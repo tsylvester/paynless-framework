@@ -28,6 +28,14 @@ function deriveStageStatus(jobStatuses: string[]): UnifiedStageStatus {
   return 'in_progress';
 }
 
+function deriveStepStatus(jobStatuses: string[]): string {
+  if (jobStatuses.length === 0) return 'not_started';
+  if (jobStatuses.some((s) => s === 'failed')) return 'failed';
+  if (jobStatuses.some((s) => s === 'in_progress' || s === 'retrying')) return 'in_progress';
+  if (jobStatuses.every((s) => s === 'completed')) return 'completed';
+  return 'in_progress';
+}
+
 export async function getAllStageProgress(
   payload: GetAllStageProgressPayload,
   dbClient: SupabaseClient<Database>,
@@ -125,6 +133,30 @@ export async function getAllStageProgress(
   const jobsList = jobs ?? [];
   const resourcesList = resources ?? [];
 
+  const recipeStepIds = new Set<string>();
+  for (const job of jobsList) {
+    if (!isRecord(job.payload)) continue;
+    const pm = job.payload.planner_metadata;
+    if (!isRecord(pm) || typeof pm.recipe_step_id !== 'string' || !pm.recipe_step_id.trim()) continue;
+    recipeStepIds.add(pm.recipe_step_id.trim());
+  }
+
+  const recipeStepIdToStepKey = new Map<string, string>();
+  if (recipeStepIds.size > 0) {
+    const { data: recipeSteps, error: stepsError } = await dbClient
+      .from('dialectic_stage_recipe_steps')
+      .select('id, step_key')
+      .in('id', Array.from(recipeStepIds));
+
+    if (!stepsError && recipeSteps) {
+      for (const row of recipeSteps) {
+        if (typeof row.id === 'string' && typeof row.step_key === 'string') {
+          recipeStepIdToStepKey.set(row.id, row.step_key);
+        }
+      }
+    }
+  }
+
   const jobsByStageSlug = new Map<string, typeof jobsList>();
   for (const job of jobsList) {
     if (isRecord(job.payload) && typeof job.payload.stageSlug === 'string') {
@@ -167,9 +199,22 @@ export async function getAllStageProgress(
 
     const documents: StageDocumentDescriptorDto[] = [];
     const jobStatuses: string[] = [];
+    const statusesByStepKey = new Map<string, string[]>();
 
     for (const job of stageJobs) {
-      jobStatuses.push(typeof job.status === 'string' ? job.status : '');
+      const jobStatus = typeof job.status === 'string' ? job.status : '';
+      jobStatuses.push(jobStatus);
+
+      const recipeStepId =
+        isRecord(job.payload) && isRecord(job.payload.planner_metadata) && typeof job.payload.planner_metadata.recipe_step_id === 'string'
+          ? job.payload.planner_metadata.recipe_step_id.trim()
+          : null;
+      const stepKey = recipeStepId ? recipeStepIdToStepKey.get(recipeStepId) ?? null : null;
+      if (stepKey) {
+        const arr = statusesByStepKey.get(stepKey) ?? [];
+        arr.push(jobStatus);
+        statusesByStepKey.set(stepKey, arr);
+      }
 
       if (
         !isRecord(job.payload) ||
@@ -193,19 +238,25 @@ export async function getAllStageProgress(
           resourceMapByDocumentKey.get(job.payload.document_key) ?? '';
       }
 
-      const jobStatus = typeof job.status === 'string' ? job.status : '';
       const status = mapJobStatusToStageRunDocumentStatus(jobStatus);
 
-      documents.push({
+      const doc: StageDocumentDescriptorDto = {
         documentKey: job.payload.document_key,
         modelId: job.payload.model_id,
         jobId: job.id,
         status,
         latestRenderedResourceId,
-      });
+      };
+      if (stepKey) {
+        doc.stepKey = stepKey;
+      }
+      documents.push(doc);
     }
 
     const stepStatuses: Record<string, string> = {};
+    for (const [key, statuses] of statusesByStepKey) {
+      stepStatuses[key] = deriveStepStatus(statuses);
+    }
     const stageStatus = deriveStageStatus(jobStatuses);
 
     const entry: StageProgressEntry = {

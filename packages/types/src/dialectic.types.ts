@@ -600,6 +600,7 @@ export interface DialecticActions {
   fetchStageDocumentContent: (key: StageDocumentCompositeKey, resourceId: string) => Promise<void>;
 
   hydrateStageProgress: (payload: ListStageDocumentsPayload) => Promise<void>;
+  hydrateAllStageProgress: (payload: GetAllStageProgressPayload) => Promise<void>;
 
   fetchStageDocumentFeedback: (key: StageDocumentCompositeKey) => Promise<void>;
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload) => Promise<ApiResponse<{ success: boolean }>>;
@@ -1008,6 +1009,22 @@ export interface ListStageDocumentsPayload {
   projectId: string;
 }
 
+export interface GetAllStageProgressPayload {
+  sessionId: string;
+  iterationNumber: number;
+  userId: string;
+  projectId: string;
+}
+
+export interface StageProgressEntry {
+  stageSlug: string;
+  documents: StageDocumentChecklistEntry[];
+  stepStatuses: Record<string, string>;
+  stageStatus: UnifiedProjectStatus;
+}
+
+export type GetAllStageProgressResponse = StageProgressEntry[];
+
 export interface ContributionContentSignedUrlResponse {
     signedUrl: string;
     mimeType: string;
@@ -1138,6 +1155,9 @@ export type DialecticServiceActionPayload = {
 | {
   action: 'listStageDocuments';
   payload: ListStageDocumentsPayload;
+} | {
+  action: 'getAllStageProgress';
+  payload: GetAllStageProgressPayload;
 }
 
 export interface DialecticServiceResponsePayload {

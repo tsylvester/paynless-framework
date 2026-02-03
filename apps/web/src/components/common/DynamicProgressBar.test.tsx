@@ -16,6 +16,7 @@ const defaultProgress: UnifiedProjectProgress = {
   overallPercentage: 0,
   currentStage: null,
   projectStatus: 'not_started',
+  stageDetails: [],
 };
 
 describe('DynamicProgressBar', () => {
@@ -26,14 +27,6 @@ describe('DynamicProgressBar', () => {
     selectUnifiedProjectProgress.mockReturnValue(defaultProgress);
   });
 
-  it('renders null when no session selected', () => {
-    selectUnifiedProjectProgress.mockReturnValue(defaultProgress);
-
-    const { container } = render(<DynamicProgressBar sessionId={sessionId} />);
-
-    expect(container.firstChild).toBeNull();
-  });
-
   it('renders 0% progress bar for new project', () => {
     const progress: UnifiedProjectProgress = {
       totalStages: 5,
@@ -42,6 +35,7 @@ describe('DynamicProgressBar', () => {
       overallPercentage: 0,
       currentStage: null,
       projectStatus: 'not_started',
+      stageDetails: [],
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -59,6 +53,7 @@ describe('DynamicProgressBar', () => {
       overallPercentage: 40,
       currentStage: null,
       projectStatus: 'in_progress',
+      stageDetails: [],
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -75,6 +70,7 @@ describe('DynamicProgressBar', () => {
       overallPercentage: 20,
       currentStage: null,
       projectStatus: 'in_progress',
+      stageDetails: [],
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -91,6 +87,7 @@ describe('DynamicProgressBar', () => {
       overallPercentage: 40,
       currentStage: null,
       projectStatus: 'in_progress',
+      stageDetails: [],
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -108,6 +105,7 @@ describe('DynamicProgressBar', () => {
       overallPercentage: 50,
       currentStage: null,
       projectStatus: 'in_progress',
+      stageDetails: [],
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -123,7 +121,7 @@ describe('DynamicProgressBar', () => {
 
     const { rerender } = render(<DynamicProgressBar sessionId={sessionId} />);
 
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.getByText('0%')).toBeInTheDocument();
 
     const progress: UnifiedProjectProgress = {
       totalStages: 5,
@@ -132,6 +130,7 @@ describe('DynamicProgressBar', () => {
       overallPercentage: 40,
       currentStage: null,
       projectStatus: 'in_progress',
+      stageDetails: [],
     };
 
     act(() => {

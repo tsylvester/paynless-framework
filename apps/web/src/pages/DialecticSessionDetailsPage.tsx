@@ -152,21 +152,16 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 					{/* Enhanced Sidebar */}
 					<div className="lg:col-span-1">
 						<div className="sticky top-40 space-y-6">
+							{/* Enhanced Progress */}
+							<DynamicProgressBar sessionId={activeSessionDetail.id} />
 							{/* Stage Navigation */}
 							<div className="space-y-3">
-								<h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-									Process Stages
-								</h3>
 								<div role="tablist" aria-label="Dialectic Stages">
 									<StageTabCard />
 								</div>
 							</div>
-
-							{/* Enhanced Progress */}
-							<DynamicProgressBar sessionId={activeSessionDetail.id} />
 						</div>
 					</div>
-
 					{/* Enhanced Content Area */}
 					<div className="lg:col-span-4">
 						<div className="bg-card rounded-2xl shadow-sm overflow-hidden">

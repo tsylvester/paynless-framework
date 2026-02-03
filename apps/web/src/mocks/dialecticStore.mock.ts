@@ -28,6 +28,7 @@ import type {
   StageDocumentContentState,
   StageDocumentVersionInfo,
   ListStageDocumentsPayload,
+  GetAllStageProgressPayload,
   EditedDocumentResource,
   SaveContributionEditSuccessResponse,
   SaveContributionEditPayload,
@@ -45,6 +46,7 @@ import {
   flushStageDocumentDraftLogic,
   handleRenderCompletedLogic,
   hydrateStageProgressLogic,
+  hydrateAllStageProgressLogic,
   reapplyDraftToNewBaselineLogic,
   recordStageDocumentDraftLogic,
   recordStageDocumentFeedbackDraftLogic,
@@ -683,6 +685,9 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       ),
       hydrateStageProgress: vi.fn().mockImplementation((payload: ListStageDocumentsPayload) => {
         hydrateStageProgressLogic(set, payload);
+      }),
+      hydrateAllStageProgress: vi.fn().mockImplementation((payload: GetAllStageProgressPayload) => {
+        hydrateAllStageProgressLogic(set, payload);
       }),
       resetSubmitStageDocumentFeedbackError: vi.fn(() => set({ submitStageDocumentFeedbackError: null })),
     };

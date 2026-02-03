@@ -1394,6 +1394,7 @@
     *   `[✅]` `objective.md`
         *   `[✅]` Single endpoint returns document progress for all stages in the session's process template
         *   `[✅]` Eliminates N API calls for N stages when user navigates to session
+        *   `[✅]` **CRITICAL: Returns populated `stepStatuses` derived from job data so frontend can compute progress percentages**
     *   `[✅]` `role.md`
         *   `[✅]` Backend API handler - aggregation layer
     *   `[✅]` `module.md`
@@ -1404,6 +1405,7 @@
         *   `[✅]` `dialectic_generation_jobs` table
         *   `[✅]` `dialectic_project_resources` table
         *   `[✅]` `deconstructStoragePath` utility
+        *   `[✅]` `dialectic_stage_recipe_steps` table - required to map `recipe_step_id` → `step_key`
     *   `[✅]` interface/`dialectic.interface.ts`
         *   `[✅]` Add `GetAllStageProgress` signature
         *   `[✅]` Add `GetAllStageProgressDeps` deps object 
@@ -1418,6 +1420,21 @@
         *   `[✅]` Assert correlates resources to jobs via document_key
         *   `[✅]` Assert 400 for missing required payload fields
         *   `[✅]` Assert 403 for non-owner user
+        *   `[✅]` **NEW TEST: Assert `stepStatuses` is populated when jobs have `planner_metadata.recipe_step_id`**
+            *   Mock jobs with `payload.planner_metadata.recipe_step_id` pointing to recipe step IDs
+            *   Mock `dialectic_stage_recipe_steps` query to return step_key for each recipe step ID
+            *   Assert returned `stepStatuses` has keys matching `step_key` values
+            *   Assert step status values derived correctly: all jobs completed → 'completed', any in_progress → 'in_progress', any failed → 'failed'
+        *   `[✅]` **NEW TEST: Assert `stepStatuses` correctly aggregates multiple jobs per step**
+            *   Create 3 jobs for same `recipe_step_id` with statuses: completed, completed, in_progress
+            *   Assert step status is 'in_progress' (not 'completed') because not all jobs done
+        *   `[✅]` **NEW TEST: Assert `stepStatuses` handles jobs without `planner_metadata.recipe_step_id`**
+            *   Jobs without `planner_metadata.recipe_step_id` are excluded from stepStatuses aggregation
+            *   They still appear in documents array but don't contribute to step progress
+        *   `[✅]` **NEW TEST: Assert `stepStatuses` maps recipe_step_id to step_key correctly**
+            *   Job has `planner_metadata.recipe_step_id: 'uuid-123'`
+            *   Recipe step table has `id: 'uuid-123', step_key: 'thesis_generate_business_case'`
+            *   Assert `stepStatuses['thesis_generate_business_case']` exists with correct status
     *   `[✅]` `getAllStageProgress.ts`
         *   `[✅]` Validate payload (sessionId, iterationNumber, userId, projectId required)
         *   `[✅]` Verify user owns the project
@@ -1426,10 +1443,39 @@
         *   `[✅]` Group jobs by `payload.stageSlug`
         *   `[✅]` For each stage: build `StageProgressEntry` with documents
         *   `[✅]` Return `StageProgressEntry[]` array
+        *   `[✅]` **FIX: Query `dialectic_stage_recipe_steps` to build recipe_step_id → step_key lookup map**
+            *   After grouping jobs by stageSlug, collect unique stageSlug values
+            *   Query: `SELECT id, step_key, stage_slug FROM dialectic_stage_recipe_steps WHERE stage_slug IN (stageSlugList)`
+            *   Build Map<string, string> where key = recipe step `id`, value = `step_key`
+        *   `[✅]` **FIX: Extract `planner_metadata.recipe_step_id` from each job's payload**
+            *   For each job: `const recipeStepId = isRecord(job.payload) && isRecord(job.payload.planner_metadata) ? job.payload.planner_metadata.recipe_step_id : null`
+            *   If `recipeStepId` is string and exists in lookup map, use mapped `step_key`
+        *   `[✅]` **FIX: Group jobs by step_key and derive step status**
+            *   Create `Map<string, string[]>` where key = step_key, value = array of job statuses
+            *   For each job with valid recipe_step_id: push job.status to the step_key's status array
+            *   After grouping, derive status for each step:
+                ```typescript
+                function deriveStepStatus(jobStatuses: string[]): string {
+                  if (jobStatuses.length === 0) return 'not_started';
+                  if (jobStatuses.some(s => s === 'failed')) return 'failed';
+                  if (jobStatuses.some(s => s === 'in_progress' || s === 'retrying')) return 'in_progress';
+                  if (jobStatuses.every(s => s === 'completed')) return 'completed';
+                  return 'in_progress';
+                }
+                ```
+        *   `[✅]` **FIX: Populate `stepStatuses` in StageProgressEntry instead of empty object**
+            *   Replace `const stepStatuses: Record<string, string> = {};` with derived step statuses
+            *   For each step_key in the stage's job group: `stepStatuses[stepKey] = deriveStepStatus(jobStatusesForStep)`
+        *   `[✅]` **FIX: Include `stepKey` in StageDocumentDescriptorDto**
+            *   When building document descriptors, include the step_key derived from the job's `planner_metadata.recipe_step_id`
+            *   This allows frontend to associate documents with their producing step
     *   `[✅]` `requirements.md`
         *   `[✅]` Single API call returns progress for all stages
         *   `[✅]` Performance: one DB query for jobs, one for resources
-    *   `[✅]` **Commit** `feat(be): add getAllStageProgress handler for single-call stage progress`
+        *   `[✅]` **NEW: `stepStatuses` must be populated from job data, NOT empty**
+        *   `[✅]` **NEW: Each step_key in stepStatuses must have status derived from all jobs with that recipe_step_id**
+        *   `[✅]` **NEW: Step status derivation: failed > in_progress > completed > not_started**
+    *   `[✅]` **Commit** `fix(be): populate stepStatuses from job planner_metadata.recipe_step_id`
 
 *   `[✅]` supabase/functions/dialectic-service/`index.ts` **[BE] Route getAllStageProgress action to handler**
     *   `[✅]` `objective.md`
@@ -1450,102 +1496,201 @@
         *   `[✅]` Router dispatches getAllStageProgress action correctly
     *   `[✅]` **Commit** `feat(be): route getAllStageProgress action in dialectic-service index`
 
-*   `[ ]` packages/api/src/`dialectic.api.ts` **[API] Add getAllStageProgress API method**
-    *   `[ ]` `objective.md`
-        *   `[ ]` Add API client method to call new `getAllStageProgress` endpoint
-    *   `[ ]` `role.md`
-        *   `[ ]` API client - frontend boundary to backend
-    *   `[ ]` `deps.md`
-        *   `[ ]` `apiClient.post` method
-        *   `[ ]` Backend endpoint from previous nodes
-    *   `[ ]` interface/`packages/types/src/dialectic.types.ts`
-        *   `[ ]` Add `GetAllStageProgressPayload`: `{ sessionId: string; iterationNumber: number; userId: string; projectId: string }`
-        *   `[ ]` Add `StageProgressEntry`: `{ stageSlug: string; documents: StageDocumentChecklistEntry[]; stageStatus: string }`
-        *   `[ ]` Add `GetAllStageProgressResponse`: `StageProgressEntry[]`
-    *   `[ ]` unit/`dialectic.api.test.ts`
-        *   `[ ]` Assert calls post with `action: 'getAllStageProgress'` and payload
-        *   `[ ]` Assert returns typed response on success
-        *   `[ ]` Assert handles API error correctly
-        *   `[ ]` Assert handles network error correctly
-    *   `[ ]` `dialectic.api.ts`
-        *   `[ ]` Add `getAllStageProgress(payload: GetAllStageProgressPayload): Promise<ApiResponse<GetAllStageProgressResponse>>`
-        *   `[ ]` POST to `dialectic-service` with `action: 'getAllStageProgress'`
-    *   `[ ]` `mocks/dialectic.api.mock.ts`
-        *   `[ ]` Add `getAllStageProgress` mock function
-    *   `[ ]` `requirements.md`
-        *   `[ ]` API method calls backend and returns typed response
-    *   `[ ]` **Commit** `feat(api): add getAllStageProgress API client method`
+*   `[✅]` packages/api/src/`dialectic.api.ts` **[API] Add getAllStageProgress API method**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Add API client method to call new `getAllStageProgress` endpoint
+    *   `[✅]` `role.md`
+        *   `[✅]` API client - frontend boundary to backend
+    *   `[✅]` `deps.md`
+        *   `[✅]` `apiClient.post` method
+        *   `[✅]` Backend endpoint from previous nodes
+    *   `[✅]` interface/`packages/types/src/dialectic.types.ts`
+        *   `[✅]` Add `GetAllStageProgressPayload`: `{ sessionId: string; iterationNumber: number; userId: string; projectId: string }`
+        *   `[✅]` Add `StageProgressEntry`: `{ stageSlug: string; documents: StageDocumentChecklistEntry[]; stageStatus: string }`
+        *   `[✅]` Add `GetAllStageProgressResponse`: `StageProgressEntry[]`
+    *   `[✅]` unit/`dialectic.api.test.ts`
+        *   `[✅]` Assert calls post with `action: 'getAllStageProgress'` and payload
+        *   `[✅]` Assert returns typed response on success
+        *   `[✅]` Assert handles API error correctly
+        *   `[✅]` Assert handles network error correctly
+    *   `[✅]` `dialectic.api.ts`
+        *   `[✅]` Add `getAllStageProgress(payload: GetAllStageProgressPayload): Promise<ApiResponse<GetAllStageProgressResponse>>`
+        *   `[✅]` POST to `dialectic-service` with `action: 'getAllStageProgress'`
+    *   `[✅]` `mocks/dialectic.api.mock.ts`
+        *   `[✅]` Add `getAllStageProgress` mock function
+    *   `[✅]` `requirements.md`
+        *   `[✅]` API method calls backend and returns typed response
+    *   `[✅]` **Commit** `feat(api): add getAllStageProgress API client method`
 
-*   `[ ]` packages/store/src/`dialecticStore.documents.ts` **[STORE] Add hydrateAllStageProgressLogic**
-    *   `[ ]` `objective.md`
-        *   `[ ]` Add logic function that calls `getAllStageProgress` and populates `stageRunProgress` for ALL stages
-    *   `[ ]` `role.md`
-        *   `[ ]` Store logic - manages document progress state
-    *   `[ ]` `deps.md`
-        *   `[ ]` `api.dialectic().getAllStageProgress` from previous node
-        *   `[ ]` `stageRunProgress` state
-        *   `[ ]` `getStageRunDocumentKey` helper
-        *   `[ ]` `ensureRenderedDocumentDescriptor` helper
-    *   `[ ]` unit/`dialecticStore.documents.test.ts`
-        *   `[ ]` Assert `hydrateAllStageProgressLogic` populates `stageRunProgress` for multiple stages from single API response
-        *   `[ ]` Assert each stage's documents keyed by (documentKey, modelId)
-        *   `[ ]` Assert handles empty response gracefully
-        *   `[ ]` Assert handles API error gracefully
-    *   `[ ]` `dialecticStore.documents.ts`
-        *   `[ ]` Add `hydrateAllStageProgressLogic(set, payload: GetAllStageProgressPayload)`
-        *   `[ ]` Call `api.dialectic().getAllStageProgress(payload)`
-        *   `[ ]` For each `StageProgressEntry`: build progressKey, populate `stageRunProgress[progressKey]`
-        *   `[ ]` Reuse `ensureRenderedDocumentDescriptor` and `createVersionInfo` helpers
-    *   `[ ]` `requirements.md`
-        *   `[ ]` Single API call populates progress for all stages
-    *   `[ ]` **Commit** `feat(store): add hydrateAllStageProgressLogic for all-stage hydration`
+*   `[✅]` packages/store/src/`dialecticStore.documents.ts` **[STORE] Fix hydrateAllStageProgressLogic to not skip documents**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Add logic function that calls `getAllStageProgress` and populates `stageRunProgress` for ALL stages
+        *   `[✅]` **FIX: Do NOT skip documents that lack `latestRenderedResourceId`**
+        *   `[✅]` **FIX: Populate `stepStatuses` from API response into `stageRunProgress[progressKey].stepStatuses`**
+    *   `[✅]` `role.md`
+        *   `[✅]` Store logic - manages document progress state
+    *   `[✅]` `deps.md`
+        *   `[✅]` `api.dialectic().getAllStageProgress` from previous node
+        *   `[✅]` `stageRunProgress` state
+        *   `[✅]` `getStageRunDocumentKey` helper
+        *   `[✅]` `ensureRenderedDocumentDescriptor` helper
+    *   `[✅]` unit/`dialecticStore.documents.test.ts`
+        *   `[✅]` Assert `hydrateAllStageProgressLogic` populates `stageRunProgress` for multiple stages from single API response
+        *   `[✅]` Assert each stage's documents keyed by (documentKey, modelId)
+        *   `[✅]` Assert handles empty response gracefully
+        *   `[✅]` Assert handles API error gracefully
+        *   `[✅]` **NEW TEST: Assert documents WITHOUT latestRenderedResourceId are still added to progress**
+            *   Mock API response with document: `{ documentKey: 'x', modelId: 'y', status: 'generating', jobId: 'j1', latestRenderedResourceId: '' }`
+            *   Assert document appears in `stageRunProgress[progressKey].documents` with status 'generating'
+            *   Assert document is NOT skipped
+        *   `[✅]` **NEW TEST: Assert `stepStatuses` from API response is copied to progress state**
+            *   Mock API response with `stepStatuses: { 'step_a': 'completed', 'step_b': 'in_progress' }`
+            *   Assert `stageRunProgress[progressKey].stepStatuses` equals `{ 'step_a': 'completed', 'step_b': 'in_progress' }`
+    *   `[✅]` `dialecticStore.documents.ts`
+        *   `[✅]` Add `hydrateAllStageProgressLogic(set, payload: GetAllStageProgressPayload)`
+        *   `[✅]` Call `api.dialectic().getAllStageProgress(payload)`
+        *   `[✅]` For each `StageProgressEntry`: build progressKey, populate `stageRunProgress[progressKey]`
+        *   `[✅]` Reuse `ensureRenderedDocumentDescriptor` and `createVersionInfo` helpers
+        *   `[✅]` **FIX at line ~1501-1511: Do NOT `continue` when `latestRenderedResourceId` is empty**
+            *   Current code skips documents without latestRenderedResourceId
+            *   This causes in-progress documents to disappear from UI
+            *   Instead: Create descriptor with status from API, empty versionHash, skip version tracking only
+            ```typescript
+            // CURRENT (WRONG):
+            if (typeof latestRenderedResourceId !== 'string' || latestRenderedResourceId.length === 0) {
+                logger.warn(...);
+                continue;  // ← SKIPS THE DOCUMENT - WRONG!
+            }
+            
+            // FIXED:
+            if (typeof latestRenderedResourceId !== 'string' || latestRenderedResourceId.length === 0) {
+                // Document exists but hasn't been rendered yet - still add to progress
+                const documentsKey = getStageRunDocumentKey(documentKey, modelId);
+                progress.documents[documentsKey] = {
+                    descriptorType: 'rendered',
+                    status: descriptorStatus,  // Use status from API (e.g., 'generating')
+                    job_id: jobId,
+                    latestRenderedResourceId: '',
+                    modelId,
+                    versionHash: '',
+                    lastRenderedResourceId: '',
+                    lastRenderAtIso: new Date().toISOString(),
+                    stepKey,
+                };
+                continue;  // Skip version tracking, but document is now in state
+            }
+            ```
+        *   `[✅]` **FIX: Copy `stepStatuses` from API response to progress state**
+            *   Current code: `progress.stepStatuses = entry.stepStatuses as StageRunProgressSnapshot['stepStatuses'];`
+            *   This is correct IF the backend returns populated stepStatuses
+            *   After backend fix, this will work correctly
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Single API call populates progress for all stages
+        *   `[✅]` **NEW: Documents without latestRenderedResourceId must still appear in progress with their status**
+        *   `[✅]` **NEW: stepStatuses from API must be copied to progress state**
+    *   `[✅]` **Commit** `fix(store): do not skip documents without latestRenderedResourceId in hydration`
 
-*   `[ ]` packages/store/src/`dialecticStore.ts` **[STORE] Expose hydrateAllStageProgress action**
-    *   `[ ]` `objective.md`
-        *   `[ ]` Expose new action `hydrateAllStageProgress` that delegates to logic function
-    *   `[ ]` `role.md`
-        *   `[ ]` Store - public action interface
-    *   `[ ]` `deps.md`
-        *   `[ ]` `hydrateAllStageProgressLogic` from previous node
-    *   `[ ]` unit/`dialecticStore.test.ts`
-        *   `[ ]` Assert `hydrateAllStageProgress` action exists
-        *   `[ ]` Assert action calls `hydrateAllStageProgressLogic` with correct arguments
-    *   `[ ]` `dialecticStore.ts`
-        *   `[ ]` Import `hydrateAllStageProgressLogic` from `./dialecticStore.documents`
-        *   `[ ]` Add `hydrateAllStageProgress: async (payload) => { await hydrateAllStageProgressLogic(set, payload); }`
-    *   `[ ]` `requirements.md`
-        *   `[ ]` Action exposed and callable from UI
-    *   `[ ]` **Commit** `feat(store): expose hydrateAllStageProgress action`
+*   `[✅]` packages/store/src/`dialecticStore.ts` **[STORE] Expose hydrateAllStageProgress action**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Expose new action `hydrateAllStageProgress` that delegates to logic function
+    *   `[✅]` `role.md`
+        *   `[✅]` Store - public action interface
+    *   `[✅]` `deps.md`
+        *   `[✅]` `hydrateAllStageProgressLogic` from previous node
+    *   `[✅]` unit/`dialecticStore.test.ts`
+        *   `[✅]` Assert `hydrateAllStageProgress` action exists
+        *   `[✅]` Assert action calls `hydrateAllStageProgressLogic` with correct arguments
+    *   `[✅]` `dialecticStore.ts`
+        *   `[✅]` Import `hydrateAllStageProgressLogic` from `./dialecticStore.documents`
+        *   `[✅]` Add `hydrateAllStageProgress: async (payload) => { await hydrateAllStageProgressLogic(set, payload); }`
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Action exposed and callable from UI
+    *   `[✅]` **Commit** `feat(store): expose hydrateAllStageProgress action`
 
-*   `[ ]` apps/web/src/hooks/`useStageRunProgressHydration.ts` **[UI] Use hydrateAllStageProgress for single-call hydration on session load**
-    *   `[ ]` `objective.md`
-        *   `[ ]` Call `hydrateAllStageProgress` once when session loads to populate all stages
-        *   `[ ]` Fix 0% progress and "Not Started" status on page refresh/return
-    *   `[ ]` `role.md`
-        *   `[ ]` UI hook - orchestrates hydration on page load
-    *   `[ ]` `deps.md`
-        *   `[ ]` `hydrateAllStageProgress` from store (previous node)
-        *   `[ ]` `activeSessionDetail` for trigger condition
-        *   `[ ]` `user` for userId
-    *   `[ ]` unit/`useStageRunProgressHydration.test.tsx`
-        *   `[ ]` Assert `hydrateAllStageProgress` called once when `activeSessionDetail` first available
-        *   `[ ]` Assert not re-called on stage tab changes
-        *   `[ ]` Assert guard ref prevents duplicate calls
-    *   `[ ]` `useStageRunProgressHydration.ts`
-        *   `[ ]` Import `hydrateAllStageProgress` from store
-        *   `[ ]` Add `hasHydratedAllStages` ref to prevent re-hydration
-        *   `[ ]` Add effect: when `activeSessionDetail` and `user` available and not already hydrated, call `hydrateAllStageProgress({ sessionId, iterationNumber, userId, projectId })`
-        *   `[ ]` Set `hasHydratedAllStages.current = true` after call
-    *   `[ ]` integration/`useStageRunProgressHydration.integration.test.tsx`
-        *   `[ ]` Assert after hydration, `selectUnifiedProjectProgress` returns correct overall percentage
-        *   `[ ]` Assert all stage statuses correctly populated
-        *   `[ ]` Assert DynamicProgressBar displays non-zero percentage when documents exist
-    *   `[ ]` `requirements.md`
-        *   `[ ]` Single API call hydrates all stages on session load
-        *   `[ ]` DynamicProgressBar shows correct percentage after page load
-        *   `[ ]` StageTabCard shows correct status for all stages
-        *   `[ ]` SessionInfoCard badge shows correct project status
-    *   `[ ]` **Commit** `feat(ui): use hydrateAllStageProgress for efficient single-call hydration`
+*   `[✅]` apps/web/src/hooks/`useStageRunProgressHydration.ts` **[UI] Use hydrateAllStageProgress for single-call hydration on session load**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Call `hydrateAllStageProgress` once when session loads to populate all stages
+        *   `[✅]` Fix 0% progress and "Not Started" status on page refresh/return
+        *   `[✅]` **CRITICAL: Do NOT overwrite existing progress state with empty data**
+        *   `[✅]` **CRITICAL: Continue calling `hydrateStageProgress` for active stage to get detailed single-stage progress**
+    *   `[✅]` `role.md`
+        *   `[✅]` UI hook - orchestrates hydration on page load
+    *   `[✅]` `deps.md`
+        *   `[✅]` `hydrateAllStageProgress` from store (previous node)
+        *   `[✅]` `activeSessionDetail` for trigger condition
+        *   `[✅]` `user` for userId
+        *   `[✅]` `hydrateStageProgress` - still needed for active stage detailed hydration
+        *   `[✅]` `fetchStageRecipe` - still needed to ensure recipe exists before hydration
+        *   `[✅]` `ensureRecipeForActiveStage` - still needed for active stage
+        *   `[✅]` `recipesByStageSlug` - check if recipe loaded before hydrating stage
+    *   `[✅]` unit/`useStageRunProgressHydration.test.tsx`
+        *   `[✅]` Assert `hydrateAllStageProgress` called once when `activeSessionDetail` first available
+        *   `[✅]` Assert not re-called on stage tab changes
+        *   `[✅]` Assert guard ref prevents duplicate calls
+        *   `[✅]` **NEW TEST: Assert `hydrateAllStageProgress` called with correct payload shape**
+            *   Payload must include: `{ sessionId, iterationNumber, userId, projectId }`
+            *   NOT stageSlug - this is all-stage hydration
+        *   `[✅]` **NEW TEST: Assert `hydrateStageProgress` still called for active stage after all-stage hydration**
+            *   hydrateAllStageProgress provides coarse progress for all stages
+            *   hydrateStageProgress provides detailed progress for the stage user is viewing
+            *   Both should be called, not just one or the other
+        *   `[✅]` **NEW TEST: Assert re-hydration when sessionId changes (user navigates to different session)**
+            *   `hasHydratedAllStagesRef` should track sessionId, not just boolean
+            *   When sessionId changes, hydration should occur again
+    *   `[✅]` `useStageRunProgressHydration.ts`
+        *   `[✅]` **Import `hydrateAllStageProgress` from store**
+            *   Add to useDialecticStore selectors: `const hydrateAllStageProgress = useDialecticStore((state) => state.hydrateAllStageProgress);`
+        *   `[✅]` **Add `hasHydratedAllStagesRef` to track which sessionId was hydrated**
+            *   `const hasHydratedAllStagesRef = useRef<string | null>(null);`
+            *   Track sessionId, not boolean, so we re-hydrate when session changes
+        *   `[✅]` **Add FIRST useEffect for all-stage hydration on session load**
+            ```typescript
+            // Effect 1: Hydrate ALL stages once when session first loads
+            useEffect(() => {
+                if (!activeContextSessionId || !activeSessionDetail || !user) {
+                    return;
+                }
+                
+                // Only hydrate once per session
+                if (hasHydratedAllStagesRef.current === activeContextSessionId) {
+                    return;
+                }
+                
+                const userId = user.id;
+                const projectId = activeSessionDetail.project_id;
+                const iterationNumber = activeSessionDetail.iteration_count;
+                
+                const hydrateAll = async () => {
+                    await hydrateAllStageProgress({
+                        sessionId: activeContextSessionId,
+                        iterationNumber,
+                        userId,
+                        projectId,
+                    });
+                    hasHydratedAllStagesRef.current = activeContextSessionId;
+                };
+                
+                void hydrateAll();
+            }, [user, activeContextSessionId, activeSessionDetail, hydrateAllStageProgress]);
+            ```
+        *   `[✅]` **Keep SECOND useEffect for active-stage detailed hydration (existing logic)**
+            *   The existing useEffect that calls `hydrateStageProgress` should remain
+            *   This provides detailed per-stage progress when user focuses on a stage tab
+            *   Do NOT remove this - both effects are needed
+        *   `[✅]` Set `hasHydratedAllStagesRef.current = sessionId` after call (not just `true`)
+    *   `[✅]` integration/`useStageRunProgressHydration.integration.test.tsx`
+        *   `[✅]` Assert after hydration, `selectUnifiedProjectProgress` returns correct overall percentage
+        *   `[✅]` Assert all stage statuses correctly populated
+        *   `[✅]` Assert DynamicProgressBar displays non-zero percentage when documents exist
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Single API call hydrates all stages on session load
+        *   `[✅]` DynamicProgressBar shows correct percentage after page load
+        *   `[✅]` StageTabCard shows correct status for all stages
+        *   `[✅]` SessionInfoCard badge shows correct project status
+        *   `[✅]` **NEW: Hook must call BOTH hydrateAllStageProgress (once per session) AND hydrateStageProgress (per active stage)**
+        *   `[✅]` **NEW: Progress state must NEVER be overwritten with empty data**
+        *   `[✅]` **NEW: When backend returns empty stepStatuses, the hook must NOT destroy existing progress**
+    *   `[✅]` **Commit** `fix(ui): call hydrateAllStageProgress on session load, keep hydrateStageProgress for active stage`
 
 # ToDo
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 

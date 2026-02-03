@@ -47,6 +47,7 @@ import {
   StageDocumentContentState,
   type SubmitStageDocumentFeedbackPayload,
   type ListStageDocumentsPayload,
+  type GetAllStageProgressPayload,
   StartSessionSuccessResponse,
   type EditedDocumentResource,
 } from '@paynless/types';
@@ -81,6 +82,7 @@ import {
 	submitStageDocumentFeedbackLogic,
 	selectStageDocumentFeedbackLogic,
 	hydrateStageProgressLogic,
+	hydrateAllStageProgressLogic,
 	createVersionInfo,
 	getStageRunDocumentKey,
 } from './dialecticStore.documents';
@@ -2662,6 +2664,9 @@ export const useDialecticStore = create<DialecticStore>()(
 
   hydrateStageProgress: async (payload: ListStageDocumentsPayload) => {
     await hydrateStageProgressLogic(set, payload);
+  },
+  hydrateAllStageProgress: async (payload: GetAllStageProgressPayload) => {
+    await hydrateAllStageProgressLogic(set, payload);
   },
     };
   }),

@@ -11,14 +11,10 @@ interface DynamicProgressBarProps {
 export const DynamicProgressBar: React.FC<DynamicProgressBarProps> = ({ sessionId, className }) => {
   const progress = useDialecticStore(state => selectUnifiedProjectProgress(state, sessionId));
 
-  if (progress.totalStages === 0) {
-    return null;
-  }
-
   const value = Math.min(100, Math.max(0, progress.overallPercentage));
-  const stageLabel = progress.currentStageSlug ?? '—';
+  const stageLabel = progress.currentStageSlug;
   const displayMessage = `Stage ${progress.completedStages}/${progress.totalStages}: ${stageLabel}`;
-
+  console.log(progress);
   return (
     <div className={`w-full flex flex-col gap-2 ${className}`}>
       <div className="flex justify-between items-center">

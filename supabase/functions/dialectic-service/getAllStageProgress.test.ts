@@ -587,3 +587,320 @@ Deno.test('getAllStageProgress - returns 403 for non-owner user', async () => {
   const jobsBuilders = mockSupabase.client.getHistoricBuildersForTable('dialectic_generation_jobs') ?? [];
   assertEquals(jobsBuilders.length, 0);
 });
+
+Deno.test('getAllStageProgress - stepStatuses is populated when jobs have planner_metadata.recipe_step_id', async () => {
+  const recipeStepId1 = 'recipe-step-uuid-1';
+  const recipeStepId2 = 'recipe-step-uuid-2';
+  const stepKey1 = 'thesis_generate_business_case';
+  const stepKey2 = 'thesis_review';
+
+  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
+  const mockJobs = [
+    {
+      id: 'job-1',
+      session_id: SESSION_ID,
+      user_id: OWNER_USER_ID,
+      status: 'completed',
+      payload: {
+        stageSlug: 'thesis',
+        iterationNumber: ITERATION_NUMBER,
+        document_key: 'doc-a',
+        model_id: 'model-a',
+        planner_metadata: { recipe_step_id: recipeStepId1 },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 'job-2',
+      session_id: SESSION_ID,
+      user_id: OWNER_USER_ID,
+      status: 'in_progress',
+      payload: {
+        stageSlug: 'thesis',
+        iterationNumber: ITERATION_NUMBER,
+        document_key: 'doc-b',
+        model_id: 'model-b',
+        planner_metadata: { recipe_step_id: recipeStepId2 },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+  const mockRecipeSteps = [
+    { id: recipeStepId1, step_key: stepKey1 },
+    { id: recipeStepId2, step_key: stepKey2 },
+  ];
+
+  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
+    genericMockResults: {
+      'dialectic_projects': { select: { data: [mockProject], error: null } },
+      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
+      'dialectic_project_resources': { select: { data: [], error: null } },
+      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
+    },
+  });
+
+  const result = await getAllStageProgress(
+    validPayload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    createMockUser(OWNER_USER_ID),
+  );
+
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
+  assertExists(thesisEntry);
+  assertExists(thesisEntry.stepStatuses);
+  assertEquals(thesisEntry.stepStatuses[stepKey1], 'completed');
+  assertEquals(thesisEntry.stepStatuses[stepKey2], 'in_progress');
+});
+
+Deno.test('getAllStageProgress - stepStatuses correctly aggregates multiple jobs per step', async () => {
+  const recipeStepId = 'recipe-step-uuid-same';
+  const stepKey = 'thesis_generate_business_case';
+
+  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
+  const mockJobs = [
+    {
+      id: 'job-1',
+      session_id: SESSION_ID,
+      user_id: OWNER_USER_ID,
+      status: 'completed',
+      payload: {
+        stageSlug: 'thesis',
+        iterationNumber: ITERATION_NUMBER,
+        document_key: 'doc-a',
+        model_id: 'model-a',
+        planner_metadata: { recipe_step_id: recipeStepId },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 'job-2',
+      session_id: SESSION_ID,
+      user_id: OWNER_USER_ID,
+      status: 'completed',
+      payload: {
+        stageSlug: 'thesis',
+        iterationNumber: ITERATION_NUMBER,
+        document_key: 'doc-b',
+        model_id: 'model-b',
+        planner_metadata: { recipe_step_id: recipeStepId },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 'job-3',
+      session_id: SESSION_ID,
+      user_id: OWNER_USER_ID,
+      status: 'in_progress',
+      payload: {
+        stageSlug: 'thesis',
+        iterationNumber: ITERATION_NUMBER,
+        document_key: 'doc-c',
+        model_id: 'model-c',
+        planner_metadata: { recipe_step_id: recipeStepId },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
+
+  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
+    genericMockResults: {
+      'dialectic_projects': { select: { data: [mockProject], error: null } },
+      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
+      'dialectic_project_resources': { select: { data: [], error: null } },
+      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
+    },
+  });
+
+  const result = await getAllStageProgress(
+    validPayload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    createMockUser(OWNER_USER_ID),
+  );
+
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
+  assertExists(thesisEntry);
+  assertExists(thesisEntry.stepStatuses);
+  assertEquals(thesisEntry.stepStatuses[stepKey], 'in_progress');
+});
+
+Deno.test('getAllStageProgress - stepStatuses handles jobs without planner_metadata.recipe_step_id', async () => {
+  const recipeStepId = 'recipe-step-uuid-with-id';
+  const stepKey = 'thesis_generate_business_case';
+
+  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
+  const mockJobs = [
+    {
+      id: 'job-with-step-id',
+      session_id: SESSION_ID,
+      user_id: OWNER_USER_ID,
+      status: 'completed',
+      payload: {
+        stageSlug: 'thesis',
+        iterationNumber: ITERATION_NUMBER,
+        document_key: 'doc-a',
+        model_id: 'model-a',
+        planner_metadata: { recipe_step_id: recipeStepId },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 'job-without-step-id',
+      session_id: SESSION_ID,
+      user_id: OWNER_USER_ID,
+      status: 'in_progress',
+      payload: {
+        stageSlug: 'thesis',
+        iterationNumber: ITERATION_NUMBER,
+        document_key: 'doc-b',
+        model_id: 'model-b',
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
+
+  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
+    genericMockResults: {
+      'dialectic_projects': { select: { data: [mockProject], error: null } },
+      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
+      'dialectic_project_resources': { select: { data: [], error: null } },
+      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
+    },
+  });
+
+  const result = await getAllStageProgress(
+    validPayload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    createMockUser(OWNER_USER_ID),
+  );
+
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
+  assertExists(thesisEntry);
+  assertEquals(thesisEntry.documents.length, 2);
+  assertExists(thesisEntry.stepStatuses);
+  assertEquals(Object.keys(thesisEntry.stepStatuses).length, 1);
+  assertEquals(thesisEntry.stepStatuses[stepKey], 'completed');
+});
+
+Deno.test('getAllStageProgress - stepStatuses maps recipe_step_id to step_key correctly', async () => {
+  const recipeStepId = 'uuid-123';
+  const stepKey = 'thesis_generate_business_case';
+
+  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
+  const mockJobs = [
+    {
+      id: 'job-1',
+      session_id: SESSION_ID,
+      user_id: OWNER_USER_ID,
+      status: 'completed',
+      payload: {
+        stageSlug: 'thesis',
+        iterationNumber: ITERATION_NUMBER,
+        document_key: 'doc-a',
+        model_id: 'model-a',
+        planner_metadata: { recipe_step_id: recipeStepId },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
+
+  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
+    genericMockResults: {
+      'dialectic_projects': { select: { data: [mockProject], error: null } },
+      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
+      'dialectic_project_resources': { select: { data: [], error: null } },
+      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
+    },
+  });
+
+  const result = await getAllStageProgress(
+    validPayload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    createMockUser(OWNER_USER_ID),
+  );
+
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
+  assertExists(thesisEntry);
+  assertExists(thesisEntry.stepStatuses);
+  assertEquals(thesisEntry.stepStatuses[stepKey], 'completed');
+});
+
+Deno.test('getAllStageProgress - stepStatuses derives failed when any job for that step has status failed', async () => {
+  const recipeStepId = 'recipe-step-uuid-failed';
+  const stepKey = 'thesis_generate_business_case';
+
+  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
+  const mockJobs = [
+    {
+      id: 'job-completed',
+      session_id: SESSION_ID,
+      user_id: OWNER_USER_ID,
+      status: 'completed',
+      payload: {
+        stageSlug: 'thesis',
+        iterationNumber: ITERATION_NUMBER,
+        document_key: 'doc-a',
+        model_id: 'model-a',
+        planner_metadata: { recipe_step_id: recipeStepId },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 'job-failed',
+      session_id: SESSION_ID,
+      user_id: OWNER_USER_ID,
+      status: 'failed',
+      payload: {
+        stageSlug: 'thesis',
+        iterationNumber: ITERATION_NUMBER,
+        document_key: 'doc-b',
+        model_id: 'model-b',
+        planner_metadata: { recipe_step_id: recipeStepId },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
+
+  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
+    genericMockResults: {
+      'dialectic_projects': { select: { data: [mockProject], error: null } },
+      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
+      'dialectic_project_resources': { select: { data: [], error: null } },
+      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
+    },
+  });
+
+  const result = await getAllStageProgress(
+    validPayload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    createMockUser(OWNER_USER_ID),
+  );
+
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
+  assertExists(thesisEntry);
+  assertExists(thesisEntry.stepStatuses);
+  assertEquals(thesisEntry.stepStatuses[stepKey], 'failed');
+});

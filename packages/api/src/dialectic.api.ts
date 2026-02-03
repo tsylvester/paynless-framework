@@ -34,6 +34,8 @@ import type {
     SubmitStageDocumentFeedbackPayload,
     ListStageDocumentsPayload,
     ListStageDocumentsResponse,
+    GetAllStageProgressPayload,
+    GetAllStageProgressResponse,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -651,12 +653,40 @@ export class DialecticApiClient {
         }
     }
 
+    async getAllStageProgress(payload: GetAllStageProgressPayload): Promise<ApiResponse<GetAllStageProgressResponse>> {
+        logger.info('Getting all stage progress', { ...payload });
+        try {
+            const response = await this.apiClient.post<GetAllStageProgressResponse, DialecticServiceActionPayload>(
+                'dialectic-service',
+                {
+                    action: 'getAllStageProgress',
+                    payload,
+                }
+            );
+
+            if (response.error) {
+                logger.error('Error getting all stage progress:', { error: response.error, ...payload });
+            } else {
+                logger.info('Successfully got all stage progress', { ...payload });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in getAllStageProgress:', { errorMessage: message, errorObject: error, ...payload });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
     /**
      * Updates the selected models for a given session.
      * Requires authentication.
      */
     async updateSessionModels(payload: UpdateSessionModelsPayload): Promise<ApiResponse<DialecticSession>> {
-        logger.info('Updating selected models for session', { sessionId: payload.sessionId, models: payload.selectedModelIds });
+        logger.info('Updating selected models for session', { sessionId: payload.sessionId, models: payload.selectedModels });
 
         try {
             const response = await this.apiClient.post<DialecticSession, DialecticServiceActionPayload>(

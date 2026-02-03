@@ -59,7 +59,7 @@ const mockDialecticSession: DialecticSession = {
   status: "pending_hypothesis",
   associated_chat_id: null,
   current_stage_id: 'stage-123',
-  selected_model_ids: ['model-1'],
+  selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
   user_input_reference_url: null,
 };
 
@@ -466,6 +466,7 @@ describe('DialecticApiClient', () => {
         const requestBody = { action: 'getProjectResourceContent', payload: validPayload };
 
         const mockResourceContentResponse: GetProjectResourceContentResponse = {
+            sourceContributionId: 'contrib-123',
             fileName: 'prompt.md',
             mimeType: 'text/markdown',
             content: '## Initial Project Prompt\n\nThis is the detailed content of the project resource file.',
@@ -763,7 +764,7 @@ describe('DialecticApiClient', () => {
                             id: 'step-b', step_key: 'b_key', step_slug: 'b-slug', step_name: 'B',
                             execution_order: 2, parallel_group: 2, branch_key: 'branch_b',
                             job_type: 'EXECUTE', prompt_type: 'Turn', prompt_template_id: 'pt-b',
-                            output_type: 'AssembledDocumentJson', granularity_strategy: 'per_source_document',
+                            output_type: 'assembled_document_json', granularity_strategy: 'per_source_document',
                             inputs_required: [{ type: 'document', document_key: 'feature_spec', required: true, slug: 'feature_spec' }],
                             inputs_relevance: [{ document_key: 'feature_spec', relevance: 1, type: 'feedback', slug: 'feature_spec' }],
                             outputs_required: [{ document_key: 'header_ctx_b', artifact_class: 'header_context', file_type: 'json' }],
@@ -772,7 +773,7 @@ describe('DialecticApiClient', () => {
                             id: 'step-a', step_key: 'a_key', step_slug: 'a-slug', step_name: 'A',
                             execution_order: 1, parallel_group: 1, branch_key: 'branch_a',
                             job_type: 'PLAN', prompt_type: 'Planner', prompt_template_id: 'pt-a',
-                            output_type: 'HeaderContext', granularity_strategy: 'all_to_one',
+                            output_type: 'header_context', granularity_strategy: 'all_to_one',
                             inputs_required: [{ type: 'seed_prompt', document_key: 'seed_prompt', required: true, slug: 'seed_prompt' }],
                             inputs_relevance: [],
                             outputs_required: [{ document_key: 'header_ctx_a', artifact_class: 'header_context', file_type: 'json' }],

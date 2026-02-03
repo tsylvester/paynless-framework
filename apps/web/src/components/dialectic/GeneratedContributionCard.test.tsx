@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { GeneratedContributionCard } from './GeneratedContributionCard';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { initializeMockDialecticState, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
+import { mockSetAuthUser } from '../../mocks/authStore.mock';
 import { toast } from 'sonner';
 import {
   StageRunDocumentDescriptor,
@@ -29,19 +30,20 @@ vi.mock('sonner', () => ({
 vi.mock('@paynless/store', async (importOriginal) => {
   const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
   const actualStoreModule = await importOriginal<typeof import('@paynless/store')>();
-  
+  const authMock = await vi.importActual<typeof import('@/mocks/authStore.mock')>('@/mocks/authStore.mock');
+
   // Capture the real selectors in closure variables
   const realSelectStageDocumentResource = actualStoreModule.selectStageDocumentResource;
   const realSelectValidMarkdownDocumentKeys = actualStoreModule.selectValidMarkdownDocumentKeys;
   const realSelectFocusedStageDocument = actualStoreModule.selectFocusedStageDocument;
-  
+
   // Use the actual selector implementations so they read from state
   // Tests can still spy on them to verify they're called
   // The mocks call through to the real functions by default
   const mockSelectStageDocumentResource = vi.fn((...args: Parameters<typeof actualStoreModule.selectStageDocumentResource>) => {
     return realSelectStageDocumentResource(...args);
   });
-  
+
   const mockSelectValidMarkdownDocumentKeys = vi.fn((...args: Parameters<typeof actualStoreModule.selectValidMarkdownDocumentKeys>) => {
     return realSelectValidMarkdownDocumentKeys(...args);
   });
@@ -49,10 +51,11 @@ vi.mock('@paynless/store', async (importOriginal) => {
   const mockSelectFocusedStageDocument = vi.fn((...args: Parameters<typeof actualStoreModule.selectFocusedStageDocument>) => {
     return realSelectFocusedStageDocument(...args);
   });
-  
-  return { 
-    ...actualStoreModule, 
+
+  return {
+    ...actualStoreModule,
     ...mockStoreExports,
+    useAuthStore: authMock.useAuthStore,
     selectStageDocumentResource: mockSelectStageDocumentResource,
     selectValidMarkdownDocumentKeys: mockSelectValidMarkdownDocumentKeys,
     selectFocusedStageDocument: mockSelectFocusedStageDocument,
@@ -301,7 +304,7 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
       session_description: 'Mock Session',
       user_input_reference_url: null,
       iteration_count: iterationNumber,
-      selected_model_ids: [modelA, modelB],
+      selected_models: [{ id: modelA, displayName: 'Model Alpha' }, { id: modelB, displayName: 'Model Beta' }],
       status: 'active',
       associated_chat_id: null,
       current_stage_id: mockStageSlug,
@@ -332,6 +335,7 @@ describe('GeneratedContributionCard', () => {
     mockSelectValidMarkdownDocumentKeys.mockClear();
     mockSelectFocusedStageDocument.mockClear();
     mockIsDocumentHighlighted.mockClear();
+    mockSetAuthUser(null);
   });
 
   it('renders model and document metadata when its model has a focused document', async () => {
@@ -346,7 +350,7 @@ describe('GeneratedContributionCard', () => {
     render(<GeneratedContributionCard modelId={modelA} />);
 
     expect(await screen.findByText(/Model Alpha/i)).toBeInTheDocument();
-    expect(screen.getByText(/Document: doc-a1/i)).toBeInTheDocument();
+    expect(screen.getByText(/doc-a1/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue('Document A1 baseline')).toBeInTheDocument();
   });
 
@@ -400,6 +404,7 @@ describe('GeneratedContributionCard', () => {
 
   it('allows user to enter feedback and save it for the correct document', async () => {
     const user = userEvent.setup();
+    mockSetAuthUser({ id: 'user-test-123' });
     setupStore({
       focusedDocument: { modelId: modelA, documentKey: docA1Key },
       content: 'Content for A1',
@@ -444,12 +449,12 @@ describe('GeneratedContributionCard', () => {
       expect(callArgs).toHaveProperty('iterationNumber', iterationNumber);
       expect(callArgs).toHaveProperty('modelId', modelA);
       expect(callArgs).toHaveProperty('documentKey', docA1Key);
-      expect(callArgs).toHaveProperty('feedback', 'This is my feedback for A1. This is new feedback.');
-      
+      expect(callArgs).toHaveProperty('feedbackContent', 'This is my feedback for A1. This is new feedback.');
+
       expect(callArgs).toEqual(
         expect.objectContaining({
           ...expectedKey,
-          feedback: 'This is my feedback for A1. This is new feedback.',
+          feedbackContent: 'This is my feedback for A1. This is new feedback.',
         }),
       );
       
@@ -631,9 +636,8 @@ describe('GeneratedContributionCard', () => {
 
       render(<GeneratedContributionCard modelId={modelA} />);
 
-      // Assert metadata is displayed (last updated timestamp)
-      expect(await screen.findByText(/Last updated:/i)).toBeInTheDocument();
-      expect(screen.getByText(/2023-01-02/i)).toBeInTheDocument();
+      // Assert metadata is displayed (date in header)
+      expect(await screen.findByText(/2023-01-02/i)).toBeInTheDocument();
     });
 
     it('should show optimistic UI updates after saveContributionEdit succeeds using resource-driven state', async () => {
@@ -732,7 +736,6 @@ describe('GeneratedContributionCard', () => {
       await waitFor(() => {
         const contentTextarea = screen.getByTestId('content-textarea');
         expect(contentTextarea).toHaveValue('Edited content');
-        expect(screen.getByText(/Last updated:/i)).toBeInTheDocument();
         expect(screen.getByText(/2023-01-02/i)).toBeInTheDocument();
       });
 
@@ -848,7 +851,7 @@ describe('GeneratedContributionCard', () => {
       ).toBeInTheDocument();
 
       // Assert document content section elements are NOT rendered
-      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /save edit/i })).not.toBeInTheDocument();
       expect(screen.queryByPlaceholderText(/Enter feedback for HeaderContext/i)).not.toBeInTheDocument();
     });
@@ -868,8 +871,8 @@ describe('GeneratedContributionCard', () => {
       render(<GeneratedContributionCard modelId={modelA} />);
 
       // Assert document content section is rendered
-      expect(await screen.findByText(/Document: draft_document_markdown/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Document Content/i)).toBeInTheDocument();
+      expect(await screen.findByText(/draft_document_markdown/i)).toBeInTheDocument();
+      expect(screen.getByTestId('content-textarea')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /save edit/i })).toBeInTheDocument();
       expect(screen.getByPlaceholderText(/Enter feedback for draft_document_markdown/i)).toBeInTheDocument();
 
@@ -894,7 +897,7 @@ describe('GeneratedContributionCard', () => {
       ).toBeInTheDocument();
 
       // Assert document content section elements are NOT rendered
-      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /save edit/i })).not.toBeInTheDocument();
     });
 
@@ -966,8 +969,8 @@ describe('GeneratedContributionCard', () => {
         await screen.findByText(/Select a document to view its content and provide feedback./i),
       ).toBeInTheDocument();
 
-      expect(screen.queryByText(/Document: doc-a1/i)).not.toBeInTheDocument();
-      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/doc-a1/i)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
     });
 
     it('renders document content when focusedStageDocumentMap has entry matching selectFocusedStageDocument', async () => {
@@ -982,8 +985,8 @@ describe('GeneratedContributionCard', () => {
 
       render(<GeneratedContributionCard modelId={modelA} />);
 
-      expect(await screen.findByText(/Document: doc-a1/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Document Content/i)).toBeInTheDocument();
+      expect(await screen.findByText(/doc-a1/i)).toBeInTheDocument();
+      expect(screen.getByTestId('content-textarea')).toBeInTheDocument();
       expect(screen.getByDisplayValue('Document A1 baseline')).toBeInTheDocument();
 
       expect(
@@ -1009,8 +1012,7 @@ describe('GeneratedContributionCard', () => {
         await screen.findByText(/Select a document to view its content and provide feedback./i),
       ).toBeInTheDocument();
 
-      expect(screen.queryByText(/Document: doc-a1/i)).not.toBeInTheDocument();
-      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
     });
 
     it('does not render document content when focusedDocument is null', () => {
@@ -1025,7 +1027,7 @@ describe('GeneratedContributionCard', () => {
         screen.getByText(/Select a document to view its content and provide feedback./i),
       ).toBeInTheDocument();
 
-      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /save edit/i })).not.toBeInTheDocument();
     });
 
@@ -1042,8 +1044,7 @@ describe('GeneratedContributionCard', () => {
         await screen.findByText(/Select a document to view its content and provide feedback./i),
       ).toBeInTheDocument();
 
-      expect(screen.queryByText(/Document: doc-a1/i)).not.toBeInTheDocument();
-      expect(screen.queryByLabelText(/Document Content/i)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
     });
   });
 
@@ -1072,7 +1073,7 @@ describe('GeneratedContributionCard', () => {
         );
       });
 
-      expect(await screen.findByText(/Document: doc-a1/i)).toBeInTheDocument();
+      expect(await screen.findByText(/doc-a1/i)).toBeInTheDocument();
     });
 
     it('verifies highlighting behavior matches StageRunChecklist behavior when using same focusedStageDocumentMap state', async () => {
@@ -1101,7 +1102,7 @@ describe('GeneratedContributionCard', () => {
       expect(callArgs?.[3]).toBe(docA1Key);
       expect(callArgs?.[4]).toBe(focusedStageDocumentMap);
 
-      expect(await screen.findByText(/Document: doc-a1/i)).toBeInTheDocument();
+      expect(await screen.findByText(/doc-a1/i)).toBeInTheDocument();
     });
 
     it('ensures highlighting logic is consistent between GeneratedContributionCard and StageRunChecklist by using same shared utility function', async () => {
@@ -1134,7 +1135,7 @@ describe('GeneratedContributionCard', () => {
       expect(documentKey).toBe(docA1Key);
       expect(map).toBe(focusedStageDocumentMap);
 
-      expect(await screen.findByText(/Document: doc-a1/i)).toBeInTheDocument();
+      expect(await screen.findByText(/doc-a1/i)).toBeInTheDocument();
     });
   });
 
@@ -1352,8 +1353,8 @@ describe('GeneratedContributionCard', () => {
     render(<GeneratedContributionCard modelId={modelA} />);
 
     expect(await screen.findByText(/Model Alpha/i)).toBeInTheDocument();
-    expect(screen.getByText(/Document: doc-a1/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Document Content/i)).toBeInTheDocument();
+    expect(screen.getByText(/doc-a1/i)).toBeInTheDocument();
+    expect(screen.getByTestId('content-textarea')).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Enter feedback for doc-a1/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /save edit/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /save feedback/i })).toBeInTheDocument();
@@ -1431,6 +1432,7 @@ describe('GeneratedContributionCard', () => {
 
   it('17.c.ii: Save Edit submits content draft and Save Feedback submits feedback draft when both are filled', async () => {
     const user = userEvent.setup();
+    mockSetAuthUser({ id: 'user-test-123' });
     setupStore({
       focusedDocument: { modelId: modelA, documentKey: docA1Key },
       content: 'Edited content draft',
@@ -1481,7 +1483,109 @@ describe('GeneratedContributionCard', () => {
     await waitFor(() => {
       expect(submitStageDocumentFeedback).toHaveBeenCalled();
       const feedbackPayload = vi.mocked(submitStageDocumentFeedback).mock.calls[0]?.[0];
-      expect(feedbackPayload.feedback).toBe('Feedback draft for submit');
+      expect(feedbackPayload.feedbackContent).toBe('Feedback draft for submit');
+    });
+  });
+
+  describe('model name from session assigned models and header layout', () => {
+    it('displays model name from session assigned models (activeSessionDetail.selected_models), not from modelCatalog or state.selectedModels', async () => {
+      const sessionDisplayName = 'Session Assigned Model Name';
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document A1 baseline',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+        activeSessionDetail: {
+          id: mockSessionId,
+          project_id: mockProjectId,
+          session_description: 'Mock Session',
+          user_input_reference_url: null,
+          iteration_count: iterationNumber,
+          selected_models: [
+            { id: modelA, displayName: sessionDisplayName },
+            { id: modelB, displayName: 'Session Model Beta' },
+          ],
+          status: 'active',
+          associated_chat_id: null,
+          current_stage_id: mockStageSlug,
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z',
+          dialectic_contributions: [],
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      expect(await screen.findByText(new RegExp(sessionDisplayName))).toBeInTheDocument();
+      expect(screen.queryByText(/Model Alpha/i)).not.toBeInTheDocument();
+    });
+
+    it('renders header as single line: ModelName • DocumentKey • Date', async () => {
+      const sessionDisplayName = 'Session Model Name';
+      const displayDate = '2023-01-02';
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+        activeSessionDetail: {
+          id: mockSessionId,
+          project_id: mockProjectId,
+          session_description: 'Mock Session',
+          user_input_reference_url: null,
+          iteration_count: iterationNumber,
+          selected_models: [{ id: modelA, displayName: sessionDisplayName }, { id: modelB, displayName: 'Beta' }],
+          status: 'active',
+          associated_chat_id: null,
+          current_stage_id: mockStageSlug,
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z',
+          dialectic_contributions: [],
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Content',
+        currentDraftMarkdown: 'Content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-02T12:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: null,
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      await screen.findByText(new RegExp(sessionDisplayName));
+      const bodyText = document.body.textContent ?? '';
+      expect(bodyText).toMatch(new RegExp(`${sessionDisplayName}\\s*•\\s*${docA1Key}\\s*•\\s*${displayDate}`));
+    });
+
+    it('does not display internal IDs (job_id, latestRenderedResourceId) in header or document detail', async () => {
+      const jobId = 'job-a1';
+      const latestRenderedResourceId = 'path/to/a1.md';
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document A1 baseline',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      await screen.findByText(/doc-a1/i);
+
+      expect(screen.queryByText(/Job:/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(jobId)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Latest Render:/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(latestRenderedResourceId)).not.toBeInTheDocument();
     });
   });
 });

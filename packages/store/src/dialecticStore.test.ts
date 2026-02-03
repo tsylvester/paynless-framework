@@ -35,6 +35,7 @@ import type {
   DialecticContribution,
   StageDocumentCompositeKey,
   SelectedModels,
+  GetAllStageProgressPayload,
 } from '@paynless/types';
 import { getStageRunDocumentKey, getStageDocumentKey } from './dialecticStore.documents';
 
@@ -736,6 +737,32 @@ describe('useDialecticStore', () => {
             expect(state.isLoadingProcessTemplate).toBe(false);
             expect(state.currentProcessTemplate).toBeNull();
             expect(state.processTemplateError).toEqual(mockError);
+        });
+    });
+
+    describe('hydrateAllStageProgress thunk', () => {
+        it('hydrateAllStageProgress action exists', () => {
+            const state = useDialecticStore.getState();
+            expect(typeof state.hydrateAllStageProgress).toBe('function');
+        });
+
+        it('hydrateAllStageProgress calls getAllStageProgress with payload', async () => {
+            const payload: GetAllStageProgressPayload = {
+                sessionId: 'session-1',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            getMockDialecticClient().getAllStageProgress.mockResolvedValue({
+                data: [],
+                status: 200,
+            });
+
+            const { hydrateAllStageProgress } = useDialecticStore.getState();
+            await hydrateAllStageProgress(payload);
+
+            expect(getMockDialecticClient().getAllStageProgress).toHaveBeenCalledTimes(1);
+            expect(getMockDialecticClient().getAllStageProgress).toHaveBeenCalledWith(payload);
         });
     });
 

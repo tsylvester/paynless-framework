@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useEffect } from "react";
 import {
 	useDialecticStore,
+	useAuthStore,
 	selectStageRunProgress,
 	selectFocusedStageDocument,
 	selectStageDocumentResource,
@@ -62,6 +63,7 @@ const formatStatusLabel = (value: string | undefined): string => {
 export const GeneratedContributionCard: React.FC<
 	GeneratedContributionCardProps
 > = ({ modelId, className }) => {
+	const user = useAuthStore((state) => state.user);
 	const {
 		sessionId,
 		stageSlug,
@@ -72,6 +74,7 @@ export const GeneratedContributionCard: React.FC<
 		updateStageDocumentFeedbackDraft,
 		submitStageDocumentFeedback,
 		saveContributionEdit,
+		activeSessionDetail,
 		modelCatalog,
 		isSubmittingStageDocumentFeedback,
 		submitStageDocumentFeedbackError,
@@ -98,6 +101,7 @@ export const GeneratedContributionCard: React.FC<
 			updateStageDocumentFeedbackDraft: state.updateStageDocumentFeedbackDraft,
 			submitStageDocumentFeedback: state.submitStageDocumentFeedback,
 			saveContributionEdit: state.saveContributionEdit,
+			activeSessionDetail: state.activeSessionDetail,
 			modelCatalog: state.modelCatalog,
 			isSubmittingStageDocumentFeedback: state.isSubmittingStageDocumentFeedback,
 			submitStageDocumentFeedbackError: state.submitStageDocumentFeedbackError,
@@ -122,10 +126,26 @@ export const GeneratedContributionCard: React.FC<
 			: undefined,
 	);
 
-	const modelName = useMemo(() => {
-		const entry = modelCatalog.find((model) => model.id === modelId);
-		return entry?.model_name ?? modelId;
-	}, [modelCatalog, modelId]);
+	const modelName = useMemo((): string => {
+		if (
+			activeSessionDetail !== null &&
+			activeSessionDetail !== undefined &&
+			activeSessionDetail.selected_models !== null &&
+			activeSessionDetail.selected_models !== undefined
+		) {
+			const assigned = activeSessionDetail.selected_models.find(
+				(m) => m.id === modelId,
+			);
+			if (assigned !== undefined) {
+				return assigned.displayName;
+			}
+		}
+		const catalogEntry = modelCatalog.find((model) => model.id === modelId);
+		if (catalogEntry !== undefined) {
+			return catalogEntry.model_name;
+		}
+		return modelId;
+	}, [activeSessionDetail, modelCatalog, modelId]);
 
 	const validMarkdownDocumentKeys = useDialecticStore((state) => {
 		if (!stageSlug) {
@@ -189,7 +209,6 @@ export const GeneratedContributionCard: React.FC<
 	const baselineContent = documentResourceState?.baselineMarkdown ?? "";
 	const isDraftLoading = documentResourceState?.isLoading ?? false;
 	const draftError = documentResourceState?.error;
-	const lastBaselineVersion = documentResourceState?.lastBaselineVersion;
 
 	const documentDescriptor: StageRunDocumentDescriptor | undefined =
 		focusedDocument && stageRunProgress
@@ -246,6 +265,10 @@ export const GeneratedContributionCard: React.FC<
 			toast.error("Could not save feedback.");
 			return;
 		}
+		if (!user || !user.id || !activeContextProjectId) {
+			toast.error("Could not save feedback.");
+			return;
+		}
 
 		const feedbackDraft = documentResourceState?.feedbackDraftMarkdown ?? "";
 
@@ -257,7 +280,10 @@ export const GeneratedContributionCard: React.FC<
 		try {
 			await submitStageDocumentFeedback({
 				...compositeKey,
-				feedback: feedbackDraft,
+				feedbackContent: feedbackDraft,
+				userId: user.id,
+				projectId: activeContextProjectId,
+				feedbackType: "user_feedback",
 			});
 			toast.success("Feedback saved successfully.");
 		} catch (_error) {
@@ -266,6 +292,8 @@ export const GeneratedContributionCard: React.FC<
 	}, [
 		compositeKey,
 		serializedKey,
+		user,
+		activeContextProjectId,
 		documentResourceState,
 		submitStageDocumentFeedback,
 	]);
@@ -348,14 +376,35 @@ export const GeneratedContributionCard: React.FC<
 		);
 	}
 
+	const headerParts: string[] = [modelName];
+	if (
+		focusedDocument !== null &&
+		focusedDocument !== undefined &&
+		isValidMarkdownDocument
+	) {
+		headerParts.push(focusedDocument.documentKey);
+	}
+	if (
+		documentResourceState !== undefined &&
+		documentResourceState !== null &&
+		documentResourceState.lastBaselineVersion !== undefined &&
+		documentResourceState.lastBaselineVersion !== null &&
+		documentResourceState.lastBaselineVersion.updatedAt !== undefined &&
+		documentResourceState.lastBaselineVersion.updatedAt !== null
+	) {
+		headerParts.push(
+			new Date(documentResourceState.lastBaselineVersion.updatedAt)
+				.toISOString()
+				.split("T")[0],
+		);
+	}
+	const headerLine: string = headerParts.join(" • ");
+
 	return (
 		<Card className={cn("flex flex-col", className)}>
 			<CardHeader className="space-y-2">
 				<div className="flex flex-wrap items-center justify-between gap-2">
-					<div className="space-y-1">
-						<p className="text-sm font-medium text-muted-foreground">Model</p>
-						<h3 className="text-lg font-semibold text-foreground">{modelName}</h3>
-					</div>
+					<h3 className="text-lg font-semibold text-foreground">{headerLine}</h3>
 					{documentDescriptor && isValidMarkdownDocument && (
 						<Badge variant="secondary">
 							{formatStatusLabel(documentDescriptor.status)}
@@ -367,40 +416,6 @@ export const GeneratedContributionCard: React.FC<
 			<CardContent className="space-y-6">
 				{focusedDocument && isValidMarkdownDocument && sessionId && stageSlug && isDocumentHighlighted(sessionId, stageSlug, modelId, focusedDocument.documentKey, focusedStageDocumentMap) ? (
 					<div className="space-y-4">
-						<div className="space-y-1">
-							<p className="text-sm font-medium text-muted-foreground">
-								Document
-							</p>
-							<p className="font-mono text-sm text-foreground">
-								Document: {focusedDocument.documentKey}
-							</p>
-							<div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-								{documentDescriptor && 'job_id' in documentDescriptor && documentDescriptor.job_id && (
-									<span>
-										Job:{" "}
-										<span className="font-medium text-foreground">
-											{documentDescriptor.job_id}
-										</span>
-									</span>
-								)}
-								{documentDescriptor && 'latestRenderedResourceId' in documentDescriptor && documentDescriptor.latestRenderedResourceId && (
-									<span>
-										Latest Render:{" "}
-										<span className="font-medium text-foreground">
-											{documentDescriptor.latestRenderedResourceId}
-										</span>
-									</span>
-								)}
-								{lastBaselineVersion?.updatedAt && (
-									<span>
-										Last updated:{" "}
-										<span className="font-medium text-foreground">
-											{new Date(lastBaselineVersion.updatedAt).toISOString().split('T')[0]}
-										</span>
-									</span>
-								)}
-							</div>
-						</div>
 
 						{draftError && (
 							<Alert variant="destructive">
@@ -420,7 +435,6 @@ export const GeneratedContributionCard: React.FC<
 							)}
 
 					<TextInputArea
-						label="Document Content"
 						value={documentResourceState?.currentDraftMarkdown || baselineContent}
 						onChange={handleDocumentContentChange}
 						disabled={isDraftLoading || isSavingContributionEdit}

@@ -15,6 +15,7 @@ import type {
 	RenderCompletedPayload,
 	RenderStartedPayload,
 	JobFailedPayload,
+	GetAllStageProgressPayload,
 	ListStageDocumentsPayload,
 	SubmitStageDocumentFeedbackPayload,
 	StageRunDocumentDescriptor,
@@ -71,6 +72,16 @@ const isPlannedDescriptor = (
 	descriptor: StageRunDocumentDescriptor | undefined,
 ): descriptor is StagePlannedDocumentDescriptor =>
 	Boolean(descriptor && descriptor.descriptorType === 'planned');
+
+function isStepStatus(value: string): value is StageRunProgressSnapshot['stepStatuses'][string] {
+	return (
+		value === 'not_started' ||
+		value === 'in_progress' ||
+		value === 'waiting_for_children' ||
+		value === 'completed' ||
+		value === 'failed'
+	);
+}
 
 /** Build composite key for stageRunProgress.documents (documentKey + separator + modelId). */
 export const getStageRunDocumentKey = (documentKey: string, modelId: string): string =>
@@ -1450,6 +1461,112 @@ export const hydrateStageProgressLogic = async (
 		};
 		logger.error('[hydrateStageProgress] Network error', { error, ...payload });
 		// Optionally set an error state here
+	}
+};
+
+export const hydrateAllStageProgressLogic = async (
+	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
+	payload: GetAllStageProgressPayload,
+): Promise<void> => {
+	const { sessionId, iterationNumber } = payload;
+
+	try {
+		const response = await api.dialectic().getAllStageProgress(payload);
+
+		if (response.error || response.data === undefined) {
+			const error = response.error || {
+				message: 'Failed to get all stage progress.',
+				code: 'NOT_FOUND',
+			};
+			logger.error('[hydrateAllStageProgress] Failed to get all stage progress', {
+				error,
+				...payload,
+			});
+			return;
+		}
+
+		if (response.data.length === 0) {
+			return;
+		}
+
+		const entries = response.data;
+		set((state) => {
+			for (const entry of entries) {
+				const progressKey = `${sessionId}:${entry.stageSlug}:${iterationNumber}`;
+
+				if (!state.stageRunProgress[progressKey]) {
+					state.stageRunProgress[progressKey] = {
+						documents: {},
+						stepStatuses: {},
+					};
+				}
+
+				const progress = state.stageRunProgress[progressKey];
+				for (const [key, value] of Object.entries(entry.stepStatuses)) {
+					if (isStepStatus(value)) {
+						progress.stepStatuses[key] = value;
+					}
+				}
+
+				for (const doc of entry.documents) {
+					const { documentKey, modelId, status, jobId, latestRenderedResourceId, stepKey } =
+						doc;
+
+					if (typeof documentKey !== 'string' || typeof modelId !== 'string') {
+						continue;
+					}
+
+					const descriptorStatus: StageRunDocumentStatus = status;
+					const documentsKey = getStageRunDocumentKey(documentKey, modelId);
+
+					if (
+						typeof latestRenderedResourceId !== 'string' ||
+						latestRenderedResourceId.length === 0
+					) {
+						progress.documents[documentsKey] = {
+							descriptorType: 'rendered',
+							status: descriptorStatus,
+							job_id: jobId ?? '',
+							latestRenderedResourceId: '',
+							modelId,
+							versionHash: '',
+							lastRenderedResourceId: '',
+							lastRenderAtIso: new Date().toISOString(),
+							stepKey,
+						};
+						continue;
+					}
+
+					const versionInfo = createVersionInfo(latestRenderedResourceId);
+					const resolvedJobId: string = jobId ?? '';
+					const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
+						status: descriptorStatus,
+						jobId: resolvedJobId,
+						latestRenderedResourceId,
+						modelId,
+						versionInfo,
+						stepKey,
+					});
+					descriptor.status = descriptorStatus;
+					descriptor.job_id = resolvedJobId;
+					descriptor.latestRenderedResourceId = latestRenderedResourceId;
+					descriptor.modelId = modelId;
+					descriptor.versionHash = versionInfo.versionHash;
+					descriptor.lastRenderedResourceId = latestRenderedResourceId;
+					descriptor.lastRenderAtIso = versionInfo.updatedAt;
+					if (!descriptor.stepKey && stepKey) {
+						descriptor.stepKey = stepKey;
+					}
+				}
+			}
+		});
+	} catch (err: unknown) {
+		const error: ApiError = {
+			message:
+				err instanceof Error ? err.message : 'An unknown network error occurred.',
+			code: 'NETWORK_ERROR',
+		};
+		logger.error('[hydrateAllStageProgress] Network error', { error, ...payload });
 	}
 };
 

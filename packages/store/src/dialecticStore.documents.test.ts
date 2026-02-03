@@ -19,6 +19,8 @@ import type {
 	StageRenderedDocumentDescriptor,
 	StageRunDocumentDescriptor,
 	EditedDocumentResource,
+	GetAllStageProgressPayload,
+	GetAllStageProgressResponse,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import {
@@ -27,6 +29,7 @@ import {
 	ensureStageDocumentContentLogic,
 	recordStageDocumentFeedbackDraftLogic,
 	flushStageDocumentFeedbackDraftLogic,
+	hydrateAllStageProgressLogic,
 } from './dialecticStore.documents';
 import {
 	api,
@@ -34,6 +37,7 @@ import {
 	getMockDialecticClient,
 } from '@paynless/api/mocks';
 import { logger } from '@paynless/utils';
+import { produce } from 'immer';
 
 const mockDialecticClient = getMockDialecticClient();
 vi.mock('@paynless/api', async () => {
@@ -135,6 +139,249 @@ describe('Stage Progress Hydration', () => {
 				modelId: 'model-b',
 			}),
 		);
+	});
+});
+
+describe('hydrateAllStageProgressLogic', () => {
+	const sessionId = 'session-1';
+	const iterationNumber = 1;
+	const userId = 'user-1';
+	const projectId = 'project-1';
+	const payload: GetAllStageProgressPayload = {
+		sessionId,
+		iterationNumber,
+		userId,
+		projectId,
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('populates stageRunProgress for multiple stages from single API response', async () => {
+		const thesisProgressKey = `${sessionId}:thesis:${iterationNumber}`;
+		const antithesisProgressKey = `${sessionId}:antithesis:${iterationNumber}`;
+		const mockResponse: GetAllStageProgressResponse = [
+			{
+				stageSlug: 'thesis',
+				documents: [
+					{
+						documentKey: 'doc_thesis_a',
+						modelId: 'model-a',
+						status: 'completed',
+						jobId: 'job-thesis-a',
+						latestRenderedResourceId: 'res-thesis-a',
+					},
+				],
+				stepStatuses: {},
+				stageStatus: 'completed',
+			},
+			{
+				stageSlug: 'antithesis',
+				documents: [
+					{
+						documentKey: 'doc_antithesis_b',
+						modelId: 'model-b',
+						status: 'generating',
+						jobId: 'job-antithesis-b',
+						latestRenderedResourceId: 'res-antithesis-b',
+					},
+				],
+				stepStatuses: {},
+				stageStatus: 'in_progress',
+			},
+		];
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		expect(state.stageRunProgress[thesisProgressKey]).toBeDefined();
+		expect(state.stageRunProgress[antithesisProgressKey]).toBeDefined();
+	});
+
+	it('keys each stage documents by (documentKey, modelId)', async () => {
+		const progressKey = `${sessionId}:thesis:${iterationNumber}`;
+		const mockResponse: GetAllStageProgressResponse = [
+			{
+				stageSlug: 'thesis',
+				documents: [
+					{
+						documentKey: 'success_metrics',
+						modelId: 'model-x',
+						status: 'completed',
+						jobId: 'job-1',
+						latestRenderedResourceId: 'res-1',
+					},
+				],
+				stepStatuses: {},
+				stageStatus: 'completed',
+			},
+		];
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.documents[stageRunDocKey('success_metrics', 'model-x')]).toEqual(
+			expect.objectContaining({
+				status: 'completed',
+				modelId: 'model-x',
+			}),
+		);
+	});
+
+	it('handles empty response gracefully', async () => {
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: [],
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		expect(Object.keys(state.stageRunProgress).length).toBe(0);
+	});
+
+	it('handles API error gracefully', async () => {
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: undefined,
+			error: { message: 'Server error', code: 'INTERNAL_ERROR' },
+			status: 500,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		expect(Object.keys(state.stageRunProgress).length).toBe(0);
+	});
+
+	it('adds documents without latestRenderedResourceId to progress', async () => {
+		const progressKey = `${sessionId}:thesis:${iterationNumber}`;
+		const mockResponse: GetAllStageProgressResponse = [
+			{
+				stageSlug: 'thesis',
+				documents: [
+					{
+						documentKey: 'x',
+						modelId: 'y',
+						status: 'generating',
+						jobId: 'j1',
+						latestRenderedResourceId: '',
+					},
+				],
+				stepStatuses: {},
+				stageStatus: 'in_progress',
+			},
+		];
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		const docKey = stageRunDocKey('x', 'y');
+		expect(progress.documents[docKey]).toBeDefined();
+		expect(progress.documents[docKey].status).toBe('generating');
+		expect(progress.documents[docKey].modelId).toBe('y');
+	});
+
+	it('copies stepStatuses from API response to progress state', async () => {
+		const progressKey = `${sessionId}:thesis:${iterationNumber}`;
+		const mockResponse: GetAllStageProgressResponse = [
+			{
+				stageSlug: 'thesis',
+				documents: [
+					{
+						documentKey: 'doc_a',
+						modelId: 'model-1',
+						status: 'completed',
+						jobId: 'job-1',
+						latestRenderedResourceId: 'res-1',
+					},
+				],
+				stepStatuses: { step_a: 'completed', step_b: 'in_progress' },
+				stageStatus: 'completed',
+			},
+		];
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.stepStatuses).toEqual({
+			step_a: 'completed',
+			step_b: 'in_progress',
+		});
 	});
 });
 
