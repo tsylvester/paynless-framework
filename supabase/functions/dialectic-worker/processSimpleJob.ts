@@ -2,7 +2,9 @@ import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
 import {
   DialecticJobPayload,
+  DialecticSession,
   SelectedAiProvider,
+  SelectedModels,
   FailedAttemptError,
   ModelProcessingResult,
   Job,
@@ -51,6 +53,22 @@ export async function processSimpleJob(
 
         const { data: sessionData, error: sessionError } = await dbClient.from('dialectic_sessions').select('*').eq('id', sessionId).single();
         if (sessionError || !sessionData) throw new Error(`Session ${sessionId} not found.`);
+
+        const ids = sessionData.selected_model_ids ?? [];
+        const selected_models: SelectedModels[] = ids.map((id) => ({ id, displayName: id }));
+        const sessionForExecute: DialecticSession = {
+            id: sessionData.id,
+            project_id: sessionData.project_id,
+            session_description: sessionData.session_description,
+            user_input_reference_url: sessionData.user_input_reference_url,
+            iteration_count: sessionData.iteration_count,
+            selected_models,
+            status: sessionData.status,
+            associated_chat_id: sessionData.associated_chat_id,
+            current_stage_id: sessionData.current_stage_id,
+            created_at: sessionData.created_at,
+            updated_at: sessionData.updated_at,
+        };
 
         const { data: providerData, error: providerError } = await dbClient.from('ai_providers').select('*').eq('id', model_id).single();
         if (providerError || !providerData || !isSelectedAiProvider(providerData)) {
@@ -298,7 +316,7 @@ export async function processSimpleJob(
             job,
             projectOwnerUserId,
             providerDetails,
-            sessionData,
+            sessionData: sessionForExecute,
             promptConstructionPayload,
             inputsRelevance: stageContext.recipe_step.inputs_relevance,
             inputsRequired: stageContext.recipe_step.inputs_required,

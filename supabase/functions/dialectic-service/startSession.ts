@@ -1,4 +1,5 @@
 import {
+    SelectedModels,
     StartSessionPayload,
     StartSessionSuccessResponse,
 } from "./dialectic.interface.ts";
@@ -325,8 +326,12 @@ export async function startSession(
         }
         
         // Construct the success response by combining the session record and the assembled prompt.
+        const ids: string[] = newSessionRecord.selected_model_ids ?? [];
+        const selected_models: SelectedModels[] = ids.map((id) => ({ id, displayName: id }));
+        const { selected_model_ids: _dropped, ...sessionFields } = newSessionRecord;
         const successResponse: StartSessionSuccessResponse = {
-            ...newSessionRecord,
+            ...sessionFields,
+            selected_models,
             seedPrompt: assembledSeedPrompt,
         };
 

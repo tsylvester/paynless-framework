@@ -13,6 +13,7 @@ import {
   type DialecticStage,
   type SubmitStageResponsesPayload,
   type DialecticSession,
+  type SelectedModels,
   SubmitStageResponsesDependencies,
 } from "./dialectic.interface.ts";
 import { createMockFileManagerService } from "../_shared/services/file_manager.mock.ts";
@@ -78,6 +79,12 @@ Deno.test("submitStageResponses", async (t) => {
     recipe_template_id: null,
   };
 
+  const defaultSelectedModels: SelectedModels[] = [
+    { id: "test-model-id", displayName: "Test Model" },
+  ];
+
+  const testSelectedModelIds: string[] = defaultSelectedModels.map((m) => m.id);
+
   const createMockSession = (
     stage: DialecticStage,
     userId: string = testUserId,
@@ -93,6 +100,7 @@ Deno.test("submitStageResponses", async (t) => {
       dialectic_domains: { name: string };
       initial_prompt_resource_id: string;
     };
+    selected_models: SelectedModels[];
     selected_model_ids: string[];
     iteration_count?: number;
     status: string | null;
@@ -109,7 +117,8 @@ Deno.test("submitStageResponses", async (t) => {
       dialectic_domains: { name: "test-domain" },
       initial_prompt_resource_id: "test-resource-id",
     },
-    selected_model_ids: ["test-model-id"],
+    selected_models: defaultSelectedModels,
+    selected_model_ids: testSelectedModelIds,
     status: sessionStatus,
     ...(iterationCount !== undefined && { iteration_count: iterationCount }),
   });
@@ -252,7 +261,11 @@ Deno.test("submitStageResponses", async (t) => {
           dialectic_sessions: {
             select: { data: [createMockSession(mockThesisStage)] },
             update: {
-              data: [{ id: testSessionId, status: "pending_antithesis" }],
+              data: [{
+                id: testSessionId,
+                status: "pending_antithesis",
+                selected_model_ids: testSelectedModelIds,
+              }],
             },
           },
           dialectic_project_resources: {
@@ -433,6 +446,7 @@ Deno.test("submitStageResponses", async (t) => {
               data: [{
                 id: testSessionId,
                 status: "iteration_complete_pending_review",
+                selected_model_ids: testSelectedModelIds,
               }],
             },
           },
@@ -554,7 +568,11 @@ Deno.test("submitStageResponses", async (t) => {
           dialectic_sessions: {
             select: { data: [createMockSession(mockThesisStage, testUserId, 1)] },
             update: {
-              data: [{ id: testSessionId, status: "pending_antithesis" }],
+              data: [{
+                id: testSessionId,
+                status: "pending_antithesis",
+                selected_model_ids: testSelectedModelIds,
+              }],
             },
           },
           dialectic_stage_recipe_steps: {
@@ -756,7 +774,11 @@ Deno.test("submitStageResponses", async (t) => {
               ],
             },
             update: {
-              data: [{ id: testSessionId, status: "pending_antithesis" }],
+              data: [{
+                id: testSessionId,
+                status: "pending_antithesis",
+                selected_model_ids: testSelectedModelIds,
+              }],
             },
           },
           dialectic_project_resources: {
@@ -878,7 +900,11 @@ Deno.test("submitStageResponses", async (t) => {
               ],
             },
             update: {
-              data: [{ id: testSessionId, status: "pending_antithesis" }],
+              data: [{
+                id: testSessionId,
+                status: "pending_antithesis",
+                selected_model_ids: testSelectedModelIds,
+              }],
             },
           },
           dialectic_project_resources: {

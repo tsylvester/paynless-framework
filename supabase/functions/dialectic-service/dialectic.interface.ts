@@ -423,6 +423,17 @@ type ListStageDocumentsAction = {
   payload: ListStageDocumentsPayload;
 };
 
+export interface GetAllStageProgressPayload {
+  sessionId: string;
+  iterationNumber: number;
+  userId: string;
+  projectId: string;
+}
+type GetAllStageProgressAction = {
+  action: 'getAllStageProgress';
+  payload: GetAllStageProgressPayload;
+};
+
 // The main union type for all possible JSON requests to the service.
 export type DialecticServiceRequest =
   | ListProjectsAction
@@ -445,6 +456,7 @@ export type DialecticServiceRequest =
   | GetSessionDetailsAction
   | GetStageRecipeAction
   | ListStageDocumentsAction
+  | GetAllStageProgressAction
   | SubmitStageDocumentFeedbackAction;
 
 // --- END: Discriminated Union ---
@@ -491,6 +503,42 @@ export interface StageDocumentDescriptorDto {
 export type ListStageDocumentsResponse = StageDocumentDescriptorDto[];
 
 // --- END: DTOs for listStageDocuments ---
+
+// --- START: DTOs and types for getAllStageProgress ---
+
+export type UnifiedStageStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
+
+export interface StageProgressEntry {
+  stageSlug: string;
+  documents: StageDocumentDescriptorDto[];
+  stepStatuses: Record<string, string>;
+  stageStatus: UnifiedStageStatus;
+}
+
+export type GetAllStageProgressResponse = StageProgressEntry[];
+
+export interface GetAllStageProgressDeps {
+  dbClient: SupabaseClient<Database>;
+  user: User;
+}
+
+export interface GetAllStageProgressParams {
+  payload: GetAllStageProgressPayload;
+}
+
+export interface GetAllStageProgressResult {
+  data?: GetAllStageProgressResponse;
+  error?: ServiceError;
+  status?: number;
+}
+
+export type GetAllStageProgressFn = (
+  payload: GetAllStageProgressPayload,
+  dbClient: SupabaseClient<Database>,
+  user: User,
+) => Promise<GetAllStageProgressResult>;
+
+// --- END: DTOs and types for getAllStageProgress ---
 
 export interface CreateProjectPayload {
   projectName: string;

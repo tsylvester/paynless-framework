@@ -28,6 +28,8 @@ import {
   SaveContributionEditPayload,
   SaveContributionEditContext,
   SaveContributionEditResult,
+  GetAllStageProgressPayload,
+  GetAllStageProgressResult,
 } from "./dialectic.interface.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
 import { isRecord } from '../_shared/utils/type-guards/type_guards.common.ts';
@@ -76,7 +78,7 @@ const mockSession: DialecticSession = {
     session_description: 'A test session',
     user_input_reference_url: null,
     iteration_count: 0,
-    selected_model_ids: ['model-1'],
+    selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
     status: 'active',
     associated_chat_id: null,
     current_stage_id: 'stage-1',
@@ -109,7 +111,10 @@ const mockFeedbackRow: DialecticFeedbackRow = {
 // #endregion
 
 // Helper to create a mostly empty but type-compliant ActionHandlers mock
-const createMockHandlers = (overrides?: Partial<ActionHandlers> & { getStageRecipe?: (...args: any[]) => Promise<{ data?: unknown; error?: { message: string }; status?: number }> }): ActionHandlers => {
+const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
+  getStageRecipe?: (...args: unknown[]) => Promise<{ data?: unknown; error?: { message: string }; status?: number }>;
+  getAllStageProgress?: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
+}): ActionHandlers => {
     return {
         createProject: overrides?.createProject || (() => Promise.resolve({ data: { id: 'mock-project-id', user_id: 'mock-user-id', project_name: 'mock-project-name', initial_user_prompt: 'mock-initial-user-prompt', selected_domain_id: 'mock-domain-id', repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, user_domain_overlay_values: null }, status: 201 })),
         listAvailableDomains: overrides?.listAvailableDomains || (() => Promise.resolve([])),
@@ -133,8 +138,9 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & { getStageReci
         getStageRecipe: overrides?.getStageRecipe || (() => Promise.resolve({ data: { stageSlug: '', instanceId: '', steps: [] }, status: 200 })),
         listStageDocuments: overrides?.listStageDocuments || (() => Promise.resolve({ data: [], status: 200 })),
         submitStageDocumentFeedback: overrides?.submitStageDocumentFeedback || (() => Promise.resolve({ data: mockFeedbackRow })),
+        getAllStageProgress: overrides?.getAllStageProgress || (() => Promise.resolve({ data: [], status: 200 })),
         ...overrides,
-    };
+    } as ActionHandlers;
 };
 
 // Wrapper for tests that need Supabase env vars
@@ -1290,15 +1296,15 @@ withSupabaseEnv("handleRequest - fetchProcessTemplate", async (t) => {
 
 withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
     const mockSessionId = 'sess-test-update';
-    const mockselectedModelIds = ['model-a', 'model-b'];
+    const mockSelectedModels = [{ id: 'model-a', displayName: 'Model A' }, { id: 'model-b', displayName: 'Model B' }];
     const mockUpdatedSession: DialecticSession = {
-        ...mockSession, // Use the global mockSession as a base
+        ...mockSession,
         id: mockSessionId,
-        selected_model_ids: mockselectedModelIds,
+        selected_models: mockSelectedModels,
         updated_at: new Date().toISOString(),
     };
 
-    const payload = { sessionId: mockSessionId, selectedModelIds: mockselectedModelIds };
+    const payload = { sessionId: mockSessionId, selectedModelIds: ['model-a', 'model-b'] };
 
     await t.step("should call updateSessionModels and return 200 on success", async () => {
         const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
@@ -1316,7 +1322,7 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         assertEquals(response.status, 200);
         const body = await response.json();
         assertEquals(body.id, mockSessionId);
-        assertEquals(body.selected_model_ids, mockselectedModelIds);
+        assertEquals(body.selected_models, mockSelectedModels);
         assertEquals(updateSpy.calls.length, 1);
     });
 
@@ -1368,7 +1374,7 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const incompletePayload = { selectedModelIds: mockselectedModelIds }; // Missing sessionId
+        const incompletePayload = { selectedModelIds: ['model-a', 'model-b'] }; // Missing sessionId
         const req = createJsonRequest("updateSessionModels", incompletePayload, mockToken);
         const reqClone = req.clone(); // Clone the request
 
@@ -1599,6 +1605,83 @@ withSupabaseEnv("handleRequest - submitStageDocumentFeedback", async (t) => {
         const body = await response.json();
         assertEquals(body.error, error.message);
         assertEquals(submitSpy.calls.length, 1);
+    });
+});
+
+withSupabaseEnv("handleRequest - getAllStageProgress", async (t) => {
+    const payload: GetAllStageProgressPayload = {
+        sessionId: 'sess-123',
+        iterationNumber: 1,
+        userId: 'user-123',
+        projectId: 'proj-123',
+    };
+
+    await t.step("should route action 'getAllStageProgress' to getAllStageProgress handler and return 200 on success", async () => {
+        const getAllStageProgressSpy = spy(() => Promise.resolve({ data: [], status: 200 }));
+        const mockHandlers = createMockHandlers({ getAllStageProgress: getAllStageProgressSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("getAllStageProgress", payload, mockToken);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 200);
+        assertEquals(getAllStageProgressSpy.calls.length, 1);
+    });
+
+    await t.step("should pass correct payload, dbClient, and user to getAllStageProgress handler", async () => {
+        const getAllStageProgressSpy = spy((_p: GetAllStageProgressPayload, _db: SupabaseClient<Database>, _u: User): Promise<GetAllStageProgressResult> =>
+            Promise.resolve({ data: [], status: 200 }));
+        const mockHandlers = createMockHandlers({ getAllStageProgress: getAllStageProgressSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("getAllStageProgress", payload, mockToken);
+        await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(getAllStageProgressSpy.calls.length, 1);
+        assertEquals(getAllStageProgressSpy.calls[0].args[0], payload);
+        assert((getAllStageProgressSpy.calls[0].args[1] as unknown) === (mockAdminClient as unknown), "handler should receive adminClient as dbClient");
+        assertEquals(getAllStageProgressSpy.calls[0].args[2].id, mockUser.id);
+    });
+
+    await t.step("should return 401 if not authenticated", async () => {
+        const getAllStageProgressSpy = spy(() => Promise.resolve({ data: [], status: 200 }));
+        const mockHandlers = createMockHandlers({ getAllStageProgress: getAllStageProgressSpy });
+
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: null }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("getAllStageProgress", payload);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 401);
+        assertEquals(getAllStageProgressSpy.calls.length, 0);
     });
 });
 

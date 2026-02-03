@@ -2,11 +2,15 @@
 import { assertEquals, assertExists, assertObjectMatch, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub } from "jsr:@std/testing@0.225.1/mock";
 import { handleUpdateSessionModels } from "./updateSessionModels.ts";
-import type { UpdateSessionModelsPayload, DialecticSession, DialecticProject } from "./dialectic.interface.ts";
+import type { UpdateSessionModelsPayload, DialecticSession, DialecticProject, SelectedModels } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { createMockSupabaseClient, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
 import { logger } from "../_shared/logger.ts"; // Import the actual logger to potentially spy on
+
+function selectedModelsFromIds(ids: string[]): SelectedModels[] {
+    return ids.map((id) => ({ id, displayName: id }));
+}
 
 Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models", async () => {
     const mockUserId = "user-happy-update-id";
@@ -31,8 +35,7 @@ Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models",
     const mockSessionBeforeUpdate: Partial<DialecticSession> = {
         id: mockSessionId,
         project_id: mockProjectId,
-        selected_model_ids: initialModels,
-        // user_id: mockUserId, // Removed: DialecticSession may not have user_id directly
+        selected_models: selectedModelsFromIds(initialModels),
     };
 
     const mockProject: Partial<DialecticProject> = {
@@ -40,7 +43,7 @@ Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models",
         user_id: mockUserId,
     };
     
-    const mockSessionAfterUpdate: DialecticSession = {
+    const mockSessionRowAfterUpdate = {
         id: mockSessionId,
         project_id: mockProjectId,
         session_description: "Test Session",
@@ -52,8 +55,15 @@ Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models",
         current_stage_id: "stage-abc",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        // user_id: mockUserId, // Removed
     };
+
+    const { selected_model_ids: _rowModelIds, ...sessionRowRest } = mockSessionRowAfterUpdate;
+    const mockSessionAfterUpdate: DialecticSession = {
+        ...sessionRowRest,
+        selected_models: selectedModelsFromIds(updatedModels),
+    };
+
+    const mockCatalogRows = updatedModels.map((id) => ({ id, name: id }));
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUserId, {
         genericMockResults: {
@@ -65,7 +75,7 @@ Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models",
                     return { data: null, error: null, status: 200, count: 0, statusText: 'OK' };
                 },
                 update: async () => ({ 
-                    data: [mockSessionAfterUpdate],
+                    data: [mockSessionRowAfterUpdate],
                     error: null, 
                     status: 200, 
                     statusText: 'OK',
@@ -81,6 +91,9 @@ Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models",
                     return { data: null, error: null, status: 200, count: 0, statusText: 'OK' };
                 },
             },
+            ai_providers: {
+                select: async () => ({ data: mockCatalogRows, error: null, status: 200, statusText: 'OK', count: mockCatalogRows.length }),
+            },
         },
         mockUser: mockUser,
     });
@@ -94,8 +107,9 @@ Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models",
         assertExists(result.data, `Update failed: ${result.error?.message}`);   
         assertEquals(result.error, undefined, "Error should be undefined on happy path");
         assertEquals(result.status, 200);
-        assertObjectMatch(result.data, mockSessionAfterUpdate as any);
-        assertEquals(result.data?.selected_model_ids, updatedModels);
+        const { selected_models: _expectedModels, ...sessionFields } = mockSessionAfterUpdate;
+        assertObjectMatch(result.data, sessionFields);
+        assertEquals(result.data?.selected_models, selectedModelsFromIds(updatedModels));
 
         const sessionSelectSpies = mockAdminDbClientSetup.spies.getAllQueryBuilderSpies('dialectic_sessions');
         const projectSelectSpies = mockAdminDbClientSetup.spies.getAllQueryBuilderSpies('dialectic_projects');
@@ -163,9 +177,14 @@ Deno.test("handleUpdateSessionModels - Error: Project Not Found/Forbidden", asyn
     };
     const mockUser: User = { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() };
     const mockSessionInstance: DialecticSession = {
-        id: mockSessionId, 
-        project_id: mockProjectId, 
-        session_description: '', iteration_count:0, selected_model_ids:[], status:'', created_at:'', updated_at:'',
+        id: mockSessionId,
+        project_id: mockProjectId,
+        session_description: '',
+        iteration_count: 0,
+        selected_models: [],
+        status: '',
+        created_at: '',
+        updated_at: '',
         user_input_reference_url: null,
         associated_chat_id: null,
         current_stage_id: null,
@@ -244,7 +263,7 @@ Deno.test("handleUpdateSessionModels - Error: DB Error on Project Fetch", async 
     const mockProjectId = "project-for-db-error-fetch-id";
     const payload: UpdateSessionModelsPayload = { sessionId: mockSessionId, selectedModelIds: ["model-1"] };
     const mockUser: User = { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() };
-    const mockSession: Partial<DialecticSession> = { id: mockSessionId, project_id: mockProjectId };
+    const mockSession: Partial<DialecticSession> = { id: mockSessionId, project_id: mockProjectId, selected_models: [] };
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUserId, {
         genericMockResults: {
@@ -280,7 +299,7 @@ Deno.test("handleUpdateSessionModels - Error: DB Error on Session Update", async
     const updatedModels = ["model-new-1"];
     const payload: UpdateSessionModelsPayload = { sessionId: mockSessionId, selectedModelIds: updatedModels };
     const mockUser: User = { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() };
-    const mockSessionBeforeUpdate: Partial<DialecticSession> = { id: mockSessionId, project_id: mockProjectId };
+    const mockSessionBeforeUpdate: Partial<DialecticSession> = { id: mockSessionId, project_id: mockProjectId, selected_models: [] };
     const mockProject: Partial<DialecticProject> = { id: mockProjectId, user_id: mockUserId };
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUserId, {

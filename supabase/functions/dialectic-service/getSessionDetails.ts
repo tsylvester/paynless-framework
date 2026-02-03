@@ -140,12 +140,45 @@ export async function getSessionDetails(
     // Extract session and stage details
     const { dialectic_stages, ...sessionFields } = session;
 
-    const rawIds: string[] | null = sessionFields.selected_model_ids ?? null;
-    const ids: string[] = Array.isArray(rawIds) ? rawIds : [];
-    const selectedModels: SelectedModels[] = ids.map((id: string) => ({
-      id,
-      displayName: id,
-    }));
+    const rawIds: string[] | null | undefined = sessionFields.selected_model_ids;
+    let ids: string[];
+    if (rawIds === null || rawIds === undefined) {
+      ids = [];
+    } else {
+      ids = rawIds;
+    }
+    const displayNameById = new Map<string, string>();
+    if (ids.length > 0) {
+      const { data: catalogRows, error: catalogError } = await dbClient
+        .from('ai_providers')
+        .select('id, name')
+        .in('id', ids);
+      if (catalogError) {
+        logger.error('getSessionDetails: Error fetching model display names from ai_providers', { sessionId, error: catalogError });
+        return { error: { message: 'Failed to fetch model details.', code: 'DB_ERROR', details: catalogError.message }, status: 500 };
+      }
+      if (catalogRows !== null && catalogRows !== undefined) {
+        for (const row of catalogRows) {
+          if (row !== null && row !== undefined && row.id != null && row.name != null) {
+            displayNameById.set(row.id, row.name);
+          }
+        }
+      }
+      const missingIds = ids.filter((id: string) => !displayNameById.has(id));
+      if (missingIds.length > 0) {
+        logger.error('getSessionDetails: Selected model ids not found in ai_providers catalog', { sessionId, missingIds });
+        return { error: { message: 'Selected model details not found in catalog.', code: 'DB_ERROR', details: `Missing display names for model ids: ${missingIds.join(', ')}` }, status: 500 };
+      }
+    }
+    const selectedModels: SelectedModels[] = [];
+    for (const id of ids) {
+      const displayName = displayNameById.get(id);
+      if (displayName === undefined) {
+        logger.error('getSessionDetails: Selected model id missing from catalog (invariant)', { sessionId, id });
+        return { error: { message: 'Selected model details not found in catalog.', code: 'DB_ERROR' }, status: 500 };
+      }
+      selectedModels.push({ id, displayName });
+    }
 
     const typedSession: DialecticSession = {
         id: sessionFields.id,

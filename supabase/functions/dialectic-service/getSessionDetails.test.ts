@@ -679,10 +679,21 @@ describe("getSessionDetails Unit Tests", () => {
 
   it("should build selected_models from session.selected_model_ids (DB column) with id and displayName", async () => {
     const selectedModelIds: string[] = ["model-a", "model-b"];
+    /** Target state: displayName is human-readable name from catalog (ai_providers.name), not id. */
+    const expectedSelectedModels: SelectedModels[] = [
+      { id: "model-a", displayName: "Model A Display Name" },
+      { id: "model-b", displayName: "Model B Display Name" },
+    ];
     const sessionWithSelectedModelIds = {
       ...mockDbSession,
       selected_model_ids: selectedModelIds,
     };
+
+    /** ai_providers table: select('id, name') returns rows with id and name (types_db ai_providers.Row). */
+    const aiProvidersSelectResult: { id: string; name: string }[] = [
+      { id: "model-a", name: "Model A Display Name" },
+      { id: "model-b", name: "Model B Display Name" },
+    ];
 
     mockClientSetup = createMockSupabaseClient(mockOwnerUser.id, {
       genericMockResults: {
@@ -698,6 +709,7 @@ describe("getSessionDetails Unit Tests", () => {
               statusText: "Not called",
             }),
         },
+        "ai_providers": { select: { data: aiProvidersSelectResult } },
       },
     });
 
@@ -711,27 +723,9 @@ describe("getSessionDetails Unit Tests", () => {
     assertEquals(result.status, 200);
     assertEquals(result.data.session.id, mockSessionId);
     assertEquals(
-      result.data.session.selected_models.length,
-      selectedModelIds.length,
-      "selected_models should be built from selected_model_ids with same length"
-    );
-    assertEquals(
-      result.data.session.selected_models[0].id,
-      "model-a",
-      "first selected model id should match selected_model_ids[0]"
-    );
-    assertExists(
-      result.data.session.selected_models[0].displayName,
-      "first selected model must have displayName"
-    );
-    assertEquals(
-      result.data.session.selected_models[1].id,
-      "model-b",
-      "second selected model id should match selected_model_ids[1]"
-    );
-    assertExists(
-      result.data.session.selected_models[1].displayName,
-      "second selected model must have displayName"
+      result.data.session.selected_models,
+      expectedSelectedModels,
+      "selected_models must have id and displayName from ai_providers.name, not id duplicated as displayName"
     );
   });
 

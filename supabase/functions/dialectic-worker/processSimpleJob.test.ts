@@ -98,7 +98,7 @@ const mockSessionData: DialecticSession = {
   session_description: 'A mock session',
   user_input_reference_url: null,
   iteration_count: 1,
-  selected_model_ids: ['model-def'],
+  selected_models: [{ id: 'model-def', displayName: 'Mock AI' }],
   status: 'in-progress',
   associated_chat_id: 'chat-789',
   current_stage_id: 'stage-1',

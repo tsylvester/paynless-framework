@@ -8,7 +8,7 @@ import type { IFileManager, FileRecord, UploadContext } from "../_shared/types/f
 import { createMockFileManagerService, MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
 import { configure, ZipReader, BlobReader, TextWriter } from "jsr:@zip-js/zip-js";
-import type { DialecticProject, DialecticProjectResource, DialecticSession, DialecticContribution } from "./dialectic.interface.ts";
+import type { DialecticProject, DialecticProjectResource, DialecticSession, DialecticContribution, SelectedModels } from "./dialectic.interface.ts";
 import type { DownloadStorageResult } from "../_shared/supabase_storage_utils.ts";
 import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts";
 import { Buffer } from "https://deno.land/std@0.177.0/node/buffer.ts";
@@ -204,6 +204,16 @@ describe("exportProject", () => {
                         }
                         return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
                     }
+                },
+                'ai_providers': {
+                    select: (state: MockQueryBuilderState) => {
+                        const inFilter = state.filters.find(f => f.column === 'id' && f.type === 'in');
+                        const ids = inFilter && Array.isArray(inFilter.value) ? inFilter.value as string[] : [];
+                        if (ids.includes('mc-1')) {
+                            return Promise.resolve({ data: [{ id: 'mc-1', name: 'Test Model' }], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                    }
                 }
             }
         });
@@ -310,6 +320,8 @@ describe("exportProject", () => {
             assertEquals(manifest.resources[0].id, resource1Data.id);
             assertEquals(manifest.sessions.length, 1);
             assertEquals(manifest.sessions[0].id, session1Data.id);
+            const expectedSelectedModels: SelectedModels[] = [{ id: "mc-1", displayName: "Test Model" }];
+            assertEquals(manifest.sessions[0].selected_models, expectedSelectedModels);
             assertEquals(manifest.sessions[0].contributions.length, 1);
             assertEquals(manifest.sessions[0].contributions[0].id, contribution1Data.id);
         }

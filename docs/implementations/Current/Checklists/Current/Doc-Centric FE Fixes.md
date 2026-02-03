@@ -1219,131 +1219,334 @@
     *   `[✅]`   Response is single origin for selected models; each has id and displayName; no second source
   *   `[✅]`   **Commit** `feat(be): getSessionDetails returns selected models with id and displayName from single response`
 
-*   `[ ]`   packages/store/src/dialecticStore.ts **[STORE] Persist selected models from session response (complete data, single origin)**
-  *   `[ ]`   `objective.md`  
-    *   `[ ]`   When session details are set, store persists selected models from response (array of { id, displayName }) as-is
-    *   `[ ]`   No merge with catalog; no building id+name from two sources
-    *   `[ ]`   State holds selectedModels (or equivalent) from backend only
-  *   `[ ]`   `role.md`  
-    *   `[ ]`   State layer; single place in client that holds selected models; mirrors backend response
-  *   `[ ]`   `module.md`  
-    *   `[ ]`   Bounded to session-fetch path and code that sets/reads selected models
-  *   `[ ]`   `deps.md`  
-    *   `[ ]`   API getSessionDetails response (session.selected_models or dialectic_session_models)
-    *   `[ ]`   DialecticStateValues; existing session-detail and context setters
-  *   `[ ]`   interface/`interface.ts`  
-    *   `[ ]`   DialecticStateValues includes selectedModels: Array<{ id: string; displayName: string }> (or equivalent) typed from application types; no separate selectedModelIds as source of truth for display
-    *   `[ ]`   Each type/field is its own nested item
-  *   `[ ]`   interface/tests/`dialecticStore.interface.test.ts`  
-    *   `[ ]`   Contract: state.selectedModels shape matches response selected_models
-    *   `[ ]`   Each contract is its own nested item
-  *   `[ ]`   interface/guards/`dialecticStore.interface.guards.ts`  
-    *   `[ ]`   Guard(s) for selectedModels shape if required
-    *   `[ ]`   Each guard is its own nested item
-  *   `[ ]`   unit/`dialecticStore.test.ts`  
-    *   `[ ]`   When session details are set with response containing selected_models, state.selectedModels equals that array (id + displayName)
-    *   `[ ]`   setSelectedModelIds / updateSessionModels still send ids to API where required; UI state is complete list from backend
-    *   `[ ]`   Each test is its own nested item
-  *   `[ ]`   `dialecticStore.ts`  
-    *   `[ ]`   In thunk that sets session details (e.g. fetchAndSetCurrentSessionDetails), set selectedModels from response.session.selected_models (or equivalent)
-    *   `[ ]`   Ensure setSelectedModelIds (or equivalent) does not orphan types; update only from single-origin data or refetch session after updateSessionModels
-    *   `[ ]`   Each requirement is its own nested item
-  *   `[ ]`   provides/`dialecticStore.provides.ts`  
-    *   `[ ]`   Exported state shape and actions for selected models
-    *   `[ ]`   Each symbol / guarantee is its own nested item
-  *   `[ ]`   `dialecticStore.mock.ts`  
-    *   `[ ]`   Mock state.selectedModels per contract
-    *   `[ ]`   Each symbol / guarantee is its own nested item
-  *   `[ ]`   integration/`dialecticStore.integration.test.ts`  
-    *   `[ ]`   Test: session fetch populates selectedModels from response; selector returns same data
-    *   `[ ]`   Each test is its own nested item
-  *   `[ ]`   `requirements.md`  
-    *   `[ ]`   Selected models in state are complete and from session response only; no catalog lookup in store
-    *   `[ ]`   Each obligation or criteria is its own nested item
-  *   `[ ]`   **Commit** `feat(store): persist selected models (id + displayName) from session response as single origin`
-    *   `[ ]`   Detail each change performed on the file in this work increment
+*   `[✅]` packages/store/`dialecticStore.selectors.ts` **[STORE] Refactor selectors to use [✅] state and adhere to coding standards**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   The selector `selectSelectedModelIds` reads a non-existent state property `state.selectedModelIds` and must be removed.
+        *   `[✅]`   A new selector, `selectSelectedModels`, must be created to correctly return the `state.selectedModels` property.
+        *   `[✅]`   The selector `selectUnifiedProjectProgress` violates the "No Optional Chaining" rule and must be refactored to access state properties safely without using `?.` or `??`.
+    *   `[✅]`   `role.md`
+        *   `[✅]`   This file's role is to provide efficient, memoized access to the `dialecticStore`'s state for UI components.
+    *   `[✅]`   `module.md`
+        *   `[✅]`   This work is bounded to the `dialecticStore.selectors.ts` file and its corresponding test file.
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Depends on the `DialecticStateValues` and `SelectedModels` types from `@paynless/types`.
+    *   `[✅]`   unit/`dialecticStore.selectors.test.ts`
+        *   `[✅]`   Delete the test suite for the now-removed `selectSelectedModelIds` selector.
+        *   `[✅]`   In all `setState` calls within this test file, replace the use of `selectedModelIds` with the correct `selectedModels: [{ id: '...', displayName: '...' }]` structure.
+        *   `[✅]`   Add a new test suite for `selectSelectedModels` to confirm it returns `state.selectedModels` when it exists, and an empty array `[]` when it is null or undefined.
+        *   `[✅]`   Update the tests for `selectUnifiedProjectProgress` to confirm it correctly calculates model counts and filters IDs using the `selectedModels` state property.
+    *   `[✅]`   `dialecticStore.selectors.ts`
+        *   `[✅]`   Remove the entire implementation of the `selectSelectedModelIds` selector.
+        *   `[✅]`   Add the new selector: `export const selectSelectedModels = (state: DialecticStateValues): SelectedModels[] => state.selectedModels;`.
+        *   `[✅]`   In `selectUnifiedProjectProgress`, refactor the logic to remove optional chaining:
+            *   Replace `const totalModels = state.selectedModels.length;` with `const selectedModels = state.selectedModels; const totalModels = selectedModels.length;`.
+            *   Replace `const selectedModelIdSet = new Set(state.selectedModels?.map(m => m.id));` with `const selectedModelIdSet = new Set((state.selectedModels).map(m => m.id));`.
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   The file must not export a selector named `selectSelectedModelIds`.
+        *   `[✅]`   The file must export a selector named `selectSelectedModels` that returns a `SelectedModels[]`.
+        *   `[✅]`   The file must contain no optional chaining (`?.`) or nullish coalescing (`??`) operators.
+    *   `[✅]`   **Commit** `fix(store): refactor selectors to use selectedModels state`
 
-*   `[ ]`   packages/store/src/dialecticStore.selectors.ts **[STORE] selectSelectedModels returns complete data from state (single origin)**
-  *   `[ ]`   `objective.md`  
-    *   `[ ]`   Selector returns array stored from backend (each element has id and displayName); reads only that state
-    *   `[ ]`   No catalog; no join
-  *   `[ ]`   `role.md`  
-    *   `[ ]`   Selector; exposes selected models to UI
-  *   `[ ]`   `module.md`  
-    *   `[ ]`   Bounded to selectSelectedModels (or replacement for selectSelectedModelIds) and return type
-  *   `[ ]`   `deps.md`  
-    *   `[ ]`   DialecticStateValues.selectedModels (from dialecticStore node)
-    *   `[ ]`   Application types for selected-model shape
-  *   `[ ]`   interface/`interface.ts`  
-    *   `[ ]`   Selector signature and return type: Array<{ id: string; displayName: string }> (or equivalent from types)
-    *   `[ ]`   Each type is its own nested item
-  *   `[ ]`   interface/tests/`dialecticStore.selectors.interface.test.ts`  
-    *   `[ ]`   Contract: return shape matches state.selectedModels
-    *   `[ ]`   Each contract is its own nested item
-  *   `[ ]`   interface/guards/`dialecticStore.selectors.interface.guards.ts`  
-    *   `[ ]`   Guard(s) if required
-    *   `[ ]`   Each guard is its own nested item
-  *   `[ ]`   unit/`dialecticStore.selectors.test.ts`  
-    *   `[ ]`   Given state.selectedModels set from session response, selector returns that array unchanged (id + displayName per element)
-    *   `[ ]`   Each test is its own nested item
-  *   `[ ]`   `dialecticStore.selectors.ts`  
-    *   `[ ]`   selectSelectedModels(state) returns state.selectedModels ?? [] (or equivalent); no modelCatalog access; no mapping ids to names
-    *   `[ ]`   Each requirement is its own nested item
-  *   `[ ]`   provides/`dialecticStore.selectors.provides.ts`  
-    *   `[ ]`   Exported selector and return type
-    *   `[ ]`   Each symbol is its own nested item
-  *   `[ ]`   `dialecticStore.selectors.mock.ts`  
-    *   `[ ]`   Mock selector returns selectedModels shape per contract
-    *   `[ ]`   Each symbol is its own nested item
-  *   `[ ]`   integration/`dialecticStore.selectors.integration.test.ts`  
-    *   `[ ]`   Test: selector returns same data as state.selectedModels; no second source
-    *   `[ ]`   Each test is its own nested item
-  *   `[ ]`   `requirements.md`  
-    *   `[ ]`   Selector returns complete selected-model data from one state field only
-    *   `[ ]`   Each obligation or criteria is its own nested item
-  *   `[ ]`   **Commit** `refactor(store): selectSelectedModels returns id + displayName from single-origin state`
-    *   `[ ]`   Detail each change performed on the file in this work increment
+*   `[✅]` packages/store/`dialecticStore.ts` **[STORE] Refactor actions to manage selectedModels state**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   The store's actions (`setSelectedModelIds`, `setModelMultiplicity`, `resetSelectedModelId`) are implemented to modify a `selectedModelIds` state property that no longer exists.
+        *   `[✅]`   The objective is to refactor these actions to correctly and exclusively manage the `selectedModels: SelectedModels[]` state property, and to update the corresponding type definitions and mock implementations in lockstep.
+    *   `[✅]`   `role.md`
+        *   `[✅]`   This file defines the central `dialecticStore`, including its state, actions for synchronous mutations, and thunks for asynchronous operations.
+    *   `[✅]`   `module.md`
+        *   `[✅]`   This work is bounded to `dialecticStore.ts`, its type definitions in `dialectic.types.ts`, its mock in `dialecticStore.mock.ts`, and their corresponding test files.
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `SelectedModels`, `AIModelCatalogEntry` interfaces from `@paynless/types`.
+        *   `[✅]`   The store's own `modelCatalog` state property for looking up model display names.
+    *   `[✅]`   interface/`dialectic.types.ts`
+        *   `[✅]`   In the `DialecticActions` interface, replace `setSelectedModelIds: (modelIds: string[]) => void;` with `setSelectedModels: (models: SelectedModels[]) => void;`.
+        *   `[✅]`   In the `DialecticActions` interface, rename `resetSelectedModelId: () => void;` to `resetSelectedModels: () => void;`.
+    *   `[✅]`   unit/`dialecticStore.test.ts`
+        *   `[✅]`   Delete the test suite for the old `setSelectedModelIds` action.
+        *   `[✅]`   Add a new test suite for `setSelectedModels` to verify it correctly updates the `state.selectedModels`.
+        *   `[✅]`   Update the tests for `setModelMultiplicity` to ensure it correctly adds and removes full `SelectedModels` objects.
+        *   `[✅]`   Add a test for `resetSelectedModels` to verify it sets `state.selectedModels` to `[]`.
+    *   `[✅]`   `dialecticStore.ts`
+        *   `[✅]`   Delete the `setSelectedModelIds` action implementation.
+        *   `[✅]`   Add a new `setSelectedModels` action that takes `SelectedModels[]` and updates the state. The action should still trigger the `updateSessionModels` API call with the IDs derived from the input.
+        *   `[✅]`   Refactor `setModelMultiplicity` to operate on the `state.selectedModels` array of objects. When adding a new model, it must look up the `displayName` from the `modelCatalog`.
+        *   `[✅]`   Rename `resetSelectedModelId` to `resetSelectedModels` and change its implementation to `set({ selectedModels: [] })`.
+    *   `[✅]`   `dialecticStore.mock.ts`
+        *   `[✅]`   In the mock's initial state, replace `selectedModelIds: []` with `selectedModels: []`.
+        *   `[✅]`   Replace the mock `setSelectedModelIds` action with a mock `setSelectedModels` action: `vi.fn((models: SelectedModels[]) => set({ selectedModels: models }))`.
+        *   `[✅]`   Refactor the mock `setModelMultiplicity` to work with the `selectedModels` state array.
+        *   `[✅]`   Rename the mock `resetSelectedModelId` to `resetSelectedModels` and update its implementation to `set({ selectedModels: [] })`.
+    *   `[✅]`   integration/`dialecticStore.session.test.ts`
+        *   `[✅]`   In all `setState` calls, replace `selectedModelIds` with the `selectedModels` structure.
+        *   `[✅]`   Update assertions that check the payload of `updateSessionModels` to ensure `selectedModelIds` is still being sent correctly as `string[]`.
+    *   `[✅]`   integration/`dialecticStore.contribution.test.ts`
+        *   `[✅]`   In all `setState` calls, replace `selectedModelIds` with the `selectedModels` structure.
+    *   `[✅]`   integration/`dialecticStore.progress.integration.test.ts`
+        *   `[✅]`   In all `setState` calls, replace `selectedModelIds` with the `selectedModels` structure.
+    *   `[✅]`   integration/`dialecticStore.notifications.test.ts`
+        *   `[✅]`   In all `setState` calls, replace `selectedModelIds` with the `selectedModels` structure.
+    *   `[✅]`   integration/`dialecticStore.project.test.ts`
+        *   `[✅]`   In all `setState` calls, replace `selectedModelIds` with the `selectedModels` structure.
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   The store, its type interface, and its mock must not implement or reference `setSelectedModelIds`.
+        *   `[✅]`   All related actions must correctly manage the `selectedModels` state property.
+    *   `[✅]`   **Commit** `refactor(store): align all model actions with selectedModels state`
 
-*   `[ ]`   apps/web/src/components/dialectic/StageRunChecklist.tsx **[UI] Use selectSelectedModels and display displayName**
-  *   `[ ]`   `objective.md`  
-    *   `[ ]`   StageRunChecklist uses selector from selectors node; builds per-model list from returned array; displays displayName (not raw id)
-    *   `[ ]`   Uses id for keys and store/API calls
-  *   `[ ]`   `role.md`  
-    *   `[ ]`   UI component; displays selected models with human-legible names
-  *   `[ ]`   `module.md`  
-    *   `[ ]`   Bounded to StageRunChecklist and its use of selected-models data
-  *   `[ ]`   `deps.md`  
-    *   `[ ]`   selectSelectedModels from store (selectors node)
-    *   `[ ]`   Existing checklist/progress selectors
-  *   `[ ]`   interface/`interface.ts`  
-    *   `[ ]`   Props/types that consume selector return type (array of { id, displayName }); no raw string[] for display
-    *   `[ ]`   Each type is its own nested item
-  *   `[ ]`   interface/tests/`StageRunChecklist.interface.test.ts`  
-    *   `[ ]`   Contract: component receives selected-models shape with id and displayName
-    *   `[ ]`   Each contract is its own nested item
-  *   `[ ]`   interface/guards/`StageRunChecklist.interface.guards.ts`  
-    *   `[ ]`   Guard(s) if required
-    *   `[ ]`   Each guard is its own nested item
-  *   `[ ]`   unit/`StageRunChecklist.test.tsx`  
-    *   `[ ]`   Renders per-model rows using displayName from selector; keys/API still use id
-    *   `[ ]`   Each test is its own nested item
-  *   `[ ]`   `StageRunChecklist.tsx`  
-    *   `[ ]`   Use selectSelectedModels(state) in computeStageRunChecklistData (or equivalent); derive effective list; push { modelId: m.id, modelDisplayName: m.displayName, statusLabel } into perModelLabels; render modelDisplayName in checklist
-    *   `[ ]`   Each requirement is its own nested item
-  *   `[ ]`   provides/`StageRunChecklist.provides.ts`  
-    *   `[ ]`   Component export and props surface
-    *   `[ ]`   Each symbol is its own nested item
-  *   `[ ]`   `StageRunChecklist.mock.ts`  
-    *   `[ ]`   Mock selector or props with selectedModels shape
-    *   `[ ]`   Each symbol is its own nested item
-  *   `[ ]`   integration/`StageRunChecklist.integration.test.tsx`  
-    *   `[ ]`   Test: checklist shows displayName; data from selector only
-    *   `[ ]`   Each test is its own nested item
-  *   `[ ]`   `requirements.md`  
-    *   `[ ]`   Checklist shows semantic names; data from selector only; single origin
-    *   `[ ]`   Each obligation or criteria is its own nested item
-  *   `[ ]`   **Commit** `fix(ui): StageRunChecklist shows model displayName from selectSelectedModels`
-    *   `[ ]`   Detail each change performed on the file in this work increment
+*   `[✅]` apps/web/components/dialectic/`StageRunChecklist.tsx` **[UI] Refactor StageRunChecklist to use selectSelectedModels and display model names**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   The component currently fails because it uses the removed `selectSelectedModelIds` selector.
+        *   `[✅]`   The objective is to refactor it to use the new `selectSelectedModels` selector and to improve the UI by displaying the human-readable `displayName` of each model instead of its raw ID.
+    *   `[✅]`   `role.md`
+        *   `[✅]`   This UI component is responsible for displaying the document checklist for a given stage, including per-model generation status.
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Bounded to `StageRunChecklist.tsx` and its test file.
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `selectSelectedModels` from `@paynless/store`.
+    *   `[✅]`   unit/`StageRunChecklist.test.tsx`
+        *   `[✅]`   Update mock store setups to use `selectSelectedModels` and return a `SelectedModels[]` array.
+        *   `[✅]`   Add an assertion to verify that the rendered component displays the `displayName` for each model, not the `id`.
+    *   `[✅]`   `StageRunChecklist.tsx`
+        *   `[✅]`   Change the store import from `selectSelectedModelIds` to `selectSelectedModels`.
+        *   `[✅]`   Update the component's data selection to use `const selectedModels = useDialecticStore(selectSelectedModels);`.
+        *   `[✅]`   Refactor the logic that generates per-model labels to iterate over the `selectedModels` array and use the `displayName` property for rendering, while still using the `id` property for React keys and logic.
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   The component must use the `selectSelectedModels` selector.
+        *   `[✅]`   The UI must display the semantic `displayName` for each model.
+    *   `[✅]`   **Commit** `feat(ui): refactor StageRunChecklist to use selectedModels`
+
+*   `[✅]` apps/web/components/dialectic/`AIModelSelector.tsx` **[UI] Refactor AIModelSelector to use selectSelectedModels**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   This component is broken because it relies on the `selectSelectedModelIds` selector.
+        *   `[✅]`   The objective is to update it to use the correct `selectSelectedModels` selector and derive the list of selected IDs from that state.
+    *   `[✅]`   `role.md`
+        *   `[✅]`   UI component providing the interface for users to select and de-select AI models for a session.
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Bounded to `AIModelSelector.tsx`.
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `selectSelectedModels` from `@paynless/store`.
+    *   `[✅]`   `AIModelSelector.tsx`
+        *   `[✅]`   Change the store import from `selectSelectedModelIds` to `selectSelectedModels`.
+        *   `[✅]`   In the `useStore` hook, replace the data selection with `currentSelectedModelIds: selectSelectedModels(state).map(m => m.id)`.
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   The component must derive its state from the `selectSelectedModels` selector.
+    *   `[✅]`   **Commit** `fix(ui): refactor AIModelSelector to use selectSelectedModels`
+
+*   `[✅]` apps/web/components/dialectic/`GenerateContributionButton.tsx` **[UI] Refactor GenerateContributionButton to use selectSelectedModels**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   This component is broken because it relies on the `selectSelectedModelIds` selector.
+        *   `[✅]`   The objective is to update it to use the correct `selectSelectedModels` selector.
+    *   `[✅]`   `role.md`
+        *   `[✅]`   UI component that triggers the contribution generation process.
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Bounded to `GenerateContributionButton.tsx` and its test file.
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `selectSelectedModels` from `@paynless/store`.
+    *   `[✅]`   unit/`GenerateContributionButton.test.tsx`
+        *   `[✅]`   Update mock store setup to use `selectSelectedModels`.
+    *   `[✅]`   `GenerateContributionButton.tsx`
+        *   `[✅]`   Change the store import from `selectSelectedModelIds` to `selectSelectedModels`.
+        *   `[✅]`   Update the data selection logic to: `const selectedModels = useDialecticStore(selectSelectedModels);`.
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   The component must derive its state from the `selectSelectedModels` selector.
+    *   `[✅]`   **Commit** `fix(ui): refactor GenerateContributionButton to use selectSelectedModels`
+
+*   `[✅]` apps/web/components/dialectic/`StageTabCard.tsx` **[UI] Refactor StageTabCard to use selectSelectedModels**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   The component reads `state.selectedModelIds` directly from the store, which will fail at runtime.
+        *   `[✅]`   The objective is to refactor the component to use the `selectSelectedModels` selector and derive necessary data from the returned `SelectedModels[]` array.
+    *   `[✅]`   `role.md`
+        *   `[✅]`   UI component that displays a tab for a dialectic stage and uses selected model information.
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Bounded to `StageTabCard.tsx` and its test file.
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `selectSelectedModels` from `@paynless/store`.
+    *   `[✅]`   unit/`StageTabCard.test.tsx`
+        *   `[✅]`   Update mock store setup in tests to provide `selectedModels` instead of `selectedModelIds`.
+    *   `[✅]`   `StageTabCard.tsx`
+        *   `[✅]`   In the `useStore` hook, replace `selectedModelIds: state.selectedModelIds ?? []` with `selectedModels: selectSelectedModels(state)`.
+        *   `[✅]`   Derive the `selectedModelIds` array where needed: `const selectedModelIds = selectedModels.map(m => m.id);`.
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   The component must use the `selectSelectedModels` selector.
+        *   `[✅]`   The component must not access `state.selectedModelIds` directly.
+    *   `[✅]`   **Commit** `fix(ui): refactor StageTabCard to use selectSelectedModels`
+
+*   `[✅]` apps/web/components/dialectic/`SessionContributionsDisplayCard.tsx` **[UI] Refactor SessionContributionsDisplayCard to use selectSelectedModels**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   The component reads `state.selectedModelIds` directly from the store, which will fail at runtime.
+        *   `[✅]`   The objective is to refactor the component to use the `selectSelectedModels` selector.
+    *   `[✅]`   `role.md`
+        *   `[✅]`   UI component for displaying session contributions.
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Bounded to `SessionContributionsDisplayCard.tsx` and its test file.
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `selectSelectedModels` from `@paynless/store`.
+    *   `[✅]`   unit/`SessionContributionsDisplayCard.test.tsx`
+        *   `[✅]`   Update all mock store setups to provide `selectedModels` instead of `selectedModelIds`.
+        *   `[✅]`   Update mock session objects to use `selected_models` instead of `selected_model_ids`.
+    *   `[✅]`   `SessionContributionsDisplayCard.tsx`
+        *   `[✅]`   In the `useStore` hook, replace the direct access to `state.selectedModelIds` with `selectedModels: selectSelectedModels(state)`.
+        *   `[✅]`   Update logic that checks `selectedModelIds.length` to check `selectedModels.length` instead.
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   The component must use the `selectSelectedModels` selector.
+    *   `[✅]`   **Commit** `fix(ui): refactor SessionContributionsDisplayCard to use selectSelectedModels`
+
+*   `[✅]` supabase/functions/dialectic-service/`getAllStageProgress.ts` **[BE] New endpoint returns progress for ALL stages in one call**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Single endpoint returns document progress for all stages in the session's process template
+        *   `[✅]` Eliminates N API calls for N stages when user navigates to session
+    *   `[✅]` `role.md`
+        *   `[✅]` Backend API handler - aggregation layer
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to `getAllStageProgress` function in `dialectic-service`
+        *   `[✅]` Consumes: sessionId, iterationNumber, userId, projectId
+        *   `[✅]` Produces: array of `StageProgressEntry` for each stage
+    *   `[✅]` `deps.md`
+        *   `[✅]` `dialectic_generation_jobs` table
+        *   `[✅]` `dialectic_project_resources` table
+        *   `[✅]` `deconstructStoragePath` utility
+    *   `[✅]` interface/`dialectic.interface.ts`
+        *   `[✅]` Add `GetAllStageProgress` signature
+        *   `[✅]` Add `GetAllStageProgressDeps` deps object 
+        *   `[✅]` Add `GetAllStageProgressParams` params object 
+        *   `[✅]` Add `GetAllStageProgressPayload`: `{ sessionId: string; iterationNumber: number; userId: string; projectId: string }`
+        *   `[✅]` Add `StageProgressEntry`: `{ stageSlug: string; documents: StageDocumentChecklistEntry[]; stepStatuses: Record<string, string>; stageStatus: UnifiedProjectStatus }`
+        *   `[✅]` Add `GetAllStageProgressResponse`: `StageProgressEntry[]`
+    *   `[✅]` unit/`getAllStageProgress.test.ts`
+        *   `[✅]` Assert returns empty array when no jobs exist for session
+        *   `[✅]` Assert returns progress entries for each stage with documents
+        *   `[✅]` Assert correctly maps job status to StageRunDocumentStatus
+        *   `[✅]` Assert correlates resources to jobs via document_key
+        *   `[✅]` Assert 400 for missing required payload fields
+        *   `[✅]` Assert 403 for non-owner user
+    *   `[✅]` `getAllStageProgress.ts`
+        *   `[✅]` Validate payload (sessionId, iterationNumber, userId, projectId required)
+        *   `[✅]` Verify user owns the project
+        *   `[✅]` Query all jobs for session+iteration (no stageSlug filter)
+        *   `[✅]` Query all rendered resources for session+iteration (no stageSlug filter)
+        *   `[✅]` Group jobs by `payload.stageSlug`
+        *   `[✅]` For each stage: build `StageProgressEntry` with documents
+        *   `[✅]` Return `StageProgressEntry[]` array
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Single API call returns progress for all stages
+        *   `[✅]` Performance: one DB query for jobs, one for resources
+    *   `[✅]` **Commit** `feat(be): add getAllStageProgress handler for single-call stage progress`
+
+*   `[✅]` supabase/functions/dialectic-service/`index.ts` **[BE] Route getAllStageProgress action to handler**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Add routing case for `getAllStageProgress` action to dispatch to new handler
+    *   `[✅]` `role.md`
+        *   `[✅]` Router - dispatches actions to handlers
+    *   `[✅]` `deps.md`
+        *   `[✅]` `getAllStageProgress` handler from previous node
+        *   `[✅]` Existing router pattern in index.ts
+    *   `[✅]` unit/`index.test.ts`
+        *   `[✅]` Assert `action: 'getAllStageProgress'` routes to `getAllStageProgress` handler
+        *   `[✅]` Assert handler receives correct payload and context
+    *   `[✅]` `index.ts`
+        *   `[✅]` Import `getAllStageProgress` from `./getAllStageProgress.ts`
+        *   `[✅]` Add case `'getAllStageProgress'` in action switch
+        *   `[✅]` Call handler with payload, dbClient, user
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Router dispatches getAllStageProgress action correctly
+    *   `[✅]` **Commit** `feat(be): route getAllStageProgress action in dialectic-service index`
+
+*   `[ ]` packages/api/src/`dialectic.api.ts` **[API] Add getAllStageProgress API method**
+    *   `[ ]` `objective.md`
+        *   `[ ]` Add API client method to call new `getAllStageProgress` endpoint
+    *   `[ ]` `role.md`
+        *   `[ ]` API client - frontend boundary to backend
+    *   `[ ]` `deps.md`
+        *   `[ ]` `apiClient.post` method
+        *   `[ ]` Backend endpoint from previous nodes
+    *   `[ ]` interface/`packages/types/src/dialectic.types.ts`
+        *   `[ ]` Add `GetAllStageProgressPayload`: `{ sessionId: string; iterationNumber: number; userId: string; projectId: string }`
+        *   `[ ]` Add `StageProgressEntry`: `{ stageSlug: string; documents: StageDocumentChecklistEntry[]; stageStatus: string }`
+        *   `[ ]` Add `GetAllStageProgressResponse`: `StageProgressEntry[]`
+    *   `[ ]` unit/`dialectic.api.test.ts`
+        *   `[ ]` Assert calls post with `action: 'getAllStageProgress'` and payload
+        *   `[ ]` Assert returns typed response on success
+        *   `[ ]` Assert handles API error correctly
+        *   `[ ]` Assert handles network error correctly
+    *   `[ ]` `dialectic.api.ts`
+        *   `[ ]` Add `getAllStageProgress(payload: GetAllStageProgressPayload): Promise<ApiResponse<GetAllStageProgressResponse>>`
+        *   `[ ]` POST to `dialectic-service` with `action: 'getAllStageProgress'`
+    *   `[ ]` `mocks/dialectic.api.mock.ts`
+        *   `[ ]` Add `getAllStageProgress` mock function
+    *   `[ ]` `requirements.md`
+        *   `[ ]` API method calls backend and returns typed response
+    *   `[ ]` **Commit** `feat(api): add getAllStageProgress API client method`
+
+*   `[ ]` packages/store/src/`dialecticStore.documents.ts` **[STORE] Add hydrateAllStageProgressLogic**
+    *   `[ ]` `objective.md`
+        *   `[ ]` Add logic function that calls `getAllStageProgress` and populates `stageRunProgress` for ALL stages
+    *   `[ ]` `role.md`
+        *   `[ ]` Store logic - manages document progress state
+    *   `[ ]` `deps.md`
+        *   `[ ]` `api.dialectic().getAllStageProgress` from previous node
+        *   `[ ]` `stageRunProgress` state
+        *   `[ ]` `getStageRunDocumentKey` helper
+        *   `[ ]` `ensureRenderedDocumentDescriptor` helper
+    *   `[ ]` unit/`dialecticStore.documents.test.ts`
+        *   `[ ]` Assert `hydrateAllStageProgressLogic` populates `stageRunProgress` for multiple stages from single API response
+        *   `[ ]` Assert each stage's documents keyed by (documentKey, modelId)
+        *   `[ ]` Assert handles empty response gracefully
+        *   `[ ]` Assert handles API error gracefully
+    *   `[ ]` `dialecticStore.documents.ts`
+        *   `[ ]` Add `hydrateAllStageProgressLogic(set, payload: GetAllStageProgressPayload)`
+        *   `[ ]` Call `api.dialectic().getAllStageProgress(payload)`
+        *   `[ ]` For each `StageProgressEntry`: build progressKey, populate `stageRunProgress[progressKey]`
+        *   `[ ]` Reuse `ensureRenderedDocumentDescriptor` and `createVersionInfo` helpers
+    *   `[ ]` `requirements.md`
+        *   `[ ]` Single API call populates progress for all stages
+    *   `[ ]` **Commit** `feat(store): add hydrateAllStageProgressLogic for all-stage hydration`
+
+*   `[ ]` packages/store/src/`dialecticStore.ts` **[STORE] Expose hydrateAllStageProgress action**
+    *   `[ ]` `objective.md`
+        *   `[ ]` Expose new action `hydrateAllStageProgress` that delegates to logic function
+    *   `[ ]` `role.md`
+        *   `[ ]` Store - public action interface
+    *   `[ ]` `deps.md`
+        *   `[ ]` `hydrateAllStageProgressLogic` from previous node
+    *   `[ ]` unit/`dialecticStore.test.ts`
+        *   `[ ]` Assert `hydrateAllStageProgress` action exists
+        *   `[ ]` Assert action calls `hydrateAllStageProgressLogic` with correct arguments
+    *   `[ ]` `dialecticStore.ts`
+        *   `[ ]` Import `hydrateAllStageProgressLogic` from `./dialecticStore.documents`
+        *   `[ ]` Add `hydrateAllStageProgress: async (payload) => { await hydrateAllStageProgressLogic(set, payload); }`
+    *   `[ ]` `requirements.md`
+        *   `[ ]` Action exposed and callable from UI
+    *   `[ ]` **Commit** `feat(store): expose hydrateAllStageProgress action`
+
+*   `[ ]` apps/web/src/hooks/`useStageRunProgressHydration.ts` **[UI] Use hydrateAllStageProgress for single-call hydration on session load**
+    *   `[ ]` `objective.md`
+        *   `[ ]` Call `hydrateAllStageProgress` once when session loads to populate all stages
+        *   `[ ]` Fix 0% progress and "Not Started" status on page refresh/return
+    *   `[ ]` `role.md`
+        *   `[ ]` UI hook - orchestrates hydration on page load
+    *   `[ ]` `deps.md`
+        *   `[ ]` `hydrateAllStageProgress` from store (previous node)
+        *   `[ ]` `activeSessionDetail` for trigger condition
+        *   `[ ]` `user` for userId
+    *   `[ ]` unit/`useStageRunProgressHydration.test.tsx`
+        *   `[ ]` Assert `hydrateAllStageProgress` called once when `activeSessionDetail` first available
+        *   `[ ]` Assert not re-called on stage tab changes
+        *   `[ ]` Assert guard ref prevents duplicate calls
+    *   `[ ]` `useStageRunProgressHydration.ts`
+        *   `[ ]` Import `hydrateAllStageProgress` from store
+        *   `[ ]` Add `hasHydratedAllStages` ref to prevent re-hydration
+        *   `[ ]` Add effect: when `activeSessionDetail` and `user` available and not already hydrated, call `hydrateAllStageProgress({ sessionId, iterationNumber, userId, projectId })`
+        *   `[ ]` Set `hasHydratedAllStages.current = true` after call
+    *   `[ ]` integration/`useStageRunProgressHydration.integration.test.tsx`
+        *   `[ ]` Assert after hydration, `selectUnifiedProjectProgress` returns correct overall percentage
+        *   `[ ]` Assert all stage statuses correctly populated
+        *   `[ ]` Assert DynamicProgressBar displays non-zero percentage when documents exist
+    *   `[ ]` `requirements.md`
+        *   `[ ]` Single API call hydrates all stages on session load
+        *   `[ ]` DynamicProgressBar shows correct percentage after page load
+        *   `[ ]` StageTabCard shows correct status for all stages
+        *   `[ ]` SessionInfoCard badge shows correct project status
+    *   `[ ]` **Commit** `feat(ui): use hydrateAllStageProgress for efficient single-call hydration`
+
 # ToDo
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
     -- User reports that a single document failed and they liked the other documents, but had to regenerate the entire stage
