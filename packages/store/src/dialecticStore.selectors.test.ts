@@ -31,7 +31,7 @@ import {
     selectCurrentProjectSessions,
     selectIsUpdatingProjectPrompt,
     selectCurrentProjectId,
-    selectSelectedModelIds,
+    selectSelectedModels,
     selectContributionById,
     selectSaveContributionEditError,
     selectActiveContextProjectId,
@@ -73,6 +73,7 @@ import type {
     StageRenderedDocumentDescriptor,
     StageProgressDetail,
     UnifiedProjectProgress,
+    SelectedModels,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 
@@ -193,7 +194,7 @@ describe('Dialectic Store Selectors', () => {
             project_id: 'projDetail1',
             session_description: 'Session One',
             iteration_count: 1,
-            selected_model_ids: ['model-1'],
+            selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
             status: 'active',
             associated_chat_id: 'chat-1',
             current_stage_id: 's1',
@@ -211,7 +212,7 @@ describe('Dialectic Store Selectors', () => {
             project_id: 'projDetail1',
             session_description: 'Session Two',
             iteration_count: 1,
-            selected_model_ids: ['model-2'],
+            selected_models: [{ id: 'model-2', displayName: 'Model 2' }],
             status: 'active',
             associated_chat_id: 'chat-2',
             current_stage_id: 's1',
@@ -265,7 +266,10 @@ describe('Dialectic Store Selectors', () => {
         isLoadingProcessTemplate: true,
         processTemplateError: mockProcessTemplateError,
         isUpdatingProjectPrompt: true,
-        selectedModelIds: ['model-1', 'model-2'],
+        selectedModels: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+        ],
         saveContributionEditError: mockSaveContributionError,
         activeContextProjectId: 'projDetail1',
         activeContextSessionId: 'session-1',
@@ -523,14 +527,61 @@ describe('Dialectic Store Selectors', () => {
         expect(selectCurrentProjectId(initialState)).toBeUndefined();
     });
 
-    it('selectSelectedModelIds should return the array of selected model IDs', () => {
-        expect(selectSelectedModelIds(testState)).toEqual(['model-1', 'model-2']);
-        expect(selectSelectedModelIds(initialState)).toEqual([]);
+    it('selectSelectedModels returns state.selectedModels unchanged when defined', () => {
+        const expected: SelectedModels[] = [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+        ];
+        expect(selectSelectedModels(testState)).toEqual(expected);
     });
 
-    describe('selectContributionById', () => {
-        it('should return the correct contribution when found', () => {
-            const result = selectContributionById(testState, 'c1-s1');
+    it('selectSelectedModels returns empty array when state.selectedModels is empty', () => {
+        const stateWithEmptySelectedModels: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            selectedModels: [],
+        };
+        expect(selectSelectedModels(stateWithEmptySelectedModels)).toEqual([]);
+    });
+
+    it('selectSelectedModels returns empty array when state.selectedModels is null', () => {
+        const stateWithNullSelectedModels: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            selectedModels: null,
+        };
+        expect(selectSelectedModels(stateWithNullSelectedModels)).toEqual([]);
+    });
+
+    it('selectSelectedModels returns empty array when state.selectedModels is undefined', () => {
+        const stateWithUndefinedSelectedModels: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            selectedModels: undefined,
+        };
+        expect(selectSelectedModels(stateWithUndefinedSelectedModels)).toEqual([]);
+    });
+
+    describe('selectUnifiedProjectProgress', () => {
+        it('should return 0% progress when selectedModels is null', () => {
+            const stateWithNullModels: DialecticStateValues = {
+                ...testState,
+                selectedModels: null,
+            };
+            const progress = selectUnifiedProjectProgress(stateWithNullModels, 'session-1');
+            expect(progress.overallPercentage).toBe(0);
+        });
+    
+        it('should return 0% progress when selectedModels is undefined', () => {
+            const stateWithUndefinedModels: DialecticStateValues = {
+                ...testState,
+                selectedModels: undefined,
+            };
+            const progress = selectUnifiedProjectProgress(stateWithUndefinedModels, 'session-1');
+            expect(progress.overallPercentage).toBe(0);
+        });
+    });
+ 
+     describe('selectContributionById', () => {
+         it('should return the correct contribution when found', () => {
+             const result = selectContributionById(testState, 'c1-s1');
             expect(result).toBeDefined();
             expect(result?.id).toBe('c1-s1');
         });
@@ -1408,7 +1459,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
             project_id: projectId,
             session_description: 'Test session',
             user_input_reference_url: null,
-            selected_model_ids: [],
+            selected_models: [],
             status: 'active',
             associated_chat_id: null,
             dialectic_session_models: [],
@@ -2194,7 +2245,7 @@ describe('selectStageDocumentResource and selectEditedDocumentByKey', () => {
                     project_id: 'proj-test',
                     session_description: 'Test session',
                     iteration_count: iterationNumber,
-                    selected_model_ids: [modelId],
+                    selected_models: [{ id: modelId, displayName: modelId }],
                     status: 'active',
                     associated_chat_id: null,
                     current_stage_id: 'stage-1',
@@ -2553,7 +2604,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1'],
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -2567,7 +2618,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1'],
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: {},
         stageRunProgress: {},
       };
@@ -2592,7 +2643,11 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1', 'model-2', 'model-3'],
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -2639,7 +2694,11 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1', 'model-2', 'model-3'],
+        selectedModels: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
           [progressKey]: {
@@ -2682,7 +2741,11 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1', 'model-2', 'model-3'],
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -2729,7 +2792,11 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1', 'model-2', 'model-3'],
+        selectedModels: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
           [progressKey]: {
@@ -2766,7 +2833,11 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1', 'model-2', 'model-3'],
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -2813,7 +2884,11 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1', 'model-2', 'model-3'],
+        selectedModels: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
           [progressKey]: {
@@ -2848,7 +2923,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1'],
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -2901,7 +2976,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1'],
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
           [progressKey]: {
@@ -2950,7 +3025,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1'],
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-def',
@@ -2976,7 +3051,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1'],
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe1, 'mock-stage-2': recipe2 },
         stageRunProgress: {
           [key1]: {
@@ -3031,7 +3106,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1'],
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-def',
@@ -3068,7 +3143,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1'],
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe1, 'mock-stage-2': recipe2 },
         stageRunProgress: {
           [key1]: { stepStatuses: { step_1: 'completed' }, documents: { [`d1${sep}model-1`]: completedDoc } },
@@ -3095,7 +3170,11 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1', 'model-2', 'model-3'],
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -3140,7 +3219,11 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1', 'model-2', 'model-3'],
+        selectedModels: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
           [progressKey]: {
@@ -3178,7 +3261,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1'],
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -3215,7 +3298,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1'],
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
           [progressKey]: {
@@ -3241,7 +3324,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1'],
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -3294,7 +3377,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1'],
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
           [progressKey]: {
@@ -3332,7 +3415,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1'],
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -3367,7 +3450,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1'],
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
           [progressKey]: {
@@ -3403,7 +3486,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1'],
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -3438,7 +3521,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1'],
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
           [progressKey]: {
@@ -3474,7 +3557,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1'],
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -3488,7 +3571,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1'],
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: {},
         stageRunProgress: {},
       };
@@ -3509,7 +3592,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
         session_description: null,
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: ['model-1'],
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
@@ -3523,7 +3606,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
-        selectedModelIds: ['model-1'],
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: {},
         stageRunProgress: {},
       };
@@ -3550,6 +3633,158 @@ describe('selectValidMarkdownDocumentKeys', () => {
         expect(Array.isArray(detail.stepsDetail)).toBe(true);
         expect(statusValues).toContain(detail.stageStatus);
       }
+    });
+
+    it('counts total models from selectedModels.length', () => {
+      const documentKey = 'doc_a';
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 'step-1',
+            step_key: 'doc_step',
+            step_slug: 'doc-step',
+            step_name: 'Doc Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: documentKey, artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+        ],
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [
+          { id: 'model-1', displayName: 'Model 1' },
+          { id: 'model-2', displayName: 'Model 2' },
+          { id: 'model-3', displayName: 'Model 3' },
+        ],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {},
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBeGreaterThan(0);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage.stepsDetail.length).toBeGreaterThan(0);
+      expect(firstStage.stepsDetail[0].totalModels).toBe(3);
+    });
+
+    it('filters documents by selectedModels map id so only selected models count', () => {
+      const documentKey = 'doc_a';
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+        ],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 'step-1',
+            step_key: 'doc_step',
+            step_slug: 'doc-step',
+            step_name: 'Doc Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: documentKey, artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+        ],
+      };
+      const baseDescriptor: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'completed',
+        job_id: 'job-1',
+        latestRenderedResourceId: 'res-1',
+        modelId: 'model-1',
+        versionHash: 'h1',
+        lastRenderedResourceId: 'res-1',
+        lastRenderAtIso: new Date().toISOString(),
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [
+          { id: 'model-1', displayName: 'Model 1' },
+          { id: 'model-2', displayName: 'Model 2' },
+        ],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { doc_step: 'in_progress' },
+            documents: {
+              [`${documentKey}${sep}model-1`]: { ...baseDescriptor, status: 'completed', modelId: 'model-1' },
+              [`${documentKey}${sep}model-2`]: { ...baseDescriptor, status: 'completed', modelId: 'model-2' },
+              [`${documentKey}${sep}model-3`]: { ...baseDescriptor, status: 'completed', modelId: 'model-3' },
+            },
+          },
+        },
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage).toBeDefined();
+      expect(firstStage.stepsDetail).toBeDefined();
+      expect(firstStage.stepsDetail.length).toBeGreaterThan(0);
+      const docStep = firstStage.stepsDetail[0];
+      expect(docStep.totalModels).toBe(2);
+      expect(docStep.completedModels).toBe(2);
     });
   });
 

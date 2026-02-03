@@ -14,6 +14,7 @@ import {
 	selectSortedStages,
 	selectActiveStageSlug,
 	selectUnifiedProjectProgress,
+	selectSelectedModels,
 } from "@paynless/store";
 import { StageRunChecklist } from "./StageRunChecklist";
 
@@ -177,7 +178,7 @@ export const StageTabCard: React.FC = () => {
 		activeStageSlug,
 		setActiveStage,
 		setFocusedStageDocument,
-		selectedModelIds,
+		selectedModels,
 		focusedStageDocumentMap,
 		activeSessionDetail,
 		activeSessionId,
@@ -213,7 +214,7 @@ export const StageTabCard: React.FC = () => {
 			activeStageSlug: activeStageSlugValue,
 			setActiveStage: state.setActiveStage,
 			setFocusedStageDocument: state.setFocusedStageDocument,
-			selectedModelIds: state.selectedModelIds ?? [],
+			selectedModels: selectSelectedModels(state),
 			focusedStageDocumentMap: focusedStageDocumentEntries,
 			activeSessionDetail: activeSession,
 			activeSessionId: sessionId,
@@ -255,8 +256,7 @@ export const StageTabCard: React.FC = () => {
 	const canRenderChecklists = Boolean(
 		activeStage &&
 		activeSessionId &&
-		typeof iterationNumber === "number" &&
-		selectedModelIds.length > 0,
+		typeof iterationNumber === "number",
 	);
 
 	const handleStageSelect = (slug: string) => {
@@ -272,11 +272,12 @@ export const StageTabCard: React.FC = () => {
 			return undefined;
 		}
 
-		const firstModelId = selectedModelIds[0] ?? "";
+		const modelId: string | null =
+			selectedModels.length > 0 ? selectedModels[0].id : null;
 		return (
 			<StageRunChecklist
 				key="single"
-				modelId={firstModelId}
+				modelId={modelId}
 				focusedStageDocumentMap={focusedStageDocumentMap}
 				onDocumentSelect={handleDocumentSelect}
 			/>
@@ -302,7 +303,7 @@ export const StageTabCard: React.FC = () => {
 									totalDocuments: 0,
 									completedDocuments: 0,
 									isComplete: false,
-									stageStatus: "not_started" as UnifiedProjectStatus,
+									stageStatus: "not_started",
 									stagePercentage: 0,
 								}
 							}
@@ -311,12 +312,6 @@ export const StageTabCard: React.FC = () => {
 					);
 				})}
 			</div>
-
-			{!canRenderChecklists && (
-				<div className="rounded-lg border border-dashed border-muted p-6 text-sm text-muted-foreground">
-					Select at least one model to view the checklist.
-				</div>
-			)}
 		</div>
 	);
 };

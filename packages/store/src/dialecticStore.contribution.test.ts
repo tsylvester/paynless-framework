@@ -24,6 +24,7 @@ import {
   EditedDocumentResource,
   StageDocumentContentState,
   StageDocumentCompositeKey,
+  SelectedModels,
 } from '@paynless/types';
 
 // We need to import the mock api object and helpers to use in the test
@@ -224,7 +225,7 @@ describe('useDialecticStore', () => {
                 project_id: mockPayload.projectId,
                 iteration_count: 1,
                 session_description: 'A session for testing generation',
-                selected_model_ids: ['model-1', 'model-2'],
+                selected_models: [{ id: 'model-1', displayName: 'Test Model 1' }, { id: 'model-2', displayName: 'Test Model 2' }],
                 dialectic_contributions: [],
                 status: 'active',
                 user_input_reference_url: null,
@@ -252,10 +253,15 @@ describe('useDialecticStore', () => {
         const mockApiError: ApiError = { message: 'API Failed', code: 'VALIDATION_ERROR' };
         const networkError = new Error('Network Failure');
 
+        const generateContributionsSelectedModels: SelectedModels[] = [
+            { id: 'model-1', displayName: 'Test Model 1' },
+            { id: 'model-2', displayName: 'Test Model 2' },
+        ];
+
         beforeEach(() => {
             useDialecticStore.setState({
                 currentProjectDetail: JSON.parse(JSON.stringify(mockProject)),
-                selectedModelIds: ['model-1', 'model-2'],
+                selectedModels: generateContributionsSelectedModels,
                 modelCatalog: mockModelCatalog,
                 generatingSessions: {},
             });
@@ -402,7 +408,7 @@ describe('useDialecticStore', () => {
                 dialectic_contributions: [],
                 associated_chat_id: null,
                 user_input_reference_url: null,
-                selected_model_ids: [],
+                selected_models: [],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
             }],
@@ -428,7 +434,7 @@ describe('useDialecticStore', () => {
                 iteration_count: 2,
                 session_description: 'A session',
                 user_input_reference_url: null,
-                selected_model_ids: [],
+                selected_models: [],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 status: 'pending_antithesis',
@@ -442,7 +448,10 @@ describe('useDialecticStore', () => {
             mockInitialProjectState = JSON.parse(JSON.stringify(mockProjectForRefetch));
             useDialecticStore.setState({
                 currentProjectDetail: mockInitialProjectState,
-                selectedModelIds: ['model-1', 'model-2'],
+                selectedModels: [
+                    { id: 'model-1', displayName: 'Model 1' },
+                    { id: 'model-2', displayName: 'Model 2' },
+                ],
                 modelCatalog: mockModelCatalog,
                 generatingSessions: {},
                 stageDocumentContent: {}, // Ensure it's clean
@@ -1125,7 +1134,7 @@ describe('useDialecticStore', () => {
                 project_id: mockProjectId,
                 session_description: 'A session',
                 user_input_reference_url: null,
-                selected_model_ids: [],
+                selected_models: [],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 status: 'pending_hypothesis',

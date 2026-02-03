@@ -137,7 +137,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	isUpdatingProjectPrompt: false,
 	isUploadingProjectResource: false,
 	uploadProjectResourceError: null,
-	selectedModelIds: [],
+	selectedModels: [],
 
 	// Cache for initial prompt file content, mapping resourceId to its state
 	initialPromptContentCache: {},
@@ -459,7 +459,7 @@ export const useDialecticStore = create<DialecticStore>()(
 					sessionId: null,
 					stage: null,
 				});
-				get().setSelectedModelIds([]);
+				set({ selectedModels: [] });
 
 				if (projectData?.process_template_id) {
 					logger.info(
@@ -1123,8 +1123,10 @@ export const useDialecticStore = create<DialecticStore>()(
               };
             }
           }
+          const models = updatedSessionFromApi.selected_models;
           return {
             currentProjectDetail: newCurrentProjectDetail,
+            selectedModels: models,
             isUpdatingSessionModels: false,
             updateSessionModelsError: null,
           };
@@ -1142,55 +1144,56 @@ export const useDialecticStore = create<DialecticStore>()(
     }
   },
 
-	setSelectedModelIds: (modelIds: string[]) => {
-		logger.info("[DialecticStore] Setting selected model IDs.", { modelIds });
-		set({ selectedModelIds: modelIds });
+	setSelectedModels: (models) => {
+		logger.info("[DialecticStore] Setting selected models.", { models });
+		set({ selectedModels: models });
 		const activeSessionId = get().activeContextSessionId;
 		if (activeSessionId) {
 			get()
 				.updateSessionModels({
 					sessionId: activeSessionId,
-					selectedModelIds: modelIds,
+					selectedModels: models,
 				})
 				.then((response) => {
 					if (response.error) {
 						logger.error(
-							"[DialecticStore] Post-setSelectedModelIds: Failed to update session models on backend",
+							"[DialecticStore] Post-setSelectedModels: Failed to update session models on backend",
 							{ sessionId: activeSessionId, error: response.error },
 						);
-						// Optionally set a specific error for this background update failure if UI needs to react
 					}
 				})
 				.catch((err) => {
 					logger.error(
-						"[DialecticStore] Post-setSelectedModelIds: Network error during background session model update",
+						"[DialecticStore] Post-setSelectedModels: Network error during background session model update",
 						{ sessionId: activeSessionId, error: err },
 					);
 				});
 		}
 	},
 
-	setModelMultiplicity: (modelId: string, count: number) => {
-		let newSelectedIds: string[] = [];
-		set((state) => {
-			const currentSelectedIds = state.selectedModelIds || [];
-			const filteredIds = currentSelectedIds.filter((id) => id !== modelId);
-			newSelectedIds = [...filteredIds];
-			for (let i = 0; i < count; i++) {
-				newSelectedIds.push(modelId);
-			}
-			logger.info(
-				`[DialecticStore] Setting multiplicity for model ${modelId} to ${count}.`,
-				{ newSelectedIds },
-			);
-			return { selectedModelIds: newSelectedIds };
-		});
-		const activeSessionId = get().activeContextSessionId;
+	setModelMultiplicity: (model, count) => {
+		const state = get();
+		// Ensure selectedModels is treated as an array, even if it's null or undefined.
+		const currentModels = state.selectedModels || [];
+		const otherModels = currentModels.filter((m) => m.id !== model.id);
+		const newModels = [...otherModels];
+		for (let i = 0; i < count; i++) {
+			newModels.push(model);
+		}
+
+		logger.info(
+			`[DialecticStore] Setting multiplicity for model ${model.id} to ${count}.`,
+			{ newSelectedIds: newModels.map((m) => m.id) },
+		);
+
+		set({ selectedModels: newModels });
+
+		const activeSessionId = state.activeContextSessionId;
 		if (activeSessionId) {
 			get()
 				.updateSessionModels({
 					sessionId: activeSessionId,
-					selectedModelIds: newSelectedIds,
+					selectedModels: newModels,
 				})
 				.then((response) => {
 					if (response.error) {
@@ -1198,7 +1201,7 @@ export const useDialecticStore = create<DialecticStore>()(
 							"[DialecticStore] Post-setModelMultiplicity: Failed to update session models on backend",
 							{
 								sessionId: activeSessionId,
-								modelId,
+								modelId: model.id,
 								count,
 								error: response.error,
 							},
@@ -1208,15 +1211,37 @@ export const useDialecticStore = create<DialecticStore>()(
 				.catch((err) => {
 					logger.error(
 						"[DialecticStore] Post-setModelMultiplicity: Network error during background session model update",
-						{ sessionId: activeSessionId, modelId, count, error: err },
+						{ sessionId: activeSessionId, modelId: model.id, count, error: err },
 					);
 				});
 		}
 	},
 
-	resetSelectedModelId: () => {
-		logger.info(`[DialecticStore] Resetting selectedModelIds.`);
-		set({ selectedModelIds: [] });
+	resetSelectedModels: () => {
+		logger.info(`[DialecticStore] Resetting selected models.`);
+		set({ selectedModels: [] });
+		const activeSessionId = get().activeContextSessionId;
+		if (activeSessionId) {
+			get()
+				.updateSessionModels({
+					sessionId: activeSessionId,
+					selectedModels: [],
+				})
+				.then((response) => {
+					if (response.error) {
+						logger.error(
+							"[DialecticStore] Post-resetSelectedModels: Failed to update session models on backend",
+							{ sessionId: activeSessionId, error: response.error },
+						);
+					}
+				})
+				.catch((err) => {
+					logger.error(
+						"[DialecticStore] Post-resetSelectedModels: Network error during background session model update",
+						{ sessionId: activeSessionId, error: err },
+					);
+				});
+		}
 	},
 
 	fetchInitialPromptContent: async (resourceId: string) => {
@@ -1746,7 +1771,8 @@ export const useDialecticStore = create<DialecticStore>()(
     const { sessionId, stageSlug, iterationNumber } = payload;
     logger.info('[DialecticStore] Initiating contributions generation...', { payload });
   
-    const { currentProjectDetail, selectedModelIds } = get();
+    const { currentProjectDetail, selectedModels } = get();
+    const selectedModelIdsForJob = (selectedModels || []).map((m) => m.id);
     if (!currentProjectDetail) {
       const error: ApiError = { message: 'No project loaded', code: 'PRECONDITION_FAILED' };
       logger.error('[DialecticStore] Precondition failed: No project loaded.', { payload });
@@ -1764,7 +1790,7 @@ export const useDialecticStore = create<DialecticStore>()(
           session.dialectic_contributions = [];
         }
         
-        selectedModelIds.forEach((modelId, index) => {
+        selectedModelIdsForJob.forEach((modelId: string, index: number) => {
           // Find model details from catalog to get the name
           const modelDetails = state.modelCatalog.find(m => m.id === modelId);
           const tempId = `placeholder-${sessionId}-${modelId}-${iterationNumber}-${index}`;
@@ -1850,7 +1876,7 @@ export const useDialecticStore = create<DialecticStore>()(
             
             // FIX 2: More robust matching
             response.data.job_ids.forEach((jobId, index) => {
-                const modelIdForThisJob = selectedModelIds[index];
+                const modelIdForThisJob = selectedModelIdsForJob[index];
                 const placeholder = pendingPlaceholders.find(p => p.model_id === modelIdForThisJob && !p.job_id);
                 if (placeholder) {
                     placeholder.job_id = jobId;
@@ -2348,12 +2374,9 @@ export const useDialecticStore = create<DialecticStore>()(
         stage: fetchedStageDetails, // This can be null, setActiveDialecticContext should handle it
       });
 
-			// Set selected models based on the session
-			if (fetchedSession.selected_model_ids) {
-				get().setSelectedModelIds(fetchedSession.selected_model_ids);
-			} else {
-				get().setSelectedModelIds([]); // Clear if no models are selected for the session
-			}
+			// Set selected models from session response (single origin: selected_models)
+			const models = fetchedSession.selected_models;
+			set({ selectedModels: models });
 		} catch (error: unknown) {
 			const networkError: ApiError = {
 				message:

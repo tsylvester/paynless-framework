@@ -100,15 +100,21 @@ export interface GetContributionContentDataResponse {
 export interface StartSessionPayload {
   projectId: string;
   sessionDescription?: string | null;
-  selectedModelIds: string[];
+  selectedModels: SelectedModels[];
   originatingChatId?: string | null;
   stageSlug?: string;
 }
 
 export interface UpdateSessionModelsPayload {
   sessionId: string;
-  selectedModelIds: string[];
+  selectedModels: SelectedModels[];
 }
+
+/** Same shape as backend dialectic-service DialecticSession.selected_models elements. */
+export interface SelectedModels {
+  id: string;
+  displayName: string;
+} 
 
 export interface DialecticSession {
   id: string;
@@ -116,7 +122,7 @@ export interface DialecticSession {
   session_description: string | null;
   user_input_reference_url: string | null;
   iteration_count: number;
-  selected_model_ids: string[] | null;
+  selected_models: SelectedModels[];
   status: string | null;
   associated_chat_id: string | null;
   current_stage_id: string | null;
@@ -296,7 +302,8 @@ export interface DialecticStateValues {
   isUpdatingProjectPrompt: boolean;
   isUploadingProjectResource: boolean;
   uploadProjectResourceError: ApiError | null;
-  selectedModelIds: string[];
+  /** Single origin from session response (id + displayName); display uses this, not catalog. */
+  selectedModels: SelectedModels[] | null | undefined;
 
   // Cache for initial prompt file content
   initialPromptContentCache: { [resourceId: string]: InitialPromptCacheEntry };
@@ -542,7 +549,7 @@ export type StageDocumentEntry = StageDocumentChecklistEntry;
 export interface StageRunChecklistProps {
   focusedStageDocumentMap?: Record<string, FocusedStageDocumentState | null>;
   onDocumentSelect: StageDocumentSelectionHandler;
-  modelId: string;
+  modelId: string | null;
 }
 
 export interface ClearFocusedStageDocumentPayload {
@@ -575,9 +582,9 @@ export interface DialecticActions {
   cloneDialecticProject: (projectId: string) => Promise<ApiResponse<DialecticProject>>;
   exportDialecticProject: (projectId: string) => Promise<ApiResponse<ExportProjectResponse>>;
   updateDialecticProjectInitialPrompt: (payload: UpdateProjectInitialPromptPayload) => Promise<ApiResponse<DialecticProjectRow>>;
-  setSelectedModelIds: (modelIds: string[]) => void;
-  setModelMultiplicity: (modelId: string, count: number) => void;
-  resetSelectedModelId: () => void;
+  setSelectedModels: (models: SelectedModels[]) => void;
+  setModelMultiplicity: (model: SelectedModels, count: number) => void;
+  resetSelectedModels: () => void;
 
   // New action for fetching process templates
   fetchProcessTemplate: (templateId: string) => Promise<void>;

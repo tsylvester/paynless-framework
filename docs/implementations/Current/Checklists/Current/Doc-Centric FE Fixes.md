@@ -1193,7 +1193,157 @@
         *   `[✅]` Remove `mockDialecticProgressUpdatePayload` mock
         *   `[✅]` Remove mock implementation for `sendDialecticProgressUpdateEvent`
     *   `[✅]` **Commit** `refactor(notification-service): remove unused sendDialecticProgressUpdateEvent method`
+    
+*   `[✅]`   supabase/functions/dialectic-service/getSessionDetails **[BE] getSessionDetails returns selected models with id and displayName from single response**
+  *   `[✅]`   `objective.md`  
+    *   `[✅]`   Session response is the single origin for selected models: each selected model has id and semantic displayName in one object
+    *   `[✅]`   getSessionDetails fetches session and selected models with catalog join so each row has model_id and model_name
+    *   `[✅]`   Response includes selected_models (or dialectic_session_models) as array of { id, displayName }
+  *   `[✅]`   `role.md`  
+    *   `[✅]`   Backend API handler; single source of session + selected-model data
+  *   `[✅]`   `module.md`  
+    *   `[✅]`   Bounded to getSessionDetails in dialectic-service; response shape and DB query
+  *   `[✅]`   `deps.md`  
+    *   `[✅]`   dialectic_sessions table
+    *   `[✅]`   dialectic_session_models (or link table) for session → models
+    *   `[✅]`   Catalog table with model semantic name; join so each selected-model row has id + name
+  *   `[✅]`   interface/`interface.ts`  
+    *   `[✅]`   GetSessionDetailsResponse (or session type) includes selected_models: Array<{ id: string; displayName: string }> (or dialectic_session_models with model_id and displayName)
+  *   `[✅]`   unit/`getSessionDetails.test.ts`  
+    *   `[✅]`   Given session with selected_model_ids, response includes selected models with both id and displayName from same query
+  *   `[✅]`   `getSessionDetails.ts`  
+    *   `[✅]`   After loading session, query selected models for that session with join to catalog (model_id + model_name)
+    *   `[✅]`   Map DB rows to response shape (id, displayName) and attach to session in returned object
+    *   `[✅]`   Preserve existing response fields and behavior
+  *   `[✅]`   `requirements.md`  
+    *   `[✅]`   Response is single origin for selected models; each has id and displayName; no second source
+  *   `[✅]`   **Commit** `feat(be): getSessionDetails returns selected models with id and displayName from single response`
 
+*   `[ ]`   packages/store/src/dialecticStore.ts **[STORE] Persist selected models from session response (complete data, single origin)**
+  *   `[ ]`   `objective.md`  
+    *   `[ ]`   When session details are set, store persists selected models from response (array of { id, displayName }) as-is
+    *   `[ ]`   No merge with catalog; no building id+name from two sources
+    *   `[ ]`   State holds selectedModels (or equivalent) from backend only
+  *   `[ ]`   `role.md`  
+    *   `[ ]`   State layer; single place in client that holds selected models; mirrors backend response
+  *   `[ ]`   `module.md`  
+    *   `[ ]`   Bounded to session-fetch path and code that sets/reads selected models
+  *   `[ ]`   `deps.md`  
+    *   `[ ]`   API getSessionDetails response (session.selected_models or dialectic_session_models)
+    *   `[ ]`   DialecticStateValues; existing session-detail and context setters
+  *   `[ ]`   interface/`interface.ts`  
+    *   `[ ]`   DialecticStateValues includes selectedModels: Array<{ id: string; displayName: string }> (or equivalent) typed from application types; no separate selectedModelIds as source of truth for display
+    *   `[ ]`   Each type/field is its own nested item
+  *   `[ ]`   interface/tests/`dialecticStore.interface.test.ts`  
+    *   `[ ]`   Contract: state.selectedModels shape matches response selected_models
+    *   `[ ]`   Each contract is its own nested item
+  *   `[ ]`   interface/guards/`dialecticStore.interface.guards.ts`  
+    *   `[ ]`   Guard(s) for selectedModels shape if required
+    *   `[ ]`   Each guard is its own nested item
+  *   `[ ]`   unit/`dialecticStore.test.ts`  
+    *   `[ ]`   When session details are set with response containing selected_models, state.selectedModels equals that array (id + displayName)
+    *   `[ ]`   setSelectedModelIds / updateSessionModels still send ids to API where required; UI state is complete list from backend
+    *   `[ ]`   Each test is its own nested item
+  *   `[ ]`   `dialecticStore.ts`  
+    *   `[ ]`   In thunk that sets session details (e.g. fetchAndSetCurrentSessionDetails), set selectedModels from response.session.selected_models (or equivalent)
+    *   `[ ]`   Ensure setSelectedModelIds (or equivalent) does not orphan types; update only from single-origin data or refetch session after updateSessionModels
+    *   `[ ]`   Each requirement is its own nested item
+  *   `[ ]`   provides/`dialecticStore.provides.ts`  
+    *   `[ ]`   Exported state shape and actions for selected models
+    *   `[ ]`   Each symbol / guarantee is its own nested item
+  *   `[ ]`   `dialecticStore.mock.ts`  
+    *   `[ ]`   Mock state.selectedModels per contract
+    *   `[ ]`   Each symbol / guarantee is its own nested item
+  *   `[ ]`   integration/`dialecticStore.integration.test.ts`  
+    *   `[ ]`   Test: session fetch populates selectedModels from response; selector returns same data
+    *   `[ ]`   Each test is its own nested item
+  *   `[ ]`   `requirements.md`  
+    *   `[ ]`   Selected models in state are complete and from session response only; no catalog lookup in store
+    *   `[ ]`   Each obligation or criteria is its own nested item
+  *   `[ ]`   **Commit** `feat(store): persist selected models (id + displayName) from session response as single origin`
+    *   `[ ]`   Detail each change performed on the file in this work increment
+
+*   `[ ]`   packages/store/src/dialecticStore.selectors.ts **[STORE] selectSelectedModels returns complete data from state (single origin)**
+  *   `[ ]`   `objective.md`  
+    *   `[ ]`   Selector returns array stored from backend (each element has id and displayName); reads only that state
+    *   `[ ]`   No catalog; no join
+  *   `[ ]`   `role.md`  
+    *   `[ ]`   Selector; exposes selected models to UI
+  *   `[ ]`   `module.md`  
+    *   `[ ]`   Bounded to selectSelectedModels (or replacement for selectSelectedModelIds) and return type
+  *   `[ ]`   `deps.md`  
+    *   `[ ]`   DialecticStateValues.selectedModels (from dialecticStore node)
+    *   `[ ]`   Application types for selected-model shape
+  *   `[ ]`   interface/`interface.ts`  
+    *   `[ ]`   Selector signature and return type: Array<{ id: string; displayName: string }> (or equivalent from types)
+    *   `[ ]`   Each type is its own nested item
+  *   `[ ]`   interface/tests/`dialecticStore.selectors.interface.test.ts`  
+    *   `[ ]`   Contract: return shape matches state.selectedModels
+    *   `[ ]`   Each contract is its own nested item
+  *   `[ ]`   interface/guards/`dialecticStore.selectors.interface.guards.ts`  
+    *   `[ ]`   Guard(s) if required
+    *   `[ ]`   Each guard is its own nested item
+  *   `[ ]`   unit/`dialecticStore.selectors.test.ts`  
+    *   `[ ]`   Given state.selectedModels set from session response, selector returns that array unchanged (id + displayName per element)
+    *   `[ ]`   Each test is its own nested item
+  *   `[ ]`   `dialecticStore.selectors.ts`  
+    *   `[ ]`   selectSelectedModels(state) returns state.selectedModels ?? [] (or equivalent); no modelCatalog access; no mapping ids to names
+    *   `[ ]`   Each requirement is its own nested item
+  *   `[ ]`   provides/`dialecticStore.selectors.provides.ts`  
+    *   `[ ]`   Exported selector and return type
+    *   `[ ]`   Each symbol is its own nested item
+  *   `[ ]`   `dialecticStore.selectors.mock.ts`  
+    *   `[ ]`   Mock selector returns selectedModels shape per contract
+    *   `[ ]`   Each symbol is its own nested item
+  *   `[ ]`   integration/`dialecticStore.selectors.integration.test.ts`  
+    *   `[ ]`   Test: selector returns same data as state.selectedModels; no second source
+    *   `[ ]`   Each test is its own nested item
+  *   `[ ]`   `requirements.md`  
+    *   `[ ]`   Selector returns complete selected-model data from one state field only
+    *   `[ ]`   Each obligation or criteria is its own nested item
+  *   `[ ]`   **Commit** `refactor(store): selectSelectedModels returns id + displayName from single-origin state`
+    *   `[ ]`   Detail each change performed on the file in this work increment
+
+*   `[ ]`   apps/web/src/components/dialectic/StageRunChecklist.tsx **[UI] Use selectSelectedModels and display displayName**
+  *   `[ ]`   `objective.md`  
+    *   `[ ]`   StageRunChecklist uses selector from selectors node; builds per-model list from returned array; displays displayName (not raw id)
+    *   `[ ]`   Uses id for keys and store/API calls
+  *   `[ ]`   `role.md`  
+    *   `[ ]`   UI component; displays selected models with human-legible names
+  *   `[ ]`   `module.md`  
+    *   `[ ]`   Bounded to StageRunChecklist and its use of selected-models data
+  *   `[ ]`   `deps.md`  
+    *   `[ ]`   selectSelectedModels from store (selectors node)
+    *   `[ ]`   Existing checklist/progress selectors
+  *   `[ ]`   interface/`interface.ts`  
+    *   `[ ]`   Props/types that consume selector return type (array of { id, displayName }); no raw string[] for display
+    *   `[ ]`   Each type is its own nested item
+  *   `[ ]`   interface/tests/`StageRunChecklist.interface.test.ts`  
+    *   `[ ]`   Contract: component receives selected-models shape with id and displayName
+    *   `[ ]`   Each contract is its own nested item
+  *   `[ ]`   interface/guards/`StageRunChecklist.interface.guards.ts`  
+    *   `[ ]`   Guard(s) if required
+    *   `[ ]`   Each guard is its own nested item
+  *   `[ ]`   unit/`StageRunChecklist.test.tsx`  
+    *   `[ ]`   Renders per-model rows using displayName from selector; keys/API still use id
+    *   `[ ]`   Each test is its own nested item
+  *   `[ ]`   `StageRunChecklist.tsx`  
+    *   `[ ]`   Use selectSelectedModels(state) in computeStageRunChecklistData (or equivalent); derive effective list; push { modelId: m.id, modelDisplayName: m.displayName, statusLabel } into perModelLabels; render modelDisplayName in checklist
+    *   `[ ]`   Each requirement is its own nested item
+  *   `[ ]`   provides/`StageRunChecklist.provides.ts`  
+    *   `[ ]`   Component export and props surface
+    *   `[ ]`   Each symbol is its own nested item
+  *   `[ ]`   `StageRunChecklist.mock.ts`  
+    *   `[ ]`   Mock selector or props with selectedModels shape
+    *   `[ ]`   Each symbol is its own nested item
+  *   `[ ]`   integration/`StageRunChecklist.integration.test.tsx`  
+    *   `[ ]`   Test: checklist shows displayName; data from selector only
+    *   `[ ]`   Each test is its own nested item
+  *   `[ ]`   `requirements.md`  
+    *   `[ ]`   Checklist shows semantic names; data from selector only; single origin
+    *   `[ ]`   Each obligation or criteria is its own nested item
+  *   `[ ]`   **Commit** `fix(ui): StageRunChecklist shows model displayName from selectSelectedModels`
+    *   `[ ]`   Detail each change performed on the file in this work increment
 # ToDo
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
     -- User reports that a single document failed and they liked the other documents, but had to regenerate the entire stage

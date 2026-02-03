@@ -10,6 +10,7 @@ import type {
   DialecticStageRecipeStep,
   DialecticStateValues,
   DialecticProcessTemplate,
+  SelectedModels,
   StageDocumentContentState,
   StageRenderedDocumentDescriptor,
   EditedDocumentResource,
@@ -23,6 +24,7 @@ import {
   initializeMockDialecticState,
   setDialecticStateValues,
   selectIsStageReadyForSessionIteration,
+  selectSelectedModels,
 } from '../../mocks/dialecticStore.mock';
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 
@@ -170,16 +172,19 @@ const buildContribution = (modelId: string): DialecticContribution => ({
   mime_type: 'text/markdown',
 });
 
+const buildSelectedModels = (ids: string[]): SelectedModels[] =>
+  ids.map((id) => ({ id, displayName: `Model ${id}` }));
+
 const buildSession = (
   contributions: DialecticContribution[],
-  selectedModelIds: string[],
+  selectedModels: SelectedModels[],
 ): DialecticSession => ({
   id: sessionId,
   project_id: projectId,
   session_description: 'Session',
   user_input_reference_url: null,
   iteration_count: iterationNumber,
-  selected_model_ids: selectedModelIds,
+  selected_models: selectedModels,
   status: 'active',
   associated_chat_id: null,
   current_stage_id: 'stage-1',
@@ -296,6 +301,14 @@ const renderSessionContributionsDisplayCard = () => render(<SessionContributions
 beforeEach(() => {
   vi.clearAllMocks();
   initializeMockDialecticState();
+  selectSelectedModels.mockImplementation(
+    (state: DialecticStateValues): SelectedModels[] => {
+      if (state.selectedModels === undefined || state.selectedModels === null) {
+        throw new Error('Test must set selectedModels on state');
+      }
+      return state.selectedModels;
+    },
+  );
 });
 
 describe('SessionContributionsDisplayCard', () => {
@@ -307,7 +320,7 @@ describe('SessionContributionsDisplayCard', () => {
     const stage = buildStage();
     const processTemplate = buildProcessTemplate(stage);
     const contributions = ['model-a', 'model-b'].map(buildContribution);
-    const session = buildSession(contributions, ['model-a', 'model-b']);
+    const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
     const project = buildProject(session, processTemplate);
     const recipe = buildRecipe(steps);
 
@@ -317,7 +330,7 @@ describe('SessionContributionsDisplayCard', () => {
       activeContextStage: stage,
       activeStageSlug: stage.slug,
       activeSessionDetail: session,
-      selectedModelIds: session.selected_model_ids ?? [],
+      selectedModels: session.selected_models,
       currentProjectDetail: project,
       currentProcessTemplate: processTemplate,
       recipesByStageSlug: {
@@ -462,7 +475,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const steps = buildRecipeSteps();
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const project = buildProject(session, multiStageProcessTemplate);
       const recipe = buildRecipe(steps);
 
@@ -472,7 +485,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: stage1,
         activeStageSlug: stage1.slug,
         activeSessionDetail: session,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -575,7 +588,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const steps = buildRecipeSteps();
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const project = buildProject(session, multiStageProcessTemplate);
       const recipe = buildRecipe(steps);
 
@@ -585,7 +598,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: stage1,
         activeStageSlug: stage1.slug,
         activeSessionDetail: session,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -771,16 +784,16 @@ describe('SessionContributionsDisplayCard', () => {
       expect(screen.queryByText('Generating documents')).not.toBeInTheDocument();
     });
 
-    it('does not display loader when global status is generating but selectedModelIds is empty and no documents exist', () => {
+    it('does not display loader when global status is generating but selectedModels is empty and no documents exist', () => {
       // 7.b.ii: Mock store state where contributionGenerationStatus is 'generating'
-      // but selectedModelIds is empty and no documents exist in stageRunProgress for the current session
+      // but selectedModels is empty and no documents exist in stageRunProgress for the current session
       const progress = buildStageRunProgress(
         {}, // Empty stepStatuses
         {}, // Empty documents
       );
 
       const contributions: DialecticContribution[] = [];
-      const session = buildSession(contributions, []); // Empty selectedModelIds
+      const session = buildSession(contributions, []);
       const stage = buildStage();
       const processTemplate = buildProcessTemplate(stage);
       const project = buildProject(session, processTemplate);
@@ -792,7 +805,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: stage,
         activeStageSlug: stage.slug,
         activeSessionDetail: session,
-        selectedModelIds: [], // Empty
+        selectedModels: [],
         currentProjectDetail: project,
         currentProcessTemplate: processTemplate,
         recipesByStageSlug: {
@@ -1126,7 +1139,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const steps = buildRecipeSteps();
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const project = buildProject(session, multiStageProcessTemplate);
       const recipe = buildRecipe(steps);
 
@@ -1136,7 +1149,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: stage1,
         activeStageSlug: stage1.slug,
         activeSessionDetail: session,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -1241,7 +1254,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const steps = buildRecipeSteps();
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const project = buildProject(session, multiStageProcessTemplate);
       const recipe = buildRecipe(steps);
 
@@ -1251,7 +1264,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: stage1,
         activeStageSlug: stage1.slug,
         activeSessionDetail: session,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -1366,7 +1379,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const synthesisProgressKey = `${sessionId}:${synthesisStage.slug}:${iterationNumber}`;
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const project = buildProject(session, multiStageProcessTemplate);
       const steps = buildRecipeSteps();
       const recipe = buildRecipe(steps);
@@ -1377,7 +1390,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: synthesisStage,
         activeStageSlug: synthesisStage.slug,
         activeSessionDetail: session,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -1506,7 +1519,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const thesisProgressKey = `${sessionId}:${thesisStage.slug}:${iterationNumber}`;
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const project = buildProject(session, multiStageProcessTemplate);
       const steps = buildRecipeSteps();
       const recipe = buildRecipe(steps);
@@ -1517,7 +1530,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: thesisStage, // Non-last stage (thesis when stages are [thesis, antithesis, synthesis])
         activeStageSlug: thesisStage.slug,
         activeSessionDetail: session,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -2060,7 +2073,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const steps = buildRecipeSteps();
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const project = buildProject(session, multiStageProcessTemplate);
       const recipe = buildRecipe(steps);
 
@@ -2073,7 +2086,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: stage1,
         activeStageSlug: stage1.slug,
         activeSessionDetail: session,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -2179,7 +2192,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const steps = buildRecipeSteps();
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const project = buildProject(session, multiStageProcessTemplate);
       const recipe = buildRecipe(steps);
 
@@ -2189,7 +2202,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: stage1,
         activeStageSlug: stage1.slug,
         activeSessionDetail: session,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -2291,7 +2304,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const steps = buildRecipeSteps();
       const contributions = ['model-a'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a']));
       const project = buildProject(session, multiStageProcessTemplate);
       const recipe = buildRecipe(steps);
 
@@ -2303,7 +2316,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: stage1,
         activeStageSlug: stage1.slug,
         activeSessionDetail: session,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -2425,7 +2438,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const steps = buildRecipeSteps();
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const sessionAlreadyPastThesis: DialecticSession = {
         ...session,
         current_stage_id: antithesisStage.id,
@@ -2439,7 +2452,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: thesisStage,
         activeStageSlug: thesisStage.slug,
         activeSessionDetail: sessionAlreadyPastThesis,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -2527,7 +2540,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const steps = buildRecipeSteps();
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const sessionAlreadyPastThesis: DialecticSession = {
         ...session,
         current_stage_id: antithesisStage.id,
@@ -2552,7 +2565,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: thesisStage,
         activeStageSlug: thesisStage.slug,
         activeSessionDetail: sessionAlreadyPastThesis,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -2655,7 +2668,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const steps = buildRecipeSteps();
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const sessionAfterAdvance: DialecticSession = {
         ...session,
         current_stage_id: antithesisStage.id,
@@ -2680,7 +2693,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: thesisStage,
         activeStageSlug: thesisStage.slug,
         activeSessionDetail: session,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {
@@ -2781,7 +2794,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const steps = buildRecipeSteps();
       const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, ['model-a', 'model-b']);
+      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
       const sessionAlreadyPastThesis: DialecticSession = {
         ...session,
         current_stage_id: antithesisStage.id,
@@ -2806,7 +2819,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextStage: thesisStage,
         activeStageSlug: thesisStage.slug,
         activeSessionDetail: sessionAlreadyPastThesis,
-        selectedModelIds: session.selected_model_ids ?? [],
+        selectedModels: session.selected_models,
         currentProjectDetail: project,
         currentProcessTemplate: multiStageProcessTemplate,
         recipesByStageSlug: {

@@ -10,6 +10,7 @@ import type {
   GenerateContributionsResponse,
   DialecticStageRecipe,
   DialecticStageRecipeStep,
+  SelectedModels,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { resetApiMock, getMockDialecticClient } from '@paynless/api/mocks';
@@ -60,6 +61,10 @@ const mockModel2: AIModelCatalogEntry = {
     max_output_tokens: null,
 };
 
+const mockSessionSelectedModels: SelectedModels[] = [
+  { id: 'model-1', displayName: 'Test Model 1' },
+  { id: 'model-2', displayName: 'Test Model 2' },
+];
 
 const mockSession: DialecticSession = {
     id: 'session-1',
@@ -69,7 +74,7 @@ const mockSession: DialecticSession = {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     current_stage_id: 'stage-1',
-    selected_model_ids: ['model-1', 'model-2'],
+    selected_models: mockSessionSelectedModels,
     dialectic_contributions: [],
     session_description: null,
     user_input_reference_url: null,
@@ -104,6 +109,11 @@ const mockProject: DialecticProject = {
 
 
 describe('Dialectic Store Notification Handlers', () => {
+  const defaultSelectedModels: SelectedModels[] = [
+    { id: 'model-1', displayName: 'Test Model 1' },
+    { id: 'model-2', displayName: 'Test Model 2' },
+  ];
+
   beforeEach(() => {
     resetApiMock();
     // Set a clean initial state for the store before each test
@@ -111,7 +121,7 @@ describe('Dialectic Store Notification Handlers', () => {
       ...initialDialecticStateValues,
       currentProjectDetail: JSON.parse(JSON.stringify(mockProject)), // Deep copy
       modelCatalog: [mockModel1, mockModel2],
-      selectedModelIds: ['model-1', 'model-2'],
+      selectedModels: defaultSelectedModels,
     });
     vi.clearAllMocks();
   });
@@ -924,8 +934,11 @@ describe('Dialectic Store Notification Handlers', () => {
   });
 
   it('should correctly update placeholders when the same model is used multiple times', async () => {
-    // Setup state with duplicate models
-    useDialecticStore.setState({ selectedModelIds: ['model-1', 'model-1'] });
+    const duplicateModelSelectedModels: SelectedModels[] = [
+      { id: 'model-1', displayName: 'Test Model 1' },
+      { id: 'model-1', displayName: 'Test Model 1' },
+    ];
+    useDialecticStore.setState({ selectedModels: duplicateModelSelectedModels });
     const { generateContributions, _handleDialecticLifecycleEvent } = useDialecticStore.getState();
 
     // Mock the API call for generateContributions

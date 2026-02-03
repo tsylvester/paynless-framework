@@ -331,6 +331,11 @@ export interface DialecticSessionModel {
     ai_provider?: AIModelCatalogEntry;
 }
 
+export interface SelectedModels {
+  id: string;
+  displayName: string;
+}
+
 //This type needs to be reset to be a row from the database
 export interface DialecticSession {
   id: string;
@@ -338,7 +343,7 @@ export interface DialecticSession {
   session_description: string | null;
   user_input_reference_url: string | null;
   iteration_count: number;
-  selected_model_ids: string[] | null;
+  selected_models: SelectedModels[];
   status: string | null;
   associated_chat_id: string | null;
   current_stage_id: string | null;

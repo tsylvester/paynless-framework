@@ -16,6 +16,7 @@ import type {
   NotificationData,
   DialecticNotificationTypes,
   StageRenderedDocumentDescriptor,
+  SelectedModels,
 } from '@paynless/types';
 import { mockLogger, resetMockLogger } from '../../api/src/mocks/logger.mock';
 import { getStageRunDocumentKey } from './dialecticStore.documents';
@@ -151,13 +152,19 @@ describe('Integration test: Frontend progress tracking from notifications to dis
   const iterationNumber = 1;
   const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
 
+  const progressSelectedModels: SelectedModels[] = [
+    { id: 'model-1', displayName: 'Model 1' },
+    { id: 'model-2', displayName: 'Model 2' },
+    { id: 'model-3', displayName: 'Model 3' },
+  ];
+
   const session: DialecticSession = {
     id: sessionId,
     project_id: 'proj-progress',
     session_description: null,
     user_input_reference_url: null,
     iteration_count: iterationNumber,
-    selected_model_ids: ['model-1', 'model-2', 'model-3'],
+    selected_models: progressSelectedModels,
     status: null,
     associated_chat_id: null,
     current_stage_id: stageThesis.id,
@@ -198,7 +205,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
     useDialecticStore.setState({
       ...initialDialecticStateValues,
       currentProjectDetail: project,
-      selectedModelIds: ['model-1', 'model-2', 'model-3'],
+      selectedModels: progressSelectedModels,
       recipesByStageSlug: { [stageSlug]: recipeThesis },
       stageRunProgress: {
         [progressKey]: {

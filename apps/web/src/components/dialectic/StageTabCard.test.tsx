@@ -8,6 +8,7 @@ import {
   DialecticStateValues,
   DialecticProcessTemplate,
   OutputRequirement,
+  SelectedModels,
   StageRunChecklistProps,
   StageRunDocumentDescriptor,
   DialecticStageRecipe,
@@ -63,6 +64,8 @@ const mockProcessTemplate: Omit<DialecticProcessTemplate, 'owner_id' | 'is_defau
   created_at: new Date().toISOString(),
 };
 
+const defaultSelectedModels: SelectedModels[] = [{ id: 'model-1', displayName: 'Model 1' }];
+
 const mockSession: DialecticSession = {
   id: 'ses-123',
   project_id: 'proj-123',
@@ -72,7 +75,7 @@ const mockSession: DialecticSession = {
   status: 'pending_hypothesis',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
-  selected_model_ids: ['model-1'],
+  selected_models: defaultSelectedModels,
   user_input_reference_url: null,
   associated_chat_id: null,
   dialectic_contributions: [],
@@ -198,11 +201,16 @@ vi.mock('./StageRunChecklist', () => ({
 }));
 
 vi.mock('@paynless/store', async () => {
-    const mockDialecticStoreUtils = await import('../../mocks/dialecticStore.mock');
-    return {
-        ...mockDialecticStoreUtils,
-        useDialecticStore: mockDialecticStoreUtils.useDialecticStore,
-    };
+  const mockDialecticStoreUtils = await import('../../mocks/dialecticStore.mock');
+  const actualPaynlessStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+  const selectSelectedModels = actualPaynlessStore.selectSelectedModels;
+  const selectUnifiedProjectProgress = actualPaynlessStore.selectUnifiedProjectProgress;
+  return {
+    ...mockDialecticStoreUtils,
+    useDialecticStore: mockDialecticStoreUtils.useDialecticStore,
+    selectSelectedModels,
+    selectUnifiedProjectProgress,
+  };
 });
 
 describe('StageTabCard', () => {
@@ -214,7 +222,7 @@ describe('StageTabCard', () => {
             activeStageSlug: mockStages[0].slug,
             activeSessionDetail: mockSession,
             currentProcessTemplate: mockProcessTemplate,
-            selectedModelIds: mockSession.selected_model_ids ?? [],
+            selectedModels: mockSession.selected_models,
             ...overrides,
         };
         setDialecticStateValues(initialState);
@@ -406,16 +414,20 @@ describe('StageTabCard', () => {
   });
 
   it('renders one StageRunChecklist (not one per model) and forwards checklist selections', () => {
+    const twoSelectedModels: SelectedModels[] = [
+      { id: 'model-1', displayName: 'Model 1' },
+      { id: 'model-2', displayName: 'Model 2' },
+    ];
     const multiModelSession: DialecticSession = {
       ...mockSession,
-      selected_model_ids: ['model-1', 'model-2'],
+      selected_models: twoSelectedModels,
     };
 
     const focusKeyModel1 = `${multiModelSession.id}:${mockStages[0].slug}:model-1`;
 
     const storeActions = setupStore({
       activeSessionDetail: multiModelSession,
-      selectedModelIds: multiModelSession.selected_model_ids ?? [],
+      selectedModels: twoSelectedModels,
       focusedStageDocument: {
         [focusKeyModel1]: { modelId: 'model-1', documentKey: 'draft_document_outline' },
       },
@@ -446,13 +458,17 @@ describe('StageTabCard', () => {
   });
 
   it('asserts the new relocated checklist container contract', () => {
+    const twoSelectedModels: SelectedModels[] = [
+      { id: 'model-1', displayName: 'Model 1' },
+      { id: 'model-2', displayName: 'Model 2' },
+    ];
     const multiModelSession: DialecticSession = {
       ...mockSession,
-      selected_model_ids: ['model-1', 'model-2'],
+      selected_models: twoSelectedModels,
     };
     setupStore({
       activeSessionDetail: multiModelSession,
-      selectedModelIds: multiModelSession.selected_model_ids ?? [],
+      selectedModels: twoSelectedModels,
     });
 
     const { container } = renderComponent();

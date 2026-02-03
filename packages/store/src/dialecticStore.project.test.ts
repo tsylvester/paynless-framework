@@ -278,7 +278,7 @@ describe('useDialecticStore', () => {
         it('should set activeSeedPrompt on successful session start', async () => {
             const payload: StartSessionPayload = {
                 projectId: 'proj-1',
-                selectedModelIds: ['model-1'],
+                selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
             };
             const mockAssembledPrompt: AssembledPrompt = {
                 promptContent: 'This is the seed prompt content.',
@@ -295,7 +295,7 @@ describe('useDialecticStore', () => {
                 updated_at: new Date().toISOString(),
                 seedPrompt: mockAssembledPrompt,
                 associated_chat_id: 'chat-1',
-                selected_model_ids: ['model-1'],
+                selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
                 user_input_reference_url: null,
             };
 
@@ -372,17 +372,15 @@ describe('useDialecticStore', () => {
                     active_recipe_instance_id: null,
                     default_system_prompt_id: null,
                 },
-                selectedModelIds: ['old-model-1'],
+                selectedModels: [{ id: 'old-model-1', displayName: 'Old Model 1' }],
             });
 
             const mockResponse: ApiResponse<DialecticProject> = { data: mockProjectDetail, status: 200 };
             mockDialecticApi.getProjectDetails.mockResolvedValue(mockResponse);
 
-            const { fetchDialecticProjectDetails, setActiveDialecticContext, setSelectedModelIds } = useDialecticStore.getState();
+            const { fetchDialecticProjectDetails, setActiveDialecticContext } = useDialecticStore.getState();
             // Spy on the actions that should be called by the enhanced thunk
             const setActiveDialecticContextSpy = vi.spyOn(useDialecticStore.getState(), 'setActiveDialecticContext');
-            const setSelectedModelIdsSpy = vi.spyOn(useDialecticStore.getState(), 'setSelectedModelIds');
-
 
             // Act
             await fetchDialecticProjectDetails(projectId);
@@ -402,17 +400,16 @@ describe('useDialecticStore', () => {
             expect(state.activeContextProjectId).toBe(projectId);
             expect(state.activeContextSessionId).toBeNull();
             expect(state.activeContextStage).toBeNull();
-            expect(state.selectedModelIds).toEqual([]);
+            expect(state.selectedModels).toEqual([]);
 
             // Verify that the specific context-setting actions were called by the thunk (if that's the implementation)
             // This is a more robust way to test if the thunk delegates correctly.
-            // The thunk (Task X.1.1.2) is planned to call setActiveDialecticContext and setSelectedModelIds.
+            // The thunk (Task X.1.1.2) is planned to call setActiveDialecticContext; selectedModels is cleared via set() so we only assert state.selectedModels.
             expect(setActiveDialecticContextSpy).toHaveBeenCalledWith({
                 projectId: projectId,
                 sessionId: null,
                 stage: null,
             });
-            expect(setSelectedModelIdsSpy).toHaveBeenCalledWith([]);
         });
 
         it('should set error state if getProjectDetails API returns an error', async () => {

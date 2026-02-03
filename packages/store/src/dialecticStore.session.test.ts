@@ -17,6 +17,7 @@ import type {
   DialecticProject, 
   AIModelCatalogEntry,
   DialecticSession,
+  SelectedModels,
   StartSessionPayload,
   UpdateSessionModelsPayload,
   DialecticStage,
@@ -73,7 +74,7 @@ describe('useDialecticStore', () => {
     describe('startDialecticSession action', () => {
         const startSessionPayload: StartSessionPayload = { 
             projectId: 'proj-123', 
-            selectedModelIds: ['model-abc'], 
+            selectedModels: [{ id: 'model-abc', displayName: 'Model ABC' }], 
             sessionDescription: 'Test Session' 
         };
         const mockAssembledPrompt: AssembledPrompt = {
@@ -86,7 +87,7 @@ describe('useDialecticStore', () => {
             session_description: startSessionPayload.sessionDescription || null,
             user_input_reference_url: null,
             iteration_count: 1,
-            selected_model_ids: [],
+            selected_models: [],
             status: 'pending_thesis',
             associated_chat_id: 'chat-123',
             current_stage_id: 'some-stage-id',
@@ -304,13 +305,13 @@ describe('useDialecticStore', () => {
     describe('updateSessionModels action', () => {
         const sessionId = 'sess-update-models-123';
         const projectId = 'proj-for-session-update';
-        const initialSelectedModels = ['model-a'];
-        const updatedSelectedModels = ['model-b', 'model-c'];
+        const initialSelectedModels: SelectedModels[] = [{ id: 'model-a', displayName: 'Model A' }];
+        const updatedSelectedModels: SelectedModels[] = [{ id: 'model-b', displayName: 'Model B' }, { id: 'model-c', displayName: 'Model C' }];
 
         const mockInitialSession: DialecticSession = {
             id: sessionId,
             project_id: projectId,
-            selected_model_ids: initialSelectedModels,
+            selected_models: initialSelectedModels,
             session_description: 'Initial session for model update test',
             user_input_reference_url: null,
             iteration_count: 1,
@@ -323,7 +324,7 @@ describe('useDialecticStore', () => {
 
         const mockUpdatedSessionFromApi: DialecticSession = {
             ...mockInitialSession,
-            selected_model_ids: updatedSelectedModels,
+            selected_models: updatedSelectedModels,
             updated_at: new Date(Date.now() + 1000).toISOString(), // Ensure updated_at is different
         };
 
@@ -353,7 +354,7 @@ describe('useDialecticStore', () => {
 
         const payload: UpdateSessionModelsPayload = {
             sessionId: sessionId,
-            selectedModelIds: updatedSelectedModels,
+            selectedModels: updatedSelectedModels,
         };
 
         beforeEach(() => {
@@ -382,7 +383,7 @@ describe('useDialecticStore', () => {
             expect(updatedProjectDetail).not.toBeNull();
             const sessionInProject = updatedProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
             expect(sessionInProject).toBeDefined();
-            expect(sessionInProject?.selected_model_ids).toEqual(updatedSelectedModels);
+            expect(sessionInProject?.selected_models).toEqual(updatedSelectedModels);
             expect(sessionInProject?.updated_at).toEqual(mockUpdatedSessionFromApi.updated_at);
         });
 
@@ -405,7 +406,7 @@ describe('useDialecticStore', () => {
             // Ensure project detail was not inadvertently changed on error
             const projectDetail = state.currentProjectDetail;
             const sessionInProject = projectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
-            expect(sessionInProject?.selected_model_ids).toEqual(initialSelectedModels);
+            expect(sessionInProject?.selected_models).toEqual(initialSelectedModels);
         });
 
         it('should set network error state if API call throws', async () => {
@@ -460,17 +461,21 @@ describe('useDialecticStore', () => {
         });
     });
 
-    describe('setSelectedModelIds action', () => {
+    describe('setSelectedModels action', () => {
         const activeSessionId = 'sess-active-for-set';
         const initialModels = ['model-x'];
         const newModels = ['model-y', 'model-z'];
+        const initialModelsSelected: SelectedModels[] = [{ id: 'model-x', displayName: 'Model X' }];
+        const newModelsSelected: SelectedModels[] = [
+            { id: 'model-y', displayName: 'Model Y' },
+            { id: 'model-z', displayName: 'Model Z' },
+        ];
 
         beforeEach(() => {
-            // Ensure an active session ID is set in the store for the background update to trigger
             useDialecticStore.setState({ activeContextSessionId: activeSessionId });
-            // Mock the updateSessionModels API call for these tests
-            getMockDialecticClient().updateSessionModels.mockResolvedValue({ data: { 
-                id: activeSessionId, selected_model_ids: initialModels,
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ data: {
+                id: activeSessionId,
+                selected_models: initialModelsSelected,
                 project_id: 'project-id',
                 session_description: 'session description',
                 user_input_reference_url: null,
@@ -483,30 +488,48 @@ describe('useDialecticStore', () => {
             }, status: 200 });
         });
 
-        it('should update selectedModelIds in the state', () => {
-            useDialecticStore.setState({ selectedModelIds: initialModels });
-            const { setSelectedModelIds } = useDialecticStore.getState();
-            setSelectedModelIds(newModels);
-            expect(useDialecticStore.getState().selectedModelIds).toEqual(newModels);
+        it('should update selectedModels from updateSessionModels response when API succeeds', async () => {
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({
+                data: {
+                    id: activeSessionId,
+                    selected_models: newModelsSelected,
+                    project_id: 'project-id',
+                    session_description: 'session description',
+                    user_input_reference_url: null,
+                    iteration_count: 1,
+                    associated_chat_id: null,
+                    current_stage_id: 'stage-x',
+                    created_at: '2023-01-01T00:00:00.000Z',
+                    updated_at: '2023-01-01T00:00:00.000Z',
+                    status: 'active',
+                },
+                status: 200,
+            });
+            useDialecticStore.setState({ selectedModels: initialModelsSelected });
+            const { setSelectedModels } = useDialecticStore.getState();
+            setSelectedModels(newModelsSelected);
+            await vi.waitFor(() => {
+                expect(useDialecticStore.getState().selectedModels).toEqual(newModelsSelected);
+            });
         });
 
         it('should call updateSessionModels in the background if activeContextSessionId is set', async () => {
-            const { setSelectedModelIds } = useDialecticStore.getState();
-            setSelectedModelIds(newModels);
+            const { setSelectedModels } = useDialecticStore.getState();
+            setSelectedModels(newModelsSelected);
 
             // Since the API call is in a .then() block, we might need to wait for microtasks
             await vi.waitFor(() => {
                 expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalledWith({
                     sessionId: activeSessionId,
-                    selectedModelIds: newModels,
+                    selectedModels: newModelsSelected,
                 });
             });
         });
 
         it('should not call updateSessionModels if activeContextSessionId is null', async () => {
             useDialecticStore.setState({ activeContextSessionId: null });
-            const { setSelectedModelIds } = useDialecticStore.getState();
-            setSelectedModelIds(newModels);
+            const { setSelectedModels } = useDialecticStore.getState();
+            setSelectedModels(newModelsSelected);
 
             // Wait a brief moment to ensure no async call is made
             await new Promise(resolve => setTimeout(resolve, 0));
@@ -518,13 +541,13 @@ describe('useDialecticStore', () => {
             getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 500 });
             vi.mocked(logger).error.mockClear();
 
-            const { setSelectedModelIds } = useDialecticStore.getState();
-            setSelectedModelIds(newModels);
+            const { setSelectedModels } = useDialecticStore.getState();
+            setSelectedModels(newModelsSelected);
 
             await vi.waitFor(() => {
                 expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
                 expect(vi.mocked(logger).error).toHaveBeenCalledWith(
-                    '[DialecticStore] Post-setSelectedModelIds: Failed to update session models on backend',
+                    '[DialecticStore] Post-setSelectedModels: Failed to update session models on backend',
                     {
                         sessionId: activeSessionId,
                         error: mockApiError,
@@ -536,16 +559,23 @@ describe('useDialecticStore', () => {
 
     describe('setModelMultiplicity action', () => {
         const activeSessionId = 'sess-active-for-multiplicity';
-        const modelToChange = 'model-alpha';
-        const initialOtherModel = 'model-beta';
+        const modelToChangeObj: SelectedModels = { id: 'model-alpha', displayName: 'Model Alpha' };
+        const initialOtherModelObj: SelectedModels = { id: 'model-beta', displayName: 'Model Beta' };
+        const modelGammaObj: SelectedModels = { id: 'model-gamma', displayName: 'Model Gamma' };
+        const selectedModelsThree: SelectedModels[] = [
+            modelToChangeObj,
+            initialOtherModelObj,
+            modelToChangeObj,
+        ];
 
         beforeEach(() => {
             useDialecticStore.setState({
                 activeContextSessionId: activeSessionId,
-                selectedModelIds: [modelToChange, initialOtherModel, modelToChange] // Initial count of modelToChange is 2
+                selectedModels: selectedModelsThree,
             });
-            getMockDialecticClient().updateSessionModels.mockResolvedValue({ data: { 
-                id: activeSessionId, selected_model_ids: [modelToChange, initialOtherModel, modelToChange],
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ data: {
+                id: activeSessionId,
+                selected_models: selectedModelsThree,
                 project_id: 'project-id',
                 session_description: 'session description',
                 user_input_reference_url: null,
@@ -553,43 +583,54 @@ describe('useDialecticStore', () => {
                 associated_chat_id: null,
                 current_stage_id: 'stage-x',
                 created_at: '2023-01-01T00:00:00.000Z',
-                updated_at: '2023-01-01T00:00:00.000Z', 
+                updated_at: '2023-01-01T00:00:00.000Z',
                 status: 'active',
             }, status: 200 });
             vi.mocked(logger).error.mockClear();
         });
 
-        it('should update selectedModelIds with the correct multiplicity', () => {
-            useDialecticStore.setState({ selectedModelIds: [modelToChange, 'model-beta', modelToChange] }); // Initial count of modelToChange is 2
+        it('should call updateSessionModels with correct ids for each multiplicity change', () => {
+            useDialecticStore.setState({
+                selectedModels: selectedModelsThree,
+            });
             const { setModelMultiplicity } = useDialecticStore.getState();
-            
-            setModelMultiplicity(modelToChange, 1); // Set count to 1
-            expect(useDialecticStore.getState().selectedModelIds.filter(id => id === modelToChange).length).toBe(1);
-            expect(useDialecticStore.getState().selectedModelIds).toContain('model-beta');
 
-            setModelMultiplicity(modelToChange, 3); // Set count to 3
-            expect(useDialecticStore.getState().selectedModelIds.filter(id => id === modelToChange).length).toBe(3);
-            expect(useDialecticStore.getState().selectedModelIds).toContain('model-beta');
+            setModelMultiplicity(modelToChangeObj, 1);
+            expect(getMockDialecticClient().updateSessionModels).toHaveBeenNthCalledWith(1, {
+                sessionId: activeSessionId,
+                selectedModels: [initialOtherModelObj, modelToChangeObj],
+            });
 
-            setModelMultiplicity('model-gamma', 2); // Add a new model with count 2
-            expect(useDialecticStore.getState().selectedModelIds.filter(id => id === 'model-gamma').length).toBe(2);
+            setModelMultiplicity(modelToChangeObj, 3);
+            expect(getMockDialecticClient().updateSessionModels).toHaveBeenNthCalledWith(2, {
+                sessionId: activeSessionId,
+                selectedModels: [initialOtherModelObj, modelToChangeObj, modelToChangeObj, modelToChangeObj],
+            });
+
+            setModelMultiplicity(modelGammaObj, 2);
+            expect(getMockDialecticClient().updateSessionModels).toHaveBeenNthCalledWith(3, {
+                sessionId: activeSessionId,
+                selectedModels: [initialOtherModelObj, modelToChangeObj, modelToChangeObj, modelToChangeObj, modelGammaObj, modelGammaObj],
+            });
         });
 
         it('should call updateSessionModels in the background with the new list of IDs', async () => {
-            useDialecticStore.setState({ selectedModelIds: [initialOtherModel] }); // Start with only beta
+            const oneModelSelected: SelectedModels[] = [initialOtherModelObj];
+            useDialecticStore.setState({
+                selectedModels: oneModelSelected,
+            });
             const { setModelMultiplicity } = useDialecticStore.getState();
             const count = 2;
-            setModelMultiplicity(modelToChange, count);
-            const expectedIds = [initialOtherModel, modelToChange, modelToChange];
+            setModelMultiplicity(modelToChangeObj, count);
+            const expectedModels: SelectedModels[] = [initialOtherModelObj, modelToChangeObj, modelToChangeObj];
 
             await vi.waitFor(() => {
                 expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalledWith({
                     sessionId: activeSessionId,
-                    selectedModelIds: expect.arrayContaining(expectedIds.sort()), // Sort for comparison if order doesn't matter
+                    selectedModels: expectedModels,
                 });
-                 const actualArgs = getMockDialecticClient().updateSessionModels.mock.calls[0][0];
-                 // Use spread operator to create a mutable copy before sorting
-                 expect([...actualArgs.selectedModelIds].sort()).toEqual([...expectedIds].sort());
+                const actualArgs = getMockDialecticClient().updateSessionModels.mock.calls[0][0];
+                expect(actualArgs.selectedModels.map((m) => m.id).sort()).toEqual(expectedModels.map((m) => m.id).sort());
             });
         });
 
@@ -599,15 +640,16 @@ describe('useDialecticStore', () => {
             const count = 2;
 
             const { setModelMultiplicity } = useDialecticStore.getState();
-            setModelMultiplicity(modelToChange, count); // modelToChange and count are from describe scope
+            setModelMultiplicity(modelToChangeObj, count);
 
             await vi.waitFor(() => {
                 expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
-                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                expect(vi.mocked(logger).error).toHaveBeenNthCalledWith(
+                    2,
                     '[DialecticStore] Post-setModelMultiplicity: Failed to update session models on backend',
                     {
                         sessionId: activeSessionId,
-                        modelId: modelToChange,
+                        modelId: modelToChangeObj.id,
                         count: count,
                         error: mockApiError,
                     }
@@ -615,11 +657,35 @@ describe('useDialecticStore', () => {
             });
         });
 
-        it('should handle setting multiplicity to 0 (removing the model)', () => {
-            useDialecticStore.setState({ selectedModelIds: [modelToChange, 'model-beta'] });
+        it('should handle setting multiplicity to 0 (removing the model)', async () => {
+            const afterRemoveSelected: SelectedModels[] = [initialOtherModelObj];
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({
+                data: {
+                    id: activeSessionId,
+                    selected_models: afterRemoveSelected,
+                    project_id: 'project-id',
+                    session_description: 'session description',
+                    user_input_reference_url: null,
+                    iteration_count: 1,
+                    associated_chat_id: null,
+                    current_stage_id: 'stage-x',
+                    created_at: '2023-01-01T00:00:00.000Z',
+                    updated_at: '2023-01-01T00:00:00.000Z',
+                    status: 'active',
+                },
+                status: 200,
+            });
+            const twoModelsSelected: SelectedModels[] = [modelToChangeObj, initialOtherModelObj];
+            useDialecticStore.setState({
+                selectedModels: twoModelsSelected,
+            });
             const { setModelMultiplicity } = useDialecticStore.getState();
-            setModelMultiplicity(modelToChange, 0);
-            expect(useDialecticStore.getState().selectedModelIds).toEqual(['model-beta']);
+            setModelMultiplicity(modelToChangeObj, 0);
+            await vi.waitFor(() => {
+                const selected = useDialecticStore.getState().selectedModels;
+                expect(selected).toBeDefined();
+                expect(selected!.map((m) => m.id)).toEqual([initialOtherModelObj.id]);
+            });
         });
     });
 
@@ -669,7 +735,7 @@ describe('useDialecticStore', () => {
             dialectic_session_models: [],
             dialectic_contributions: [],
             feedback: [],
-            selected_model_ids: [],
+            selected_models: [],
         };
 
         const mockStageDetails: DialecticStage = {
@@ -716,6 +782,37 @@ describe('useDialecticStore', () => {
             expect(state.activeContextSessionId).toEqual(mockSessionId);
             expect(state.activeContextStage).toEqual(mockStageDetails);
             expect(state.activeSeedPrompt).toEqual(mockSeedPrompt);
+            expect(state.selectedModels).toEqual(mockSessionData.selected_models);
+        });
+
+        it('should persist selectedModels from session response (single origin)', async () => {
+            const selectedModelsFromResponse: SelectedModels[] = [
+                { id: 'model-1', displayName: 'Model One' },
+                { id: 'model-2', displayName: 'Model Two' },
+            ];
+            const sessionWithSelectedModels: DialecticSession = {
+                ...mockSessionData,
+                selected_models: selectedModelsFromResponse,
+            };
+            const apiResponseWithSelectedModels: ApiResponse<{
+                session: DialecticSession;
+                currentStageDetails: DialecticStage | null;
+                activeSeedPrompt: AssembledPrompt | null;
+            }> = {
+                data: {
+                    session: sessionWithSelectedModels,
+                    currentStageDetails: mockStageDetails,
+                    activeSeedPrompt: mockSeedPrompt,
+                },
+                status: 200,
+            };
+            getMockDialecticClient().getSessionDetails.mockResolvedValue(apiResponseWithSelectedModels);
+            useDialecticStore.setState({ ...initialDialecticStateValues });
+
+            await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.selectedModels).toEqual(selectedModelsFromResponse);
         });
         
         it('should update an existing session in currentProjectDetail.dialectic_sessions', async () => {

@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect } from "react";
 import { InternalDropdownButton } from "./InternalDropdownButton";
-import type { AiProvider } from "@paynless/types";
+import type { AiProvider, SelectedModels } from "@paynless/types";
 import {
 	DropdownMenu,
 	DropdownMenuTrigger,
@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, X, Cpu } from "lucide-react";
 import { useDialecticStore, useAiStore } from "@paynless/store";
-import { selectSelectedModelIds } from "@paynless/store";
+import { selectSelectedModels } from "@paynless/store";
 import { MultiplicitySelector } from "./MultiplicitySelector";
 import { cn } from "@/lib/utils";
 
@@ -22,12 +22,14 @@ interface AIModelSelectorProps {
 
 const SelectedModelsDisplayContent: React.FC<{
 	availableProviders: AiProvider[] | null | undefined;
-	currentSelectedModelIds: string[] | null;
+	selectedModels: SelectedModels[];
+	currentSelectedModelIds: string[];
 	modelMultiplicities: Record<string, number>;
 	onRemoveModel: (modelId: string) => void;
 	compact?: boolean;
 }> = ({
 	availableProviders,
+	selectedModels,
 	currentSelectedModelIds,
 	modelMultiplicities,
 	onRemoveModel,
@@ -42,7 +44,7 @@ const SelectedModelsDisplayContent: React.FC<{
 		);
 	}
 
-	if (!currentSelectedModelIds || currentSelectedModelIds.length === 0) {
+	if (currentSelectedModelIds.length === 0) {
 		return (
 			<div className="flex items-center gap-2 text-sm text-muted-foreground py-2 px-3 border-2 border-dashed border-muted-foreground/30 rounded-lg">
 				<Cpu className="w-4 h-4" />
@@ -51,7 +53,6 @@ const SelectedModelsDisplayContent: React.FC<{
 		);
 	}
 
-	// Get unique model IDs and their counts
 	const uniqueModels = Array.from(new Set(currentSelectedModelIds));
 
 	if (compact && uniqueModels.length > 2) {
@@ -71,9 +72,14 @@ const SelectedModelsDisplayContent: React.FC<{
 	return (
 		<div className="flex flex-wrap items-center gap-2">
 			{uniqueModels.map((modelId) => {
+				const model = selectedModels.find((m) => m.id === modelId);
+				if (!model) return null;
 				const provider = availableProviders.find((p) => p.id === modelId);
-				const displayName = provider ? provider.name : "Unknown Model";
-				const count = modelMultiplicities[modelId] || 0;
+				if (provider === undefined) {
+					throw new Error(`AIModelSelector: no provider in catalog for model id ${modelId}`);
+				}
+				const displayLabel: string = provider.name;
+				const count = modelMultiplicities[modelId];
 
 				return (
 					<Badge
@@ -83,11 +89,11 @@ const SelectedModelsDisplayContent: React.FC<{
 					>
 						<span
 							className="truncate font-medium text-foreground"
-							title={displayName}
+							title={displayLabel}
 						>
-							{displayName}
+							{displayLabel}
 						</span>
-						{count > 1 && (
+						{count !== undefined && count > 1 && (
 							<span className="bg-foreground text-background px-1.5 py-0.5 rounded-full text-xs font-bold leading-none">
 								{count}
 							</span>
@@ -95,7 +101,7 @@ const SelectedModelsDisplayContent: React.FC<{
 						<span
 							role="button"
 							tabIndex={0}
-							aria-label={`Remove ${displayName}`}
+							aria-label={`Remove ${displayLabel}`}
 							className="h-4 w-4 p-0 hover:bg-destructive hover:text-destructive-foreground rounded-full text-muted-foreground hover:text-destructive-foreground cursor-pointer flex items-center justify-center"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -129,22 +135,31 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 			aiError: state.aiError,
 		}));
 
-	const { currentSelectedModelIds, setModelMultiplicity } = useDialecticStore(
+	const { selectedModels, setModelMultiplicity } = useDialecticStore(
 		(state) => ({
-			currentSelectedModelIds: selectSelectedModelIds(state),
+			selectedModels: selectSelectedModels(state),
 			setModelMultiplicity: state.setModelMultiplicity,
 		}),
 	);
 
+	const currentSelectedModelIds = useMemo(
+		() => selectedModels.map((m) => m.id),
+		[selectedModels],
+	);
+
 	const modelMultiplicities = useMemo(() => {
 		const counts: Record<string, number> = {};
-		if (currentSelectedModelIds) {
-			for (const id of currentSelectedModelIds) {
-				counts[id] = (counts[id] || 0) + 1;
+		if (availableProviders) {
+			for (const p of availableProviders) {
+				counts[p.id] = 0;
 			}
 		}
+		for (const m of selectedModels) {
+			if (counts[m.id] === undefined) counts[m.id] = 0;
+			counts[m.id] += 1;
+		}
 		return counts;
-	}, [currentSelectedModelIds]);
+	}, [selectedModels, availableProviders]);
 
 	useEffect(() => {
 		if (
@@ -157,11 +172,18 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 	}, [loadAiConfig, isConfigLoading, availableProviders, aiError]);
 
 	const handleMultiplicityChange = (modelId: string, newCount: number) => {
-		setModelMultiplicity(modelId, newCount);
+		const provider = availableProviders?.find((p) => p.id === modelId);
+		if (provider) {
+			setModelMultiplicity({ id: provider.id, displayName: provider.name }, newCount);
+		} else {
+			const model = selectedModels.find((m) => m.id === modelId);
+			if (model) setModelMultiplicity(model, newCount);
+		}
 	};
 
 	const handleRemoveModel = (modelId: string) => {
-		setModelMultiplicity(modelId, 0);
+		const model = selectedModels.find((m) => m.id === modelId);
+		if (model) setModelMultiplicity(model, 0);
 	};
 
 	const hasContentProviders =
@@ -176,7 +198,7 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 	} else if (aiError) {
 		dropdownContent = (
 			<DropdownMenuLabel className="text-destructive">
-				Error: {aiError || "Failed to load models"}
+				Error: {aiError}
 			</DropdownMenuLabel>
 		);
 	} else if (hasContentProviders) {
@@ -191,8 +213,8 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 					<ScrollArea className="h-64">
 						<div className="p-2 space-y-1">
 							{availableProviders.map((provider) => {
-								const count = modelMultiplicities[provider.id] || 0;
-								const isSelected = count > 0;
+								const count = modelMultiplicities[provider.id];
+								const isSelected = count !== undefined && count > 0;
 
 								return (
 									<div
@@ -305,6 +327,7 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 						<div className="flex-grow mr-2 min-w-0">
 							<SelectedModelsDisplayContent
 								availableProviders={availableProviders}
+								selectedModels={selectedModels}
 								currentSelectedModelIds={currentSelectedModelIds}
 								modelMultiplicities={modelMultiplicities}
 								onRemoveModel={handleRemoveModel}

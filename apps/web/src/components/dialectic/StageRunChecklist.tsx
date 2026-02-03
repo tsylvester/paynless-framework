@@ -14,7 +14,7 @@ import {
   selectStageDocumentChecklist,
   selectValidMarkdownDocumentKeys,
   selectSortedStages,
-  selectSelectedModelIds,
+  selectSelectedModels,
 } from '@paynless/store';
 
 import { isDocumentHighlighted } from '@paynless/utils';
@@ -24,7 +24,6 @@ import {
   Accordion,
   AccordionContent,
   AccordionItem,
-  AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { ChevronDown, ChevronRight, XCircle } from 'lucide-react';
@@ -124,7 +123,7 @@ function getMarkdownDocumentDescriptors(
   return descriptors;
 }
 
-type PerModelLabel = { modelId: string; statusLabel: string };
+type PerModelLabel = { modelId: string; displayName: string; statusLabel: string };
 
 type StageDocumentRow = {
   entry: StageDocumentEntry;
@@ -155,9 +154,10 @@ function computeStageRunChecklistData(
   const activeStageSlug = state.activeStageSlug;
   const activeSessionId = state.activeContextSessionId;
   const iterationNumber = state.activeSessionDetail?.iteration_count;
-  const selectedModelIds = selectSelectedModelIds(state);
+  const selectedModels = selectSelectedModels(state);
   const effectiveModelIds: string[] =
-    selectedModelIds.length > 0 ? selectedModelIds : modelIdProp ? [modelIdProp] : [];
+    selectedModels.length > 0 ? selectedModels.map((m) => m.id) : modelIdProp ? [modelIdProp] : [];
+  const displayNameByModelId = new Map(selectedModels.map((m) => [m.id, m.displayName]));
 
   const activeStageIndex =
     activeStageSlug != null
@@ -216,7 +216,8 @@ function computeStageRunChecklistData(
           } else {
             statusLabel = 'Not started';
           }
-          perModelLabels.push({ modelId: mid, statusLabel });
+          const displayName = displayNameByModelId.get(mid) ?? mid;
+          perModelLabels.push({ modelId: mid, displayName, statusLabel });
         }
       }
 
@@ -380,34 +381,17 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
         data-testid="stage-run-checklist-accordion"
       >
         {checklistData.stageDataList.map((stageData) => {
-          const stageLabel =
-            stageData.stage.display_name ?? stageData.stage.slug;
           return (
             <AccordionItem
               key={stageData.stage.slug}
               value={stageData.stage.slug}
               className="border-none"
             >
-              <AccordionTrigger
-                data-testid={`stage-run-checklist-accordion-trigger-${stageData.stage.slug}`}
-                className="justify-between rounded-none px-0 py-1 text-sm font-normal text-muted-foreground hover:no-underline"
-              >
-                <span className="text-left">{stageLabel}</span>
-                {!stageData.isReady ? (
-                  <Badge variant="secondary" className="shrink-0 ml-2">
-                    Stage not ready
-                  </Badge>
-                ) : null}
-              </AccordionTrigger>
               <AccordionContent
                 data-testid={`stage-run-checklist-accordion-content-${stageData.stage.slug}`}
                 className="flex w-full flex-col gap-0 overflow-hidden px-0"
               >
-                {!stageData.isReady ? (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">
-                    Stage not ready
-                  </p>
-                ) : stageData.documentRows.length > 0 ? (
+                {stageData.documentRows.length > 0 ? (
                   <>
                     <p className="px-0 pb-2 text-sm text-muted-foreground">
                       {stageData.documentRows.filter((r) => r.consolidatedLabel === 'Completed').length} / {stageData.documentRows.length} Documents
@@ -513,9 +497,9 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
                               data-testid="stage-run-checklist-row-per-model-status"
                               className="flex flex-col gap-0.5 pl-6 text-xs text-muted-foreground"
                             >
-                              {perModelLabels.map(({ modelId: mid, statusLabel }) => (
+                              {perModelLabels.map(({ modelId: mid, displayName, statusLabel }) => (
                                 <span key={mid}>
-                                  {mid}: {statusLabel}
+                                  {displayName}: {statusLabel}
                                 </span>
                               ))}
                             </div>

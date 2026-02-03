@@ -15,7 +15,7 @@ import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import {
     initializeMockDialecticState,
     selectValidMarkdownDocumentKeys,
-    selectSelectedModelIds,
+    selectSelectedModels,
     setDialecticStateValues,
 } from '../../mocks/dialecticStore.mock';
 
@@ -72,7 +72,7 @@ const baseSession: DialecticSession = {
     session_description: 'Test session',
     iteration_count: iterationNumber,
     current_stage_id: 'stage-synthesis',
-    selected_model_ids: [],
+    selected_models: [],
     status: 'active',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -820,10 +820,8 @@ describe('StageRunChecklist', () => {
 
         expect(checklistCard).toContainElement(accordion);
 
-        const accordionTrigger = within(accordion).getByTestId('stage-run-checklist-accordion-trigger-synthesis');
         const accordionContent = within(accordion).getByTestId('stage-run-checklist-accordion-content-synthesis');
 
-        expect(accordion).toContainElement(accordionTrigger);
         expect(accordion).toContainElement(accordionContent);
         expect(accordion.closest('[data-testid="stage-run-checklist-card"]')).toBe(checklistCard);
     });
@@ -911,6 +909,51 @@ describe('StageRunChecklist', () => {
         expect(screen.getByTestId('document-synthesis_document_rendered')).toBeInTheDocument();
         expect(screen.queryByTestId('document-synthesis_plan_header')).toBeNull();
         expect(screen.getByText('0 / 1 Documents')).toBeInTheDocument();
+    });
+
+    it('displays displayName for each model in the per-model section, not the raw id', () => {
+        const modelIdB = 'model-b';
+        selectSelectedModels.mockReturnValue([
+            { id: modelIdA, displayName: 'Model A' },
+            { id: modelIdB, displayName: 'Model B' },
+        ]);
+        const recipe = createRecipe([buildRenderStep()]);
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+        const documents: StageRunDocuments = {
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
+                status: 'completed',
+                job_id: 'job-1',
+                latestRenderedResourceId: 'res-1',
+                modelId: modelIdA,
+                versionHash: 'h1',
+                lastRenderedResourceId: 'res-1',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+            },
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdB)]: {
+                status: 'continuing',
+                job_id: 'job-2',
+                latestRenderedResourceId: 'res-2',
+                modelId: modelIdB,
+                versionHash: 'h2',
+                lastRenderedResourceId: 'res-2',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+            },
+        };
+        setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents));
+
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+        const documentRow = screen.getByTestId('document-synthesis_document_rendered');
+        fireEvent.click(documentRow);
+
+        const perModelSection = within(documentRow).queryByTestId('stage-run-checklist-row-per-model-status');
+        expect(perModelSection).toBeInTheDocument();
+        if (perModelSection) {
+            expect(within(perModelSection).getByText(/Model A/)).toBeInTheDocument();
+            expect(within(perModelSection).getByText(/Model B/)).toBeInTheDocument();
+        }
     });
 
     it('uses selectValidMarkdownDocumentKeys as the source of truth and does not duplicate filtering logic', () => {
@@ -1329,13 +1372,9 @@ describe('StageRunChecklist', () => {
             render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
         });
 
-            expect(screen.getByText('Thesis')).toBeInTheDocument();
-            expect(screen.getByText('Antithesis')).toBeInTheDocument();
-            expect(screen.getByText('Synthesis')).toBeInTheDocument();
-            const stageLabels = screen.getAllByText(/^(Thesis|Antithesis|Synthesis)$/);
-            expect(stageLabels[0]).toHaveTextContent('Thesis');
-            expect(stageLabels[1]).toHaveTextContent('Antithesis');
-            expect(stageLabels[2]).toHaveTextContent('Synthesis');
+            expect(screen.getByTestId('stage-run-checklist-accordion-content-thesis')).toBeInTheDocument();
+            expect(screen.getByTestId('stage-run-checklist-accordion-content-antithesis')).toBeInTheDocument();
+            expect(screen.getByTestId('stage-run-checklist-accordion-content-synthesis')).toBeInTheDocument();
         });
 
         it('when a stage is focused, the stage displays all documents the stage will produce (from recipe)', () => {
@@ -1351,7 +1390,11 @@ describe('StageRunChecklist', () => {
         });
 
         it('document row shows consolidated status when a document is unfocused (e.g. "2/3 complete", "Completed", "Not started")', () => {
-            selectSelectedModelIds.mockReturnValue(['model-a', 'model-b', 'model-c']);
+            selectSelectedModels.mockReturnValue([
+                { id: 'model-a', displayName: 'Model A' },
+                { id: 'model-b', displayName: 'Model B' },
+                { id: 'model-c', displayName: 'Model C' },
+            ]);
             const recipe = createRecipe([buildRenderStep()]);
             const stepStatuses: StepStatuses = { render_document: 'in_progress' };
             const documents: StageRunDocuments = {
@@ -1378,7 +1421,11 @@ describe('StageRunChecklist', () => {
         it('one document key produced by 3 models with 2 completed shows "2/3 complete" and expand shows per-model status', () => {
             const modelIdB = 'model-b';
             const modelIdC = 'model-c';
-            selectSelectedModelIds.mockReturnValue([modelIdA, modelIdB, modelIdC]);
+            selectSelectedModels.mockReturnValue([
+                { id: modelIdA, displayName: 'Model A' },
+                { id: modelIdB, displayName: 'Model B' },
+                { id: modelIdC, displayName: 'Model C' },
+            ]);
             const recipe = createRecipe([buildRenderStep()]);
             selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
             const documentKey = 'synthesis_document_rendered';
@@ -1424,7 +1471,10 @@ describe('StageRunChecklist', () => {
 
         it('when user focuses a document row, row expands to show per-model status for that document', () => {
             const modelIdB = 'model-b';
-            selectSelectedModelIds.mockReturnValue([modelIdA, modelIdB]);
+            selectSelectedModels.mockReturnValue([
+                { id: modelIdA, displayName: 'Model A' },
+                { id: modelIdB, displayName: 'Model B' },
+            ]);
             const recipe = createRecipe([buildRenderStep()]);
             selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
             const documentKey = 'synthesis_document_rendered';
@@ -1470,7 +1520,10 @@ describe('StageRunChecklist', () => {
 
         it('clicking the document row arrow toggles per-model list without changing focus (onDocumentSelect not called)', () => {
             const modelIdB = 'model-b';
-            selectSelectedModelIds.mockReturnValue([modelIdA, modelIdB]);
+            selectSelectedModels.mockReturnValue([
+                { id: modelIdA, displayName: 'Model A' },
+                { id: modelIdB, displayName: 'Model B' },
+            ]);
             const recipe = createRecipe([buildRenderStep()]);
             selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
             const documentKey = 'synthesis_document_rendered';
@@ -1537,7 +1590,7 @@ describe('StageRunChecklist', () => {
             render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
         });
 
-            expect(screen.getByText(/Stage not ready|Not started/i)).toBeInTheDocument();
+            expect(screen.getByText(/Stage not ready|Not started|No documents generated yet/i)).toBeInTheDocument();
         });
 
         it('distinguishes "Stage not ready" from "Document not started"', () => {
@@ -1560,7 +1613,11 @@ describe('StageRunChecklist', () => {
         });
 
         it('clicking a document focuses by documentKey so viewer can show all model versions; onDocumentSelect called once per modelId', () => {
-            selectSelectedModelIds.mockReturnValue([modelIdA, 'model-b', 'model-c']);
+            selectSelectedModels.mockReturnValue([
+                { id: modelIdA, displayName: 'Model A' },
+                { id: 'model-b', displayName: 'Model B' },
+                { id: 'model-c', displayName: 'Model C' },
+            ]);
             const recipe = createRecipe([buildRenderStep()]);
             selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
             const documents: StageRunDocuments = {
@@ -1609,9 +1666,9 @@ describe('StageRunChecklist', () => {
             render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
         });
 
-            expect(screen.getByText('Thesis')).toBeInTheDocument();
-            expect(screen.getByText('Antithesis')).toBeInTheDocument();
-            expect(screen.getByText('Synthesis')).toBeInTheDocument();
+            expect(screen.getByTestId('stage-run-checklist-accordion-content-thesis')).toBeInTheDocument();
+            expect(screen.getByTestId('stage-run-checklist-accordion-content-antithesis')).toBeInTheDocument();
+            expect(screen.getByTestId('stage-run-checklist-accordion-content-synthesis')).toBeInTheDocument();
         });
 
         it('does filter display of any steps that do not produce a document that will be rendered for the user to view (headers, intermediate products)', () => {

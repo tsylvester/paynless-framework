@@ -9,7 +9,7 @@ import {
 	selectSortedStages,
 	selectStageProgressSummary,
 	selectStageDocumentChecklist,
-	selectStageRunProgress,
+	selectSelectedModels,
 } from "@paynless/store";
 import {
 	ApiError,
@@ -163,41 +163,12 @@ export const SessionContributionsDisplayCard: React.FC = () => {
     }
 
     const progressKey = `${session.id}:${activeStage.slug}:${session.iteration_count}`;
-    const progress = selectStageRunProgress(
-      state,
-      session.id,
-      activeStage.slug,
-      session.iteration_count,
+
+    const selectedModels = selectSelectedModels(state);
+    const uniqueModels = Array.from(
+      new Set(selectedModels.map((m) => m.id)),
     );
-
-    let resolvedModelIds =
-      state.selectedModelIds && state.selectedModelIds.length > 0
-        ? state.selectedModelIds
-        : session.selected_model_ids ?? [];
-
-    if ((!resolvedModelIds || resolvedModelIds.length === 0) && progress?.documents) {
-      resolvedModelIds = Object.values(progress.documents)
-        .map((entry) => entry?.modelId)
-        .filter((modelId): modelId is string => Boolean(modelId));
-    }
-
-    const uniqueModels = Array.from(new Set(resolvedModelIds ?? []));
     const map = new Map<string, StageDocumentChecklistEntry[]>();
-
-    if (uniqueModels.length === 0 && progress?.documents) {
-      const fallbackModels = Array.from(
-        new Set(
-          Object.values(progress.documents)
-            .map((entry) => entry?.modelId)
-            .filter((modelId): modelId is string => Boolean(modelId)),
-        ),
-      );
-
-      fallbackModels.forEach((modelId) => {
-        map.set(modelId, selectStageDocumentChecklist(state, progressKey, modelId));
-      });
-      return map;
-    }
 
     uniqueModels.forEach((modelId) => {
       map.set(modelId, selectStageDocumentChecklist(state, progressKey, modelId));

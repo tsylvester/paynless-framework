@@ -22,6 +22,7 @@ import type {
     StageProgressDetail,
     UnifiedProjectStatus,
     DialecticProcessTemplate,
+    SelectedModels,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import { createSelector } from 'reselect';
@@ -131,8 +132,8 @@ export const selectGenerateContributionsError = (state: DialecticStateValues): A
 export const selectCurrentProjectId = (state: DialecticStateValues): string | undefined => 
   state.currentProjectDetail?.id;
 
-// Selector for selected model IDs for the new session modal
-export const selectSelectedModelIds = (state: DialecticStateValues): string[] => state.selectedModelIds || [];
+// Selector for selected models (id + displayName) for the new session modal
+export const selectSelectedModels = (state: DialecticStateValues): SelectedModels[] => state.selectedModels || [];
 
 // Input selector for all contributions from the current project's sessions
 export const selectAllContributionsFromCurrentProject = (state: DialecticStateValues): DialecticContribution[] => {
@@ -810,7 +811,9 @@ export const selectUnifiedProjectProgress = (
     const totalStages = stages.length;
     const session = selectSessionById(state, sessionId);
     const iterationNumber = session?.iteration_count ?? 0;
-    const totalModels = state.selectedModelIds?.length ?? 0;
+    const selectedModels = state.selectedModels || [];
+    const totalModels = selectedModels.length;
+    const selectedModelIdSet = new Set(selectedModels.map((m) => m.id));
 
     const currentStageId = session?.current_stage_id ?? null;
     const currentStage: DialecticStage | null = currentStageId
@@ -881,7 +884,7 @@ export const selectUnifiedProjectProgress = (
                     const matchesOutput = outputDocKeys.length === 0 || outputDocKeys.some((k: string) => documentKey === k);
                     if (!matchesOutput) continue;
                     if (!desc.modelId) throw new Error(`document ${compositeKey} has no modelId`);
-                    if (state.selectedModelIds.indexOf(desc.modelId) === -1) continue;
+                    if (!selectedModelIdSet.has(desc.modelId)) continue;
                     if (desc.status === 'completed') completed += 1;
                     else if (desc.status === 'failed') hasFailed = true;
                     else hasInProgress = true;

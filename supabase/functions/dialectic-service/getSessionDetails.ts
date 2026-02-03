@@ -4,6 +4,7 @@ import type {
   DialecticSession,
   GetSessionDetailsResponse,
   DialecticStage,
+  SelectedModels,
 } from './dialectic.interface.ts';
 import type { AssembledPrompt } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import type { ServiceError } from '../_shared/types.ts';
@@ -138,14 +139,21 @@ export async function getSessionDetails(
     
     // Extract session and stage details
     const { dialectic_stages, ...sessionFields } = session;
-    
+
+    const rawIds: string[] | null = sessionFields.selected_model_ids ?? null;
+    const ids: string[] = Array.isArray(rawIds) ? rawIds : [];
+    const selectedModels: SelectedModels[] = ids.map((id: string) => ({
+      id,
+      displayName: id,
+    }));
+
     const typedSession: DialecticSession = {
         id: sessionFields.id,
         project_id: sessionFields.project_id,
         session_description: sessionFields.session_description,
         user_input_reference_url: sessionFields.user_input_reference_url,
         iteration_count: sessionFields.iteration_count,
-        selected_model_ids: sessionFields.selected_model_ids,
+        selected_models: selectedModels,
         status: sessionFields.status,
         associated_chat_id: sessionFields.associated_chat_id,
         current_stage_id: sessionFields.current_stage_id,
