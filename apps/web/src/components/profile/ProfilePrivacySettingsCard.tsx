@@ -1,135 +1,159 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { useAuthStore } from '@paynless/store';
-import type { ProfilePrivacySetting } from '@paynless/types'; // UserProfile not directly needed here now
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { useAuthStore } from "@paynless/store";
+import type { ProfilePrivacySetting } from "@paynless/types";
+import { Loader2 } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
+import { toast } from "sonner";
+import {
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { AlertCircle } from 'lucide-react'; // For error icon
-// Button might not be needed if Select triggers save on change directly
-// import { Button } from "@/components/ui/button"; 
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 
 export const ProfilePrivacySettingsCard: React.FC = () => {
-  const profile = useAuthStore((state) => state.profile);
-  const updateProfile = useAuthStore((state) => state.updateProfile);
-  // For more granular control, you might have specific isLoading/error states in authStore
-  // e.g., isProfileUpdating, profileUpdateError
-  const isLoading = useAuthStore((state) => state.isLoading);
-  const error = useAuthStore((state) => state.error);
+	const profile = useAuthStore((state) => state.profile);
+	const updateProfile = useAuthStore((state) => state.updateProfile);
+	const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const currentSetting = profile?.profile_privacy_setting;
+	const currentSetting = profile?.profile_privacy_setting;
 
-  const handleSettingChange = (newSetting: ProfilePrivacySetting) => {
-    if (newSetting && newSetting !== currentSetting) {
-      console.log('[ProfilePrivacySettingsCard] Attempting to update privacy setting to:', newSetting);
-      updateProfile({ profile_privacy_setting: newSetting })
-        .then(() => {
-          console.log('[ProfilePrivacySettingsCard] Privacy setting update successful.');
-        })
-        .catch((err) => {
-          console.error('[ProfilePrivacySettingsCard] Privacy setting update failed:', err);
-          // Error is already set in authStore by updateProfile, so UI will react
-        });
-    }
-  };
+	const handleSettingChange = async (newSetting: ProfilePrivacySetting) => {
+		if (newSetting && newSetting !== currentSetting) {
+			setIsSubmitting(true);
+			const result = await updateProfile({
+				profile_privacy_setting: newSetting,
+			});
+			if (result) {
+				toast.success("Privacy setting updated successfully!");
+			} else {
+				toast.error("Failed to update privacy setting. Please try again.");
+			}
+			setIsSubmitting(false);
+		}
+	};
 
-  if (!profile && !isLoading && !error) { // Initial loading state before profile is fetched
-    return (
-      <Card className="w-full max-w-md mx-auto">
-        <CardHeader className="text-center">
-          <CardTitle className="text-textPrimary">Profile Privacy</CardTitle>
-          <CardDescription>Adjust who can see your profile information.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-6 text-center">
-            <p className="text-muted-foreground">Loading profile settings...</p>
-        </CardContent>
-      </Card>
-    );
-  }
-  // If profile is null but it IS loading or IS an error, the main card will handle it.
+	if (!profile) {
+		return (
+			<Card className="w-full">
+				<CardHeader>
+					<CardTitle className="text-xl font-bold text-textPrimary">
+						Profile Privacy
+					</CardTitle>
+					<CardDescription>
+						Adjust who can see your profile information.
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<p className="text-muted-foreground">Loading profile settings...</p>
+				</CardContent>
+			</Card>
+		);
+	}
 
-  const privacyOptions: { value: ProfilePrivacySetting; label: string; description: string }[] = [
-    {
-      value: 'private',
-      label: 'Private',
-      description: 'Only you and members of organizations you share can see your profile details.'
-    },
-    {
-      value: 'public',
-      label: 'Public',
-      description: 'Anyone can see your basic profile details (name, avatar).'
-    },
-    // {
-    //   value: 'members_only',
-    //   label: 'Members Only',
-    //   description: 'Only members of organizations you belong to can see your profile details.'
-    // },
-  ];
+	const privacyOptions: {
+		value: ProfilePrivacySetting;
+		label: string;
+		description: string;
+	}[] = [
+		{
+			value: "private",
+			label: "Private",
+			description:
+				"Only you and members of organizations you share can see your profile details.",
+		},
+		{
+			value: "public",
+			label: "Public",
+			description: "Anyone can see your basic profile details (name, avatar).",
+		},
+	];
 
-  // Find the current option to display its description in the trigger
-  const selectedOptionDetails = privacyOptions.find(opt => opt.value === (currentSetting || 'private'));
+	const selectedOptionDetails = privacyOptions.find(
+		(opt) => opt.value === (currentSetting || "private"),
+	);
 
-  return (
-    <Card className="w-full max-w-lg mx-auto">
-      <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-bold text-textPrimary">Profile Privacy</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6 p-6">
-        <div className="space-y-2">
-          <Label htmlFor="profile-privacy-select" className="font-semibold text-textSecondary">Privacy Setting</Label>
-          <Select 
-            value={currentSetting || 'private'} 
-            onValueChange={(value) => handleSettingChange(value as ProfilePrivacySetting)}
-            disabled={isLoading || !profile}
-            name="profile-privacy-select"
-          >
-            <SelectTrigger className="w-full text-left" data-testid="privacy-select-trigger" id="profile-privacy-select">
-              {/* Display current selection's label only in the trigger */}
-              {selectedOptionDetails ? (
-                <span className="font-medium">{selectedOptionDetails.label}</span>
-              ) : (
-                <SelectValue placeholder="Select your profile privacy" />
-              )}
-            </SelectTrigger>
-            <SelectContent className="bg-popover/80 backdrop-blur-md max-h-96" data-testid="select-content-wrapper">
-              {privacyOptions.map(option => (
-                <SelectItem 
-                  key={option.value} 
-                  value={option.value} 
-                  className="cursor-pointer" 
-                  data-testid={`privacy-option-${option.value}`}
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium">{option.label}</span>
-                    <span className="text-xs text-muted-foreground">{option.description}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {/* Display selected option's description below the Select component */}
-          {selectedOptionDetails && (
-            <p className="text-sm text-muted-foreground pt-2" data-testid="selected-privacy-description">
-              {selectedOptionDetails.description}
-            </p>
-          )}
-          <p className="text-sm text-muted-foreground pt-1">
-            This setting controls who can view your profile details like name and activity.
-          </p>
-        </div>
-      </CardContent>
-      {(isLoading || error) && (
-        <CardFooter className={`border-t pt-4 mt-6 ${error ? 'bg-destructive/10 border-destructive/30' : ''}`}>
-          {isLoading && !error && <p data-testid="loading-indicator" className="text-sm text-muted-foreground animate-pulse w-full text-center">Saving settings...</p>}
-          {error && (
-            <div data-testid="error-message" className="w-full flex items-center gap-2 text-destructive p-3 rounded-md bg-destructive/10">
-              <AlertCircle size={18} />
-              <span>Error updating settings: {error.message}</span>
-            </div>
-          )}
-        </CardFooter>
-      )}
-    </Card>
-  );
-}; 
+	return (
+		<Card className="w-full">
+			<CardHeader>
+				<CardTitle className="text-xl font-bold text-textPrimary">
+					Profile Privacy
+				</CardTitle>
+			</CardHeader>
+			<CardContent className="space-y-4">
+				<div className="space-y-2">
+					<Label
+						htmlFor="profile-privacy-select"
+						className="font-semibold text-textSecondary"
+					>
+						Privacy Setting
+					</Label>
+					<Select
+						value={currentSetting || "private"}
+						onValueChange={(value) =>
+							handleSettingChange(value as ProfilePrivacySetting)
+						}
+						disabled={isSubmitting || !profile}
+						name="profile-privacy-select"
+					>
+						<SelectTrigger
+							className="w-full text-left"
+							data-testid="privacy-select-trigger"
+							id="profile-privacy-select"
+						>
+							{isSubmitting && (
+								<Loader2 className="h-4 w-4 animate-spin mr-2" />
+							)}
+							{selectedOptionDetails ? (
+								<span className="font-medium">
+									{selectedOptionDetails.label}
+								</span>
+							) : (
+								<SelectValue placeholder="Select your profile privacy" />
+							)}
+						</SelectTrigger>
+						<SelectContent
+							className="bg-popover/80 backdrop-blur-md max-h-96"
+							data-testid="select-content-wrapper"
+						>
+							{privacyOptions.map((option) => (
+								<SelectItem
+									key={option.value}
+									value={option.value}
+									className="cursor-pointer"
+									data-testid={`privacy-option-${option.value}`}
+								>
+									<div className="flex flex-col">
+										<span className="font-medium">{option.label}</span>
+										<span className="text-xs text-muted-foreground">
+											{option.description}
+										</span>
+									</div>
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					{selectedOptionDetails && (
+						<p
+							className="text-sm text-muted-foreground"
+							data-testid="selected-privacy-description"
+						>
+							{selectedOptionDetails.description}
+						</p>
+					)}
+				</div>
+			</CardContent>
+		</Card>
+	);
+};
