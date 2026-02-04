@@ -84,6 +84,7 @@ export interface AuthStore {
   logout: () => Promise<void>
   updateProfile: (profileData: UserProfileUpdate) => Promise<UserProfile | null> // Uses UserProfile alias
   updateEmail: (email: string) => Promise<boolean>
+  updatePassword: (newPassword: string) => Promise<boolean>
   uploadAvatar: (file: File) => Promise<string | null>
   fetchProfile: () => Promise<UserProfile | null>
   checkEmailExists: (email: string) => Promise<boolean>
