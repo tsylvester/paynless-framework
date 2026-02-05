@@ -1,3 +1,4 @@
+
 {
   "name": "paynless-framework-monorepo",
   "version": "0.1.0",
@@ -16,7 +17,8 @@
     "lint": "pnpm -r run lint --if-present",
     "test": "pnpm -r test",
     "test:integration": "vitest run --config ./vitest.config.ts",
-    "sync:types": "supabase gen types typescript --local > supabase/functions/types_db.ts && node supabase/scripts/sync-supabase-shared-types.mjs"
+    "sync:types": "supabase gen types typescript --local > supabase/functions/types_db.ts && node supabase/scripts/sync-supabase-shared-types.mjs",
+    "dev:load-prompts": "cd supabase/functions && deno --allow-all --env=../.env ../scripts/seed_prompt_templates.ts"
   },
   "keywords": [
     "supabase",
