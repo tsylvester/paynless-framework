@@ -10,6 +10,7 @@ import {
   afterEach 
 } from "https://deno.land/std@0.208.0/testing/bdd.ts";
 import { User } from 'npm:@supabase/supabase-js';
+import { SelectedModels } from './dialectic.interface.ts';
 import { getSessionDetails } from './getSessionDetails.ts';
 import { logger } from '../_shared/logger.ts';
 import { 
@@ -38,12 +39,14 @@ describe("getSessionDetails Unit Tests", () => {
   const mockProjectId = "unit-test-project-id";
   const mockStageId = "unit-test-stage-id";
 
+  /** Session row as returned by PostgREST: dialectic_sessions has selected_model_ids (string[] | null), not selected_models. */
   const mockDbSession = {
     id: mockSessionId,
     project_id: mockProjectId,
     current_stage_id: mockStageId,
     iteration_count: 1,
     dialectic_stages: { id: mockStageId, slug: 'test-stage' },
+    selected_model_ids: null as string[] | null,
   };
 
   const mockDbProject = {
@@ -198,6 +201,7 @@ describe("getSessionDetails Unit Tests", () => {
     assertExists(result.data, "Response data should exist on success");
     assertEquals(result.status, 200);
     assertEquals(result.data.session.id, mockSessionId);
+    assertEquals(result.data.session.selected_models, [], "selected_models should be empty when session has no selected models");
     assertExists(result.data.activeSeedPrompt, "activeSeedPrompt should be present in the response when skipSeedPrompt is false");
     assertEquals(result.data.activeSeedPrompt?.promptContent, mockPromptContent);
   });
@@ -230,6 +234,7 @@ describe("getSessionDetails Unit Tests", () => {
     assertExists(result.data, "Response data should exist on success");
     assertEquals(result.status, 200);
     assertEquals(result.data.session.id, mockSessionId);
+    assertEquals(result.data.session.selected_models, [], "selected_models should be present and empty when session has no selected models");
     assertEquals(result.data.activeSeedPrompt, null, "activeSeedPrompt should be null when skipSeedPrompt is true");
   });
 
@@ -670,5 +675,125 @@ describe("getSessionDetails Unit Tests", () => {
     assertEquals(result.status, 200);
     assertExists(result.data.activeSeedPrompt, "activeSeedPrompt should be present when skipSeedPrompt is not provided (defaults to false)");
     assertEquals(result.data.activeSeedPrompt?.promptContent, mockPromptContent);
+  });
+
+  it("should build selected_models from session.selected_model_ids (DB column) with id and displayName", async () => {
+    const selectedModelIds: string[] = ["model-a", "model-b"];
+    /** Target state: displayName is human-readable name from catalog (ai_providers.name), not id. */
+    const expectedSelectedModels: SelectedModels[] = [
+      { id: "model-a", displayName: "Model A Display Name" },
+      { id: "model-b", displayName: "Model B Display Name" },
+    ];
+    const sessionWithSelectedModelIds = {
+      ...mockDbSession,
+      selected_model_ids: selectedModelIds,
+    };
+
+    /** ai_providers table: select('id, name') returns rows with id and name (types_db ai_providers.Row). */
+    const aiProvidersSelectResult: { id: string; name: string }[] = [
+      { id: "model-a", name: "Model A Display Name" },
+      { id: "model-b", name: "Model B Display Name" },
+    ];
+
+    mockClientSetup = createMockSupabaseClient(mockOwnerUser.id, {
+      genericMockResults: {
+        "dialectic_sessions": { select: { data: [sessionWithSelectedModelIds] } },
+        "dialectic_projects": { select: { data: [mockDbProject] } },
+        "dialectic_project_resources": {
+          select: () =>
+            Promise.resolve({
+              data: null,
+              error: new Error("seed_prompt query should not be called when skipSeedPrompt is true"),
+              count: 0,
+              status: 400,
+              statusText: "Not called",
+            }),
+        },
+        "ai_providers": { select: { data: aiProvidersSelectResult } },
+      },
+    });
+
+    const result = await getSessionDetails(
+      { sessionId: mockSessionId, skipSeedPrompt: true },
+      mockClientSetup.client as any,
+      mockOwnerUser
+    );
+
+    assertExists(result.data, "Response data should exist on success");
+    assertEquals(result.status, 200);
+    assertEquals(result.data.session.id, mockSessionId);
+    assertEquals(
+      result.data.session.selected_models,
+      expectedSelectedModels,
+      "selected_models must have id and displayName from ai_providers.name, not id duplicated as displayName"
+    );
+  });
+
+  it("should return selected_models empty when session.selected_model_ids is null", async () => {
+    const sessionWithNullIds = {
+      ...mockDbSession,
+      selected_model_ids: null,
+    };
+
+    mockClientSetup = createMockSupabaseClient(mockOwnerUser.id, {
+      genericMockResults: {
+        "dialectic_sessions": { select: { data: [sessionWithNullIds] } },
+        "dialectic_projects": { select: { data: [mockDbProject] } },
+        "dialectic_project_resources": {
+          select: () =>
+            Promise.resolve({
+              data: null,
+              error: new Error("seed_prompt query should not be called when skipSeedPrompt is true"),
+              count: 0,
+              status: 400,
+              statusText: "Not called",
+            }),
+        },
+      },
+    });
+
+    const result = await getSessionDetails(
+      { sessionId: mockSessionId, skipSeedPrompt: true },
+      mockClientSetup.client as any,
+      mockOwnerUser
+    );
+
+    assertExists(result.data, "Response data should exist on success");
+    assertEquals(result.status, 200);
+    assertEquals(result.data.session.selected_models.length, 0, "selected_models should be empty when selected_model_ids is null");
+  });
+
+  it("should return selected_models empty when session.selected_model_ids is empty array", async () => {
+    const sessionWithEmptyIds = {
+      ...mockDbSession,
+      selected_model_ids: [] as string[],
+    };
+
+    mockClientSetup = createMockSupabaseClient(mockOwnerUser.id, {
+      genericMockResults: {
+        "dialectic_sessions": { select: { data: [sessionWithEmptyIds] } },
+        "dialectic_projects": { select: { data: [mockDbProject] } },
+        "dialectic_project_resources": {
+          select: () =>
+            Promise.resolve({
+              data: null,
+              error: new Error("seed_prompt query should not be called when skipSeedPrompt is true"),
+              count: 0,
+              status: 400,
+              statusText: "Not called",
+            }),
+        },
+      },
+    });
+
+    const result = await getSessionDetails(
+      { sessionId: mockSessionId, skipSeedPrompt: true },
+      mockClientSetup.client as any,
+      mockOwnerUser
+    );
+
+    assertExists(result.data, "Response data should exist on success");
+    assertEquals(result.status, 200);
+    assertEquals(result.data.session.selected_models.length, 0, "selected_models should be empty when selected_model_ids is []");
   });
 }); 

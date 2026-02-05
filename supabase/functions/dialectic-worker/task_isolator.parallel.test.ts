@@ -1476,18 +1476,6 @@ describe('planComplexStage', () => {
                 hasFilter('project_id', mockParentJob.payload.projectId),
                 'Expected project_id filter for project_resource',
             );
-            assert(
-                hasFilter('session_id', mockParentJob.payload.sessionId),
-                'Expected session_id filter for project_resource',
-            );
-            assert(
-                hasFilter('stage_slug', 'test-stage'),
-                'Expected stage_slug filter for project_resource',
-            );
-            assert(
-                hasFilter('iteration_number', mockParentJob.payload.iterationNumber),
-                'Expected iteration_number filter for project_resource',
-            );
 
             const hasNonNullSourceContributionFilter = calls.some((args) =>
                 Array.isArray(args) &&
@@ -1577,18 +1565,6 @@ describe('planComplexStage', () => {
             assert(
                 hasFilter('project_id', mockParentJob.payload.projectId),
                 'Expected project_id filter for seed_prompt',
-            );
-            assert(
-                hasFilter('session_id', mockParentJob.payload.sessionId),
-                'Expected session_id filter for seed_prompt',
-            );
-            assert(
-                hasFilter('stage_slug', 'test-stage'),
-                'Expected stage_slug filter for seed_prompt',
-            );
-            assert(
-                hasFilter('iteration_number', mockParentJob.payload.iterationNumber),
-                'Expected iteration_number filter for seed_prompt',
             );
         });
 

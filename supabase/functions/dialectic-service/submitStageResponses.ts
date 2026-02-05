@@ -8,6 +8,8 @@ import {
   type SubmitStageResponsesResponse,
   type DialecticStage,
   type DialecticProject,
+  type DialecticSession,
+  type SelectedModels,
   SeedPromptRecipeStep,
 } from './dialectic.interface.ts';
 import { PromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.ts";
@@ -119,16 +121,67 @@ export async function submitStageResponses(
   const project: DialecticProject & { dialectic_domains: { id: string; name: string; description: string | null } | null } = sessionData.project;
   const currentStage: DialecticStage = sessionData.stage;
 
-  if (currentStage.slug !== payload.stageSlug) {
-    logger.error(
-      `[submitStageResponses] Mismatch: Payload stage slug (${payload.stageSlug}) vs session's current stage slug (${currentStage.slug}).`,
+  function sessionRowToDialecticSession(
+    row: Omit<DialecticSession, 'selected_models'> & { selected_model_ids: string[] },
+  ): DialecticSession {
+    const selected_models: SelectedModels[] = row.selected_model_ids.map((id) => ({
+      id,
+      displayName: id,
+    }));
+    return {
+      id: row.id,
+      project_id: row.project_id,
+      session_description: row.session_description,
+      user_input_reference_url: row.user_input_reference_url,
+      iteration_count: row.iteration_count,
+      status: row.status,
+      associated_chat_id: row.associated_chat_id,
+      current_stage_id: row.current_stage_id,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      selected_models,
+    };
+  }
+
+  function sessionRowHasSelectedModelIds(
+    row: { selected_model_ids: string[] | null },
+  ): row is { selected_model_ids: string[] } {
+    return row.selected_model_ids !== null && row.selected_model_ids !== undefined;
+  }
+
+  // 2. Validate user's permissions (project owner can submit)
+  if (userId && project.user_id !== userId) {
+    logger.warn(
+      `[submitStageResponses] Unauthorized: User ${userId} attempted to submit responses for project ${project.id} owned by ${project.user_id}.`,
     );
     return {
-      error: {
-        message: 'Stage slug mismatch with current session stage.',
-        status: 400,
+      error: { message: 'Unauthorized to submit to this project.', status: 403 },
+      status: 403,
+    };
+  }
+
+  if (currentStage.slug !== payload.stageSlug) {
+    logger.info(
+      `[submitStageResponses] Session already past target stage (payload: ${payload.stageSlug}, current: ${currentStage.slug}). Returning success without advancing.`,
+    );
+    if (!sessionRowHasSelectedModelIds(sessionData)) {
+      logger.error('[submitStageResponses] Session has no selected_model_ids.', {
+        sessionId: payload.sessionId,
+      });
+      return {
+        error: {
+          message: 'Session configuration error: selected_model_ids is required.',
+          status: 500,
+        },
+        status: 500,
+      };
+    }
+    return {
+      data: {
+        message: 'Stage responses recorded; session already at a later stage. No advancement.',
+        updatedSession: sessionRowToDialecticSession(sessionData),
       },
-      status: 400,
+      status: 200,
     };
   }
 
@@ -140,19 +193,6 @@ export async function submitStageResponses(
   }
 
   const iterationNumber = sessionData.iteration_count;
-
-  // 2. Validate user's permissions (if applicable, e.g., only project owner can submit)
-  // For now, assuming if the user can fetch the session, they can submit.
-  // Add more robust checks if needed.
-  if (userId && project.user_id !== userId) {
-    logger.warn(
-      `[submitStageResponses] Unauthorized: User ${userId} attempted to submit responses for project ${project.id} owned by ${project.user_id}.`,
-    );
-    return {
-      error: { message: 'Unauthorized to submit to this project.', status: 403 },
-      status: 403,
-    };
-  }
 
   // Critical check: Ensure project has a process_template_id
   // Try to get it from the nested structure (new query) or directly (base table column)
@@ -222,13 +262,47 @@ export async function submitStageResponses(
         "[submitStageResponses] Error updating session status for terminal stage:",
         { error: terminalUpdateError },
       );
-      // Non-critical, proceed with response
+      return {
+        error: {
+          message: 'Failed to update session status for terminal stage.',
+          status: 500,
+          details: terminalUpdateError.message,
+        },
+        status: 500,
+      };
     }
-
+    if (
+      updatedTerminalSession === null ||
+      updatedTerminalSession === undefined
+    ) {
+      logger.error(
+        '[submitStageResponses] No session row returned after terminal update.',
+        { sessionId: payload.sessionId },
+      );
+      return {
+        error: {
+          message: 'Failed to retrieve updated session.',
+          status: 500,
+        },
+        status: 500,
+      };
+    }
+    if (!sessionRowHasSelectedModelIds(updatedTerminalSession)) {
+      logger.error('[submitStageResponses] Session has no selected_model_ids.', {
+        sessionId: payload.sessionId,
+      });
+      return {
+        error: {
+          message: 'Session configuration error: selected_model_ids is required.',
+          status: 500,
+        },
+        status: 500,
+      };
+    }
     return {
       data: {
         message: 'Stage responses submitted. Current stage is terminal.',
-        updatedSession: updatedTerminalSession || sessionData, // return updated or original if update failed
+        updatedSession: sessionRowToDialecticSession(updatedTerminalSession),
       },
       status: 200,
     };
@@ -507,14 +581,38 @@ export async function submitStageResponses(
     };
   }
 
+  if (updatedSession === null || updatedSession === undefined) {
+    logger.error(
+      '[submitStageResponses] No session row returned after stage update.',
+      { sessionId: payload.sessionId },
+    );
+    return {
+      error: {
+        message: 'Failed to retrieve updated session.',
+        status: 500,
+      },
+      status: 500,
+    };
+  }
+  if (!sessionRowHasSelectedModelIds(updatedSession)) {
+    logger.error('[submitStageResponses] Session has no selected_model_ids.', {
+      sessionId: payload.sessionId,
+    });
+    return {
+      error: {
+        message: 'Session configuration error: selected_model_ids is required.',
+        status: 500,
+      },
+      status: 500,
+    };
+  }
   logger.info(
     `[submitStageResponses] Function completed successfully for session ${payload.sessionId}. Next stage: ${nextStageFull.display_name}`,
   );
-
   return {
     data: {
       message: 'Stage responses submitted successfully. Next stage pending.',
-      updatedSession: updatedSession || sessionData, 
+      updatedSession: sessionRowToDialecticSession(updatedSession),
     },
     status: 200,
   };

@@ -1,8 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import type {
 	DialecticStage,
 	FocusedStageDocumentState,
 	SetFocusedStageDocumentPayload,
+	UnifiedProjectStatus,
 } from "@paynless/types";
 import { cn } from "@/lib/utils";
 import {
@@ -12,7 +13,8 @@ import {
 	selectCurrentProjectDetail,
 	selectSortedStages,
 	selectActiveStageSlug,
-	selectStageProgressSummary
+	selectUnifiedProjectProgress,
+	selectSelectedModels,
 } from "@paynless/store";
 import { StageRunChecklist } from "./StageRunChecklist";
 import { CheckCircle2 } from "lucide-react";
@@ -21,6 +23,8 @@ interface StageProgressSnapshotSummary {
 	totalDocuments: number;
 	completedDocuments: number;
 	isComplete: boolean;
+	stageStatus: UnifiedProjectStatus;
+	stagePercentage: number;
 }
 
 interface StageCardProps {
@@ -115,10 +119,14 @@ const StageCard: React.FC<StageCardProps> = ({
 								index + 1
 							)}
 						</div>
-						<span className={cn(
-							"font-medium",
-							isActive ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
-						)}>
+						<span
+							className={cn(
+								"font-medium",
+								isActive
+									? "text-foreground"
+									: "text-muted-foreground group-hover:text-foreground",
+							)}
+						>
 							{displayName}
 						</span>
 					</div>
@@ -150,7 +158,7 @@ export const StageTabCard: React.FC = () => {
 		activeStageSlug,
 		setActiveStage,
 		setFocusedStageDocument,
-		selectedModelIds,
+		selectedModels,
 		focusedStageDocumentMap,
 		activeSessionDetail,
 		activeSessionId,
@@ -161,31 +169,24 @@ export const StageTabCard: React.FC = () => {
 		const activeStageSlugValue = selectActiveStageSlug(state);
 		const sessionId = selectActiveContextSessionId(state);
 		const activeSession = sessionId ? selectSessionById(state, sessionId) : null;
-		const iterationNumber = activeSession?.iteration_count;
-		const summaries: Record<string, StageProgressSnapshotSummary> = {};
+		const unified = sessionId ? selectUnifiedProjectProgress(state, sessionId) : null;
 		const focusedStageDocumentEntries: Record<string, FocusedStageDocumentState | null> =
 			state.focusedStageDocument ?? {};
 
+		const summaries: Record<string, StageProgressSnapshotSummary> = {};
 		for (const stage of sortedStages) {
-			if (sessionId && typeof iterationNumber === "number") {
-				const summary = selectStageProgressSummary(
-					state,
-					sessionId,
-					stage.slug,
-					iterationNumber,
-				);
-				summaries[stage.slug] = {
-					totalDocuments: summary?.totalDocuments ?? 0,
-					completedDocuments: summary?.completedDocuments ?? 0,
-					isComplete: summary?.isComplete ?? false,
-				};
-			} else {
-				summaries[stage.slug] = {
-					totalDocuments: 0,
-					completedDocuments: 0,
-					isComplete: false,
-				};
-			}
+			const detail = unified?.stageDetails?.find((d) => d.stageSlug === stage.slug) ?? null;
+			const totalDocuments = detail ? (detail.totalSteps > 0 ? detail.totalSteps : 1) : 0;
+			const completedDocuments = detail?.completedSteps ?? 0;
+			const stageStatus = detail?.stageStatus ?? "not_started";
+			const stagePercentage = detail?.stagePercentage ?? 0;
+			summaries[stage.slug] = {
+				totalDocuments,
+				completedDocuments,
+				isComplete: stageStatus === "completed",
+				stageStatus,
+				stagePercentage,
+			};
 		}
 
 		return {
@@ -193,7 +194,7 @@ export const StageTabCard: React.FC = () => {
 			activeStageSlug: activeStageSlugValue,
 			setActiveStage: state.setActiveStage,
 			setFocusedStageDocument: state.setFocusedStageDocument,
-			selectedModelIds: state.selectedModelIds ?? [],
+			selectedModels: selectSelectedModels(state),
 			focusedStageDocumentMap: focusedStageDocumentEntries,
 			activeSessionDetail: activeSession,
 			activeSessionId: sessionId,
@@ -202,8 +203,10 @@ export const StageTabCard: React.FC = () => {
 		};
 	});
 
+	const hasInitializedStage = useRef(false);
+
 	useEffect(() => {
-		if (!activeStageSlug && stages.length > 0) {
+		if (!hasInitializedStage.current && !activeStageSlug && stages.length > 0) {
 			const currentStageFromSession = activeSessionDetail?.current_stage_id
 				? stages.find((s) => s.id === activeSessionDetail.current_stage_id)
 				: undefined;
@@ -213,8 +216,9 @@ export const StageTabCard: React.FC = () => {
 			} else {
 				setActiveStage(stages[0].slug);
 			}
+			hasInitializedStage.current = true;
 		}
-	}, [stages, activeSessionDetail, activeStageSlug, setActiveStage]);
+	}, [stages, activeStageSlug, setActiveStage]);
 
 	if (stages.length === 0) {
 		return (
@@ -232,8 +236,7 @@ export const StageTabCard: React.FC = () => {
 	const canRenderChecklists = Boolean(
 		activeStage &&
 		activeSessionId &&
-		typeof iterationNumber === "number" &&
-		selectedModelIds.length > 0,
+		typeof iterationNumber === "number",
 	);
 
 	const handleStageSelect = (slug: string) => {
@@ -244,19 +247,21 @@ export const StageTabCard: React.FC = () => {
 		setFocusedStageDocument(payload);
 	};
 
-	const renderChecklistForStage = (isStageActive: boolean) => {
+	const renderChecklistForStage = (isStageActive: boolean): React.ReactNode => {
 		if (!isStageActive || !canRenderChecklists) {
 			return undefined;
 		}
 
-		return selectedModelIds.map((modelId) => (
+		const modelId: string | null =
+			selectedModels.length > 0 ? selectedModels[0].id : null;
+		return (
 			<StageRunChecklist
-				key={modelId}
+				key="single"
 				modelId={modelId}
 				focusedStageDocumentMap={focusedStageDocumentMap}
 				onDocumentSelect={handleDocumentSelect}
 			/>
-		));
+		);
 	};
 
 	return (
@@ -278,6 +283,8 @@ export const StageTabCard: React.FC = () => {
 									totalDocuments: 0,
 									completedDocuments: 0,
 									isComplete: false,
+									stageStatus: "not_started",
+									stagePercentage: 0,
 								}
 							}
 							checklist={renderChecklistForStage(isActiveStage)}
@@ -285,12 +292,6 @@ export const StageTabCard: React.FC = () => {
 					);
 				})}
 			</div>
-
-			{!canRenderChecklists && (
-				<div className="rounded-lg border border-dashed border-muted p-4 text-sm text-muted-foreground">
-					Select at least one model to view the checklist.
-				</div>
-			)}
 		</div>
 	);
 };

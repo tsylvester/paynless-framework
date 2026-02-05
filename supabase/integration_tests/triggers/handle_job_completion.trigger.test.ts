@@ -403,7 +403,7 @@ describe("`handle_job_completion` Trigger Integration Tests", () => {
 
     // Step 66.b: RED tests for session status advancement on stage completion
     describe("Step 66.b: Session Status Advancement on Stage Completion", () => {
-        it("66.b.i: should advance session status to pending_{next_stage} when all root PLAN jobs complete", async () => {
+        it("66.b.i: should set session status to thesis_completed when all root PLAN jobs complete for thesis", async () => {
             // Get existing stages from database
             const thesisStageId = await getStageBySlug('thesis');
             
@@ -450,13 +450,12 @@ describe("`handle_job_completion` Trigger Integration Tests", () => {
             // Wait for trigger to process
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            // Query dialectic_sessions and assert status = 'pending_antithesis'
-            // RED: This test must initially FAIL because Part 3 doesn't exist
+            // Query dialectic_sessions and assert status = 'thesis_completed' (trigger does not advance stage)
             const sessionStatus = await getSessionStatus(testSessionId);
             assertEquals(
                 sessionStatus,
-                'pending_antithesis',
-                'Session status should be advanced to pending_antithesis when all root PLAN jobs complete',
+                'thesis_completed',
+                'Session status should be set to thesis_completed when all root PLAN jobs complete',
             );
 
             // Cleanup
@@ -520,13 +519,12 @@ describe("`handle_job_completion` Trigger Integration Tests", () => {
             // Wait for trigger to process
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            // Assert session status is now 'pending_{next_stage}' or 'iteration_complete_pending_review'
-            // RED: This test must initially FAIL
+            // Assert session status is now synthesis_completed (trigger does not advance stage)
             sessionStatus = await getSessionStatus(testSessionId);
             assertEquals(
                 sessionStatus,
-                'pending_parenthesis',
-                'Session status should advance to pending_parenthesis when all PLAN jobs complete',
+                'synthesis_completed',
+                'Session status should be set to synthesis_completed when all PLAN jobs complete',
             );
 
             // Cleanup
@@ -632,7 +630,7 @@ describe("`handle_job_completion` Trigger Integration Tests", () => {
             await adminClient.from('dialectic_sessions').delete().eq('id', testSessionId);
         });
 
-        it("66.b.v: should set iteration_complete_pending_review for terminal stages", async () => {
+        it("66.b.v: should set paralysis_completed for terminal stages", async () => {
             // Get existing terminal stage (paralysis)
             const paralysisStageId = await getStageBySlug('paralysis');
             
@@ -680,13 +678,12 @@ describe("`handle_job_completion` Trigger Integration Tests", () => {
             // Wait for trigger to process
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            // Assert session status is 'iteration_complete_pending_review' (no next stage exists)
-            // RED: This test must initially FAIL
+            // Assert session status is paralysis_completed (trigger sets {stage}_completed for all stages)
             const sessionStatus = await getSessionStatus(testSessionId);
             assertEquals(
                 sessionStatus,
-                'iteration_complete_pending_review',
-                'Session status should be set to iteration_complete_pending_review for terminal stages',
+                'paralysis_completed',
+                'Session status should be set to paralysis_completed when all root PLAN jobs complete for terminal stage',
             );
 
             // Cleanup
@@ -743,13 +740,12 @@ describe("`handle_job_completion` Trigger Integration Tests", () => {
             // Wait for trigger to process
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            // Assert session status advances anyway (RENDER jobs never block completion)
-            // RED: This test must initially FAIL
+            // Assert session status is thesis_completed (RENDER jobs never block completion)
             const sessionStatus = await getSessionStatus(testSessionId);
             assertEquals(
                 sessionStatus,
-                'pending_antithesis',
-                'Session status should advance even when RENDER jobs are stuck in pending',
+                'thesis_completed',
+                'Session status should be thesis_completed even when RENDER jobs are stuck in pending',
             );
 
             // Cleanup
@@ -811,13 +807,12 @@ describe("`handle_job_completion` Trigger Integration Tests", () => {
             // Wait for trigger to process
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            // Assert session status advances (waiting jobs excluded from incomplete count)
-            // RED: This test must initially FAIL
+            // Assert session status is thesis_completed (waiting jobs excluded from incomplete count)
             const sessionStatus = await getSessionStatus(testSessionId);
             assertEquals(
                 sessionStatus,
-                'pending_antithesis',
-                'Session status should advance even when jobs are in waiting_for_prerequisite status',
+                'thesis_completed',
+                'Session status should be thesis_completed even when jobs are in waiting_for_prerequisite status',
             );
 
             // Cleanup

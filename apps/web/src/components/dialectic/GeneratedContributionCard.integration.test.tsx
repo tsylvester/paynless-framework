@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   StageRenderedDocumentDescriptor,
   SaveContributionEditPayload,
+  DialecticContribution,
 } from '@paynless/types';
 
 import { GeneratedContributionCard } from './GeneratedContributionCard';
@@ -89,6 +90,39 @@ const buildStageDocumentDescriptor = (
   ...overrides,
 });
 
+const buildDialecticContribution = (
+  overrides: Partial<DialecticContribution> = {},
+): DialecticContribution => ({
+  id: 'contrib-1',
+  session_id: sessionId,
+  user_id: null,
+  stage: stageSlug,
+  iteration_number: iterationNumber,
+  model_id: modelId,
+  model_name: 'Test Model',
+  prompt_template_id_used: null,
+  seed_prompt_url: null,
+  edit_version: 0,
+  is_latest_edit: true,
+  original_model_contribution_id: null,
+  raw_response_storage_path: null,
+  target_contribution_id: null,
+  tokens_used_input: null,
+  tokens_used_output: null,
+  processing_time_ms: null,
+  error: null,
+  citations: null,
+  created_at: '2024-01-01T00:00:00.000Z',
+  updated_at: '2024-01-01T00:00:00.000Z',
+  contribution_type: null,
+  file_name: null,
+  storage_bucket: null,
+  storage_path: null,
+  size_bytes: null,
+  mime_type: null,
+  ...overrides,
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   initializeMockDialecticState();
@@ -116,13 +150,19 @@ describe('GeneratedContributionCard Integration Tests', () => {
           session_description: 'Test Session',
           user_input_reference_url: null,
           iteration_count: iterationNumber,
-          selected_model_ids: [modelId],
+          selected_models: [{ id: modelId, displayName: 'Test Model' }],
           status: 'active',
           associated_chat_id: null,
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
-          dialectic_contributions: [],
+          dialectic_contributions: [
+            buildDialecticContribution({
+              id: sourceContributionId,
+              model_id: modelId,
+              model_name: 'Test Model',
+            }),
+          ],
         },
         focusedStageDocument: {
           [`${sessionId}:${stageSlug}:${modelId}`]: {
@@ -153,6 +193,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-1',
             sourceContributionId: sourceContributionId,
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
           },
         },
         recipesByStageSlug: {
@@ -231,7 +273,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
       expect(contentTextarea).toHaveValue(editedContent);
 
       // Verify the save edit button is enabled
-      const saveEditButton = screen.getByRole('button', { name: /save edit/i });
+      const saveEditButton = screen.getByRole('button', { name: /save changes/i });
       await waitFor(() => {
         expect(saveEditButton).not.toBeDisabled();
       });
@@ -279,13 +321,19 @@ describe('GeneratedContributionCard Integration Tests', () => {
           session_description: 'Test Session',
           user_input_reference_url: null,
           iteration_count: iterationNumber,
-          selected_model_ids: [modelId],
+          selected_models: [{ id: modelId, displayName: 'Test Model' }],
           status: 'active',
           associated_chat_id: null,
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
-          dialectic_contributions: [],
+          dialectic_contributions: [
+            buildDialecticContribution({
+              id: 'contrib-loading-1',
+              model_id: modelId,
+              model_name: 'Test Model',
+            }),
+          ],
         },
         focusedStageDocument: {
           [`${sessionId}:${stageSlug}:${modelId}`]: {
@@ -301,7 +349,21 @@ describe('GeneratedContributionCard Integration Tests', () => {
             },
           },
         },
-        stageDocumentContent: {},
+        stageDocumentContent: {
+          [compositeKeyString]: {
+            baselineMarkdown: '',
+            currentDraftMarkdown: '',
+            isDirty: false,
+            isLoading: false,
+            error: null,
+            lastBaselineVersion: null,
+            pendingDiff: null,
+            lastAppliedVersionHash: null,
+            sourceContributionId: 'contrib-loading-1',
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
+          },
+        },
         recipesByStageSlug: {
           [stageSlug]: {
             stageSlug,
@@ -399,13 +461,19 @@ describe('GeneratedContributionCard Integration Tests', () => {
           session_description: 'Test Session',
           user_input_reference_url: null,
           iteration_count: iterationNumber,
-          selected_model_ids: [modelId],
+          selected_models: [{ id: modelId, displayName: 'Test Model' }],
           status: 'active',
           associated_chat_id: null,
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
-          dialectic_contributions: [],
+          dialectic_contributions: [
+            buildDialecticContribution({
+              id: 'contrib-loaded-1',
+              model_id: modelId,
+              model_name: 'Test Model',
+            }),
+          ],
         },
         focusedStageDocument: {
           [`${sessionId}:${stageSlug}:${modelId}`]: {
@@ -435,7 +503,9 @@ describe('GeneratedContributionCard Integration Tests', () => {
             },
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-1',
-            sourceContributionId: null,
+            sourceContributionId: 'contrib-loaded-1',
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
           },
         },
         recipesByStageSlug: {
@@ -510,7 +580,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
       });
     });
 
-    it('4.e.iii: should show loading state when selectStageDocumentResource returns isLoading: true', async () => {
+    it('4.e.iii: should disable content input when selectStageDocumentResource returns isLoading: true', async () => {
       const documentDescriptor = buildStageDocumentDescriptor({
         latestRenderedResourceId: 'resource-123',
       });
@@ -525,13 +595,19 @@ describe('GeneratedContributionCard Integration Tests', () => {
           session_description: 'Test Session',
           user_input_reference_url: null,
           iteration_count: iterationNumber,
-          selected_model_ids: [modelId],
+          selected_models: [{ id: modelId, displayName: 'Test Model' }],
           status: 'active',
           associated_chat_id: null,
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
-          dialectic_contributions: [],
+          dialectic_contributions: [
+            buildDialecticContribution({
+              id: 'contrib-loading-2',
+              model_id: modelId,
+              model_name: 'Test Model',
+            }),
+          ],
         },
         focusedStageDocument: {
           [`${sessionId}:${stageSlug}:${modelId}`]: {
@@ -558,6 +634,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
             pendingDiff: null,
             lastAppliedVersionHash: null,
             sourceContributionId: null,
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
           },
         },
         recipesByStageSlug: {
@@ -625,11 +703,12 @@ describe('GeneratedContributionCard Integration Tests', () => {
       // Render component (test subject)
       render(<GeneratedContributionCard modelId={modelId} />);
 
-      // Verify component shows loading state in rendered output
+      // Verify content input is disabled while loading
       await waitFor(() => {
-        const loader = document.querySelector('.animate-spin');
-        expect(loader).toBeInTheDocument();
-        expect(loader).toHaveClass('h-4', 'w-4');
+        const contentTextarea = screen.getByTestId(
+          `stage-document-content-${modelId}-${documentKey}`,
+        );
+        expect(contentTextarea).toBeDisabled();
       });
     });
 
@@ -649,13 +728,19 @@ describe('GeneratedContributionCard Integration Tests', () => {
           session_description: 'Test Session',
           user_input_reference_url: null,
           iteration_count: iterationNumber,
-          selected_model_ids: [modelId],
+          selected_models: [{ id: modelId, displayName: 'Test Model' }],
           status: 'active',
           associated_chat_id: null,
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
-          dialectic_contributions: [],
+          dialectic_contributions: [
+            buildDialecticContribution({
+              id: 'contrib-error-1',
+              model_id: modelId,
+              model_name: 'Test Model',
+            }),
+          ],
         },
         focusedStageDocument: {
           [`${sessionId}:${stageSlug}:${modelId}`]: {
@@ -681,7 +766,9 @@ describe('GeneratedContributionCard Integration Tests', () => {
             lastBaselineVersion: null,
             pendingDiff: null,
             lastAppliedVersionHash: null,
-            sourceContributionId: null,
+            sourceContributionId: 'contrib-error-1',
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
           },
         },
         recipesByStageSlug: {

@@ -2,7 +2,7 @@
 import { assertEquals, assertExists, assertObjectMatch } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub } from "jsr:@std/testing@0.225.1/mock";
 import { startSession } from "./startSession.ts";
-import type { StartSessionPayload, StartSessionSuccessResponse, DialecticProjectResource, StartSessionDeps } from "./dialectic.interface.ts";
+import type { StartSessionPayload, StartSessionSuccessResponse, DialecticProjectResource, StartSessionDeps, SelectedModels } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
@@ -132,6 +132,8 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
 
     assertExists(result.data, `Session start failed: ${result.error?.message}`);
     assertEquals(result.error, undefined, "Error should be undefined on happy path");
+    const expectedSelectedModels: SelectedModels[] = payload.selectedModelIds.map((id) => ({ id, displayName: id }));
+    assertEquals(result.data.selected_models, expectedSelectedModels, "Response should include selected_models derived from payload.selectedModelIds.");
     assertExists(result.data.seedPrompt, "The seedPrompt should be part of the successful response.");
     assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt.");
 
@@ -282,6 +284,8 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
 
     assertExists(result.data, `Session start failed: ${result.error?.message}`);
     assertEquals(result.error, undefined, "Error should be undefined on happy path");
+    const expectedSelectedModels: SelectedModels[] = payload.selectedModelIds.map((id) => ({ id, displayName: id }));
+    assertEquals(result.data.selected_models, expectedSelectedModels, "Response should include selected_models derived from payload.selectedModelIds.");
 
     const expectedResponse: Partial<StartSessionSuccessResponse> = {
         id: mockNewSessionId,
@@ -430,7 +434,7 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
             },
             dialectic_sessions: {
                 insert: async () => ({
-                    data: [{ id: mockNewSessionId, project_id: mockProjectId, session_description: payload.sessionDescription }],
+                    data: [{ id: mockNewSessionId, project_id: mockProjectId, session_description: payload.sessionDescription, selected_model_ids: payload.selectedModelIds }],
                     error: null, status: 201, statusText: 'ok'
                 })
             },
@@ -483,6 +487,8 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
         undefined,
         "Error should be undefined on file prompt happy path",
     );
+    const expectedSelectedModels: SelectedModels[] = payload.selectedModelIds.map((id) => ({ id, displayName: id }));
+    assertEquals(result.data.selected_models, expectedSelectedModels, "Response should include selected_models derived from payload.selectedModelIds.");
     assertExists(result.data.seedPrompt, "The seedPrompt should be part of the successful response in the file prompt case.");
     assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt in the file prompt case.");
 
@@ -596,6 +602,8 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
         `Expected startSession to succeed with dummy embedding provider, but got error: ${result.error
             ?.message}`,
     );
+    const expectedSelectedModels: SelectedModels[] = payload.selectedModelIds.map((id) => ({ id, displayName: id }));
+    assertEquals(result.data.selected_models, expectedSelectedModels, "Response should include selected_models derived from payload.selectedModelIds.");
     assertExists(result.data.seedPrompt, "The seedPrompt should be part of the successful response in the dummy adapter case.");
     assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt in the dummy adapter case.");
     assertEquals(

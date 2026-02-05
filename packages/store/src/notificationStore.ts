@@ -323,24 +323,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                                 eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'] };
                             }
                             break;
-                        case 'dialectic_progress_update':
-                            if (
-                                typeof data['sessionId'] === 'string' &&
-                                typeof data['stageSlug'] === 'string' &&
-                                typeof data['current_step'] === 'number' &&
-                                typeof data['total_steps'] === 'number' &&
-                                typeof data['message'] === 'string'
-                            ) {
-                                eventPayload = {
-                                    type,
-                                    sessionId: data['sessionId'],
-                                    stageSlug: data['stageSlug'],
-                                    current_step: data['current_step'],
-                                    total_steps: data['total_steps'],
-                                    message: data['message'],
-                                };
-                            }
-                            break;
                         case 'planner_started':
                             if (
                                 typeof data['sessionId'] === 'string' &&

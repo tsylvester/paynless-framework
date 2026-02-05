@@ -221,6 +221,16 @@ Deno.test('Type Guard: isInputRule', async (t) => {
         assertEquals(isInputRule(invalid as any), false);
     });
 
+    await t.step('should return true for type "project_resource"', () => {
+        const rule: InputRule = { ...validInputRule, type: 'project_resource', slug: 'thesis', document_key: FileType.InitialUserPrompt };
+        assertEquals(isInputRule(rule), true);
+    });
+
+    await t.step('should return true for type "contribution"', () => {
+        const rule: InputRule = { ...validInputRule, type: 'contribution', slug: 'synthesis', document_key: FileType.comparison_vector };
+        assertEquals(isInputRule(rule), true);
+    });
+
     await t.step('should return false for a plain empty object', () => {
         assertEquals(isInputRule({}), false);
     });

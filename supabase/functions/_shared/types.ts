@@ -150,7 +150,37 @@ export interface EmailMarketingService {
 export type ResourceDocuments = {
   id?: string;
   content: string;
+  document_key?: string;
+  stage_slug?: string;
+  type?: string;
 }[];
+
+/** Shape of a single part passed to Gemini sendMessage (text or inlineData). Used by GoogleAdapter tests. */
+export interface GeminiSendMessagePart {
+  text?: string;
+  inlineData?: { mimeType: string; data?: string };
+}
+
+/** Minimal shape returned by a stubbed getGenerativeModel for GoogleAdapter tests. */
+export interface GoogleGetGenerativeModelStubReturn {
+  startChat(_opts?: unknown): GoogleStartChatStubReturn;
+}
+
+/** Minimal shape returned by startChat in stubbed getGenerativeModel. */
+export interface GoogleStartChatStubReturn {
+  sendMessage(_parts: unknown): Promise<{
+    response: {
+      candidates: unknown[];
+      usageMetadata: unknown;
+      text: () => string;
+    };
+  }>;
+}
+
+/** Shape of generationConfig captured from startChat opts in GoogleAdapter tests. */
+export interface GoogleGenerationConfigCapture {
+  maxOutputTokens?: number;
+}
 
 /**
  * Structure for sending a message via the 'chat' Edge Function.

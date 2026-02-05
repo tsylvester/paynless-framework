@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	useDialecticStore,
-	selectSelectedModelIds,
+	selectSelectedModels,
 	selectSessionById,
 	selectActiveStage,
 	selectIsStageReadyForSessionIteration,
@@ -46,7 +46,7 @@ export const GenerateContributionButton: React.FC<
 	const isWalletReady =
 		activeWalletInfo.status === "ok" && activeWalletInfo.walletId;
 
-	const selectedModelIds = useDialecticStore(selectSelectedModelIds);
+	const selectedModels = useDialecticStore(selectSelectedModels);
 	const activeStage = useMemo(() => selectActiveStage(store), [store]);
 	const activeSession = useMemo(
 		() =>
@@ -71,7 +71,7 @@ export const GenerateContributionButton: React.FC<
 	const isSessionGenerating = activeContextSessionId
 		? generatingSessions[activeContextSessionId]?.length > 0
 		: false;
-	const areAnyModelsSelected = selectedModelIds && selectedModelIds.length > 0;
+	const areAnyModelsSelected = selectedModels.length > 0;
 
 	// Final, correct logic based on user feedback
 	const contributionsForStageAndIterationExist = useMemo(() => {

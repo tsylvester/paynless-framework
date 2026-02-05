@@ -1,7 +1,7 @@
 import { render, screen, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import App from './App';
-import { useAuthStore, useSubscriptionStore, useWalletStore, initialWalletStateValues } from '@paynless/store';
+import { useSubscriptionStore, useWalletStore, initialWalletStateValues } from '@paynless/store';
 import type { SubscriptionStore, WalletStore } from '@paynless/store';
 import type { UserProfile } from '@paynless/types';
 // Import initialWalletStateValues and necessary selectors
@@ -14,11 +14,9 @@ import {
     mockSetAuthProfile, 
 } from './mocks/authStore.mock';
 import { 
-    mockedUseAiStoreHookLogic, 
     resetAiStoreMock,
     mockSetIsChatContextHydrated,
 } from './mocks/aiStore.mock';
-import { useAiStore } from '@paynless/store';
 import { useStageRunProgressHydration } from './hooks/useStageRunProgressHydration';
 
 vi.mock('./hooks/useStageRunProgressHydration', () => ({
@@ -34,6 +32,17 @@ const useStageRunProgressHydrationMock = vi.mocked(useStageRunProgressHydration)
 // vi.mock('../../components/layout/Footer', () => ({ Footer: () => <div data-testid="site-footer">Mocked Footer Content</div> })); // Ensure real footer renders
 vi.mock('../../components/integrations/ChatwootIntegration', () => ({ ChatwootIntegration: () => <div data-testid="mock-chatwoot">Mocked Chatwoot</div> }));
 vi.mock('@/components/ui/sonner', () => ({ Toaster: () => <div data-testid="mock-toaster">Mock Toaster</div> }));
+
+vi.mock('@paynless/store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/store')>();
+  const { mockedUseAuthStoreHookLogic } = await import('./mocks/authStore.mock');
+  const { mockedUseAiStoreHookLogic } = await import('./mocks/aiStore.mock');
+  return {
+    ...actual,
+    useAuthStore: mockedUseAuthStoreHookLogic,
+    useAiStore: mockedUseAiStoreHookLogic,
+  };
+});
 
 // --- Test Suite ---
 
@@ -112,11 +121,6 @@ describe('App Component', () => {
             }
             return mockWalletFullState;
         });
-
-        // Spy on useAuthStore to use the updated mockedUseAuthStoreHookLogic
-        // The mockedUseAuthStoreHookLogic itself now handles the full AuthStore type and the equalityFn
-        vi.spyOn({ useAuthStore }, 'useAuthStore').mockImplementation(mockedUseAuthStoreHookLogic);
-        vi.spyOn({ useAiStore }, 'useAiStore').mockImplementation(mockedUseAiStoreHookLogic);
     });
 
     afterEach(() => {
@@ -124,21 +128,18 @@ describe('App Component', () => {
     });
 
     it('should render Header and Footer when not loading', async () => {
-        // Set auth store state for this test using helpers
-        mockSetAuthIsLoading(false);
-        mockSetAuthUser(null); // Or a mock user if needed
-        mockSetAuthSession(null); // Or a mock session if needed
-
-        // No need to re-spy in each test if done in beforeEach and resetAuthStoreMock handles state
-        // vi.spyOn(PaynlessStore, 'useAuthStore').mockImplementation(mockedUseAuthStoreHookLogic);
+        // Set auth store so app shows loading spinner (mock defaults to isLoading: false; we need loading state for spinner + no header/footer)
+        mockSetAuthIsLoading(true);
+        mockSetAuthUser(null);
+        mockSetAuthSession(null);
 
         await act(async () => {
             render(<App />);
         });
 
-        // Assertions
-        expect(await screen.findByRole('status')).toBeInTheDocument(); 
-        expect(screen.queryByRole('banner')).not.toBeInTheDocument(); 
+        // Assertions: loading state shows spinner (status), no Header (banner) or Footer (contentinfo)
+        expect(await screen.findByRole('status')).toBeInTheDocument();
+        expect(screen.queryByRole('banner')).not.toBeInTheDocument();
         expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
     });
 

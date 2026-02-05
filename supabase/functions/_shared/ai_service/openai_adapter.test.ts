@@ -1,8 +1,10 @@
 // supabase/functions/_shared/ai_service/openai_adapter.test.ts
-import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import "npm:openai/shims/web";
+import { assert, assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import type { APIPromise } from 'npm:openai/core';
-import type { ChatCompletion } from 'npm:openai/resources/chat/completions';
+import { APIPromise } from 'npm:openai/core';
+import type { FinalRequestOptions } from 'npm:openai/core';
+import type { ChatCompletion, ChatCompletionCreateParams, ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
 import type { Model, ModelsPage } from 'npm:openai/resources/models';
 import type { PagePromise } from 'npm:openai/core';
 import type { CreateEmbeddingResponse } from 'npm:openai/resources/embeddings';
@@ -63,6 +65,46 @@ const MOCK_OPENAI_MODELS_RESPONSE_DATA: Model[] = [
     { id: "gpt-4o", object: "model", created: 1715367049, owned_by: "openai-internal" },
     { id: "gpt-3.5-turbo", object: "model", created: 1677610602, owned_by: "openai" },
 ];
+
+function isChatCompletionCreateParams(val: unknown): val is ChatCompletionCreateParams {
+    if (typeof val !== 'object' || val === null) return false;
+    const messages: unknown = Object.getOwnPropertyDescriptor(val, 'messages')?.value;
+    if (!Array.isArray(messages)) return false;
+    return true;
+}
+
+function getMessageTextContent(msg: ChatCompletionMessageParam): string {
+    const content: unknown = Object.getOwnPropertyDescriptor(msg, 'content')?.value;
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return '';
+    let out = '';
+    for (const part of content) {
+        if (typeof part !== 'object' || part === null) continue;
+        const text: unknown = Object.getOwnPropertyDescriptor(part, 'text')?.value;
+        if (typeof text === 'string') out += text;
+    }
+    return out;
+}
+
+type ApiResponsePromise = ConstructorParameters<typeof APIPromise>[0];
+type ApiResponseProps = Awaited<ApiResponsePromise>;
+
+function buildApiResponseProps(): ApiResponseProps {
+    const response = new Response();
+    const options: FinalRequestOptions = { method: 'post', path: '/v1/chat/completions' };
+    const controller = new AbortController();
+    return { response, options, controller };
+}
+
+function createMockAPIPromise<T extends object>(resp: T): APIPromise<T> {
+    const responsePromise: ApiResponsePromise = Promise.resolve(buildApiResponseProps());
+    const requestId = 'test-request-id';
+    const parseResponse = (_props: ApiResponseProps): Promise<T & { requestId: string }> =>
+        Promise.resolve(Object.assign({}, resp, { requestId }));
+    // WithRequestID<T> is internal; T & { requestId: string } is structurally equivalent for test doubles.
+    // @ts-expect-error - parseResponse return type matches runtime shape; no type cast used.
+    return new APIPromise<T>(responsePromise, parseResponse);
+}
 
 // This is the mock API that the test contract will spy on.
 const mockOpenAiApi: MockApi = {
@@ -138,11 +180,7 @@ Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
         usage: { prompt_tokens: 5, total_tokens: 5 },
     };
     
-    function createMockEmbeddingPromise(resp: CreateEmbeddingResponse): APIPromise<CreateEmbeddingResponse> {
-        return Promise.resolve(resp) as APIPromise<CreateEmbeddingResponse>;
-    }
-
-    const createStub = stub(OpenAI.Embeddings.prototype, "create", () => createMockEmbeddingPromise(MOCK_EMBEDDING_SUCCESS_RESPONSE));
+    const createStub = stub(OpenAI.Embeddings.prototype, "create", () => createMockAPIPromise(MOCK_EMBEDDING_SUCCESS_RESPONSE));
 
     try {
         const adapter = new OpenAiAdapter(MOCK_EMBEDDING_PROVIDER, 'sk-test-key', mockLogger);
@@ -164,12 +202,8 @@ Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
 });
 
 Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o-series", async () => {
-    // Arrange
     const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
-    function createMockChatPromise(resp: ChatCompletion): APIPromise<ChatCompletion> {
-        return Promise.resolve(resp) as APIPromise<ChatCompletion>;
-    }
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", (params) => createMockChatPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
 
     try {
         const request: ChatApiRequest = {
@@ -184,15 +218,12 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o-seri
 
         assertEquals(chatCreateStub.calls.length, 1);
         const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
-        let mct: unknown = undefined;
-        let mt: unknown = undefined;
-        if (isJson(payloadUnknown) && typeof payloadUnknown === 'object' && payloadUnknown !== null) {
-            // Narrow using runtime guards and index access
-            // deno-lint-ignore no-explicit-any
-            const rec = payloadUnknown as any;
-            mct = rec['max_completion_tokens'];
-            mt = rec['max_tokens'];
-        }
+        const mct: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_completion_tokens')?.value
+            : undefined;
+        const mt: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_tokens')?.value
+            : undefined;
         assertExists(mct);
         assertEquals(mct, 123);
         assertEquals(mt === undefined || mt === null, true);
@@ -202,17 +233,13 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o-seri
 });
 
 Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for legacy chat models", async () => {
-    // Arrange a legacy model provider
     const LEGACY_PROVIDER: Tables<'ai_providers'> = {
         ...MOCK_PROVIDER,
         api_identifier: 'openai-gpt-3.5-turbo',
     };
 
     const adapter = new OpenAiAdapter(LEGACY_PROVIDER, 'sk-test-key', mockLogger);
-    function createMockChatPromise(resp: ChatCompletion): APIPromise<ChatCompletion> {
-        return Promise.resolve(resp) as APIPromise<ChatCompletion>;
-    }
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", (params) => createMockChatPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
 
     try {
         const request: ChatApiRequest = {
@@ -227,17 +254,98 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for legacy chat model
 
         assertEquals(chatCreateStub.calls.length, 1);
         const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
-        let mt: unknown = undefined;
-        let mct: unknown = undefined;
-        if (isJson(payloadUnknown) && typeof payloadUnknown === 'object' && payloadUnknown !== null) {
-            // deno-lint-ignore no-explicit-any
-            const rec = payloadUnknown as any;
-            mt = rec['max_tokens'];
-            mct = rec['max_completion_tokens'];
-        }
+        const mt: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_tokens')?.value
+            : undefined;
+        const mct: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_completion_tokens')?.value
+            : undefined;
         assertExists(mt);
         assertEquals(mt, 123);
         assertEquals(mct === undefined || mct === null, true);
+    } finally {
+        chatCreateStub.restore();
+    }
+});
+
+// --- resourceDocuments tests ---
+
+Deno.test("OpenAiAdapter - resourceDocuments: when present appear as text in messages", async () => {
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+        const request: ChatApiRequest = {
+            message: 'User prompt',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            resourceDocuments: [
+                { id: 'd1', content: 'Doc A content', document_key: 'business_case', stage_slug: 'thesis' },
+                { id: 'd2', content: 'Doc B content', document_key: 'feature_spec', stage_slug: 'thesis' },
+            ],
+        };
+
+        await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+
+        assertEquals(chatCreateStub.calls.length, 1);
+        const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
+        if (!isChatCompletionCreateParams(payloadUnknown)) throw new Error('payload must be ChatCompletionCreateParams');
+        const allContent = payloadUnknown.messages.map(getMessageTextContent).join('\n');
+        assert(allContent.includes('Doc A content'), 'Document content must appear as text in messages');
+        assert(allContent.includes('Doc B content'), 'Document content must appear as text in messages');
+        assert(allContent.includes('User prompt'), 'User message must be present');
+    } finally {
+        chatCreateStub.restore();
+    }
+});
+
+Deno.test("OpenAiAdapter - resourceDocuments: document labels are present in message content", async () => {
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+        const request: ChatApiRequest = {
+            message: 'User prompt',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            resourceDocuments: [
+                { content: 'Doc content', document_key: 'success_metrics', stage_slug: 'thesis' },
+            ],
+        };
+
+        await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+
+        assertEquals(chatCreateStub.calls.length, 1);
+        const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
+        if (!isChatCompletionCreateParams(payloadUnknown)) throw new Error('payload must be ChatCompletionCreateParams');
+        const allContent = payloadUnknown.messages.map(getMessageTextContent).join('\n');
+        assert(allContent.includes('[Document:'), 'Document label must be present');
+        assert(allContent.includes('from thesis]'), 'Document stage must be present in label');
+        assert(allContent.includes('success_metrics'), 'document_key must be present in label');
+    } finally {
+        chatCreateStub.restore();
+    }
+});
+
+Deno.test("OpenAiAdapter - resourceDocuments: empty resourceDocuments does not add placeholder messages", async () => {
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+        const request: ChatApiRequest = {
+            message: 'User prompt',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            resourceDocuments: [],
+        };
+
+        await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+
+        assertEquals(chatCreateStub.calls.length, 1);
+        const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
+        if (!isChatCompletionCreateParams(payloadUnknown)) throw new Error('payload must be ChatCompletionCreateParams');
+        assertEquals(payloadUnknown.messages.length, 1, 'Must not add extra messages when resourceDocuments is empty');
+        assertEquals(getMessageTextContent(payloadUnknown.messages[0]), 'User prompt', 'Only user message must be present');
     } finally {
         chatCreateStub.restore();
     }

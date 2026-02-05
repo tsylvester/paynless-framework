@@ -52,6 +52,13 @@ export class OpenAiAdapter {
       content: msg.content,
     })).filter(msg => msg.content);
 
+    if (request.resourceDocuments && request.resourceDocuments.length > 0) {
+      const docParts: string[] = request.resourceDocuments.map((doc) =>
+        `[Document: ${doc.document_key ?? ''} from ${doc.stage_slug ?? ''}]\n${doc.content}`
+      );
+      openaiMessages.push({ role: 'user', content: docParts.join('\n\n') });
+    }
+
     if (request.message) {
       openaiMessages.push({ role: 'user', content: request.message });
     }

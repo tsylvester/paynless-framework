@@ -491,10 +491,9 @@ describe('processComplexJob', () => {
         assertEquals(finalUpdateArgs[0].status, 'waiting_for_children');
     });
 
-    it('emits planner_started when planner work begins with document and model context', async () => {
+    it('emits planner_started when planner work begins with step context', async () => {
         // Arrange
         resetMockNotificationService();
-        // Ensure a simple child is produced to pass happy path
         const firstStep = mockTemplateRecipeSteps[0];
         const mockChildJob: DialecticJobRow = {
             id: 'child-1', user_id: 'user-1', session_id: mockParentJob.session_id, stage_slug: mockParentJob.stage_slug,
@@ -519,16 +518,15 @@ describe('processComplexJob', () => {
         // Act
         await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, notificationPlanCtx, 'user-jwt-123');
 
-        // Assert
-        const calls = mockNotificationService.sendDocumentCentricNotification.calls;
-        assert(calls.length >= 1, 'Expected at least one document-centric notification');
+        // Assert (PLAN planner_started: step_key required; no modelId or document_key)
+        const calls = mockNotificationService.sendJobNotificationEvent.calls;
+        assert(calls.length >= 1, 'Expected at least one notification');
         const [payloadArg, targetUserId] = calls[0].args;
         assertEquals(payloadArg.type, 'planner_started');
         assertEquals(payloadArg.sessionId, mockParentJob.session_id);
         assertEquals(payloadArg.stageSlug, mockParentJob.stage_slug);
         assertEquals(payloadArg.job_id, mockParentJob.id);
-        assertEquals(payloadArg.document_key, String(firstStep.output_type));
-        assertEquals(payloadArg.modelId, mockParentJob.payload.model_id);
+        assertEquals(payloadArg.step_key, firstStep.step_slug);
         assertEquals(payloadArg.iterationNumber, mockParentJob.iteration_number);
         assertEquals(targetUserId, mockParentJob.user_id);
     });

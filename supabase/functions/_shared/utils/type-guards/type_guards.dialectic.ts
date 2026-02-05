@@ -1119,7 +1119,7 @@ export function isDialecticRenderJobPayload(payload: unknown): payload is Dialec
         'sessionId', 'projectId', 'model_id', 'walletId', 'stageSlug', 'iterationNumber',
         'documentIdentity', 'documentKey', 'sourceContributionId', 'user_jwt', 'template_filename',
         // Base job payload fields that may be present on render jobs
-        'continueUntilComplete', 'maxRetries', 'continuation_count', 'target_contribution_id', 'is_test_job', 'model_slug'
+        'continueUntilComplete', 'maxRetries', 'continuation_count', 'target_contribution_id', 'is_test_job', 'model_slug',
     ]);
 
     const unknownKeys = Object.keys(payload).filter(key => !allowedKeys.has(key));

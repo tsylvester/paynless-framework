@@ -4,7 +4,8 @@ import type {
     DialecticProjectResource, 
     DialecticSession, 
     DialecticContribution,
-    ExportProjectResponse
+    ExportProjectResponse,
+    SelectedModels
 } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
@@ -143,6 +144,34 @@ export async function exportProject(
             sessions: [],
         };
 
+        const displayNameByModelId = new Map<string, string>();
+        if (sessionsData && sessionsData.length > 0) {
+            const allModelIds: string[] = [];
+            for (const session of sessionsData) {
+                const ids = session.selected_model_ids ?? [];
+                for (const id of ids) {
+                    if (!displayNameByModelId.has(id)) {
+                        allModelIds.push(id);
+                    }
+                }
+            }
+            if (allModelIds.length > 0) {
+                const { data: catalogRows, error: catalogError } = await supabaseClient
+                    .from('ai_providers')
+                    .select('id, name')
+                    .in('id', allModelIds);
+                if (catalogError) {
+                    logger.warn('Export: could not fetch model display names from ai_providers.', { projectId, details: catalogError });
+                } else if (catalogRows) {
+                    for (const row of catalogRows) {
+                        if (row.id != null && row.name != null) {
+                            displayNameByModelId.set(row.id, row.name);
+                        }
+                    }
+                }
+            }
+        }
+
         if (sessionsData) {
             for (const session of sessionsData) {
                 const { data: contributionsSql, error: contributionsError } = await supabaseClient
@@ -192,9 +221,24 @@ export async function exportProject(
                         validContributions.push(mappedContribution);
                     }
                 }
-                
+
+                const ids = session.selected_model_ids ?? [];
+                const selected_models: SelectedModels[] = ids
+                    .filter((id: string) => displayNameByModelId.has(id))
+                    .map((id: string) => ({ id, displayName: displayNameByModelId.get(id)! }));
+
                 manifest.sessions.push({
-                    ...session,
+                    id: session.id,
+                    project_id: session.project_id,
+                    session_description: session.session_description,
+                    user_input_reference_url: session.user_input_reference_url,
+                    iteration_count: session.iteration_count,
+                    selected_models,
+                    status: session.status,
+                    associated_chat_id: session.associated_chat_id,
+                    current_stage_id: session.current_stage_id,
+                    created_at: session.created_at,
+                    updated_at: session.updated_at,
                     contributions: validContributions,
                 });
             }

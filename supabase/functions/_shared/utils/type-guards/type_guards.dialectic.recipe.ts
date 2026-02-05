@@ -18,7 +18,7 @@ const validGranularityStrategies = new Set([
     'per_source_document_by_lineage',
     'per_model',
 ]);
-const validInputRuleTypes = new Set(['document', 'feedback', 'header_context', 'seed_prompt']);
+const validInputRuleTypes = new Set(['document', 'feedback', 'header_context', 'seed_prompt', 'project_resource', 'contribution']);
 
 export function isDialecticRecipeTemplateStep(step: unknown): step is DialecticRecipeTemplateStep {
   if (!isRecord(step)) {

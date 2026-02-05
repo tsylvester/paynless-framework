@@ -9,9 +9,33 @@ export const useStageRunProgressHydration = (): void => {
     const recipesByStageSlug = useDialecticStore((state) => state.recipesByStageSlug);
     const fetchStageRecipe = useDialecticStore((state) => state.fetchStageRecipe);
     const ensureRecipeForActiveStage = useDialecticStore((state) => state.ensureRecipeForActiveStage);
+    const hydrateAllStageProgress = useDialecticStore((state) => state.hydrateAllStageProgress);
     const hydrateStageProgress = useDialecticStore((state) => state.hydrateStageProgress);
 
+    const hasHydratedAllStagesRef = useRef<string | null>(null);
     const isFetchingRef = useRef(false);
+
+    useEffect(() => {
+        if (!activeContextSessionId || !activeSessionDetail || !user) {
+            return;
+        }
+        if (hasHydratedAllStagesRef.current === activeContextSessionId) {
+            return;
+        }
+        const userId = user.id;
+        const projectId = activeSessionDetail.project_id;
+        const iterationNumber = activeSessionDetail.iteration_count;
+        const hydrateAll = async (): Promise<void> => {
+            await hydrateAllStageProgress({
+                sessionId: activeContextSessionId,
+                iterationNumber,
+                userId,
+                projectId,
+            });
+            hasHydratedAllStagesRef.current = activeContextSessionId;
+        };
+        void hydrateAll();
+    }, [user, activeContextSessionId, activeSessionDetail, hydrateAllStageProgress]);
 
     useEffect(() => {
         if (!activeContextSessionId || !activeStageSlug || !activeSessionDetail || !user) {

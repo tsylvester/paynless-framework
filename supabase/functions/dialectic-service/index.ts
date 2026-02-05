@@ -32,6 +32,8 @@ import {
   ListStageDocumentsPayload,
   ListStageDocumentsResponse,
   SubmitStageDocumentFeedbackPayload,
+  GetAllStageProgressPayload,
+  GetAllStageProgressResult,
 } from "./dialectic.interface.ts";
 import { getStageRecipe } from "./getStageRecipe.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
@@ -74,6 +76,7 @@ import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { handleUpdateSessionModels } from './updateSessionModels.ts';
 import { listStageDocuments } from './listStageDocuments.ts';
 import { submitStageDocumentFeedback, type SubmitStageDocumentFeedbackDeps } from './submitStageDocumentFeedback.ts';
+import { getAllStageProgress } from './getAllStageProgress.ts';
 import { callUnifiedAIModel } from './callModel.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
@@ -183,6 +186,7 @@ export interface ActionHandlers {
   getStageRecipe: (payload: { stageSlug: string }, dbClient: SupabaseClient) => Promise<{ data?: StageRecipeResponse; error?: ServiceError; status?: number }>;
   listStageDocuments: (payload: ListStageDocumentsPayload, dbClient: SupabaseClient) => Promise<{ status: number; data?: ListStageDocumentsResponse; error?: { message: string } }>;
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload, dbClient: SupabaseClient, deps: SubmitStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<DialecticFeedbackRow>>;
+  getAllStageProgress: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
 }
 
 export async function handleRequest(
@@ -259,6 +263,7 @@ export async function handleRequest(
         'getSessionDetails',
         'listStageDocuments',
         'submitStageDocumentFeedback',
+        'getAllStageProgress',
       ];
 
       let userForJson: User | null = null;
@@ -505,7 +510,7 @@ export async function handleRequest(
             dbClient: userClient as SupabaseClient<Database>,
             user: userForJson,
             logger,
-            fileManager: new FileManagerService(userClient, FileManagerDependencies),
+            fileManager: fileManager,
             pathDeconstructor: deconstructStoragePath,
           };
           const { data, error, status } = await handlers.saveContributionEdit(payload, userForJson, context);
@@ -560,6 +565,17 @@ export async function handleRequest(
           }
           return createSuccessResponse(data, 200, req);
         }
+        case "getAllStageProgress": {
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for getAllStageProgress', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const payload: GetAllStageProgressPayload = requestBody.payload;
+          const result = await handlers.getAllStageProgress(payload, adminClient as SupabaseClient<Database>, userForJson);
+          if (result.error) {
+            return createErrorResponse(result.error.message, result.status || 500, req, result.error);
+          }
+          return createSuccessResponse(result.data, result.status || 200, req);
+        }
         default: {
           const errorMessage = `Unknown action for application/json.`;
           logger.warn(errorMessage, { action });
@@ -607,6 +623,7 @@ export const defaultHandlers: ActionHandlers = {
   getStageRecipe,
   listStageDocuments,
   submitStageDocumentFeedback,
+  getAllStageProgress,
 };
 
 export function createDialecticServiceHandler(

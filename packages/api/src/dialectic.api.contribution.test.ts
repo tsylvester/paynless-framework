@@ -82,7 +82,7 @@ const mockDialecticSession: DialecticSession = {
   status: "pending_hypothesis",
   associated_chat_id: null,
   current_stage_id: 'stage-123',
-  selected_model_ids: ['model-1'],
+  selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
   user_input_reference_url: null,
 };
 
@@ -495,6 +495,8 @@ describe('DialecticApiClient', () => {
             sessionId: 'sess-456',
             originalModelContributionId: 'contrib-model-original',
             responseText: 'User feedback on the edit.',
+            documentKey: 'synthesis',
+            resourceType: 'rendered_document',
         };
         const requestBody = { action: 'saveContributionEdit', payload: validPayload };
 
@@ -537,7 +539,7 @@ describe('DialecticApiClient', () => {
         const validPayload: StartSessionPayload = {
             projectId: 'proj-123',
             sessionDescription: 'Kicking off a new session',
-            selectedModelIds: ['model-abc', 'model-def'],
+            selectedModels: [{ id: 'model-abc', displayName: 'Model ABC' }, { id: 'model-def', displayName: 'Model DEF' }],
         };
         const requestBody = { action: 'startSession', payload: validPayload };
 
@@ -617,7 +619,7 @@ describe('DialecticApiClient', () => {
             status: "pending_parenthesis", // The expected next stage
             associated_chat_id: null,
             current_stage_id: 'stage-456', // ID of the next stage
-            selected_model_ids: ['model-1'],
+            selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
             user_input_reference_url: null,
         };
 
@@ -667,13 +669,13 @@ describe('DialecticApiClient', () => {
         const endpoint = 'dialectic-service';
         const validPayload: UpdateSessionModelsPayload = {
             sessionId: 'sess-123',
-            selectedModelIds: ['model-xyz', 'model-abc'],
+            selectedModels: [{ id: 'model-xyz', displayName: 'Model XYZ' }, { id: 'model-abc', displayName: 'Model ABC' }],
         };
         const requestBody = { action: 'updateSessionModels', payload: validPayload };
         const mockUpdatedSession: DialecticSession = {
             ...mockDialecticSession, // Assuming mockDialecticSession is a base session
             id: validPayload.sessionId,
-            selected_model_ids: validPayload.selectedModelIds,
+            selected_models: validPayload.selectedModels,
             updated_at: new Date().toISOString(),
         };
 

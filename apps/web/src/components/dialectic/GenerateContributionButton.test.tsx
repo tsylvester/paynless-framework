@@ -13,7 +13,8 @@ import type {
   GenerateContributionsResponse, // For explicit mock typing
   ApiResponse, // For explicit mock typing
   DialecticStateValues,
-  DialecticProcessTemplate
+  DialecticProcessTemplate,
+  SelectedModels
 } from '@paynless/types'; // Corrected DialecticProjectDetail to DialecticProject
 
 // Import utilities from the actual mock file
@@ -31,9 +32,8 @@ vi.mock('@paynless/store', async () => {
   const actualPaynlessStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
   const walletStoreMock = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStore.mock');
 
-  // These are simple, test-specific selectors that work with our flat mock state.
-  // This isolates the component test from the real store's implementation details.
-  const selectSelectedModelIds = (state: DialecticStateValues) => state.selectedModelIds || [];
+  // Use real selectSelectedModels so component reads state.selectedModels.
+  const selectSelectedModels = actualPaynlessStore.selectSelectedModels;
   
   const selectActiveStage = (state: DialecticStateValues): DialecticStage | null => {
     const { currentProjectDetail, activeStageSlug } = state;
@@ -61,7 +61,7 @@ vi.mock('@paynless/store', async () => {
     // Pass through wallet state defaults required by the wallet mock itself
     initialWalletStateValues: actualPaynlessStore.initialWalletStateValues,
     selectSessionById: actualPaynlessStore.selectSessionById, // This selector is simple enough to work with our mock state
-    selectSelectedModelIds, // Use our test-specific implementation
+    selectSelectedModels,
     selectActiveStage, // Use our test-specific implementation
     // Add the new selector to our mocks
     selectIsStageReadyForSessionIteration: vi.fn(),
@@ -81,9 +81,10 @@ const mockThesisStage: DialecticStage = {
   display_name: 'Thesis',
   description: 'Initial hypothesis generation',
   default_system_prompt_id: 'prompt-1',
-  input_artifact_rules: {},
-  expected_output_artifacts: {},
   created_at: new Date().toISOString(),
+  expected_output_template_ids: [],
+  recipe_template_id: null,
+  active_recipe_instance_id: null,
 };
 
 // Define mockContribution at a higher scope if used in multiple tests
@@ -166,7 +167,7 @@ const createMockSession = (
   session_description: `Session ${sessionId} for ${projectId}`,
   user_input_reference_url: null,
   iteration_count: iteration,
-  selected_model_ids: [],
+  selected_models: [],
   status: 'active',
   associated_chat_id: null,
   current_stage_id: mockThesisStage.id,
@@ -175,6 +176,10 @@ const createMockSession = (
   dialectic_contributions: contributions,
   dialectic_session_models: [],
 });
+
+// SelectedModels fixtures for store state (component uses selectSelectedModels)
+const oneSelectedModel: SelectedModels[] = [{ id: 'model-1', displayName: 'Model 1' }];
+const oneSelectedModelAlt: SelectedModels[] = [{ id: 'model1', displayName: 'Model 1' }];
 
 // Helper to set the state of the dialecticStore mock
 const setDialecticStateValues = (state: Partial<DialecticStateValues>) => {
@@ -198,7 +203,7 @@ describe('GenerateContributionButton', () => {
     const defaultSession = createMockSession('test-session-id', 'test-project-id', 1);
     const defaultProject = createMockProject('test-project-id', [defaultSession]);
     setDialecticStateValues({ 
-      selectedModelIds: ['model-1'],
+      selectedModels: oneSelectedModel,
       currentProjectDetail: defaultProject,
       activeContextSessionId: 'test-session-id', // New state
       activeStageSlug: 'thesis', // New state
@@ -241,7 +246,7 @@ describe('GenerateContributionButton', () => {
     const defaultSession = createMockSession('test-session-id', 'test-project-id', 1);
     const defaultProject = createMockProject('test-project-id', [defaultSession]);
     setDialecticStateValues({
-      selectedModelIds: [], // Override: No models selected
+      selectedModels: [], // Override: No models selected
       currentProjectDetail: defaultProject,
       activeContextSessionId: 'test-session-id',
       activeStageSlug: 'thesis',
@@ -255,7 +260,7 @@ describe('GenerateContributionButton', () => {
     // We now need to explicitly mock the stage readiness check to return true to isolate the test
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     setDialecticStateValues({
-      selectedModelIds: ['model-1'],
+      selectedModels: oneSelectedModel,
       activeStageSlug: null, // No active stage
       currentProjectDetail: createMockProject('test-project-id', [createMockSession('test-session-id', 'test-project-id', 1)]),
     });
@@ -282,7 +287,7 @@ describe('GenerateContributionButton', () => {
     const projectWithContribution = createMockProject('test-project-id', [sessionWithContribution]);
     
     setDialecticStateValues({
-      selectedModelIds: ['model1'],
+      selectedModels: oneSelectedModelAlt,
       currentProjectDetail: projectWithContribution,
       activeContextSessionId: 'test-session-id',
       activeStageSlug: 'thesis',
@@ -299,7 +304,7 @@ describe('GenerateContributionButton', () => {
     const defaultSession = createMockSession('test-session-id', 'test-project-id', 1);
     const defaultProject = createMockProject('test-project-id', [defaultSession]);
     setDialecticStateValues({
-      selectedModelIds: ['model-1'],
+      selectedModels: oneSelectedModel,
       currentProjectDetail: defaultProject,
       activeContextSessionId: 'test-session-id',
       activeStageSlug: 'thesis',
@@ -322,7 +327,7 @@ describe('GenerateContributionButton', () => {
     const projectWithContributions = createMockProject('test-project-id', [sessionWithContribution]);
 
     setDialecticStateValues({
-      selectedModelIds: ['model1'],
+      selectedModels: oneSelectedModelAlt,
       currentProjectDetail: projectWithContributions,
       activeContextSessionId: 'test-session-id',
       activeStageSlug: 'thesis',
@@ -400,7 +405,7 @@ describe('GenerateContributionButton', () => {
     const sessionWithNullIteration = createMockSession('test-session-id', 'test-project-id', 1);
     const projectWithNullIterationSession = createMockProject('test-project-id', [sessionWithNullIteration]);
     setDialecticStateValues({ 
-      selectedModelIds: ['model1'],
+      selectedModels: oneSelectedModelAlt,
       // Set active session to null to test the guard clause
       activeContextSessionId: null,
       currentProjectDetail: projectWithNullIterationSession,
@@ -423,7 +428,7 @@ describe('GenerateContributionButton', () => {
     const defaultSession = createMockSession('test-session-id', 'test-project-id', 1);
     const projectWithoutStages = createMockProject('test-project-id', [defaultSession], []); // No stages in template
     setDialecticStateValues({
-      selectedModelIds: ['model-1'],
+      selectedModels: oneSelectedModel,
       activeStageSlug: 'non-existent-stage', // This stage doesn't exist in the mock project
       currentProjectDetail: projectWithoutStages,
       activeContextSessionId: 's-id'
@@ -457,7 +462,7 @@ describe('GenerateContributionButton', () => {
     const projectWithContribution = createMockProject('test-project-id', [sessionWithContribution]);
 
     setDialecticStateValues({
-      selectedModelIds: [], // NO models selected
+      selectedModels: [], // NO models selected
       currentProjectDetail: projectWithContribution, // Contributions exist
       activeContextSessionId: 'test-session-id',
       activeStageSlug: 'thesis',
@@ -476,7 +481,7 @@ describe('GenerateContributionButton', () => {
     
     // Test Case 1: Active session is missing
     setDialecticStateValues({ 
-      selectedModelIds: ['model1'],
+      selectedModels: oneSelectedModelAlt,
       activeContextSessionId: null, // No active session
       currentProjectDetail: createMockProject('test-project-id', [createMockSession('test-session-id', 'test-project-id', 1)]),
       activeStageSlug: 'thesis',
@@ -494,7 +499,7 @@ describe('GenerateContributionButton', () => {
     
     act(() => {
       setDialecticStateValues({
-        selectedModelIds: ['model-1'],
+        selectedModels: oneSelectedModel,
         currentProjectDetail: projectWithBadSession,
         activeContextSessionId: 'test-session-id',
         activeStageSlug: 'thesis',
@@ -519,7 +524,7 @@ describe('GenerateContributionButton', () => {
    it('handles currentProjectDetail being null gracefully by being disabled', () => {
     // No readiness mock needed as this checks a more fundamental missing piece of state
     setDialecticStateValues({
-      selectedModelIds: ['model-1'],
+      selectedModels: oneSelectedModel,
       currentProjectDetail: null, // Project is null
       activeContextSessionId: 'test-session-id',
       activeStageSlug: 'thesis',

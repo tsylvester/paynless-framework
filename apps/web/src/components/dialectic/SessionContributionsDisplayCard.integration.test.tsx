@@ -10,6 +10,7 @@ import type {
   DialecticStageRecipeStep,
   DialecticStateValues,
   DialecticProcessTemplate,
+  SelectedModels,
   StageRenderedDocumentDescriptor,
 } from '@paynless/types';
 
@@ -19,6 +20,7 @@ import {
   getDialecticStoreState,
   initializeMockDialecticState,
   setDialecticStateValues,
+  selectSelectedModels,
 } from '../../mocks/dialecticStore.mock';
 import { selectStageDocumentChecklist } from '@paynless/store';
 
@@ -170,16 +172,19 @@ const buildContribution = (modelId: string): DialecticContribution => ({
   mime_type: 'text/markdown',
 });
 
+const buildSelectedModels = (ids: string[]): SelectedModels[] =>
+  ids.map((id) => ({ id, displayName: `Model ${id}` }));
+
 const buildSession = (
   contributions: DialecticContribution[],
-  selectedModelIds: string[],
+  selectedModels: SelectedModels[],
 ): DialecticSession => ({
   id: sessionId,
   project_id: projectId,
   session_description: 'Session',
   user_input_reference_url: null,
   iteration_count: iterationNumber,
-  selected_model_ids: selectedModelIds,
+  selected_models: selectedModels,
   status: 'active',
   associated_chat_id: null,
   current_stage_id: 'stage-1',
@@ -254,6 +259,14 @@ const renderSessionContributionsDisplayCard = () => render(<SessionContributions
 beforeEach(() => {
   vi.clearAllMocks();
   initializeMockDialecticState();
+  selectSelectedModels.mockImplementation(
+    (state: DialecticStateValues): SelectedModels[] => {
+      if (state.selectedModels === undefined || state.selectedModels === null) {
+        throw new Error('Test must set selectedModels on state');
+      }
+      return state.selectedModels;
+    },
+  );
 });
 
 describe('SessionContributionsDisplayCard Integration Tests', () => {
@@ -265,7 +278,7 @@ describe('SessionContributionsDisplayCard Integration Tests', () => {
     const stage = buildStage();
     const processTemplate = buildProcessTemplate(stage);
     const contributions = ['model-a', 'model-b'].map(buildContribution);
-    const session = buildSession(contributions, ['model-a', 'model-b']);
+    const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
     const project = buildProject(session, processTemplate);
     const recipe = buildRecipe(steps);
 
@@ -275,7 +288,7 @@ describe('SessionContributionsDisplayCard Integration Tests', () => {
       activeContextStage: stage,
       activeStageSlug: stage.slug,
       activeSessionDetail: session,
-      selectedModelIds: session.selected_model_ids ?? [],
+      selectedModels: session.selected_models,
       currentProjectDetail: project,
       currentProcessTemplate: processTemplate,
       recipesByStageSlug: {

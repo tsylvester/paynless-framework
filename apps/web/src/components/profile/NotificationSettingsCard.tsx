@@ -15,6 +15,8 @@ import { Switch } from "@/components/ui/switch";
 
 export const NotificationSettingsCard: React.FC = () => {
 	const profile = useAuthStore((state) => state.profile);
+	const isLoading = useAuthStore((state) => state.isLoading);
+	const error = useAuthStore((state) => state.error);
 	const toggleNewsletterSubscription = useAuthStore(
 		(state) => state.toggleNewsletterSubscription,
 	);
@@ -49,6 +51,11 @@ export const NotificationSettingsCard: React.FC = () => {
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-4">
+				{error && (
+					<div data-testid="error-message" className="text-sm text-destructive">
+						Error updating settings: {error.message}
+					</div>
+				)}
 				<div className="space-y-2">
 					<Label
 						htmlFor="newsletter-subscription"
@@ -61,16 +68,16 @@ export const NotificationSettingsCard: React.FC = () => {
 							id="newsletter-subscription"
 							checked={!!profile.is_subscribed_to_newsletter}
 							onCheckedChange={handleSubscriptionToggle}
-							disabled={isSubmitting}
+							disabled={isSubmitting || isLoading}
 							aria-label="Subscribe to system notices and updates"
 						/>
 						<Label
 							htmlFor="newsletter-subscription"
-							className={`flex-grow ${isSubmitting ? "text-muted-foreground" : ""}`}
+							className={`flex-grow ${isSubmitting || isLoading ? "text-muted-foreground" : ""}`}
 						>
 							System notices and updates
 						</Label>
-						{isSubmitting && (
+						{(isSubmitting || isLoading) && (
 							<Loader2 className="h-4 w-4 animate-spin text-primary" />
 						)}
 					</div>

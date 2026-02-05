@@ -465,10 +465,11 @@ export async function renderDocument(
 
   // 7) Notification 
   const targetUser = base.user_id;
-  if (deps.notificationService && typeof deps.notificationService.sendDocumentCentricNotification === "function" && targetUser && latestRenderedResourceId) {
+  if (deps.notificationService && typeof deps.notificationService.sendJobNotificationEvent === "function" && targetUser && latestRenderedResourceId) {
     const renderJobId = `render-${documentIdentity}`;
+    const stepKey = 'document_step';
     try {
-      await deps.notificationService.sendDocumentCentricNotification({
+      await deps.notificationService.sendJobNotificationEvent({
         type: "render_completed",
         sessionId,
         stageSlug,
@@ -477,6 +478,7 @@ export async function renderDocument(
         document_key: documentKey,
         modelId: modelSlug,
         latestRenderedResourceId,
+        step_key: stepKey,
       }, targetUser);
     } catch (e) {
       deps.logger?.warn?.("Failed to send render_completed notification", { error: e });

@@ -6,7 +6,7 @@ import { initializeApiClient, _resetApiClient } from '@paynless/api';
 import { server } from '../../api/src/setupTests';
 import { useNotificationStore } from './notificationStore';
 import { useDialecticStore } from './dialecticStore';
-import { getStageDocumentKey } from './dialecticStore.documents';
+import { getStageDocumentKey, getStageRunDocumentKey } from './dialecticStore.documents';
 import type {
   Notification,
   DialecticStageRecipe,
@@ -160,7 +160,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
       });
 
       let updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
-      let descriptor = updatedProgress?.documents[documentKey];
+      let descriptor = updatedProgress?.documents[getStageRunDocumentKey(documentKey, modelId)];
       expect(descriptor).toBeDefined();
       expect(isRenderedDescriptor(descriptor)).toBe(true);
       if (isRenderedDescriptor(descriptor)) {
@@ -193,7 +193,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
       });
 
       updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
-      descriptor = updatedProgress?.documents[documentKey];
+      descriptor = updatedProgress?.documents[getStageRunDocumentKey(documentKey, modelId)];
       expect(descriptor).toBeDefined();
       expect(isRenderedDescriptor(descriptor)).toBe(true);
       if (isRenderedDescriptor(descriptor)) {
@@ -227,7 +227,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
       });
 
       updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
-      descriptor = updatedProgress?.documents[documentKey];
+      descriptor = updatedProgress?.documents[getStageRunDocumentKey(documentKey, modelId)];
       expect(descriptor).toBeDefined();
       expect(isRenderedDescriptor(descriptor)).toBe(true);
       if (isRenderedDescriptor(descriptor)) {
@@ -262,7 +262,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
 
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
-          documents: { [documentKey]: descriptor },
+          documents: { [getStageRunDocumentKey(documentKey, modelId)]: descriptor },
           stepStatuses: {},
         };
       });
@@ -372,7 +372,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
       useDialecticStore.setState((state) => {
         state.recipesByStageSlug[stageSlug] = recipe;
         state.stageRunProgress[progressKey] = {
-          documents: { [documentKey]: descriptor },
+          documents: { [getStageRunDocumentKey(documentKey, modelId)]: descriptor },
           stepStatuses: {},
         };
       });
@@ -404,7 +404,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
       });
 
       const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
-      const updatedDescriptor = updatedProgress?.documents[documentKey];
+      const updatedDescriptor = updatedProgress?.documents[getStageRunDocumentKey(documentKey, modelId)];
       expect(updatedDescriptor).toBeDefined();
       expect(isRenderedDescriptor(updatedDescriptor)).toBe(true);
       if (isRenderedDescriptor(updatedDescriptor)) {
@@ -475,8 +475,8 @@ describe('Store integration test for progressive document rendering lifecycle', 
 
       const progress = useDialecticStore.getState().stageRunProgress[progressKey];
       expect(progress).toBeDefined();
-      expect(progress?.documents[documentKey]).toBeDefined();
-      const descriptor = progress?.documents[documentKey];
+      expect(progress?.documents[getStageRunDocumentKey(documentKey, modelId)]).toBeDefined();
+      const descriptor = progress?.documents[getStageRunDocumentKey(documentKey, modelId)];
       expect(isRenderedDescriptor(descriptor)).toBe(true);
       if (isRenderedDescriptor(descriptor)) {
         expect(descriptor.latestRenderedResourceId).toBe(latestRenderedResourceId);
@@ -582,7 +582,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
 
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
-          documents: { [documentKey]: descriptor },
+          documents: { [getStageRunDocumentKey(documentKey, modelId)]: descriptor },
           stepStatuses: {},
         };
         state.stageDocumentContent[serializedKey] = cachedContent;

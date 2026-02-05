@@ -1,6 +1,7 @@
 import { useAuthStore } from "@paynless/store";
 import { AlertTriangle } from "lucide-react";
 import ErrorBoundary from "../components/common/ErrorBoundary";
+import { CardSkeleton } from "../components/common/CardSkeleton";
 import { EditEmail } from "../components/profile/EditEmail";
 import { EditName } from "../components/profile/EditName";
 import { EditPassword } from "../components/profile/EditPassword";
@@ -16,6 +17,44 @@ import { WalletBalanceDisplay } from "../components/wallet/WalletBalanceDisplay"
 
 export function ProfilePage() {
 	const currentProfile = useAuthStore((state) => state.profile);
+	const isLoading = useAuthStore((state) => state.isLoading);
+	const error = useAuthStore((state) => state.error);
+
+	if (isLoading) {
+		return (
+			<div className="container mx-auto px-4 py-8">
+				<div
+					data-testid="profile-grid-skeleton-container"
+					className="max-w-2xl mx-auto space-y-6"
+				>
+					<CardSkeleton numberOfFields={2} />
+					<CardSkeleton numberOfFields={2} />
+					<CardSkeleton numberOfFields={2} />
+					<CardSkeleton numberOfFields={2} />
+				</div>
+			</div>
+		);
+	}
+
+	if (!currentProfile && error) {
+		return (
+			<div className="container mx-auto px-4 py-8 text-center">
+				<Card className="w-full max-w-md mx-auto border-destructive bg-destructive/10">
+					<CardHeader>
+						<CardTitle className="flex items-center text-destructive text-lg">
+							<AlertTriangle size={20} className="mr-2 shrink-0" />
+							Could not load Profile Page
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<p className="text-destructive/90 text-sm">
+							Profile data could not be loaded. {error.message}
+						</p>
+					</CardContent>
+				</Card>
+			</div>
+		);
+	}
 
 	if (!currentProfile) {
 		return (

@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import * as selectorsModule from './dialecticStore.selectors';
 import {
     selectDomains,
     selectIsLoadingDomains,
@@ -32,7 +31,7 @@ import {
     selectCurrentProjectSessions,
     selectIsUpdatingProjectPrompt,
     selectCurrentProjectId,
-    selectSelectedModelIds,
+    selectSelectedModels,
     selectContributionById,
     selectSaveContributionEditError,
     selectActiveContextProjectId,
@@ -49,7 +48,8 @@ import {
     selectStageProgressSummary,
     selectStageDocumentResource,
     selectEditedDocumentByKey,
-    selectValidMarkdownDocumentKeys
+    selectValidMarkdownDocumentKeys,
+    selectUnifiedProjectProgress,
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type { 
@@ -71,7 +71,11 @@ import type {
     AssembledPrompt,
     StageDocumentContentState,
     StageRenderedDocumentDescriptor,
+    StageProgressDetail,
+    UnifiedProjectProgress,
+    SelectedModels,
 } from '@paynless/types';
+import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 
 const mockThesisStage: DialecticStage = {
     id: 's1',
@@ -190,7 +194,7 @@ describe('Dialectic Store Selectors', () => {
             project_id: 'projDetail1',
             session_description: 'Session One',
             iteration_count: 1,
-            selected_model_ids: ['model-1'],
+            selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
             status: 'active',
             associated_chat_id: 'chat-1',
             current_stage_id: 's1',
@@ -208,7 +212,7 @@ describe('Dialectic Store Selectors', () => {
             project_id: 'projDetail1',
             session_description: 'Session Two',
             iteration_count: 1,
-            selected_model_ids: ['model-2'],
+            selected_models: [{ id: 'model-2', displayName: 'Model 2' }],
             status: 'active',
             associated_chat_id: 'chat-2',
             current_stage_id: 's1',
@@ -262,7 +266,10 @@ describe('Dialectic Store Selectors', () => {
         isLoadingProcessTemplate: true,
         processTemplateError: mockProcessTemplateError,
         isUpdatingProjectPrompt: true,
-        selectedModelIds: ['model-1', 'model-2'],
+        selectedModels: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+        ],
         saveContributionEditError: mockSaveContributionError,
         activeContextProjectId: 'projDetail1',
         activeContextSessionId: 'session-1',
@@ -520,14 +527,61 @@ describe('Dialectic Store Selectors', () => {
         expect(selectCurrentProjectId(initialState)).toBeUndefined();
     });
 
-    it('selectSelectedModelIds should return the array of selected model IDs', () => {
-        expect(selectSelectedModelIds(testState)).toEqual(['model-1', 'model-2']);
-        expect(selectSelectedModelIds(initialState)).toEqual([]);
+    it('selectSelectedModels returns state.selectedModels unchanged when defined', () => {
+        const expected: SelectedModels[] = [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+        ];
+        expect(selectSelectedModels(testState)).toEqual(expected);
     });
 
-    describe('selectContributionById', () => {
-        it('should return the correct contribution when found', () => {
-            const result = selectContributionById(testState, 'c1-s1');
+    it('selectSelectedModels returns empty array when state.selectedModels is empty', () => {
+        const stateWithEmptySelectedModels: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            selectedModels: [],
+        };
+        expect(selectSelectedModels(stateWithEmptySelectedModels)).toEqual([]);
+    });
+
+    it('selectSelectedModels returns empty array when state.selectedModels is null', () => {
+        const stateWithNullSelectedModels: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            selectedModels: null,
+        };
+        expect(selectSelectedModels(stateWithNullSelectedModels)).toEqual([]);
+    });
+
+    it('selectSelectedModels returns empty array when state.selectedModels is undefined', () => {
+        const stateWithUndefinedSelectedModels: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            selectedModels: undefined,
+        };
+        expect(selectSelectedModels(stateWithUndefinedSelectedModels)).toEqual([]);
+    });
+
+    describe('selectUnifiedProjectProgress', () => {
+        it('should return 0% progress when selectedModels is null', () => {
+            const stateWithNullModels: DialecticStateValues = {
+                ...testState,
+                selectedModels: null,
+            };
+            const progress = selectUnifiedProjectProgress(stateWithNullModels, 'session-1');
+            expect(progress.overallPercentage).toBe(0);
+        });
+    
+        it('should return 0% progress when selectedModels is undefined', () => {
+            const stateWithUndefinedModels: DialecticStateValues = {
+                ...testState,
+                selectedModels: undefined,
+            };
+            const progress = selectUnifiedProjectProgress(stateWithUndefinedModels, 'session-1');
+            expect(progress.overallPercentage).toBe(0);
+        });
+    });
+ 
+     describe('selectContributionById', () => {
+         it('should return the correct contribution when found', () => {
+             const result = selectContributionById(testState, 'c1-s1');
             expect(result).toBeDefined();
             expect(result?.id).toBe('c1-s1');
         });
@@ -1405,7 +1459,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
             project_id: projectId,
             session_description: 'Test session',
             user_input_reference_url: null,
-            selected_model_ids: [],
+            selected_models: [],
             status: 'active',
             associated_chat_id: null,
             dialectic_session_models: [],
@@ -2052,6 +2106,9 @@ describe('selectStageDocumentResource and selectEditedDocumentByKey', () => {
             },
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-abc',
+            sourceContributionId: null,
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
         };
 
         const state: DialecticStateValues = {
@@ -2083,6 +2140,9 @@ describe('selectStageDocumentResource and selectEditedDocumentByKey', () => {
             },
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-def',
+            sourceContributionId: null,
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
         };
 
         const state: DialecticStateValues = {
@@ -2128,6 +2188,9 @@ describe('selectStageDocumentResource and selectEditedDocumentByKey', () => {
             },
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-ghi',
+            sourceContributionId: null,
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
         };
 
         const staleContribution: DialecticContribution = {
@@ -2182,7 +2245,7 @@ describe('selectStageDocumentResource and selectEditedDocumentByKey', () => {
                     project_id: 'proj-test',
                     session_description: 'Test session',
                     iteration_count: iterationNumber,
-                    selected_model_ids: [modelId],
+                    selected_models: [{ id: modelId, displayName: modelId }],
                     status: 'active',
                     associated_chat_id: null,
                     current_stage_id: 'stage-1',
@@ -2238,6 +2301,9 @@ describe('selectStageDocumentResource and selectEditedDocumentByKey', () => {
             },
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-dirty',
+            sourceContributionId: null,
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
         };
 
         const state: DialecticStateValues = {
@@ -2464,6 +2530,1261 @@ describe('selectValidMarkdownDocumentKeys', () => {
         expect(result).toBeInstanceOf(Set);
         expect(result.size).toBe(0);
     });
-});
+  });
 
+  describe('selectUnifiedProjectProgress', () => {
+    const sessionId = 'session-unified';
+    const iterationNumber = 1;
+    const progressKeyForStage = (stageSlug: string): string =>
+        `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+    const stage1ForUnified: DialecticStage = {
+      id: 'stage-abc',
+      slug: 'mock-stage-1',
+      display_name: 'Mock Stage 1',
+      description: 'First mock stage',
+      created_at: new Date().toISOString(),
+      default_system_prompt_id: 'sp-1',
+      expected_output_template_ids: [],
+      recipe_template_id: null,
+      active_recipe_instance_id: null,
+    };
+    const stage2ForUnified: DialecticStage = {
+      id: 'stage-def',
+      slug: 'mock-stage-2',
+      display_name: 'Mock Stage 2',
+      description: 'Second mock stage',
+      created_at: new Date().toISOString(),
+      default_system_prompt_id: 'sp-2',
+      expected_output_template_ids: [],
+      recipe_template_id: null,
+      active_recipe_instance_id: null,
+    };
+    const templateForUnified: DialecticProcessTemplate = {
+      id: 'pt-1',
+      name: 'Test Template',
+      description: 'A test template',
+      created_at: new Date().toISOString(),
+      starting_stage_id: 'stage-abc',
+      stages: [stage1ForUnified, stage2ForUnified],
+      transitions: [
+        { id: 't1', process_template_id: 'pt-1', source_stage_id: 'stage-abc', target_stage_id: 'stage-def', created_at: new Date().toISOString(), condition_description: null },
+      ],
+    };
+    const projectBaseForUnified: DialecticProject = {
+      id: 'proj-1',
+      user_id: 'user1',
+      project_name: 'Detailed Project',
+      initial_user_prompt: 'Initial Prompt Text',
+      selected_domain_id: 'domain1',
+      dialectic_domains: { name: 'Tech' },
+      selected_domain_overlay_id: 'overlay1',
+      repo_url: null,
+      status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      dialectic_sessions: [],
+      resources: [],
+      process_template_id: 'pt1',
+      dialectic_process_templates: templateForUnified,
+      isLoadingProcessTemplate: false,
+      processTemplateError: null,
+      contributionGenerationStatus: 'idle',
+      generateContributionsError: null,
+      isSubmittingStageResponses: false,
+      submitStageResponsesError: null,
+      isSavingContributionEdit: false,
+      saveContributionEditError: null,
+    };
+
+    it('returns 0% progress for new project with no completed documents', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: {},
+        stageRunProgress: {},
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.overallPercentage).toBe(0);
+      expect(result.completedStages).toBe(0);
+      expect(result.totalStages).toBe(2);
+      expect(result.projectStatus).toBe('not_started');
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+    });
+
+    it('calculates step progress as completedModels/totalModels (e.g. 1/3 = 33%)', () => {
+      const documentKey = 'doc_a';
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 'step-1',
+            step_key: 'doc_step',
+            step_slug: 'doc-step',
+            step_name: 'Doc Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: documentKey, artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+        ],
+      };
+      const baseDescriptor: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'completed',
+        job_id: 'job-1',
+        latestRenderedResourceId: 'res-1',
+        modelId: 'model-1',
+        versionHash: 'h1',
+        lastRenderedResourceId: 'res-1',
+        lastRenderAtIso: new Date().toISOString(),
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { doc_step: 'in_progress' },
+            documents: {
+              [`${documentKey}${sep}model-1`]: { ...baseDescriptor, status: 'completed', modelId: 'model-1' },
+              [`${documentKey}${sep}model-2`]: { ...baseDescriptor, status: 'generating', modelId: 'model-2' },
+              [`${documentKey}${sep}model-3`]: { ...baseDescriptor, status: 'not_started', modelId: 'model-3' },
+            },
+          },
+        },
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.totalStages).toBe(2);
+      expect(result.currentStage).not.toBeNull();
+      expect(result.projectStatus).toBe('in_progress');
+      expect(result.overallPercentage).toBeGreaterThan(0);
+      expect(result.overallPercentage).toBeLessThan(100);
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage).toBeDefined();
+      expect(firstStage.stepsDetail).toBeDefined();
+      expect(firstStage.stepsDetail.length).toBeGreaterThan(0);
+      const docStep = firstStage.stepsDetail[0];
+      expect(docStep.completedModels).toBe(1);
+      expect(docStep.totalModels).toBe(3);
+      expect(docStep.stepPercentage).toBeCloseTo(100 / 3, 1);
+    });
+
+    it('one document key produced by 3 models: 1 of 3 completed yields 33% step progress', () => {
+      const documentKey = 'doc_a';
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 'step-1',
+            step_key: 'doc_step',
+            step_slug: 'doc-step',
+            step_name: 'Doc Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: documentKey, artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+        ],
+      };
+      const baseDescriptor: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'completed',
+        job_id: 'job-1',
+        latestRenderedResourceId: 'res-1',
+        modelId: 'model-1',
+        versionHash: 'h1',
+        lastRenderedResourceId: 'res-1',
+        lastRenderAtIso: new Date().toISOString(),
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { doc_step: 'in_progress' },
+            documents: {
+              [`${documentKey}${sep}model-1`]: { ...baseDescriptor, status: 'completed', modelId: 'model-1' },
+              [`${documentKey}${sep}model-2`]: { ...baseDescriptor, status: 'generating', modelId: 'model-2' },
+              [`${documentKey}${sep}model-3`]: { ...baseDescriptor, status: 'not_started', modelId: 'model-3' },
+            },
+          },
+        },
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage).toBeDefined();
+      expect(firstStage.stepsDetail).toBeDefined();
+      expect(firstStage.stepsDetail.length).toBeGreaterThan(0);
+      const docStep = firstStage.stepsDetail[0];
+      expect(docStep.completedModels).toBe(1);
+      expect(docStep.totalModels).toBe(3);
+      expect(docStep.stepPercentage).toBeCloseTo(100 / 3, 1);
+    });
+
+    it('one document key produced by 3 models: all 3 completed yields 100% step progress', () => {
+      const documentKey = 'doc_a';
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 'step-1',
+            step_key: 'doc_step',
+            step_slug: 'doc-step',
+            step_name: 'Doc Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: documentKey, artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+        ],
+      };
+      const baseDescriptor: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'completed',
+        job_id: 'job-1',
+        latestRenderedResourceId: 'res-1',
+        modelId: 'model-1',
+        versionHash: 'h1',
+        lastRenderedResourceId: 'res-1',
+        lastRenderAtIso: new Date().toISOString(),
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { doc_step: 'in_progress' },
+            documents: {
+              [`${documentKey}${sep}model-1`]: { ...baseDescriptor, status: 'completed', modelId: 'model-1' },
+              [`${documentKey}${sep}model-2`]: { ...baseDescriptor, status: 'completed', modelId: 'model-2' },
+              [`${documentKey}${sep}model-3`]: { ...baseDescriptor, status: 'completed', modelId: 'model-3' },
+            },
+          },
+        },
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage).toBeDefined();
+      expect(firstStage.stepsDetail).toBeDefined();
+      expect(firstStage.stepsDetail.length).toBeGreaterThan(0);
+      const docStep = firstStage.stepsDetail[0];
+      expect(docStep.completedModels).toBe(3);
+      expect(docStep.totalModels).toBe(3);
+      expect(docStep.stepPercentage).toBe(100);
+    });
+
+    it('calculates stage progress as sum of step progress / total steps', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 's1',
+            step_key: 'step_a',
+            step_slug: 'step-a',
+            step_name: 'Step A',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+          {
+            id: 's2',
+            step_key: 'step_b',
+            step_slug: 'step-b',
+            step_name: 'Step B',
+            execution_order: 2,
+            parallel_group: 2,
+            branch_key: 'b2',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: 'doc_b', artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+        ],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { step_a: 'completed', step_b: 'in_progress' },
+            documents: {
+              'doc_a': {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'j1',
+                latestRenderedResourceId: 'r1',
+                modelId: 'model-1',
+                versionHash: 'v1',
+                lastRenderedResourceId: 'r1',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+              'doc_b': {
+                descriptorType: 'rendered',
+                status: 'generating',
+                job_id: 'j2',
+                latestRenderedResourceId: 'r2',
+                modelId: 'model-1',
+                versionHash: 'v2',
+                lastRenderedResourceId: 'r2',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+          },
+        },
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.totalStages).toBe(2);
+      expect(result.currentStageSlug).toBe('mock-stage-1');
+      expect(result.overallPercentage).toBeGreaterThanOrEqual(0);
+      expect(result.overallPercentage).toBeLessThanOrEqual(100);
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+    });
+
+    it('calculates overall progress as (completed stages + current stage progress) / total stages', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-def',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe1: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'i1',
+        steps: [{ id: 's1', step_key: 'step_1', step_slug: 's1', step_name: 'Step 1', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd1', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+      };
+      const recipe2: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-2',
+        instanceId: 'i2',
+        steps: [{ id: 's2', step_key: 'step_2', step_slug: 's2', step_name: 'Step 2', execution_order: 1, parallel_group: 1, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd2', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+      };
+      const key1 = progressKeyForStage('mock-stage-1');
+      const key2 = progressKeyForStage('mock-stage-2');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe1, 'mock-stage-2': recipe2 },
+        stageRunProgress: {
+          [key1]: {
+            stepStatuses: { step_1: 'completed' },
+            documents: {
+              'd1': {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'j1',
+                latestRenderedResourceId: 'r1',
+                modelId: 'model-1',
+                versionHash: 'v1',
+                lastRenderedResourceId: 'r1',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+          },
+          [key2]: {
+            stepStatuses: { step_2: 'in_progress' },
+            documents: {
+              'd2': {
+                descriptorType: 'rendered',
+                status: 'generating',
+                job_id: 'j2',
+                latestRenderedResourceId: 'r2',
+                modelId: 'model-1',
+                versionHash: 'v2',
+                lastRenderedResourceId: 'r2',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+          },
+        },
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.totalStages).toBe(2);
+      expect(result.completedStages).toBe(1);
+      expect(result.currentStageSlug).toBe('mock-stage-2');
+      expect(result.overallPercentage).toBeGreaterThan(50);
+      expect(result.overallPercentage).toBeLessThanOrEqual(100);
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+    });
+
+    it('returns 100% when all stages complete', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-def',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe1: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'i1',
+        steps: [{ id: 's1', step_key: 'step_1', step_slug: 's1', step_name: 'Step 1', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd1', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+      };
+      const recipe2: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-2',
+        instanceId: 'i2',
+        steps: [{ id: 's2', step_key: 'step_2', step_slug: 's2', step_name: 'Step 2', execution_order: 1, parallel_group: 1, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd2', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+      };
+      const key1 = progressKeyForStage('mock-stage-1');
+      const key2 = progressKeyForStage('mock-stage-2');
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const completedDoc = {
+        descriptorType: 'rendered' as const,
+        status: 'completed' as const,
+        job_id: 'j1',
+        latestRenderedResourceId: 'r1',
+        modelId: 'model-1',
+        versionHash: 'v1',
+        lastRenderedResourceId: 'r1',
+        lastRenderAtIso: new Date().toISOString(),
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe1, 'mock-stage-2': recipe2 },
+        stageRunProgress: {
+          [key1]: { stepStatuses: { step_1: 'completed' }, documents: { [`d1${sep}model-1`]: completedDoc } },
+          [key2]: { stepStatuses: { step_2: 'completed' }, documents: { [`d2${sep}model-1`]: { ...completedDoc, job_id: 'j2', latestRenderedResourceId: 'r2', lastRenderedResourceId: 'r2' } } },
+        },
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.overallPercentage).toBe(100);
+      expect(result.completedStages).toBe(2);
+      expect(result.projectStatus).toBe('completed');
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+    });
+
+    it('handles multi-model steps correctly (3 models = step complete only when all 3 finish)', () => {
+      const documentKey = 'doc_a';
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [{
+          id: 'step-1',
+          step_key: 'doc_step',
+          step_slug: 'doc-step',
+          step_name: 'Doc Step',
+          execution_order: 1,
+          parallel_group: 1,
+          branch_key: 'b1',
+          job_type: 'EXECUTE',
+          prompt_type: 'Turn',
+          output_type: 'assembled_document_json',
+          granularity_strategy: 'per_source_document',
+          inputs_required: [],
+          inputs_relevance: [],
+          outputs_required: [{ document_key: documentKey, artifact_class: 'rendered_document', file_type: 'markdown' }],
+        }],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const baseDoc: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'completed',
+        job_id: 'j1',
+        latestRenderedResourceId: 'r1',
+        modelId: 'model-1',
+        versionHash: 'v1',
+        lastRenderedResourceId: 'r1',
+        lastRenderAtIso: new Date().toISOString(),
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { doc_step: 'in_progress' },
+            documents: {
+              [`${documentKey}${sep}model-1`]: { ...baseDoc, status: 'completed', modelId: 'model-1' },
+              [`${documentKey}${sep}model-2`]: { ...baseDoc, status: 'generating', modelId: 'model-2' },
+              [`${documentKey}${sep}model-3`]: { ...baseDoc, status: 'not_started', modelId: 'model-3' },
+            },
+          },
+        },
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.totalStages).toBe(2);
+      expect(result.projectStatus).toBe('in_progress');
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage).toBeDefined();
+      expect(firstStage.stepsDetail).toBeDefined();
+      expect(firstStage.stepsDetail.length).toBeGreaterThan(0);
+      const docStep = firstStage.stepsDetail[0];
+      expect(docStep.completedModels).toBe(1);
+      expect(docStep.totalModels).toBe(3);
+      expect(docStep.status).toBe('in_progress');
+    });
+
+    it('handles non-model steps as 1/1 (step without model call counts as complete when step completes)', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 'render-step',
+            step_key: 'render_step',
+            step_slug: 'render-step',
+            step_name: 'Render Step',
+            execution_order: 2,
+            parallel_group: 2,
+            branch_key: 'b2',
+            job_type: 'RENDER',
+            prompt_type: 'Turn',
+            output_type: 'rendered_document',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: 'out', artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+        ],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { render_step: 'completed' },
+            documents: {},
+          },
+        },
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.totalStages).toBe(2);
+      expect(result.projectStatus).toBe('in_progress');
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+    });
+
+    it('mixed recipe with model and non-model steps calculates correctly', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 'exec-1',
+            step_key: 'exec_step',
+            step_slug: 'exec-step',
+            step_name: 'Exec Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: 'doc_x', artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+          {
+            id: 'render-1',
+            step_key: 'render_step',
+            step_slug: 'render-step',
+            step_name: 'Render Step',
+            execution_order: 2,
+            parallel_group: 2,
+            branch_key: 'b2',
+            job_type: 'RENDER',
+            prompt_type: 'Turn',
+            output_type: 'rendered_document',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: 'doc_x', artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+        ],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { exec_step: 'completed', render_step: 'completed' },
+            documents: {
+              'doc_x': {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'j1',
+                latestRenderedResourceId: 'r1',
+                modelId: 'model-1',
+                versionHash: 'v1',
+                lastRenderedResourceId: 'r1',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+          },
+        },
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.totalStages).toBe(2);
+      expect(result.overallPercentage).toBeGreaterThanOrEqual(0);
+      expect(result.overallPercentage).toBeLessThanOrEqual(100);
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+    });
+
+    it('returns failed status if any document has failed status', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [{
+          id: 's1',
+          step_key: 'doc_step',
+          step_slug: 'doc-step',
+          step_name: 'Doc Step',
+          execution_order: 1,
+          parallel_group: 1,
+          branch_key: 'b1',
+          job_type: 'EXECUTE',
+          prompt_type: 'Turn',
+          output_type: 'assembled_document_json',
+          granularity_strategy: 'per_source_document',
+          inputs_required: [],
+          inputs_relevance: [],
+          outputs_required: [{ document_key: 'doc_fail', artifact_class: 'rendered_document', file_type: 'markdown' }],
+        }],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { doc_step: 'failed' },
+            documents: {
+              'doc_fail': {
+                descriptorType: 'rendered',
+                status: 'failed',
+                job_id: 'j1',
+                latestRenderedResourceId: 'r1',
+                modelId: 'model-1',
+                versionHash: 'v1',
+                lastRenderedResourceId: 'r1',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+          },
+        },
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.projectStatus).toBe('failed');
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+    });
+
+    it('returns in_progress status when documents are generating', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [{
+          id: 's1',
+          step_key: 'doc_step',
+          step_slug: 'doc-step',
+          step_name: 'Doc Step',
+          execution_order: 1,
+          parallel_group: 1,
+          branch_key: 'b1',
+          job_type: 'EXECUTE',
+          prompt_type: 'Turn',
+          output_type: 'assembled_document_json',
+          granularity_strategy: 'per_source_document',
+          inputs_required: [],
+          inputs_relevance: [],
+          outputs_required: [{ document_key: 'doc_gen', artifact_class: 'rendered_document', file_type: 'markdown' }],
+        }],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { doc_step: 'in_progress' },
+            documents: {
+              'doc_gen': {
+                descriptorType: 'rendered',
+                status: 'generating',
+                job_id: 'j1',
+                latestRenderedResourceId: 'r1',
+                modelId: 'model-1',
+                versionHash: 'v1',
+                lastRenderedResourceId: 'r1',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+          },
+        },
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.projectStatus).toBe('in_progress');
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+    });
+
+    it('returns not_started status for stages with no progress data', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: {},
+        stageRunProgress: {},
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.projectStatus).toBe('not_started');
+      expect(result.overallPercentage).toBe(0);
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+    });
+
+    it('returns stageDetails array with one entry per stage and correct StageProgressDetail shape', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: {},
+        stageRunProgress: {},
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBe(result.totalStages);
+
+      const statusValues: Array<UnifiedProjectProgress['projectStatus']> = ['not_started', 'in_progress', 'completed', 'failed'];
+      for (let i = 0; i < result.stageDetails.length; i += 1) {
+        const detail: StageProgressDetail = result.stageDetails[i];
+        expect(detail).toBeDefined();
+        expect(typeof detail.stageSlug).toBe('string');
+        expect(detail.stageSlug.length).toBeGreaterThan(0);
+        expect(typeof detail.totalSteps).toBe('number');
+        expect(typeof detail.completedSteps).toBe('number');
+        expect(detail.completedSteps).toBeGreaterThanOrEqual(0);
+        expect(detail.completedSteps).toBeLessThanOrEqual(detail.totalSteps);
+        expect(typeof detail.stagePercentage).toBe('number');
+        expect(detail.stagePercentage).toBeGreaterThanOrEqual(0);
+        expect(detail.stagePercentage).toBeLessThanOrEqual(100);
+        expect(Array.isArray(detail.stepsDetail)).toBe(true);
+        expect(statusValues).toContain(detail.stageStatus);
+      }
+    });
+
+    it('counts total models from selectedModels.length', () => {
+      const documentKey = 'doc_a';
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+            { id: 'model-3', displayName: 'Model 3' },
+        ],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 'step-1',
+            step_key: 'doc_step',
+            step_slug: 'doc-step',
+            step_name: 'Doc Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: documentKey, artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+        ],
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [
+          { id: 'model-1', displayName: 'Model 1' },
+          { id: 'model-2', displayName: 'Model 2' },
+          { id: 'model-3', displayName: 'Model 3' },
+        ],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {},
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      expect(result.stageDetails.length).toBeGreaterThan(0);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage.stepsDetail.length).toBeGreaterThan(0);
+      expect(firstStage.stepsDetail[0].totalModels).toBe(3);
+    });
+
+    it('filters documents by selectedModels map id so only selected models count', () => {
+      const documentKey = 'doc_a';
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [
+            { id: 'model-1', displayName: 'Model 1' },
+            { id: 'model-2', displayName: 'Model 2' },
+        ],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 'step-1',
+            step_key: 'doc_step',
+            step_slug: 'doc-step',
+            step_name: 'Doc Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [{ document_key: documentKey, artifact_class: 'rendered_document', file_type: 'markdown' }],
+          },
+        ],
+      };
+      const baseDescriptor: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'completed',
+        job_id: 'job-1',
+        latestRenderedResourceId: 'res-1',
+        modelId: 'model-1',
+        versionHash: 'h1',
+        lastRenderedResourceId: 'res-1',
+        lastRenderAtIso: new Date().toISOString(),
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        selectedModels: [
+          { id: 'model-1', displayName: 'Model 1' },
+          { id: 'model-2', displayName: 'Model 2' },
+        ],
+        recipesByStageSlug: { 'mock-stage-1': recipe },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { doc_step: 'in_progress' },
+            documents: {
+              [`${documentKey}${sep}model-1`]: { ...baseDescriptor, status: 'completed', modelId: 'model-1' },
+              [`${documentKey}${sep}model-2`]: { ...baseDescriptor, status: 'completed', modelId: 'model-2' },
+              [`${documentKey}${sep}model-3`]: { ...baseDescriptor, status: 'completed', modelId: 'model-3' },
+            },
+          },
+        },
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      expect(result.stageDetails).toBeDefined();
+      expect(Array.isArray(result.stageDetails)).toBe(true);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage).toBeDefined();
+      expect(firstStage.stepsDetail).toBeDefined();
+      expect(firstStage.stepsDetail.length).toBeGreaterThan(0);
+      const docStep = firstStage.stepsDetail[0];
+      expect(docStep.totalModels).toBe(2);
+      expect(docStep.completedModels).toBe(2);
+    });
+  });
 

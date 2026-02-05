@@ -331,6 +331,11 @@ export interface DialecticSessionModel {
     ai_provider?: AIModelCatalogEntry;
 }
 
+export interface SelectedModels {
+  id: string;
+  displayName: string;
+}
+
 //This type needs to be reset to be a row from the database
 export interface DialecticSession {
   id: string;
@@ -338,7 +343,7 @@ export interface DialecticSession {
   session_description: string | null;
   user_input_reference_url: string | null;
   iteration_count: number;
-  selected_model_ids: string[] | null;
+  selected_models: SelectedModels[];
   status: string | null;
   associated_chat_id: string | null;
   current_stage_id: string | null;
@@ -418,6 +423,17 @@ type ListStageDocumentsAction = {
   payload: ListStageDocumentsPayload;
 };
 
+export interface GetAllStageProgressPayload {
+  sessionId: string;
+  iterationNumber: number;
+  userId: string;
+  projectId: string;
+}
+type GetAllStageProgressAction = {
+  action: 'getAllStageProgress';
+  payload: GetAllStageProgressPayload;
+};
+
 // The main union type for all possible JSON requests to the service.
 export type DialecticServiceRequest =
   | ListProjectsAction
@@ -440,6 +456,7 @@ export type DialecticServiceRequest =
   | GetSessionDetailsAction
   | GetStageRecipeAction
   | ListStageDocumentsAction
+  | GetAllStageProgressAction
   | SubmitStageDocumentFeedbackAction;
 
 // --- END: Discriminated Union ---
@@ -486,6 +503,42 @@ export interface StageDocumentDescriptorDto {
 export type ListStageDocumentsResponse = StageDocumentDescriptorDto[];
 
 // --- END: DTOs for listStageDocuments ---
+
+// --- START: DTOs and types for getAllStageProgress ---
+
+export type UnifiedStageStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
+
+export interface StageProgressEntry {
+  stageSlug: string;
+  documents: StageDocumentDescriptorDto[];
+  stepStatuses: Record<string, string>;
+  stageStatus: UnifiedStageStatus;
+}
+
+export type GetAllStageProgressResponse = StageProgressEntry[];
+
+export interface GetAllStageProgressDeps {
+  dbClient: SupabaseClient<Database>;
+  user: User;
+}
+
+export interface GetAllStageProgressParams {
+  payload: GetAllStageProgressPayload;
+}
+
+export interface GetAllStageProgressResult {
+  data?: GetAllStageProgressResponse;
+  error?: ServiceError;
+  status?: number;
+}
+
+export type GetAllStageProgressFn = (
+  payload: GetAllStageProgressPayload,
+  dbClient: SupabaseClient<Database>,
+  user: User,
+) => Promise<GetAllStageProgressResult>;
+
+// --- END: DTOs and types for getAllStageProgress ---
 
 export interface CreateProjectPayload {
   projectName: string;
@@ -657,6 +710,7 @@ export enum BranchKey {
   comparison_vector = 'comparison_vector',
 
   // Synthesis
+  header_context_pairwise = 'header_context_pairwise',
   synthesis_pairwise_business_case = 'synthesis_pairwise_business_case',
   synthesis_pairwise_feature_spec = 'synthesis_pairwise_feature_spec',
   synthesis_pairwise_technical_approach = 'synthesis_pairwise_technical_approach',
@@ -781,7 +835,7 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
         [key: string]: string | string[];
     };
     document_key?: string | null;
-    branch_key?: string | null;
+    branch_key?: BranchKey | null;
     parallel_group?: number | null;
     planner_metadata?: DialecticStepPlannerMetadata | null;
     document_relationships?: DocumentRelationships | null;
@@ -816,7 +870,7 @@ export interface RequiredArtifactIdentity {
     iterationNumber: number;
     model_id: string; 
     documentKey: string; // FileType as string
-    branchKey?: string | null; // Optional for lineage disambiguation
+    branchKey?: BranchKey | null; // Optional for lineage disambiguation
     parallelGroup?: number | null; // Optional for parallel branches
     sourceGroupFragment?: string | null; // Optional for source group disambiguation
 }
@@ -1095,19 +1149,35 @@ export interface SubmitStageResponseItem {
   rating?: number;
 }
 
-export interface SubmitStageResponsesPayload { 
+/**
+ * Payload for submitStageResponses (user-initiated stage advancement).
+ *
+ * Session status patterns accepted by the handler:
+ * - `{stageSlug}_completed` — trigger has marked stage complete; handler may advance.
+ * - `running_{stageSlug}` — stage still running (race before trigger); handler may advance when at target stage.
+ *
+ * Idempotency: The handler always returns success for valid payloads. Saves (edits/feedback) are the client's
+ * responsibility before calling this action. Advancement is conditional: the handler advances the session
+ * (current_stage_id, status) only when the session is currently at the target stage (payload.stageSlug).
+ * If the session is already past the target stage, the handler returns success without advancing.
+ */
+export interface SubmitStageResponsesPayload {
   sessionId: string;
   projectId: string;
   stageSlug: DialecticStage['slug'];
   currentIterationNumber: number;
   responses: SubmitStageResponseItem[];
-  userStageFeedback?: { 
-    content: string; 
-    feedbackType: string; 
-    resourceDescription?: Json | null; 
+  userStageFeedback?: {
+    content: string;
+    feedbackType: string;
+    resourceDescription?: Json | null;
   };
 }
 
+/**
+ * Response from submitStageResponses. updatedSession reflects the session after the call;
+ * if advancement occurred, it will have the next stage and pending_{nextStage} status.
+ */
 export interface SubmitStageResponsesResponse {
   message: string;
   updatedSession: DialecticSession;

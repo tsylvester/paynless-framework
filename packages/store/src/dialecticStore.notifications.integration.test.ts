@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act } from '@testing-library/react';
 import { useNotificationStore } from './notificationStore';
 import { useDialecticStore, initialDialecticStateValues } from './dialecticStore';
+import { getStageRunDocumentKey } from './dialecticStore.documents';
 import { useWalletStore } from './walletStore';
 import type { Notification, DialecticStageRecipe, DialecticStageRecipeStep, StageRunDocumentDescriptor, StageRenderedDocumentDescriptor } from '@paynless/types';
 import { mockLogger, resetMockLogger } from '../../api/src/mocks/logger.mock';
@@ -112,7 +113,7 @@ describe('Notification handling integration tests - optional fields', () => {
 
             const updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
             expect(updatedProgress).toBeDefined();
-            const descriptor = updatedProgress?.documents[documentKey];
+            const descriptor = updatedProgress?.documents[getStageRunDocumentKey(documentKey, modelId)];
             expect(descriptor).toBeDefined();
             expect(isRenderedDescriptor(descriptor)).toBe(true);
             
@@ -425,7 +426,7 @@ describe('Notification handling integration tests - optional fields', () => {
             // Verify document IS tracked after document_started
             let updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
             expect(updatedProgress).toBeDefined();
-            let descriptor = updatedProgress?.documents[documentKey];
+            let descriptor = updatedProgress?.documents[getStageRunDocumentKey(documentKey, modelId)];
             expect(descriptor).toBeDefined();
             expect(isRenderedDescriptor(descriptor)).toBe(true);
             if (isRenderedDescriptor(descriptor)) {
@@ -465,7 +466,7 @@ describe('Notification handling integration tests - optional fields', () => {
             // Verify document's latestRenderedResourceId is updated after render_completed
             updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
             expect(updatedProgress).toBeDefined();
-            descriptor = updatedProgress?.documents[documentKey];
+            descriptor = updatedProgress?.documents[getStageRunDocumentKey(documentKey, modelId)];
             expect(descriptor).toBeDefined();
             expect(isRenderedDescriptor(descriptor)).toBe(true);
             if (isRenderedDescriptor(descriptor)) {
@@ -504,7 +505,7 @@ describe('Notification handling integration tests - optional fields', () => {
             // Verify document_completed found and updated the document
             updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
             expect(updatedProgress).toBeDefined();
-            descriptor = updatedProgress?.documents[documentKey];
+            descriptor = updatedProgress?.documents[getStageRunDocumentKey(documentKey, modelId)];
             expect(descriptor).toBeDefined();
             expect(isRenderedDescriptor(descriptor)).toBe(true);
             if (isRenderedDescriptor(descriptor)) {
@@ -588,7 +589,7 @@ describe('Notification handling integration tests - optional fields', () => {
             // Verify document IS tracked after document_started
             let updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
             expect(updatedProgress).toBeDefined();
-            let descriptor = updatedProgress?.documents[documentKey];
+            let descriptor = updatedProgress?.documents[getStageRunDocumentKey(documentKey, modelId)];
             expect(descriptor).toBeDefined();
             expect(isRenderedDescriptor(descriptor)).toBe(true);
             if (isRenderedDescriptor(descriptor)) {
@@ -626,7 +627,7 @@ describe('Notification handling integration tests - optional fields', () => {
             // Verify document IS found and updated to 'completed' status
             updatedProgress = useDialecticStore.getState().stageRunProgress[progressKey];
             expect(updatedProgress).toBeDefined();
-            descriptor = updatedProgress?.documents[documentKey];
+            descriptor = updatedProgress?.documents[getStageRunDocumentKey(documentKey, modelId)];
             expect(descriptor).toBeDefined();
             expect(isRenderedDescriptor(descriptor)).toBe(true);
             if (isRenderedDescriptor(descriptor)) {

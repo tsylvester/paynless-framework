@@ -28,11 +28,15 @@ import type {
   StageDocumentContentState,
   StageDocumentVersionInfo,
   ListStageDocumentsPayload,
+  GetAllStageProgressPayload,
   EditedDocumentResource,
   SaveContributionEditSuccessResponse,
   SaveContributionEditPayload,
   SubmitStageDocumentFeedbackPayload,
+  UnifiedProjectProgress,
+  SelectedModels,
 } from '@paynless/types';
+import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import {
   beginStageDocumentEditLogic,
   clearStageDocumentDraftLogic,
@@ -42,6 +46,7 @@ import {
   flushStageDocumentDraftLogic,
   handleRenderCompletedLogic,
   hydrateStageProgressLogic,
+  hydrateAllStageProgressLogic,
   reapplyDraftToNewBaselineLogic,
   recordStageDocumentDraftLogic,
   recordStageDocumentFeedbackDraftLogic,
@@ -94,7 +99,7 @@ export const selectSortedStages = (state: DialecticStateValues): DialecticStage[
 };
 
 export const selectActiveContextStage = (state: DialecticStateValues): DialecticStage | null => state.activeContextStage;
-export const selectSelectedModelIds = vi.fn<[DialecticStateValues], string[]>().mockReturnValue([]);
+export const selectSelectedModels = vi.fn<[DialecticStateValues], SelectedModels[]>().mockReturnValue([]);
 export const selectActiveContextProjectId = (state: DialecticStateValues): string | null => state.activeContextProjectId;
 export const selectActiveContextSessionId = (state: DialecticStateValues): string | null => state.activeContextSessionId;
 export const selectActiveStageSlug = (state: DialecticStateValues): string | null => state.activeStageSlug;
@@ -160,6 +165,24 @@ export const selectStepList = (
 
 export const selectValidMarkdownDocumentKeys = vi.fn<[DialecticStateValues, string], Set<string>>().mockReturnValue(new Set<string>());
 
+const defaultUnifiedProgress: UnifiedProjectProgress = {
+  totalStages: 0,
+  completedStages: 0,
+  currentStageSlug: null,
+  overallPercentage: 0,
+  currentStage: null,
+  projectStatus: 'not_started',
+  stageDetails: [],
+};
+
+export const selectUnifiedProjectProgress: Mock<
+  [DialecticStateValues, string],
+  UnifiedProjectProgress
+> = vi.fn<
+  [DialecticStateValues, string],
+  UnifiedProjectProgress
+>().mockReturnValue(defaultUnifiedProgress);
+
 export const selectStageRunProgress = (
   state: DialecticStateValues,
   sessionId: string,
@@ -181,20 +204,36 @@ export const selectStageDocumentChecklist = (
   }
 
   const checklist: StageDocumentChecklistEntry[] = [];
+  const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
 
-  for (const documentKey of Object.keys(progress.documents)) {
-    const descriptor = progress.documents[documentKey];
+  for (const compositeKey of Object.keys(progress.documents)) {
+    const descriptor = progress.documents[compositeKey];
     if (!descriptor || descriptor.modelId !== modelId) {
       continue;
     }
-    // Check if this is a rendered descriptor (has job_id property)
-    if ('job_id' in descriptor) {
+    const documentKey = compositeKey.includes(sep)
+      ? compositeKey.slice(0, compositeKey.indexOf(sep))
+      : compositeKey;
+
+    if (descriptor.descriptorType === 'planned') {
       checklist.push({
+        descriptorType: 'planned',
+        documentKey,
+        status: 'not_started',
+        jobId: null,
+        latestRenderedResourceId: null,
+        modelId: descriptor.modelId,
+        stepKey: descriptor.stepKey,
+      });
+    } else {
+      checklist.push({
+        descriptorType: 'rendered',
         documentKey,
         status: descriptor.status,
         jobId: descriptor.job_id,
         latestRenderedResourceId: descriptor.latestRenderedResourceId ?? null,
         modelId: descriptor.modelId,
+        stepKey: descriptor.stepKey,
       });
     }
   }
@@ -257,11 +296,12 @@ export const selectStageProgressSummary = (
     outstandingDocuments,
   };
 };
+
 // ---- END: Controllable selectors ----
 
 // Define and export the mock for the new thunk
-export const mockActivateProjectAndSessionContextForDeepLink = vi.fn().mockResolvedValue(undefined as void);
-export const mockFetchAndSetCurrentSessionDetails = vi.fn().mockResolvedValue(undefined as void);
+export const mockActivateProjectAndSessionContextForDeepLink = vi.fn().mockResolvedValue(undefined);
+export const mockFetchAndSetCurrentSessionDetails = vi.fn().mockResolvedValue(undefined);
 
 // Mock Session (used in some action mocks)
 const mockSession: DialecticSession = {
@@ -270,7 +310,7 @@ const mockSession: DialecticSession = {
   session_description: 'Mock Session',
   user_input_reference_url: null,
   iteration_count: 1,
-  selected_model_ids: [],
+  selected_models: [],
   status: 'active',
   associated_chat_id: null,
   current_stage_id: 'stage-1',
@@ -316,7 +356,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isUpdatingProjectPrompt: false,
   isUploadingProjectResource: false,
   uploadProjectResourceError: null,
-  selectedModelIds: [],
+  selectedModels: [],
   initialPromptContentCache: {},
   activeContextProjectId: null,
   activeContextSessionId: null,
@@ -338,7 +378,6 @@ export const initialDialecticStateValues: DialecticStateValues = {
   fetchFeedbackFileContentError: null,
   activeDialecticWalletId: null,
   activeStageSlug: 'thesis',
-  sessionProgress: {},
   recipesByStageSlug: {},
   stageRunProgress: {},
   focusedStageDocument: {},
@@ -430,17 +469,17 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       cloneDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
       exportDialecticProject: vi.fn().mockResolvedValue({ data: { export_url: '' }, error: undefined, status: 200 }),
       updateDialecticProjectInitialPrompt: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
-      setSelectedModelIds: vi.fn((ids: string[]) => set({ selectedModelIds: ids })),
-      setModelMultiplicity: vi.fn((modelId: string, count: number) => {
-        const currentSelectedIds = get().selectedModelIds || [];
-        const filteredIds = currentSelectedIds.filter((id) => id !== modelId);
-        const newSelectedIds = [...filteredIds];
+      setSelectedModels: vi.fn((models: SelectedModels[]) => set({ selectedModels: models })),
+      setModelMultiplicity: vi.fn((model: SelectedModels, count: number) => {
+        const currentModels: SelectedModels[] = get().selectedModels || [];
+        const otherModels: SelectedModels[] = currentModels.filter((m) => m.id !== model.id);
+        const newModels: SelectedModels[] = [...otherModels];
         for (let i = 0; i < count; i++) {
-          newSelectedIds.push(modelId);
+          newModels.push(model);
         }
-        set({ selectedModelIds: newSelectedIds });
+        set({ selectedModels: newModels });
       }),
-      resetSelectedModelId: vi.fn(() => set({ selectedModelIds: [] })),
+      resetSelectedModels: vi.fn(() => set({ selectedModels: [] })),
       fetchInitialPromptContent: vi.fn().mockResolvedValue(undefined),
       generateContributions: vi.fn().mockResolvedValue({ data: { message: 'ok', contributions: [] }, error: undefined, status: 200 }),
       submitStageResponses: vi.fn().mockResolvedValue({ data: { message: 'ok', userFeedbackStoragePath: '/path', nextStageSeedPromptStoragePath: '/path', updatedSession: mockSession }, error: undefined, status: 200 }),
@@ -557,9 +596,11 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       _handleProgressUpdate: vi.fn(),
       _handleContributionGenerationComplete: vi.fn(),
       _handlePlannerStarted: vi.fn(),
+      _handlePlannerCompleted: vi.fn(),
       _handleDocumentStarted: vi.fn(),
       _handleDocumentChunkCompleted: vi.fn(),
       _handleDocumentCompleted: vi.fn<[DocumentCompletedPayload], void>(),
+      _handleRenderStarted: vi.fn(),
       _handleRenderCompleted: vi.fn().mockImplementation((event: RenderCompletedPayload) => {
         handleRenderCompletedLogic(get, set, event);
       }),
@@ -650,6 +691,9 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       hydrateStageProgress: vi.fn().mockImplementation((payload: ListStageDocumentsPayload) => {
         hydrateStageProgressLogic(set, payload);
       }),
+      hydrateAllStageProgress: vi.fn().mockImplementation((payload: GetAllStageProgressPayload) => {
+        hydrateAllStageProgressLogic(set, payload);
+      }),
       resetSubmitStageDocumentFeedbackError: vi.fn(() => set({ submitStageDocumentFeedbackError: null })),
     };
   }),
@@ -665,10 +709,14 @@ export const getDialecticStoreState = (): DialecticStore => actualMockStore.getS
 // 5. Mock Hook Logic using useStore
 export function useDialecticStore(): DialecticStore;
 export function useDialecticStore<TResult>(selector: (state: DialecticStore) => TResult): TResult;
-export function useDialecticStore<TResult>(selector?: (state: DialecticStore) => TResult): TResult | DialecticStore {
-  // useStore from Zustand handles undefined selector by returning the whole state.
-  // The selector type needs to be compatible.
-  return useStore(actualMockStore, selector as (state: DialecticStore) => TResult);
+export function useDialecticStore<TResult = DialecticStore>(selector?: (state: DialecticStore) => TResult): TResult | DialecticStore {
+  let sel: (state: DialecticStore) => TResult | DialecticStore;
+  if (selector !== undefined) {
+    sel = selector;
+  } else {
+    sel = (s: DialecticStore): DialecticStore => s;
+  }
+  return useStore(actualMockStore, sel);
 }
 
 // Attach getState and setState to the useDialecticStore hook, similar to Zustand's store API
@@ -681,19 +729,7 @@ Object.assign(useDialecticStore, {
   },
   // Helper to get all action mocks (useful for `expect(getActions().someAction).toHaveBeenCalled()`)
   getActions: (): DialecticActions => {
-    const currentState = actualMockStore.getState();
-    const actions: Partial<DialecticActions> = {};
-    const stateValueKeys = new Set(Object.keys(initialDialecticStateValues));
-
-    for (const key in currentState) {
-      if (Object.prototype.hasOwnProperty.call(currentState, key) && !stateValueKeys.has(key)) {
-        const potentialAction = (currentState as unknown as Record<string, unknown>)[key];
-        if (typeof potentialAction === 'function') {
-          (actions as Record<string, unknown>)[key] = potentialAction;
-        }
-      }
-    }
-    return actions as DialecticActions;
+    return actualMockStore.getState();
   }
 });
 
@@ -712,7 +748,7 @@ export const initializeMockDialecticState = (initialStateOverrides?: Partial<Dia
   // Ensure that selectors converted to actual functions are NOT reset as vi.fn()
   selectIsStageReadyForSessionIteration.mockClear().mockReturnValue(false);
   selectFeedbackForStageIteration.mockClear().mockReturnValue(null);
-  selectSelectedModelIds.mockClear().mockReturnValue([]);
+  selectSelectedModels.mockClear().mockReturnValue([]);
   selectOverlay.mockClear();
 
   // Resetting specific action mocks (ensure all relevant actions are included if needed for global mock state)
@@ -732,10 +768,10 @@ export const resetDialecticStoreMock = () => {
 
 // 9. Utility to get specific action mocks from the current store instance
 // This is more robust than getActions() if you need a specific, typed action mock.
-export const getDialecticStoreActionMock = <K extends keyof DialecticActions>(actionName: K): Mock => {
+export const getDialecticStoreActionMock = <K extends keyof DialecticActions>(actionName: K): DialecticActions[K] => {
     const action = actualMockStore.getState()[actionName];
     if (typeof action === 'function' && '_isMockFunction' in action) {
-        return action as unknown as Mock;
+        return action;
     }
     throw new Error(`Action ${String(actionName)} is not a mock function in the store.`);
 };
@@ -743,17 +779,5 @@ export const getDialecticStoreActionMock = <K extends keyof DialecticActions>(ac
 // Helper to access ALL actions, including those that are not vi.fn() if any (though they should be)
 // This is similar to the one attached to the hook but can be used independently.
 export const getDialecticStoreActions = (): DialecticActions => {
-  const currentState = actualMockStore.getState();
-  const actionsOnly: Partial<DialecticActions> = {};
-  const stateKeys = Object.keys(initialDialecticStateValues); // Array of strings
-
-  for (const key in currentState) { // key is string
-    if (Object.prototype.hasOwnProperty.call(currentState, key)) {
-      // Ensure key is not a state key and the value is a function
-      if (!(stateKeys).includes(key) && typeof (currentState as unknown as Record<string, unknown>)[key] === 'function') {
-        (actionsOnly as Record<string, unknown>)[key] = (currentState as unknown as Record<string, unknown>)[key];
-      }
-    }
-  }
-  return actionsOnly as DialecticActions;
+  return actualMockStore.getState();
 };

@@ -1,7 +1,8 @@
-// Import actual store
+// Import actual store and API (real assets; api is test-double at boundary in setup)
+import { api } from "@paynless/api";
 import { useAuthStore } from "@paynless/store";
 // Import types
-import type { User, UserProfile } from "@paynless/types";
+import type { ApiError, User, UserProfile } from "@paynless/types";
 import {
 	act,
 	fireEvent,
@@ -10,11 +11,19 @@ import {
 	waitFor,
 	within,
 } from "@testing-library/react";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mockSetAuthError, resetAuthStoreMock } from "@/mocks/authStore.mock";
+import { resetAuthStoreMock } from "@/mocks/authStore.mock";
 // Import components to test
 import { ProfilePage } from "../../pages/Profile";
+
+vi.mock("sonner", () => ({
+	toast: {
+		success: vi.fn(),
+		error: vi.fn(),
+	},
+	Toaster: () => null,
+}));
 
 // Mock Profile Data for tests
 const initialProfileData: UserProfile = {
@@ -54,7 +63,11 @@ describe("Profile Integration Tests", () => {
 
 	// --- Test Setup ---
 	beforeEach(() => {
-		vi.clearAllMocks();
+		// Do not clearAllMocks: it wipes setup’s api.wallet implementation and breaks real WalletBalanceDisplay.
+		// Clear only the mocks this suite drives so each test gets a fresh api.post.
+		vi.mocked(api.post).mockReset();
+		vi.mocked(toast.success).mockClear();
+		vi.mocked(toast.error).mockClear();
 		// Set initial store state simulating user is logged in WITH profile data
 		act(() => {
 			useAuthStore.setState({
@@ -97,16 +110,23 @@ describe("Profile Integration Tests", () => {
 	it("should successfully update profile via API and show success message", async () => {
 		const updatedFirstName = "UpdatedFirstName";
 		const updatedLastName = "UpdatedLastName";
-
-		// Override PUT handler (Corrected path)
-		// mockSetAuthProfile({ ...initialProfileData, first_name: updatedFirstName, last_name: updatedLastName });
+		const updatedProfile: UserProfile = {
+			...initialProfileData,
+			first_name: updatedFirstName,
+			last_name: updatedLastName,
+		};
+		vi.mocked(api.post).mockResolvedValueOnce({
+			status: 200,
+			data: updatedProfile,
+			error: undefined,
+		});
 
 		renderProfilePageWithToaster();
 
-		// Wait for initial load and find the card
-		const editNameCard: HTMLElement | null = (
-			await screen.findByText("Edit Name")
-		).closest('div[data-slot="card"]');
+		const nameTitle = await screen.findByText("Name", { exact: true });
+		const editNameCard: HTMLElement | null = nameTitle.closest(
+			'div[data-slot="card"]',
+		);
 		expect(editNameCard).toBeInTheDocument();
 
 		// Change values within the card
@@ -127,14 +147,10 @@ describe("Profile Integration Tests", () => {
 			}
 		});
 
-		// Check for success message/feedback
 		await waitFor(() => {
-			expect(
-				screen.getByText(/Name updated successfully!/i),
-			).toBeInTheDocument();
+			expect(toast.success).toHaveBeenCalledWith("Name updated successfully!");
 		});
 
-		// Verify store state was updated
 		await waitFor(() => {
 			const state = useAuthStore.getState();
 			expect(state.profile?.first_name).toBe(updatedFirstName);
@@ -143,14 +159,22 @@ describe("Profile Integration Tests", () => {
 	});
 
 	it("should display error message on profile update failure (e.g., 400)", async () => {
-		// Mock failed PUT response (Corrected path)
-		mockSetAuthError(new Error("Update validation failed"));
+		const apiError: ApiError = {
+			message: "Update validation failed",
+			code: "VALIDATION_ERROR",
+		};
+		vi.mocked(api.post).mockResolvedValueOnce({
+			status: 400,
+			data: undefined,
+			error: apiError,
+		});
 
 		renderProfilePageWithToaster();
 
-		const editNameCard: HTMLElement | null = (
-			await screen.findByText("Edit Name")
-		).closest('div[data-slot="card"]');
+		const nameTitle = await screen.findByText("Name", { exact: true });
+		const editNameCard: HTMLElement | null = nameTitle.closest(
+			'div[data-slot="card"]',
+		);
 		expect(editNameCard).toBeInTheDocument();
 
 		await act(async () => {
@@ -166,13 +190,12 @@ describe("Profile Integration Tests", () => {
 			}
 		});
 
-		// Check for error message displayed by ProfileEditor/ProfilePage
 		await waitFor(() => {
-			// Error might be prefixed, adjust based on actual implementation
-			expect(screen.getByText(/Update validation failed/i)).toBeInTheDocument();
+			expect(toast.error).toHaveBeenCalledWith(
+				expect.stringMatching(/Failed to update name/i),
+			);
 		});
 
-		// Verify store state was NOT updated
 		const state = useAuthStore.getState();
 		expect(state.profile?.first_name).toBe(initialProfileData.first_name);
 	});

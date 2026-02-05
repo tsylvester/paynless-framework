@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useDialecticStore, initialDialecticStateValues } from './dialecticStore';
+import { getStageRunDocumentKey } from './dialecticStore.documents';
 import type {
   ApiError,
   DialecticProject,
@@ -9,6 +10,7 @@ import type {
   GenerateContributionsResponse,
   DialecticStageRecipe,
   DialecticStageRecipeStep,
+  SelectedModels,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { resetApiMock, getMockDialecticClient } from '@paynless/api/mocks';
@@ -59,6 +61,10 @@ const mockModel2: AIModelCatalogEntry = {
     max_output_tokens: null,
 };
 
+const mockSessionSelectedModels: SelectedModels[] = [
+  { id: 'model-1', displayName: 'Test Model 1' },
+  { id: 'model-2', displayName: 'Test Model 2' },
+];
 
 const mockSession: DialecticSession = {
     id: 'session-1',
@@ -68,7 +74,7 @@ const mockSession: DialecticSession = {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     current_stage_id: 'stage-1',
-    selected_model_ids: ['model-1', 'model-2'],
+    selected_models: mockSessionSelectedModels,
     dialectic_contributions: [],
     session_description: null,
     user_input_reference_url: null,
@@ -103,6 +109,11 @@ const mockProject: DialecticProject = {
 
 
 describe('Dialectic Store Notification Handlers', () => {
+  const defaultSelectedModels: SelectedModels[] = [
+    { id: 'model-1', displayName: 'Test Model 1' },
+    { id: 'model-2', displayName: 'Test Model 2' },
+  ];
+
   beforeEach(() => {
     resetApiMock();
     // Set a clean initial state for the store before each test
@@ -110,7 +121,7 @@ describe('Dialectic Store Notification Handlers', () => {
       ...initialDialecticStateValues,
       currentProjectDetail: JSON.parse(JSON.stringify(mockProject)), // Deep copy
       modelCatalog: [mockModel1, mockModel2],
-      selectedModelIds: ['model-1', 'model-2'],
+      selectedModels: defaultSelectedModels,
     });
     vi.clearAllMocks();
   });
@@ -128,7 +139,7 @@ describe('Dialectic Store Notification Handlers', () => {
       execution_order: 1,
       job_type: 'PLAN',
       prompt_type: 'Planner',
-      output_type: 'HeaderContext',
+      output_type: 'header_context',
       granularity_strategy: 'all_to_one',
       inputs_required: [],
     };
@@ -140,7 +151,7 @@ describe('Dialectic Store Notification Handlers', () => {
       execution_order: 2,
       job_type: 'EXECUTE',
       prompt_type: 'Turn',
-      output_type: 'AssembledDocumentJson',
+      output_type: 'assembled_document_json',
       granularity_strategy: 'per_source_document',
       inputs_required: [],
     };
@@ -152,7 +163,7 @@ describe('Dialectic Store Notification Handlers', () => {
       execution_order: 3,
       job_type: 'RENDER',
       prompt_type: 'Turn',
-      output_type: 'RenderedDocument',
+      output_type: 'rendered_document',
       granularity_strategy: 'per_source_document',
       inputs_required: [],
     };
@@ -236,7 +247,7 @@ describe('Dialectic Store Notification Handlers', () => {
       const state = useDialecticStore.getState();
       const progress = state.stageRunProgress[progressKey];
       expect(progress.stepStatuses.document_step).toBe('in_progress');
-      expect(progress.documents.business_case).toEqual(
+      expect(progress.documents[getStageRunDocumentKey('business_case', 'model-2')]).toEqual(
         expect.objectContaining({
           descriptorType: 'rendered',
           status: 'generating',
@@ -271,8 +282,9 @@ describe('Dialectic Store Notification Handlers', () => {
     });
 
     it('updates chunk status when document_chunk_completed arrives', () => {
+      const docKey = getStageRunDocumentKey('business_case', 'model-2');
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents.business_case = {
+        state.stageRunProgress[progressKey].documents[docKey] = {
           status: 'generating',
           job_id: 'job-doc',
           latestRenderedResourceId: 'resource/business_case.json',
@@ -299,7 +311,7 @@ describe('Dialectic Store Notification Handlers', () => {
       _handleDialecticLifecycleEvent?.(event);
 
       const state = useDialecticStore.getState();
-      expect(state.stageRunProgress[progressKey].documents.business_case).toEqual(
+      expect(state.stageRunProgress[progressKey].documents[docKey]).toEqual(
         expect.objectContaining({
           descriptorType: 'rendered',
           status: 'continuing',
@@ -314,8 +326,9 @@ describe('Dialectic Store Notification Handlers', () => {
     });
 
     it('marks document completed when final chunk flagged', () => {
+      const docKey = getStageRunDocumentKey('business_case', 'model-2');
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents.business_case = {
+        state.stageRunProgress[progressKey].documents[docKey] = {
           status: 'continuing',
           job_id: 'job-doc',
           latestRenderedResourceId: 'resource/business_case.json',
@@ -341,16 +354,17 @@ describe('Dialectic Store Notification Handlers', () => {
       _handleDialecticLifecycleEvent?.(event);
 
       const state = useDialecticStore.getState();
-      expect(state.stageRunProgress[progressKey].documents.business_case.status).toBe('completed');
+      expect(state.stageRunProgress[progressKey].documents[docKey].status).toBe('completed');
     });
 
     it('records render completion and latest resource', () => {
+      const renderDocKey = getStageRunDocumentKey('business_case', 'model-render');
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents.business_case = {
+        state.stageRunProgress[progressKey].documents[renderDocKey] = {
           status: 'continuing',
           job_id: 'job-doc',
           latestRenderedResourceId: 'resource/business_case.json',
-          modelId: 'model-2',
+          modelId: 'model-render',
           lastRenderedResourceId: 'resource/business_case.json',
           versionHash: expect.any(String),
           lastRenderAtIso: expect.any(String),
@@ -374,7 +388,7 @@ describe('Dialectic Store Notification Handlers', () => {
       const state = useDialecticStore.getState();
       const progress = state.stageRunProgress[progressKey];
       expect(progress.stepStatuses.render_step).toBe('completed');
-      expect(progress.documents.business_case).toEqual(
+      expect(progress.documents[renderDocKey]).toEqual(
         expect.objectContaining({
           descriptorType: 'rendered',
           status: 'completed',
@@ -390,8 +404,9 @@ describe('Dialectic Store Notification Handlers', () => {
     });
 
     it('marks document failed when job_failed arrives', () => {
+      const docKey = getStageRunDocumentKey('business_case', 'model-2');
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents.business_case = {
+        state.stageRunProgress[progressKey].documents[docKey] = {
           status: 'continuing',
           job_id: 'job-doc',
           latestRenderedResourceId: 'resource/business_case.json',
@@ -420,7 +435,7 @@ describe('Dialectic Store Notification Handlers', () => {
       const state = useDialecticStore.getState();
       const progress = state.stageRunProgress[progressKey];
       expect(progress.stepStatuses.document_step).toBe('failed');
-      expect(progress.documents.business_case).toEqual(
+      expect(progress.documents[docKey]).toEqual(
         expect.objectContaining({
           descriptorType: 'rendered',
           status: 'failed',
@@ -433,6 +448,99 @@ describe('Dialectic Store Notification Handlers', () => {
           stepKey: 'document_step',
         }),
       );
+    });
+
+    describe('All DialecticLifecycleEvent types (planner_completed, execute_*, render_started, render_chunk_completed)', () => {
+      it('accepts planner_completed without throwing', () => {
+        const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+        const event: DialecticLifecycleEvent = {
+          type: 'planner_completed',
+          sessionId,
+          stageSlug,
+          iterationNumber,
+          job_id: 'job-planner',
+          step_key: 'planner_step',
+        };
+        expect(() => _handleDialecticLifecycleEvent?.(event)).not.toThrow();
+      });
+
+      it('accepts execute_started without throwing', () => {
+        const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+        const event: DialecticLifecycleEvent = {
+          type: 'execute_started',
+          sessionId,
+          stageSlug,
+          iterationNumber,
+          job_id: 'job-exec',
+          step_key: 'document_step',
+          modelId: 'model-1',
+          document_key: 'business_case',
+        };
+        expect(() => _handleDialecticLifecycleEvent?.(event)).not.toThrow();
+      });
+
+      it('accepts execute_chunk_completed without throwing', () => {
+        const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+        const event: DialecticLifecycleEvent = {
+          type: 'execute_chunk_completed',
+          sessionId,
+          stageSlug,
+          iterationNumber,
+          job_id: 'job-exec',
+          step_key: 'document_step',
+          modelId: 'model-1',
+          document_key: 'business_case',
+          isFinalChunk: false,
+          continuationNumber: 1,
+        };
+        expect(() => _handleDialecticLifecycleEvent?.(event)).not.toThrow();
+      });
+
+      it('accepts execute_completed without throwing', () => {
+        const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+        const event: DialecticLifecycleEvent = {
+          type: 'execute_completed',
+          sessionId,
+          stageSlug,
+          iterationNumber,
+          job_id: 'job-exec',
+          step_key: 'document_step',
+          modelId: 'model-1',
+          document_key: 'business_case',
+          latestRenderedResourceId: 'resource-1',
+        };
+        expect(() => _handleDialecticLifecycleEvent?.(event)).not.toThrow();
+      });
+
+      it('accepts render_started without throwing', () => {
+        const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+        const event: DialecticLifecycleEvent = {
+          type: 'render_started',
+          sessionId,
+          stageSlug,
+          iterationNumber,
+          job_id: 'job-render',
+          step_key: 'render_step',
+          modelId: 'model-1',
+          document_key: 'business_case',
+        };
+        expect(() => _handleDialecticLifecycleEvent?.(event)).not.toThrow();
+      });
+
+      it('accepts render_chunk_completed without throwing', () => {
+        const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
+        const event: DialecticLifecycleEvent = {
+          type: 'render_chunk_completed',
+          sessionId,
+          stageSlug,
+          iterationNumber,
+          job_id: 'job-render',
+          step_key: 'render_step',
+          modelId: 'model-1',
+          document_key: 'business_case',
+        };
+        expect(() => _handleDialecticLifecycleEvent?.(event)).not.toThrow();
+      });
     });
   });
 
@@ -706,28 +814,6 @@ describe('Dialectic Store Notification Handlers', () => {
     );
   });
 
-  it('should update session progress on progress update notification', () => {
-      const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
-      
-      const progressNotification: DialecticLifecycleEvent = {
-          type: 'dialectic_progress_update',
-          sessionId: 'session-1',
-          stageSlug: 'test-stage',
-          current_step: 5,
-          total_steps: 10,
-          message: 'Processing item 5 of 10...'
-      };
-
-      _handleDialecticLifecycleEvent?.(progressNotification);
-
-      const state = useDialecticStore.getState();
-      const progress = state.sessionProgress['session-1'];
-      expect(progress).toBeDefined();
-      expect(progress.current_step).toBe(5);
-      expect(progress.total_steps).toBe(10);
-      expect(progress.message).toBe('Processing item 5 of 10...');
-  });
-
   it('should clear generating status and refetch project on completion', async () => {
       const { generateContributions, _handleDialecticLifecycleEvent, fetchDialecticProjectDetails } = useDialecticStore.getState();
       
@@ -848,8 +934,11 @@ describe('Dialectic Store Notification Handlers', () => {
   });
 
   it('should correctly update placeholders when the same model is used multiple times', async () => {
-    // Setup state with duplicate models
-    useDialecticStore.setState({ selectedModelIds: ['model-1', 'model-1'] });
+    const duplicateModelSelectedModels: SelectedModels[] = [
+      { id: 'model-1', displayName: 'Test Model 1' },
+      { id: 'model-1', displayName: 'Test Model 1' },
+    ];
+    useDialecticStore.setState({ selectedModels: duplicateModelSelectedModels });
     const { generateContributions, _handleDialecticLifecycleEvent } = useDialecticStore.getState();
 
     // Mock the API call for generateContributions

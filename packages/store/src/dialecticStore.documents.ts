@@ -8,11 +8,14 @@ import type {
 	StageDocumentContentState,
 	StageDocumentVersionInfo,
 	PlannerStartedPayload,
+	PlannerCompletedPayload,
 	DocumentStartedPayload,
 	DocumentChunkCompletedPayload,
 	DocumentCompletedPayload,
 	RenderCompletedPayload,
+	RenderStartedPayload,
 	JobFailedPayload,
+	GetAllStageProgressPayload,
 	ListStageDocumentsPayload,
 	SubmitStageDocumentFeedbackPayload,
 	StageRunDocumentDescriptor,
@@ -21,6 +24,7 @@ import type {
 	StageRunDocumentStatus,
 	StageRunProgressSnapshot,
 } from '@paynless/types';
+import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
 import { selectValidMarkdownDocumentKeys } from './dialecticStore.selectors';
@@ -69,9 +73,23 @@ const isPlannedDescriptor = (
 ): descriptor is StagePlannedDocumentDescriptor =>
 	Boolean(descriptor && descriptor.descriptorType === 'planned');
 
+function isStepStatus(value: string): value is StageRunProgressSnapshot['stepStatuses'][string] {
+	return (
+		value === 'not_started' ||
+		value === 'in_progress' ||
+		value === 'waiting_for_children' ||
+		value === 'completed' ||
+		value === 'failed'
+	);
+}
+
+/** Build composite key for stageRunProgress.documents (documentKey + separator + modelId). */
+export const getStageRunDocumentKey = (documentKey: string, modelId: string): string =>
+	`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`;
+
 const ensureRenderedDocumentDescriptor = (
 	progress: Draft<StageRunProgressSnapshot>,
-	documentKey: string,
+	documentsKey: string,
 	seed: {
 		status: StageRunDocumentStatus;
 		jobId: string;
@@ -81,7 +99,7 @@ const ensureRenderedDocumentDescriptor = (
 		stepKey?: string;
 	},
 ): StageRenderedDocumentDescriptor => {
-	const existing = progress.documents[documentKey];
+	const existing = progress.documents[documentsKey];
 	if (existing && !isPlannedDescriptor(existing)) {
 		if (existing.descriptorType !== 'rendered') {
 			existing.descriptorType = 'rendered';
@@ -110,7 +128,7 @@ const ensureRenderedDocumentDescriptor = (
 		rendered.stepKey = derivedStepKey;
 	}
 
-	progress.documents[documentKey] = rendered;
+	progress.documents[documentsKey] = rendered;
 	return rendered;
 };
 
@@ -497,6 +515,59 @@ export const handlePlannerStartedLogic = (
 	});
 };
 
+/** Sets step status for a progress bucket. Used when no document descriptor update is needed. */
+export const setStepStatusLogic = (
+	get: () => DialecticStore,
+	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
+	progressKey: string,
+	stepKey: string,
+	status: 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed',
+): void => {
+	const progressSnapshot = get().stageRunProgress[progressKey];
+	if (!progressSnapshot) {
+		logger.warn('[DialecticStore] setStepStatusLogic ignored; progress bucket missing', { progressKey });
+		return;
+	}
+	set((state) => {
+		const progress = state.stageRunProgress[progressKey];
+		if (!progress) return;
+		progress.stepStatuses[stepKey] = status;
+	});
+};
+
+export const handlePlannerCompletedLogic = (
+	get: () => DialecticStore,
+	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
+	event: PlannerCompletedPayload,
+): void => {
+	const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
+	setStepStatusLogic(get, set, progressKey, event.step_key, 'completed');
+};
+
+export const handleRenderStartedLogic = (
+	get: () => DialecticStore,
+	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
+	event: RenderStartedPayload,
+): void => {
+	const recipe = get().recipesByStageSlug[event.stageSlug];
+	if (!recipe) {
+		logger.warn('[DialecticStore] render_started ignored; recipe missing', { stageSlug: event.stageSlug });
+		return;
+	}
+	const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
+	const progressSnapshot = get().stageRunProgress[progressKey];
+	if (!progressSnapshot) {
+		logger.warn('[DialecticStore] render_started ignored; progress bucket missing', { progressKey });
+		return;
+	}
+	const stepKey = event.step_key ?? recipe.steps.find((step) => step.job_type === 'RENDER')?.step_key;
+	if (!stepKey) {
+		logger.warn('[DialecticStore] render_started ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
+		return;
+	}
+	setStepStatusLogic(get, set, progressKey, stepKey, 'in_progress');
+};
+
 export const handleDocumentStartedLogic = (
 	get: () => DialecticStore,
 	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
@@ -541,11 +612,11 @@ export const handleDocumentStartedLogic = (
 		}
 
 		progress.stepStatuses[stepKey] = 'in_progress';
-		const documentKeyValue = event.document_key;
+		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
 
 		// Handle planner outputs (JSON artifacts) without rendered resources
 		if (!requiresRendering && !hasLatestRenderedResourceId) {
-			const existingDescriptor = progress.documents[documentKeyValue];
+			const existingDescriptor = progress.documents[documentsKey];
 
 			if (!existingDescriptor || isPlannedDescriptor(existingDescriptor)) {
 				// Create minimal rendered descriptor for planner output
@@ -560,7 +631,7 @@ export const handleDocumentStartedLogic = (
 					lastRenderAtIso: new Date().toISOString(),
 					stepKey,
 				};
-				progress.documents[documentKeyValue] = minimalDescriptor;
+				progress.documents[documentsKey] = minimalDescriptor;
 			} else {
 				// Update existing rendered descriptor
 				const renderedDescriptor = existingDescriptor;
@@ -587,7 +658,7 @@ export const handleDocumentStartedLogic = (
 					version: versionInfo,
 				});
 
-				const descriptor = ensureRenderedDocumentDescriptor(progress, documentKeyValue, {
+				const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 					status: 'generating',
 					jobId: event.job_id,
 					latestRenderedResourceId: latestRenderedResourceId,
@@ -608,7 +679,7 @@ export const handleDocumentStartedLogic = (
 				}
 			} else {
 				// latestRenderedResourceId is missing - initialize basic tracking, defer version tracking
-				const existingDescriptor = progress.documents[documentKeyValue];
+				const existingDescriptor = progress.documents[documentsKey];
 
 				if (!existingDescriptor || isPlannedDescriptor(existingDescriptor)) {
 					// Create descriptor with basic tracking info, no version tracking yet
@@ -623,7 +694,7 @@ export const handleDocumentStartedLogic = (
 						lastRenderAtIso: new Date().toISOString(),
 						stepKey,
 					};
-					progress.documents[documentKeyValue] = descriptor;
+					progress.documents[documentsKey] = descriptor;
 				} else {
 					// Update existing rendered descriptor
 					const renderedDescriptor = existingDescriptor;
@@ -650,7 +721,7 @@ export const handleDocumentStartedLogic = (
 				version: versionInfo,
 			});
 
-			const descriptor = ensureRenderedDocumentDescriptor(progress, documentKeyValue, {
+			const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 				status: 'generating',
 				jobId: event.job_id,
 				latestRenderedResourceId: latestRenderedResourceId,
@@ -705,8 +776,8 @@ export const handleDocumentChunkCompletedLogic = (
 		if (!progress) {
 			return;
 		}
-		const documentKeyValue = event.document_key;
-		const documentEntry = progress.documents[documentKeyValue];
+		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
+		const documentEntry = progress.documents[documentsKey];
 		if (!documentEntry) {
 			logger.warn('[DialecticStore] document_chunk_completed ignored; document not tracked', { progressKey, documentKey: event.document_key });
 			return;
@@ -718,7 +789,7 @@ export const handleDocumentChunkCompletedLogic = (
 			if (!shouldUpdateVersion || !versionInfo) {
 				return;
 			}
-			const renderedDescriptor = ensureRenderedDocumentDescriptor(progress, documentKeyValue, {
+			const renderedDescriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 				status: nextStatus,
 				jobId: event.job_id,
 				latestRenderedResourceId: latestRenderedResourceId,
@@ -819,12 +890,12 @@ export const handleRenderCompletedLogic = (
 		if (stepKey) {
 			progress.stepStatuses[stepKey] = 'completed';
 		}
-		const documentKeyValue = event.document_key;
-		const existingDescriptor = progress.documents[documentKeyValue];
+		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
+		const existingDescriptor = progress.documents[documentsKey];
 		// Preserve existing status if stepKey is undefined (progressive rendering)
 		// Only set status to 'completed' when stepKey is defined (final render step)
 		const statusToUse = stepKey ? 'completed' : (existingDescriptor && !isPlannedDescriptor(existingDescriptor) ? existingDescriptor.status : 'generating');
-		const descriptor = ensureRenderedDocumentDescriptor(progress, documentKeyValue, {
+		const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 			status: statusToUse,
 			jobId: event.job_id,
 			latestRenderedResourceId,
@@ -900,8 +971,8 @@ export const handleDocumentCompletedLogic = (
 			return;
 		}
 
-		const documentKeyValue = event.document_key;
-		const documentEntry = progress.documents[documentKeyValue];
+		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
+		const documentEntry = progress.documents[documentsKey];
 
 		if (!documentEntry) {
 			logger.warn('[DialecticStore] document_completed ignored; document not tracked', { progressKey, documentKey: event.document_key });
@@ -920,7 +991,7 @@ export const handleDocumentCompletedLogic = (
 		if (shouldUpdateVersion && versionInfo && latestRenderedResourceId) {
 			if (isPlannedDescriptor(documentEntry)) {
 				// Convert planned descriptor to rendered descriptor
-				const renderedDescriptor = ensureRenderedDocumentDescriptor(progress, documentKeyValue, {
+				const renderedDescriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 					status: 'completed',
 					jobId: event.job_id,
 					latestRenderedResourceId: latestRenderedResourceId,
@@ -976,7 +1047,7 @@ export const handleDocumentCompletedLogic = (
 					lastRenderAtIso: new Date().toISOString(),
 					stepKey: documentEntry.stepKey ?? stepKey,
 				};
-				progress.documents[documentKeyValue] = minimalDescriptor;
+				progress.documents[documentsKey] = minimalDescriptor;
 			} else {
 				// Update existing rendered descriptor without version tracking
 				const renderedDescriptor = documentEntry;
@@ -1021,17 +1092,30 @@ export const handleJobFailedLogic = (
 		documentKey: event.document_key,
 	};
 
+	if (event.document_key == null || event.modelId == null) {
+		const err = new Error(
+			'[DialecticStore] job_failed: document_key and modelId are required; missing data is an error.',
+		);
+		logger.error('[DialecticStore] job_failed missing required data', {
+			progressKey,
+			stepKey,
+			document_key: event.document_key,
+			modelId: event.modelId,
+		});
+		throw err;
+	}
+	const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
+
 	set((state) => {
 		const progress = state.stageRunProgress[progressKey];
 		if (!progress) {
 			return;
 		}
 		progress.stepStatuses[stepKey] = 'failed';
-		const documentKeyValue = event.document_key;
 		const hasLatestResource =
 			typeof event.latestRenderedResourceId === 'string' &&
 			event.latestRenderedResourceId.length > 0;
-		const existingDescriptor = progress.documents[documentKeyValue];
+		const existingDescriptor = progress.documents[documentsKey];
 		let descriptorVersionInfo: StageDocumentVersionInfo | null = null;
 
 		const buildFallbackVersion = (resourceId: string): StageDocumentVersionInfo =>
@@ -1042,7 +1126,7 @@ export const handleJobFailedLogic = (
 			resourceId: string,
 			versionInfo: StageDocumentVersionInfo,
 		): StageRenderedDocumentDescriptor => {
-			const renderedDescriptor = ensureRenderedDocumentDescriptor(progress, documentKeyValue, {
+			const renderedDescriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 				status: 'failed',
 				jobId: event.job_id,
 				latestRenderedResourceId: resourceId,
@@ -1079,7 +1163,7 @@ export const handleJobFailedLogic = (
 						lastRenderAtIso: versionInfo.updatedAt,
 						stepKey: existingDescriptor.stepKey ?? stepKey,
 					};
-					progress.documents[documentKeyValue] = renderedDescriptor;
+					progress.documents[documentsKey] = renderedDescriptor;
 					descriptorVersionInfo = null;
 					return renderedDescriptor;
 				}
@@ -1089,7 +1173,7 @@ export const handleJobFailedLogic = (
 
 			if (hasLatestResource) {
 				const versionInfo = buildFallbackVersion(event.latestRenderedResourceId!);
-				const renderedDescriptor = ensureRenderedDocumentDescriptor(progress, documentKeyValue, {
+				const renderedDescriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 					status: 'failed',
 					jobId: event.job_id,
 					latestRenderedResourceId: event.latestRenderedResourceId!,
@@ -1115,7 +1199,7 @@ export const handleJobFailedLogic = (
 			if (stepKey) {
 				renderedDescriptor.stepKey = stepKey;
 			}
-			progress.documents[documentKeyValue] = renderedDescriptor;
+			progress.documents[documentsKey] = renderedDescriptor;
 			descriptorVersionInfo = null;
 			return renderedDescriptor;
 		};
@@ -1213,16 +1297,44 @@ export const submitStageDocumentFeedbackLogic = async (
 		};
 		const serializedKey = getStageDocumentKey(compositeKey);
 		const resolvedResource = get().stageDocumentResources[serializedKey];
-		
-		// Derive sourceContributionId from resource metadata
 		const sourceContributionId = resolvedResource?.source_contribution_id ?? null;
-		
-		// Construct enriched payload with sourceContributionId
+
+		// Require correct data at write time; no defaults or fallbacks
+		const missing: string[] = [];
+		if (payload.feedbackContent === undefined || payload.feedbackContent === null) missing.push('feedbackContent');
+		if (payload.userId === undefined || payload.userId === null || payload.userId === '') missing.push('userId');
+		if (payload.projectId === undefined || payload.projectId === null || payload.projectId === '') missing.push('projectId');
+		if (payload.feedbackType === undefined || payload.feedbackType === null || payload.feedbackType === '') missing.push('feedbackType');
+		if (missing.length > 0) {
+			const error: ApiError = {
+				message: `Cannot submit feedback: missing required fields: ${missing.join(', ')}.`,
+				code: 'VALIDATION_ERROR',
+			};
+			logger.error('[submitStageDocumentFeedback] Missing required payload fields', {
+				serializedKey,
+				missing,
+			});
+			set(state => {
+				state.isSubmittingStageDocumentFeedback = false;
+				state.submitStageDocumentFeedbackError = error;
+			});
+			return { data: undefined, error, status: 400 };
+		}
+
 		const enrichedPayload: SubmitStageDocumentFeedbackPayload = {
-			...payload,
+			sessionId: payload.sessionId,
+			stageSlug: payload.stageSlug,
+			iterationNumber: payload.iterationNumber,
+			modelId: payload.modelId,
+			documentKey: payload.documentKey,
+			feedbackContent: payload.feedbackContent,
+			userId: payload.userId,
+			projectId: payload.projectId,
+			feedbackType: payload.feedbackType,
+			...(payload.feedbackId !== undefined && { feedbackId: payload.feedbackId }),
 			sourceContributionId,
 		};
-		
+
 		const response = await api.dialectic().submitStageDocumentFeedback(enrichedPayload);
 		if (response.error) {
 			logger.error(
@@ -1320,7 +1432,8 @@ export const hydrateStageProgressLogic = async (
 					return;
 				}
 				const descriptorStatus: StageRunDocumentStatus = status;
-				const descriptor = ensureRenderedDocumentDescriptor(progress, documentKey, {
+				const documentsKey = getStageRunDocumentKey(documentKey, modelId);
+				const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 					status: descriptorStatus,
 					jobId,
 					latestRenderedResourceId,
@@ -1348,6 +1461,112 @@ export const hydrateStageProgressLogic = async (
 		};
 		logger.error('[hydrateStageProgress] Network error', { error, ...payload });
 		// Optionally set an error state here
+	}
+};
+
+export const hydrateAllStageProgressLogic = async (
+	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
+	payload: GetAllStageProgressPayload,
+): Promise<void> => {
+	const { sessionId, iterationNumber } = payload;
+
+	try {
+		const response = await api.dialectic().getAllStageProgress(payload);
+
+		if (response.error || response.data === undefined) {
+			const error = response.error || {
+				message: 'Failed to get all stage progress.',
+				code: 'NOT_FOUND',
+			};
+			logger.error('[hydrateAllStageProgress] Failed to get all stage progress', {
+				error,
+				...payload,
+			});
+			return;
+		}
+
+		if (response.data.length === 0) {
+			return;
+		}
+
+		const entries = response.data;
+		set((state) => {
+			for (const entry of entries) {
+				const progressKey = `${sessionId}:${entry.stageSlug}:${iterationNumber}`;
+
+				if (!state.stageRunProgress[progressKey]) {
+					state.stageRunProgress[progressKey] = {
+						documents: {},
+						stepStatuses: {},
+					};
+				}
+
+				const progress = state.stageRunProgress[progressKey];
+				for (const [key, value] of Object.entries(entry.stepStatuses)) {
+					if (isStepStatus(value)) {
+						progress.stepStatuses[key] = value;
+					}
+				}
+
+				for (const doc of entry.documents) {
+					const { documentKey, modelId, status, jobId, latestRenderedResourceId, stepKey } =
+						doc;
+
+					if (typeof documentKey !== 'string' || typeof modelId !== 'string') {
+						continue;
+					}
+
+					const descriptorStatus: StageRunDocumentStatus = status;
+					const documentsKey = getStageRunDocumentKey(documentKey, modelId);
+
+					if (
+						typeof latestRenderedResourceId !== 'string' ||
+						latestRenderedResourceId.length === 0
+					) {
+						progress.documents[documentsKey] = {
+							descriptorType: 'rendered',
+							status: descriptorStatus,
+							job_id: jobId ?? '',
+							latestRenderedResourceId: '',
+							modelId,
+							versionHash: '',
+							lastRenderedResourceId: '',
+							lastRenderAtIso: new Date().toISOString(),
+							stepKey,
+						};
+						continue;
+					}
+
+					const versionInfo = createVersionInfo(latestRenderedResourceId);
+					const resolvedJobId: string = jobId ?? '';
+					const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
+						status: descriptorStatus,
+						jobId: resolvedJobId,
+						latestRenderedResourceId,
+						modelId,
+						versionInfo,
+						stepKey,
+					});
+					descriptor.status = descriptorStatus;
+					descriptor.job_id = resolvedJobId;
+					descriptor.latestRenderedResourceId = latestRenderedResourceId;
+					descriptor.modelId = modelId;
+					descriptor.versionHash = versionInfo.versionHash;
+					descriptor.lastRenderedResourceId = latestRenderedResourceId;
+					descriptor.lastRenderAtIso = versionInfo.updatedAt;
+					if (!descriptor.stepKey && stepKey) {
+						descriptor.stepKey = stepKey;
+					}
+				}
+			}
+		});
+	} catch (err: unknown) {
+		const error: ApiError = {
+			message:
+				err instanceof Error ? err.message : 'An unknown network error occurred.',
+			code: 'NETWORK_ERROR',
+		};
+		logger.error('[hydrateAllStageProgress] Network error', { error, ...payload });
 	}
 };
 

@@ -14,7 +14,7 @@ import {
 import { isInputRule, isRelevanceRule, isOutputRule } from "../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
 import { isRecord } from "../_shared/utils/type-guards/type_guards.common.ts";
 import type { ModelContributionFileTypes } from "../_shared/types/file_manager.types.ts";
-import { isModelContributionFileType, isFileType } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isModelContributionFileType, isFileType, isOutputType } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 export async function getStageRecipe(
   payload: { stageSlug: string },
@@ -108,8 +108,12 @@ export async function getStageRecipe(
     }
     
     // At this point, rawType is validated as a ModelContributionFileType
-    // All steps are included in the DTO - frontend needs all steps (including PLAN with header_context) to track progress
     const mappedOutputType: ModelContributionFileTypes = rawType;
+
+    // EXECUTE steps with backend-only output (e.g. assembled_document_json) are not shown in the frontend DTO
+    if (jobType === "EXECUTE" && !isOutputType(mappedOutputType)) {
+      continue;
+    }
 
     // Validate arrays and elements
     if (!Array.isArray(s.inputs_required)) {

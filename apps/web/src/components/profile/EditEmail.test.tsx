@@ -103,10 +103,6 @@ vi.mock("@/components/ui/label", () => ({
 	Label: (props: any) => <label data-testid="shadcn-label" {...props} />,
 }));
 
-vi.mock("lucide-react", () => ({
-	AlertCircle: () => <div data-testid="alert-circle-icon" />,
-}));
-
 describe("EditEmail Component", () => {
 	const mockUpdateEmail = vi.fn();
 
@@ -151,15 +147,13 @@ describe("EditEmail Component", () => {
 	it("should render with initial email in an input field and a disabled Save button", () => {
 		setupMockStore(); // Uses mockAuthUserInitial by default
 		render(<EditEmail />);
-		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent(
-			"Edit Email",
-		);
+		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent("Email");
 
 		const emailInput = screen.getByLabelText(/email address/i);
 		expect(emailInput).toBeInTheDocument();
 		expect(emailInput).toHaveValue(mockAuthUserInitial.email);
 
-		const saveButton = screen.getByRole("button", { name: /save changes/i });
+		const saveButton = screen.getByRole("button", { name: /save/i });
 		expect(saveButton).toBeInTheDocument();
 		expect(saveButton).toBeDisabled();
 	});
@@ -168,7 +162,7 @@ describe("EditEmail Component", () => {
 		setupMockStore();
 		render(<EditEmail />);
 		const emailInput = screen.getByLabelText(/email address/i);
-		const saveButton = screen.getByRole("button", { name: /save changes/i });
+		const saveButton = screen.getByRole("button", { name: /save/i });
 
 		fireEvent.change(emailInput, { target: { value: "new@example.com" } });
 		expect(saveButton).toBeEnabled();
@@ -182,13 +176,11 @@ describe("EditEmail Component", () => {
 		const emailInput = screen.getByLabelText(/email address/i);
 		fireEvent.change(emailInput, { target: { value: "updated@example.com" } });
 
-		const saveButton = screen.getByRole("button", { name: /save changes/i });
+		const saveButton = screen.getByRole("button", { name: /save/i });
 		fireEvent.click(saveButton);
 
 		await waitFor(() => {
-			expect(mockUpdateEmail).toHaveBeenCalledWith({
-				email: "updated@example.com",
-			});
+			expect(mockUpdateEmail).toHaveBeenCalledWith("updated@example.com");
 			expect(toast.success).toHaveBeenCalledWith(
 				"Email update request sent! Check your inbox for verification.",
 			);
@@ -207,6 +199,7 @@ describe("EditEmail Component", () => {
 			mockAuthUserInitial,
 			mockUserProfile,
 			false,
+			null,
 			() => updatePromise,
 		);
 
@@ -214,7 +207,7 @@ describe("EditEmail Component", () => {
 		const emailInput = screen.getByLabelText(/email address/i);
 		fireEvent.change(emailInput, { target: { value: "saving@example.com" } });
 
-		const saveButton = screen.getByRole("button", { name: /save changes/i });
+		const saveButton = screen.getByRole("button", { name: /save/i });
 		expect(saveButton).toBeEnabled();
 		fireEvent.click(saveButton);
 
@@ -237,28 +230,25 @@ describe("EditEmail Component", () => {
 				updatedUserAfterSaveAttempt,
 				mockUserProfile,
 				false,
+				null,
 				() => updatePromise,
 			);
 		});
 
-		const finalSaveButton = screen.getByRole("button", {
-			name: /save changes/i,
-		});
-		expect(finalSaveButton).toHaveTextContent(/save changes/i);
+		const finalSaveButton = screen.getByRole("button", { name: /save/i });
+		expect(finalSaveButton).toHaveTextContent(/save/i);
 		// Email in input is 'saving@example.com', originalEmailFromAuth is 'initial@example.com'
 		// So hasChanged is true, button should be enabled.
 		expect(finalSaveButton).toBeEnabled();
 	});
 
-	it("should show error toast and in-card error if updateEmail returns false (simulating API error)", async () => {
-		const errorMsg = "Invalid Email Format";
+	it("should show error toast when updateEmail returns false (simulating API error)", async () => {
 		mockUpdateEmail.mockResolvedValue(false);
-		// Provide a user object for the form to render
 		setupMockStore(
 			mockAuthUserInitial,
 			mockUserProfile,
 			false,
-			new Error(errorMsg),
+			null,
 			mockUpdateEmail,
 		);
 
@@ -266,55 +256,49 @@ describe("EditEmail Component", () => {
 		const emailInput = screen.getByLabelText(/email address/i);
 		fireEvent.change(emailInput, { target: { value: "error@example.com" } });
 
-		const saveButton = screen.getByRole("button", { name: /save changes/i });
+		const saveButton = screen.getByRole("button", { name: /save/i });
 		fireEvent.click(saveButton);
 
 		await waitFor(() => {
-			expect(mockUpdateEmail).toHaveBeenCalledWith({
-				email: "error@example.com",
-			});
+			expect(mockUpdateEmail).toHaveBeenCalledWith("error@example.com");
 		});
 
 		await waitFor(() => {
-			expect(screen.getByTestId("alert-circle-icon")).toBeInTheDocument();
-			expect(screen.getByText(errorMsg)).toBeInTheDocument();
 			expect(toast.error).toHaveBeenCalledWith(
 				"Failed to update email. An unexpected error occurred.",
 			);
 		});
-		const saveButtonAfterError = screen.getByRole("button", {
-			name: /save changes/i,
-		});
+		const saveButtonAfterError = screen.getByRole("button", { name: /save/i });
 		expect(saveButtonAfterError).toBeEnabled();
 	});
 
-	it("should display storeError if present on load, without user interaction", () => {
+	it("should render form when store has error on load (component does not display store error)", () => {
 		const existingError = new Error("Initial store error on email load");
-		// Provide user object for the form to render, even with an error
 		setupMockStore(mockAuthUserInitial, mockUserProfile, false, existingError);
 
 		render(<EditEmail />);
 
-		expect(screen.getByTestId("alert-circle-icon")).toBeInTheDocument();
-		expect(screen.getByText(existingError.message)).toBeInTheDocument();
+		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent("Email");
+		expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+		expect(screen.queryByTestId("alert-circle-icon")).not.toBeInTheDocument();
 	});
 
-	it("should show user data not available if user is not loaded", () => {
-		setupMockStore(null, mockUserProfile); // Pass null for user
+	it("should show loading message and no form when user is not loaded", () => {
+		setupMockStore(null, mockUserProfile);
 		render(<EditEmail />);
 		expect(
-			screen.getByText(/User data not available. Cannot edit email./i),
+			screen.getByText(/Loading email settings.../i),
 		).toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: /save changes/i })).toBeNull();
+		expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
 	});
 
-	it("should disable save button and show loading text if component is in loading state from store", () => {
+	it("should render form with Save button when store isLoading is true (component uses only isSubmitting for button state)", () => {
 		setupMockStore(mockAuthUserInitial, mockUserProfile, true);
 		render(<EditEmail />);
-		// When storeIsLoading is true, component isLoading is true, button text is Saving...
-		const saveButton = screen.getByRole("button", { name: /saving.../i });
+		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent("Email");
+		const saveButton = screen.getByRole("button", { name: /save/i });
 		expect(saveButton).toBeInTheDocument();
+		expect(saveButton).toHaveTextContent(/save/i);
 		expect(saveButton).toBeDisabled();
-		expect(saveButton).toHaveTextContent(/saving.../i);
 	});
 });

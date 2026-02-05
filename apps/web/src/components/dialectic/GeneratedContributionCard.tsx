@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useEffect, useState } from "react";
 import {
 	useDialecticStore,
+	useAuthStore,
 	selectStageRunProgress,
 	selectFocusedStageDocument,
 	selectStageDocumentResource,
@@ -9,6 +10,7 @@ import {
 import {
 	StageDocumentCompositeKey,
 	StageRunDocumentDescriptor,
+	StageDocumentVersionInfo,
 	SaveContributionEditPayload,
 } from "@paynless/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -72,8 +74,9 @@ const formatStatusLabel = (value: string | undefined): string => {
 export const GeneratedContributionCard: React.FC<
 	GeneratedContributionCardProps
 > = ({ modelId, className }) => {
+	const user = useAuthStore((state) => state.user);
 	const [isTechnicalDetailsOpen, setIsTechnicalDetailsOpen] = useState(false);
-
+	const [isEditorsOpen, setIsEditorsOpen] = useState(true);
 	const {
 		sessionId,
 		stageSlug,
@@ -84,7 +87,7 @@ export const GeneratedContributionCard: React.FC<
 		updateStageDocumentFeedbackDraft,
 		submitStageDocumentFeedback,
 		saveContributionEdit,
-		modelCatalog,
+		activeSessionDetail,
 		isSubmittingStageDocumentFeedback,
 		submitStageDocumentFeedbackError,
 		isSavingContributionEdit,
@@ -110,7 +113,7 @@ export const GeneratedContributionCard: React.FC<
 			updateStageDocumentFeedbackDraft: state.updateStageDocumentFeedbackDraft,
 			submitStageDocumentFeedback: state.submitStageDocumentFeedback,
 			saveContributionEdit: state.saveContributionEdit,
-			modelCatalog: state.modelCatalog,
+			activeSessionDetail: state.activeSessionDetail,
 			isSubmittingStageDocumentFeedback: state.isSubmittingStageDocumentFeedback,
 			submitStageDocumentFeedbackError: state.submitStageDocumentFeedbackError,
 			isSavingContributionEdit: state.isSavingContributionEdit,
@@ -140,14 +143,44 @@ export const GeneratedContributionCard: React.FC<
 		);
 	});
 
-	const modelName = useMemo(() => {
-		const entry = modelCatalog.find((model) => model.id === modelId);
-		return entry?.model_name ?? modelId;
-	}, [modelCatalog, modelId]);
-
-	const modelInitial = useMemo(() => {
-		return modelName.charAt(0).toUpperCase();
-	}, [modelName]);
+	const modelName = useMemo((): string => {
+		if (!hasStageContext) {
+			return "";
+		}
+		if (!activeSessionDetail) {
+			throw new Error(
+				`GeneratedContributionCard invariant violation: activeSessionDetail missing for modelId "${modelId}"`,
+			);
+		}
+		const contributions = activeSessionDetail.dialectic_contributions ?? [];
+		const nameByModelId = new Map<string, string>();
+		contributions.forEach((contribution) => {
+			const contributionModelId = contribution.model_id;
+			const contributionModelName = contribution.model_name;
+			if (
+				typeof contributionModelId !== "string" ||
+				contributionModelId.trim().length === 0 ||
+				typeof contributionModelName !== "string" ||
+				contributionModelName.trim().length === 0
+			) {
+				return;
+			}
+			const existing = nameByModelId.get(contributionModelId);
+			if (existing && existing !== contributionModelName) {
+				throw new Error(
+					`GeneratedContributionCard invariant violation: conflicting model_name values for modelId "${contributionModelId}" ("${existing}" vs "${contributionModelName}")`,
+				);
+			}
+			nameByModelId.set(contributionModelId, contributionModelName);
+		});
+		const name = nameByModelId.get(modelId);
+		if (!name) {
+			throw new Error(
+				`GeneratedContributionCard invariant violation: missing dialectic_contributions model_name for modelId "${modelId}"`,
+			);
+		}
+		return name;
+	}, [activeSessionDetail, hasStageContext, modelId]);
 
 	const validMarkdownDocumentKeys = useDialecticStore((state) => {
 		if (!stageSlug) {
@@ -216,7 +249,8 @@ export const GeneratedContributionCard: React.FC<
 	const baselineContent = documentResourceState?.baselineMarkdown ?? "";
 	const isDraftLoading = documentResourceState?.isLoading ?? false;
 	const draftError = documentResourceState?.error;
-	const lastBaselineVersion = documentResourceState?.lastBaselineVersion;
+	const lastBaselineVersion: StageDocumentVersionInfo | null =
+		documentResourceState ? documentResourceState.lastBaselineVersion : null;
 
 	const documentDescriptor: StageRunDocumentDescriptor | undefined =
 		focusedDocument && stageRunProgress
@@ -280,6 +314,10 @@ export const GeneratedContributionCard: React.FC<
 			toast.error("Could not save feedback.");
 			return;
 		}
+		if (!user || !user.id || !activeContextProjectId) {
+			toast.error("Could not save feedback.");
+			return;
+		}
 
 		const feedbackDraft = documentResourceState?.feedbackDraftMarkdown ?? "";
 
@@ -291,7 +329,10 @@ export const GeneratedContributionCard: React.FC<
 		try {
 			await submitStageDocumentFeedback({
 				...compositeKey,
-				feedback: feedbackDraft,
+				feedbackContent: feedbackDraft,
+				userId: user.id,
+				projectId: activeContextProjectId,
+				feedbackType: "user_feedback",
 			});
 			toast.success("Feedback saved successfully.");
 		} catch (_error) {
@@ -300,6 +341,8 @@ export const GeneratedContributionCard: React.FC<
 	}, [
 		compositeKey,
 		serializedKey,
+		user,
+		activeContextProjectId,
 		documentResourceState,
 		submitStageDocumentFeedback,
 	]);
@@ -395,6 +438,82 @@ export const GeneratedContributionCard: React.FC<
 		await Promise.all(promises);
 	}, [canSaveEdit, canSaveFeedback, handleSaveEdit, handleSaveFeedback]);
 
+	const selectedDocumentKey = focusedDocument ? focusedDocument.documentKey : null;
+	const showDocument =
+		Boolean(hasStageContext) &&
+		Boolean(isValidMarkdownDocument) &&
+		Boolean(sessionId) &&
+		Boolean(stageSlug) &&
+		Boolean(selectedDocumentKey) &&
+		Boolean(
+			sessionId &&
+				stageSlug &&
+				selectedDocumentKey &&
+				isDocumentHighlighted(
+					sessionId,
+					stageSlug,
+					modelId,
+					selectedDocumentKey,
+					focusedStageDocumentMap,
+				),
+		);
+	const documentCreatedAtIso = useMemo((): string | null => {
+		if (!showDocument) {
+			return null;
+		}
+		if (!selectedDocumentKey) {
+			throw new Error(
+				`GeneratedContributionCard invariant violation: selectedDocumentKey missing while showDocument is true (modelId "${modelId}")`,
+			);
+		}
+		if (!activeSessionDetail) {
+			throw new Error(
+				`GeneratedContributionCard invariant violation: activeSessionDetail missing while document is selected (modelId "${modelId}")`,
+			);
+		}
+		const sourceContributionId = documentResourceState?.sourceContributionId;
+		if (
+			typeof sourceContributionId !== "string" ||
+			sourceContributionId.trim().length === 0
+		) {
+			if (isDraftLoading) {
+				return null;
+			}
+			throw new Error(
+				`GeneratedContributionCard invariant violation: missing sourceContributionId for selected document (modelId "${modelId}", documentKey "${selectedDocumentKey}")`,
+			);
+		}
+		const contributions = activeSessionDetail.dialectic_contributions ?? [];
+		const sourceContribution = contributions.find(
+			(contribution) => contribution.id === sourceContributionId,
+		);
+		if (!sourceContribution) {
+			if (isDraftLoading) {
+				return null;
+			}
+			throw new Error(
+				`GeneratedContributionCard invariant violation: source contribution "${sourceContributionId}" not found in activeSessionDetail.dialectic_contributions (modelId "${modelId}", documentKey "${selectedDocumentKey}")`,
+			);
+		}
+		return sourceContribution.created_at;
+	}, [
+		activeSessionDetail,
+		documentResourceState?.sourceContributionId,
+		isDraftLoading,
+		modelId,
+		selectedDocumentKey,
+		showDocument,
+	]);
+	const documentLastUpdatedAtIso = useMemo((): string | null => {
+		if (!showDocument) {
+			return null;
+		}
+		if (lastBaselineVersion?.updatedAt) {
+			return lastBaselineVersion.updatedAt;
+		}
+		return null;
+	}, [lastBaselineVersion?.updatedAt, showDocument]);
+
 	if (!hasStageContext) {
 		return (
 			<Card className={cn("p-4", className)}>
@@ -408,28 +527,54 @@ export const GeneratedContributionCard: React.FC<
 		);
 	}
 
-	const showDocument = focusedDocument && isValidMarkdownDocument && sessionId && stageSlug && isDocumentHighlighted(sessionId, stageSlug, modelId, focusedDocument.documentKey, focusedStageDocumentMap);
-
 	return (
 		<Card className={cn("flex flex-col", className)}>
 			<CardHeader className="pb-3">
 				<div className="flex items-center justify-between gap-4">
 					{/* Document Info with Model Avatar */}
 					<div className="flex items-center gap-3">
-						<div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
-							{modelInitial}
-						</div>
-						<div>
-							{focusedDocument ? (
-								<h3 className="text-base font-medium text-foreground">
-									{focusedDocument.documentKey}
-								</h3>
-							) : (
-								<h3 className="text-base font-medium text-foreground">No document selected</h3>
+						<Button
+							variant="ghost"
+							size="sm"
+							type="button"
+							className={cn(
+								"w-10 h-10 rounded-full p-0 flex items-center justify-center",
+								"bg-primary/10 text-primary hover:bg-primary/15",
+								!focusedDocument && "opacity-60",
 							)}
-							<p className="text-sm text-muted-foreground">
-								{modelName}
-							</p>
+							aria-expanded={focusedDocument ? isEditorsOpen : undefined}
+							aria-label={isEditorsOpen ? "Collapse editors" : "Expand editors"}
+							disabled={!focusedDocument}
+							onClick={() => setIsEditorsOpen((prev) => !prev)}
+						>
+							<ChevronDown
+								className={cn(
+									"h-4 w-4 transition-transform duration-200",
+									isEditorsOpen ? "rotate-180" : "rotate-0",
+								)}
+							/>
+						</Button>
+						<div className="min-w-0">
+							<div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+								<span className="truncate text-base font-medium text-foreground">
+									{focusedDocument ? focusedDocument.documentKey : "No document selected"}
+								</span>
+								{focusedDocument ? (
+									<span className="truncate text-sm text-muted-foreground">
+										{modelName}
+									</span>
+								) : null}
+								{focusedDocument && documentCreatedAtIso ? (
+									<span className="truncate text-xs text-muted-foreground">
+										Created {new Date(documentCreatedAtIso).toLocaleDateString()}
+									</span>
+								) : null}
+								{focusedDocument && documentLastUpdatedAtIso ? (
+									<span className="truncate text-xs text-muted-foreground">
+										Updated {new Date(documentLastUpdatedAtIso).toLocaleDateString()}
+									</span>
+								) : null}
+							</div>
 						</div>
 					</div>
 
@@ -473,10 +618,10 @@ export const GeneratedContributionCard: React.FC<
 			</CardHeader>
 
 			<CardContent className="flex-1 space-y-4">
-				{showDocument ? (
+				{showDocument && selectedDocumentKey ? (
 					<>
 						{/* Technical Details Collapsible */}
-						{(documentDescriptor && ('job_id' in documentDescriptor || 'latestRenderedResourceId' in documentDescriptor)) && (
+						{isRenderedDescriptor(documentDescriptor) && (
 							<Collapsible open={isTechnicalDetailsOpen} onOpenChange={setIsTechnicalDetailsOpen}>
 								<CollapsibleTrigger asChild>
 									<Button
@@ -494,22 +639,18 @@ export const GeneratedContributionCard: React.FC<
 								</CollapsibleTrigger>
 								<CollapsibleContent className="mt-2">
 									<div className="flex flex-wrap gap-4 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
-										{'job_id' in documentDescriptor && documentDescriptor.job_id && (
-											<span>
-												Job ID:{" "}
-												<code className="font-mono text-foreground bg-muted px-1 rounded">
-													{documentDescriptor.job_id}
-												</code>
-											</span>
-										)}
-										{'latestRenderedResourceId' in documentDescriptor && documentDescriptor.latestRenderedResourceId && (
-											<span>
-												Resource ID:{" "}
-												<code className="font-mono text-foreground bg-muted px-1 rounded">
-													{documentDescriptor.latestRenderedResourceId}
-												</code>
-											</span>
-										)}
+										<span>
+											Job ID:{" "}
+											<code className="font-mono text-foreground bg-muted px-1 rounded">
+												{documentDescriptor.job_id}
+											</code>
+										</span>
+										<span>
+											Resource ID:{" "}
+											<code className="font-mono text-foreground bg-muted px-1 rounded">
+												{documentDescriptor.latestRenderedResourceId}
+											</code>
+										</span>
 										{lastBaselineVersion?.updatedAt && (
 											<span>
 												Last updated:{" "}
@@ -540,65 +681,72 @@ export const GeneratedContributionCard: React.FC<
 								</Alert>
 							)}
 
-						{/* Resizable Side-by-Side Layout (lg+ screens) */}
-						<div className="hidden lg:block">
-							<ResizablePanelGroup direction="horizontal" className="min-h-[400px] rounded-lg border">
-								<ResizablePanel defaultSize={60} minSize={30}>
-									<div className="h-full p-4">
-										<TextInputArea
-											label="Document Content"
-											value={documentResourceState?.currentDraftMarkdown || baselineContent}
-											onChange={handleDocumentContentChange}
-											disabled={isDraftLoading || isSavingContributionEdit}
-											placeholder="No content available."
-											id={`stage-document-content-${modelId}-${focusedDocument.documentKey}`}
-											dataTestId={`stage-document-content-${modelId}-${focusedDocument.documentKey}`}
-											showPreviewToggle
-											initialPreviewMode
-										/>
-									</div>
-								</ResizablePanel>
-								<ResizableHandle withHandle />
-								<ResizablePanel defaultSize={40} minSize={25}>
-									<div className="h-full p-4 bg-muted/20">
-										<TextInputArea
-											label="Feedback"
-											value={feedbackDraftValue}
-											onChange={handleFeedbackDraftChange}
-											placeholder={`Enter feedback for this document...`}
-											id={`stage-document-feedback-${modelId}-${focusedDocument.documentKey}`}
-											dataTestId={`stage-document-feedback-${modelId}-${focusedDocument.documentKey}`}
-											showPreviewToggle
-										/>
-									</div>
-								</ResizablePanel>
-							</ResizablePanelGroup>
-						</div>
+						{isEditorsOpen ? (
+							<>
+								{/* Resizable Side-by-Side Layout (lg+ screens) */}
+								<div className="hidden lg:block">
+									<ResizablePanelGroup direction="horizontal" className="min-h-[400px] rounded-lg border">
+										<ResizablePanel defaultSize={60} minSize={30}>
+											<div className="h-full p-4">
+												<TextInputArea
+													label="Document Content"
+													value={documentResourceState?.currentDraftMarkdown || baselineContent}
+													onChange={handleDocumentContentChange}
+													disabled={isDraftLoading || isSavingContributionEdit}
+													placeholder="No content available."
+													id={`stage-document-content-${modelId}-${selectedDocumentKey}`}
+													dataTestId={`stage-document-content-${modelId}-${selectedDocumentKey}`}
+													showPreviewToggle
+													initialPreviewMode
+												/>
+											</div>
+										</ResizablePanel>
+										<ResizableHandle withHandle />
+										<ResizablePanel defaultSize={40} minSize={25}>
+											<div className="h-full p-4 bg-muted/20">
+												<TextInputArea
+													label="Feedback"
+													value={feedbackDraftValue}
+													onChange={handleFeedbackDraftChange}
+													placeholder={`Enter feedback for this document...`}
+													id={`stage-document-feedback-${modelId}-${selectedDocumentKey}`}
+													dataTestId={`stage-document-feedback-${modelId}-${selectedDocumentKey}`}
+													showPreviewToggle
+												/>
+											</div>
+										</ResizablePanel>
+									</ResizablePanelGroup>
+								</div>
 
-						{/* Stacked Layout (mobile/tablet) */}
-						<div className="lg:hidden space-y-4">
-							<TextInputArea
-								label="Document Content"
-								value={documentResourceState?.currentDraftMarkdown || baselineContent}
-								onChange={handleDocumentContentChange}
-								disabled={isDraftLoading || isSavingContributionEdit}
-								placeholder="No content available."
-								id={`stage-document-content-mobile-${modelId}-${focusedDocument.documentKey}`}
-								dataTestId={`stage-document-content-mobile-${modelId}-${focusedDocument.documentKey}`}
-								showPreviewToggle
-								initialPreviewMode
-							/>
+								{/* Stacked Layout (mobile/tablet) */}
+								<div className="lg:hidden space-y-4">
+									<TextInputArea
+										label="Document Content"
+										value={documentResourceState?.currentDraftMarkdown || baselineContent}
+										onChange={handleDocumentContentChange}
+										disabled={isDraftLoading || isSavingContributionEdit}
+										placeholder="No content available."
+										id={`stage-document-content-mobile-${modelId}-${selectedDocumentKey}`}
+										dataTestId={`stage-document-content-mobile-${modelId}-${selectedDocumentKey}`}
+										showPreviewToggle
+										initialPreviewMode
+									/>
 
-							<TextInputArea
-								label="Feedback"
-								value={feedbackDraftValue}
-								onChange={handleFeedbackDraftChange}
-								placeholder={`Enter feedback for this document...`}
-								id={`stage-document-feedback-mobile-${modelId}-${focusedDocument.documentKey}`}
-								dataTestId={`stage-document-feedback-mobile-${modelId}-${focusedDocument.documentKey}`}
-								showPreviewToggle
-							/>
-						</div>
+									<TextInputArea
+										label="Feedback"
+										value={feedbackDraftValue}
+										onChange={handleFeedbackDraftChange}
+										placeholder={`Enter feedback for this document...`}
+										id={`stage-document-feedback-mobile-${modelId}-${selectedDocumentKey}`}
+										dataTestId={`stage-document-feedback-mobile-${modelId}-${selectedDocumentKey}`}
+										showPreviewToggle
+									/>
+								</div>
+							</>
+						) : (
+							<p className="text-xs text-muted-foreground">
+							</p>
+						)}
 
 						{/* Error Alerts */}
 						{saveContributionEditError && (

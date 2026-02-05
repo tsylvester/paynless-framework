@@ -341,8 +341,8 @@ describe('processComplexJob', () => {
         // Act
         await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', errorPlanCtx, 'user-jwt-123');
 
-        // Assert
-        const calls = mockNotificationService.sendDocumentCentricNotification.calls;
+        // Assert (PLAN job_failed: step_key required; modelId and document_key omitted)
+        const calls = mockNotificationService.sendJobNotificationEvent.calls;
         const jobFailedCalls = calls.filter((c) => {
             const a = c.args?.[0];
             return a && typeof a === 'object' && (a).type === 'job_failed';
@@ -353,9 +353,9 @@ describe('processComplexJob', () => {
         assertEquals(payloadArg.sessionId, mockParentJob.session_id);
         assertEquals(payloadArg.stageSlug, mockParentJob.stage_slug);
         assertEquals(payloadArg.job_id, mockParentJob.id);
-        assert(typeof payloadArg.document_key === 'string');
-        assertEquals(payloadArg.modelId, mockParentJob.payload.model_id);
+        assert(typeof payloadArg.step_key === 'string');
         assertEquals(payloadArg.iterationNumber, mockParentJob.iteration_number);
+        assert(payloadArg.error && typeof payloadArg.error.code === 'string' && typeof payloadArg.error.message === 'string');
         assertEquals(targetUserId, 'user-id-fail');
     });
 
@@ -373,8 +373,8 @@ describe('processComplexJob', () => {
         // Act
         await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', errorPlanCtx, 'user-jwt-123');
 
-        // Assert
-        const calls = mockNotificationService.sendDocumentCentricNotification.calls;
+        // Assert (PLAN job_failed: step_key required; modelId and document_key omitted)
+        const calls = mockNotificationService.sendJobNotificationEvent.calls;
         const jobFailedCalls = calls.filter((c) => {
             const a = c.args?.[0];
             return a && typeof a === 'object' && (a).type === 'job_failed';
@@ -385,9 +385,9 @@ describe('processComplexJob', () => {
         assertEquals(payloadArg.sessionId, mockParentJob.session_id);
         assertEquals(payloadArg.stageSlug, mockParentJob.stage_slug);
         assertEquals(payloadArg.job_id, mockParentJob.id);
-        assert(typeof payloadArg.document_key === 'string');
-        assertEquals(payloadArg.modelId, mockParentJob.payload.model_id);
+        assert(typeof payloadArg.step_key === 'string');
         assertEquals(payloadArg.iterationNumber, mockParentJob.iteration_number);
+        assert(payloadArg.error && typeof payloadArg.error.code === 'string' && typeof payloadArg.error.message === 'string');
         assertEquals(targetUserId, 'user-id-fail');
     });
 

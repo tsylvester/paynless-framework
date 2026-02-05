@@ -13,6 +13,7 @@ import {
   type DialecticStage,
   type SubmitStageResponsesPayload,
   type DialecticSession,
+  type SelectedModels,
   SubmitStageResponsesDependencies,
 } from "./dialectic.interface.ts";
 import { createMockFileManagerService } from "../_shared/services/file_manager.mock.ts";
@@ -78,10 +79,17 @@ Deno.test("submitStageResponses", async (t) => {
     recipe_template_id: null,
   };
 
+  const defaultSelectedModels: SelectedModels[] = [
+    { id: "test-model-id", displayName: "Test Model" },
+  ];
+
+  const testSelectedModelIds: string[] = defaultSelectedModels.map((m) => m.id);
+
   const createMockSession = (
     stage: DialecticStage,
     userId: string = testUserId,
     iterationCount: number | undefined = undefined,
+    sessionStatus: string | null = null,
   ): Partial<DialecticSession> & {
     stage: DialecticStage;
     project: {
@@ -92,8 +100,10 @@ Deno.test("submitStageResponses", async (t) => {
       dialectic_domains: { name: string };
       initial_prompt_resource_id: string;
     };
+    selected_models: SelectedModels[];
     selected_model_ids: string[];
     iteration_count?: number;
+    status: string | null;
   } => ({
     id: testSessionId,
     project_id: testProjectId,
@@ -107,7 +117,9 @@ Deno.test("submitStageResponses", async (t) => {
       dialectic_domains: { name: "test-domain" },
       initial_prompt_resource_id: "test-resource-id",
     },
-    selected_model_ids: ["test-model-id"],
+    selected_models: defaultSelectedModels,
+    selected_model_ids: testSelectedModelIds,
+    status: sessionStatus,
     ...(iterationCount !== undefined && { iteration_count: iterationCount }),
   });
 
@@ -249,7 +261,11 @@ Deno.test("submitStageResponses", async (t) => {
           dialectic_sessions: {
             select: { data: [createMockSession(mockThesisStage)] },
             update: {
-              data: [{ id: testSessionId, status: "pending_antithesis" }],
+              data: [{
+                id: testSessionId,
+                status: "pending_antithesis",
+                selected_model_ids: testSelectedModelIds,
+              }],
             },
           },
           dialectic_project_resources: {
@@ -430,6 +446,7 @@ Deno.test("submitStageResponses", async (t) => {
               data: [{
                 id: testSessionId,
                 status: "iteration_complete_pending_review",
+                selected_model_ids: testSelectedModelIds,
               }],
             },
           },
@@ -551,7 +568,11 @@ Deno.test("submitStageResponses", async (t) => {
           dialectic_sessions: {
             select: { data: [createMockSession(mockThesisStage, testUserId, 1)] },
             update: {
-              data: [{ id: testSessionId, status: "pending_antithesis" }],
+              data: [{
+                id: testSessionId,
+                status: "pending_antithesis",
+                selected_model_ids: testSelectedModelIds,
+              }],
             },
           },
           dialectic_stage_recipe_steps: {
@@ -683,6 +704,304 @@ Deno.test("submitStageResponses", async (t) => {
       );
 
       assertEquals(status, 200, "Function should succeed when resource exists with column metadata");
+    },
+  );
+
+  await t.step(
+    "Accepts session with status thesis_completed and advances",
+    async () => {
+      const mockPayload: SubmitStageResponsesPayload = {
+        sessionId: testSessionId,
+        projectId: testProjectId,
+        stageSlug: "thesis",
+        currentIterationNumber: 1,
+        responses: [],
+      };
+      const fileManagerAllowsUpload = createMockFileManagerService();
+      fileManagerAllowsUpload.uploadAndRegisterFile = spy((_context) =>
+        Promise.resolve({
+          record: {
+            id: "new-resource-id",
+            session_id: testSessionId,
+            user_id: testUserId,
+            stage: "antithesis",
+            iteration_number: 1,
+            model_id: "test-model-id",
+            model_name: "Test Model",
+            prompt_template_id_used: "test-prompt-template-id",
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: null,
+            tokens_used_output: null,
+            processing_time_ms: null,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: "seed_prompt",
+            file_name: "seed_prompt.md",
+            storage_bucket: "test-bucket",
+            storage_path: "test/path",
+            size_bytes: 123,
+            mime_type: "text/markdown",
+            document_relationships: null,
+            is_header: false,
+            source_prompt_resource_id: null,
+          },
+          error: null,
+        })
+      );
+      const mockDependenciesWithStorage: SubmitStageResponsesDependencies = {
+        ...mockDependencies,
+        fileManager: fileManagerAllowsUpload,
+        downloadFromStorage: spy(() =>
+          Promise.resolve({
+            data: new TextEncoder().encode("Mock file content").slice().buffer,
+            error: null,
+          })
+        ),
+      };
+      const mockDbConfig: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_sessions: {
+            select: {
+              data: [
+                createMockSession(mockThesisStage, testUserId, 1, "thesis_completed"),
+              ],
+            },
+            update: {
+              data: [{
+                id: testSessionId,
+                status: "pending_antithesis",
+                selected_model_ids: testSelectedModelIds,
+              }],
+            },
+          },
+          dialectic_project_resources: {
+            select: {
+              data: [{
+                storage_bucket: "test-bucket",
+                storage_path: "test-path",
+                file_name: "test-file.txt",
+              }],
+            },
+          },
+          system_prompts: {
+            select: {
+              data: [{
+                id: "prompt-id-antithesis",
+                prompt_text: "Test antithesis prompt",
+              }],
+            },
+          },
+          domain_specific_prompt_overlays: {
+            select: { data: [{ overlay_values: { test: "overlay" } }] },
+          },
+          dialectic_stage_transitions: {
+            select: {
+              data: [{
+                source_stage_id: testThesisStageId,
+                target_stage: mockAntithesisStage,
+              }],
+            },
+          },
+          dialectic_project_documents: {
+            select: { data: [{ id: "required-artifact-id" }] },
+          },
+        },
+      };
+      const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+      const { status, error, data } = await submitStageResponses(
+        mockPayload,
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockUser,
+        mockDependenciesWithStorage,
+      );
+      assertEquals(status, 200);
+      assertEquals(error, undefined);
+      assertExists(data);
+      assertEquals(data.updatedSession?.status, "pending_antithesis");
+      const updateSpy = mockSupabase.spies.getLatestQueryBuilderSpies(
+        "dialectic_sessions",
+      )?.update;
+      assertExists(updateSpy);
+      assertEquals(updateSpy.calls[0].args[0].current_stage_id, testAntithesisStageId);
+    },
+  );
+
+  await t.step(
+    "Accepts session with status running_thesis and advances when at target stage",
+    async () => {
+      const mockPayload: SubmitStageResponsesPayload = {
+        sessionId: testSessionId,
+        projectId: testProjectId,
+        stageSlug: "thesis",
+        currentIterationNumber: 1,
+        responses: [],
+      };
+      const fileManagerAllowsUpload = createMockFileManagerService();
+      fileManagerAllowsUpload.uploadAndRegisterFile = spy((_context) =>
+        Promise.resolve({
+          record: {
+            id: "new-resource-id",
+            session_id: testSessionId,
+            user_id: testUserId,
+            stage: "antithesis",
+            iteration_number: 1,
+            model_id: "test-model-id",
+            model_name: "Test Model",
+            prompt_template_id_used: "test-prompt-template-id",
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: null,
+            tokens_used_output: null,
+            processing_time_ms: null,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: "seed_prompt",
+            file_name: "seed_prompt.md",
+            storage_bucket: "test-bucket",
+            storage_path: "test/path",
+            size_bytes: 123,
+            mime_type: "text/markdown",
+            document_relationships: null,
+            is_header: false,
+            source_prompt_resource_id: null,
+          },
+          error: null,
+        })
+      );
+      const mockDependenciesWithStorage: SubmitStageResponsesDependencies = {
+        ...mockDependencies,
+        fileManager: fileManagerAllowsUpload,
+        downloadFromStorage: spy(() =>
+          Promise.resolve({
+            data: new TextEncoder().encode("Mock file content").slice().buffer,
+            error: null,
+          })
+        ),
+      };
+      const mockDbConfig: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_sessions: {
+            select: {
+              data: [
+                createMockSession(mockThesisStage, testUserId, 1, "running_thesis"),
+              ],
+            },
+            update: {
+              data: [{
+                id: testSessionId,
+                status: "pending_antithesis",
+                selected_model_ids: testSelectedModelIds,
+              }],
+            },
+          },
+          dialectic_project_resources: {
+            select: {
+              data: [{
+                storage_bucket: "test-bucket",
+                storage_path: "test-path",
+                file_name: "test-file.txt",
+              }],
+            },
+          },
+          system_prompts: {
+            select: {
+              data: [{
+                id: "prompt-id-antithesis",
+                prompt_text: "Test antithesis prompt",
+              }],
+            },
+          },
+          domain_specific_prompt_overlays: {
+            select: { data: [{ overlay_values: { test: "overlay" } }] },
+          },
+          dialectic_stage_transitions: {
+            select: {
+              data: [{
+                source_stage_id: testThesisStageId,
+                target_stage: mockAntithesisStage,
+              }],
+            },
+          },
+          dialectic_project_documents: {
+            select: { data: [{ id: "required-artifact-id" }] },
+          },
+        },
+      };
+      const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+      const { status, error, data } = await submitStageResponses(
+        mockPayload,
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockUser,
+        mockDependenciesWithStorage,
+      );
+      assertEquals(status, 200);
+      assertEquals(error, undefined);
+      assertExists(data);
+      assertEquals(data.updatedSession?.status, "pending_antithesis");
+      const updateSpy = mockSupabase.spies.getLatestQueryBuilderSpies(
+        "dialectic_sessions",
+      )?.update;
+      assertExists(updateSpy);
+      assertEquals(updateSpy.calls[0].args[0].current_stage_id, testAntithesisStageId);
+    },
+  );
+
+  await t.step(
+    "Returns success without advancing when session already past target stage",
+    async () => {
+      const mockPayload: SubmitStageResponsesPayload = {
+        sessionId: testSessionId,
+        projectId: testProjectId,
+        stageSlug: "thesis",
+        currentIterationNumber: 1,
+        responses: [],
+      };
+      const mockDbConfig: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_sessions: {
+            select: {
+              data: [
+                createMockSession(
+                  mockAntithesisStage,
+                  testUserId,
+                  1,
+                  "antithesis_completed",
+                ),
+              ],
+            },
+          },
+        },
+      };
+      const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+      const { status, error, data } = await submitStageResponses(
+        mockPayload,
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockUser,
+        mockDependencies,
+      );
+      assertEquals(status, 200);
+      assertEquals(error, undefined);
+      assertExists(data);
+      const updateSpy = mockSupabase.spies.getLatestQueryBuilderSpies(
+        "dialectic_sessions",
+      )?.update;
+      assert(
+        updateSpy === undefined || updateSpy.calls.length === 0,
+        "dialectic_sessions.update should not be called when session already past target stage",
+      );
     },
   );
 });

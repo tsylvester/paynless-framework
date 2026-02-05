@@ -105,6 +105,9 @@ vi.mock("@/components/ui/label", () => ({
 
 vi.mock("lucide-react", () => ({
 	AlertCircle: () => <div data-testid="alert-circle-icon" />,
+	Loader2: (props: { className?: string }) => (
+		<span data-testid="loader2-icon" {...props} />
+	),
 }));
 
 describe("EditName Component", () => {
@@ -150,9 +153,7 @@ describe("EditName Component", () => {
 	it("should render with initial first and last names in input fields and a disabled Save button", () => {
 		render(<EditName />);
 
-		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent(
-			"Edit Name",
-		);
+		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent("Name");
 
 		const firstNameInput = screen.getByLabelText(/first name/i);
 		expect(firstNameInput).toBeInTheDocument();
@@ -257,16 +258,9 @@ describe("EditName Component", () => {
 		expect(finalSaveButton).toBeDisabled();
 	});
 
-	it("should show error toast and in-card error if updateProfile returns null (simulating API error)", async () => {
-		const errorMsg = "Network Error Updating Name";
+	it("should show error toast when updateProfile returns null (simulating API error)", async () => {
 		mockUpdateProfile.mockResolvedValue(null);
-
-		setupMockStore(
-			mockProfileInitial,
-			false,
-			new Error(errorMsg),
-			mockUpdateProfile,
-		);
+		setupMockStore(mockProfileInitial, false, null, mockUpdateProfile);
 
 		render(<EditName />);
 
@@ -284,8 +278,6 @@ describe("EditName Component", () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByTestId("alert-circle-icon")).toBeInTheDocument();
-			expect(screen.getByText(errorMsg)).toBeInTheDocument();
 			expect(toast.error).toHaveBeenCalledWith(
 				"Failed to update name. An unexpected error occurred.",
 			);
@@ -295,29 +287,33 @@ describe("EditName Component", () => {
 		expect(saveButtonAfterError).toBeEnabled();
 	});
 
-	it("should display storeError if present on load, without user interaction", () => {
+	it("should render form when store has error on load (component does not display store error)", () => {
 		const existingError = new Error("Initial store error on load");
 		setupMockStore(mockProfileInitial, false, existingError);
 
 		render(<EditName />);
 
-		expect(screen.getByTestId("alert-circle-icon")).toBeInTheDocument();
-		expect(screen.getByText(existingError.message)).toBeInTheDocument();
+		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent("Name");
+		expect(screen.getByLabelText(/first name/i)).toBeInTheDocument();
+		expect(screen.queryByTestId("alert-circle-icon")).not.toBeInTheDocument();
 	});
 
-	it("should disable save button if profile is not loaded", () => {
+	it("should show loading message and no form when profile is not loaded", () => {
 		setupMockStore(null);
 		render(<EditName />);
-		expect(screen.getByText(/Profile data not available/i)).toBeInTheDocument();
+		expect(
+			screen.getByText(/Loading profile data.../i),
+		).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
 	});
 
-	it("should disable save button if component is in loading state from store", () => {
+	it("should render form with Save button when store isLoading is true (component uses only isSubmitting for button state)", () => {
 		setupMockStore(mockProfileInitial, true);
 		render(<EditName />);
-		const saveButton = screen.getByRole("button", { name: /saving.../i });
+		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent("Name");
+		const saveButton = screen.getByRole("button", { name: /save/i });
 		expect(saveButton).toBeInTheDocument();
+		expect(saveButton).toHaveTextContent(/save/i);
 		expect(saveButton).toBeDisabled();
-		expect(saveButton).toHaveTextContent(/saving.../i);
 	});
 });

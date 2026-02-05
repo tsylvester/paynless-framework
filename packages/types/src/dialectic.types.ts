@@ -100,15 +100,21 @@ export interface GetContributionContentDataResponse {
 export interface StartSessionPayload {
   projectId: string;
   sessionDescription?: string | null;
-  selectedModelIds: string[];
+  selectedModels: SelectedModels[];
   originatingChatId?: string | null;
   stageSlug?: string;
 }
 
 export interface UpdateSessionModelsPayload {
   sessionId: string;
-  selectedModelIds: string[];
+  selectedModels: SelectedModels[];
 }
+
+/** Same shape as backend dialectic-service DialecticSession.selected_models elements. */
+export interface SelectedModels {
+  id: string;
+  displayName: string;
+} 
 
 export interface DialecticSession {
   id: string;
@@ -116,7 +122,7 @@ export interface DialecticSession {
   session_description: string | null;
   user_input_reference_url: string | null;
   iteration_count: number;
-  selected_model_ids: string[] | null;
+  selected_models: SelectedModels[];
   status: string | null;
   associated_chat_id: string | null;
   current_stage_id: string | null;
@@ -296,7 +302,8 @@ export interface DialecticStateValues {
   isUpdatingProjectPrompt: boolean;
   isUploadingProjectResource: boolean;
   uploadProjectResourceError: ApiError | null;
-  selectedModelIds: string[];
+  /** Single origin from session response (id + displayName); display uses this, not catalog. */
+  selectedModels: SelectedModels[] | null | undefined;
 
   // Cache for initial prompt file content
   initialPromptContentCache: { [resourceId: string]: InitialPromptCacheEntry };
@@ -342,8 +349,6 @@ export interface DialecticStateValues {
 
   activeDialecticWalletId: string | null;
 
-  sessionProgress: { [sessionId: string]: ProgressData };
-  
   // Recipe hydration and per-stage-run progress
   recipesByStageSlug: Record<string, DialecticStageRecipe>;
   stageRunProgress: Record<string, StageRunProgressSnapshot>;
@@ -449,9 +454,59 @@ export interface StageDocumentContentState {
   feedbackIsDirty: boolean;
 }
 
+/**
+ * Separator used in stageRunProgress.documents keys.
+ * Key format: `${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`.
+ * One document key can have N descriptors (one per model).
+ */
+export const STAGE_RUN_DOCUMENT_KEY_SEPARATOR = ':';
+
+/**
+ * Key for stageRunProgress.documents. Format: documentKey + STAGE_RUN_DOCUMENT_KEY_SEPARATOR + modelId.
+ * Enables multiple descriptors per document key (one per model).
+ */
+export type StageRunDocumentKey = string;
+
+/** Parsed parts of a StageRunDocumentKey (documentKey + separator + modelId). */
+export interface StageRunDocumentKeyParts {
+  documentKey: string;
+  modelId: string;
+}
+
 export interface StageRunProgressSnapshot {
   stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed'>;
-  documents: Record<string, StageRunDocumentDescriptor>;
+  /** Keyed by StageRunDocumentKey (documentKey:modelId). One document key can have N descriptors. */
+  documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
+}
+
+export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
+
+export interface StepProgressDetail {
+  stepKey: string;
+  stepName: string;
+  totalModels: number;
+  completedModels: number;
+  stepPercentage: number;
+  status: UnifiedProjectStatus;
+}
+
+export interface StageProgressDetail {
+  stageSlug: string;
+  totalSteps: number;
+  completedSteps: number;
+  stagePercentage: number;
+  stepsDetail: StepProgressDetail[];
+  stageStatus: UnifiedProjectStatus;
+}
+
+export interface UnifiedProjectProgress {
+  totalStages: number;
+  completedStages: number;
+  currentStageSlug: string | null;
+  overallPercentage: number;
+  currentStage: DialecticStage | null;
+  projectStatus: UnifiedProjectStatus;
+  stageDetails: StageProgressDetail[];
 }
 
 export interface InitialPromptCacheEntry {
@@ -494,7 +549,7 @@ export type StageDocumentEntry = StageDocumentChecklistEntry;
 export interface StageRunChecklistProps {
   focusedStageDocumentMap?: Record<string, FocusedStageDocumentState | null>;
   onDocumentSelect: StageDocumentSelectionHandler;
-  modelId: string;
+  modelId: string | null;
 }
 
 export interface ClearFocusedStageDocumentPayload {
@@ -527,9 +582,9 @@ export interface DialecticActions {
   cloneDialecticProject: (projectId: string) => Promise<ApiResponse<DialecticProject>>;
   exportDialecticProject: (projectId: string) => Promise<ApiResponse<ExportProjectResponse>>;
   updateDialecticProjectInitialPrompt: (payload: UpdateProjectInitialPromptPayload) => Promise<ApiResponse<DialecticProjectRow>>;
-  setSelectedModelIds: (modelIds: string[]) => void;
-  setModelMultiplicity: (modelId: string, count: number) => void;
-  resetSelectedModelId: () => void;
+  setSelectedModels: (models: SelectedModels[]) => void;
+  setModelMultiplicity: (model: SelectedModels, count: number) => void;
+  resetSelectedModels: () => void;
 
   // New action for fetching process templates
   fetchProcessTemplate: (templateId: string) => Promise<void>;
@@ -545,6 +600,7 @@ export interface DialecticActions {
   fetchStageDocumentContent: (key: StageDocumentCompositeKey, resourceId: string) => Promise<void>;
 
   hydrateStageProgress: (payload: ListStageDocumentsPayload) => Promise<void>;
+  hydrateAllStageProgress: (payload: GetAllStageProgressPayload) => Promise<void>;
 
   fetchStageDocumentFeedback: (key: StageDocumentCompositeKey) => Promise<void>;
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload) => Promise<ApiResponse<{ success: boolean }>>;
@@ -600,11 +656,12 @@ export interface DialecticActions {
   _handleContributionGenerationFailed: (event: ContributionGenerationFailedPayload) => void;
   _handleContributionGenerationComplete: (event: ContributionGenerationCompletePayload) => void;
   _handleContributionGenerationContinued: (event: ContributionGenerationContinuedPayload) => void;
-  _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => void;
   _handlePlannerStarted: (event: PlannerStartedPayload) => void;
+  _handlePlannerCompleted: (event: PlannerCompletedPayload) => void;
   _handleDocumentStarted: (event: DocumentStartedPayload) => void;
   _handleDocumentChunkCompleted: (event: DocumentChunkCompletedPayload) => void;
   _handleDocumentCompleted: (event: DocumentCompletedPayload) => void;
+  _handleRenderStarted: (event: RenderStartedPayload) => void;
   _handleRenderCompleted: (event: RenderCompletedPayload) => void;
   _handleJobFailed: (event: JobFailedPayload) => void;
   
@@ -669,14 +726,19 @@ export type DialecticNotificationTypes =
   | 'dialectic_contribution_received'
   | 'contribution_generation_failed'
   | 'contribution_generation_complete'
-  | 'dialectic_progress_update'
   | 'contribution_generation_continued'
   | 'planner_started'
+  | 'planner_completed'
   | 'document_started'
   | 'document_chunk_completed'
+  | 'document_completed'
+  | 'execute_started'
+  | 'execute_chunk_completed'
+  | 'execute_completed'
+  | 'render_started'
+  | 'render_chunk_completed'
   | 'render_completed'
-  | 'job_failed'
-  | 'document_completed';
+  | 'job_failed';
 
 export interface ContributionGenerationStartedPayload {
   // This is the overall contribution generation for the entire session stage. 
@@ -743,21 +805,6 @@ export interface ContributionGenerationCompletePayload {
   projectId: string;
 }
 
-export interface DialecticProgressUpdatePayload {
-  type: 'dialectic_progress_update';
-  sessionId: string;
-  stageSlug: string;
-  current_step: number;
-  total_steps: number;
-  message: string;
-}
-
-export interface ProgressData {
-  current_step: number;
-  total_steps: number;
-  message: string;
-}
-
 export interface DocumentLifecyclePayload {
   sessionId: string;
   stageSlug: string;
@@ -769,8 +816,21 @@ export interface DocumentLifecyclePayload {
   latestRenderedResourceId?: string | null;
 }
 
+/** Base fields required for progress tracking. PLAN events use this only (no modelId, no document_key). */
+export interface JobNotificationBase {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  job_id: string;
+  step_key: string;
+}
+
 export interface PlannerStartedPayload extends DocumentLifecyclePayload {
   type: 'planner_started';
+}
+
+export interface PlannerCompletedPayload extends JobNotificationBase {
+  type: 'planner_completed';
 }
 
 export interface DocumentStartedPayload extends DocumentLifecyclePayload {
@@ -785,6 +845,41 @@ export interface DocumentChunkCompletedPayload extends DocumentLifecyclePayload 
 
 export interface DocumentCompletedPayload extends DocumentLifecyclePayload {
   type: 'document_completed';
+}
+
+/** EXECUTE job payload: modelId required, document_key optional. */
+export interface ExecutePayload extends JobNotificationBase {
+  modelId: string;
+  document_key?: string;
+}
+
+export interface ExecuteStartedPayload extends ExecutePayload {
+  type: 'execute_started';
+}
+
+export interface ExecuteChunkCompletedPayload extends ExecutePayload {
+  type: 'execute_chunk_completed';
+  isFinalChunk?: boolean;
+  continuationNumber?: number;
+}
+
+export interface ExecuteCompletedPayload extends ExecutePayload {
+  type: 'execute_completed';
+  latestRenderedResourceId?: string | null;
+}
+
+/** RENDER job payload: modelId and document_key required. */
+export interface RenderPayload extends JobNotificationBase {
+  modelId: string;
+  document_key: string;
+}
+
+export interface RenderStartedPayload extends RenderPayload {
+  type: 'render_started';
+}
+
+export interface RenderChunkCompletedPayload extends RenderPayload {
+  type: 'render_chunk_completed';
 }
 
 export interface RenderCompletedPayload extends DocumentLifecyclePayload {
@@ -805,11 +900,16 @@ ContributionGenerationStartedPayload
 | ContributionGenerationFailedPayload 
 | ContributionGenerationContinuedPayload
 | ContributionGenerationCompletePayload
-| DialecticProgressUpdatePayload
 | PlannerStartedPayload
+| PlannerCompletedPayload
 | DocumentStartedPayload
 | DocumentChunkCompletedPayload
 | DocumentCompletedPayload
+| ExecuteStartedPayload
+| ExecuteChunkCompletedPayload
+| ExecuteCompletedPayload
+| RenderStartedPayload
+| RenderChunkCompletedPayload
 | RenderCompletedPayload
 | JobFailedPayload;
 
@@ -908,6 +1008,22 @@ export interface ListStageDocumentsPayload {
   userId: string;
   projectId: string;
 }
+
+export interface GetAllStageProgressPayload {
+  sessionId: string;
+  iterationNumber: number;
+  userId: string;
+  projectId: string;
+}
+
+export interface StageProgressEntry {
+  stageSlug: string;
+  documents: StageDocumentChecklistEntry[];
+  stepStatuses: Record<string, string>;
+  stageStatus: UnifiedProjectStatus;
+}
+
+export type GetAllStageProgressResponse = StageProgressEntry[];
 
 export interface ContributionContentSignedUrlResponse {
     signedUrl: string;
@@ -1039,6 +1155,9 @@ export type DialecticServiceActionPayload = {
 | {
   action: 'listStageDocuments';
   payload: ListStageDocumentsPayload;
+} | {
+  action: 'getAllStageProgress';
+  payload: GetAllStageProgressPayload;
 }
 
 export interface DialecticServiceResponsePayload {
@@ -1138,10 +1257,8 @@ export interface StageDocumentFeedback {
 
 /**
  * Payload for submitting stage document feedback.
- * NOTE: Naming mismatch with backend contract - this interface uses `feedback` while
- * the backend API expects `feedbackContent`. Additionally, the backend contract expects
- * a linkage field (`source_contribution_id`) to track which contribution the feedback
- * targets. Future refactors should standardize naming to align with backend.
+ * Aligned with backend contract (dialectic-service dialectic.interface.ts).
+ * Caller must provide identity and context (userId, projectId, feedbackContent, feedbackType).
  */
 export interface SubmitStageDocumentFeedbackPayload {
 	sessionId: string;
@@ -1149,7 +1266,11 @@ export interface SubmitStageDocumentFeedbackPayload {
 	iterationNumber: number;
 	modelId: string;
 	documentKey: string;
-	feedback: string;
+	feedbackContent: string;
+	userId: string;
+	projectId: string;
+	feedbackType: string;
+	feedbackId?: string;
 	sourceContributionId?: string | null;
 }
 

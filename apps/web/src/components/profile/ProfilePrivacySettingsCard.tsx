@@ -24,6 +24,8 @@ import {
 
 export const ProfilePrivacySettingsCard: React.FC = () => {
 	const profile = useAuthStore((state) => state.profile);
+	const isLoading = useAuthStore((state) => state.isLoading);
+	const error = useAuthStore((state) => state.error);
 	const updateProfile = useAuthStore((state) => state.updateProfile);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -92,6 +94,20 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
 				</CardTitle>
 			</CardHeader>
 			<CardContent className="space-y-4">
+				{error && (
+					<div data-testid="error-message" className="text-sm text-destructive">
+						Error updating settings: {error.message}
+					</div>
+				)}
+				{(isSubmitting || isLoading) && (
+					<div
+						data-testid="loading-indicator"
+						className="flex items-center gap-2 text-sm text-muted-foreground"
+					>
+						<Loader2 className="h-4 w-4 animate-spin" />
+						Saving settings...
+					</div>
+				)}
 				<div className="space-y-2">
 					<Label
 						htmlFor="profile-privacy-select"
@@ -104,7 +120,7 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
 						onValueChange={(value) =>
 							handleSettingChange(value as ProfilePrivacySetting)
 						}
-						disabled={isSubmitting || !profile}
+						disabled={isSubmitting || isLoading || !profile}
 						name="profile-privacy-select"
 					>
 						<SelectTrigger
@@ -112,7 +128,7 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
 							data-testid="privacy-select-trigger"
 							id="profile-privacy-select"
 						>
-							{isSubmitting && (
+							{(isSubmitting || isLoading) && (
 								<Loader2 className="h-4 w-4 animate-spin mr-2" />
 							)}
 							{selectedOptionDetails ? (

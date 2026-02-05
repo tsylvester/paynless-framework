@@ -5,7 +5,6 @@ import type { DeleteProjectPayload } from "./dialectic.interface.ts";
 import { createMockSupabaseClient, type MockQueryBuilderState, type MockSupabaseDataConfig } from "../_shared/supabase.mock.ts";
 import type { Database } from "../types_db.ts"; // Assuming this is the correct path for db types
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getStorageSpies } from "../_shared/supabase.mock.ts";
 
 // Define mock STORAGE_BUCKETS to resolve linter errors
 const STORAGE_BUCKETS = {
@@ -53,6 +52,8 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
         `${sessionFolderPath}/contrib2.md`
     ].sort();
 
+    const listCalls: string[] = [];
+    const removeCalls: string[][] = [];
 
     // 1. Mock the DB calls
     const mockProjectsSelect = spy(async (state: MockQueryBuilderState) => {
@@ -99,16 +100,16 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
             dialectic_contributions: { select: mockContributionsSelect },
         },
         storageMock: {
-            listResult: async (bucketId, path, options) => {
+            listResult: async (_bucketId: string, path: string | undefined, _options: unknown) => {
+                if (path !== undefined) listCalls.push(path);
                 if (path === projectRootPath) return { data: filesInStorageList, error: null };
                 if (path === sessionFolderPath) return { data: filesInSessionFolderList, error: null };
                 if (path === `${projectRootPath}/sessions/sessions`) return { data: [], error: null };
                 return { data: [], error: new Error(`Mock list not configured for path: ${path}`) };
             },
-            removeResult: async (bucketId, paths) => {
-                const sortedPaths = [...paths].sort();
-                if (bucketId === 'dialectic-contributions' && sortedPaths.length > 0) {
-                     // The recursive delete may call remove multiple times. This mock should just succeed.
+            removeResult: async (bucketId: string, paths: string[]) => {
+                removeCalls.push([...paths]);
+                if (bucketId === 'dialectic-contributions' && paths.length > 0) {
                     return { data: [{ bucket: bucketId, name: 'mocked-removal' }], error: null };
                 }
                 return { data: null, error: new Error(`Mocked removal failed for bucket ${bucketId} with paths: ${JSON.stringify(paths)}`) };
@@ -116,11 +117,7 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
         }
     };
 
-    const { client: adminDbClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockAdminDbConfig);
-    
-    // Ensure the storage spies are created by calling from()
-    adminDbClient.storage.from('dialectic-contributions'); 
-    const { removeSpy, listSpy } = getStorageSpies(adminDbClient, 'dialectic-contributions');
+    const { client: adminDbClient, clearAllStubs } = createMockSupabaseClient(mockUserId, mockAdminDbConfig);
 
     // 3. Run the function
     const response = await deleteProject(adminDbClient as unknown as SupabaseClient<Database>, mockPayload, mockUserId);
@@ -136,18 +133,13 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
     assertEquals(mockContributionsSelect.calls.length, 1, "Contributions select should be called once to get buckets");
     assertEquals(mockProjectsDelete.calls.length, 1, "Project delete should be called once");
 
-    // Assert Storage calls
-    assertExists(listSpy, "The list spy for the storage bucket should exist.");
-    assertEquals(listSpy.calls.length, 2, "Storage list should be called for the root project folder and the sessions sub-folder.");
-    
-    assertExists(removeSpy, "The remove spy for the storage bucket should exist.");
-    assertEquals(removeSpy.calls.length, 2, "Storage remove should be called once for files in root, and once for files in session folder.");
-    
-    // Check that the combination of all calls to remove() contains all the expected files.
-    const allRemovedPaths = removeSpy.calls.flatMap(call => call.args[0]).sort();
+    // Assert Storage calls (recorded in listResult/removeResult callbacks)
+    assertEquals(listCalls.length, 2, "Storage list should be called for the root project folder and the sessions sub-folder.");
+    assertEquals(removeCalls.length, 2, "Storage remove should be called once for files in root, and once for files in session folder.");
+    const allRemovedPaths = removeCalls.flatMap((paths: string[]) => paths).sort();
     assertEquals(
         JSON.stringify(allRemovedPaths),
-        JSON.stringify(filesToRemove), // Use the pre-sorted list of expected files
+        JSON.stringify(filesToRemove),
         "Storage remove was not called with the correct file paths across all calls"
     );
 

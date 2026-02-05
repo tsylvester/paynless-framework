@@ -1,13 +1,16 @@
 import React, { useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useDialecticStore, selectSortedStages } from "@paynless/store";
+import {
+	useDialecticStore,
+	selectSortedStages,
+	selectActiveStageSlug,
+} from "@paynless/store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
 	DialecticSession,
 	DialecticProject,
-	DialecticStage,
 	ApiError,
 } from "@paynless/types";
 
@@ -15,6 +18,7 @@ import {
 import { SessionInfoCard } from "../components/dialectic/SessionInfoCard";
 import { StageTabCard } from "../components/dialectic/StageTabCard";
 import { SessionContributionsDisplayCard } from "../components/dialectic/SessionContributionsDisplayCard";
+import { DynamicProgressBar } from "../components/common/DynamicProgressBar";
 
 export const DialecticSessionDetailsPage: React.FC = () => {
 	const { projectId: urlProjectId, sessionId: urlSessionId } = useParams<{
@@ -40,9 +44,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 	const currentProjectDetail = useDialecticStore(
 		(state) => state.currentProjectDetail,
 	) as DialecticProject | null;
-	const activeContextStage = useDialecticStore(
-		(state) => state.activeContextStage,
-	) as DialecticStage | null;
+	const activeStageSlug = useDialecticStore(selectActiveStageSlug);
 	const sortedStages = useDialecticStore(selectSortedStages);
 
 	// Loading and error states from store
@@ -150,6 +152,8 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 					{/* Sidebar */}
 					<div className="lg:col-span-1">
 						<div className="sticky top-24 space-y-4">
+							{/* Enhanced Progress */}
+							<DynamicProgressBar sessionId={activeSessionDetail.id} />
 							{/* Stage Navigation */}
 							<div className="space-y-2">
 								<h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1">
@@ -165,13 +169,13 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 					{/* Main Content Area */}
 					<div className="lg:col-span-1">
 						<div className="bg-card rounded-xl border shadow-sm overflow-hidden">
-							{activeContextStage && activeSessionDetail ? (
+							{activeStageSlug && activeSessionDetail ? (
 								<div className="p-6">
 									<SessionContributionsDisplayCard />
 								</div>
 							) : (
 								<div className="py-16 text-center">
-									{!activeContextStage &&
+									{!activeStageSlug &&
 									sortedStages.length > 0 &&
 									!isLoading ? (
 										<div className="space-y-3">

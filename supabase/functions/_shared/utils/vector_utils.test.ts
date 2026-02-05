@@ -13,6 +13,7 @@ import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { type Database } from "../../types_db.ts";
 import { createMockSupabaseClient } from "../supabase.mock.ts";
+import { IDialecticJobDeps, RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
 import { FileType } from "../types/file_manager.types.ts";
 
 
@@ -129,13 +130,14 @@ const mockSourceDocument = (overrides: Partial<SourceDocument>): SourceDocument 
     ...overrides,
 });
 
-const deps: ExecuteModelCallAndSaveParams['deps'] = { embeddingClient: mockEmbeddingClient, getSeedPromptForStage: () => Promise.resolve({
+const deps: IDialecticJobDeps = { embeddingClient: mockEmbeddingClient, getSeedPromptForStage: () => Promise.resolve({
   content: '',
   fullPath: '',
   bucket: '',
   path: '',
   fileName: '',
 }),
+executeModelCallAndSave: () => Promise.resolve(),
 documentRenderer: {
   renderDocument: () => Promise.resolve({
     content: '',
@@ -164,18 +166,16 @@ retryJob: () => Promise.resolve({
   enqueued: true,
 }),
 notificationService: {
-  sendDocumentCentricNotification: () => Promise.resolve(),
+  sendJobNotificationEvent: () => Promise.resolve(),
   sendContributionStartedEvent: () => Promise.resolve(),
   sendDialecticContributionStartedEvent: () => Promise.resolve(),
   sendContributionReceivedEvent: () => Promise.resolve(),
   sendContributionRetryingEvent: () => Promise.resolve(),
   sendContributionGenerationCompleteEvent: () => Promise.resolve(),
   sendContributionGenerationContinuedEvent: () => Promise.resolve(),
-  sendDialecticProgressUpdateEvent: () => Promise.resolve(),
   sendContributionFailedNotification: () => Promise.resolve(),
   sendContributionGenerationFailedEvent: () => Promise.resolve(),
 },
-executeModelCallAndSave: () => Promise.resolve(),
 downloadFromStorage: () => Promise.resolve({
   data: new ArrayBuffer(0),
   error: null,
@@ -548,15 +548,15 @@ Deno.test("getSortedCompressionCandidates - blended scoring ranks higher-matrix 
     },
   });
 
-  // Arrange: two documents with identical similarity to the prompt
+  // Arrange: two documents with identical similarity to the prompt; relevance rules key by document_key so high-priority doc gets relevance 1, low-priority gets 0
   const documents: SourceDocument[] = [
-    mockSourceDocument({ id: 'doc-high', content: 'high relevance', document_key: 'high.md', type: 'document' }),
-    mockSourceDocument({ id: 'doc-low', content: 'high relevance', document_key: 'low.md', type: 'document' }),
+    mockSourceDocument({ id: 'doc-high', content: 'high relevance', document_key: 'business_case', type: 'document' }),
+    mockSourceDocument({ id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', type: 'document' }),
   ];
 
-  const inputsRelevance = [
-    { document_key: 'high.md', type: 'document', relevance: 1 },
-    { document_key: 'low.md', type: 'document', relevance: 0 },
+  const inputsRelevance: RelevanceRule[] = [
+    { document_key: FileType.business_case, type: 'document', relevance: 1 },
+    { document_key: FileType.feature_spec, type: 'document', relevance: 0 },
   ];
 
   const result = await getSortedCompressionCandidates(
@@ -585,13 +585,13 @@ Deno.test("getSortedCompressionCandidates - matrix priority protects high-priori
   });
 
   const documents: SourceDocument[] = [
-    mockSourceDocument({ id: 'doc-high', content: 'high relevance', document_key: 'high.md', type: 'document' }),
-    mockSourceDocument({ id: 'doc-low', content: 'high relevance', document_key: 'low.md', type: 'document' }),
+    mockSourceDocument({ id: 'doc-high', content: 'high relevance', document_key: 'business_case', type: 'document' }),
+    mockSourceDocument({ id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', type: 'document' }),
   ];
 
-  const inputsRelevance = [
-    { document_key: 'high.md', type: 'document', relevance: 1 },
-    { document_key: 'low.md', type: 'document', relevance: 0 },
+  const inputsRelevance: RelevanceRule[] = [
+    { document_key: FileType.business_case, type: 'document', relevance: 1 },
+    { document_key: FileType.feature_spec, type: 'document', relevance: 0 },
   ];
 
   const result = await getSortedCompressionCandidates(

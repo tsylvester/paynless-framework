@@ -187,7 +187,7 @@ Deno.test('gatherArtifacts - queries resources first and finds rendered document
             session_description: 'A mock session',
             user_input_reference_url: null,
             iteration_count: 1,
-            selected_model_ids: ['model-def'],
+            selected_models: [{ id: 'model-def', displayName: 'Mock AI' }],
             status: 'in-progress',
             associated_chat_id: 'chat-789',
             current_stage_id: 'stage-1',
@@ -292,7 +292,7 @@ Deno.test('gatherArtifacts - prefers resources over contributions when both exis
             session_description: 'A mock session',
             user_input_reference_url: null,
             iteration_count: 1,
-            selected_model_ids: ['model-def'],
+            selected_models: [{ id: 'model-def', displayName: 'Mock AI' }],
             status: 'in-progress',
             associated_chat_id: 'chat-789',
             current_stage_id: 'stage-1',
@@ -370,7 +370,7 @@ Deno.test('gatherArtifacts - throws error when required rendered document not fo
             session_description: 'A mock session',
             user_input_reference_url: null,
             iteration_count: 1,
-            selected_model_ids: ['model-def'],
+            selected_models: [{ id: 'model-def', displayName: 'Mock AI' }],
             status: 'in-progress',
             associated_chat_id: 'chat-789',
             current_stage_id: 'stage-1',
@@ -413,6 +413,99 @@ Deno.test('gatherArtifacts - throws error when required rendered document not fo
     assert(
         !contributionsQueried,
         'Contributions should NOT be queried when resources are not found (finished documents must be in resources, not contributions)',
+    );
+});
+
+Deno.test('gatherArtifacts - finds required seed_prompt in dialectic_project_resources when app stores it there (target behavior)', async () => {
+    // Target: app stores seed_prompt in dialectic_project_resources via fileManager.uploadAndRegisterFile(FileType.SeedPrompt).
+    // Executor should query project_resources for inputsRequired type seed_prompt and find it; execution should succeed.
+    const seedPromptResource = {
+        id: 'resource-seed-prompt-123',
+        content: 'Seed prompt content',
+        stage_slug: 'thesis',
+        project_id: 'project-abc',
+        session_id: 'session-456',
+        iteration_number: 1,
+        resource_type: 'seed_prompt',
+        created_at: new Date().toISOString(),
+        storage_path: 'project-abc/session_session-456/iteration_1/thesis',
+        file_name: 'seed_prompt.md',
+    };
+    let projectResourcesQueried = false;
+    const { client: dbClient, spies } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'ai_providers': {
+                select: {
+                    data: [mockFullProviderData],
+                    error: null,
+                },
+            },
+            'dialectic_project_resources': {
+                select: () => {
+                    projectResourcesQueried = true;
+                    return Promise.resolve({ data: [seedPromptResource], error: null });
+                },
+            },
+            'dialectic_contributions': {
+                select: () => {
+                    return Promise.resolve({ data: [], error: null });
+                },
+            },
+            'dialectic_feedback': {
+                select: () => {
+                    return Promise.resolve({ data: [], error: null });
+                },
+            },
+        },
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps: IExecuteJobContext = getMockDeps({ fileManager, countTokens: countTokensTen });
+
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob(testPayload),
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        sessionData: {
+            id: 'session-456',
+            project_id: 'project-abc',
+            session_description: 'A mock session',
+            user_input_reference_url: null,
+            iteration_count: 1,
+            selected_models: [{ id: 'model-def', displayName: 'Mock AI' }],
+            status: 'in-progress',
+            associated_chat_id: 'chat-789',
+            current_stage_id: 'stage-1',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        },
+        promptConstructionPayload: {
+            systemInstruction: undefined,
+            conversationHistory: [],
+            resourceDocuments: [],
+            currentUserPrompt: 'Test prompt',
+        },
+        compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
+        inputsRequired: [
+            {
+                type: 'seed_prompt',
+                slug: 'thesis',
+                document_key: FileType.SeedPrompt,
+                required: true,
+            },
+        ],
+    };
+
+    await executeModelCallAndSave(params);
+
+    assert(
+        projectResourcesQueried,
+        'Executor should query dialectic_project_resources for required seed_prompt (app stores it there)',
     );
 });
 
@@ -473,7 +566,7 @@ Deno.test('gatherArtifacts - continues to query contributions for intermediate a
             session_description: 'A mock session',
             user_input_reference_url: null,
             iteration_count: 1,
-            selected_model_ids: ['model-def'],
+            selected_models: [{ id: 'model-def', displayName: 'Mock AI' }],
             status: 'in-progress',
             associated_chat_id: 'chat-789',
             current_stage_id: 'stage-1',
@@ -512,6 +605,191 @@ Deno.test('gatherArtifacts - continues to query contributions for intermediate a
             'Resources should NOT be queried for intermediate artifacts (header_context is stored in contributions)',
         );
     }
+});
+
+Deno.test('gatherArtifacts - queries dialectic_contributions by session_id only, never by project_id', async () => {
+    const { client: dbClient, spies } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'ai_providers': {
+                select: {
+                    data: [mockFullProviderData],
+                    error: null,
+                },
+            },
+            'dialectic_project_resources': {
+                select: () => Promise.resolve({ data: [], error: null }),
+            },
+            'dialectic_contributions': {
+                select: () => {
+                    const contribution = {
+                        id: 'header-contrib-123',
+                        content: 'Header context content',
+                        stage: 'thesis',
+                        session_id: 'session-456',
+                        iteration_number: 1,
+                        created_at: new Date().toISOString(),
+                        storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
+                        file_name: 'model-collect_1_header_context.json',
+                    };
+                    return Promise.resolve({ data: [contribution], error: null });
+                },
+            },
+            'dialectic_feedback': {
+                select: () => Promise.resolve({ data: [], error: null }),
+            },
+        },
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps: IExecuteJobContext = getMockDeps({ fileManager, countTokens: countTokensTen });
+
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob(testPayload),
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        sessionData: {
+            id: 'session-456',
+            project_id: 'project-abc',
+            session_description: 'A mock session',
+            user_input_reference_url: null,
+            iteration_count: 1,
+            selected_models: [{ id: 'model-def', displayName: 'Mock AI' }],
+            status: 'in-progress',
+            associated_chat_id: 'chat-789',
+            current_stage_id: 'stage-1',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        },
+        promptConstructionPayload: {
+            systemInstruction: undefined,
+            conversationHistory: [],
+            resourceDocuments: [],
+            currentUserPrompt: 'Test prompt',
+        },
+        compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
+        inputsRequired: [
+            {
+                type: 'header_context',
+                slug: 'thesis',
+                document_key: FileType.HeaderContext,
+            },
+        ],
+    };
+
+    await executeModelCallAndSave(params);
+
+    const allContributionsSpies = spies.getAllQueryBuilderSpies('dialectic_contributions');
+    assertExists(allContributionsSpies, 'At least one dialectic_contributions query should occur');
+    for (const builder of allContributionsSpies) {
+        if (builder.eq?.calls) {
+            for (const call of builder.eq.calls) {
+                const column: unknown = call.args?.[0];
+                assert(
+                    column !== 'project_id',
+                    'dialectic_contributions has no project_id column; query by session_id only. Found .eq("project_id", ...) in gatherArtifacts contributions query.',
+                );
+            }
+        }
+    }
+});
+
+Deno.test('gatherArtifacts - finds required project_resource initial_user_prompt in dialectic_project_resources (target behavior)', async () => {
+    // Target: generate-advisor-recommendations and similar steps require project_resource with document_key=initial_user_prompt.
+    // findSourceDocuments finds it in dialectic_project_resources during planning. gatherArtifacts must also query
+    // dialectic_project_resources (not dialectic_contributions) so execution succeeds.
+    const initialUserPromptResource = {
+        id: 'resource-initial-prompt-123',
+        content: 'Test prompt for full DAG traversal integration test',
+        stage_slug: null,
+        project_id: 'project-abc',
+        session_id: null,
+        iteration_number: null,
+        resource_type: 'initial_user_prompt',
+        created_at: new Date().toISOString(),
+        storage_path: 'project-abc/0_seed_inputs',
+        file_name: 'initial_prompt_1769983040943.md',
+        storage_bucket: 'dialectic-contributions',
+    };
+    let projectResourcesQueriedForInitialPrompt = false;
+    const { client: dbClient } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'ai_providers': {
+                select: {
+                    data: [mockFullProviderData],
+                    error: null,
+                },
+            },
+            'dialectic_project_resources': {
+                select: () => {
+                    projectResourcesQueriedForInitialPrompt = true;
+                    return Promise.resolve({ data: [initialUserPromptResource], error: null });
+                },
+            },
+            'dialectic_contributions': {
+                select: () => Promise.resolve({ data: [], error: null }),
+            },
+            'dialectic_feedback': {
+                select: () => Promise.resolve({ data: [], error: null }),
+            },
+        },
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps: IExecuteJobContext = getMockDeps({ fileManager, countTokens: countTokensTen });
+
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob({
+            ...testPayload,
+            stageSlug: 'paralysis',
+        }),
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        sessionData: {
+            id: 'session-456',
+            project_id: 'project-abc',
+            session_description: 'A mock session',
+            user_input_reference_url: null,
+            iteration_count: 1,
+            selected_models: [{ id: 'model-def', displayName: 'Mock AI' }],
+            status: 'in-progress',
+            associated_chat_id: 'chat-789',
+            current_stage_id: 'stage-1',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        },
+        promptConstructionPayload: {
+            systemInstruction: undefined,
+            conversationHistory: [],
+            resourceDocuments: [],
+            currentUserPrompt: 'Test prompt',
+        },
+        compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
+        inputsRequired: [
+            {
+                type: 'project_resource',
+                slug: 'project',
+                document_key: FileType.InitialUserPrompt,
+                required: true,
+            },
+        ],
+    };
+
+    await executeModelCallAndSave(params);
+
+    assert(
+        projectResourcesQueriedForInitialPrompt,
+        'Executor should query dialectic_project_resources for required project_resource/initial_user_prompt (app stores it there, same as findSourceDocuments)',
+    );
 });
 
 Deno.test('gatherArtifacts - skips optional document input when not found in resources', async () => {
@@ -556,7 +834,7 @@ Deno.test('gatherArtifacts - skips optional document input when not found in res
             session_description: 'A mock session',
             user_input_reference_url: null,
             iteration_count: 1,
-            selected_model_ids: ['model-def'],
+            selected_models: [{ id: 'model-def', displayName: 'Mock AI' }],
             status: 'in-progress',
             associated_chat_id: 'chat-789',
             current_stage_id: 'stage-1',
