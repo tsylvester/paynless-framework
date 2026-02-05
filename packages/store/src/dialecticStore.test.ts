@@ -1092,6 +1092,45 @@ describe('useDialecticStore', () => {
             expect(finalContributions?.[0].status).toBe('failed');
             expect(finalContributions?.[1].status).toBe('failed');
         });
+
+        it('should return error and add no placeholders when a selected model is missing from modelCatalog', async () => {
+            const catalogWithOnlyModel1: AIModelCatalogEntry[] = [
+                { id: 'model-1', model_name: 'Test Model 1', provider_name: 'Provider A', api_identifier: 'm1', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null },
+            ];
+            useDialecticStore.setState({ modelCatalog: catalogWithOnlyModel1 });
+
+            const { generateContributions } = useDialecticStore.getState();
+            const result = await generateContributions(mockPayload);
+
+            expect(result.error).toEqual({ message: 'Model details not found for model ID.', code: 'MODEL_DETAILS_NOT_FOUND' });
+            expect(result.status).toBe(500);
+
+            const finalState = useDialecticStore.getState();
+            const finalContributions = finalState.currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions;
+            expect(finalContributions).toHaveLength(0);
+            expect(finalState.generateContributionsError).toEqual(result.error);
+            expect(getMockDialecticClient().generateContributions).not.toHaveBeenCalled();
+        });
+
+        it('should return error and add no placeholders when modelCatalog has model but model_name is empty', async () => {
+            const catalogWithEmptyModelName: AIModelCatalogEntry[] = [
+                { id: 'model-1', model_name: 'Test Model 1', provider_name: 'Provider A', api_identifier: 'm1', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null },
+                { id: 'model-2', model_name: '', provider_name: 'Provider B', api_identifier: 'm2', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null },
+            ];
+            useDialecticStore.setState({ modelCatalog: catalogWithEmptyModelName });
+
+            const { generateContributions } = useDialecticStore.getState();
+            const result = await generateContributions(mockPayload);
+
+            expect(result.error).toEqual({ message: 'Model name not found for model ID.', code: 'MODEL_NAME_NOT_FOUND' });
+            expect(result.status).toBe(500);
+
+            const finalState = useDialecticStore.getState();
+            const finalContributions = finalState.currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions;
+            expect(finalContributions).toHaveLength(0);
+            expect(finalState.generateContributionsError).toEqual(result.error);
+            expect(getMockDialecticClient().generateContributions).not.toHaveBeenCalled();
+        });
     });
 
     describe('clearFocusedStageDocument', () => {

@@ -1772,8 +1772,8 @@ export const useDialecticStore = create<DialecticStore>()(
   generateContributions: async (payload: GenerateContributionsPayload): Promise<ApiResponse<GenerateContributionsResponse>> => {
     const { sessionId, stageSlug, iterationNumber } = payload;
     logger.info('[DialecticStore] Initiating contributions generation...', { payload });
-  
-    const { currentProjectDetail, selectedModels } = get();
+
+    const { currentProjectDetail, selectedModels, modelCatalog } = get();
     const selectedModelIdsForJob = (selectedModels || []).map((m) => m.id);
     if (!currentProjectDetail) {
       const error: ApiError = { message: 'No project loaded', code: 'PRECONDITION_FAILED' };
@@ -1781,7 +1781,26 @@ export const useDialecticStore = create<DialecticStore>()(
       set({ generateContributionsError: error });
       return { error, status: 400 };
     }
-  
+
+    const modelIdToName = new Map<string, string>();
+    for (const modelId of selectedModelIdsForJob) {
+      const modelDetails = modelCatalog.find((m) => m.id === modelId);
+      if (!modelDetails) {
+        logger.error('[DialecticStore] Model details not found for model ID:', { modelId });
+        const error: ApiError = { message: 'Model details not found for model ID.', code: 'MODEL_DETAILS_NOT_FOUND' };
+        set({ generateContributionsError: error });
+        return { error, status: 500 };
+      }
+      const name = modelDetails.model_name;
+      if (typeof name !== 'string' || name.trim().length === 0) {
+        logger.error('[DialecticStore] Model name not found for model ID:', { modelId });
+        const error: ApiError = { message: 'Model name not found for model ID.', code: 'MODEL_NAME_NOT_FOUND' };
+        set({ generateContributionsError: error });
+        return { error, status: 500 };
+      }
+      modelIdToName.set(modelId, name);
+    }
+
     // --- Step 15.b: Immediate UI feedback with placeholders ---
     set(state => {
       const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
@@ -1791,21 +1810,21 @@ export const useDialecticStore = create<DialecticStore>()(
         if (!session.dialectic_contributions) {
           session.dialectic_contributions = [];
         }
-        
-        selectedModelIdsForJob.forEach((modelId: string, index: number) => {
-          // Find model details from catalog to get the name
-          const modelDetails = state.modelCatalog.find(m => m.id === modelId);
+        selectedModelIdsForJob.forEach((modelId: string, index: number): void => {
+          const modelName = modelIdToName.get(modelId);
+          if (modelName === undefined) {
+            return;
+          }
           const tempId = `placeholder-${sessionId}-${modelId}-${iterationNumber}-${index}`;
           const placeholder: DialecticContribution = {
             id: tempId,
-            job_id: null, // Initialized to null, will be updated after API call
+            job_id: null,
             session_id: sessionId,
             stage: stageSlug,
             iteration_number: iterationNumber,
             model_id: modelId,
-            model_name: modelDetails?.model_name || 'Unknown Model',
+            model_name: modelName,
             status: 'pending',
-            // --- Fill in other required fields with default/null values ---
             user_id: null,
             prompt_template_id_used: null,
             seed_prompt_url: null,
@@ -1834,7 +1853,7 @@ export const useDialecticStore = create<DialecticStore>()(
         });
       }
     });
-  
+
     try {
       // Enrich payload with active walletId from wallet store
       const activeWalletInfo = selectActiveChatWalletInfo(
