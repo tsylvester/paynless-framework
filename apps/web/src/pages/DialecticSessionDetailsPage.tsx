@@ -141,63 +141,67 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 
 	return (
 		<div>
-			{/* Enhanced Header */}
-			<div className="px-6 py-2">
+			{/* Header */}
+			<div className="px-6 py-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
 				<SessionInfoCard />
 			</div>
 
-			{/* Enhanced Content */}
-			<div className="px-6 py-8">
-				<div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-12">
-					{/* Enhanced Sidebar */}
+			{/* Content */}
+			<div className="px-6 py-6">
+				<div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+					{/* Sidebar */}
 					<div className="lg:col-span-1">
-						<div className="sticky top-40 space-y-6">
+						<div className="sticky top-24 space-y-4">
 							{/* Enhanced Progress */}
 							<DynamicProgressBar sessionId={activeSessionDetail.id} />
 							{/* Stage Navigation */}
-							<div className="space-y-3">
+							<div className="space-y-2">
+								<h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1">
+									Process Stages
+								</h3>
 								<div role="tablist" aria-label="Dialectic Stages">
 									<StageTabCard />
 								</div>
 							</div>
 						</div>
 					</div>
-					{/* Enhanced Content Area */}
-					<div className="lg:col-span-4">
-						<div className="bg-card rounded-2xl shadow-sm overflow-hidden">
+
+					{/* Main Content Area */}
+					<div className="lg:col-span-1">
+						<div className="bg-card rounded-xl border shadow-sm overflow-hidden">
 							{activeStageSlug && activeSessionDetail ? (
-								<div className="p-8">
+								<div className="p-6">
 									<SessionContributionsDisplayCard />
 								</div>
 							) : (
-								<div className="py-24 text-center">
+								<div className="py-16 text-center">
 									{!activeStageSlug &&
 									sortedStages.length > 0 &&
 									!isLoading ? (
-										<div className="space-y-4">
-											<div className="w-16 h-16 mx-auto rounded-full bg-muted/50 flex items-center justify-center">
-												<span className="text-2xl">🎯</span>
+										<div className="space-y-3">
+											<div className="w-14 h-14 mx-auto rounded-full bg-muted/50 flex items-center justify-center">
+												<span className="text-xl">🎯</span>
 											</div>
 											<div>
-												<h3 className="text-lg font-medium mb-2">
+												<h3 className="text-base font-medium mb-1">
 													Select a stage to begin
 												</h3>
-												<p className="text-muted-foreground">
+												<p className="text-sm text-muted-foreground">
 													Choose a process stage from the sidebar to view and
 													work with contributions
 												</p>
 											</div>
 										</div>
 									) : sortedStages.length === 0 && !isLoading ? (
-										<div className="space-y-4">
-											<div className="w-16 h-16 mx-auto rounded-full bg-red-50 dark:bg-red-950/30 flex items-center justify-center">
-												<span className="text-2xl">⚠️</span>
+										<div className="space-y-3">
+											<div className="w-14 h-14 mx-auto rounded-full bg-red-50 dark:bg-red-950/30 flex items-center justify-center">
+												<span className="text-xl">⚠️</span>
 											</div>
 											<div>
-												<h3 className="text-lg font-medium mb-2 text-destructive">
+												<h3 className="text-base font-medium mb-1 text-destructive">
 													No stages configured
 												</h3>
-												<p className="text-muted-foreground">
+												<p className="text-sm text-muted-foreground">
 													This project doesn't have any process stages set up
 												</p>
 											</div>

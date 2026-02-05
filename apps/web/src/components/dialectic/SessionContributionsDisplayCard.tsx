@@ -402,11 +402,59 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		<div className="space-y-6">
 			{/* Stage Header */}
 			<div data-testid="card-header" className="space-y-2">
-				<div className="flex items-start justify-between gap-4">
-					<div className="space-y-1">
+				<div className="flex flex-wrap items-center justify-between gap-4">
+					<div className="space-y-1 min-w-[200px]">
 						<h2 className="text-xl font-medium tracking-tight">{getDisplayName(activeStage)}</h2>
 						<p className="text-sm text-muted-foreground leading-relaxed">{activeStage.description}</p>
 					</div>
+
+					{/* Middle Section: Banners */}
+					{(isGenerating || generationError || failedDocumentKeys.length > 0) && (
+						<div className="flex-1 min-w-[300px]">
+							{/* Generation Status Banners */}
+							{isGenerating && (
+								<div className="bg-blue-50 dark:bg-blue-950/20 rounded-xl px-5 py-3 border border-blue-200/50 dark:border-blue-800/50">
+									<div className="flex items-center gap-3">
+										<div className="p-1.5 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+											<Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+										</div>
+										<div>
+											<p className="text-sm font-medium text-blue-900 dark:text-blue-100">Generating documents</p>
+											<p className="text-xs text-blue-700 dark:text-blue-300">
+												Please wait while AI models process your request...
+											</p>
+										</div>
+									</div>
+								</div>
+							)}
+							{(generationError || failedDocumentKeys.length > 0) && (
+								<div
+									className="bg-red-50 dark:bg-red-950/20 rounded-xl px-5 py-3 border border-red-200/50 dark:border-red-800/50"
+									data-testid="generation-error-banner"
+								>
+									<div className="flex items-center gap-3">
+										<div className="p-1.5 bg-red-100 dark:bg-red-900/50 rounded-lg">
+											<div className="h-4 w-4 rounded-full bg-red-600 flex items-center justify-center">
+												<span className="text-white text-xs font-bold">!</span>
+											</div>
+										</div>
+										<div>
+											<p className="text-sm font-medium text-red-900 dark:text-red-100">Generation Error</p>
+											{generationError?.message && (
+												<p className="text-xs text-red-700 dark:text-red-300">{generationError.message}</p>
+											)}
+											{failedDocumentKeys.length > 0 && (
+												<p className="text-xs text-red-700 dark:text-red-300">
+													Failed documents: {failedDocumentKeys.join(', ')}
+												</p>
+											)}
+										</div>
+									</div>
+								</div>
+							)}
+						</div>
+					)}
+
 					<div className="flex items-center gap-2">
 						{/* Stage completion indicator */}
 						{stageProgressSummary?.isComplete && (
@@ -432,48 +480,6 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 				</div>
 			</div>
 
-			{/* Generation Status Banners */}
-			{isGenerating && (
-				<div className="bg-blue-50 dark:bg-blue-950/20 rounded-xl px-5 py-3 border border-blue-200/50 dark:border-blue-800/50">
-					<div className="flex items-center gap-3">
-						<div className="p-1.5 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
-							<Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-						</div>
-						<div>
-							<p className="text-sm font-medium text-blue-900 dark:text-blue-100">Generating documents</p>
-							<p className="text-xs text-blue-700 dark:text-blue-300">
-								Please wait while AI models process your request...
-							</p>
-						</div>
-					</div>
-				</div>
-			)}
-
-			{(generationError || failedDocumentKeys.length > 0) && (
-				<div
-					className="bg-red-50 dark:bg-red-950/20 rounded-xl px-5 py-3 border border-red-200/50 dark:border-red-800/50"
-					data-testid="generation-error-banner"
-				>
-					<div className="flex items-center gap-3">
-						<div className="p-1.5 bg-red-100 dark:bg-red-900/50 rounded-lg">
-							<div className="h-4 w-4 rounded-full bg-red-600 flex items-center justify-center">
-								<span className="text-white text-xs font-bold">!</span>
-							</div>
-						</div>
-						<div>
-							<p className="text-sm font-medium text-red-900 dark:text-red-100">Generation Error</p>
-							{generationError?.message && (
-								<p className="text-xs text-red-700 dark:text-red-300">{generationError.message}</p>
-							)}
-							{failedDocumentKeys.length > 0 && (
-								<p className="text-xs text-red-700 dark:text-red-300">
-									Failed documents: {failedDocumentKeys.join(', ')}
-								</p>
-							)}
-						</div>
-					</div>
-				</div>
-			)}
 
 			{/* Document Cards */}
 			<div className="space-y-4">

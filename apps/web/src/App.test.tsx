@@ -1,7 +1,7 @@
 import { render, screen, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import App from './App';
-import { useAuthStore, useSubscriptionStore, useWalletStore, initialWalletStateValues } from '@paynless/store';
+import { useSubscriptionStore, useWalletStore, initialWalletStateValues } from '@paynless/store';
 import type { SubscriptionStore, WalletStore } from '@paynless/store';
 import type { UserProfile } from '@paynless/types';
 // Import initialWalletStateValues and necessary selectors
@@ -14,11 +14,9 @@ import {
     mockSetAuthProfile, 
 } from './mocks/authStore.mock';
 import { 
-    mockedUseAiStoreHookLogic, 
     resetAiStoreMock,
     mockSetIsChatContextHydrated,
 } from './mocks/aiStore.mock';
-import { useAiStore } from '@paynless/store';
 import { useStageRunProgressHydration } from './hooks/useStageRunProgressHydration';
 
 vi.mock('./hooks/useStageRunProgressHydration', () => ({

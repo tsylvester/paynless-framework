@@ -183,16 +183,18 @@ vi.mock('./StageRunChecklist', () => ({
       <button
         type="button"
         data-testid={`mock-stage-run-checklist-${props.modelId}`}
-        onClick={() =>
-          props.onDocumentSelect({
-            sessionId: mockSession.id,
-            stageSlug: mockStages[0].slug,
-            iterationNumber: mockSession.iteration_count,
-            modelId: props.modelId,
-            documentKey: 'draft_document_outline',
-            stepKey: 'draft_document',
-          })
-        }
+        onClick={() => {
+          if (props.modelId !== null) {
+            props.onDocumentSelect({
+              sessionId: mockSession.id,
+              stageSlug: mockStages[0].slug,
+              iterationNumber: mockSession.iteration_count,
+              modelId: props.modelId,
+              documentKey: 'draft_document_outline',
+              stepKey: 'draft_document',
+            });
+          }
+        }}
       >
         StageRunChecklist {props.modelId}
       </button>

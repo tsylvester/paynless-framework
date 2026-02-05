@@ -193,6 +193,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-1',
             sourceContributionId: sourceContributionId,
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
           },
         },
         recipesByStageSlug: {
@@ -358,6 +360,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
             pendingDiff: null,
             lastAppliedVersionHash: null,
             sourceContributionId: 'contrib-loading-1',
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
           },
         },
         recipesByStageSlug: {
@@ -500,6 +504,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-1',
             sourceContributionId: 'contrib-loaded-1',
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
           },
         },
         recipesByStageSlug: {
@@ -628,6 +634,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
             pendingDiff: null,
             lastAppliedVersionHash: null,
             sourceContributionId: null,
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
           },
         },
         recipesByStageSlug: {
@@ -759,6 +767,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
             pendingDiff: null,
             lastAppliedVersionHash: null,
             sourceContributionId: 'contrib-error-1',
+            feedbackDraftMarkdown: '',
+            feedbackIsDirty: false,
           },
         },
         recipesByStageSlug: {

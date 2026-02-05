@@ -1708,10 +1708,10 @@
     --- PROPOSED: Implement regeneration prior to stage advancement, disable regeneration for documents who have downstream documents, set up future sprint for branching/iteration to support hints to regenerate downstream documents if a user regenerates upstream documents
     --- BLOCKER: Some stages are fundamentally dependent on all prior outputs, like synthesis, and the entire stage needs to be rerun if thesis/antithesis documents are regenerated
 
-    - Email validation disabled
+    x Email validation disabled
     -- Need to actually set up email validation
     
-    - User password changes disabled
+    x User password changes disabled
     -- need to actually set up password changes 
 
     - New user sign in banner doesn't display, throws console error  
@@ -1723,3 +1723,13 @@
     -- Not a dev task per se, but we need to run a few e2e multi-model flows and index the cost then set the new user sign up deposit close to that value
     -- This is not recurring, just a new user sign up 
     -- Dep: Will need to finally set up email validation so that users can't just create new accounts for each project 
+
+   - Generating spinner stays present until page refresh 
+   -- Needs to react to actual progress 
+   -- Stop the spinner when a condition changes 
+
+   -  Third stage doesn't seem to do anything 
+   -- Attempting to generate stalls with no product 
+
+   - Checklist does not correctly find documents when multiple agents are chosen 
+   -- 

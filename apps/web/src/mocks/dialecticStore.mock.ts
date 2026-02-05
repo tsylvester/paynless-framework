@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { useStore } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
@@ -165,10 +165,7 @@ export const selectStepList = (
 
 export const selectValidMarkdownDocumentKeys = vi.fn<[DialecticStateValues, string], Set<string>>().mockReturnValue(new Set<string>());
 
-export const selectUnifiedProjectProgress = vi.fn<
-  [DialecticStateValues, string],
-  UnifiedProjectProgress
->().mockReturnValue({
+const defaultUnifiedProgress: UnifiedProjectProgress = {
   totalStages: 0,
   completedStages: 0,
   currentStageSlug: null,
@@ -176,7 +173,15 @@ export const selectUnifiedProjectProgress = vi.fn<
   currentStage: null,
   projectStatus: 'not_started',
   stageDetails: [],
-});
+};
+
+export const selectUnifiedProjectProgress: Mock<
+  [DialecticStateValues, string],
+  UnifiedProjectProgress
+> = vi.fn<
+  [DialecticStateValues, string],
+  UnifiedProjectProgress
+>().mockReturnValue(defaultUnifiedProgress);
 
 export const selectStageRunProgress = (
   state: DialecticStateValues,
