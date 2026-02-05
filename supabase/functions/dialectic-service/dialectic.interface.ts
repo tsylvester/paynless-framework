@@ -590,7 +590,7 @@ export interface StartSessionPayload {
 
 export interface UpdateSessionModelsPayload {
   sessionId: string;
-  selectedModelIds: string[];
+  selectedModels: SelectedModels[];
 }
 
 export type StartSessionSuccessResponse = DialecticSession & {
