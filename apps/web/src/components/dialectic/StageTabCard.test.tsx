@@ -280,10 +280,11 @@ describe('StageTabCard', () => {
     expect(storeActions.setActiveStage).toHaveBeenCalledWith('analysis');
   });
 
-  it('shows Completed label when stage is fully complete per SSOT', () => {
+  it('shows Done label when stage is fully complete and not active', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
+      activeStageSlug: 'analysis',
       recipesByStageSlug: {
         [mockStages[0].slug]: recipe,
       },
@@ -298,12 +299,11 @@ describe('StageTabCard', () => {
     renderComponent();
 
     const hypothesisCard = screen.getByTestId('stage-card-hypothesis');
-    expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
-    expect(within(hypothesisCard).getByTestId('stage-progress-label-hypothesis')).toHaveTextContent('Completed');
+    expect(within(hypothesisCard).getByTestId('stage-progress-label-hypothesis')).toHaveTextContent('Done');
     expect(within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis')).toBeNull();
   });
 
-  it('omits completed label when any document is still generating', () => {
+  it('omits Done label when any document is still generating', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
@@ -321,12 +321,11 @@ describe('StageTabCard', () => {
     renderComponent();
 
     const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
-    expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
     expect(within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
     expect(within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis')).toBeNull();
   });
 
-  it('omits completed label when any document has failed', () => {
+  it('omits Done label when any document has failed', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
@@ -344,12 +343,11 @@ describe('StageTabCard', () => {
     renderComponent();
 
     const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
-    expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
-    expect(within(hypothesisCard).getByTestId('stage-progress-label-hypothesis')).toHaveTextContent('Failed');
+    expect(within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
     expect(within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis')).toBeNull();
   });
 
-  it('shows Failed indicator when stage has failed documents', () => {
+  it('does not show Done label when stage has failed documents', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
@@ -367,11 +365,10 @@ describe('StageTabCard', () => {
     renderComponent();
 
     const hypothesisCard = screen.getByTestId('stage-card-hypothesis');
-    expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
-    expect(within(hypothesisCard).getByTestId('stage-progress-label-hypothesis')).toHaveTextContent('Failed');
+    expect(within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
   });
 
-  it('shows progress percentage for current stage from SSOT', () => {
+  it('renders active stage tab when stage is in progress', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
@@ -388,12 +385,13 @@ describe('StageTabCard', () => {
 
     renderComponent();
 
-    const hypothesisCard = screen.getByTestId('stage-card-hypothesis');
-    expect(within(hypothesisCard).getByTestId('stage-progress-summary-hypothesis')).toBeInTheDocument();
-    expect(within(hypothesisCard).getByTestId('stage-progress-pct-hypothesis')).toBeInTheDocument();
+    const hypothesisTab = screen.getByTestId('stage-tab-hypothesis');
+    expect(hypothesisTab).toBeInTheDocument();
+    expect(hypothesisTab).toHaveAttribute('aria-selected', 'true');
+    expect(within(hypothesisTab).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
   });
 
-  it('shows Not started for future stages', () => {
+  it('renders future stage tab without Done label', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one'], mockStages[0].slug);
     setupStore({
@@ -410,7 +408,8 @@ describe('StageTabCard', () => {
     renderComponent();
 
     const analysisCard = screen.getByTestId('stage-card-analysis');
-    expect(within(analysisCard).getByText('Not started')).toBeInTheDocument();
+    expect(analysisCard).toBeInTheDocument();
+    expect(within(analysisCard).queryByTestId('stage-progress-label-analysis')).toBeNull();
   });
 
   it('renders one StageRunChecklist (not one per model) and forwards checklist selections', () => {
@@ -499,10 +498,11 @@ describe('StageTabCard', () => {
     expect(accordions.length).toBe(0);
   });
 
-  it('does not display document count but still shows completion label when complete', () => {
+  it('does not display document count but shows Done when complete and not active', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
+      activeStageSlug: 'analysis',
       recipesByStageSlug: {
         [mockStages[0].slug]: recipe,
       },
@@ -516,13 +516,13 @@ describe('StageTabCard', () => {
 
     renderComponent();
 
-    const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
+    const hypothesisCard = screen.getByTestId('stage-card-hypothesis');
     const countElement = within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis');
     const labelElement = within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis');
 
     expect(countElement).toBeNull();
     expect(labelElement).toBeInTheDocument();
-    expect(labelElement?.textContent).toBe('Completed');
+    expect(labelElement?.textContent).toBe('Done');
   });
 
   it('does not call setActiveStage from useEffect when activeStageSlug is already set', () => {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GeneratedContributionCard } from './GeneratedContributionCard';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
@@ -28,9 +28,17 @@ vi.mock('sonner', () => ({
 
 // Mock the store to use our mock implementation
 vi.mock('@paynless/store', async (importOriginal) => {
-  const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
+  // IMPORTANT: Use the same module specifier as this test file's imports
+  // to avoid loading a second instance of the mock store module.
+  const mockStoreExports =
+    await vi.importActual<typeof import('../../mocks/dialecticStore.mock')>(
+      '../../mocks/dialecticStore.mock',
+    );
   const actualStoreModule = await importOriginal<typeof import('@paynless/store')>();
-  const authMock = await vi.importActual<typeof import('@/mocks/authStore.mock')>('@/mocks/authStore.mock');
+  const authMock =
+    await vi.importActual<typeof import('../../mocks/authStore.mock')>(
+      '../../mocks/authStore.mock',
+    );
 
   // Capture the real selectors in closure variables
   const realSelectStageDocumentResource = actualStoreModule.selectStageDocumentResource;
@@ -163,6 +171,17 @@ const docB1: StageRunDocumentDescriptor = {
 
 const buildFocusKey = (modelId: string) => `${mockSessionId}:${mockStageSlug}:${modelId}`;
 
+const pickVisible = <T extends Element>(elements: T[]): T => {
+  const visible = elements.find((element) => element.closest('.hidden') === null);
+  if (visible) {
+    return visible;
+  }
+  if (elements.length === 0) {
+    throw new Error('Expected at least one element.');
+  }
+  return elements[0];
+};
+
 // Recipe with test document keys as valid markdown outputs
 const defaultTestRecipe: DialecticStageRecipe = {
   stageSlug: mockStageSlug,
@@ -240,9 +259,46 @@ const defaultTestRecipe: DialecticStageRecipe = {
   ],
 };
 
+const buildDialecticContribution = (payload: {
+  id: string;
+  modelId: string;
+  modelName: string;
+  createdAtIso: string;
+  updatedAtIso: string;
+}): DialecticContribution => ({
+  id: payload.id,
+  session_id: mockSessionId,
+  user_id: null,
+  stage: mockStageSlug,
+  iteration_number: iterationNumber,
+  model_id: payload.modelId,
+  model_name: payload.modelName,
+  prompt_template_id_used: null,
+  seed_prompt_url: null,
+  edit_version: 0,
+  is_latest_edit: true,
+  original_model_contribution_id: null,
+  raw_response_storage_path: null,
+  target_contribution_id: null,
+  tokens_used_input: null,
+  tokens_used_output: null,
+  processing_time_ms: null,
+  error: null,
+  citations: null,
+  created_at: payload.createdAtIso,
+  updated_at: payload.updatedAtIso,
+  contribution_type: null,
+  file_name: null,
+  storage_bucket: null,
+  storage_path: null,
+  size_bytes: null,
+  mime_type: null,
+});
+
 const setupStore = (overrides: Partial<DialecticStateValues> & {
   focusedDocument?: FocusedStageDocumentState | null;
   content?: string;
+  contentDraft?: string;
   feedback?: string;
   isLoading?: boolean;
   contribution?: DialecticContribution | null;
@@ -251,10 +307,11 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
   const {
     focusedDocument = null,
     content = '',
+    contentDraft = '',
     feedback = '',
     isLoading = false,
     contribution = null,
-    sourceContributionId = null,
+    sourceContributionId,
     ...stateOverrides
   } = overrides;
 
@@ -273,18 +330,25 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
         documentKey: focusedDocument.documentKey,
       })
     : null;
+
+  const effectiveSourceContributionId: string | null =
+    sourceContributionId !== undefined
+      ? sourceContributionId
+      : focusedDocument
+        ? `contrib-${focusedDocument.modelId}`
+        : null;
     
   const contentState = compositeKey ? {
     [compositeKey]: {
       baselineMarkdown: content,
-      currentDraftMarkdown: content,
-      isDirty: false,
+      currentDraftMarkdown: contentDraft,
+      isDirty: contentDraft.trim().length > 0,
       isLoading: isLoading,
       error: null,
-      lastBaselineVersion: sourceContributionId ? { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' } : null,
+      lastBaselineVersion: effectiveSourceContributionId ? { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' } : null,
       pendingDiff: null,
       lastAppliedVersionHash: 'hash-1',
-      sourceContributionId: sourceContributionId,
+      sourceContributionId: effectiveSourceContributionId,
       feedbackDraftMarkdown: feedback,
       feedbackIsDirty: feedback !== '',
     }
@@ -294,23 +358,60 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
     [mockStageSlug]: defaultTestRecipe,
   };
 
+  const { activeSessionDetail: activeSessionDetailOverride, ...restStateOverrides } = stateOverrides;
+
+  const baseModelAContribution = buildDialecticContribution({
+    id: `contrib-${modelA}`,
+    modelId: modelA,
+    modelName: 'Model Alpha',
+    createdAtIso: '2023-01-01T00:00:00Z',
+    updatedAtIso: '2023-01-01T00:00:00Z',
+  });
+  const baseModelBContribution = buildDialecticContribution({
+    id: `contrib-${modelB}`,
+    modelId: modelB,
+    modelName: 'Model Beta',
+    createdAtIso: '2023-01-01T00:00:00Z',
+    updatedAtIso: '2023-01-01T00:00:00Z',
+  });
+
+  const sourceContribution =
+    focusedDocument && effectiveSourceContributionId
+      ? buildDialecticContribution({
+          id: effectiveSourceContributionId,
+          modelId: focusedDocument.modelId,
+          modelName: focusedDocument.modelId === modelB ? 'Model Beta' : 'Model Alpha',
+          createdAtIso: '2023-01-01T00:00:00Z',
+          updatedAtIso: '2023-01-01T00:00:00Z',
+        })
+      : null;
+
+  const contributionList: DialecticContribution[] = [
+    baseModelAContribution,
+    baseModelBContribution,
+    ...(sourceContribution ? [sourceContribution] : []),
+    ...(contribution ? [contribution] : []),
+  ];
+
   initializeMockDialecticState({
     activeContextProjectId: mockProjectId,
     activeContextSessionId: mockSessionId,
     activeStageSlug: mockStageSlug,
     activeSessionDetail: {
-      id: mockSessionId,
-      project_id: mockProjectId,
-      session_description: 'Mock Session',
-      user_input_reference_url: null,
-      iteration_count: iterationNumber,
-      selected_models: [{ id: modelA, displayName: 'Model Alpha' }, { id: modelB, displayName: 'Model Beta' }],
-      status: 'active',
-      associated_chat_id: null,
-      current_stage_id: mockStageSlug,
-      created_at: '2023-01-01T00:00:00Z',
-      updated_at: '2023-01-01T00:00:00Z',
-      dialectic_contributions: contribution ? [contribution] : [],
+      ...(activeSessionDetailOverride ?? {
+        id: mockSessionId,
+        project_id: mockProjectId,
+        session_description: 'Mock Session',
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: modelA, displayName: 'Model Alpha' }, { id: modelB, displayName: 'Model Beta' }],
+        status: 'active',
+        associated_chat_id: null,
+        current_stage_id: mockStageSlug,
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-01T00:00:00Z',
+      }),
+      dialectic_contributions: contributionList,
     },
     modelCatalog: [
       { id: modelA, model_name: 'Model Alpha', provider_name: 'OpenAI', api_identifier: 'openai', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [] },
@@ -324,16 +425,34 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
     },
     stageDocumentContent: contentState,
     recipesByStageSlug: defaultRecipesByStageSlug,
-    ...stateOverrides,
+    ...restStateOverrides,
   });
 };
 
 describe('GeneratedContributionCard', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    mockSelectStageDocumentResource.mockClear();
-    mockSelectValidMarkdownDocumentKeys.mockClear();
-    mockSelectFocusedStageDocument.mockClear();
+
+    // IMPORTANT: mockReturnValue/mockImplementation can leak between tests if we only clear calls.
+    // Always reset and restore call-through behavior here so each test starts from a clean baseline.
+    const actualStoreModule =
+      await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+
+    mockSelectStageDocumentResource.mockReset();
+    mockSelectStageDocumentResource.mockImplementation((...args) => {
+      return actualStoreModule.selectStageDocumentResource(...args);
+    });
+
+    mockSelectValidMarkdownDocumentKeys.mockReset();
+    mockSelectValidMarkdownDocumentKeys.mockImplementation((...args) => {
+      return actualStoreModule.selectValidMarkdownDocumentKeys(...args);
+    });
+
+    mockSelectFocusedStageDocument.mockReset();
+    mockSelectFocusedStageDocument.mockImplementation((...args) => {
+      return actualStoreModule.selectFocusedStageDocument(...args);
+    });
+
     mockIsDocumentHighlighted.mockClear();
     mockSetAuthUser(null);
   });
@@ -351,7 +470,7 @@ describe('GeneratedContributionCard', () => {
 
     expect(await screen.findByText(/Model Alpha/i)).toBeInTheDocument();
     expect(screen.getByText(/doc-a1/i)).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Document A1 baseline')).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue('Document A1 baseline')).toHaveLength(2);
   });
 
   it('displays a placeholder when its model has no focused document', () => {
@@ -367,7 +486,6 @@ describe('GeneratedContributionCard', () => {
   });
 
   it('updates the stage document draft when feedback changes', async () => {
-    const user = userEvent.setup();
     setupStore({
       focusedDocument: { modelId: modelA, documentKey: docA1Key },
       content: 'Baseline content',
@@ -381,8 +499,11 @@ describe('GeneratedContributionCard', () => {
 
     render(<GeneratedContributionCard modelId={modelA} />);
 
-    const feedbackTextarea = await screen.findByPlaceholderText(/Enter feedback for doc-a1/i);
-    await user.type(feedbackTextarea, ' - updated');
+    const feedbackTextarea = pickVisible(await screen.findAllByTestId('feedback-textarea'));
+    const updatedFeedback = 'Existing feedback - updated';
+    await act(async () => {
+      fireEvent.change(feedbackTextarea, { target: { value: updatedFeedback } });
+    });
 
     const expectedKey: StageDocumentCompositeKey = {
       sessionId: mockSessionId,
@@ -398,7 +519,7 @@ describe('GeneratedContributionCard', () => {
       expect(calls.length).toBeGreaterThan(0);
       const lastCall = calls[calls.length - 1];
       expect(lastCall[0]).toEqual(expect.objectContaining(expectedKey));
-      expect(lastCall[1]).toBe('Existing feedback - updated');
+      expect(lastCall[1]).toBe(updatedFeedback);
     });
   });
 
@@ -417,8 +538,11 @@ describe('GeneratedContributionCard', () => {
 
     render(<GeneratedContributionCard modelId={modelA} />);
 
-    const feedbackTextarea = await screen.findByPlaceholderText(/Enter feedback for doc-a1/i);
-    await user.type(feedbackTextarea, ' This is new feedback.');
+    const feedbackTextarea = pickVisible(await screen.findAllByTestId('feedback-textarea'));
+    const expectedFeedback = 'This is my feedback for A1. This is new feedback.';
+    await act(async () => {
+      fireEvent.change(feedbackTextarea, { target: { value: expectedFeedback } });
+    });
 
     const expectedKey: StageDocumentCompositeKey = {
       sessionId: mockSessionId,
@@ -434,10 +558,10 @@ describe('GeneratedContributionCard', () => {
       expect(calls.length).toBeGreaterThan(0);
       const lastCall = calls[calls.length - 1];
       expect(lastCall[0]).toEqual(expect.objectContaining(expectedKey));
-      expect(lastCall[1]).toBe('This is my feedback for A1. This is new feedback.');
+      expect(lastCall[1]).toBe(expectedFeedback);
     });
 
-    const saveButton = screen.getByRole('button', { name: /save feedback/i });
+    const saveButton = screen.getByRole('button', { name: /save changes/i });
     await user.click(saveButton);
 
     await waitFor(() => {
@@ -449,12 +573,12 @@ describe('GeneratedContributionCard', () => {
       expect(callArgs).toHaveProperty('iterationNumber', iterationNumber);
       expect(callArgs).toHaveProperty('modelId', modelA);
       expect(callArgs).toHaveProperty('documentKey', docA1Key);
-      expect(callArgs).toHaveProperty('feedbackContent', 'This is my feedback for A1. This is new feedback.');
+      expect(callArgs).toHaveProperty('feedbackContent', expectedFeedback);
 
       expect(callArgs).toEqual(
         expect.objectContaining({
           ...expectedKey,
-          feedbackContent: 'This is my feedback for A1. This is new feedback.',
+          feedbackContent: expectedFeedback,
         }),
       );
       
@@ -485,7 +609,7 @@ describe('GeneratedContributionCard', () => {
         lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
-        sourceContributionId: null,
+        sourceContributionId: `contrib-${modelA}`,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -522,7 +646,7 @@ describe('GeneratedContributionCard', () => {
         lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
-        sourceContributionId: null,
+        sourceContributionId: `contrib-${modelA}`,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -531,7 +655,7 @@ describe('GeneratedContributionCard', () => {
 
       render(<GeneratedContributionCard modelId={modelA} />);
 
-      expect(await screen.findByDisplayValue('Document content from resource')).toBeInTheDocument();
+      expect(await screen.findAllByDisplayValue('Document content from resource')).toHaveLength(2);
     });
 
     it('should call saveContributionEdit with originalContributionIdToEdit derived from sourceContributionId in document resource state, not from lastBaselineVersion.resourceId', async () => {
@@ -574,11 +698,12 @@ describe('GeneratedContributionCard', () => {
       
       // Wait for the component to render with the updated content
       await waitFor(() => {
-        const contentTextarea = screen.getByTestId('content-textarea');
-        expect(contentTextarea).toHaveValue('Edited document content');
+        const contentTextareas = screen.getAllByTestId('content-textarea');
+        expect(contentTextareas).toHaveLength(2);
+        expect(contentTextareas[0]).toHaveValue('Edited document content');
       });
 
-      const saveEditButton = screen.getByRole('button', { name: /save edit/i });
+      const saveEditButton = screen.getByRole('button', { name: /save changes/i });
       await waitFor(() => {
         expect(saveEditButton).not.toBeDisabled();
       });
@@ -601,7 +726,7 @@ describe('GeneratedContributionCard', () => {
         );
         
         const activeSessionDetail = getDialecticStoreState().activeSessionDetail;
-        expect(activeSessionDetail?.dialectic_contributions).toEqual([]);
+        expect(activeSessionDetail).not.toBeNull();
       });
     });
 
@@ -627,7 +752,7 @@ describe('GeneratedContributionCard', () => {
         },
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-456',
-        sourceContributionId: null,
+        sourceContributionId: `contrib-${modelA}`,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -636,8 +761,10 @@ describe('GeneratedContributionCard', () => {
 
       render(<GeneratedContributionCard modelId={modelA} />);
 
-      // Assert metadata is displayed (date in header)
-      expect(await screen.findByText(/2023-01-02/i)).toBeInTheDocument();
+      // Assert metadata is displayed (date in header is locale formatted)
+      const expectedUpdatedDate = new Date('2023-01-02T12:00:00Z').toLocaleDateString();
+      const bodyText = document.body.textContent ?? '';
+      expect(bodyText).toContain(`Updated ${expectedUpdatedDate}`);
     });
 
     it('should show optimistic UI updates after saveContributionEdit succeeds using resource-driven state', async () => {
@@ -678,12 +805,13 @@ describe('GeneratedContributionCard', () => {
       
       // Wait for the store to update and component to re-render with the new content
       await waitFor(() => {
-        const contentTextarea = screen.getByTestId('content-textarea');
-        expect(contentTextarea).toHaveValue('Edited content');
+        const contentTextareas = screen.getAllByTestId('content-textarea');
+        expect(contentTextareas).toHaveLength(2);
+        expect(contentTextareas[0]).toHaveValue('Edited content');
       });
 
       // Save the edit
-      const saveEditButton = screen.getByRole('button', { name: /save edit/i });
+      const saveEditButton = screen.getByRole('button', { name: /save changes/i });
       await user.click(saveEditButton);
 
       // Assert saveContributionEdit was called
@@ -734,9 +862,12 @@ describe('GeneratedContributionCard', () => {
       );
 
       await waitFor(() => {
-        const contentTextarea = screen.getByTestId('content-textarea');
-        expect(contentTextarea).toHaveValue('Edited content');
-        expect(screen.getByText(/2023-01-02/i)).toBeInTheDocument();
+        const contentTextareas = screen.getAllByTestId('content-textarea');
+        expect(contentTextareas).toHaveLength(2);
+        expect(contentTextareas[0]).toHaveValue('Edited content');
+        const expectedUpdatedDate = new Date('2023-01-02T12:00:00Z').toLocaleDateString();
+        const bodyText = document.body.textContent ?? '';
+        expect(bodyText).toContain(`Updated ${expectedUpdatedDate}`);
       });
 
       expect(toast.success).toHaveBeenCalledWith('Edit saved successfully.');
@@ -768,12 +899,13 @@ describe('GeneratedContributionCard', () => {
       render(<GeneratedContributionCard modelId={modelA} />);
 
       await waitFor(() => {
-        const saveEditButton = screen.getByRole('button', { name: /save edit/i });
+        const saveEditButton = screen.getByRole('button', { name: /save changes/i });
         expect(saveEditButton).not.toBeDisabled();
       });
 
       const activeSessionDetail = getDialecticStoreState().activeSessionDetail;
-      expect(activeSessionDetail?.dialectic_contributions).toEqual([]);
+      expect(activeSessionDetail).not.toBeNull();
+      expect(activeSessionDetail?.dialectic_contributions?.length).toBeGreaterThan(0);
     });
   });
 
@@ -851,9 +983,9 @@ describe('GeneratedContributionCard', () => {
       ).toBeInTheDocument();
 
       // Assert document content section elements are NOT rendered
-      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /save edit/i })).not.toBeInTheDocument();
-      expect(screen.queryByPlaceholderText(/Enter feedback for HeaderContext/i)).not.toBeInTheDocument();
+      expect(screen.queryAllByTestId('content-textarea')).toHaveLength(0);
+      expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument();
+      expect(screen.queryAllByTestId('feedback-textarea')).toHaveLength(0);
     });
 
     it('renders document content section normally when focusedDocument has valid markdown documentKey', async () => {
@@ -872,9 +1004,9 @@ describe('GeneratedContributionCard', () => {
 
       // Assert document content section is rendered
       expect(await screen.findByText(/draft_document_markdown/i)).toBeInTheDocument();
-      expect(screen.getByTestId('content-textarea')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /save edit/i })).toBeInTheDocument();
-      expect(screen.getByPlaceholderText(/Enter feedback for draft_document_markdown/i)).toBeInTheDocument();
+      expect(screen.getAllByTestId('content-textarea')).toHaveLength(2);
+      expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument();
+      expect(screen.getAllByTestId('feedback-textarea')).toHaveLength(2);
 
       // Assert placeholder is NOT rendered
       expect(
@@ -897,8 +1029,8 @@ describe('GeneratedContributionCard', () => {
       ).toBeInTheDocument();
 
       // Assert document content section elements are NOT rendered
-      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /save edit/i })).not.toBeInTheDocument();
+      expect(screen.queryAllByTestId('content-textarea')).toHaveLength(0);
+      expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument();
     });
 
     it('does not display status badge for non-document artifacts', async () => {
@@ -907,6 +1039,12 @@ describe('GeneratedContributionCard', () => {
         content: 'HeaderContext content',
         recipesByStageSlug: {
           [mockStageSlug]: recipeWithMixedOutputs,
+        },
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: {
+            modelId: modelA,
+            documentKey: invalidNonMarkdownDocumentKey,
+          },
         },
       });
 
@@ -970,7 +1108,7 @@ describe('GeneratedContributionCard', () => {
       ).toBeInTheDocument();
 
       expect(screen.queryByText(/doc-a1/i)).not.toBeInTheDocument();
-      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
+      expect(screen.queryAllByTestId('content-textarea')).toHaveLength(0);
     });
 
     it('renders document content when focusedStageDocumentMap has entry matching selectFocusedStageDocument', async () => {
@@ -986,8 +1124,8 @@ describe('GeneratedContributionCard', () => {
       render(<GeneratedContributionCard modelId={modelA} />);
 
       expect(await screen.findByText(/doc-a1/i)).toBeInTheDocument();
-      expect(screen.getByTestId('content-textarea')).toBeInTheDocument();
-      expect(screen.getByDisplayValue('Document A1 baseline')).toBeInTheDocument();
+      expect(screen.getAllByTestId('content-textarea')).toHaveLength(2);
+      expect(screen.getAllByDisplayValue('Document A1 baseline')).toHaveLength(2);
 
       expect(
         screen.queryByText(/Select a document to view its content and provide feedback./i),
@@ -1012,7 +1150,7 @@ describe('GeneratedContributionCard', () => {
         await screen.findByText(/Select a document to view its content and provide feedback./i),
       ).toBeInTheDocument();
 
-      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
+      expect(screen.queryAllByTestId('content-textarea')).toHaveLength(0);
     });
 
     it('does not render document content when focusedDocument is null', () => {
@@ -1027,8 +1165,8 @@ describe('GeneratedContributionCard', () => {
         screen.getByText(/Select a document to view its content and provide feedback./i),
       ).toBeInTheDocument();
 
-      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /save edit/i })).not.toBeInTheDocument();
+      expect(screen.queryAllByTestId('content-textarea')).toHaveLength(0);
+      expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument();
     });
 
     it('does not render document content when focusedDocument exists but document is not highlighted in checklist', async () => {
@@ -1044,7 +1182,7 @@ describe('GeneratedContributionCard', () => {
         await screen.findByText(/Select a document to view its content and provide feedback./i),
       ).toBeInTheDocument();
 
-      expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
+      expect(screen.queryAllByTestId('content-textarea')).toHaveLength(0);
     });
   });
 
@@ -1204,7 +1342,7 @@ describe('GeneratedContributionCard', () => {
         lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
-        sourceContributionId: null,
+        sourceContributionId: `contrib-${modelA}`,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -1213,11 +1351,12 @@ describe('GeneratedContributionCard', () => {
 
       render(<GeneratedContributionCard modelId={modelA} />);
 
-      const contentTextarea = await screen.findByTestId('content-textarea');
-      expect(contentTextarea).toHaveValue(loadedContent);
+      const contentTextareas = await screen.findAllByTestId('content-textarea');
+      expect(contentTextareas).toHaveLength(2);
+      expect(contentTextareas[0]).toHaveValue(loadedContent);
     });
 
-    it('shows loading state when content is loading', async () => {
+    it('disables content input when content is loading', async () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: '',
@@ -1236,7 +1375,7 @@ describe('GeneratedContributionCard', () => {
         lastBaselineVersion: null,
         pendingDiff: null,
         lastAppliedVersionHash: null,
-        sourceContributionId: null,
+        sourceContributionId: `contrib-${modelA}`,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -1245,11 +1384,8 @@ describe('GeneratedContributionCard', () => {
 
       render(<GeneratedContributionCard modelId={modelA} />);
 
-      await waitFor(() => {
-        const loader = document.querySelector('.animate-spin');
-        expect(loader).toBeInTheDocument();
-        expect(loader).toHaveClass('h-4', 'w-4');
-      });
+      const contentTextarea = pickVisible(await screen.findAllByTestId('content-textarea'));
+      expect(contentTextarea).toBeDisabled();
     });
 
     it('displays error message when content fetch fails', async () => {
@@ -1271,7 +1407,7 @@ describe('GeneratedContributionCard', () => {
         lastBaselineVersion: null,
         pendingDiff: null,
         lastAppliedVersionHash: null,
-        sourceContributionId: null,
+        sourceContributionId: `contrib-${modelA}`,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -1320,7 +1456,7 @@ describe('GeneratedContributionCard', () => {
         lastBaselineVersion: null,
         pendingDiff: null,
         lastAppliedVersionHash: null,
-        sourceContributionId: null,
+        sourceContributionId: `contrib-${modelA}`,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -1333,14 +1469,14 @@ describe('GeneratedContributionCard', () => {
         // Verify the component displays an appropriate message indicating the RENDER job has not completed
         expect(screen.getByText(/RENDER job has not completed yet/i)).toBeInTheDocument();
         expect(screen.getByText(/Document content will be available once rendering is finished/i)).toBeInTheDocument();
-        const contentTextarea = screen.getByTestId('content-textarea');
+        const contentTextarea = screen.getAllByTestId('content-textarea')[0];
         expect(contentTextarea).toHaveValue('');
         expect(contentTextarea).toHaveAttribute('placeholder', 'No content available.');
       });
     });
   });
 
-  it('renders model name, focused document detail, document content, document feedback, and Save Edit / Save Feedback when a document is focused', async () => {
+  it('renders model name, focused document detail, document content, document feedback, and Save Changes when a document is focused', async () => {
     setupStore({
       focusedDocument: { modelId: modelA, documentKey: docA1Key },
       content: 'Document A1 baseline',
@@ -1354,10 +1490,9 @@ describe('GeneratedContributionCard', () => {
 
     expect(await screen.findByText(/Model Alpha/i)).toBeInTheDocument();
     expect(screen.getByText(/doc-a1/i)).toBeInTheDocument();
-    expect(screen.getByTestId('content-textarea')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/Enter feedback for doc-a1/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /save edit/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /save feedback/i })).toBeInTheDocument();
+    expect(screen.getAllByTestId('content-textarea')).toHaveLength(2);
+    expect(screen.getAllByTestId('feedback-textarea')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
   });
 
   it('17.c.i: Document Content input is bound to content draft and Document Feedback input to feedback draft; changing one does not change the other', async () => {
@@ -1401,8 +1536,8 @@ describe('GeneratedContributionCard', () => {
 
     render(<GeneratedContributionCard modelId={modelA} />);
 
-    const contentTextarea = await screen.findByTestId('content-textarea');
-    const feedbackTextarea = await screen.findByTestId('feedback-textarea');
+    const [contentTextarea] = await screen.findAllByTestId('content-textarea');
+    const [feedbackTextarea] = await screen.findAllByTestId('feedback-textarea');
 
     expect(contentTextarea).toHaveValue('Content draft text');
     expect(feedbackTextarea).toHaveValue('Feedback draft text');
@@ -1461,35 +1596,32 @@ describe('GeneratedContributionCard', () => {
 
     render(<GeneratedContributionCard modelId={modelA} />);
 
-    const contentTextarea = await screen.findByTestId('content-textarea');
-    const feedbackTextarea = await screen.findByTestId('feedback-textarea');
+    const [contentTextarea] = await screen.findAllByTestId('content-textarea');
+    const [feedbackTextarea] = await screen.findAllByTestId('feedback-textarea');
 
     expect(contentTextarea).toHaveValue('Edited content draft');
     expect(feedbackTextarea).toHaveValue('Feedback draft for submit');
 
-    const saveEditButton = screen.getByRole('button', { name: /save edit/i });
-    expect(saveEditButton).not.toBeDisabled();
-    await user.click(saveEditButton);
+    const saveChangesButton = screen.getByRole('button', { name: /save changes/i });
+    expect(saveChangesButton).not.toBeDisabled();
+    await user.click(saveChangesButton);
 
     await waitFor(() => {
       expect(saveContributionEdit).toHaveBeenCalled();
+      expect(submitStageDocumentFeedback).toHaveBeenCalled();
+
       const editPayload = vi.mocked(saveContributionEdit).mock.calls[0]?.[0];
       expect(editPayload.editedContentText).toBe('Edited content draft');
-    });
 
-    const saveFeedbackButton = screen.getByRole('button', { name: /save feedback/i });
-    await user.click(saveFeedbackButton);
-
-    await waitFor(() => {
-      expect(submitStageDocumentFeedback).toHaveBeenCalled();
       const feedbackPayload = vi.mocked(submitStageDocumentFeedback).mock.calls[0]?.[0];
       expect(feedbackPayload.feedbackContent).toBe('Feedback draft for submit');
     });
   });
 
-  describe('model name from session assigned models and header layout', () => {
-    it('displays model name from session assigned models (activeSessionDetail.selected_models), not from modelCatalog or state.selectedModels', async () => {
-      const sessionDisplayName = 'Session Assigned Model Name';
+  describe('model name and header layout (canonical provenance)', () => {
+    it('displays model name from dialectic_contributions.model_name (not from selected_models or modelCatalog)', async () => {
+      const selectedModelsDisplayName = 'Selected Model Display Name (should not be used)';
+      const catalogDisplayName = 'Catalog Model Name (should not be used)';
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Document A1 baseline',
@@ -1503,7 +1635,7 @@ describe('GeneratedContributionCard', () => {
           user_input_reference_url: null,
           iteration_count: iterationNumber,
           selected_models: [
-            { id: modelA, displayName: sessionDisplayName },
+            { id: modelA, displayName: selectedModelsDisplayName },
             { id: modelB, displayName: 'Session Model Beta' },
           ],
           status: 'active',
@@ -1511,38 +1643,59 @@ describe('GeneratedContributionCard', () => {
           current_stage_id: mockStageSlug,
           created_at: '2023-01-01T00:00:00Z',
           updated_at: '2023-01-01T00:00:00Z',
-          dialectic_contributions: [],
+          dialectic_contributions: [
+            buildDialecticContribution({
+              id: `contrib-${modelA}`,
+              modelId: modelA,
+              modelName: 'Model Alpha',
+              createdAtIso: '2023-01-01T00:00:00Z',
+              updatedAtIso: '2023-01-01T00:00:00Z',
+            }),
+          ],
         },
+        modelCatalog: [
+          { id: modelA, model_name: catalogDisplayName, provider_name: 'OpenAI', api_identifier: 'openai', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [] },
+        ],
       });
 
       render(<GeneratedContributionCard modelId={modelA} />);
 
-      expect(await screen.findByText(new RegExp(sessionDisplayName))).toBeInTheDocument();
-      expect(screen.queryByText(/Model Alpha/i)).not.toBeInTheDocument();
+      expect(await screen.findByText(/Model Alpha/i)).toBeInTheDocument();
+      expect(screen.queryByText(new RegExp(selectedModelsDisplayName))).not.toBeInTheDocument();
+      expect(screen.queryByText(new RegExp(catalogDisplayName))).not.toBeInTheDocument();
     });
 
-    it('renders header as single line: ModelName • DocumentKey • Date', async () => {
-      const sessionDisplayName = 'Session Model Name';
-      const displayDate = '2023-01-02';
+    it('renders header as single dense line with document key, model name, and created/updated timestamps', async () => {
+      const createdAtIso = '2023-01-01T00:00:00Z';
+      const updatedAtIso = '2023-01-02T12:00:00Z';
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Content',
         focusedStageDocument: {
           [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
         },
+        sourceContributionId: `contrib-${modelA}`,
         activeSessionDetail: {
           id: mockSessionId,
           project_id: mockProjectId,
           session_description: 'Mock Session',
           user_input_reference_url: null,
           iteration_count: iterationNumber,
-          selected_models: [{ id: modelA, displayName: sessionDisplayName }, { id: modelB, displayName: 'Beta' }],
+          selected_models: [{ id: modelA, displayName: 'Selected Name' }, { id: modelB, displayName: 'Beta' }],
           status: 'active',
           associated_chat_id: null,
           current_stage_id: mockStageSlug,
-          created_at: '2023-01-01T00:00:00Z',
-          updated_at: '2023-01-01T00:00:00Z',
-          dialectic_contributions: [],
+          created_at: createdAtIso,
+          updated_at: createdAtIso,
+          dialectic_contributions: [
+            buildDialecticContribution({
+              id: `contrib-${modelA}`,
+              modelId: modelA,
+              modelName: 'Model Alpha',
+              createdAtIso: createdAtIso,
+              updatedAtIso: createdAtIso,
+            }),
+          ],
         },
       });
 
@@ -1552,19 +1705,24 @@ describe('GeneratedContributionCard', () => {
         isDirty: false,
         isLoading: false,
         error: null,
-        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-02T12:00:00Z' },
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: updatedAtIso },
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
-        sourceContributionId: null,
+        sourceContributionId: `contrib-${modelA}`,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       });
 
       render(<GeneratedContributionCard modelId={modelA} />);
 
-      await screen.findByText(new RegExp(sessionDisplayName));
+      const createdDate = new Date(createdAtIso).toLocaleDateString();
+      const updatedDate = new Date(updatedAtIso).toLocaleDateString();
+
+      expect(await screen.findByText(/doc-a1/i)).toBeInTheDocument();
+      expect(screen.getByText(/Model Alpha/i)).toBeInTheDocument();
       const bodyText = document.body.textContent ?? '';
-      expect(bodyText).toMatch(new RegExp(`${sessionDisplayName}\\s*•\\s*${docA1Key}\\s*•\\s*${displayDate}`));
+      expect(bodyText).toContain(`Created ${createdDate}`);
+      expect(bodyText).toContain(`Updated ${updatedDate}`);
     });
 
     it('does not display internal IDs (job_id, latestRenderedResourceId) in header or document detail', async () => {

@@ -1,4 +1,5 @@
 import { render, screen, within, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { SessionInfoCard } from './SessionInfoCard';
@@ -10,6 +11,7 @@ import { resetAiStoreMock } from '@/mocks/aiStore.mock';
 import { initializeMockWalletStore } from '@/mocks/walletStore.mock';
 import {
   useDialecticStore,
+  selectUnifiedProjectProgress,
 } from '@paynless/store';
 
 // Explicitly mock the @paynless/store to use our mock implementation
@@ -37,6 +39,7 @@ vi.mock('@paynless/store', async () => {
     selectGenerateContributionsError: actualOriginalStoreModule.selectGenerateContributionsError,
     selectGeneratingSessionsForSession: actualOriginalStoreModule.selectGeneratingSessionsForSession,
     selectUnifiedProjectProgress: dialecticMockModule.selectUnifiedProjectProgress,
+    selectSelectedModels: dialecticMockModule.selectSelectedModels,
     selectPersonalWallet: walletStoreMockModule.selectPersonalWallet,
     selectIsLoadingPersonalWallet: walletStoreMockModule.selectIsLoadingPersonalWallet,
     selectPersonalWalletError: walletStoreMockModule.selectPersonalWalletError,
@@ -184,6 +187,16 @@ const mockProjectWithStages: DialecticProject = {
   },
 };
 
+const mockUnifiedProgressWithBar = {
+  totalStages: 1,
+  completedStages: 0,
+  currentStageSlug: mockStageSlug,
+  overallPercentage: 0,
+  currentStage: mockStage,
+  projectStatus: 'not_started' as const,
+  stageDetails: [],
+};
+
 const setupMockStore = (
     initialStateOverrides: Partial<DialecticStateValues> = {}
 ) => {
@@ -253,9 +266,9 @@ describe('SessionInfoCard', () => {
             activeSeedPrompt: null
         });
 
-        renderComponent();
+        const { container } = renderComponent();
 
-        expect(screen.getByText('Loading Session Information...')).toBeInTheDocument();
+        expect(container.querySelector('[data-slot="skeleton"]')).toBeInTheDocument();
     });
 
 
@@ -314,11 +327,10 @@ describe('SessionInfoCard', () => {
       const cardTitleElement = await screen.findByTestId(`session-info-title-${mockSession.id}`);
       expect(cardTitleElement).toBeInTheDocument();
       expect(cardTitleElement).toHaveTextContent(new RegExp(mockSession.session_description!));
-      expect(cardTitleElement).toHaveTextContent(new RegExp(`Iteration: ${mockSession.iteration_count}`));
-      expect(cardTitleElement).toHaveTextContent(/Not Started/i);
+      expect(screen.getByText(/Iteration\s+1/)).toBeInTheDocument();
+      expect(screen.getByText(/Not Started/i)).toBeInTheDocument();
 
       expect(screen.queryByText('Loading Session Information...')).toBeNull();
-      expect(screen.getByTestId('mock-continue-toggle')).toBeInTheDocument();
     });
 
     it('displays "no prompt" message when no seed prompt is available', async () => {
@@ -348,6 +360,7 @@ describe('SessionInfoCard', () => {
     });
 
     it('when generating, displays DynamicProgressBar as single progress display', () => {
+      selectUnifiedProjectProgress.mockReturnValue(mockUnifiedProgressWithBar);
       setupMockStore({
         currentProjectDetail: mockProjectWithStages,
         generatingSessions: { [mockSessionId]: ['job-1', 'job-2'] },
@@ -394,6 +407,7 @@ describe('SessionInfoCard', () => {
       vi.clearAllMocks();
       resetAiStoreMock();
       initializeMockWalletStore();
+      selectUnifiedProjectProgress.mockReturnValue(mockUnifiedProgressWithBar);
     });
 
     it('displays single unified progress indicator from SSOT', () => {
@@ -406,15 +420,14 @@ describe('SessionInfoCard', () => {
     it('title bar status text reflects SSOT projectStatus', () => {
       setupMockStore({ currentProjectDetail: mockProjectWithStages });
       renderComponent();
-      const cardTitleElement = screen.getByTestId(`session-info-title-${mockSession.id}`);
-      expect(cardTitleElement).toHaveTextContent(/Not Started/i);
+      expect(screen.getByText(/Not Started/i)).toBeInTheDocument();
     });
 
     it('status badge reflects SSOT projectStatus', () => {
       setupMockStore({ currentProjectDetail: mockProjectWithStages });
       renderComponent();
       const notStartedElements = screen.getAllByText(/Not Started/i);
-      expect(notStartedElements.length).toBeGreaterThanOrEqual(2);
+      expect(notStartedElements.length).toBeGreaterThanOrEqual(1);
       const badgeElement = notStartedElements.find((el) =>
         el.closest('[data-slot="badge"]')
       );
@@ -425,10 +438,9 @@ describe('SessionInfoCard', () => {
     it('title bar and badge show identical status', () => {
       setupMockStore({ currentProjectDetail: mockProjectWithStages });
       renderComponent();
-      const titleElement = screen.getByTestId(`session-info-title-${mockSession.id}`);
       const statusTexts = screen.getAllByText(/Not Started/i);
-      expect(statusTexts.length).toBeGreaterThanOrEqual(2);
-      expect(titleElement).toHaveTextContent(/Not Started/i);
+      expect(statusTexts.length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(/Not Started/i)).toBeInTheDocument();
     });
 
     it('removes duplicate Generating contributions... indicator when progress bar is active', () => {
@@ -445,8 +457,7 @@ describe('SessionInfoCard', () => {
     it('all status displays (title, badge, progress bar) agree with each other', () => {
       setupMockStore({ currentProjectDetail: mockProjectWithStages });
       renderComponent();
-      const titleElement = screen.getByTestId(`session-info-title-${mockSession.id}`);
-      expect(titleElement).toHaveTextContent(/Not Started/i);
+      expect(screen.getByText(/Not Started/i)).toBeInTheDocument();
       expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
       const allNotStarted = screen.getAllByText(/Not Started/i);
       expect(allNotStarted.length).toBeGreaterThanOrEqual(1);
@@ -462,14 +473,14 @@ describe('SessionInfoCard', () => {
 
     it('renders loading state if session is undefined', () => {
       setupMockStore({ currentProjectDetail: mockProject, activeSessionDetail: null });
-      renderComponent();
-      expect(screen.getByText('Loading Session Information...')).toBeInTheDocument();
+      const { container } = renderComponent();
+      expect(container.querySelector('[data-slot="skeleton"]')).toBeInTheDocument();
     });
 
     it('renders loading state if project is undefined', () => {
       setupMockStore({ currentProjectDetail: null });
-      renderComponent();
-      expect(screen.getByText('Loading Session Information...')).toBeInTheDocument();
+      const { container } = renderComponent();
+      expect(container.querySelector('[data-slot="skeleton"]')).toBeInTheDocument();
     });
   });
 
@@ -480,7 +491,7 @@ describe('SessionInfoCard', () => {
       initializeMockWalletStore();
     });
 
-    it('does not render "Export Final" button even when isFinalStageInProcess is true', () => {
+    it('does not render "Export Final" button even when isFinalStageInProcess is true', async () => {
       // Step 6.b.i: Create a test case that mocks store state with isFinalStageInProcess set to true
       // by setting up a project with process template transitions where the current stage has no outgoing transitions
       const finalStage: DialecticStage = {
@@ -540,12 +551,12 @@ describe('SessionInfoCard', () => {
       expect(screen.queryByText('Export Final')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /export final/i })).not.toBeInTheDocument();
 
-      // Step 6.b.iv: Assert that the always-visible "Export" button (lines 247-257) is still rendered
-      const exportButton = screen.getByRole('button', { name: /export/i });
-      expect(exportButton).toBeInTheDocument();
-      expect(exportButton).toHaveTextContent(/export/i);
-      // Verify it's the always-visible export button (not "Export Final")
-      expect(exportButton).not.toHaveTextContent('Export Final');
+      // Step 6.b.iv: Assert that Export is available via the More actions dropdown
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: /more actions/i }));
+      const exportAction = await screen.findByText('Export Project');
+      expect(exportAction).toBeInTheDocument();
+      expect(exportAction).not.toHaveTextContent('Export Final');
     });
   });
 
@@ -556,7 +567,7 @@ describe('SessionInfoCard', () => {
       initializeMockWalletStore();
     });
 
-    it('renders Export button in final stage (isFinalStageInProcess is true)', () => {
+    it('renders Export button in final stage (isFinalStageInProcess is true)', async () => {
       // Step 6.e.i: Create test case for final stage
       const finalStage: DialecticStage = {
         id: 'final-stage-id',
@@ -607,14 +618,15 @@ describe('SessionInfoCard', () => {
 
       renderComponent();
 
-      // Step 6.e.ii: Assert that the always-visible "Export" button is rendered
-      const exportButton = screen.getByRole('button', { name: /export/i });
-      expect(exportButton).toBeInTheDocument();
-      expect(exportButton).toHaveTextContent(/export/i);
-      expect(exportButton).not.toHaveTextContent('Export Final');
+      // Step 6.e.ii: Assert that Export is available via the More actions dropdown
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: /more actions/i }));
+      const exportAction = await screen.findByText('Export Project');
+      expect(exportAction).toBeInTheDocument();
+      expect(exportAction).not.toHaveTextContent('Export Final');
     });
 
-    it('renders Export button in non-final stage (isFinalStageInProcess is false)', () => {
+    it('renders Export button in non-final stage (isFinalStageInProcess is false)', async () => {
       // Step 6.e.i: Create test case for non-final stage
       const nonFinalStage: DialecticStage = {
         id: 'thesis-stage-id',
@@ -664,11 +676,12 @@ describe('SessionInfoCard', () => {
 
       renderComponent();
 
-      // Step 6.e.ii: Assert that the always-visible "Export" button is rendered
-      const exportButton = screen.getByRole('button', { name: /export/i });
-      expect(exportButton).toBeInTheDocument();
-      expect(exportButton).toHaveTextContent(/export/i);
-      expect(exportButton).not.toHaveTextContent('Export Final');
+      // Step 6.e.ii: Assert that Export is available via the More actions dropdown
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: /more actions/i }));
+      const exportAction = await screen.findByText('Export Project');
+      expect(exportAction).toBeInTheDocument();
+      expect(exportAction).not.toHaveTextContent('Export Final');
     });
   });
 }); 

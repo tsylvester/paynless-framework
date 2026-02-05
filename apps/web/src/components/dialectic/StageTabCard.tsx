@@ -17,6 +17,7 @@ import {
 	selectSelectedModels,
 } from "@paynless/store";
 import { StageRunChecklist } from "./StageRunChecklist";
+import { CheckCircle2 } from "lucide-react";
 
 interface StageProgressSnapshotSummary {
 	totalDocuments: number;
@@ -59,7 +60,7 @@ const StageCard: React.FC<StageCardProps> = ({
 	checklist,
 }) => {
 	const displayName = getDisplayName(stage);
-	
+
 	if (!isContextReady) {
 		return (
 			<div
@@ -68,7 +69,7 @@ const StageCard: React.FC<StageCardProps> = ({
 					"border-l-4 border-l-transparent",
 				)}
 			>
-				<div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+				<div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
 					<span className="text-xs font-medium text-muted-foreground">
 						{index + 1}
 					</span>
@@ -84,28 +85,15 @@ const StageCard: React.FC<StageCardProps> = ({
 	const hasDocuments = progress.totalDocuments > 0;
 	const shouldRenderChecklist = Boolean(isActive && checklist);
 
-	const stageLabel =
-		progress.stageStatus === "completed"
-			? "Completed"
-			: progress.stageStatus === "failed"
-				? "Failed"
-				: progress.stageStatus === "not_started"
-					? "Not started"
-					: null;
-	const showPercentage =
-		progress.stageStatus === "in_progress" &&
-		progress.stagePercentage >= 0 &&
-		progress.stagePercentage < 100;
-
 	return (
-		<div className="space-y-1" data-testid={`stage-card-${stage.slug}`}>
+		<div className="space-y-1.5" data-testid={`stage-card-${stage.slug}`}>
 			<button
 				data-testid={`stage-tab-${stage.slug}`}
 				className={cn(
-					"group w-full text-left py-4 px-4 rounded-xl transition-all duration-200 text-sm relative overflow-hidden",
+					"group w-full text-left py-3 px-3 rounded-lg transition-all duration-200 text-sm relative",
 					isActive
-						? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-600/25 font-medium"
-						: "text-muted-foreground hover:text-foreground hover:bg-muted/50 hover:shadow-md",
+						? "bg-primary/5 border-l-4 border-l-primary font-medium"
+						: "text-muted-foreground hover:text-foreground hover:bg-muted/50 border-l-4 border-l-transparent",
 				)}
 				onClick={onSelect}
 				role="tab"
@@ -113,56 +101,48 @@ const StageCard: React.FC<StageCardProps> = ({
 				aria-controls={`stage-content-${displayName}`}
 				tabIndex={isActive ? 0 : -1}
 			>
-				{isActive && (
-					<div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 to-blue-700/10 animate-pulse" />
-				)}
-				<div className="flex items-center justify-between gap-4 relative z-10">
-					<div className="flex items-center gap-3">
+				<div className="flex items-center justify-between gap-3 relative z-10">
+					<div className="flex items-center gap-2.5">
 						<div
 							className={cn(
-								"w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors duration-200",
+								"w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-colors duration-200",
 								isActive
-									? "bg-white/20 text-white"
-									: "bg-muted text-muted-foreground group-hover:bg-muted-foreground/20",
+									? "bg-primary text-primary-foreground"
+									: progress.isComplete
+										? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+										: "bg-muted text-muted-foreground group-hover:bg-muted-foreground/20",
 							)}
 						>
-							{index + 1}
+							{progress.isComplete ? (
+								<CheckCircle2 className="h-3.5 w-3.5" />
+							) : (
+								index + 1
+							)}
 						</div>
-						<span className="font-medium">{displayName}</span>
+						<span
+							className={cn(
+								"font-medium",
+								isActive
+									? "text-foreground"
+									: "text-muted-foreground group-hover:text-foreground",
+							)}
+						>
+							{displayName}
+						</span>
 					</div>
-					{(hasDocuments || stageLabel !== null) && (
-						<div
-							className="flex flex-col items-end gap-1 text-xs"
-							data-testid={`stage-progress-summary-${stage.slug}`}
+					{hasDocuments && progress.isComplete && !isActive && (
+						<span
+							data-testid={`stage-progress-label-${stage.slug}`}
+							className="text-xs font-medium text-emerald-600 dark:text-emerald-400"
 						>
-							{stageLabel !== null && (
-								<span
-									data-testid={`stage-progress-label-${stage.slug}`}
-									className={cn(
-										"font-medium",
-										progress.stageStatus === "completed" && "text-emerald-400",
-										progress.stageStatus === "failed" && "text-destructive",
-										progress.stageStatus === "not_started" && "text-muted-foreground",
-									)}
-								>
-									{stageLabel}
-								</span>
-							)}
-							{showPercentage && (
-								<span
-									data-testid={`stage-progress-pct-${stage.slug}`}
-									className="text-muted-foreground"
-								>
-									{Math.round(progress.stagePercentage)}%
-								</span>
-							)}
-						</div>
+							Done
+						</span>
 					)}
 				</div>
 			</button>
 			{shouldRenderChecklist && (
 				<div
-					className="w-full"
+					className="w-full pl-4"
 					data-testid={`stage-checklist-wrapper-${stage.slug}`}
 				>
 					{checklist}
@@ -285,8 +265,8 @@ export const StageTabCard: React.FC = () => {
 	};
 
 	return (
-		<div className="space-y-2 self-start" data-testid="stage-container">
-			<div className="space-y-2" data-testid="stage-tab-list">
+		<div className="space-y-1.5 self-start" data-testid="stage-container">
+			<div className="space-y-1.5" data-testid="stage-tab-list">
 				{stages.map((stage, index) => {
 					const isActiveStage = stage.slug === activeStageSlug;
 

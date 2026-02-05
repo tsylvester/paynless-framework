@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useEffect } from "react";
+import React, { useCallback, useMemo, useEffect, useState } from "react";
 import {
 	useDialecticStore,
 	useAuthStore,
@@ -10,6 +10,7 @@ import {
 import {
 	StageDocumentCompositeKey,
 	StageRunDocumentDescriptor,
+	StageDocumentVersionInfo,
 	SaveContributionEditPayload,
 } from "@paynless/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -17,10 +18,20 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { TextInputArea } from "@/components/common/TextInputArea";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronDown, Info } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { isDocumentHighlighted } from "@paynless/utils";
+import {
+	ResizablePanelGroup,
+	ResizablePanel,
+	ResizableHandle,
+} from "@/components/ui/resizable";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 const getStageDocumentKey = (key: StageDocumentCompositeKey): string =>
 	`${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
@@ -64,6 +75,8 @@ export const GeneratedContributionCard: React.FC<
 	GeneratedContributionCardProps
 > = ({ modelId, className }) => {
 	const user = useAuthStore((state) => state.user);
+	const [isTechnicalDetailsOpen, setIsTechnicalDetailsOpen] = useState(false);
+	const [isEditorsOpen, setIsEditorsOpen] = useState(true);
 	const {
 		sessionId,
 		stageSlug,
@@ -75,7 +88,6 @@ export const GeneratedContributionCard: React.FC<
 		submitStageDocumentFeedback,
 		saveContributionEdit,
 		activeSessionDetail,
-		modelCatalog,
 		isSubmittingStageDocumentFeedback,
 		submitStageDocumentFeedbackError,
 		isSavingContributionEdit,
@@ -102,7 +114,6 @@ export const GeneratedContributionCard: React.FC<
 			submitStageDocumentFeedback: state.submitStageDocumentFeedback,
 			saveContributionEdit: state.saveContributionEdit,
 			activeSessionDetail: state.activeSessionDetail,
-			modelCatalog: state.modelCatalog,
 			isSubmittingStageDocumentFeedback: state.isSubmittingStageDocumentFeedback,
 			submitStageDocumentFeedbackError: state.submitStageDocumentFeedbackError,
 			isSavingContributionEdit: state.isSavingContributionEdit,
@@ -115,37 +126,61 @@ export const GeneratedContributionCard: React.FC<
 	const hasStageContext =
 		Boolean(sessionId && stageSlug && typeof iterationNumber === "number");
 
-	const stageRunProgress = useDialecticStore((state) =>
-		hasStageContext && sessionId && stageSlug && typeof iterationNumber === "number"
-			? selectStageRunProgress(
-					state,
-					sessionId,
-					stageSlug,
-					iterationNumber,
-			)
-			: undefined,
-	);
+	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
+	const stageRunProgress = useDialecticStore((state) => {
+		const currentSessionId = state.activeContextSessionId;
+		const currentStageSlug = state.activeStageSlug;
+		const currentIterationNumber = state.activeSessionDetail?.iteration_count;
+
+		if (!currentSessionId || !currentStageSlug || typeof currentIterationNumber !== "number") {
+			return undefined;
+		}
+		return selectStageRunProgress(
+			state,
+			currentSessionId,
+			currentStageSlug,
+			currentIterationNumber,
+		);
+	});
 
 	const modelName = useMemo((): string => {
-		if (
-			activeSessionDetail !== null &&
-			activeSessionDetail !== undefined &&
-			activeSessionDetail.selected_models !== null &&
-			activeSessionDetail.selected_models !== undefined
-		) {
-			const assigned = activeSessionDetail.selected_models.find(
-				(m) => m.id === modelId,
+		if (!hasStageContext) {
+			return "";
+		}
+		if (!activeSessionDetail) {
+			throw new Error(
+				`GeneratedContributionCard invariant violation: activeSessionDetail missing for modelId "${modelId}"`,
 			);
-			if (assigned !== undefined) {
-				return assigned.displayName;
+		}
+		const contributions = activeSessionDetail.dialectic_contributions ?? [];
+		const nameByModelId = new Map<string, string>();
+		contributions.forEach((contribution) => {
+			const contributionModelId = contribution.model_id;
+			const contributionModelName = contribution.model_name;
+			if (
+				typeof contributionModelId !== "string" ||
+				contributionModelId.trim().length === 0 ||
+				typeof contributionModelName !== "string" ||
+				contributionModelName.trim().length === 0
+			) {
+				return;
 			}
+			const existing = nameByModelId.get(contributionModelId);
+			if (existing && existing !== contributionModelName) {
+				throw new Error(
+					`GeneratedContributionCard invariant violation: conflicting model_name values for modelId "${contributionModelId}" ("${existing}" vs "${contributionModelName}")`,
+				);
+			}
+			nameByModelId.set(contributionModelId, contributionModelName);
+		});
+		const name = nameByModelId.get(modelId);
+		if (!name) {
+			throw new Error(
+				`GeneratedContributionCard invariant violation: missing dialectic_contributions model_name for modelId "${modelId}"`,
+			);
 		}
-		const catalogEntry = modelCatalog.find((model) => model.id === modelId);
-		if (catalogEntry !== undefined) {
-			return catalogEntry.model_name;
-		}
-		return modelId;
-	}, [activeSessionDetail, modelCatalog, modelId]);
+		return name;
+	}, [activeSessionDetail, hasStageContext, modelId]);
 
 	const validMarkdownDocumentKeys = useDialecticStore((state) => {
 		if (!stageSlug) {
@@ -186,20 +221,25 @@ export const GeneratedContributionCard: React.FC<
 		[compositeKey],
 	);
 
+	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
 	const documentResourceState = useDialecticStore((state) => {
+		const currentSessionId = state.activeContextSessionId;
+		const currentStageSlug = state.activeStageSlug;
+		const currentIterationNumber = state.activeSessionDetail?.iteration_count;
+
 		if (
 			!compositeKey ||
-			!sessionId ||
-			!stageSlug ||
-			typeof iterationNumber !== "number"
+			!currentSessionId ||
+			!currentStageSlug ||
+			typeof currentIterationNumber !== "number"
 		) {
 			return undefined;
 		}
 		return selectStageDocumentResource(
 			state,
-			sessionId,
-			stageSlug,
-			iterationNumber,
+			currentSessionId,
+			currentStageSlug,
+			currentIterationNumber,
 			modelId,
 			compositeKey.documentKey,
 		);
@@ -209,6 +249,8 @@ export const GeneratedContributionCard: React.FC<
 	const baselineContent = documentResourceState?.baselineMarkdown ?? "";
 	const isDraftLoading = documentResourceState?.isLoading ?? false;
 	const draftError = documentResourceState?.error;
+	const lastBaselineVersion: StageDocumentVersionInfo | null =
+		documentResourceState ? documentResourceState.lastBaselineVersion : null;
 
 	const documentDescriptor: StageRunDocumentDescriptor | undefined =
 		focusedDocument && stageRunProgress
@@ -226,10 +268,16 @@ export const GeneratedContributionCard: React.FC<
 		);
 	};
 
+	// Use serialized key for stable comparison in effect
+	const documentDescriptorResourceId = isRenderedDescriptor(documentDescriptor)
+		? documentDescriptor.latestRenderedResourceId
+		: null;
+
 	useEffect(() => {
+		// Only fetch if we have all required data and content isn't already loaded
 		if (
 			compositeKey &&
-			isRenderedDescriptor(documentDescriptor) &&
+			documentDescriptorResourceId &&
 			!documentResourceState?.isLoading &&
 			!documentResourceState?.baselineMarkdown &&
 			!documentResourceState?.error &&
@@ -237,17 +285,18 @@ export const GeneratedContributionCard: React.FC<
 		) {
 			fetchStageDocumentContent(
 				compositeKey,
-				documentDescriptor.latestRenderedResourceId,
+				documentDescriptorResourceId,
 			);
 		}
 	}, [
-		compositeKey,
-		focusedDocument,
-		documentDescriptor,
+		// Use serialized key for stable dependency comparison
+		serializedKey,
+		documentDescriptorResourceId,
 		documentResourceState?.isLoading,
 		documentResourceState?.baselineMarkdown,
 		documentResourceState?.error,
 		fetchStageDocumentContent,
+		compositeKey,
 	]);
 
 	const handleFeedbackDraftChange = useCallback(
@@ -363,6 +412,108 @@ export const GeneratedContributionCard: React.FC<
 		Boolean(documentResourceState?.currentDraftMarkdown) &&
 		Boolean(documentResourceState?.sourceContributionId);
 
+	// Determine if content or feedback has been modified
+	const hasContentChanges = Boolean(documentResourceState?.currentDraftMarkdown);
+	const hasFeedbackChanges = Boolean(documentResourceState?.feedbackDraftMarkdown);
+	const hasUnsavedChanges = hasContentChanges || hasFeedbackChanges;
+
+	const isSaving = isSavingContributionEdit || isSubmittingStageDocumentFeedback;
+
+	const handleSaveChanges = useCallback(async () => {
+		// Save both content edits and feedback if they exist
+		const promises: Promise<void>[] = [];
+
+		if (canSaveEdit) {
+			promises.push(handleSaveEdit());
+		}
+		if (canSaveFeedback) {
+			promises.push(handleSaveFeedback());
+		}
+
+		if (promises.length === 0) {
+			toast.info("No changes to save.");
+			return;
+		}
+
+		await Promise.all(promises);
+	}, [canSaveEdit, canSaveFeedback, handleSaveEdit, handleSaveFeedback]);
+
+	const selectedDocumentKey = focusedDocument ? focusedDocument.documentKey : null;
+	const showDocument =
+		Boolean(hasStageContext) &&
+		Boolean(isValidMarkdownDocument) &&
+		Boolean(sessionId) &&
+		Boolean(stageSlug) &&
+		Boolean(selectedDocumentKey) &&
+		Boolean(
+			sessionId &&
+				stageSlug &&
+				selectedDocumentKey &&
+				isDocumentHighlighted(
+					sessionId,
+					stageSlug,
+					modelId,
+					selectedDocumentKey,
+					focusedStageDocumentMap,
+				),
+		);
+	const documentCreatedAtIso = useMemo((): string | null => {
+		if (!showDocument) {
+			return null;
+		}
+		if (!selectedDocumentKey) {
+			throw new Error(
+				`GeneratedContributionCard invariant violation: selectedDocumentKey missing while showDocument is true (modelId "${modelId}")`,
+			);
+		}
+		if (!activeSessionDetail) {
+			throw new Error(
+				`GeneratedContributionCard invariant violation: activeSessionDetail missing while document is selected (modelId "${modelId}")`,
+			);
+		}
+		const sourceContributionId = documentResourceState?.sourceContributionId;
+		if (
+			typeof sourceContributionId !== "string" ||
+			sourceContributionId.trim().length === 0
+		) {
+			if (isDraftLoading) {
+				return null;
+			}
+			throw new Error(
+				`GeneratedContributionCard invariant violation: missing sourceContributionId for selected document (modelId "${modelId}", documentKey "${selectedDocumentKey}")`,
+			);
+		}
+		const contributions = activeSessionDetail.dialectic_contributions ?? [];
+		const sourceContribution = contributions.find(
+			(contribution) => contribution.id === sourceContributionId,
+		);
+		if (!sourceContribution) {
+			if (isDraftLoading) {
+				return null;
+			}
+			throw new Error(
+				`GeneratedContributionCard invariant violation: source contribution "${sourceContributionId}" not found in activeSessionDetail.dialectic_contributions (modelId "${modelId}", documentKey "${selectedDocumentKey}")`,
+			);
+		}
+		return sourceContribution.created_at;
+	}, [
+		activeSessionDetail,
+		documentResourceState?.sourceContributionId,
+		isDraftLoading,
+		modelId,
+		selectedDocumentKey,
+		showDocument,
+	]);
+	const documentLastUpdatedAtIso = useMemo((): string | null => {
+		if (!showDocument) {
+			return null;
+		}
+		if (lastBaselineVersion?.updatedAt) {
+			return lastBaselineVersion.updatedAt;
+		}
+		return null;
+	}, [lastBaselineVersion?.updatedAt, showDocument]);
+
 	if (!hasStageContext) {
 		return (
 			<Card className={cn("p-4", className)}>
@@ -376,46 +527,142 @@ export const GeneratedContributionCard: React.FC<
 		);
 	}
 
-	const headerParts: string[] = [modelName];
-	if (
-		focusedDocument !== null &&
-		focusedDocument !== undefined &&
-		isValidMarkdownDocument
-	) {
-		headerParts.push(focusedDocument.documentKey);
-	}
-	if (
-		documentResourceState !== undefined &&
-		documentResourceState !== null &&
-		documentResourceState.lastBaselineVersion !== undefined &&
-		documentResourceState.lastBaselineVersion !== null &&
-		documentResourceState.lastBaselineVersion.updatedAt !== undefined &&
-		documentResourceState.lastBaselineVersion.updatedAt !== null
-	) {
-		headerParts.push(
-			new Date(documentResourceState.lastBaselineVersion.updatedAt)
-				.toISOString()
-				.split("T")[0],
-		);
-	}
-	const headerLine: string = headerParts.join(" • ");
-
 	return (
 		<Card className={cn("flex flex-col", className)}>
-			<CardHeader className="space-y-2">
-				<div className="flex flex-wrap items-center justify-between gap-2">
-					<h3 className="text-lg font-semibold text-foreground">{headerLine}</h3>
-					{documentDescriptor && isValidMarkdownDocument && (
-						<Badge variant="secondary">
-							{formatStatusLabel(documentDescriptor.status)}
-						</Badge>
-					)}
+			<CardHeader className="pb-3">
+				<div className="flex items-center justify-between gap-4">
+					{/* Document Info with Model Avatar */}
+					<div className="flex items-center gap-3">
+						<Button
+							variant="ghost"
+							size="sm"
+							type="button"
+							className={cn(
+								"w-10 h-10 rounded-full p-0 flex items-center justify-center",
+								"bg-primary/10 text-primary hover:bg-primary/15",
+								!focusedDocument && "opacity-60",
+							)}
+							aria-expanded={focusedDocument ? isEditorsOpen : undefined}
+							aria-label={isEditorsOpen ? "Collapse editors" : "Expand editors"}
+							disabled={!focusedDocument}
+							onClick={() => setIsEditorsOpen((prev) => !prev)}
+						>
+							<ChevronDown
+								className={cn(
+									"h-4 w-4 transition-transform duration-200",
+									isEditorsOpen ? "rotate-180" : "rotate-0",
+								)}
+							/>
+						</Button>
+						<div className="min-w-0">
+							<div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+								<span className="truncate text-base font-medium text-foreground">
+									{focusedDocument ? focusedDocument.documentKey : "No document selected"}
+								</span>
+								{focusedDocument ? (
+									<span className="truncate text-sm text-muted-foreground">
+										{modelName}
+									</span>
+								) : null}
+								{focusedDocument && documentCreatedAtIso ? (
+									<span className="truncate text-xs text-muted-foreground">
+										Created {new Date(documentCreatedAtIso).toLocaleDateString()}
+									</span>
+								) : null}
+								{focusedDocument && documentLastUpdatedAtIso ? (
+									<span className="truncate text-xs text-muted-foreground">
+										Updated {new Date(documentLastUpdatedAtIso).toLocaleDateString()}
+									</span>
+								) : null}
+							</div>
+						</div>
+					</div>
+
+					{/* Status Badge and Save Button */}
+					<div className="flex items-center gap-3">
+						{documentDescriptor && isValidMarkdownDocument && (
+							<Badge
+								variant="secondary"
+								className={cn(
+									"font-normal",
+									documentDescriptor.status === "completed" && "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
+									documentDescriptor.status === "failed" && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+									documentDescriptor.status === "generating" && "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+								)}
+							>
+								{formatStatusLabel(documentDescriptor.status)}
+							</Badge>
+						)}
+
+						{hasUnsavedChanges && (
+							<div className="flex items-center gap-2">
+								<span className="text-xs text-amber-600 dark:text-amber-400">Unsaved changes</span>
+								<Button
+									onClick={handleSaveChanges}
+									disabled={isSaving || isDraftLoading}
+									size="sm"
+								>
+									{isSaving ? (
+										<>
+											<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+											Saving...
+										</>
+									) : (
+										"Save Changes"
+									)}
+								</Button>
+							</div>
+						)}
+					</div>
 				</div>
 			</CardHeader>
 
-			<CardContent className="space-y-6">
-				{focusedDocument && isValidMarkdownDocument && sessionId && stageSlug && isDocumentHighlighted(sessionId, stageSlug, modelId, focusedDocument.documentKey, focusedStageDocumentMap) ? (
-					<div className="space-y-4">
+			<CardContent className="flex-1 space-y-4">
+				{showDocument && selectedDocumentKey ? (
+					<>
+						{/* Technical Details Collapsible */}
+						{isRenderedDescriptor(documentDescriptor) && (
+							<Collapsible open={isTechnicalDetailsOpen} onOpenChange={setIsTechnicalDetailsOpen}>
+								<CollapsibleTrigger asChild>
+									<Button
+										variant="ghost"
+										size="sm"
+										className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+									>
+										<Info className="h-3 w-3" />
+										Technical details
+										<ChevronDown className={cn(
+											"h-3 w-3 transition-transform duration-200",
+											isTechnicalDetailsOpen && "rotate-180"
+										)} />
+									</Button>
+								</CollapsibleTrigger>
+								<CollapsibleContent className="mt-2">
+									<div className="flex flex-wrap gap-4 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
+										<span>
+											Job ID:{" "}
+											<code className="font-mono text-foreground bg-muted px-1 rounded">
+												{documentDescriptor.job_id}
+											</code>
+										</span>
+										<span>
+											Resource ID:{" "}
+											<code className="font-mono text-foreground bg-muted px-1 rounded">
+												{documentDescriptor.latestRenderedResourceId}
+											</code>
+										</span>
+										{lastBaselineVersion?.updatedAt && (
+											<span>
+												Last updated:{" "}
+												<span className="font-medium text-foreground">
+													{new Date(lastBaselineVersion.updatedAt).toLocaleDateString()}
+												</span>
+											</span>
+										)}
+									</div>
+								</CollapsibleContent>
+							</Collapsible>
+						)}
 
 						{draftError && (
 							<Alert variant="destructive">
@@ -434,27 +681,74 @@ export const GeneratedContributionCard: React.FC<
 								</Alert>
 							)}
 
-					<TextInputArea
-						value={documentResourceState?.currentDraftMarkdown || baselineContent}
-						onChange={handleDocumentContentChange}
-						disabled={isDraftLoading || isSavingContributionEdit}
-						placeholder="No content available."
-						id={`stage-document-content-${modelId}-${focusedDocument.documentKey}`}
-						dataTestId={`stage-document-content-${modelId}-${focusedDocument.documentKey}`}
-						showPreviewToggle
-						initialPreviewMode
-					/>
+						{isEditorsOpen ? (
+							<>
+								{/* Resizable Side-by-Side Layout (lg+ screens) */}
+								<div className="hidden lg:block">
+									<ResizablePanelGroup direction="horizontal" className="min-h-[400px] rounded-lg border">
+										<ResizablePanel defaultSize={60} minSize={30}>
+											<div className="h-full p-4">
+												<TextInputArea
+													label="Document Content"
+													value={documentResourceState?.currentDraftMarkdown || baselineContent}
+													onChange={handleDocumentContentChange}
+													disabled={isDraftLoading || isSavingContributionEdit}
+													placeholder="No content available."
+													id={`stage-document-content-${modelId}-${selectedDocumentKey}`}
+													dataTestId={`stage-document-content-${modelId}-${selectedDocumentKey}`}
+													showPreviewToggle
+													initialPreviewMode
+												/>
+											</div>
+										</ResizablePanel>
+										<ResizableHandle withHandle />
+										<ResizablePanel defaultSize={40} minSize={25}>
+											<div className="h-full p-4 bg-muted/20">
+												<TextInputArea
+													label="Feedback"
+													value={feedbackDraftValue}
+													onChange={handleFeedbackDraftChange}
+													placeholder={`Enter feedback for this document...`}
+													id={`stage-document-feedback-${modelId}-${selectedDocumentKey}`}
+													dataTestId={`stage-document-feedback-${modelId}-${selectedDocumentKey}`}
+													showPreviewToggle
+												/>
+											</div>
+										</ResizablePanel>
+									</ResizablePanelGroup>
+								</div>
 
-						<TextInputArea
-							label="Document Feedback"
-							value={feedbackDraftValue}
-							onChange={handleFeedbackDraftChange}
-							placeholder={`Enter feedback for ${focusedDocument.documentKey}`}
-							id={`stage-document-feedback-${modelId}-${focusedDocument.documentKey}`}
-							dataTestId={`stage-document-feedback-${modelId}-${focusedDocument.documentKey}`}
-							showPreviewToggle
-						/>
+								{/* Stacked Layout (mobile/tablet) */}
+								<div className="lg:hidden space-y-4">
+									<TextInputArea
+										label="Document Content"
+										value={documentResourceState?.currentDraftMarkdown || baselineContent}
+										onChange={handleDocumentContentChange}
+										disabled={isDraftLoading || isSavingContributionEdit}
+										placeholder="No content available."
+										id={`stage-document-content-mobile-${modelId}-${selectedDocumentKey}`}
+										dataTestId={`stage-document-content-mobile-${modelId}-${selectedDocumentKey}`}
+										showPreviewToggle
+										initialPreviewMode
+									/>
 
+									<TextInputArea
+										label="Feedback"
+										value={feedbackDraftValue}
+										onChange={handleFeedbackDraftChange}
+										placeholder={`Enter feedback for this document...`}
+										id={`stage-document-feedback-mobile-${modelId}-${selectedDocumentKey}`}
+										dataTestId={`stage-document-feedback-mobile-${modelId}-${selectedDocumentKey}`}
+										showPreviewToggle
+									/>
+								</div>
+							</>
+						) : (
+							<p className="text-xs text-muted-foreground">
+							</p>
+						)}
+
+						{/* Error Alerts */}
 						{saveContributionEditError && (
 							<Alert variant="destructive">
 								<AlertDescription>
@@ -470,50 +764,7 @@ export const GeneratedContributionCard: React.FC<
 								</AlertDescription>
 							</Alert>
 						)}
-
-						<div className="flex items-center justify-end gap-3">
-							{isDraftLoading && (
-								<Loader2
-									aria-hidden
-									className="h-4 w-4 animate-spin text-muted-foreground"
-								/>
-							)}
-							<Button
-								onClick={handleSaveEdit}
-								disabled={
-									!canSaveEdit ||
-									isDraftLoading ||
-									isSavingContributionEdit
-								}
-							>
-								{isSavingContributionEdit ? (
-									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-										Saving...
-									</>
-								) : (
-									"Save Edit"
-								)}
-							</Button>
-							<Button
-								onClick={handleSaveFeedback}
-								disabled={
-									!canSaveFeedback ||
-									isDraftLoading ||
-									isSubmittingStageDocumentFeedback
-								}
-							>
-								{isSubmittingStageDocumentFeedback ? (
-									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-										Saving...
-									</>
-								) : (
-									"Save Feedback"
-								)}
-							</Button>
-						</div>
-					</div>
+					</>
 				) : (
 					<p className="text-sm text-muted-foreground">
 						Select a document to view its content and provide feedback.
