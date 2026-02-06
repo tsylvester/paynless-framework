@@ -561,8 +561,8 @@ describe('GeneratedContributionCard', () => {
       expect(lastCall[1]).toBe(expectedFeedback);
     });
 
-    const saveButton = screen.getByRole('button', { name: /save changes/i });
-    await user.click(saveButton);
+    const saveFeedbackButtons = screen.getAllByRole('button', { name: /save feedback/i });
+    await user.click(saveFeedbackButtons[0]);
 
     await waitFor(() => {
       expect(submitStageDocumentFeedback).toHaveBeenCalled();
@@ -703,11 +703,11 @@ describe('GeneratedContributionCard', () => {
         expect(contentTextareas[0]).toHaveValue('Edited document content');
       });
 
-      const saveEditButton = screen.getByRole('button', { name: /save changes/i });
+      const saveEditButtons = screen.getAllByRole('button', { name: /save edit/i });
       await waitFor(() => {
-        expect(saveEditButton).not.toBeDisabled();
+        expect(saveEditButtons[0]).not.toBeDisabled();
       });
-      await user.click(saveEditButton);
+      await user.click(saveEditButtons[0]);
 
       const expectedPayload: SaveContributionEditPayload = {
         originalContributionIdToEdit: originalContributionId,
@@ -811,8 +811,8 @@ describe('GeneratedContributionCard', () => {
       });
 
       // Save the edit
-      const saveEditButton = screen.getByRole('button', { name: /save changes/i });
-      await user.click(saveEditButton);
+      const saveEditButtons = screen.getAllByRole('button', { name: /save edit/i });
+      await user.click(saveEditButtons[0]);
 
       // Assert saveContributionEdit was called
       const expectedPayload: SaveContributionEditPayload = {
@@ -899,8 +899,8 @@ describe('GeneratedContributionCard', () => {
       render(<GeneratedContributionCard modelId={modelA} />);
 
       await waitFor(() => {
-        const saveEditButton = screen.getByRole('button', { name: /save changes/i });
-        expect(saveEditButton).not.toBeDisabled();
+        const saveEditButtons = screen.getAllByRole('button', { name: /save edit/i });
+        expect(saveEditButtons[0]).not.toBeDisabled();
       });
 
       const activeSessionDetail = getDialecticStoreState().activeSessionDetail;
@@ -984,7 +984,7 @@ describe('GeneratedContributionCard', () => {
 
       // Assert document content section elements are NOT rendered
       expect(screen.queryAllByTestId('content-textarea')).toHaveLength(0);
-      expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /save edit/i })).not.toBeInTheDocument();
       expect(screen.queryAllByTestId('feedback-textarea')).toHaveLength(0);
     });
 
@@ -1005,7 +1005,8 @@ describe('GeneratedContributionCard', () => {
       // Assert document content section is rendered
       expect(await screen.findByText(/draft_document_markdown/i)).toBeInTheDocument();
       expect(screen.getAllByTestId('content-textarea')).toHaveLength(2);
-      expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument();
+      const saveEditButtons = screen.getAllByRole('button', { name: /save edit/i });
+      expect(saveEditButtons.length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByTestId('feedback-textarea')).toHaveLength(2);
 
       // Assert placeholder is NOT rendered
@@ -1476,7 +1477,7 @@ describe('GeneratedContributionCard', () => {
     });
   });
 
-  it('renders model name, focused document detail, document content, document feedback, and Save Changes when a document is focused', async () => {
+  it('renders model name, focused document detail, document content, document feedback, Save Edit and Save Feedback when a document is focused', async () => {
     setupStore({
       focusedDocument: { modelId: modelA, documentKey: docA1Key },
       content: 'Document A1 baseline',
@@ -1492,7 +1493,10 @@ describe('GeneratedContributionCard', () => {
     expect(screen.getByText(/doc-a1/i)).toBeInTheDocument();
     expect(screen.getAllByTestId('content-textarea')).toHaveLength(2);
     expect(screen.getAllByTestId('feedback-textarea')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
+    const saveEditButtons = screen.getAllByRole('button', { name: /save edit/i });
+    const saveFeedbackButtons = screen.getAllByRole('button', { name: /save feedback/i });
+    expect(saveEditButtons.length).toBeGreaterThanOrEqual(1);
+    expect(saveFeedbackButtons.length).toBeGreaterThanOrEqual(1);
   });
 
   it('17.c.i: Document Content input is bound to content draft and Document Feedback input to feedback draft; changing one does not change the other', async () => {
@@ -1602,17 +1606,22 @@ describe('GeneratedContributionCard', () => {
     expect(contentTextarea).toHaveValue('Edited content draft');
     expect(feedbackTextarea).toHaveValue('Feedback draft for submit');
 
-    const saveChangesButton = screen.getByRole('button', { name: /save changes/i });
-    expect(saveChangesButton).not.toBeDisabled();
-    await user.click(saveChangesButton);
+    const saveEditButtons = screen.getAllByRole('button', { name: /save edit/i });
+    expect(saveEditButtons[0]).not.toBeDisabled();
+    await user.click(saveEditButtons[0]);
 
     await waitFor(() => {
       expect(saveContributionEdit).toHaveBeenCalled();
-      expect(submitStageDocumentFeedback).toHaveBeenCalled();
-
       const editPayload = vi.mocked(saveContributionEdit).mock.calls[0]?.[0];
       expect(editPayload.editedContentText).toBe('Edited content draft');
+    });
 
+    const saveFeedbackButtons = screen.getAllByRole('button', { name: /save feedback/i });
+    expect(saveFeedbackButtons[0]).not.toBeDisabled();
+    await user.click(saveFeedbackButtons[0]);
+
+    await waitFor(() => {
+      expect(submitStageDocumentFeedback).toHaveBeenCalled();
       const feedbackPayload = vi.mocked(submitStageDocumentFeedback).mock.calls[0]?.[0];
       expect(feedbackPayload.feedbackContent).toBe('Feedback draft for submit');
     });
@@ -1746,10 +1755,541 @@ describe('GeneratedContributionCard', () => {
       expect(screen.queryByText(latestRenderedResourceId)).not.toBeInTheDocument();
     });
   });
+
+  describe('Split Save Edit and Save Feedback buttons', () => {
+    it('renders Save Edit button below document content when document is focused', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Doc content',
+        feedback: '',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const saveEditButtons = await screen.findAllByRole('button', { name: /save edit/i });
+      expect(saveEditButtons.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('renders Save Feedback button below feedback editor when document is focused', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Doc content',
+        feedback: 'Feedback text',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const saveFeedbackButtons = await screen.findAllByRole('button', { name: /save feedback/i });
+      expect(saveFeedbackButtons.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('Save Edit button is disabled when canSaveEdit is false', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        contentDraft: '',
+        sourceContributionId: 'contrib-1',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Content',
+        currentDraftMarkdown: '',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: 'contrib-1',
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const saveEditButtons = await screen.findAllByRole('button', { name: /save edit/i });
+      expect(saveEditButtons[0]).toBeDisabled();
+    });
+
+    it('Save Feedback button is disabled when canSaveFeedback is false', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        feedback: '',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Content',
+        currentDraftMarkdown: 'Content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: `contrib-${modelA}`,
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const saveFeedbackButtons = await screen.findAllByRole('button', { name: /save feedback/i });
+      expect(saveFeedbackButtons[0]).toBeDisabled();
+    });
+
+    it('Save Edit button shows Loader2 spinner and Saving... when isSavingContributionEdit is true', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        contentDraft: 'Content',
+        sourceContributionId: 'contrib-1',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+        isSavingContributionEdit: true,
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Content',
+        currentDraftMarkdown: 'Content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: 'contrib-1',
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const savingTexts = await screen.findAllByText(/saving\.\.\./i);
+      expect(savingTexts.length).toBeGreaterThanOrEqual(1);
+      const savingButtons = screen.getAllByRole('button', { name: /saving\.\.\./i });
+      expect(savingButtons.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('Save Feedback button shows Loader2 spinner and Saving... when isSubmittingStageDocumentFeedback is true', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        feedback: 'Feedback text',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+        isSubmittingStageDocumentFeedback: true,
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Content',
+        currentDraftMarkdown: 'Content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: `contrib-${modelA}`,
+        feedbackDraftMarkdown: 'Feedback text',
+        feedbackIsDirty: true,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const savingButtons = screen.getAllByRole('button', { name: /saving\.\.\./i });
+      expect(savingButtons.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('Unsaved edits text appears when hasContentChanges is true and does not appear when false', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Baseline',
+        contentDraft: 'Edited content',
+        feedback: '',
+        sourceContributionId: 'contrib-1',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Baseline',
+        currentDraftMarkdown: 'Edited content',
+        isDirty: true,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: 'contrib-1',
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const unsavedEditsTexts = await screen.findAllByText(/unsaved edits/i);
+      expect(unsavedEditsTexts.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('Unsaved edits text does not appear when hasContentChanges is false', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Baseline',
+        contentDraft: '',
+        feedback: '',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Baseline',
+        currentDraftMarkdown: '',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: `contrib-${modelA}`,
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const saveEditButtons = await screen.findAllByRole('button', { name: /save edit/i });
+      expect(saveEditButtons.length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText(/unsaved edits/i)).not.toBeInTheDocument();
+    });
+
+    it('Unsaved feedback text appears when hasFeedbackChanges is true', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        feedback: 'Draft feedback',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Content',
+        currentDraftMarkdown: 'Content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: `contrib-${modelA}`,
+        feedbackDraftMarkdown: 'Draft feedback',
+        feedbackIsDirty: true,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const unsavedFeedbackTexts = await screen.findAllByText(/unsaved feedback/i);
+      expect(unsavedFeedbackTexts.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('Unsaved feedback text does not appear when hasFeedbackChanges is false', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        feedback: '',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const saveFeedbackButtons = await screen.findAllByRole('button', { name: /save feedback/i });
+      expect(saveFeedbackButtons.length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText(/unsaved feedback/i)).not.toBeInTheDocument();
+    });
+
+    it('does not display "Unsaved edits" when isDirty is false and currentDraftMarkdown has content', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Baseline content',
+        contentDraft: 'Baseline content',
+        feedback: '',
+        sourceContributionId: 'contrib-1',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Baseline content',
+        currentDraftMarkdown: 'Baseline content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: 'contrib-1',
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      expect(screen.queryByText(/unsaved edits/i)).not.toBeInTheDocument();
+    });
+
+    it('displays "Unsaved edits" when isDirty is true', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Baseline',
+        contentDraft: 'Edited content',
+        feedback: '',
+        sourceContributionId: 'contrib-1',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Baseline',
+        currentDraftMarkdown: 'Edited content',
+        isDirty: true,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: 'contrib-1',
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const unsavedEditsTexts = await screen.findAllByText(/unsaved edits/i);
+      expect(unsavedEditsTexts.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('does not display "Unsaved feedback" when feedbackIsDirty is false and feedbackDraftMarkdown has content', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        feedback: 'Existing feedback',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Content',
+        currentDraftMarkdown: 'Content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: `contrib-${modelA}`,
+        feedbackDraftMarkdown: 'Existing feedback',
+        feedbackIsDirty: false,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      expect(screen.queryByText(/unsaved feedback/i)).not.toBeInTheDocument();
+    });
+
+    it('displays "Unsaved feedback" when feedbackIsDirty is true', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        feedback: 'Draft feedback',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Content',
+        currentDraftMarkdown: 'Content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: `contrib-${modelA}`,
+        feedbackDraftMarkdown: 'Draft feedback',
+        feedbackIsDirty: true,
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const unsavedFeedbackTexts = await screen.findAllByText(/unsaved feedback/i);
+      expect(unsavedFeedbackTexts.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('saveContributionEditError message is displayed near Save Edit button when error is present', async () => {
+      const errorMessage = 'Edit save failed';
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        sourceContributionId: 'contrib-1',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+        saveContributionEditError: { code: 'ERR_EDIT', message: errorMessage },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const errorElements = await screen.findAllByText(errorMessage);
+      expect(errorElements.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('submitStageDocumentFeedbackError message is displayed near Save Feedback button when error is present', async () => {
+      const errorMessage = 'Feedback submit failed';
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        feedback: 'Feedback',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+        submitStageDocumentFeedbackError: { code: 'ERR_FEEDBACK', message: errorMessage },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const errorElements = await screen.findAllByText(errorMessage);
+      expect(errorElements.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('clicking Save Edit button calls handleSaveEdit', async () => {
+      const user = userEvent.setup();
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Edit content',
+        contentDraft: 'Edit content',
+        sourceContributionId: 'contrib-1',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Edit content',
+        currentDraftMarkdown: 'Edit content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: 'contrib-1',
+        feedbackDraftMarkdown: '',
+        feedbackIsDirty: false,
+      });
+
+      const { saveContributionEdit } = getDialecticStoreState();
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const saveEditButtons = await screen.findAllByRole('button', { name: /save edit/i });
+      await user.click(saveEditButtons[0]);
+
+      await waitFor(() => {
+        expect(saveContributionEdit).toHaveBeenCalled();
+      });
+    });
+
+    it('clicking Save Feedback button calls handleSaveFeedback', async () => {
+      const user = userEvent.setup();
+      mockSetAuthUser({ id: 'user-1' });
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        feedback: 'My feedback',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReturnValue({
+        baselineMarkdown: 'Content',
+        currentDraftMarkdown: 'Content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: { resourceId: 'res-1', versionHash: 'hash-1', updatedAt: '2023-01-01T00:00:00Z' },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: `contrib-${modelA}`,
+        feedbackDraftMarkdown: 'My feedback',
+        feedbackIsDirty: true,
+      });
+
+      const { submitStageDocumentFeedback } = getDialecticStoreState();
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const saveFeedbackButtons = await screen.findAllByRole('button', { name: /save feedback/i });
+      await user.click(saveFeedbackButtons[0]);
+
+      await waitFor(() => {
+        expect(submitStageDocumentFeedback).toHaveBeenCalled();
+      });
+    });
+
+    it('Save Changes button no longer exists', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        feedback: 'Feedback',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const saveEditButtons = await screen.findAllByRole('button', { name: /save edit/i });
+      expect(saveEditButtons.length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument();
+    });
+
+    it('Unsaved changes combined indicator no longer exists', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Content',
+        feedback: 'Feedback',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const saveEditButtons = await screen.findAllByRole('button', { name: /save edit/i });
+      expect(saveEditButtons.length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText(/unsaved changes/i)).not.toBeInTheDocument();
+    });
+  });
 });
-
-
-
-
-
-

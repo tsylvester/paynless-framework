@@ -50,6 +50,7 @@ import {
     selectEditedDocumentByKey,
     selectValidMarkdownDocumentKeys,
     selectUnifiedProjectProgress,
+    selectStageHasUnsavedChanges,
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type { 
@@ -2618,6 +2619,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: {},
         stageRunProgress: {},
@@ -2694,6 +2696,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [
             { id: 'model-1', displayName: 'Model 1' },
             { id: 'model-2', displayName: 'Model 2' },
@@ -2792,6 +2795,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [
             { id: 'model-1', displayName: 'Model 1' },
             { id: 'model-2', displayName: 'Model 2' },
@@ -2884,6 +2888,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [
             { id: 'model-1', displayName: 'Model 1' },
             { id: 'model-2', displayName: 'Model 2' },
@@ -2976,6 +2981,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
@@ -3051,6 +3057,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe1, 'mock-stage-2': recipe2 },
         stageRunProgress: {
@@ -3143,6 +3150,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe1, 'mock-stage-2': recipe2 },
         stageRunProgress: {
@@ -3219,6 +3227,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [
             { id: 'model-1', displayName: 'Model 1' },
             { id: 'model-2', displayName: 'Model 2' },
@@ -3298,6 +3307,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
@@ -3377,6 +3387,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
@@ -3450,6 +3461,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
@@ -3521,6 +3533,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: { 'mock-stage-1': recipe },
         stageRunProgress: {
@@ -3571,6 +3584,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: {},
         stageRunProgress: {},
@@ -3606,6 +3620,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
         recipesByStageSlug: {},
         stageRunProgress: {},
@@ -3683,6 +3698,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [
           { id: 'model-1', displayName: 'Model 1' },
           { id: 'model-2', displayName: 'Model 2' },
@@ -3759,6 +3775,7 @@ describe('selectValidMarkdownDocumentKeys', () => {
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
         selectedModels: [
           { id: 'model-1', displayName: 'Model 1' },
           { id: 'model-2', displayName: 'Model 2' },
@@ -3786,5 +3803,239 @@ describe('selectValidMarkdownDocumentKeys', () => {
       expect(docStep.totalModels).toBe(2);
       expect(docStep.completedModels).toBe(2);
     });
+
+    it('selectUnifiedProjectProgress returns correct totalStages when currentProcessTemplate has stages', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: {},
+        stageRunProgress: {},
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      expect(result.totalStages).toBe(2);
+    });
+
+    it('selectUnifiedProjectProgress returns totalStages 0 when currentProcessTemplate is null', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        currentProcessTemplate: null,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: {},
+        stageRunProgress: {},
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      expect(result.totalStages).toBe(0);
+    });
+
+    it('selectUnifiedProjectProgress returns correct overallPercentage based on currentProcessTemplate stages', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: {},
+        stageRunProgress: {},
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      expect(result.totalStages).toBe(2);
+      expect(result.overallPercentage).toBeGreaterThanOrEqual(0);
+      expect(result.overallPercentage).toBeLessThanOrEqual(100);
+    });
+
+    it('selectUnifiedProjectProgress ignores project.dialectic_process_templates and uses currentProcessTemplate', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const projectWithTemplate: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+        dialectic_process_templates: templateForUnified,
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithTemplate,
+        currentProcessTemplate: null,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: {},
+        stageRunProgress: {},
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      expect(result.totalStages).toBe(0);
+    });
   });
+
+describe('selectStageHasUnsavedChanges', () => {
+  const sessionId = 'session-unsaved-test';
+  const stageSlug = 'thesis';
+  const iterationNumber = 1;
+  const modelId = 'model-1';
+  const documentKey = 'business_case';
+  const keyPrefix = `${sessionId}:${stageSlug}:${iterationNumber}:`;
+
+  function makeContent(overrides: { isDirty?: boolean; feedbackIsDirty?: boolean }): StageDocumentContentState {
+    return {
+      baselineMarkdown: '',
+      currentDraftMarkdown: '',
+      isDirty: overrides.isDirty ?? false,
+      isLoading: false,
+      error: null,
+      lastBaselineVersion: null,
+      pendingDiff: null,
+      lastAppliedVersionHash: null,
+      sourceContributionId: null,
+      feedbackDraftMarkdown: '',
+      feedbackIsDirty: overrides.feedbackIsDirty ?? false,
+    };
+  }
+
+  it('returns { hasUnsavedEdits: false, hasUnsavedFeedback: false } when stageDocumentContent is empty', () => {
+    const state: DialecticStateValues = {
+      ...initialDialecticStateValues,
+      stageDocumentContent: {},
+    };
+    const result = selectStageHasUnsavedChanges(state, sessionId, stageSlug, iterationNumber);
+    expect(result).toEqual({ hasUnsavedEdits: false, hasUnsavedFeedback: false });
+  });
+
+  it('returns { hasUnsavedEdits: true, hasUnsavedFeedback: false } when one document has isDirty: true and feedbackIsDirty: false', () => {
+    const compositeKey = `${keyPrefix}${modelId}:${documentKey}`;
+    const state: DialecticStateValues = {
+      ...initialDialecticStateValues,
+      stageDocumentContent: {
+        [compositeKey]: makeContent({ isDirty: true, feedbackIsDirty: false }),
+      },
+    };
+    const result = selectStageHasUnsavedChanges(state, sessionId, stageSlug, iterationNumber);
+    expect(result).toEqual({ hasUnsavedEdits: true, hasUnsavedFeedback: false });
+  });
+
+  it('returns { hasUnsavedEdits: false, hasUnsavedFeedback: true } when one document has isDirty: false and feedbackIsDirty: true', () => {
+    const compositeKey = `${keyPrefix}${modelId}:${documentKey}`;
+    const state: DialecticStateValues = {
+      ...initialDialecticStateValues,
+      stageDocumentContent: {
+        [compositeKey]: makeContent({ isDirty: false, feedbackIsDirty: true }),
+      },
+    };
+    const result = selectStageHasUnsavedChanges(state, sessionId, stageSlug, iterationNumber);
+    expect(result).toEqual({ hasUnsavedEdits: false, hasUnsavedFeedback: true });
+  });
+
+  it('returns { hasUnsavedEdits: true, hasUnsavedFeedback: true } when documents have mixed dirty states', () => {
+    const key1 = `${keyPrefix}model-a:doc1`;
+    const key2 = `${keyPrefix}model-b:doc2`;
+    const state: DialecticStateValues = {
+      ...initialDialecticStateValues,
+      stageDocumentContent: {
+        [key1]: makeContent({ isDirty: true, feedbackIsDirty: false }),
+        [key2]: makeContent({ isDirty: false, feedbackIsDirty: true }),
+      },
+    };
+    const result = selectStageHasUnsavedChanges(state, sessionId, stageSlug, iterationNumber);
+    expect(result).toEqual({ hasUnsavedEdits: true, hasUnsavedFeedback: true });
+  });
+
+  it('ignores documents from different sessions (key prefix mismatch)', () => {
+    const otherSessionId = 'other-session';
+    const compositeKey = `${otherSessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+    const state: DialecticStateValues = {
+      ...initialDialecticStateValues,
+      stageDocumentContent: {
+        [compositeKey]: makeContent({ isDirty: true, feedbackIsDirty: true }),
+      },
+    };
+    const result = selectStageHasUnsavedChanges(state, sessionId, stageSlug, iterationNumber);
+    expect(result).toEqual({ hasUnsavedEdits: false, hasUnsavedFeedback: false });
+  });
+
+  it('ignores documents from different stages (key prefix mismatch)', () => {
+    const otherStageSlug = 'antithesis';
+    const compositeKey = `${sessionId}:${otherStageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+    const state: DialecticStateValues = {
+      ...initialDialecticStateValues,
+      stageDocumentContent: {
+        [compositeKey]: makeContent({ isDirty: true, feedbackIsDirty: true }),
+      },
+    };
+    const result = selectStageHasUnsavedChanges(state, sessionId, stageSlug, iterationNumber);
+    expect(result).toEqual({ hasUnsavedEdits: false, hasUnsavedFeedback: false });
+  });
+
+  it('ignores documents from different iterations (key prefix mismatch)', () => {
+    const otherIteration = 2;
+    const compositeKey = `${sessionId}:${stageSlug}:${otherIteration}:${modelId}:${documentKey}`;
+    const state: DialecticStateValues = {
+      ...initialDialecticStateValues,
+      stageDocumentContent: {
+        [compositeKey]: makeContent({ isDirty: true, feedbackIsDirty: true }),
+      },
+    };
+    const result = selectStageHasUnsavedChanges(state, sessionId, stageSlug, iterationNumber);
+    expect(result).toEqual({ hasUnsavedEdits: false, hasUnsavedFeedback: false });
+  });
+});
 

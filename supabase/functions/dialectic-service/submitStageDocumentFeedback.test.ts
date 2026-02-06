@@ -342,3 +342,141 @@ Deno.test('submitStageDocumentFeedback - Validation: returns 400 on missing payl
   assertExists(result.error);
   assertEquals(result.error.message, 'Missing required fields in feedback payload.');
 });
+
+Deno.test('submitStageDocumentFeedback - Validation: returns error when iterationNumber is undefined', async () => {
+  const mockFileManager = createMockFileManagerService();
+  const payloadWithUndefinedIteration: Partial<SubmitStageDocumentFeedbackPayload> = {
+    ...mockPayload,
+    iterationNumber: undefined,
+  };
+  const mockSupabase = createMockSupabaseClient(USER_ID, {});
+  const deps = {
+    fileManager: mockFileManager,
+    logger: { log: spy(), error: spy(), warn: spy(), info: spy(), debug: spy() },
+  };
+
+  const result = await submitStageDocumentFeedback(
+    payloadWithUndefinedIteration as SubmitStageDocumentFeedbackPayload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    deps,
+  );
+
+  assertExists(result.error);
+  assertEquals(result.error.message, 'Missing required fields in feedback payload.');
+});
+
+Deno.test('submitStageDocumentFeedback - Validation: accepts iterationNumber of 0 as valid', async () => {
+  const mockFileManager = createMockFileManagerService();
+  const mockFileRecord = {
+    id: 'feedback-record-iter0',
+    project_id: PROJECT_ID,
+    session_id: mockPayload.sessionId,
+    user_id: USER_ID,
+    stage_slug: mockPayload.stageSlug,
+    iteration_number: 0,
+    storage_bucket: 'test-bucket',
+    storage_path: 'test/path',
+    file_name: 'feedback.md',
+    mime_type: 'text/markdown',
+    size_bytes: 100,
+    feedback_type: 'user_feedback',
+    resource_description: {
+      document_key: mockPayload.documentKey,
+      model_id: mockPayload.modelId,
+    },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    target_contribution_id: null,
+  };
+  mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+  const payloadWithZeroIteration: SubmitStageDocumentFeedbackPayload = {
+    ...mockPayload,
+    iterationNumber: 0,
+  };
+  const mockDbRecord = {
+    id: 'feedback-new-id-iter0',
+    ...payloadWithZeroIteration,
+  };
+  const mockSupabase = createMockSupabaseClient(USER_ID, {
+    genericMockResults: {
+      dialectic_feedback: {
+        select: { data: [mockDbRecord], error: null },
+        insert: { data: [mockDbRecord], error: null },
+        update: { data: null, error: new Error('Update should not be called') },
+      },
+    },
+  });
+
+  const deps = {
+    fileManager: mockFileManager,
+    logger: { log: spy(), error: spy(), warn: spy(), info: spy(), debug: spy() },
+  };
+
+  const result = await submitStageDocumentFeedback(
+    payloadWithZeroIteration,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    deps,
+  );
+
+  assertExists(result.data);
+  assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1);
+});
+
+Deno.test('submitStageDocumentFeedback - Validation: accepts iterationNumber of 1 as valid', async () => {
+  const mockFileManager = createMockFileManagerService();
+  const mockFileRecord = {
+    id: 'feedback-record-iter1',
+    project_id: PROJECT_ID,
+    session_id: mockPayload.sessionId,
+    user_id: USER_ID,
+    stage_slug: mockPayload.stageSlug,
+    iteration_number: 1,
+    storage_bucket: 'test-bucket',
+    storage_path: 'test/path',
+    file_name: 'feedback.md',
+    mime_type: 'text/markdown',
+    size_bytes: 100,
+    feedback_type: 'user_feedback',
+    resource_description: {
+      document_key: mockPayload.documentKey,
+      model_id: mockPayload.modelId,
+    },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    target_contribution_id: null,
+  };
+  mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+  const payloadWithOneIteration: SubmitStageDocumentFeedbackPayload = {
+    ...mockPayload,
+    iterationNumber: 1,
+  };
+  const mockDbRecord = {
+    id: 'feedback-new-id-iter1',
+    ...payloadWithOneIteration,
+  };
+  const mockSupabase = createMockSupabaseClient(USER_ID, {
+    genericMockResults: {
+      dialectic_feedback: {
+        select: { data: [mockDbRecord], error: null },
+        insert: { data: [mockDbRecord], error: null },
+        update: { data: null, error: new Error('Update should not be called') },
+      },
+    },
+  });
+
+  const deps = {
+    fileManager: mockFileManager,
+    logger: { log: spy(), error: spy(), warn: spy(), info: spy(), debug: spy() },
+  };
+
+  const result = await submitStageDocumentFeedback(
+    payloadWithOneIteration,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    deps,
+  );
+
+  assertExists(result.data);
+  assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1);
+});

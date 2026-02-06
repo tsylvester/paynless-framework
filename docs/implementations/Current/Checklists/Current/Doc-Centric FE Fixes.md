@@ -1692,6 +1692,681 @@
         *   `[✅]` **NEW: When backend returns empty stepStatuses, the hook must NOT destroy existing progress**
     *   `[✅]` **Commit** `fix(ui): call hydrateAllStageProgress on session load, keep hydrateStageProgress for active stage`
 
+*   `[✅]` `[STORE]` packages/store/src/dialecticStore.selectors.ts **Add selectStageHasUnsavedChanges selector**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Provide a selector that returns whether ANY document in a given stage has unsaved edits (isDirty) or unsaved feedback (feedbackIsDirty)
+        *   `[✅]` Enable UI components to display unsaved-work indicators without iterating through stageDocumentContent themselves
+        *   `[✅]` Support the SubmitResponsesButton component's need to inform users about pending saves
+    *   `[✅]` `role.md`
+        *   `[✅]` Domain: Selector function for state derivation
+        *   `[✅]` This selector derives aggregate dirty state from the normalized stageDocumentContent map
+        *   `[✅]` Consumers: SubmitResponsesButton, potentially SessionContributionsDisplayCard
+    *   `[✅]` `module.md`
+        *   `[✅]` Boundary: Operates only on DialecticStateValues.stageDocumentContent
+        *   `[✅]` Input: state, sessionId, stageSlug, iterationNumber
+        *   `[✅]` Output: { hasUnsavedEdits: boolean; hasUnsavedFeedback: boolean }
+        *   `[✅]` Does NOT mutate state, pure selector function
+    *   `[✅]` `deps.md`
+        *   `[✅]` DialecticStateValues (from @paynless/types) - state shape
+        *   `[✅]` StageDocumentContentState (from @paynless/types) - individual document state with isDirty and feedbackIsDirty
+        *   `[✅]` No external runtime dependencies, pure function
+    *   `[✅]` interface/`dialecticStore.selectors.ts` (type additions)
+        *   `[✅]` Add return type interface StageUnsavedChangesResult with hasUnsavedEdits: boolean and hasUnsavedFeedback: boolean
+        *   `[✅]` Add function signature selectStageHasUnsavedChanges(state: DialecticStateValues, sessionId: string, stageSlug: string, iterationNumber: number): StageUnsavedChangesResult
+    *   `[✅]` unit/`dialecticStore.selectors.test.ts`
+        *   `[✅]` Test: selectStageHasUnsavedChanges returns { hasUnsavedEdits: false, hasUnsavedFeedback: false } when stageDocumentContent is empty
+        *   `[✅]` Test: selectStageHasUnsavedChanges returns { hasUnsavedEdits: true, hasUnsavedFeedback: false } when one document has isDirty: true and feedbackIsDirty: false
+        *   `[✅]` Test: selectStageHasUnsavedChanges returns { hasUnsavedEdits: false, hasUnsavedFeedback: true } when one document has isDirty: false and feedbackIsDirty: true
+        *   `[✅]` Test: selectStageHasUnsavedChanges returns { hasUnsavedEdits: true, hasUnsavedFeedback: true } when documents have mixed dirty states
+        *   `[✅]` Test: selectStageHasUnsavedChanges ignores documents from different sessions (key prefix mismatch)
+        *   `[✅]` Test: selectStageHasUnsavedChanges ignores documents from different stages (key prefix mismatch)
+        *   `[✅]` Test: selectStageHasUnsavedChanges ignores documents from different iterations (key prefix mismatch)
+    *   `[✅]` `dialecticStore.selectors.ts` (implementation)
+        *   `[✅]` Export interface StageUnsavedChangesResult at top of file with existing type exports
+        *   `[✅]` Implement selectStageHasUnsavedChanges that constructs keyPrefix as `${sessionId}:${stageSlug}:${iterationNumber}:`
+        *   `[✅]` Iterate over Object.entries(state.stageDocumentContent) filtering by keyPrefix
+        *   `[✅]` Accumulate hasUnsavedEdits = true if any entry.isDirty is true
+        *   `[✅]` Accumulate hasUnsavedFeedback = true if any entry.feedbackIsDirty is true
+        *   `[✅]` Return { hasUnsavedEdits, hasUnsavedFeedback }
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Selector must be pure (no side effects)
+        *   `[✅]` Selector must return consistent results for same inputs
+        *   `[✅]` Selector must only consider documents matching the exact session:stage:iteration prefix
+        *   `[✅]` All tests pass with lint clean
+    *   `[✅]` **Commit** `feat(store): add selectStageHasUnsavedChanges selector for aggregate dirty state detection`
+
+*   `[✅]` `[STORE]` packages/store/src/index.ts **Export selectStageHasUnsavedChanges and StageUnsavedChangesResult**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Make the new selector available to consuming packages (@paynless/web)
+        *   `[✅]` Maintain consistent export pattern with existing selectors
+    *   `[✅]` `role.md`
+        *   `[✅]` Infrastructure: Package barrel export file
+        *   `[✅]` Exposes public API of @paynless/store package
+    *   `[✅]` `module.md`
+        *   `[✅]` Boundary: Re-exports from dialecticStore.selectors.ts
+        *   `[✅]` No logic, pure re-export
+    *   `[✅]` `deps.md`
+        *   `[✅]` dialecticStore.selectors.ts - source of selectStageHasUnsavedChanges and StageUnsavedChangesResult
+    *   `[✅]` `index.ts` (implementation)
+        *   `[✅]` Verify dialecticStore.selectors.ts is already exported via `export * from './dialecticStore.selectors';`
+        *   `[✅]` If not present, add the export statement
+        *   `[✅]` No additional changes needed if wildcard export already present
+    *   `[✅]` `requirements.md`
+        *   `[✅]` selectStageHasUnsavedChanges must be importable from '@paynless/store'
+        *   `[✅]` StageUnsavedChangesResult type must be importable from '@paynless/store'
+        *   `[✅]` Lint clean
+    *   `[✅]` **Commit** `feat(store): export selectStageHasUnsavedChanges from package index`
+
+*   `[✅]` `[UI]` apps/web/src/components/dialectic/GeneratedContributionCard.tsx **Split Save Changes into discrete Save Edit and Save Feedback buttons**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Remove the combined "Save Changes" button that confusingly saves both edits and feedback
+        *   `[✅]` Add a "Save Edit" button positioned below the Document Content TextInputArea
+        *   `[✅]` Add a "Save Feedback" button positioned below the Feedback TextInputArea
+        *   `[✅]` Display "Unsaved edits" indicator only when hasContentChanges is true
+        *   `[✅]` Display "Unsaved feedback" indicator only when hasFeedbackChanges is true
+        *   `[✅]` Display saveContributionEditError message below the Save Edit button when present
+        *   `[✅]` Display submitStageDocumentFeedbackError message below the Save Feedback button when present
+        *   `[✅]` Show loading spinner on Save Edit button when isSavingContributionEdit is true
+        *   `[✅]` Show loading spinner on Save Feedback button when isSubmittingStageDocumentFeedback is true
+    *   `[✅]` `role.md`
+        *   `[✅]` UI: React component for displaying and editing a single document contribution
+        *   `[✅]` Consumers: SessionContributionsDisplayCard renders one GeneratedContributionCard per model
+        *   `[✅]` Providers: useDialecticStore for state and actions
+    *   `[✅]` `module.md`
+        *   `[✅]` Boundary: Receives modelId prop, reads state from useDialecticStore
+        *   `[✅]` Calls saveContributionEdit action for edit saves
+        *   `[✅]` Calls submitStageDocumentFeedback action for feedback saves (via handleSaveFeedback)
+        *   `[✅]` Does NOT call submitStageResponses (that is handled by SubmitResponsesButton)
+    *   `[✅]` `deps.md`
+        *   `[✅]` useDialecticStore (from @paynless/store) - state and actions
+        *   `[✅]` useAuthStore (from @paynless/store) - user context for feedback submission
+        *   `[✅]` Button (from @/components/ui/button) - UI primitive
+        *   `[✅]` Loader2 (from lucide-react) - loading spinner icon
+        *   `[✅]` toast (from sonner) - success/error notifications
+        *   `[✅]` Existing imports: TextInputArea, Card, CardContent, CardHeader, Badge, Alert, AlertDescription, ResizablePanelGroup, ResizablePanel, ResizableHandle, Collapsible, CollapsibleContent, CollapsibleTrigger
+    *   `[✅]` unit/`GeneratedContributionCard.test.tsx`
+        *   `[✅]` Test: renders "Save Edit" button below document content editor when document is focused
+        *   `[✅]` Test: renders "Save Feedback" button below feedback editor when document is focused
+        *   `[✅]` Test: "Save Edit" button is disabled when canSaveEdit is false
+        *   `[✅]` Test: "Save Feedback" button is disabled when canSaveFeedback is false
+        *   `[✅]` Test: "Save Edit" button shows Loader2 spinner and "Saving..." text when isSavingContributionEdit is true
+        *   `[✅]` Test: "Save Feedback" button shows Loader2 spinner and "Saving..." text when isSubmittingStageDocumentFeedback is true
+        *   `[✅]` Test: "Unsaved edits" text appears when hasContentChanges is true and does not appear when false
+        *   `[✅]` Test: "Unsaved feedback" text appears when hasFeedbackChanges is true and does not appear when false
+        *   `[✅]` Test: saveContributionEditError message is displayed near Save Edit button when error is present
+        *   `[✅]` Test: submitStageDocumentFeedbackError message is displayed near Save Feedback button when error is present
+        *   `[✅]` Test: clicking "Save Edit" button calls handleSaveEdit
+        *   `[✅]` Test: clicking "Save Feedback" button calls handleSaveFeedback
+        *   `[✅]` Test: "Save Changes" button no longer exists (removed)
+        *   `[✅]` Test: "Unsaved changes" combined indicator no longer exists (removed)
+    *   `[✅]` `GeneratedContributionCard.tsx` (implementation)
+        *   `[✅]` Add isSubmittingStageDocumentFeedback to destructured state from useDialecticStore (line ~117)
+        *   `[✅]` Add submitStageDocumentFeedbackError to destructured state from useDialecticStore (line ~118)
+        *   `[✅]` Remove hasUnsavedChanges derived variable (line 418)
+        *   `[✅]` Remove the combined hasUnsavedChanges conditional block rendering "Unsaved changes" and "Save Changes" button (lines 597-615)
+        *   `[✅]` In the desktop ResizablePanel for Document Content (lines 689-703), after the TextInputArea closing tag, add a div containing:
+            *   `[✅]` Conditional "Unsaved edits" span when hasContentChanges is true
+            *   `[✅]` Conditional error span when saveContributionEditError is present
+            *   `[✅]` "Save Edit" Button with onClick={handleSaveEdit}, disabled={!canSaveEdit || isSavingContributionEdit}, showing Loader2 + "Saving..." when isSavingContributionEdit, else "Save Edit"
+        *   `[✅]` In the desktop ResizablePanel for Feedback (lines 705-717), after the TextInputArea closing tag, add a div containing:
+            *   `[✅]` Conditional "Unsaved feedback" span when hasFeedbackChanges is true
+            *   `[✅]` Conditional error span when submitStageDocumentFeedbackError is present
+            *   `[✅]` "Save Feedback" Button with onClick={handleSaveFeedback}, disabled={!canSaveFeedback || isSubmittingStageDocumentFeedback}, showing Loader2 + "Saving..." when isSubmittingStageDocumentFeedback, else "Save Feedback"
+        *   `[✅]` In the mobile/tablet stacked layout (lines 722-744), apply the same pattern: add save button divs after each TextInputArea
+        *   `[✅]` Keep handleSaveEdit and handleSaveFeedback functions unchanged (they already exist and work correctly)
+    *   `[✅]` `requirements.md`
+        *   `[✅]` "Save Changes" button must not exist in the rendered output
+        *   `[✅]` "Save Edit" button must appear below Document Content editor
+        *   `[✅]` "Save Feedback" button must appear below Feedback editor
+        *   `[✅]` Each button has its own loading state tied to its respective action
+        *   `[✅]` Each button has its own error display tied to its respective error state
+        *   `[✅]` Each button has its own unsaved indicator tied to its respective dirty flag
+        *   `[✅]` Both desktop and mobile layouts updated consistently
+        *   `[✅]` All tests pass with lint clean
+    *   `[✅]` **Commit** `feat(ui): split GeneratedContributionCard Save Changes into discrete Save Edit and Save Feedback buttons`
+
+*   `[✅]` `[UI]` apps/web/src/components/dialectic/SubmitResponsesButton.tsx **Create new SubmitResponsesButton component**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Create an independent, reusable component that renders the "Submit Responses & Advance Stage" button
+        *   `[✅]` Button calls submitStageResponses store action which saves ALL dirty edits and ALL dirty feedback for ALL models and ALL documents in the ENTIRE STAGE before advancing
+        *   `[✅]` Show confirmation dialog before submission to prevent accidental clicks
+        *   `[✅]` Display loading spinner during submission
+        *   `[✅]` Display error message when submitStageResponsesError is present
+        *   `[✅]` Inform user when there is unsaved work that will be automatically saved
+        *   `[✅]` Hide button when stage is not ready, on final stage, or when no contributions exist
+        *   `[✅]` On success, show toast and navigate to next stage
+    *   `[✅]` `role.md`
+        *   `[✅]` UI: React component for submitting all stage work and advancing
+        *   `[✅]` Consumer: SessionContributionsDisplayCard imports and renders this component
+        *   `[✅]` Provider: useDialecticStore for state and submitStageResponses action
+        *   `[✅]` This is an INDEPENDENT component specifically so it can be trivially reintroduced if removed
+    *   `[✅]` `module.md`
+        *   `[✅]` Boundary: No props - reads all required data from useDialecticStore
+        *   `[✅]` Renders a card-footer container div with data-testid="card-footer"
+        *   `[✅]` Contains AlertDialog for confirmation, Button for trigger
+        *   `[✅]` Calls submitStageResponses action on confirmation
+        *   `[✅]` Calls setActiveStage action to advance UI to next stage on success
+    *   `[✅]` `deps.md`
+        *   `[✅]` useDialecticStore (from @paynless/store) - state and actions
+        *   `[✅]` selectIsStageReadyForSessionIteration (from @paynless/store) - determines if button should show
+        *   `[✅]` selectSortedStages (from @paynless/store) - for determining next stage
+        *   `[✅]` selectStageHasUnsavedChanges (from @paynless/store) - for unsaved work indicator
+        *   `[✅]` SubmitStageResponsesPayload, ApiError (from @paynless/types) - type definitions
+        *   `[✅]` Button (from @/components/ui/button) - primary button primitive
+        *   `[✅]` Alert, AlertDescription (from @/components/ui/alert) - error display
+        *   `[✅]` AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, AlertDialogCancel, AlertDialogAction (from @/components/ui/alert-dialog) - confirmation modal
+        *   `[✅]` Loader2, AlertTriangle (from lucide-react) - icons
+        *   `[✅]` toast (from sonner) - success/error notifications
+        *   `[✅]` React, useMemo (from react) - hooks
+        *   `[✅]` selectStageProgressSummary (from @paynless/store) - determines if all documents are complete
+    *   `[✅]` interface/`SubmitResponsesButton.tsx` (no separate interface file - types inline or imported)
+        *   `[✅]` No props interface needed (component reads from store)
+        *   `[✅]` Component exports: export const SubmitResponsesButton: React.FC
+    *   `[✅]` unit/`SubmitResponsesButton.test.tsx`
+        *   `[✅]` Test: does not render when project is null
+        *   `[✅]` Test: does not render when session is null
+        *   `[✅]` Test: does not render when activeStage is null
+        *   `[✅]` Test: does not render when selectIsStageReadyForSessionIteration returns false
+        *   `[✅]` Test: does not render when isFinalStage is true (no outgoing transitions from activeStage)
+        *   `[✅]` Test: does not render when session has no contributions for current stage/iteration
+        *   `[✅]` Test: button is disabled when selectStageProgressSummary.isComplete is false (stage incomplete)
+        *   `[✅]` Test: button is NOT disabled when selectStageProgressSummary.isComplete is true (stage complete)
+        *   `[✅]` Test: button has animate-pulse class when enabled and stage has not been submitted for current iteration
+        *   `[✅]` Test: button does NOT have animate-pulse class when isSubmitting is true
+        *   `[✅]` Test: button does NOT have animate-pulse class after successful submission
+        *   `[✅]` Test: renders card-footer container with data-testid="card-footer" when all conditions met
+        *   `[✅]` Test: renders "Submit Responses & Advance Stage" button text
+        *   `[✅]` Test: button is disabled when isSubmittingStageResponses is true
+        *   `[✅]` Test: button shows Loader2 spinner and "Submitting..." text when isSubmittingStageResponses is true
+        *   `[✅]` Test: clicking button opens AlertDialog confirmation modal
+        *   `[✅]` Test: confirmation dialog shows title "Submit and Advance?"
+        *   `[✅]` Test: confirmation dialog shows description about saving edits and feedback
+        *   `[✅]` Test: confirmation dialog shows unsaved items count when hasUnsavedEdits or hasUnsavedFeedback is true
+        *   `[✅]` Test: clicking Cancel button in dialog closes dialog without calling submitStageResponses
+        *   `[✅]` Test: clicking Continue button in dialog calls submitStageResponses with correct payload { sessionId, currentIterationNumber, projectId, stageSlug }
+        *   `[✅]` Test: displays submitStageResponsesError in Alert when present
+        *   `[✅]` Test: shows "Unsaved work will be saved automatically" message when hasUnsavedEdits or hasUnsavedFeedback is true
+        *   `[✅]` Test: calls setActiveStage with next stage slug on successful submission
+        *   `[✅]` Test: shows success toast on successful submission
+        *   `[✅]` Test: shows error toast when submitStageResponses returns error
+    *   `[✅]` `SubmitResponsesButton.tsx` (implementation)
+        *   `[✅]` Import selectStageProgressSummary from '@paynless/store'
+        *   `[✅]` Read stageProgressSummary from useDialecticStore with selectStageProgressSummary(state, session.id, activeStage.slug, session.iteration_count)
+        *   `[✅]` Compute isStageComplete = stageProgressSummary?.isComplete ?? false
+        *   `[✅]` Compute shouldPulse = canShowButton && isStageComplete && !isSubmitting
+        *   `[✅]` Update Button disabled prop: disabled={isSubmitting || !isStageComplete}
+        *   `[✅]` Update Button className to conditionally include "animate-pulse ring-2 ring-primary" when shouldPulse is true
+        *   `[✅]` Import React, useMemo from 'react'
+        *   `[✅]` Import useDialecticStore, selectIsStageReadyForSessionIteration, selectSortedStages, selectStageHasUnsavedChanges from '@paynless/store'
+        *   `[✅]` Import SubmitStageResponsesPayload, ApiError from '@paynless/types'
+        *   `[✅]` Import Button from '@/components/ui/button'
+        *   `[✅]` Import Alert, AlertDescription from '@/components/ui/alert'
+        *   `[✅]` Import AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, AlertDialogCancel, AlertDialogAction from '@/components/ui/alert-dialog'
+        *   `[✅]` Import Loader2, AlertTriangle from 'lucide-react'
+        *   `[✅]` Import toast from 'sonner'
+        *   `[✅]` Define component export const SubmitResponsesButton: React.FC = () => { ... }
+        *   `[✅]` Read project from useDialecticStore((state) => state.currentProjectDetail)
+        *   `[✅]` Read session from useDialecticStore((state) => state.activeSessionDetail)
+        *   `[✅]` Read activeStage from useDialecticStore((state) => state.activeContextStage)
+        *   `[✅]` Read sortedStages from useDialecticStore(selectSortedStages)
+        *   `[✅]` Read setActiveStage from useDialecticStore((state) => state.setActiveStage)
+        *   `[✅]` Read submitStageResponses from useDialecticStore((state) => state.submitStageResponses)
+        *   `[✅]` Read isSubmitting from useDialecticStore((state) => state.isSubmittingStageResponses)
+        *   `[✅]` Read submitError from useDialecticStore((state) => state.submitStageResponsesError)
+        *   `[✅]` Read { hasUnsavedEdits, hasUnsavedFeedback } from useDialecticStore with selectStageHasUnsavedChanges, handling null session/activeStage
+        *   `[✅]` Read isStageReady from useDialecticStore with selectIsStageReadyForSessionIteration, handling null project/session/activeStage
+        *   `[✅]` Compute isFinalStage with useMemo: check if all transitions have source_stage_id !== activeStage.id
+        *   `[✅]` Compute canShowButton: isStageReady && !isFinalStage && session has contributions for current stage/iteration
+        *   `[✅]` Define async handleSubmit function that:
+            *   `[✅]` Guards for null session, activeStage, project
+            *   `[✅]` Constructs SubmitStageResponsesPayload with sessionId, currentIterationNumber, projectId, stageSlug
+            *   `[✅]` Calls submitStageResponses(payload) and awaits result
+            *   `[✅]` On error (result.error), throws error for catch block
+            *   `[✅]` On success, shows toast.success with "Stage advanced!" message
+            *   `[✅]` On success, finds current stage index in sortedStages, if not last, calls setActiveStage with next stage slug
+            *   `[✅]` In catch block, casts to ApiError, shows toast.error with error message
+        *   `[✅]` Return null if !canShowButton
+        *   `[✅]` Return JSX:
+            *   `[✅]` Outer div with data-testid="card-footer" className="border-t pt-4 mt-4"
+            *   `[✅]` Conditional Alert with variant="destructive" showing submitError.message when submitError is present
+            *   `[✅]` Inner div with flex layout for message and button
+            *   `[✅]` Conditional "Unsaved work will be saved automatically" span when hasUnsavedEdits || hasUnsavedFeedback
+            *   `[✅]` AlertDialog containing:
+                *   `[✅]` AlertDialogTrigger wrapping Button with disabled={isSubmitting}, gradient background classes
+                *   `[✅]` Button content: Loader2 + "Submitting..." when isSubmitting, else "Submit Responses & Advance Stage"
+                *   `[✅]` AlertDialogContent with:
+                    *   `[✅]` AlertDialogHeader with AlertDialogTitle "Submit and Advance?"
+                    *   `[✅]` AlertDialogDescription with explanation text
+                    *   `[✅]` Conditional span showing unsaved items count when hasUnsavedEdits || hasUnsavedFeedback
+                    *   `[✅]` AlertDialogFooter with AlertDialogCancel "Cancel" and AlertDialogAction "Continue" with onClick={handleSubmit}
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Button must be disabled when any document in the stage has status other than 'completed'
+        *   `[✅]` Button must show pulse animation when enabled and ready for first use in current iteration
+        *   `[✅]` Pulse animation must stop during submission (isSubmitting true)
+        *   `[✅]` Pulse animation must stop after successful submission
+        *   `[✅]` Component must be a standalone file that can be imported independently
+        *   `[✅]` Button text must be exactly "Submit Responses & Advance Stage" to match existing test expectations
+        *   `[✅]` Container must have data-testid="card-footer" to match existing test expectations
+        *   `[✅]` Confirmation dialog must have "Continue" button to match existing test expectations
+        *   `[✅]` Must use selectStageHasUnsavedChanges to determine unsaved work indicator
+        *   `[✅]` Must call submitStageResponses which handles ALL saves before advancing
+        *   `[✅]` All tests pass with lint clean
+    *   `[✅]` **Commit** `feat(ui): create SubmitResponsesButton component for universal stage submission`
+
+*   `[✅]` `[UI]` apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx **Integrate SubmitResponsesButton component**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Import and render SubmitResponsesButton at the bottom of the contributions display area
+        *   `[✅]` Ensure the button appears after all GeneratedContributionCard components
+        *   `[✅]` Maintain existing functionality of the component unchanged
+    *   `[✅]` `role.md`
+        *   `[✅]` UI: Container component that hosts GeneratedContributionCard instances and now SubmitResponsesButton
+        *   `[✅]` Orchestrates the display of all stage contributions and the submit action
+    *   `[✅]` `module.md`
+        *   `[✅]` Boundary: Imports SubmitResponsesButton, places it in render tree
+        *   `[✅]` SubmitResponsesButton is self-contained, no props needed
+        *   `[✅]` Placement: After the Document Cards section, before the Feedback Content Modal
+    *   `[✅]` `deps.md`
+        *   `[✅]` SubmitResponsesButton (from ./SubmitResponsesButton) - new import
+        *   `[✅]` All existing imports remain unchanged
+    *   `[✅]` unit/`SessionContributionsDisplayCard.test.tsx` (existing tests should now pass)
+        *   `[✅]` Verify existing test "14.c.ii: submits all document-level feedback then advances stage on Submit Responses & Advance Stage" now passes without early return
+        *   `[✅]` Verify getSubmitButton() returns the button element (no longer null)
+        *   `[✅]` Verify getCardFooter() returns the card-footer element (no longer null)
+        *   `[✅]` Verify tests at lines 1299, 1415-1421, 1544-1552, 2013-2125, 2214-2233, 2324-2348 exercise actual button behavior
+    *   `[✅]` `SessionContributionsDisplayCard.tsx` (implementation)
+        *   `[✅]` Add import statement: import { SubmitResponsesButton } from "./SubmitResponsesButton";
+        *   `[✅]` In the return JSX, after the {/* Project Complete Badge (final stage) */} section (around line 513) and before the {/* Feedback Content Modal */} section (around line 515), add:
+            *   `[✅]` {/* Submit Responses Button */}
+            *   `[✅]` <SubmitResponsesButton />
+    *   `[✅]` `requirements.md`
+        *   `[✅]` SubmitResponsesButton must render inside SessionContributionsDisplayCard
+        *   `[✅]` Button must be findable by screen.queryByRole('button', { name: 'Submit Responses & Advance Stage' })
+        *   `[✅]` Card-footer must be findable by screen.queryByTestId('card-footer')
+        *   `[✅]` All existing tests in SessionContributionsDisplayCard.test.tsx must pass
+        *   `[✅]` No other changes to SessionContributionsDisplayCard logic
+        *   `[✅]` Lint clean
+    *   `[✅]` **Commit** `feat(ui): integrate SubmitResponsesButton into SessionContributionsDisplayCard`
+
+*   `[✅]` `[TEST-INT]` apps/web/src/components/dialectic/ **Integration test for complete save and submit workflow**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Verify end-to-end flow: user edits document, clicks Save Edit, edits feedback, clicks Save Feedback, clicks Submit Responses & Advance Stage
+        *   `[✅]` Verify all three save paths work independently and together
+        *   `[✅]` Verify unsaved work indicators appear and disappear correctly
+        *   `[✅]` Verify error states display correctly for each action
+    *   `[✅]` `role.md`
+        *   `[✅]` Integration test: Tests interaction between GeneratedContributionCard, SubmitResponsesButton, and store actions
+        *   `[✅]` Exercises real component tree with mocked store actions
+    *   `[✅]` `module.md`
+        *   `[✅]` Boundary: Renders SessionContributionsDisplayCard with full mock state
+        *   `[✅]` Tests user interactions and resulting state changes
+    *   `[✅]` `deps.md`
+        *   `[✅]` SessionContributionsDisplayCard (component under test)
+        *   `[✅]` GeneratedContributionCard (child component)
+        *   `[✅]` SubmitResponsesButton (child component)
+        *   `[✅]` dialecticStore.mock.ts (mocked store)
+        *   `[✅]` @testing-library/react (render, screen, fireEvent, waitFor)
+        *   `[✅]` vitest (describe, it, expect, vi)
+    *   `[✅]` integration/`SessionContributionsDisplayCard.integration.test.tsx`
+        *   `[✅]` Test: user edits document content, "Unsaved edits" appears, clicks "Save Edit", calls saveContributionEdit, "Unsaved edits" disappears
+        *   `[✅]` Test: user enters feedback, "Unsaved feedback" appears, clicks "Save Feedback", calls submitStageDocumentFeedback, "Unsaved feedback" disappears
+        *   `[✅]` Test: user has both unsaved edits and feedback, clicks "Submit Responses & Advance Stage", confirmation dialog appears, clicks Continue, calls submitStageResponses, stage advances
+        *   `[✅]` Test: saveContributionEdit error displays near "Save Edit" button
+        *   `[✅]` Test: submitStageDocumentFeedback error displays near "Save Feedback" button
+        *   `[✅]` Test: submitStageResponses error displays in SubmitResponsesButton alert
+        *   `[✅]` Test: "Save Edit" shows loading state during save
+        *   `[✅]` Test: "Save Feedback" shows loading state during save
+        *   `[✅]` Test: "Submit Responses & Advance Stage" shows loading state during submission
+    *   `[✅]` `requirements.md`
+        *   `[✅]` All integration tests pass
+        *   `[✅]` Tests cover the discrete save button flow
+        *   `[✅]` Tests cover the universal submit flow
+        *   `[✅]` Tests verify error handling for all three save paths
+        *   `[✅]` Lint clean
+    *   `[✅]` **Commit** `test(ui): add integration tests for discrete save buttons and submit responses workflow`
+
+*   `[✅]` **Commit** `feat(dialectic): restore discrete save functionality and SubmitResponses button - completes save/feedback workflow restoration`
+
+*   `[✅]`   [STORE] `packages/store/src/dialecticStore.selectors.ts` **Fix selectUnifiedProjectProgress to use currentProcessTemplate**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   `selectUnifiedProjectProgress` must read the process template from `state.currentProcessTemplate` instead of `project?.dialectic_process_templates`
+        *   `[✅]`   The selector must return correct `totalStages`, `completedStages`, and `overallPercentage` when `currentProcessTemplate` is populated
+        *   `[✅]`   DynamicProgressBar must display accurate progress when stages exist in `currentProcessTemplate`
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Selector function within the dialectic store state management layer
+        *   `[✅]`   Derives unified project progress from normalized store state
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Located in `@paynless/store` package
+        *   `[✅]`   Exports memoized selector `selectUnifiedProjectProgress`
+        *   `[✅]`   Consumed by `DynamicProgressBar` component and potentially other progress UI components
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `DialecticStateValues` from `@paynless/types`
+        *   `[✅]`   `UnifiedProjectProgress` return type from `@paynless/types`
+        *   `[✅]`   `DialecticProcessTemplate` from `@paynless/types`
+        *   `[✅]`   `selectSessionById` internal selector (same file)
+        *   `[✅]`   `selectValidMarkdownDocumentKeys` internal selector (same file)
+        *   `[✅]`   `selectStageRunProgress` internal selector (same file)
+    *   `[✅]`   `packages/store/src/dialecticStore.selectors.test.ts`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress returns correct totalStages when currentProcessTemplate has stages`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress returns totalStages 0 when currentProcessTemplate is null`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress returns correct overallPercentage based on currentProcessTemplate stages`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress ignores project.dialectic_process_templates and uses currentProcessTemplate`
+    *   `[✅]`   `packages/store/src/dialecticStore.selectors.ts`
+        *   `[✅]`   Line 808: Change `const template = project?.dialectic_process_templates ?? null;` to `const template = state.currentProcessTemplate ?? null;`
+        *   `[✅]`   Verify `getSortedStagesFromTemplate` call now receives the correct template object
+        *   `[✅]`   Ensure no other references in selector rely on `project?.dialectic_process_templates`
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   `selectUnifiedProjectProgress(state, sessionId)` returns `UnifiedProjectProgress` with `totalStages > 0` when `state.currentProcessTemplate` has stages
+        *   `[✅]`   `DynamicProgressBar` displays non-zero progress when template stages are loaded
+        *   `[✅]`   All existing tests in `dialecticStore.selectors.test.ts` continue to pass
+    *   `[✅]`   **Commit** `fix(store): selectUnifiedProjectProgress reads from currentProcessTemplate instead of project.dialectic_process_templates`
+        *   `[✅]`   Changed template source from `project?.dialectic_process_templates` to `state.currentProcessTemplate`
+
+*   `[✅]`   [UI] `apps/web/src/components/dialectic/GeneratedContributionCard.tsx` **Fix hasContentChanges and hasFeedbackChanges to use isDirty flags**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   "Unsaved edits" indicator must only display when `documentResourceState.isDirty` is true
+        *   `[✅]`   "Unsaved feedback" indicator must only display when `documentResourceState.feedbackIsDirty` is true
+        *   `[✅]`   Indicators must NOT display when document content equals baseline (unedited state)
+    *   `[✅]`   `role.md`
+        *   `[✅]`   React UI component in the dialectic feature area
+        *   `[✅]`   Displays document content editor with unsaved changes indicators
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Located in `apps/web/src/components/dialectic/`
+        *   `[✅]`   Consumes `documentResourceState` from `selectStageDocumentResource` selector
+        *   `[✅]`   Displays `TextInputArea` for document content and feedback editing
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `useDialecticStore` from `@paynless/store`
+        *   `[✅]`   `selectStageDocumentResource` selector from `@paynless/store`
+        *   `[✅]`   `StageDocumentContentState` type from `@paynless/types` (contains `isDirty` and `feedbackIsDirty` boolean fields)
+    *   `[✅]`   `apps/web/src/components/dialectic/GeneratedContributionCard.test.tsx`
+        *   `[✅]`   Add test: `does not display "Unsaved edits" when isDirty is false and currentDraftMarkdown has content`
+        *   `[✅]`   Add test: `displays "Unsaved edits" when isDirty is true`
+        *   `[✅]`   Add test: `does not display "Unsaved feedback" when feedbackIsDirty is false and feedbackDraftMarkdown has content`
+        *   `[✅]`   Add test: `displays "Unsaved feedback" when feedbackIsDirty is true`
+    *   `[✅]`   `apps/web/src/components/dialectic/GeneratedContributionCard.tsx`
+        *   `[✅]`   Line 415: Change `const hasContentChanges = Boolean(documentResourceState?.currentDraftMarkdown);` to `const hasContentChanges = Boolean(documentResourceState?.isDirty);`
+        *   `[✅]`   Line 416: Change `const hasFeedbackChanges = Boolean(documentResourceState?.feedbackDraftMarkdown);` to `const hasFeedbackChanges = Boolean(documentResourceState?.feedbackIsDirty);`
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   "Unsaved edits" text element only renders when `documentResourceState.isDirty === true`
+        *   `[✅]`   "Unsaved feedback" text element only renders when `documentResourceState.feedbackIsDirty === true`
+        *   `[✅]`   Newly loaded documents with unedited content do not trigger unsaved indicators
+        *   `[✅]`   All existing tests in `GeneratedContributionCard.test.tsx` continue to pass
+    *   `[✅]`   **Commit** `fix(ui): GeneratedContributionCard uses isDirty flags for unsaved change indicators`
+        *   `[✅]`   Changed hasContentChanges to check isDirty instead of currentDraftMarkdown presence
+        *   `[✅]`   Changed hasFeedbackChanges to check feedbackIsDirty instead of feedbackDraftMarkdown presence
+
+*   `[✅]`   [BE] `supabase/functions/dialectic-service/submitStageDocumentFeedback.ts` **Fix iterationNumber validation logic**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Validation must correctly detect when `iterationNumber` is `undefined`
+        *   `[✅]`   Fix incorrect expression `!iterationNumber === undefined` to `iterationNumber === undefined`
+        *   `[✅]`   Validation must allow `iterationNumber` value of `0` (first iteration) as valid
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Backend Edge Function handler for submitting stage document feedback
+        *   `[✅]`   Validates payload before uploading feedback file and registering in database
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Located in `supabase/functions/dialectic-service/`
+        *   `[✅]`   Exported function `submitStageDocumentFeedback`
+        *   `[✅]`   Consumes `IFileManager` dependency for storage operations
+        *   `[✅]`   Writes to `dialectic_feedback` table
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `SupabaseClient` from `npm:@supabase/supabase-js@2`
+        *   `[✅]`   `Database` types from `../types_db.ts`
+        *   `[✅]`   `IFileManager` from `../_shared/types/file_manager.types.ts`
+        *   `[✅]`   `ILogger` from `../_shared/types.ts`
+        *   `[✅]`   `SubmitStageDocumentFeedbackPayload` from `./dialectic.interface.ts`
+        *   `[✅]`   `FileType` enum from `../_shared/types/file_manager.types.ts`
+    *   `[✅]`   `supabase/functions/dialectic-service/submitStageDocumentFeedback.test.ts`
+        *   `[✅]`   Add test: `returns error when iterationNumber is undefined`
+        *   `[✅]`   Add test: `accepts iterationNumber of 0 as valid`
+        *   `[✅]`   Add test: `accepts iterationNumber of 1 as valid`
+        *   `[✅]`   Verify existing validation tests still pass for other required fields
+    *   `[✅]`   `supabase/functions/dialectic-service/submitStageDocumentFeedback.ts`
+        *   `[✅]`   Line 36: Change `!iterationNumber === undefined` to `iterationNumber === undefined`
+        *   `[✅]`   Full corrected condition: `if (!sessionId || !stageSlug || iterationNumber === undefined || !documentKey || !modelId || !feedbackContent || !userId || !projectId)`
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Payload with `iterationNumber: undefined` returns validation error
+        *   `[✅]`   Payload with `iterationNumber: 0` passes validation and proceeds to file upload
+        *   `[✅]`   Payload with `iterationNumber: 1` passes validation and proceeds to file upload
+        *   `[✅]`   All existing tests in `submitStageDocumentFeedback.test.ts` continue to pass
+    *   `[✅]`   **Commit** `fix(be): correct iterationNumber validation in submitStageDocumentFeedback`
+        *   `[✅]`   Fixed incorrect expression `!iterationNumber === undefined` to `iterationNumber === undefined`
+
+*   `[✅]`   [TEST-INT] `apps/web/src/components/dialectic/GeneratedContributionCard.integration.test.tsx` **Add integration test for unsaved indicators with store state**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Verify unsaved indicators integrate correctly with store `isDirty` and `feedbackIsDirty` state
+        *   `[✅]`   Confirm indicators update reactively when store state changes
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Integration test verifying component behavior with real store state transitions
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Located in `apps/web/src/components/dialectic/`
+        *   `[✅]`   Tests interaction between `GeneratedContributionCard` and `dialecticStore`
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `render`, `screen` from `@testing-library/react`
+        *   `[✅]`   `useDialecticStore` from `@paynless/store`
+        *   `[✅]`   Mock data from `apps/web/src/mocks/dialecticStore.mock.ts`
+    *   `[✅]`   `apps/web/src/components/dialectic/GeneratedContributionCard.integration.test.tsx`
+        *   `[✅]`   Add test: `does not show unsaved indicator when document is loaded with isDirty false`
+        *   `[✅]`   Add test: `shows unsaved indicator after user edits document and isDirty becomes true`
+        *   `[✅]`   Add test: `hides unsaved indicator after document is saved and isDirty becomes false`
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Integration tests pass with actual store state management
+        *   `[✅]`   Tests verify reactive updates to unsaved indicators
+    *   `[✅]`   **Commit** `test(ui): add integration tests for GeneratedContributionCard unsaved indicators`
+        *   `[✅]`   Added integration tests verifying isDirty flag drives unsaved indicators
+
+*   `[ ]`   [STORE] packages/store/src/`dialecticStore.selectors.ts` **Fix selectUnifiedProjectProgress to calculate progress from actual documents, not selectedModels**
+    *   `[ ]`   `objective.md`
+        *   `[ ]`   Remove dependency on `state.selectedModels` for progress calculation
+        *   `[ ]`   Calculate step progress from actual documents in `stageRunProgress.documents`
+        *   `[ ]`   Use document's `stepKey` to associate documents with steps
+        *   `[ ]`   Derive `totalModelsForStep` from document count, not `selectedModels.length`
+        *   `[ ]`   Preserve document `modelId` for display/attribution (but not for filtering)
+        *   `[ ]`   Ensure progress for completed work is unaffected by changes to `selectedModels`
+    *   `[ ]`   `role.md`
+        *   `[ ]`   Domain selector that computes unified project progress from store state
+        *   `[ ]`   Single source of truth for progress calculation consumed by UI components
+    *   `[ ]`   `module.md`
+        *   `[ ]`   Located in `packages/store/src/dialecticStore.selectors.ts`
+        *   `[ ]`   Exports `selectUnifiedProjectProgress` selector
+        *   `[ ]`   Returns `UnifiedProjectProgress` with `stageDetails[].stepsDetail[]`
+    *   `[ ]`   `deps.md`
+        *   `[ ]`   `DialecticStateValues` from `@paynless/types`
+        *   `[ ]`   `selectSessionById` - gets session by ID from current project
+        *   `[ ]`   `selectStageRunProgress` - gets progress snapshot for session/stage/iteration
+        *   `[ ]`   `selectValidMarkdownDocumentKeys` - filters to valid markdown document keys
+        *   `[ ]`   `getSortedStagesFromTemplate` - helper to sort stages by transition order
+        *   `[ ]`   `extractLogicalDocumentKeyFromComposite` - extracts document key from composite key
+        *   `[ ]`   `isModelStep` - determines if step produces model-generated documents
+    *   `[ ]`   `dialectic.types.ts` (no changes required)
+        *   `[ ]`   `UnifiedProjectProgress` - already correctly typed
+        *   `[ ]`   `StageProgressDetail` - already correctly typed
+        *   `[ ]`   `StepProgressDetail` - already correctly typed
+        *   `[ ]`   `StageRunDocumentDescriptor` - includes `stepKey` and `modelId` fields
+    *   `[ ]`   unit/`dialecticStore.selectors.test.ts`
+        *   `[ ]`   Test: `selectUnifiedProjectProgress returns correct progress when documents exist regardless of selectedModels being empty`
+        *   `[ ]`   Test: `selectUnifiedProjectProgress counts documents by stepKey, not by selectedModels count`
+        *   `[ ]`   Test: `selectUnifiedProjectProgress changing selectedModels does not affect progress for completed documents`
+        *   `[ ]`   Test: `selectUnifiedProjectProgress returns 0% and not_started when no documents exist for model step`
+        *   `[ ]`   Test: `selectUnifiedProjectProgress returns correct step percentage with mixed document statuses (completed, failed, in_progress)`
+        *   `[ ]`   Test: `selectUnifiedProjectProgress returns 100% for step when all documents have status completed`
+    *   `[ ]`   `dialecticStore.selectors.ts`
+        *   `[ ]`   Remove line 813: `const selectedModels = state.selectedModels || [];`
+        *   `[ ]`   Remove line 814: `const totalModels = selectedModels.length;`
+        *   `[ ]`   Remove line 815: `const selectedModelIdSet = new Set(selectedModels.map((m) => m.id));`
+        *   `[ ]`   Rewrite model-step branch (lines 864-894) to count documents from `progress.documents` by `stepKey`
+        *   `[ ]`   Remove filter: `if (!selectedModelIdSet.has(desc.modelId)) continue;` (line 886)
+        *   `[ ]`   Set `totalModelsForStep` = count of documents for this step
+        *   `[ ]`   Set `completedModelsForStep` = count of documents with `status === 'completed'`
+        *   `[ ]`   Handle edge case: if no documents for step, use `stepStatus` from `stepStatuses`
+    *   `[ ]`   `dialecticStore.mock.ts` (update if needed)
+        *   `[ ]`   Ensure mock state allows testing without `selectedModels` dependency
+    *   `[ ]`   integration/`dialecticStore.progress.integration.test.ts`
+        *   `[ ]`   Test: `selectUnifiedProjectProgress returns correct percentage when stageRunProgress has completed documents and selectedModels is empty`
+        *   `[ ]`   Test: `selectUnifiedProjectProgress returns same percentage before and after selectedModels changes`
+        *   `[ ]`   Test: `selectUnifiedProjectProgress matches selectStageProgressSummary completion state`
+    *   `[ ]`   `requirements.md`
+        *   `[ ]`   Progress calculation is based solely on actual documents in `stageRunProgress.documents`
+        *   `[ ]`   `state.selectedModels` has zero effect on progress for completed work
+        *   `[ ]`   Document `modelId` is preserved for display but not used for filtering
+        *   `[ ]`   `selectUnifiedProjectProgress` and `selectStageProgressSummary` show consistent completion state
+        *   `[ ]`   All existing tests pass with updated logic
+    *   `[ ]`   **Commit** `fix(store): selectUnifiedProjectProgress calculates progress from actual documents, not selectedModels`
+        *   `[ ]`   Removed dependency on state.selectedModels for progress calculation
+        *   `[ ]`   Model step progress now counts documents by stepKey from stageRunProgress.documents
+        *   `[ ]`   Added unit tests verifying decoupling from selectedModels
+        *   `[ ]`   Added integration tests verifying consistency with selectStageProgressSummary
+
+*   `[ ]`   [TEST-INT] apps/web/src/components/common/`DynamicProgressBar` **Add unit and integration tests for progress display from actual documents**
+    *   `[ ]`   `objective.md`
+        *   `[ ]`   Verify DynamicProgressBar displays correct progress based on actual completed documents
+        *   `[ ]`   Confirm progress is unaffected by changes to `state.selectedModels`
+        *   `[ ]`   Test granular step-by-step progress tracking via `stageDetails[].stepsDetail[]`
+        *   `[ ]`   Ensure consistency between DynamicProgressBar and badge completion indicators
+    *   `[ ]`   `role.md`
+        *   `[ ]`   Unit and integration tests for DynamicProgressBar UI component
+        *   `[ ]`   Validates that progress display reflects actual document completion state
+    *   `[ ]`   `module.md`
+        *   `[ ]`   Located in `apps/web/src/components/common/`
+        *   `[ ]`   Unit tests in `DynamicProgressBar.test.tsx`
+        *   `[ ]`   Integration tests in `DynamicProgressBar.integration.test.tsx`
+    *   `[ ]`   `deps.md`
+        *   `[ ]`   `render`, `screen`, `waitFor` from `@testing-library/react`
+        *   `[ ]`   `useDialecticStore`, `selectUnifiedProjectProgress` from `@paynless/store`
+        *   `[ ]`   `UnifiedProjectProgress`, `StageProgressDetail`, `StepProgressDetail` from `@paynless/types`
+        *   `[ ]`   `dialecticStore.mock.ts` for unit test mocking
+        *   `[ ]`   Real store state for integration tests
+    *   `[ ]`   unit/`DynamicProgressBar.test.tsx`
+        *   `[ ]`   Test: `displays correct percentage from stageDetails when documents are completed`
+        *   `[ ]`   Test: `displays 0% only when no documents exist in stageRunProgress`
+        *   `[ ]`   Test: `displays 100% when all steps in all stages have completed documents`
+        *   `[ ]`   Test: `displays step-level progress message showing current step name`
+        *   `[ ]`   Test: `reacts to store updates when document completion status changes`
+        *   `[ ]`   Test: `stageDetails with populated stepsDetail drives correct percentage`
+    *   `[ ]`   integration/`DynamicProgressBar.integration.test.tsx`
+        *   `[ ]`   Test: `displays correct percentage from real selectUnifiedProjectProgress with stageRunProgress documents`
+        *   `[ ]`   Test: `progress does not change when state.selectedModels is modified`
+        *   `[ ]`   Test: `progress updates when document status changes from in_progress to completed`
+        *   `[ ]`   Test: `displays same completion state as SessionContributionsDisplayCard badge`
+        *   `[ ]`   Test: `displays non-zero percentage when documents exist regardless of selectedModels`
+    *   `[ ]`   `dialecticStore.mock.ts`
+        *   `[ ]`   Update mock to support `stageRunProgress` with document descriptors
+        *   `[ ]`   Add helper to create mock `StageProgressDetail` with `stepsDetail`
+        *   `[ ]`   Add helper to create mock `StepProgressDetail` with `totalModels` and `completedModels`
+    *   `[ ]`   `requirements.md`
+        *   `[ ]`   Unit tests verify component renders progress from `selectUnifiedProjectProgress`
+        *   `[ ]`   Integration tests verify progress reflects actual `stageRunProgress.documents`
+        *   `[ ]`   Tests confirm `selectedModels` changes do not affect displayed progress
+        *   `[ ]`   Tests verify consistency between DynamicProgressBar and badge indicators
+        *   `[ ]`   All tests pass with corrected selector logic from previous node
+    *   `[ ]`   **Commit** `test(ui): add unit and integration tests for DynamicProgressBar document-based progress`
+        *   `[ ]`   Added unit tests with populated stageDetails and stepsDetail
+        *   `[ ]`   Added integration tests verifying decoupling from selectedModels
+        *   `[ ]`   Updated dialecticStore.mock.ts with helpers for progress testing
+        *   `[ ]`   Tests verify consistency with badge completion indicators
+
+*   `[ ]` `[BE]` supabase/functions/_shared/services/`file_manager.ts` **Fix cleanup logic to only delete specific uploaded file**
+    *   `[ ]` `objective.md`
+        *   `[ ]` When DB registration fails after successful upload, only the specific file just uploaded should be deleted
+        *   `[ ]` Sibling files in the same directory (e.g., `seed_prompt.md`) must NOT be deleted
+    *   `[ ]` `role.md`
+        *   `[ ]` Infrastructure adapter for Supabase Storage file operations
+    *   `[ ]` `module.md`
+        *   `[ ]` Bounded to file upload, registration, and cleanup within `_shared/services`
+    *   `[ ]` `deps.md`
+        *   `[ ]` `this.supabase.storage` - Supabase storage client
+        *   `[ ]` `finalMainContentFilePath` - directory path (already in scope)
+        *   `[ ]` `finalFileName` - specific filename (already in scope)
+    *   `[ ]` interface/`file_manager.types.ts`
+        *   `[ ]` No type changes required for this fix
+    *   `[ ]` unit/`file_manager.test.ts`
+        *   `[ ]` Test: cleanup on DB error deletes only the specific uploaded file
+        *   `[ ]` Test: sibling files in same directory are preserved after cleanup
+    *   `[ ]` `file_manager.ts`
+        *   `[ ]` Replace lines 396-405: remove `list()` + loop over all files
+        *   `[ ]` Construct single path: `${finalMainContentFilePath}/${finalFileName}`
+        *   `[ ]` Call `remove([fullPathToRemove])` for only that one file
+    *   `[ ]` integration/`file_manager.integration.test.ts`
+        *   `[ ]` Test: upload file, simulate DB error, verify only that file is removed
+        *   `[ ]` Test: pre-existing sibling file survives cleanup
+    *   `[ ]` `requirements.md`
+        *   `[ ]` Cleanup must target exactly one file path
+        *   `[ ]` Cleanup must not use `list()` to enumerate directory contents
+    *   `[ ]` **Commit** `fix(be): file_manager cleanup only deletes specific uploaded file, not entire directory`
+
+*   `[ ]` `[BE]` supabase/functions/_shared/utils/`path_constructor.ts` **Update UserFeedback to use original document path**
+    *   `[ ]` `objective.md`
+        *   `[ ]` `FileType.UserFeedback` must place feedback file alongside original document
+        *   `[ ]` Feedback filename must be `{original_basename}_feedback.md`
+    *   `[ ]` `role.md`
+        *   `[ ]` Domain utility for deterministic storage path construction
+    *   `[ ]` `module.md`
+        *   `[ ]` Bounded to path construction logic in `_shared/utils`
+    *   `[ ]` `deps.md`
+        *   `[ ]` `PathContext` from `file_manager.types.ts` - add `originalStoragePath` field
+        *   `[ ]` `sanitizeForPath` - existing helper in same file
+    *   `[ ]` interface/`file_manager.types.ts`
+        *   `[ ]` Add optional `originalStoragePath?: string` to `PathContext` interface
+        *   `[ ]` Add optional `originalBaseName?: string` to `PathContext` interface (for feedback filename derivation)
+    *   `[ ]` interface/tests/`path_constructor.interface.test.ts`
+        *   `[ ]` Test: `PathContext` with `originalStoragePath` satisfies interface
+        *   `[ ]` Test: `PathContext` with `originalBaseName` satisfies interface
+    *   `[ ]` interface/guards/`type_guards.file_manager.ts`
+        *   `[ ]` No new guards required (fields are optional)
+    *   `[ ]` unit/`path_constructor.test.ts`
+        *   `[ ]` Test: `UserFeedback` with `originalStoragePath` returns that path as `storagePath`
+        *   `[ ]` Test: `UserFeedback` with `originalBaseName` returns `{baseName}_feedback.md` as `fileName`
+        *   `[ ]` Test: `UserFeedback` without `originalStoragePath` falls back to legacy `stageRootPath`
+    *   `[ ]` `path_constructor.ts`
+        *   `[ ]` Update `FileType.UserFeedback` case (lines 159-161)
+        *   `[ ]` If `context.originalStoragePath` and `context.originalBaseName` provided, use them
+        *   `[ ]` Construct `fileName` as `${originalBaseName}_feedback.md`
+        *   `[ ]` Otherwise fall back to legacy behavior
+    *   `[ ]` integration/`path_constructor.integration.test.ts`
+        *   `[ ]` Test: full path context produces correct feedback path alongside rendered document
+    *   `[ ]` `requirements.md`
+        *   `[ ]` Feedback file must be in same directory as original document
+        *   `[ ]` Feedback filename must preserve original document's naming pattern
+        *   `[ ]` Legacy behavior preserved when optional fields not provided
+    *   `[ ]` **Commit** `feat(be): path_constructor UserFeedback supports original document path derivation`
+
+*   `[ ]` `[BE]` supabase/functions/dialectic-service/`submitStageDocumentFeedback.ts` **Look up original document path for feedback placement**
+    *   `[ ]` `objective.md`
+        *   `[ ]` Query `dialectic_project_resources` using `sourceContributionId` to get original document's `storage_path` and `file_name`
+        *   `[ ]` Derive feedback path context from original document location
+        *   `[ ]` Pass `originalStoragePath` and `originalBaseName` to `pathContext`
+    *   `[ ]` `role.md`
+        *   `[ ]` Application service for handling user feedback submission
+    *   `[ ]` `module.md`
+        *   `[ ]` Bounded to dialectic-service feedback flow
+    *   `[ ]` `deps.md`
+        *   `[ ]` `dbClient` - Supabase client for DB queries
+        *   `[ ]` `fileManager.uploadAndRegisterFile` - for storage upload
+        *   `[ ]` `PathContext` with new optional fields from previous node
+        *   `[ ]` `dialectic_project_resources` table - to look up original document
+    *   `[ ]` interface/`dialectic.interface.ts`
+        *   `[ ]` No changes to `SubmitStageDocumentFeedbackPayload` (already has `sourceContributionId`)
+    *   `[ ]` unit/`submitStageDocumentFeedback.test.ts`
+        *   `[ ]` Test: when `sourceContributionId` provided, queries `dialectic_project_resources` for original doc
+        *   `[ ]` Test: error returned if original document lookup fails
+        *   `[ ]` Test: `pathContext` includes `originalStoragePath` from looked-up resource
+        *   `[ ]` Test: `pathContext` includes `originalBaseName` derived from looked-up `file_name`
+    *   `[ ]` `submitStageDocumentFeedback.ts`
+        *   `[ ]` After validation, query `dialectic_project_resources` where `source_contribution_id = sourceContributionId` and `resource_type = 'rendered_document'`
+        *   `[ ]` Extract `storage_path` and `file_name` from result
+        *   `[ ]` Derive `originalBaseName` by removing `.md` extension from `file_name`
+        *   `[ ]` Add `originalStoragePath` and `originalBaseName` to `uploadContext.pathContext`
+    *   `[ ]` integration/`submitStageDocumentFeedback.integration.test.ts`
+        *   `[ ]` Test: feedback file created alongside original rendered document
+        *   `[ ]` Test: feedback filename is `{original}_feedback.md`
+        *   `[ ]` Test: seed_prompt.md in same stage directory is not affected
+    *   `[ ]` `requirements.md`
+        *   `[ ]` `sourceContributionId` must be present to save feedback
+        *   `[ ]` Feedback file must be placed in original document's directory
+        *   `[ ]` Feedback filename must match pattern `{originalBaseName}_feedback.md`
+    *   `[ ]` **Commit** `feat(be): submitStageDocumentFeedback places feedback alongside original document`
+
+*   `[ ]` `[COMMIT]` **Final checkpoint** `fix(be): feedback files placed correctly and cleanup preserves sibling files`
+
+
 # ToDo
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
     -- User reports that a single document failed and they liked the other documents, but had to regenerate the entire stage
@@ -1707,12 +2382,6 @@
     --- If we "only" highlight downstream products, all downstream products are invalid, because the header_context used to generate them would be invalid 
     --- PROPOSED: Implement regeneration prior to stage advancement, disable regeneration for documents who have downstream documents, set up future sprint for branching/iteration to support hints to regenerate downstream documents if a user regenerates upstream documents
     --- BLOCKER: Some stages are fundamentally dependent on all prior outputs, like synthesis, and the entire stage needs to be rerun if thesis/antithesis documents are regenerated
-
-    x Email validation disabled
-    -- Need to actually set up email validation
-    
-    x User password changes disabled
-    -- need to actually set up password changes 
 
     - New user sign in banner doesn't display, throws console error  
     -- Chase, diagnose, fix 

@@ -413,30 +413,8 @@ export const GeneratedContributionCard: React.FC<
 		Boolean(documentResourceState?.sourceContributionId);
 
 	// Determine if content or feedback has been modified
-	const hasContentChanges = Boolean(documentResourceState?.currentDraftMarkdown);
-	const hasFeedbackChanges = Boolean(documentResourceState?.feedbackDraftMarkdown);
-	const hasUnsavedChanges = hasContentChanges || hasFeedbackChanges;
-
-	const isSaving = isSavingContributionEdit || isSubmittingStageDocumentFeedback;
-
-	const handleSaveChanges = useCallback(async () => {
-		// Save both content edits and feedback if they exist
-		const promises: Promise<void>[] = [];
-
-		if (canSaveEdit) {
-			promises.push(handleSaveEdit());
-		}
-		if (canSaveFeedback) {
-			promises.push(handleSaveFeedback());
-		}
-
-		if (promises.length === 0) {
-			toast.info("No changes to save.");
-			return;
-		}
-
-		await Promise.all(promises);
-	}, [canSaveEdit, canSaveFeedback, handleSaveEdit, handleSaveFeedback]);
+	const hasContentChanges = Boolean(documentResourceState?.isDirty);
+	const hasFeedbackChanges = Boolean(documentResourceState?.feedbackIsDirty);
 
 	const selectedDocumentKey = focusedDocument ? focusedDocument.documentKey : null;
 	const showDocument =
@@ -578,7 +556,7 @@ export const GeneratedContributionCard: React.FC<
 						</div>
 					</div>
 
-					{/* Status Badge and Save Button */}
+					{/* Status Badge */}
 					<div className="flex items-center gap-3">
 						{documentDescriptor && isValidMarkdownDocument && (
 							<Badge
@@ -592,26 +570,6 @@ export const GeneratedContributionCard: React.FC<
 							>
 								{formatStatusLabel(documentDescriptor.status)}
 							</Badge>
-						)}
-
-						{hasUnsavedChanges && (
-							<div className="flex items-center gap-2">
-								<span className="text-xs text-amber-600 dark:text-amber-400">Unsaved changes</span>
-								<Button
-									onClick={handleSaveChanges}
-									disabled={isSaving || isDraftLoading}
-									size="sm"
-								>
-									{isSaving ? (
-										<>
-											<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-											Saving...
-										</>
-									) : (
-										"Save Changes"
-									)}
-								</Button>
-							</div>
 						)}
 					</div>
 				</div>
@@ -687,7 +645,7 @@ export const GeneratedContributionCard: React.FC<
 								<div className="hidden lg:block">
 									<ResizablePanelGroup direction="horizontal" className="min-h-[400px] rounded-lg border">
 										<ResizablePanel defaultSize={60} minSize={30}>
-											<div className="h-full p-4">
+											<div className="h-full p-4 space-y-2">
 												<TextInputArea
 													label="Document Content"
 													value={documentResourceState?.currentDraftMarkdown || baselineContent}
@@ -699,11 +657,33 @@ export const GeneratedContributionCard: React.FC<
 													showPreviewToggle
 													initialPreviewMode
 												/>
+												<div className="flex flex-col gap-1">
+													{hasContentChanges && (
+														<span className="text-xs text-amber-600 dark:text-amber-400">Unsaved edits</span>
+													)}
+													{saveContributionEditError && (
+														<span className="text-xs text-destructive">{saveContributionEditError.message}</span>
+													)}
+													<Button
+														onClick={handleSaveEdit}
+														disabled={!canSaveEdit || isSavingContributionEdit || isDraftLoading}
+														size="sm"
+													>
+														{isSavingContributionEdit ? (
+															<>
+																<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+																Saving...
+															</>
+														) : (
+															"Save Edit"
+														)}
+													</Button>
+												</div>
 											</div>
 										</ResizablePanel>
 										<ResizableHandle withHandle />
 										<ResizablePanel defaultSize={40} minSize={25}>
-											<div className="h-full p-4 bg-muted/20">
+											<div className="h-full p-4 bg-muted/20 space-y-2">
 												<TextInputArea
 													label="Feedback"
 													value={feedbackDraftValue}
@@ -713,6 +693,28 @@ export const GeneratedContributionCard: React.FC<
 													dataTestId={`stage-document-feedback-${modelId}-${selectedDocumentKey}`}
 													showPreviewToggle
 												/>
+												<div className="flex flex-col gap-1">
+													{hasFeedbackChanges && (
+														<span className="text-xs text-amber-600 dark:text-amber-400">Unsaved feedback</span>
+													)}
+													{submitStageDocumentFeedbackError && (
+														<span className="text-xs text-destructive">{submitStageDocumentFeedbackError.message}</span>
+													)}
+													<Button
+														onClick={handleSaveFeedback}
+														disabled={!canSaveFeedback || isSubmittingStageDocumentFeedback}
+														size="sm"
+													>
+														{isSubmittingStageDocumentFeedback ? (
+															<>
+																<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+																Saving...
+															</>
+														) : (
+															"Save Feedback"
+														)}
+													</Button>
+												</div>
 											</div>
 										</ResizablePanel>
 									</ResizablePanelGroup>
@@ -720,49 +722,80 @@ export const GeneratedContributionCard: React.FC<
 
 								{/* Stacked Layout (mobile/tablet) */}
 								<div className="lg:hidden space-y-4">
-									<TextInputArea
-										label="Document Content"
-										value={documentResourceState?.currentDraftMarkdown || baselineContent}
-										onChange={handleDocumentContentChange}
-										disabled={isDraftLoading || isSavingContributionEdit}
-										placeholder="No content available."
-										id={`stage-document-content-mobile-${modelId}-${selectedDocumentKey}`}
-										dataTestId={`stage-document-content-mobile-${modelId}-${selectedDocumentKey}`}
-										showPreviewToggle
-										initialPreviewMode
-									/>
+									<div className="space-y-2">
+										<TextInputArea
+											label="Document Content"
+											value={documentResourceState?.currentDraftMarkdown || baselineContent}
+											onChange={handleDocumentContentChange}
+											disabled={isDraftLoading || isSavingContributionEdit}
+											placeholder="No content available."
+											id={`stage-document-content-mobile-${modelId}-${selectedDocumentKey}`}
+											dataTestId={`stage-document-content-mobile-${modelId}-${selectedDocumentKey}`}
+											showPreviewToggle
+											initialPreviewMode
+										/>
+										<div className="flex flex-col gap-1">
+											{hasContentChanges && (
+												<span className="text-xs text-amber-600 dark:text-amber-400">Unsaved edits</span>
+											)}
+											{saveContributionEditError && (
+												<span className="text-xs text-destructive">{saveContributionEditError.message}</span>
+											)}
+											<Button
+												onClick={handleSaveEdit}
+												disabled={!canSaveEdit || isSavingContributionEdit || isDraftLoading}
+												size="sm"
+											>
+												{isSavingContributionEdit ? (
+													<>
+														<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+														Saving...
+													</>
+												) : (
+													"Save Edit"
+												)}
+											</Button>
+										</div>
+									</div>
 
-									<TextInputArea
-										label="Feedback"
-										value={feedbackDraftValue}
-										onChange={handleFeedbackDraftChange}
-										placeholder={`Enter feedback for this document...`}
-										id={`stage-document-feedback-mobile-${modelId}-${selectedDocumentKey}`}
-										dataTestId={`stage-document-feedback-mobile-${modelId}-${selectedDocumentKey}`}
-										showPreviewToggle
-									/>
+									<div className="space-y-2">
+										<TextInputArea
+											label="Feedback"
+											value={feedbackDraftValue}
+											onChange={handleFeedbackDraftChange}
+											placeholder={`Enter feedback for this document...`}
+											id={`stage-document-feedback-mobile-${modelId}-${selectedDocumentKey}`}
+											dataTestId={`stage-document-feedback-mobile-${modelId}-${selectedDocumentKey}`}
+											showPreviewToggle
+										/>
+										<div className="flex flex-col gap-1">
+											{hasFeedbackChanges && (
+												<span className="text-xs text-amber-600 dark:text-amber-400">Unsaved feedback</span>
+											)}
+											{submitStageDocumentFeedbackError && (
+												<span className="text-xs text-destructive">{submitStageDocumentFeedbackError.message}</span>
+											)}
+											<Button
+												onClick={handleSaveFeedback}
+												disabled={!canSaveFeedback || isSubmittingStageDocumentFeedback}
+												size="sm"
+											>
+												{isSubmittingStageDocumentFeedback ? (
+													<>
+														<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+														Saving...
+													</>
+												) : (
+													"Save Feedback"
+												)}
+											</Button>
+										</div>
+									</div>
 								</div>
 							</>
 						) : (
 							<p className="text-xs text-muted-foreground">
 							</p>
-						)}
-
-						{/* Error Alerts */}
-						{saveContributionEditError && (
-							<Alert variant="destructive">
-								<AlertDescription>
-									{saveContributionEditError.message}
-								</AlertDescription>
-							</Alert>
-						)}
-
-						{submitStageDocumentFeedbackError && (
-							<Alert variant="destructive">
-								<AlertDescription>
-									{submitStageDocumentFeedbackError.message}
-								</AlertDescription>
-							</Alert>
 						)}
 					</>
 				) : (

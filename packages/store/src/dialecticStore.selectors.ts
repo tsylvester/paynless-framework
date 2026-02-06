@@ -805,8 +805,7 @@ export const selectUnifiedProjectProgress = (
     state: DialecticStateValues,
     sessionId: string
 ): UnifiedProjectProgress => {
-    const project = state.currentProjectDetail;
-    const template = project?.dialectic_process_templates ?? null;
+    const template = state.currentProcessTemplate ?? null;
     const stages = template ? getSortedStagesFromTemplate(template) : [];
     const totalStages = stages.length;
     const session = selectSessionById(state, sessionId);
@@ -1076,6 +1075,48 @@ export const selectEditedDocumentByKey = (
     compositeKey: string
 ): StageDocumentContentState | undefined => {
     return state.stageDocumentContent[compositeKey];
+};
+
+/** Aggregate dirty state for documents in a stage run. Used by SubmitResponsesButton and unsaved-work indicators. */
+export interface StageUnsavedChangesResult {
+    hasUnsavedEdits: boolean;
+    hasUnsavedFeedback: boolean;
+}
+
+/**
+ * Returns whether any document in the given stage run has unsaved edits (isDirty) or unsaved feedback (feedbackIsDirty).
+ * Pure selector over stageDocumentContent; only considers keys matching sessionId:stageSlug:iterationNumber.
+ *
+ * @param state - The dialectic state values
+ * @param sessionId - The session identifier
+ * @param stageSlug - The stage slug
+ * @param iterationNumber - The iteration number
+ * @returns Aggregate dirty state for the stage run
+ */
+export const selectStageHasUnsavedChanges = (
+    state: DialecticStateValues,
+    sessionId: string,
+    stageSlug: string,
+    iterationNumber: number
+): StageUnsavedChangesResult => {
+    const keyPrefix = `${sessionId}:${stageSlug}:${iterationNumber}:`;
+    let hasUnsavedEdits = false;
+    let hasUnsavedFeedback = false;
+    for (const [key, entry] of Object.entries(state.stageDocumentContent)) {
+        if (!key.startsWith(keyPrefix)) {
+            continue;
+        }
+        if (entry.isDirty) {
+            hasUnsavedEdits = true;
+        }
+        if (entry.feedbackIsDirty) {
+            hasUnsavedFeedback = true;
+        }
+        if (hasUnsavedEdits && hasUnsavedFeedback) {
+            break;
+        }
+    }
+    return { hasUnsavedEdits, hasUnsavedFeedback };
 };
 
 /**

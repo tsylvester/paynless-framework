@@ -33,7 +33,7 @@ export async function submitStageDocumentFeedback(
   } = payload;
 
   if (
-    !sessionId || !stageSlug || !iterationNumber === undefined || !documentKey ||
+    !sessionId || !stageSlug || iterationNumber === undefined || !documentKey ||
     !modelId || !feedbackContent || !userId || !projectId
   ) {
     deps.logger.warn('Missing required fields in feedback payload.', { payload });

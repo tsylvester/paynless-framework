@@ -59,6 +59,12 @@ import {
 // However, preferring selectors that operate on the store's state is generally better.
 export const selectIsStageReadyForSessionIteration = vi.fn<[DialecticStateValues, string, string, string, number], boolean>().mockReturnValue(false);
 export const selectFeedbackForStageIteration = vi.fn<[DialecticStateValues, string, string, string, number], DialecticFeedback[] | null>().mockReturnValue(null);
+export const selectStageHasUnsavedChanges = vi
+	.fn<
+		[DialecticStateValues, string, string, number],
+		{ hasUnsavedEdits: boolean; hasUnsavedFeedback: boolean }
+	>()
+	.mockReturnValue({ hasUnsavedEdits: false, hasUnsavedFeedback: false });
 
 // Changed to actual selectors
 export const selectIsLoadingProjectDetail = (state: DialecticStateValues): boolean => state.isLoadingProjectDetail;
@@ -748,6 +754,7 @@ export const initializeMockDialecticState = (initialStateOverrides?: Partial<Dia
   // Ensure that selectors converted to actual functions are NOT reset as vi.fn()
   selectIsStageReadyForSessionIteration.mockClear().mockReturnValue(false);
   selectFeedbackForStageIteration.mockClear().mockReturnValue(null);
+  selectStageHasUnsavedChanges.mockClear().mockReturnValue({ hasUnsavedEdits: false, hasUnsavedFeedback: false });
   selectSelectedModels.mockClear().mockReturnValue([]);
   selectOverlay.mockClear();
 

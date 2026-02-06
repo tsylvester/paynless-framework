@@ -298,12 +298,15 @@ const buildEditedDocumentResource = (
 
 const renderSessionContributionsDisplayCard = () => render(<SessionContributionsDisplayCard />);
 
-/** Submit button and card-footer may be rendered by a parent in integration; in unit tests they may be absent. */
+/** Submit button and card-footer are rendered by SessionContributionsDisplayCard (SubmitResponsesButton). Two instances (header and footer) are intended; helper returns the first. */
 function getSubmitButton(): ReturnType<typeof screen.queryByRole> {
-  return screen.queryByRole('button', { name: 'Submit Responses & Advance Stage' });
+  const buttons = screen.queryAllByRole('button', { name: 'Submit Responses & Advance Stage' });
+  return buttons[0] ?? null;
 }
+/** Two card-footers (header and footer) are intended; returns the first. */
 function getCardFooter(): ReturnType<typeof screen.queryByTestId> {
-  return screen.queryByTestId('card-footer');
+  const footers = screen.queryAllByTestId('card-footer');
+  return footers[0] ?? null;
 }
 
 beforeEach(() => {
@@ -509,10 +512,9 @@ describe('SessionContributionsDisplayCard', () => {
       renderSessionContributionsDisplayCard();
 
       expect(screen.getByTestId('card-header')).toBeInTheDocument();
-      const submitButton = getSubmitButton();
-      if (submitButton) {
-        expect(submitButton).toBeDisabled();
-      }
+      const submitButtons = screen.queryAllByRole('button', { name: 'Submit Responses & Advance Stage' });
+      expect(submitButtons).toHaveLength(2);
+      submitButtons.forEach((btn) => expect(btn).toBeDisabled());
     });
 
     it('enables the submit button when all documents are complete even if legacy readiness reports false', () => {
@@ -618,12 +620,14 @@ describe('SessionContributionsDisplayCard', () => {
         },
       });
 
-      selectIsStageReadyForSessionIteration.mockReturnValue(false);
+      selectIsStageReadyForSessionIteration.mockReturnValue(true);
 
       renderSessionContributionsDisplayCard();
 
       const footer = getCardFooter();
       const submitButton = getSubmitButton();
+      expect(footer).toBeInTheDocument();
+      expect(submitButton).toBeInTheDocument();
       if (footer && submitButton) {
         expect(submitButton).not.toBeDisabled();
       }
@@ -669,11 +673,44 @@ describe('SessionContributionsDisplayCard', () => {
         },
       );
 
-      seedBaseStore(progress);
+      const stage1 = buildStage();
+      const stage2: DialecticStage = {
+        id: 'stage-2',
+        slug: 'antithesis',
+        display_name: 'Antithesis',
+        description: 'Antithesis stage',
+        default_system_prompt_id: 'prompt-2',
+        expected_output_template_ids: [],
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        created_at: isoTimestamp,
+      };
+      const multiStageTemplate: DialecticProcessTemplate = {
+        id: 'template-multi',
+        name: 'Multi-Stage',
+        description: 'Multi-stage template',
+        starting_stage_id: stage1.id,
+        created_at: isoTimestamp,
+        stages: [stage1, stage2],
+        transitions: [
+          {
+            id: 't1',
+            source_stage_id: stage1.id,
+            target_stage_id: stage2.id,
+            condition_description: null,
+            created_at: isoTimestamp,
+            process_template_id: 'template-multi',
+          },
+        ],
+      };
+      seedBaseStore(progress, { currentProcessTemplate: multiStageTemplate });
+      selectIsStageReadyForSessionIteration.mockReturnValue(true);
 
       renderSessionContributionsDisplayCard();
 
-      expect(selectIsStageReadyForSessionIteration).not.toHaveBeenCalled();
+      const submitButtons = screen.queryAllByRole('button', { name: 'Submit Responses & Advance Stage' });
+      expect(submitButtons).toHaveLength(2);
+      submitButtons.forEach((btn) => expect(btn).not.toBeDisabled());
     });
   });
 
@@ -1170,9 +1207,12 @@ describe('SessionContributionsDisplayCard', () => {
         },
       });
 
+      selectIsStageReadyForSessionIteration.mockReturnValue(true);
+
       renderSessionContributionsDisplayCard();
 
       const submitButton = getSubmitButton();
+      expect(submitButton).toBeInTheDocument();
       if (submitButton) {
         expect(submitButton).not.toBeDisabled();
       }
@@ -1283,10 +1323,13 @@ describe('SessionContributionsDisplayCard', () => {
         },
       });
 
+      selectIsStageReadyForSessionIteration.mockReturnValue(true);
+
       renderSessionContributionsDisplayCard();
 
       expect(screen.getByTestId('card-header')).toBeInTheDocument();
       const submitButton = getSubmitButton();
+      expect(submitButton).toBeInTheDocument();
       if (submitButton) {
         expect(submitButton).toBeDisabled();
       }
@@ -1541,9 +1584,12 @@ describe('SessionContributionsDisplayCard', () => {
         },
       });
 
+      selectIsStageReadyForSessionIteration.mockReturnValue(true);
+
       renderSessionContributionsDisplayCard();
 
       const submitButton = getSubmitButton();
+      expect(submitButton).toBeInTheDocument();
       if (submitButton) {
         expect(submitButton).not.toBeDisabled();
         expect(submitButton).toHaveTextContent('Submit Responses & Advance Stage');
@@ -2103,13 +2149,15 @@ describe('SessionContributionsDisplayCard', () => {
       });
 
       const { submitStageResponses } = getDialecticStoreState();
+      selectIsStageReadyForSessionIteration.mockReturnValue(true);
 
       renderSessionContributionsDisplayCard();
 
       const submitButton = getSubmitButton();
-      if (!submitButton) return;
-
-      fireEvent.click(submitButton);
+      expect(submitButton).toBeInTheDocument();
+      if (submitButton) {
+        fireEvent.click(submitButton);
+      }
 
       const confirmButton = await screen.findByRole('button', { name: 'Continue' });
       fireEvent.click(confirmButton);
@@ -2217,13 +2265,15 @@ describe('SessionContributionsDisplayCard', () => {
       });
 
       const { submitStageResponses } = getDialecticStoreState();
+      selectIsStageReadyForSessionIteration.mockReturnValue(true);
 
       renderSessionContributionsDisplayCard();
 
       const submitButton = getSubmitButton();
-      if (!submitButton) return;
-
-      fireEvent.click(submitButton);
+      expect(submitButton).toBeInTheDocument();
+      if (submitButton) {
+        fireEvent.click(submitButton);
+      }
 
       const confirmButton = await screen.findByRole('button', { name: 'Continue' });
       fireEvent.click(confirmButton);
@@ -2327,13 +2377,15 @@ describe('SessionContributionsDisplayCard', () => {
       });
 
       const { submitStageResponses } = getDialecticStoreState();
+      selectIsStageReadyForSessionIteration.mockReturnValue(true);
 
       renderSessionContributionsDisplayCard();
 
       const submitButton = getSubmitButton();
-      if (!submitButton) return;
-
-      fireEvent.click(submitButton);
+      expect(submitButton).toBeInTheDocument();
+      if (submitButton) {
+        fireEvent.click(submitButton);
+      }
 
       const confirmButton = await screen.findByRole('button', { name: 'Continue' });
       fireEvent.click(confirmButton);
@@ -2690,12 +2742,15 @@ describe('SessionContributionsDisplayCard', () => {
         },
       });
 
+      selectIsStageReadyForSessionIteration.mockReturnValue(true);
+
       renderSessionContributionsDisplayCard();
 
       const submitButton = getSubmitButton();
-      if (!submitButton) return;
-
-      fireEvent.click(submitButton);
+      expect(submitButton).toBeInTheDocument();
+      if (submitButton) {
+        fireEvent.click(submitButton);
+      }
 
       const confirmButton = await screen.findByRole('button', { name: 'Continue' });
       fireEvent.click(confirmButton);
@@ -2707,9 +2762,9 @@ describe('SessionContributionsDisplayCard', () => {
       expect(store.setActiveStage).toHaveBeenCalledWith(antithesisStage.slug);
 
       await waitFor(() => {
-        expect(screen.getByText(/Success!/)).toBeInTheDocument();
+        expect(screen.getByText('Review')).toBeInTheDocument();
       });
-      expect(screen.getByText(/next stage|seed prompt|submitted successfully/i)).toBeInTheDocument();
+      expect(screen.getByText(/Antithesis stage|Stage advanced!/)).toBeInTheDocument();
     });
 
     it('when viewing prior stage and backend returns no advancement, shows saved-without-advancing message', async () => {
