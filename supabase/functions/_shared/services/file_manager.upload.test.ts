@@ -146,24 +146,19 @@ Deno.test('FileManagerService', async (t) => {
           },
           storageMock: {
             uploadResult: { data: { path: expectedFullPath }, error: null },
-            // Ensure cleanup path executes (list returns the uploaded file name)
-            listResult: { data: [{ name: expectedPathParts.fileName }], error: null },
             removeResult: { data: [], error: null },
           },
         };
         beforeEach(config);
-        // Initialize spy before the call so it tracks the remove call
         const storageBucket = setup.spies.storage.from('test-bucket');
+        const listSpy = storageBucket.listSpy;
         const removeSpy = storageBucket.removeSpy;
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
-        // Expect RED: prove intended behavior (message + details) and cleanup attempted
         assertEquals(record, null);
         assertExists(error);
         assertEquals(error?.message, 'Database registration failed after successful upload.');
-        // Intended: details should include DB code/details for easier diagnosis
-        // This will be RED until implementation propagates details
         if (isPostgrestError(error)) {
           assertExists(error.details, 'PostgrestError should have details');
           assert(typeof error.details === 'string', 'error.details should be a string');
@@ -174,13 +169,11 @@ Deno.test('FileManagerService', async (t) => {
           assert(detailsText.includes('PGRST116') || detailsText.includes('constraint'));
         }
 
-        // Ensure we attempted to remove the uploaded file path
-        assertExists(removeSpy, "Remove spy should exist");
-        assert(removeSpy.calls.length > 0, "Remove should have been called");
-        const removedPathsArg = removeSpy.calls[0]?.args[0];
-        assertExists(removedPathsArg);
-        assert(Array.isArray(removedPathsArg), 'removedPathsArg should be an array');
-        assert(removedPathsArg.some((p: string) => p === expectedFullPath));
+        // Cleanup must target only the specific uploaded file; must not use list()
+        assert(listSpy.calls.length === 0, 'Cleanup must not call storage.list');
+        assertExists(removeSpy, 'Remove spy should exist');
+        assertEquals(removeSpy.calls.length, 1, 'Remove should have been called exactly once');
+        assertEquals(removeSpy.calls[0].args[0], [expectedFullPath], 'Remove must be called with only the uploaded file path');
       } finally {
         afterEach();
       }
@@ -895,22 +888,14 @@ Deno.test('FileManagerService', async (t) => {
             },
           },
           storageMock: {
-            uploadResult: { data: { path: expectedFullPath }, error: null }, // Upload succeeds
-            listResult: { data: [{ 
-              name: expectedPathParts.fileName, 
-              id: 'file-id-for-cleanup',
-              updated_at: new Date().toISOString(),
-              created_at: new Date().toISOString(),
-              last_accessed_at: new Date().toISOString(),
-              metadata: { 'e-tag': 'abc'} 
-            }], error: null }, // Mock the list call
-            removeResult: { data: [{ name: 'test-bucket' }], error: null }, // Mock the subsequent remove call
+            uploadResult: { data: { path: expectedFullPath }, error: null },
+            removeResult: { data: [], error: null },
           },
         };
         beforeEach(config);
-        // Initialize spy before the call so it tracks the list call
         const storageBucket = setup.spies.storage.from('test-bucket');
         const listSpy = storageBucket.listSpy;
+        const removeSpy = storageBucket.removeSpy;
 
         const context: UploadContext = {
           ...baseUploadContext,
@@ -925,7 +910,6 @@ Deno.test('FileManagerService', async (t) => {
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
         assertExists(error);
-        // Error should be wrapped with descriptive message when upload succeeds but DB fails
         if (isPostgrestError(error)) {
           assertEquals(error.message, 'Simulated DB insert error');
           assertEquals(error.code, 'XXYYZ');
@@ -937,15 +921,11 @@ Deno.test('FileManagerService', async (t) => {
         }
         assertEquals(record, null);
 
-        // Check that storage.list was called for cleanup
-        assertExists(listSpy, "List spy should exist");
-        assertExists(listSpy.calls[0], "List should have been called");
-        assertEquals(listSpy.calls[0].args[0], expectedPathParts.storagePath);
-        
-        // Check that storage.remove was called with the correct file path
-        const removeSpy = storageBucket.removeSpy;
+        // Sibling files preserved: cleanup must not use list(); only the specific uploaded file path is removed
+        assert(listSpy.calls.length === 0, 'Cleanup must not call storage.list');
         assertExists(removeSpy);
-        assertEquals(removeSpy.calls[0].args[0], [expectedFullPath]);
+        assertEquals(removeSpy.calls.length, 1, 'Remove should have been called exactly once');
+        assertEquals(removeSpy.calls[0].args[0], [expectedFullPath], 'Remove must be called with only the uploaded file path');
 
       } finally {
         afterEach();

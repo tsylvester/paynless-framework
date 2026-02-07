@@ -2153,115 +2153,219 @@
     *   `[✅]`   **Commit** `test(ui): add integration tests for GeneratedContributionCard unsaved indicators`
         *   `[✅]`   Added integration tests verifying isDirty flag drives unsaved indicators
 
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore.selectors.ts` **Fix selectUnifiedProjectProgress to calculate progress from actual documents, not selectedModels**
-    *   `[ ]`   `objective.md`
-        *   `[ ]`   Remove dependency on `state.selectedModels` for progress calculation
-        *   `[ ]`   Calculate step progress from actual documents in `stageRunProgress.documents`
-        *   `[ ]`   Use document's `stepKey` to associate documents with steps
-        *   `[ ]`   Derive `totalModelsForStep` from document count, not `selectedModels.length`
-        *   `[ ]`   Preserve document `modelId` for display/attribution (but not for filtering)
-        *   `[ ]`   Ensure progress for completed work is unaffected by changes to `selectedModels`
-    *   `[ ]`   `role.md`
-        *   `[ ]`   Domain selector that computes unified project progress from store state
-        *   `[ ]`   Single source of truth for progress calculation consumed by UI components
-    *   `[ ]`   `module.md`
-        *   `[ ]`   Located in `packages/store/src/dialecticStore.selectors.ts`
-        *   `[ ]`   Exports `selectUnifiedProjectProgress` selector
-        *   `[ ]`   Returns `UnifiedProjectProgress` with `stageDetails[].stepsDetail[]`
-    *   `[ ]`   `deps.md`
-        *   `[ ]`   `DialecticStateValues` from `@paynless/types`
-        *   `[ ]`   `selectSessionById` - gets session by ID from current project
-        *   `[ ]`   `selectStageRunProgress` - gets progress snapshot for session/stage/iteration
-        *   `[ ]`   `selectValidMarkdownDocumentKeys` - filters to valid markdown document keys
-        *   `[ ]`   `getSortedStagesFromTemplate` - helper to sort stages by transition order
-        *   `[ ]`   `extractLogicalDocumentKeyFromComposite` - extracts document key from composite key
-        *   `[ ]`   `isModelStep` - determines if step produces model-generated documents
-    *   `[ ]`   `dialectic.types.ts` (no changes required)
-        *   `[ ]`   `UnifiedProjectProgress` - already correctly typed
-        *   `[ ]`   `StageProgressDetail` - already correctly typed
-        *   `[ ]`   `StepProgressDetail` - already correctly typed
-        *   `[ ]`   `StageRunDocumentDescriptor` - includes `stepKey` and `modelId` fields
-    *   `[ ]`   unit/`dialecticStore.selectors.test.ts`
-        *   `[ ]`   Test: `selectUnifiedProjectProgress returns correct progress when documents exist regardless of selectedModels being empty`
-        *   `[ ]`   Test: `selectUnifiedProjectProgress counts documents by stepKey, not by selectedModels count`
-        *   `[ ]`   Test: `selectUnifiedProjectProgress changing selectedModels does not affect progress for completed documents`
-        *   `[ ]`   Test: `selectUnifiedProjectProgress returns 0% and not_started when no documents exist for model step`
-        *   `[ ]`   Test: `selectUnifiedProjectProgress returns correct step percentage with mixed document statuses (completed, failed, in_progress)`
-        *   `[ ]`   Test: `selectUnifiedProjectProgress returns 100% for step when all documents have status completed`
-    *   `[ ]`   `dialecticStore.selectors.ts`
-        *   `[ ]`   Remove line 813: `const selectedModels = state.selectedModels || [];`
-        *   `[ ]`   Remove line 814: `const totalModels = selectedModels.length;`
-        *   `[ ]`   Remove line 815: `const selectedModelIdSet = new Set(selectedModels.map((m) => m.id));`
-        *   `[ ]`   Rewrite model-step branch (lines 864-894) to count documents from `progress.documents` by `stepKey`
-        *   `[ ]`   Remove filter: `if (!selectedModelIdSet.has(desc.modelId)) continue;` (line 886)
-        *   `[ ]`   Set `totalModelsForStep` = count of documents for this step
-        *   `[ ]`   Set `completedModelsForStep` = count of documents with `status === 'completed'`
-        *   `[ ]`   Handle edge case: if no documents for step, use `stepStatus` from `stepStatuses`
-    *   `[ ]`   `dialecticStore.mock.ts` (update if needed)
-        *   `[ ]`   Ensure mock state allows testing without `selectedModels` dependency
-    *   `[ ]`   integration/`dialecticStore.progress.integration.test.ts`
-        *   `[ ]`   Test: `selectUnifiedProjectProgress returns correct percentage when stageRunProgress has completed documents and selectedModels is empty`
-        *   `[ ]`   Test: `selectUnifiedProjectProgress returns same percentage before and after selectedModels changes`
-        *   `[ ]`   Test: `selectUnifiedProjectProgress matches selectStageProgressSummary completion state`
-    *   `[ ]`   `requirements.md`
-        *   `[ ]`   Progress calculation is based solely on actual documents in `stageRunProgress.documents`
-        *   `[ ]`   `state.selectedModels` has zero effect on progress for completed work
-        *   `[ ]`   Document `modelId` is preserved for display but not used for filtering
-        *   `[ ]`   `selectUnifiedProjectProgress` and `selectStageProgressSummary` show consistent completion state
-        *   `[ ]`   All existing tests pass with updated logic
-    *   `[ ]`   **Commit** `fix(store): selectUnifiedProjectProgress calculates progress from actual documents, not selectedModels`
-        *   `[ ]`   Removed dependency on state.selectedModels for progress calculation
-        *   `[ ]`   Model step progress now counts documents by stepKey from stageRunProgress.documents
-        *   `[ ]`   Added unit tests verifying decoupling from selectedModels
-        *   `[ ]`   Added integration tests verifying consistency with selectStageProgressSummary
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`getAllStageProgress.ts` **Enhance to return job-level progress per step per model instead of document-based progress**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Return granular job completion data grouped by recipe step_key
+        *   `[✅]`   For each step, return: totalJobs, completedJobs, inProgressJobs, failedJobs
+        *   `[✅]`   For EXECUTE steps (model steps), include per-model job status breakdown
+        *   `[✅]`   Track which models PERFORMED jobs from dialectic_generation_jobs table, not from selectedModels
+        *   `[✅]`   PLAN steps (granularity_strategy='all_to_one') have exactly 1 job total regardless of model count
+        *   `[✅]`   EXECUTE steps (granularity_strategy='per_source_document' or 'per_model') have N jobs where N = number of models that received work
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Backend service function that provides the single source of truth for progress data
+        *   `[✅]`   Queries dialectic_generation_jobs table to derive actual job completion state
+        *   `[✅]`   Returns normalized DTO suitable for frontend consumption
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: dialectic-service edge function → database query → DTO response
+        *   `[✅]`   Input: GetAllStageProgressPayload with sessionId, iterationNumber, userId, projectId
+        *   `[✅]`   Output: GetAllStageProgressResponse with enhanced StageProgressEntry[] containing jobProgress per step
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   SupabaseClient<Database> for database queries
+        *   `[✅]`   User for authorization checks
+        *   `[✅]`   dialectic_generation_jobs table: source of job status data
+        *   `[✅]`   dialectic_stage_recipe_steps table: source of step_key to recipe_step_id mapping
+        *   `[✅]`   isRecord type guard from type_guards.common.ts
+        *   `[✅]`   deconstructStoragePath from path_deconstructor.ts (existing dep, unchanged)
+    *   `[✅]`   interface/`dialectic.interface.ts`
+        *   `[✅]`   Add `JobProgressEntry` interface: `{ totalJobs: number; completedJobs: number; inProgressJobs: number; failedJobs: number; modelJobStatuses?: Record<string, 'pending' | 'in_progress' | 'completed' | 'failed'>; }`
+        *   `[✅]`   Add `StepJobProgress` type: `Record<string, JobProgressEntry>` where key is step_key
+        *   `[✅]`   Extend `StageProgressEntry` interface to add: `jobProgress: StepJobProgress;`
+        *   `[✅]`   Existing `stepStatuses: Record<string, string>` remains for backward compatibility but jobProgress is the authoritative source
+    *   `[✅]`   interface/tests/`type_guards.dialectic.test.ts`
+        *   `[✅]`   Add test: `isJobProgressEntry returns true for valid JobProgressEntry with all required fields`
+        *   `[✅]`   Add test: `isJobProgressEntry returns false when totalJobs is missing or not a number`
+        *   `[✅]`   Add test: `isJobProgressEntry returns true when optional modelJobStatuses is present with valid status values`
+        *   `[✅]`   Add test: `isJobProgressEntry returns false when modelJobStatuses contains invalid status value`
+    *   `[✅]`   interface/guards/`type_guards.dialectic.ts`
+        *   `[✅]`   Add `isJobProgressEntry(value: unknown): value is JobProgressEntry` type guard
+        *   `[✅]`   Validates totalJobs, completedJobs, inProgressJobs, failedJobs are numbers >= 0
+        *   `[✅]`   Validates optional modelJobStatuses is Record<string, valid_status> if present
+    *   `[✅]`   unit/`getAllStageProgress.test.ts`
+        *   `[✅]`   Add test: `returns jobProgress with correct totalJobs count for PLAN step (exactly 1 job regardless of model count)`
+        *   `[✅]`   Add test: `returns jobProgress with correct totalJobs count for EXECUTE step (N jobs where N = distinct model_ids in jobs table)`
+        *   `[✅]`   Add test: `returns jobProgress.completedJobs matching count of jobs with status='completed' for each step_key`
+        *   `[✅]`   Add test: `returns jobProgress.inProgressJobs matching count of jobs with status='in_progress' or 'retrying' for each step_key`
+        *   `[✅]`   Add test: `returns jobProgress.failedJobs matching count of jobs with status='failed' for each step_key`
+        *   `[✅]`   Add test: `returns jobProgress.modelJobStatuses with per-model status for EXECUTE steps`
+        *   `[✅]`   Add test: `modelJobStatuses keys are actual model_ids from job payloads, not from selectedModels`
+        *   `[✅]`   Add test: `PLAN step jobProgress does not include modelJobStatuses (undefined)`
+        *   `[✅]`   Add test: `step_key is derived from payload.planner_metadata.recipe_step_id lookup in dialectic_stage_recipe_steps`
+        *   `[✅]`   Add test: `all jobs supply valid data with no defaults, fallbacks, or healing`
+    *   `[✅]`   `getAllStageProgress.ts`
+        *   `[✅]`   Query dialectic_generation_jobs with: `select('id, status, payload, stage_slug').eq('session_id', sessionId).eq('iteration_number', iterationNumber)`
+        *   `[✅]`   Extract recipe_step_id from each job's `payload.planner_metadata.recipe_step_id`
+        *   `[✅]`   Lookup step_key from dialectic_stage_recipe_steps using recipe_step_id
+        *   `[✅]`   Group jobs by step_key, then aggregate status counts per step
+        *   `[✅]`   For EXECUTE jobs, also group by payload.model_id to build modelJobStatuses
+        *   `[✅]`   Determine from job_type if step is EXECUTE (models), PLAN or RENDER (no models)
+        *   `[✅]`   Build StepJobProgress map and add to each StageProgressEntry as jobProgress field
+        *   `[✅]`   Preserve existing documents and stepStatuses fields for backward compatibility
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   jobProgress must reflect actual job table state, not document completion or selectedModels
+        *   `[✅]`   totalJobs for a step = count of distinct jobs in dialectic_generation_jobs for that step_key
+        *   `[✅]`   Progress calculation: stepPercentage = (completedJobs / totalJobs) * 100
+        *   `[✅]`   All model_ids in modelJobStatuses must come from actual job payloads, never from session.selected_models
+    *   `[✅]`   **Commit** `feat(be): getAllStageProgress returns job-level progress per step with per-model breakdown`
 
-*   `[ ]`   [TEST-INT] apps/web/src/components/common/`DynamicProgressBar` **Add unit and integration tests for progress display from actual documents**
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore.documents.ts` **Add jobProgress tracking to stageRunProgress and update from job notifications**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Add jobProgress: StepJobProgress to stageRunProgress[progressKey] state
+        *   `[✅]`   Update jobProgress from job lifecycle notifications (planner_started, planner_completed, execute_started, document_completed, job_failed)
+        *   `[✅]`   Track actual model_ids from notification payloads, not from selectedModels
+        *   `[✅]`   Increment/decrement job counts as notifications arrive in real-time
+    *   `[✅]`   `role.md`
+        *   `[✅]`   State management layer that maintains real-time job progress state
+        *   `[✅]`   Receives job notifications via notification handlers and updates jobProgress accordingly
+        *   `[✅]`   Provides jobProgress data to selectors for progress calculation
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: notification handlers → state mutation → selector consumption
+        *   `[✅]`   jobProgress state keyed by progressKey (sessionId:stageSlug:iterationNumber) and step_key
+        *   `[✅]`   Each step_key maps to JobProgressEntry with job counts and optional modelJobStatuses
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   JobProgressEntry, StepJobProgress types from @paynless/types (frontend mirror of backend types)
+        *   `[✅]`   Notification payload types: PlannerStartedPayload, PlannerCompletedPayload, ExecuteStartedPayload, DocumentCompletedPayload, JobFailedPayload from notification.service.types.ts
+        *   `[✅]`   Existing stageRunProgress state structure
+        *   `[✅]`   STAGE_RUN_DOCUMENT_KEY_SEPARATOR constant from @paynless/types
+    *   `[✅]`   interface/`packages/types/src/dialectic.types.ts`
+        *   `[✅]`   Add `JobProgressEntry` interface matching backend: `{ totalJobs: number; completedJobs: number; inProgressJobs: number; failedJobs: number; modelJobStatuses?: Record<string, 'pending' | 'in_progress' | 'completed' | 'failed'>; }`
+        *   `[✅]`   Add `StepJobProgress` type: `Record<string, JobProgressEntry>`
+        *   `[✅]`   Add `jobProgress: StepJobProgress` to `StageRunProgressEntry` interface (or create if not exists)
+        *   `[✅]`   Export all new types
+    *   `[✅]`   unit/`dialecticStore.documents.test.ts`
+        *   `[✅]`   Add test: `handlePlannerStartedLogic initializes jobProgress[step_key] with totalJobs=1, inProgressJobs=1, completedJobs=0, failedJobs=0`
+        *   `[✅]`   Add test: `handlePlannerCompletedLogic updates jobProgress[step_key] to completedJobs=1, inProgressJobs=0`
+        *   `[✅]`   Add test: `handleExecuteStartedLogic increments jobProgress[step_key].totalJobs and inProgressJobs, adds modelId to modelJobStatuses with 'in_progress'`
+        *   `[✅]`   Add test: `handleDocumentCompletedLogic decrements inProgressJobs, increments completedJobs, updates modelJobStatuses[modelId] to 'completed'`
+        *   `[✅]`   Add test: `handleJobFailedLogic decrements inProgressJobs, increments failedJobs, updates modelJobStatuses[modelId] to 'failed'`
+        *   `[✅]`   Add test: `jobProgress persists across multiple notifications for same step_key (accumulates correctly)`
+        *   `[✅]`   Add test: `modelJobStatuses tracks distinct modelIds from actual notifications, not from selectedModels state`
+        *   `[✅]`   Add test: `hydrateStageProgress populates jobProgress from API response`
+    *   `[✅]`   `dialecticStore.documents.ts`
+        *   `[✅]`   Add ensureJobProgressEntry helper: creates JobProgressEntry with zeros if not exists for step_key
+        *   `[✅]`   In handlePlannerStartedLogic: extract step_key from notification.step_key, call ensureJobProgressEntry, set totalJobs=1, inProgressJobs=1
+        *   `[✅]`   In handlePlannerCompletedLogic: set completedJobs=1, inProgressJobs=0 for step_key
+        *   `[✅]`   In handleExecuteStartedLogic: extract step_key and modelId from notification, increment totalJobs and inProgressJobs, set modelJobStatuses[modelId]='in_progress'
+        *   `[✅]`   In handleDocumentCompletedLogic: decrement inProgressJobs, increment completedJobs, set modelJobStatuses[modelId]='completed'
+        *   `[✅]`   In handleJobFailedLogic: decrement inProgressJobs, increment failedJobs, set modelJobStatuses[modelId]='failed'
+        *   `[✅]`   In hydrateStageProgressLogic: copy jobProgress from API response to stageRunProgress[progressKey].jobProgress
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   jobProgress must be updated in real-time as notifications arrive
+        *   `[✅]`   model_ids in modelJobStatuses come exclusively from notification payloads
+        *   `[✅]`   PLAN steps have no modelJobStatuses (single orchestration job)
+        *   `[✅]`   EXECUTE steps accumulate modelJobStatuses as each model's job starts/completes/fails
+        *   `[✅]`   jobProgress state must be hydrated from backend on page load/refresh
+    *   `[✅]`   **Commit** `feat(store): add jobProgress tracking to stageRunProgress with real-time notification updates`
+
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore.selectors.ts` **Rewrite selectUnifiedProjectProgress to calculate progress from jobProgress, not documents or selectedModels**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Remove dependency on state.selectedModels for progress calculation
+        *   `[✅]`   Calculate step progress from stageRunProgress[progressKey].jobProgress
+        *   `[✅]`   PLAN steps: percentage = jobProgress[step_key].completedJobs > 0 ? 100 : 0
+        *   `[✅]`   EXECUTE steps: percentage = (completedJobs / totalJobs) * 100
+        *   `[✅]`   Stage percentage = average of all step percentages (sum / count)
+        *   `[✅]`   Overall percentage = (completedStages * 100 + currentStagePercentage) / totalStages
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Memoized selector that computes unified progress from job-based state
+        *   `[✅]`   Single source of truth for all progress UI components
+        *   `[✅]`   Returns UnifiedProjectProgress with totalStages, completedStages, currentStageSlug, overallPercentage, stageDetails with stepDetails
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: store state → selector → UI components (DynamicProgressBar, StageTabCard, etc.)
+        *   `[✅]`   Input: DialecticStateValues, sessionId
+        *   `[✅]`   Output: UnifiedProjectProgress with accurate job-based percentages
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   stageRunProgress from state with jobProgress field
+        *   `[✅]`   recipesByStageSlug from state for step metadata
+        *   `[✅]`   currentProcessTemplate from state for stage list and transitions
+        *   `[✅]`   selectSessionById helper selector
+        *   `[✅]`   createSelector from reselect for memoization
+        *   `[✅]`   UnifiedProjectProgress, StageProgressDetail, StepProgressDetail types from @paynless/types
+    *   `[✅]`   interface/`packages/types/src/dialectic.types.ts`
+        *   `[✅]`   Update `StepProgressDetail` interface: change `totalModels` to `totalJobs`, change `completedModels` to `completedJobs`, add `inProgressJobs: number`, add `failedJobs: number`
+        *   `[✅]`   Update `StageProgressDetail` interface if needed to include jobProgress summary
+        *   `[✅]`   Ensure UnifiedProjectProgress.stageDetails[].stepsDetail[] uses updated StepProgressDetail
+    *   `[✅]`   unit/`dialecticStore.selectors.test.ts`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress returns stepPercentage=100 for PLAN step when jobProgress[step_key].completedJobs >= 1`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress returns stepPercentage=0 for PLAN step when jobProgress[step_key].completedJobs === 0`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress returns stepPercentage=(completedJobs/totalJobs)*100 for EXECUTE step`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress stagePercentage equals average of all step percentages`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress overallPercentage equals (completedStages*100 + currentStagePercentage) / totalStages`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress does NOT read from state.selectedModels`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress returns correct progress when selectedModels is empty but jobs exist`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress returns correct progress when selectedModels changes but job state unchanged`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress returns status='failed' for step when failedJobs > 0`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress returns status='in_progress' for step when inProgressJobs > 0 and failedJobs === 0`
+        *   `[✅]`   Add test: `selectUnifiedProjectProgress returns status='completed' for step when completedJobs === totalJobs and totalJobs > 0`
+    *   `[✅]`   `dialecticStore.selectors.ts`
+        *   `[✅]`   Remove lines 813-815 that read state.selectedModels for progress calculation
+        *   `[✅]`   Replace isModelStep function with check: step has EXECUTE job_type (not PLAN or RENDER)
+        *   `[✅]`   In step iteration loop (lines 854-915), replace document counting with:
+            *   `[✅]`   Get jobProgress from `progress?.jobProgress?.[stepKey]` or default to `{ totalJobs: 0, completedJobs: 0, inProgressJobs: 0, failedJobs: 0 }`
+            *   `[✅]`   Set `totalJobs = jobProgress.totalJobs`
+            *   `[✅]`   Set `completedJobs = jobProgress.completedJobs`
+            *   `[✅]`   Set `stepPercentage = totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0`
+            *   `[✅]`   Set `stepStatus` based on: failed if failedJobs > 0, in_progress if inProgressJobs > 0, completed if completedJobs === totalJobs && totalJobs > 0, else not_started
+        *   `[✅]`   Update StepProgressDetail construction to use new totalJobs/completedJobs/inProgressJobs/failedJobs fields
+        *   `[✅]`   Keep existing stagePercentage calculation as average of step percentages
+        *   `[✅]`   Keep existing overallPercentage calculation
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   selectedModels state MUST NOT be used in progress calculation
+        *   `[✅]`   Progress is derived exclusively from jobProgress in stageRunProgress
+        *   `[✅]`   Step percentage formula: (completedJobs / totalJobs) * 100, or 0 if totalJobs is 0
+        *   `[✅]`   Stage percentage formula: sum(stepPercentages) / stepCount
+        *   `[✅]`   Overall percentage formula: (completedStages * 100 + currentStagePercentage) / totalStages
+    *   `[✅]`   **Commit** `fix(store): selectUnifiedProjectProgress calculates progress from jobProgress, not selectedModels`
+
+*   `[ ]`   [UI] apps/web/src/components/common/`DynamicProgressBar.tsx` **Display granular step-by-step progress from job-based selector**
     *   `[ ]`   `objective.md`
-        *   `[ ]`   Verify DynamicProgressBar displays correct progress based on actual completed documents
-        *   `[ ]`   Confirm progress is unaffected by changes to `state.selectedModels`
-        *   `[ ]`   Test granular step-by-step progress tracking via `stageDetails[].stepsDetail[]`
-        *   `[ ]`   Ensure consistency between DynamicProgressBar and badge completion indicators
+        *   `[ ]`   Display overall progress percentage from selectUnifiedProjectProgress.overallPercentage
+        *   `[ ]`   No reference to selectedModels - all data from selector
     *   `[ ]`   `role.md`
-        *   `[ ]`   Unit and integration tests for DynamicProgressBar UI component
-        *   `[ ]`   Validates that progress display reflects actual document completion state
+        *   `[ ]`   UI component that visualizes progress to the user
+        *   `[ ]`   Consumes selectUnifiedProjectProgress selector output
+        *   `[ ]`   Single progress display component used across the application
     *   `[ ]`   `module.md`
-        *   `[ ]`   Located in `apps/web/src/components/common/`
-        *   `[ ]`   Unit tests in `DynamicProgressBar.test.tsx`
-        *   `[ ]`   Integration tests in `DynamicProgressBar.integration.test.tsx`
+        *   `[ ]`   Boundary: selector output → React component → rendered UI
+        *   `[ ]`   Input: sessionId prop to pass to selector
+        *   `[ ]`   Output: Visual progress bar with percentage that reflects the exact actual progress 
     *   `[ ]`   `deps.md`
-        *   `[ ]`   `render`, `screen`, `waitFor` from `@testing-library/react`
-        *   `[ ]`   `useDialecticStore`, `selectUnifiedProjectProgress` from `@paynless/store`
-        *   `[ ]`   `UnifiedProjectProgress`, `StageProgressDetail`, `StepProgressDetail` from `@paynless/types`
-        *   `[ ]`   `dialecticStore.mock.ts` for unit test mocking
-        *   `[ ]`   Real store state for integration tests
+        *   `[ ]`   useDialecticStore hook for accessing store
+        *   `[ ]`   selectUnifiedProjectProgress selector from dialecticStore.selectors.ts
+        *   `[ ]`   UnifiedProjectProgress type from @paynless/types
+        *   `[ ]`   Existing Progress UI component from shadcn/ui (or similar)
     *   `[ ]`   unit/`DynamicProgressBar.test.tsx`
-        *   `[ ]`   Test: `displays correct percentage from stageDetails when documents are completed`
-        *   `[ ]`   Test: `displays 0% only when no documents exist in stageRunProgress`
-        *   `[ ]`   Test: `displays 100% when all steps in all stages have completed documents`
-        *   `[ ]`   Test: `displays step-level progress message showing current step name`
-        *   `[ ]`   Test: `reacts to store updates when document completion status changes`
-        *   `[ ]`   Test: `stageDetails with populated stepsDetail drives correct percentage`
+        *   `[ ]`   Add test: `renders overall percentage from selectUnifiedProjectProgress.overallPercentage`
+        *   `[ ]`   Add test: `renders current stage name from selectUnifiedProjectProgress.currentStageSlug`
+        *   `[ ]`   Add test: `renders step progress as completedJobs/totalJobs for current stage steps`
+        *   `[ ]`   Add test: `renders 0% when jobProgress is empty (no jobs started)`
+        *   `[ ]`   Add test: `renders 100% when all jobs completed for all stages`
+        *   `[ ]`   Add test: `does not reference selectedModels`
+        *   `[ ]`   Add test: `updates in real-time as selector output changes (job notifications processed)`
+    *   `[ ]`   `DynamicProgressBar.tsx`
+        *   `[ ]`   Import selectUnifiedProjectProgress from @paynless/store
+        *   `[ ]`   Call selector with sessionId prop: `const progress = useDialecticStore(state => selectUnifiedProjectProgress(state, sessionId))`
+        *   `[ ]`   Render main progress bar with progress.overallPercentage
+        *   `[ ]`   Render current stage section showing progress.currentStageSlug
+        *   `[ ]`   For current stage, iterate progress.stageDetails[currentIndex].stepsDetail and render each step's progress
+        *   `[ ]`   Remove any existing code that reads from selectedModels or calculates progress inline
     *   `[ ]`   integration/`DynamicProgressBar.integration.test.tsx`
-        *   `[ ]`   Test: `displays correct percentage from real selectUnifiedProjectProgress with stageRunProgress documents`
-        *   `[ ]`   Test: `progress does not change when state.selectedModels is modified`
-        *   `[ ]`   Test: `progress updates when document status changes from in_progress to completed`
-        *   `[ ]`   Test: `displays same completion state as SessionContributionsDisplayCard badge`
-        *   `[ ]`   Test: `displays non-zero percentage when documents exist regardless of selectedModels`
-    *   `[ ]`   `dialecticStore.mock.ts`
-        *   `[ ]`   Update mock to support `stageRunProgress` with document descriptors
-        *   `[ ]`   Add helper to create mock `StageProgressDetail` with `stepsDetail`
-        *   `[ ]`   Add helper to create mock `StepProgressDetail` with `totalModels` and `completedModels`
+        *   `[ ]`   Add test: `displays correct percentage when stageRunProgress has jobProgress with completed jobs`
+        *   `[ ]`   Add test: `displays correct percentage after job notification updates jobProgress`
+        *   `[ ]`   Add test: `displays consistent progress with StageTabCard completion badges`
     *   `[ ]`   `requirements.md`
-        *   `[ ]`   Unit tests verify component renders progress from `selectUnifiedProjectProgress`
-        *   `[ ]`   Integration tests verify progress reflects actual `stageRunProgress.documents`
-        *   `[ ]`   Tests confirm `selectedModels` changes do not affect displayed progress
-        *   `[ ]`   Tests verify consistency between DynamicProgressBar and badge indicators
-        *   `[ ]`   All tests pass with corrected selector logic from previous node
-    *   `[ ]`   **Commit** `test(ui): add unit and integration tests for DynamicProgressBar document-based progress`
-        *   `[ ]`   Added unit tests with populated stageDetails and stepsDetail
-        *   `[ ]`   Added integration tests verifying decoupling from selectedModels
-        *   `[ ]`   Updated dialecticStore.mock.ts with helpers for progress testing
-        *   `[ ]`   Tests verify consistency with badge completion indicators
+        *   `[ ]`   Progress display must match selectUnifiedProjectProgress output exactly
+        *   `[ ]`   No inline progress calculations - all from selector
+        *   `[ ]`   Progress must reflect job status (not document status)
+    *   `[ ]`   **Commit** `feat(ui): DynamicProgressBar displays job-based granular step progress from SSOT selector`
 
 *   `[ ]` `[BE]` supabase/functions/_shared/services/`file_manager.ts` **Fix cleanup logic to only delete specific uploaded file**
     *   `[ ]` `objective.md`

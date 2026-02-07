@@ -196,8 +196,13 @@ Deno.test('constructStoragePath and deconstructStoragePath should be perfect inv
         case FileType.UserFeedback:
           return {
             fileType,
-            context: { ...baseStageContext, stageSlug: 'antithesis' },
-            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'antithesis', parsedFileNameFromPath: 'user_feedback_antithesis.md' },
+            context: {
+              projectId,
+              fileType,
+              originalStoragePath: `${projectId}/session_${shortSessionId}/iteration_${iteration}/2_antithesis/documents`,
+              originalBaseName: 'doc_antithesis',
+            },
+            expectedDeconstructed: { ...expectedBaseStageInfo, stageSlug: 'antithesis', parsedFileNameFromPath: 'doc_antithesis_feedback.md' },
           };
 
         // --- Document-Centric ---
@@ -847,9 +852,16 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('constructs path for user_feedback', () => {
-      const { storagePath, fileName } = constructStoragePath({ ...stageContext, fileType: FileType.UserFeedback });
-      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis`);
-      assertEquals(fileName, 'user_feedback_thesis.md');
+      const originalStoragePath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`;
+      const originalBaseName = 'business_case_thesis';
+      const { storagePath, fileName } = constructStoragePath({
+        projectId,
+        fileType: FileType.UserFeedback,
+        originalStoragePath,
+        originalBaseName,
+      });
+      assertEquals(storagePath, originalStoragePath);
+      assertEquals(fileName, 'business_case_thesis_feedback.md');
     });
 
     await t.step('constructs path for rag_context_summary', () => {
@@ -871,7 +883,7 @@ Deno.test('constructStoragePath', async (t) => {
 
     await t.step('throws if base path context is missing for stage files', () => {
         assertThrows(() => constructStoragePath({ fileType: FileType.SeedPrompt } as PathContext ), Error, 'Base path context required for seed_prompt.');
-        assertThrows(() => constructStoragePath({ fileType: FileType.UserFeedback } as PathContext), Error, 'Base path context and stageSlug required for user_feedback.');
+        assertThrows(() => constructStoragePath({ fileType: FileType.UserFeedback } as PathContext), Error, 'originalStoragePath and originalBaseName are required for user_feedback.');
     });
 
     await t.step('throws if context is missing for model contributions', () => {
@@ -1927,6 +1939,33 @@ Deno.test('constructStoragePath', async (t) => {
       assert(path1.fileName.includes('_continuation_1'), 'First continuation chunk should have _continuation_1 in filename');
       assert(path2.fileName.includes('_continuation_2'), 'Second continuation chunk should have _continuation_2 in filename');
       assert(path3.fileName.includes('_continuation_3'), 'Third continuation chunk should have _continuation_3 in filename');
+    });
+  });
+
+  await t.step('UserFeedback original document path', async (t) => {
+    await t.step('UserFeedback with originalStoragePath and originalBaseName returns that path as storagePath and baseName_feedback.md as fileName', () => {
+      const originalStoragePath = `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`;
+      const originalBaseName = 'business_case_0_claude';
+      const context: PathContext = {
+        projectId,
+        fileType: FileType.UserFeedback,
+        originalStoragePath,
+        originalBaseName,
+      };
+      const { storagePath, fileName } = constructStoragePath(context);
+      assertEquals(storagePath, originalStoragePath);
+      assertEquals(fileName, 'business_case_0_claude_feedback.md');
+    });
+
+    await t.step('UserFeedback with originalBaseName uses sanitized base name for fileName', () => {
+      const context: PathContext = {
+        projectId,
+        fileType: FileType.UserFeedback,
+        originalStoragePath: 'proj/session_abc/iteration_0/1_thesis/documents',
+        originalBaseName: 'Feature Spec 1',
+      };
+      const { fileName } = constructStoragePath(context);
+      assertEquals(fileName, 'feature_spec_1_feedback.md');
     });
   });
 });

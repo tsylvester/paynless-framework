@@ -43,6 +43,8 @@ import {
     ContentToInclude,
     SelectAnchorResult,
     SourceDocument,
+    JobProgressEntry,
+    JobProgressStatus,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { isFileType } from './type_guards.file_manager.ts';
@@ -1455,4 +1457,23 @@ export function isSelectAnchorResult(value: unknown): value is SelectAnchorResul
     return false;
 }
 
+const validJobProgressStatuses: Set<string> = new Set<JobProgressStatus>(['pending', 'in_progress', 'completed', 'failed']);
+
+export function isJobProgressEntry(value: unknown): value is JobProgressEntry {
+    if (!isRecord(value)) return false;
+
+    if (typeof value.totalJobs !== 'number' || value.totalJobs < 0) return false;
+    if (typeof value.completedJobs !== 'number' || value.completedJobs < 0) return false;
+    if (typeof value.inProgressJobs !== 'number' || value.inProgressJobs < 0) return false;
+    if (typeof value.failedJobs !== 'number' || value.failedJobs < 0) return false;
+
+    if ('modelJobStatuses' in value && value.modelJobStatuses !== undefined) {
+        if (!isRecord(value.modelJobStatuses)) return false;
+        for (const status of Object.values(value.modelJobStatuses)) {
+            if (typeof status !== 'string' || !validJobProgressStatuses.has(status)) return false;
+        }
+    }
+
+    return true;
+}
 

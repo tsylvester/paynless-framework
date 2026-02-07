@@ -185,6 +185,7 @@ describe('Dialectic Store Notification Handlers', () => {
               render_step: 'not_started',
             },
             documents: {},
+            jobProgress: {},
           },
         },
       });

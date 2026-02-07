@@ -473,10 +473,21 @@ export interface StageRunDocumentKeyParts {
   modelId: string;
 }
 
+export interface JobProgressEntry {
+  totalJobs: number;
+  completedJobs: number;
+  inProgressJobs: number;
+  failedJobs: number;
+  modelJobStatuses?: Record<string, 'pending' | 'in_progress' | 'completed' | 'failed'>;
+}
+
+export type StepJobProgress = Record<string, JobProgressEntry>;
+
 export interface StageRunProgressSnapshot {
   stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed'>;
   /** Keyed by StageRunDocumentKey (documentKey:modelId). One document key can have N descriptors. */
   documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
+  jobProgress: StepJobProgress;
 }
 
 export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
@@ -484,8 +495,10 @@ export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' |
 export interface StepProgressDetail {
   stepKey: string;
   stepName: string;
-  totalModels: number;
-  completedModels: number;
+  totalJobs: number;
+  completedJobs: number;
+  inProgressJobs: number;
+  failedJobs: number;
   stepPercentage: number;
   status: UnifiedProjectStatus;
 }
@@ -1021,6 +1034,7 @@ export interface StageProgressEntry {
   documents: StageDocumentChecklistEntry[];
   stepStatuses: Record<string, string>;
   stageStatus: UnifiedProjectStatus;
+  jobProgress: StepJobProgress;
 }
 
 export type GetAllStageProgressResponse = StageProgressEntry[];

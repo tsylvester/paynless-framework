@@ -59,6 +59,12 @@ Deno.test('submitStageDocumentFeedback - Happy Path: creates a new feedback reco
   };
   const mockSupabase = createMockSupabaseClient(USER_ID, {
     genericMockResults: {
+      dialectic_project_resources: {
+        select: {
+          data: [{ storage_path: 'test/path', file_name: 'feedback.md' }],
+          error: null,
+        },
+      },
       dialectic_feedback: {
         select: { data: [mockDbRecord], error: null },
         insert: { data: [mockDbRecord], error: null },
@@ -203,6 +209,12 @@ Deno.test('submitStageDocumentFeedback - Happy Path: updates an existing feedbac
   };
   const mockSupabase = createMockSupabaseClient(USER_ID, {
     genericMockResults: {
+      dialectic_project_resources: {
+        select: {
+          data: [{ storage_path: 'test/path', file_name: 'feedback.md' }],
+          error: null,
+        },
+      },
       dialectic_feedback: {
         select: { data: [mockDbRecord], error: null },
         update: { data: [mockDbRecord], error: null },
@@ -250,7 +262,16 @@ Deno.test('submitStageDocumentFeedback - Error Case: returns 500 on fileManager 
   const mockFileManager = createMockFileManagerService();
   mockFileManager.setUploadAndRegisterFileResponse(null, { message: 'Upload failed' });
 
-  const mockSupabase = createMockSupabaseClient(USER_ID, {});
+  const mockSupabase = createMockSupabaseClient(USER_ID, {
+    genericMockResults: {
+      dialectic_project_resources: {
+        select: {
+          data: [{ storage_path: 'test/path', file_name: 'feedback.md' }],
+          error: null,
+        },
+      },
+    },
+  });
 
   const deps = {
     fileManager: mockFileManager,
@@ -297,6 +318,12 @@ Deno.test('submitStageDocumentFeedback - Error Case: returns 500 on database ins
 
   const mockSupabase = createMockSupabaseClient(USER_ID, {
     genericMockResults: {
+      dialectic_project_resources: {
+        select: {
+          data: [{ storage_path: 'test/path', file_name: 'feedback.md' }],
+          error: null,
+        },
+      },
       dialectic_feedback: {
         insert: { data: null, error: new Error('DB insert error') },
       },
@@ -400,6 +427,12 @@ Deno.test('submitStageDocumentFeedback - Validation: accepts iterationNumber of 
   };
   const mockSupabase = createMockSupabaseClient(USER_ID, {
     genericMockResults: {
+      dialectic_project_resources: {
+        select: {
+          data: [{ storage_path: 'test/path', file_name: 'feedback.md' }],
+          error: null,
+        },
+      },
       dialectic_feedback: {
         select: { data: [mockDbRecord], error: null },
         insert: { data: [mockDbRecord], error: null },
@@ -458,6 +491,12 @@ Deno.test('submitStageDocumentFeedback - Validation: accepts iterationNumber of 
   };
   const mockSupabase = createMockSupabaseClient(USER_ID, {
     genericMockResults: {
+      dialectic_project_resources: {
+        select: {
+          data: [{ storage_path: 'test/path', file_name: 'feedback.md' }],
+          error: null,
+        },
+      },
       dialectic_feedback: {
         select: { data: [mockDbRecord], error: null },
         insert: { data: [mockDbRecord], error: null },
@@ -479,4 +518,195 @@ Deno.test('submitStageDocumentFeedback - Validation: accepts iterationNumber of 
 
   assertExists(result.data);
   assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1);
+});
+
+Deno.test('submitStageDocumentFeedback - when sourceContributionId provided, queries dialectic_project_resources for original doc', async () => {
+  const mockFileManager = createMockFileManagerService();
+  const originalStoragePath = 'projects/p1/session_abc/iter_1/3_synthesis/rendered_documents';
+  const originalFileName = 'doc-a_model-a.md';
+  mockFileManager.setUploadAndRegisterFileResponse(
+    {
+      id: 'feedback-record-id-res',
+      project_id: PROJECT_ID,
+      session_id: mockPayload.sessionId,
+      user_id: USER_ID,
+      stage_slug: mockPayload.stageSlug,
+      iteration_number: mockPayload.iterationNumber,
+      storage_bucket: 'test-bucket',
+      storage_path: originalStoragePath,
+      file_name: 'doc-a_model-a_feedback.md',
+      mime_type: 'text/markdown',
+      size_bytes: 100,
+      feedback_type: 'user_feedback',
+      resource_description: { document_key: mockPayload.documentKey, model_id: mockPayload.modelId },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      target_contribution_id: mockPayload.sourceContributionId ?? null,
+    },
+    null,
+  );
+  const mockDbRecord = {
+    id: 'feedback-new-id-res',
+    ...mockPayload,
+  };
+  const mockSupabase = createMockSupabaseClient(USER_ID, {
+    genericMockResults: {
+      dialectic_project_resources: {
+        select: {
+          data: [{ storage_path: originalStoragePath, file_name: originalFileName }],
+          error: null,
+        },
+      },
+      dialectic_feedback: {
+        select: { data: [mockDbRecord], error: null },
+        insert: { data: [mockDbRecord], error: null },
+        update: { data: null, error: new Error('Update should not be called') },
+      },
+    },
+  });
+  const deps = {
+    fileManager: mockFileManager,
+    logger: { log: spy(), error: spy(), warn: spy(), info: spy(), debug: spy() },
+  };
+  await submitStageDocumentFeedback(
+    mockPayload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    deps,
+  );
+  assertExists(mockSupabase.client.getLatestBuilder('dialectic_project_resources'));
+});
+
+Deno.test('submitStageDocumentFeedback - error returned if original document lookup fails', async () => {
+  const mockFileManager = createMockFileManagerService();
+  const mockSupabase = createMockSupabaseClient(USER_ID, {
+    genericMockResults: {
+      dialectic_project_resources: {
+        select: { data: [], error: null },
+      },
+    },
+  });
+  const deps = {
+    fileManager: mockFileManager,
+    logger: { log: spy(), error: spy(), warn: spy(), info: spy(), debug: spy() },
+  };
+  const result = await submitStageDocumentFeedback(
+    mockPayload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    deps,
+  );
+  assertExists(result.error);
+  assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 0);
+});
+
+Deno.test('submitStageDocumentFeedback - pathContext includes originalStoragePath from looked-up resource', async () => {
+  const mockFileManager = createMockFileManagerService();
+  const originalStoragePath = 'projects/p1/session_abc/iter_1/3_synthesis/rendered_documents';
+  const originalFileName = 'doc-a_model-a.md';
+  mockFileManager.setUploadAndRegisterFileResponse(
+    {
+      id: 'feedback-record-id-osp',
+      project_id: PROJECT_ID,
+      session_id: mockPayload.sessionId,
+      user_id: USER_ID,
+      stage_slug: mockPayload.stageSlug,
+      iteration_number: mockPayload.iterationNumber,
+      storage_bucket: 'test-bucket',
+      storage_path: originalStoragePath,
+      file_name: 'doc-a_model-a_feedback.md',
+      mime_type: 'text/markdown',
+      size_bytes: 100,
+      feedback_type: 'user_feedback',
+      resource_description: { document_key: mockPayload.documentKey, model_id: mockPayload.modelId },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      target_contribution_id: mockPayload.sourceContributionId ?? null,
+    },
+    null,
+  );
+  const mockDbRecord = { id: 'feedback-new-id-osp', ...mockPayload };
+  const mockSupabase = createMockSupabaseClient(USER_ID, {
+    genericMockResults: {
+      dialectic_project_resources: {
+        select: {
+          data: [{ storage_path: originalStoragePath, file_name: originalFileName }],
+          error: null,
+        },
+      },
+      dialectic_feedback: {
+        select: { data: [mockDbRecord], error: null },
+        insert: { data: [mockDbRecord], error: null },
+        update: { data: null, error: new Error('Update should not be called') },
+      },
+    },
+  });
+  const deps = {
+    fileManager: mockFileManager,
+    logger: { log: spy(), error: spy(), warn: spy(), info: spy(), debug: spy() },
+  };
+  await submitStageDocumentFeedback(
+    mockPayload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    deps,
+  );
+  assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1);
+  const uploadCall = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+  assertExists(uploadCall);
+  assertEquals(uploadCall.pathContext.originalStoragePath, originalStoragePath);
+});
+
+Deno.test('submitStageDocumentFeedback - pathContext includes originalBaseName derived from looked-up file_name', async () => {
+  const mockFileManager = createMockFileManagerService();
+  const originalStoragePath = 'projects/p1/session_abc/iter_1/3_synthesis/rendered_documents';
+  const originalFileName = 'doc-a_model-a.md';
+  const expectedBaseName = 'doc-a_model-a';
+  mockFileManager.setUploadAndRegisterFileResponse(
+    {
+      id: 'feedback-record-id-obn',
+      project_id: PROJECT_ID,
+      session_id: mockPayload.sessionId,
+      user_id: USER_ID,
+      stage_slug: mockPayload.stageSlug,
+      iteration_number: mockPayload.iterationNumber,
+      storage_bucket: 'test-bucket',
+      storage_path: originalStoragePath,
+      file_name: `${expectedBaseName}_feedback.md`,
+      mime_type: 'text/markdown',
+      size_bytes: 100,
+      feedback_type: 'user_feedback',
+      resource_description: { document_key: mockPayload.documentKey, model_id: mockPayload.modelId },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      target_contribution_id: mockPayload.sourceContributionId ?? null,
+    },
+    null,
+  );
+  const mockDbRecord = { id: 'feedback-new-id-obn', ...mockPayload };
+  const mockSupabase = createMockSupabaseClient(USER_ID, {
+    genericMockResults: {
+      dialectic_project_resources: {
+        select: {
+          data: [{ storage_path: originalStoragePath, file_name: originalFileName }],
+          error: null,
+        },
+      },
+      dialectic_feedback: {
+        select: { data: [mockDbRecord], error: null },
+        insert: { data: [mockDbRecord], error: null },
+        update: { data: null, error: new Error('Update should not be called') },
+      },
+    },
+  });
+  const deps = {
+    fileManager: mockFileManager,
+    logger: { log: spy(), error: spy(), warn: spy(), info: spy(), debug: spy() },
+  };
+  await submitStageDocumentFeedback(
+    mockPayload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+    deps,
+  );
+  assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1);
+  const uploadCall = mockFileManager.uploadAndRegisterFile.calls[0].args[0];
+  assertExists(uploadCall);
+  assertEquals(uploadCall.pathContext.originalBaseName, expectedBaseName);
 });

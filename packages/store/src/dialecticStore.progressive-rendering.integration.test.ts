@@ -131,7 +131,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
 
       useDialecticStore.setState((state) => {
         state.recipesByStageSlug[stageSlug] = recipe;
-        state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {} };
+        state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {} };
       });
 
       const documentStartedNotification: Notification = {
@@ -264,6 +264,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
         state.stageRunProgress[progressKey] = {
           documents: { [getStageRunDocumentKey(documentKey, modelId)]: descriptor },
           stepStatuses: {},
+          jobProgress: {},
         };
       });
 
@@ -374,6 +375,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
         state.stageRunProgress[progressKey] = {
           documents: { [getStageRunDocumentKey(documentKey, modelId)]: descriptor },
           stepStatuses: {},
+          jobProgress: {},
         };
       });
 
@@ -584,6 +586,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
         state.stageRunProgress[progressKey] = {
           documents: { [getStageRunDocumentKey(documentKey, modelId)]: descriptor },
           stepStatuses: {},
+          jobProgress: {},
         };
         state.stageDocumentContent[serializedKey] = cachedContent;
       });

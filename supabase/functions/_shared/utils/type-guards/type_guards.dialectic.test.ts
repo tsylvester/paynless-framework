@@ -50,6 +50,7 @@ import {
     isObjectWithOptionalId,
     isArrayWithOptionalId,
     isSelectAnchorResult,
+    isJobProgressEntry,
 } from './type_guards.dialectic.ts';
 import { 
     BranchKey, 
@@ -82,6 +83,7 @@ import {
     DialecticRenderJobPayload,
     SelectAnchorResult,
     SourceDocument,
+    JobProgressEntry,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
@@ -3813,6 +3815,46 @@ Deno.test('Type Guard: isSelectAnchorResult', async (t) => {
             unknownProperty: 'value',
         };
         assert(!isSelectAnchorResult(result));
+    });
+});
+
+Deno.test('Type Guard: isJobProgressEntry', async (t) => {
+    await t.step('returns true for valid JobProgressEntry with all required fields', () => {
+        const value: JobProgressEntry = {
+            totalJobs: 2,
+            completedJobs: 1,
+            inProgressJobs: 1,
+            failedJobs: 0,
+        };
+        assert(isJobProgressEntry(value));
+    });
+
+    await t.step('returns false when totalJobs is missing or not a number', () => {
+        assert(!isJobProgressEntry({ completedJobs: 0, inProgressJobs: 0, failedJobs: 0 }));
+        assert(!isJobProgressEntry({ totalJobs: '1', completedJobs: 0, inProgressJobs: 0, failedJobs: 0 }));
+        assert(!isJobProgressEntry({ totalJobs: null, completedJobs: 0, inProgressJobs: 0, failedJobs: 0 }));
+    });
+
+    await t.step('returns true when optional modelJobStatuses is present with valid status values', () => {
+        const value: JobProgressEntry = {
+            totalJobs: 2,
+            completedJobs: 1,
+            inProgressJobs: 1,
+            failedJobs: 0,
+            modelJobStatuses: { 'model-a': 'completed', 'model-b': 'in_progress' },
+        };
+        assert(isJobProgressEntry(value));
+    });
+
+    await t.step('returns false when modelJobStatuses contains invalid status value', () => {
+        const value = {
+            totalJobs: 2,
+            completedJobs: 1,
+            inProgressJobs: 1,
+            failedJobs: 0,
+            modelJobStatuses: { 'model-a': 'invalid_status' },
+        };
+        assert(!isJobProgressEntry(value));
     });
 });
 

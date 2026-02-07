@@ -239,7 +239,7 @@ describe('DialecticStore (integration) - readiness notifications', () => {
     created_at: now,
     updated_at: now,
     current_stage_id: stageId,
-    selected_model_ids: [],
+    selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
     dialectic_contributions: [],
     session_description: null,
     user_input_reference_url: null,
@@ -296,6 +296,7 @@ describe('DialecticStore (integration) - readiness notifications', () => {
           [writerStepKey]: 'not_started',
         },
         documents: {},
+        jobProgress: {},
       };
     });
   });
@@ -427,7 +428,7 @@ describe('DialecticStore (integration) - saveContributionEdit', () => {
     created_at: now,
     updated_at: now,
     current_stage_id: stageId,
-    selected_model_ids: [modelId],
+    selected_models: [{ id: modelId, displayName: 'Model 1' }],
     dialectic_contributions: [originalContribution],
     session_description: null,
     user_input_reference_url: null,
@@ -638,7 +639,7 @@ describe('DialecticStore (integration) - fetchStageDocumentContent stores source
     created_at: now,
     updated_at: now,
     current_stage_id: 'stage-1',
-    selected_model_ids: [modelId],
+    selected_models: [{ id: modelId, displayName: 'Model 1' }],
     dialectic_contributions: [],
     session_description: null,
     user_input_reference_url: null,

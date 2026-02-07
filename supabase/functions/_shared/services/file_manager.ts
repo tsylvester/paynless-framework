@@ -393,16 +393,8 @@ export class FileManagerService {
       }
     } catch(e) {
       if (!mainUploadError) {
-        const { data: files, error: listError } = await this.supabase.storage
-          .from(this.storageBucket)
-          .list(finalMainContentFilePath);
-
-        if (listError) {
-          console.error(`[FileManager] Failed to list files for cleanup at path: ${finalMainContentFilePath}. Manual cleanup may be required.`, listError);
-        } else if (files && files.length > 0) {
-          const pathsToRemove = files.map(file => `${finalMainContentFilePath}/${file.name}`);
-          await this.supabase.storage.from(this.storageBucket).remove(pathsToRemove);
-        }
+        const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+        await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]);
       }
       // If upload succeeded but DB registration failed, wrap PostgrestError with descriptive message
       // Otherwise return PostgrestError directly for other cases

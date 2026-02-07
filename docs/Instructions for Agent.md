@@ -120,7 +120,7 @@
 * Prove the functional gap, the implemented fix, and regressions through tests before moving on; never assume success without proof.
 
 ## 9. Logging, Defaults, and Error Handling
-* Do remove logging unless the user explicitly instructs you to do so.
+* Do not remove logging unless the user explicitly instructs you to do so.
 * The first step to debugging is to add logging. Do not guess at the problem, add logging to see what's happening.
 * Adding console logs solely for troubleshooting is exempt from TDD and checklist obligations, but the exemption applies only to the logging statements themselves.
 * Believe failing tests, linter flags, and user-reported errors literally; fix the stated condition before chasing deeper causes.

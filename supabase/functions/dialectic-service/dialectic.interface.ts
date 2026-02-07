@@ -508,11 +508,24 @@ export type ListStageDocumentsResponse = StageDocumentDescriptorDto[];
 
 export type UnifiedStageStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
 
+export type JobProgressStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+export interface JobProgressEntry {
+  totalJobs: number;
+  completedJobs: number;
+  inProgressJobs: number;
+  failedJobs: number;
+  modelJobStatuses?: Record<string, JobProgressStatus>;
+}
+
+export type StepJobProgress = Record<string, JobProgressEntry>;
+
 export interface StageProgressEntry {
   stageSlug: string;
   documents: StageDocumentDescriptorDto[];
   stepStatuses: Record<string, string>;
   stageStatus: UnifiedStageStatus;
+  jobProgress: StepJobProgress;
 }
 
 export type GetAllStageProgressResponse = StageProgressEntry[];

@@ -23,6 +23,8 @@ import type {
 	StagePlannedDocumentDescriptor,
 	StageRunDocumentStatus,
 	StageRunProgressSnapshot,
+	JobProgressEntry,
+	ExecuteStartedPayload,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import { api } from '@paynless/api';
@@ -86,6 +88,24 @@ function isStepStatus(value: string): value is StageRunProgressSnapshot['stepSta
 /** Build composite key for stageRunProgress.documents (documentKey + separator + modelId). */
 export const getStageRunDocumentKey = (documentKey: string, modelId: string): string =>
 	`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`;
+
+const ensureJobProgressEntry = (
+	progress: Draft<StageRunProgressSnapshot>,
+	stepKey: string,
+): JobProgressEntry => {
+	const existing = progress.jobProgress[stepKey];
+	if (existing) {
+		return existing;
+	}
+	const entry: JobProgressEntry = {
+		totalJobs: 0,
+		completedJobs: 0,
+		inProgressJobs: 0,
+		failedJobs: 0,
+	};
+	progress.jobProgress[stepKey] = entry;
+	return entry;
+};
 
 const ensureRenderedDocumentDescriptor = (
 	progress: Draft<StageRunProgressSnapshot>,
@@ -512,6 +532,11 @@ export const handlePlannerStartedLogic = (
 			return;
 		}
 		progress.stepStatuses[stepKey] = 'in_progress';
+		const jobEntry = ensureJobProgressEntry(progress, stepKey);
+		jobEntry.totalJobs = 1;
+		jobEntry.inProgressJobs = 1;
+		jobEntry.completedJobs = 0;
+		jobEntry.failedJobs = 0;
 	});
 };
 
@@ -542,6 +567,50 @@ export const handlePlannerCompletedLogic = (
 ): void => {
 	const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
 	setStepStatusLogic(get, set, progressKey, event.step_key, 'completed');
+	set((state) => {
+		const progress = state.stageRunProgress[progressKey];
+		if (!progress) return;
+		const jobEntry = ensureJobProgressEntry(progress, event.step_key);
+		jobEntry.completedJobs = 1;
+		jobEntry.inProgressJobs = 0;
+	});
+};
+
+export const handleExecuteStartedLogic = (
+	get: () => DialecticStore,
+	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
+	event: ExecuteStartedPayload,
+): void => {
+	const recipe = get().recipesByStageSlug[event.stageSlug];
+	if (!recipe) {
+		logger.warn('[DialecticStore] execute_started ignored; recipe missing', { stageSlug: event.stageSlug });
+		return;
+	}
+	const progressKey = `${event.sessionId}:${event.stageSlug}:${event.iterationNumber}`;
+	const progressSnapshot = get().stageRunProgress[progressKey];
+	if (!progressSnapshot) {
+		logger.warn('[DialecticStore] execute_started ignored; progress bucket missing', { progressKey });
+		return;
+	}
+	const stepKey = event.step_key ?? recipe.steps.find((step) => step.job_type === 'EXECUTE')?.step_key;
+	if (!stepKey) {
+		logger.warn('[DialecticStore] execute_started ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
+		return;
+	}
+	const modelId = event.modelId;
+	set((state) => {
+		const progress = state.stageRunProgress[progressKey];
+		if (!progress) return;
+		const jobEntry = ensureJobProgressEntry(progress, stepKey);
+		jobEntry.totalJobs += 1;
+		jobEntry.inProgressJobs += 1;
+		if (modelId) {
+			if (!jobEntry.modelJobStatuses) {
+				jobEntry.modelJobStatuses = {};
+			}
+			jobEntry.modelJobStatuses[modelId] = 'in_progress';
+		}
+	});
 };
 
 export const handleRenderStartedLogic = (
@@ -965,7 +1034,7 @@ export const handleDocumentCompletedLogic = (
 		documentKey: event.document_key,
 	};
 
-	set((state) => {
+		set((state) => {
 		const progress = state.stageRunProgress[progressKey];
 		if (!progress) {
 			return;
@@ -981,6 +1050,17 @@ export const handleDocumentCompletedLogic = (
 
 		// Determine step key from event or descriptor
 		const stepKey = event.step_key ?? (!isPlannedDescriptor(documentEntry) ? documentEntry.stepKey : undefined);
+
+		// Update jobProgress for EXECUTE step
+		if (stepKey && event.modelId) {
+			const jobEntry = ensureJobProgressEntry(progress, stepKey);
+			jobEntry.inProgressJobs = Math.max(0, jobEntry.inProgressJobs - 1);
+			jobEntry.completedJobs += 1;
+			if (!jobEntry.modelJobStatuses) {
+				jobEntry.modelJobStatuses = {};
+			}
+			jobEntry.modelJobStatuses[event.modelId] = 'completed';
+		}
 
 		// Update step status if we have a step_key
 		if (stepKey) {
@@ -1088,23 +1168,15 @@ export const handleJobFailedLogic = (
 		sessionId: event.sessionId,
 		stageSlug: event.stageSlug,
 		iterationNumber: event.iterationNumber,
-		modelId: event.modelId,
-		documentKey: event.document_key,
+		modelId: event.modelId ?? '',
+		documentKey: event.document_key ?? '',
 	};
 
-	if (event.document_key == null || event.modelId == null) {
-		const err = new Error(
-			'[DialecticStore] job_failed: document_key and modelId are required; missing data is an error.',
-		);
-		logger.error('[DialecticStore] job_failed missing required data', {
-			progressKey,
-			stepKey,
-			document_key: event.document_key,
-			modelId: event.modelId,
-		});
-		throw err;
-	}
-	const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
+	const hasDocumentKeyAndModelId =
+		event.document_key != null &&
+		event.document_key !== '' &&
+		event.modelId != null &&
+		event.modelId !== '';
 
 	set((state) => {
 		const progress = state.stageRunProgress[progressKey];
@@ -1112,6 +1184,19 @@ export const handleJobFailedLogic = (
 			return;
 		}
 		progress.stepStatuses[stepKey] = 'failed';
+		const jobEntry = ensureJobProgressEntry(progress, stepKey);
+		jobEntry.inProgressJobs = Math.max(0, jobEntry.inProgressJobs - 1);
+		jobEntry.failedJobs += 1;
+		if (event.modelId) {
+			if (!jobEntry.modelJobStatuses) {
+				jobEntry.modelJobStatuses = {};
+			}
+			jobEntry.modelJobStatuses[event.modelId] = 'failed';
+		}
+		if (!hasDocumentKeyAndModelId) {
+			return;
+		}
+		const documentsKey = getStageRunDocumentKey(event.document_key!, event.modelId!);
 		const hasLatestResource =
 			typeof event.latestRenderedResourceId === 'string' &&
 			event.latestRenderedResourceId.length > 0;
@@ -1405,6 +1490,7 @@ export const hydrateStageProgressLogic = async (
 				state.stageRunProgress[progressKey] = {
 					documents: {},
 					stepStatuses: {},
+					jobProgress: {},
 				};
 			}
 
@@ -1498,10 +1584,16 @@ export const hydrateAllStageProgressLogic = async (
 					state.stageRunProgress[progressKey] = {
 						documents: {},
 						stepStatuses: {},
+						jobProgress: {},
 					};
 				}
 
 				const progress = state.stageRunProgress[progressKey];
+				if (entry.jobProgress) {
+					for (const [stepKey, jobEntry] of Object.entries(entry.jobProgress)) {
+						progress.jobProgress[stepKey] = { ...jobEntry };
+					}
+				}
 				for (const [key, value] of Object.entries(entry.stepStatuses)) {
 					if (isStepStatus(value)) {
 						progress.stepStatuses[key] = value;

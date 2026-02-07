@@ -1,6 +1,10 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
-import type { IFileManager, UserFeedbackUploadContext } from '../_shared/types/file_manager.types.ts';
+import type {
+  IFileManager,
+  PathContext,
+  UserFeedbackUploadContext,
+} from '../_shared/types/file_manager.types.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import type { ILogger } from '../_shared/types.ts';
 import {
@@ -45,28 +49,55 @@ export async function submitStageDocumentFeedback(
   const { fileManager, logger } = deps;
   const resolvedSourceContributionId = sourceContributionId ?? null;
 
+  let originalStoragePath: string | undefined;
+  let originalBaseName: string | undefined;
+  if (resolvedSourceContributionId !== null) {
+    const { data: resourceRow, error: resourceError } = await dbClient
+      .from('dialectic_project_resources')
+      .select('storage_path, file_name')
+      .eq('source_contribution_id', resolvedSourceContributionId)
+      .eq('resource_type', 'rendered_document')
+      .maybeSingle();
+    if (resourceError || !resourceRow) {
+      logger.warn('Original document not found for feedback placement.', {
+        sourceContributionId: resolvedSourceContributionId,
+      });
+      return {
+        error: { message: 'Original document not found for feedback placement.' },
+      };
+    }
+    originalStoragePath = resourceRow.storage_path;
+    originalBaseName = resourceRow.file_name.endsWith('.md')
+      ? resourceRow.file_name.slice(0, -3)
+      : resourceRow.file_name;
+  }
+
   const fileName =
     `feedback_${documentKey}_${modelId}_${new Date().toISOString()}.md`;
   const fileBuffer = new TextEncoder().encode(feedbackContent);
   const blob = new Blob([fileBuffer], { type: 'text/markdown' });
 
+  const pathContext: PathContext & { fileType: FileType.UserFeedback } = {
+    projectId: projectId,
+    fileType: FileType.UserFeedback,
+    sessionId: sessionId,
+    iteration: iterationNumber,
+    stageSlug: stageSlug,
+    documentKey: documentKey,
+    modelSlug: modelId,
+    originalFileName: fileName,
+    sourceContributionId: resolvedSourceContributionId,
+    ...(originalStoragePath !== undefined && originalBaseName !== undefined
+      ? { originalStoragePath, originalBaseName }
+      : {}),
+  };
   const uploadContext: UserFeedbackUploadContext = {
     fileContent: feedbackContent,
     mimeType: 'text/markdown',
     sizeBytes: blob.size,
     userId: userId,
     description: `User feedback for document ${documentKey}`,
-    pathContext: {
-      projectId: projectId,
-      fileType: FileType.UserFeedback,
-      sessionId: sessionId,
-      iteration: iterationNumber,
-      stageSlug: stageSlug,
-      documentKey: documentKey,
-      modelSlug: modelId,
-      originalFileName: fileName,
-      sourceContributionId: resolvedSourceContributionId,
-    },
+    pathContext,
     feedbackTypeForDb: feedbackType,
     resourceDescriptionForDb: {
       document_key: documentKey,

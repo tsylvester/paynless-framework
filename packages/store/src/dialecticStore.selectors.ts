@@ -792,14 +792,7 @@ function getSortedStagesFromTemplate(template: DialecticProcessTemplate | null):
     });
 }
 
-function isModelStep(step: DialecticStageRecipeStep): boolean {
-    if (step.job_type === 'RENDER') return false;
-    const outputs = step.outputs_required;
-    if (!outputs?.length) return false;
-    const hasDocumentOutput = outputs.some((o: { artifact_class: string; file_type?: string }) =>
-        (o.artifact_class === 'rendered_document' || o.artifact_class === 'assembled_document_json') && (o.file_type === 'markdown' || !o.file_type));
-    return hasDocumentOutput;
-}
+const isExecuteStep = (step: DialecticStageRecipeStep): boolean => step.job_type === 'EXECUTE';
 
 export const selectUnifiedProjectProgress = (
     state: DialecticStateValues,
@@ -810,9 +803,6 @@ export const selectUnifiedProjectProgress = (
     const totalStages = stages.length;
     const session = selectSessionById(state, sessionId);
     const iterationNumber = session?.iteration_count ?? 0;
-    const selectedModels = state.selectedModels || [];
-    const totalModels = selectedModels.length;
-    const selectedModelIdSet = new Set(selectedModels.map((m) => m.id));
 
     const currentStageId = session?.current_stage_id ?? null;
     const currentStage: DialecticStage | null = currentStageId
@@ -840,7 +830,6 @@ export const selectUnifiedProjectProgress = (
         const stageSlug = stage.slug;
         const recipe = state.recipesByStageSlug[stageSlug];
         const progress = selectStageRunProgress(state, sessionId, stageSlug, iterationNumber);
-        const validMarkdownKeys = selectValidMarkdownDocumentKeys(state, stageSlug);
         const steps = recipe?.steps ?? [];
         const sortedSteps = [...steps].sort((a, b) => {
             if (a.execution_order !== b.execution_order) return a.execution_order - b.execution_order;
@@ -853,51 +842,41 @@ export const selectUnifiedProjectProgress = (
 
         for (const step of sortedSteps) {
             const stepKey = step.step_key;
-            const stepStatusFromProgress = progress?.stepStatuses?.[stepKey];
-            const isModel = isModelStep(step);
+            const jobEntry = progress?.jobProgress?.[stepKey];
 
-            let totalModelsForStep: number;
-            let completedModelsForStep: number;
-            let stepPercentage: number;
+            if (!jobEntry) {
+                stepsDetail.push({
+                    stepKey,
+                    stepName: step.step_name,
+                    totalJobs: 0,
+                    completedJobs: 0,
+                    inProgressJobs: 0,
+                    failedJobs: 0,
+                    stepPercentage: 0,
+                    status: 'not_started',
+                });
+                continue;
+            }
+
+            const totalJobs: number = jobEntry.totalJobs;
+            const completedJobs: number = jobEntry.completedJobs;
+            const inProgressJobs: number = jobEntry.inProgressJobs;
+            const failedJobs: number = jobEntry.failedJobs;
+
+            const isExecute = isExecuteStep(step);
+            const stepPercentage: number = isExecute
+                ? (totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0)
+                : (completedJobs > 0 ? 100 : 0);
+
             let stepStatus: UnifiedProjectStatus;
-
-            if (isModel) {
-                totalModelsForStep = totalModels;
-                const outputDocKeys = (step.outputs_required ?? [])
-                    .filter((o: { artifact_class: string; file_type?: string }) =>
-                        (o.artifact_class === 'rendered_document' || o.artifact_class === 'assembled_document_json') &&
-                        (o.file_type === 'markdown' || !o.file_type))
-                    .map((o: { document_key: string }) => o.document_key);
-                let completed = 0;
-                let hasFailed = false;
-                let hasInProgress = false;
-                const docs = progress?.documents ?? {};
-                const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
-                for (const compositeKey of Object.keys(docs)) {
-                    const desc = docs[compositeKey];
-                    if (!desc) continue;
-                    const documentKey = compositeKey.includes(sep)
-                        ? compositeKey.slice(0, compositeKey.indexOf(sep))
-                        : compositeKey;
-                    if (!validMarkdownKeys.has(documentKey)) continue;
-                    const matchesOutput = outputDocKeys.length === 0 || outputDocKeys.some((k: string) => documentKey === k);
-                    if (!matchesOutput) continue;
-                    if (!desc.modelId) throw new Error(`document ${compositeKey} has no modelId`);
-                    if (!selectedModelIdSet.has(desc.modelId)) continue;
-                    if (desc.status === 'completed') completed += 1;
-                    else if (desc.status === 'failed') hasFailed = true;
-                    else hasInProgress = true;
-                }
-                completedModelsForStep = completed;
-                stepPercentage = totalModelsForStep > 0 ? (completed / totalModelsForStep) * 100 : 0;
-                if (completed === 0 && hasInProgress && stepPercentage === 0) stepPercentage = 0.01;
-                stepStatus = hasFailed ? 'failed' : (hasInProgress || completed < totalModelsForStep ? 'in_progress' : 'completed');
+            if (failedJobs > 0) {
+                stepStatus = 'failed';
+            } else if (inProgressJobs > 0) {
+                stepStatus = 'in_progress';
+            } else if (completedJobs === totalJobs && totalJobs > 0) {
+                stepStatus = 'completed';
             } else {
-                totalModelsForStep = 1;
-                const done = stepStatusFromProgress === 'completed';
-                completedModelsForStep = done ? 1 : 0;
-                stepPercentage = done ? 100 : 0;
-                stepStatus = stepStatusFromProgress === 'failed' ? 'failed' : (done ? 'completed' : (stepStatusFromProgress === 'in_progress' ? 'in_progress' : 'not_started'));
+                stepStatus = 'not_started';
             }
 
             stepSum += stepPercentage;
@@ -908,8 +887,10 @@ export const selectUnifiedProjectProgress = (
             stepsDetail.push({
                 stepKey,
                 stepName: step.step_name,
-                totalModels: totalModelsForStep,
-                completedModels: completedModelsForStep,
+                totalJobs,
+                completedJobs,
+                inProgressJobs,
+                failedJobs,
                 stepPercentage,
                 status: stepStatus,
             });
@@ -1012,7 +993,7 @@ export const selectFocusedStageDocument = (
     if (!focusMap) {
         return null;
     }
-    const entry = focusMap[key] ?? null;
+    const entry = focusMap[key];
     if (!entry) {
         return null;
     }

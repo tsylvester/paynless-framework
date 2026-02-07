@@ -71,6 +71,7 @@ import {
 	fetchStageDocumentContentLogic,
 	handlePlannerStartedLogic,
 	handlePlannerCompletedLogic,
+	handleExecuteStartedLogic,
 	handleDocumentStartedLogic,
 	handleDocumentChunkCompletedLogic,
 	handleDocumentCompletedLogic,
@@ -1468,6 +1469,7 @@ export const useDialecticStore = create<DialecticStore>()(
             handlers._handleDocumentStarted(payload);
             break;
         case 'execute_started':
+            handleExecuteStartedLogic(get, set, payload);
             if (payload.document_key !== undefined && payload.document_key !== '') {
                 handlers._handleDocumentStarted({
                     type: 'document_started',
@@ -2668,6 +2670,7 @@ export const useDialecticStore = create<DialecticStore>()(
         state.stageRunProgress[progressKey] = {
           documents: {},
           stepStatuses,
+          jobProgress: {},
         };
         return;
       }
