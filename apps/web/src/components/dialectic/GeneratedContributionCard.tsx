@@ -369,6 +369,12 @@ export const GeneratedContributionCard: React.FC<
 			return;
 		}
 
+		const resourceType = documentResourceState?.resourceType;
+		if (resourceType === null || resourceType === undefined) {
+			toast.error("Could not determine resource type for edit.");
+			return;
+		}
+
 		const payload: SaveContributionEditPayload = {
 			originalContributionIdToEdit,
 			editedContentText: editedContent,
@@ -377,7 +383,7 @@ export const GeneratedContributionCard: React.FC<
 			originalModelContributionId: originalContributionIdToEdit,
 			responseText: editedContent,
 			documentKey: compositeKey.documentKey,
-			resourceType: "rendered_document",
+			resourceType,
 		};
 
 		try {

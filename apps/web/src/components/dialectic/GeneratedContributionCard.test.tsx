@@ -303,6 +303,7 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
   isLoading?: boolean;
   contribution?: DialecticContribution | null;
   sourceContributionId?: string | null;
+  resourceType?: string | null;
 }) => {
   const {
     focusedDocument = null,
@@ -312,6 +313,7 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
     isLoading = false,
     contribution = null,
     sourceContributionId,
+    resourceType = null,
     ...stateOverrides
   } = overrides;
 
@@ -351,6 +353,7 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
       sourceContributionId: effectiveSourceContributionId,
       feedbackDraftMarkdown: feedback,
       feedbackIsDirty: feedback !== '',
+      resourceType,
     }
   } : {};
 
@@ -421,6 +424,7 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
       [progressKey]: {
         stepStatuses: {},
         documents: documents,
+        jobProgress: {},
       },
     },
     stageDocumentContent: contentState,
@@ -610,6 +614,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -647,6 +652,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -661,12 +667,13 @@ describe('GeneratedContributionCard', () => {
     it('should call saveContributionEdit with originalContributionIdToEdit derived from sourceContributionId in document resource state, not from lastBaselineVersion.resourceId', async () => {
       const user = userEvent.setup();
       const originalContributionId = 'contrib-orig-123';
-      
+
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Original document content',
         contribution: null,
         sourceContributionId: originalContributionId,
+        resourceType: 'rendered_document',
         focusedStageDocument: {
           [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
         },
@@ -730,6 +737,58 @@ describe('GeneratedContributionCard', () => {
       });
     });
 
+    it('should call saveContributionEdit with resourceType from documentResourceState.resourceType', async () => {
+      const user = userEvent.setup();
+      const originalContributionId = 'contrib-orig-456';
+      // Only rendered_document is ever shown for editing; assert payload uses state value.
+      const stateResourceType = 'rendered_document';
+
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Document content',
+        contribution: null,
+        sourceContributionId: originalContributionId,
+        resourceType: stateResourceType,
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      mockSelectStageDocumentResource.mockReset();
+      const actualStoreModule = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+      mockSelectStageDocumentResource.mockImplementation((...args) => {
+        return actualStoreModule.selectStageDocumentResource(...args);
+      });
+
+      const { updateStageDocumentDraft } = getDialecticStoreState();
+      const compositeKey: StageDocumentCompositeKey = {
+        sessionId: mockSessionId,
+        stageSlug: mockStageSlug,
+        iterationNumber,
+        modelId: modelA,
+        documentKey: docA1Key,
+      };
+      updateStageDocumentDraft(compositeKey, 'Edited content');
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      await waitFor(() => {
+        const contentTextareas = screen.getAllByTestId('content-textarea');
+        expect(contentTextareas[0]).toHaveValue('Edited content');
+      });
+
+      const saveEditButtons = screen.getAllByRole('button', { name: /save edit/i });
+      await user.click(saveEditButtons[0]);
+
+      const { saveContributionEdit } = getDialecticStoreState();
+      await waitFor(() => {
+        expect(saveContributionEdit).toHaveBeenCalled();
+      });
+      const payload: SaveContributionEditPayload = (saveContributionEdit as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+      expect(payload).toBeDefined();
+      expect(payload.resourceType).toBe(stateResourceType);
+    });
+
     it('should display EditedDocumentResource metadata after successful edit', async () => {
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
@@ -755,6 +814,7 @@ describe('GeneratedContributionCard', () => {
         sourceContributionId: `contrib-${modelA}`,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
+        resourceType: null,
       };
 
       mockSelectStageDocumentResource.mockReturnValue(documentResourceState);
@@ -770,19 +830,18 @@ describe('GeneratedContributionCard', () => {
     it('should show optimistic UI updates after saveContributionEdit succeeds using resource-driven state', async () => {
       const user = userEvent.setup();
       const originalContributionId = 'contrib-orig-123';
-      
+
       setupStore({
         focusedDocument: { modelId: modelA, documentKey: docA1Key },
         content: 'Original content',
         contribution: null,
         sourceContributionId: originalContributionId,
+        resourceType: 'rendered_document',
         focusedStageDocument: {
           [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
         },
       });
 
-      // Don't override the selector - let it read from the actual store state
-      // Reset the mock to clear any previous mockReturnValue and restore default call-through behavior
       mockSelectStageDocumentResource.mockReset();
       const actualStoreModule = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
       mockSelectStageDocumentResource.mockImplementation((...args) => {
@@ -793,7 +852,6 @@ describe('GeneratedContributionCard', () => {
 
       render(<GeneratedContributionCard modelId={modelA} />);
 
-      // Directly set the new content in the store - the component uses || so empty string falls back to baseline
       const compositeKey: StageDocumentCompositeKey = {
         sessionId: mockSessionId,
         stageSlug: mockStageSlug,
@@ -802,19 +860,16 @@ describe('GeneratedContributionCard', () => {
         documentKey: docA1Key,
       };
       updateStageDocumentDraft(compositeKey, 'Edited content');
-      
-      // Wait for the store to update and component to re-render with the new content
+
       await waitFor(() => {
         const contentTextareas = screen.getAllByTestId('content-textarea');
         expect(contentTextareas).toHaveLength(2);
         expect(contentTextareas[0]).toHaveValue('Edited content');
       });
 
-      // Save the edit
       const saveEditButtons = screen.getAllByRole('button', { name: /save edit/i });
       await user.click(saveEditButtons[0]);
 
-      // Assert saveContributionEdit was called
       const expectedPayload: SaveContributionEditPayload = {
         originalContributionIdToEdit: originalContributionId,
         editedContentText: 'Edited content',
@@ -832,42 +887,12 @@ describe('GeneratedContributionCard', () => {
         );
       });
 
-      const { updateStageDocumentResource } = getDialecticStoreState();
-      updateStageDocumentResource(
-        {
-          sessionId: mockSessionId,
-          stageSlug: mockStageSlug,
-          iterationNumber,
-          modelId: modelA,
-          documentKey: docA1Key,
-        },
-        {
-          id: 'resource-new',
-          resource_type: 'rendered_document',
-          project_id: mockProjectId,
-          session_id: mockSessionId,
-          stage_slug: mockStageSlug,
-          iteration_number: iterationNumber,
-          document_key: docA1Key,
-          source_contribution_id: originalContributionId,
-          storage_bucket: 'dialectic-resources',
-          storage_path: '/edited/resource-new.md',
-          file_name: 'edited-resource-new.md',
-          mime_type: 'text/markdown',
-          size_bytes: 'Edited content'.length,
-          created_at: '2023-01-01T00:00:00Z',
-          updated_at: '2023-01-02T12:00:00Z',
-        },
-        'Edited content',
-      );
-
       await waitFor(() => {
-        const contentTextareas = screen.getAllByTestId('content-textarea');
-        expect(contentTextareas).toHaveLength(2);
-        expect(contentTextareas[0]).toHaveValue('Edited content');
-        const expectedUpdatedDate = new Date('2023-01-02T12:00:00Z').toLocaleDateString();
-        const bodyText = document.body.textContent ?? '';
-        expect(bodyText).toContain(`Updated ${expectedUpdatedDate}`);
+        const serializedKey = getStageDocumentKey(compositeKey);
+        const entry = getDialecticStoreState().stageDocumentContent[serializedKey];
+        expect(entry).toBeDefined();
+        expect(entry?.sourceContributionId).toBe(originalContributionId);
+        expect(entry?.resourceType).toBe('rendered_document');
       });
 
       expect(toast.success).toHaveBeenCalledWith('Edit saved successfully.');
@@ -1344,6 +1369,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -1377,6 +1403,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: null,
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -1409,6 +1436,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: null,
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -1458,6 +1486,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: null,
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       };
@@ -1523,6 +1552,7 @@ describe('GeneratedContributionCard', () => {
       pendingDiff: null,
       lastAppliedVersionHash: null,
       sourceContributionId: null,
+      resourceType: null,
       feedbackDraftMarkdown: 'Feedback draft text',
       feedbackIsDirty: true,
     };
@@ -1592,6 +1622,7 @@ describe('GeneratedContributionCard', () => {
       pendingDiff: null,
       lastAppliedVersionHash: 'hash-1',
       sourceContributionId: 'contrib-1',
+      resourceType: 'rendered_document',
       feedbackDraftMarkdown: 'Feedback draft for submit',
       feedbackIsDirty: true,
     });
@@ -1718,6 +1749,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       });
@@ -1810,6 +1842,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: 'contrib-1',
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       });
@@ -1840,6 +1873,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       });
@@ -1872,6 +1906,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: 'contrib-1',
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       });
@@ -1905,6 +1940,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: 'Feedback text',
         feedbackIsDirty: true,
       });
@@ -1937,6 +1973,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: 'contrib-1',
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       });
@@ -1968,6 +2005,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       });
@@ -1999,6 +2037,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: 'Draft feedback',
         feedbackIsDirty: true,
       });
@@ -2048,6 +2087,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: 'contrib-1',
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       });
@@ -2079,6 +2119,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: 'contrib-1',
+        resourceType: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       });
@@ -2109,6 +2150,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: 'Existing feedback',
         feedbackIsDirty: false,
       });
@@ -2138,6 +2180,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: 'Draft feedback',
         feedbackIsDirty: true,
       });
@@ -2206,6 +2249,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: 'contrib-1',
+        resourceType: 'rendered_document',
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
       });
@@ -2243,6 +2287,7 @@ describe('GeneratedContributionCard', () => {
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-1',
         sourceContributionId: `contrib-${modelA}`,
+        resourceType: null,
         feedbackDraftMarkdown: 'My feedback',
         feedbackIsDirty: true,
       });

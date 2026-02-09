@@ -476,4 +476,72 @@ Deno.test("getProjectResourceContent - returns sourceContributionId as null when
   assertEquals(result.data?.mimeType, "text/plain");
   assertEquals(result.data?.content, "Test content");
   assertEquals(result.data?.sourceContributionId, null);
+});
+
+Deno.test("getProjectResourceContent - successful response includes resourceType matching resource row resource_type", async () => {
+  const mockDbClient: any = {
+    from: () => mockDbClient,
+    select: () => mockDbClient,
+    eq: () => mockDbClient,
+    single: () => Promise.resolve({
+      data: {
+        project_id: "project123",
+        user_id: "user123",
+        file_name: "doc.md",
+        mime_type: "text/markdown",
+        storage_bucket: "test-bucket",
+        storage_path: "test/path/doc.md",
+        source_contribution_id: null,
+        resource_type: "rendered_document",
+      },
+      error: null,
+    }),
+    storage: {
+      from: () => mockDbClient.storage,
+      download: () => Promise.resolve({ data: new Blob(["Content"]), error: null }),
+    },
+  };
+
+  const mockUser: any = { id: "user123" };
+  const payload = { resourceId: "resource123" };
+
+  const result = await getProjectResourceContent(payload, mockDbClient as any, mockUser as any);
+
+  assertEquals(result.error, undefined);
+  assertEquals(result.data?.resourceType, "rendered_document");
+});
+
+Deno.test("getProjectResourceContent - successful response shape includes resourceType", async () => {
+  const mockDbClient: any = {
+    from: () => mockDbClient,
+    select: () => mockDbClient,
+    eq: () => mockDbClient,
+    single: () => Promise.resolve({
+      data: {
+        project_id: "project123",
+        user_id: "user123",
+        file_name: "doc.md",
+        mime_type: "text/markdown",
+        storage_bucket: "test-bucket",
+        storage_path: "test/path/doc.md",
+        source_contribution_id: null,
+        resource_type: null,
+      },
+      error: null,
+    }),
+    storage: {
+      from: () => mockDbClient.storage,
+      download: () => Promise.resolve({ data: new Blob(["Content"]), error: null }),
+    },
+  };
+
+  const mockUser: any = { id: "user123" };
+  const payload = { resourceId: "resource123" };
+
+  const result = await getProjectResourceContent(payload, mockDbClient as any, mockUser as any);
+
+  assertEquals(result.error, undefined);
+  assertEquals(result.data !== undefined, true);
+  assertEquals("resourceType" in (result.data ?? {}), true);
+  assertEquals(result.data?.resourceType, null);
 }); 

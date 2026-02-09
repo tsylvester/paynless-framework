@@ -16,7 +16,6 @@ import type {
     StageRenderedDocumentDescriptor,
     StagePlannedDocumentDescriptor,
     StageDocumentContentState,
-    EditedDocumentResource,
     UnifiedProjectProgress,
     StepProgressDetail,
     StageProgressDetail,
@@ -1098,54 +1097,6 @@ export const selectStageHasUnsavedChanges = (
         }
     }
     return { hasUnsavedEdits, hasUnsavedFeedback };
-};
-
-/**
- * Selector to get the complete EditedDocumentResource metadata from stageDocumentResources.
- * This returns the full resource metadata including source_contribution_id, updated_at,
- * resource_type, document_key, id, storage_path, mime_type, size_bytes, created_at,
- * and all other EditedDocumentResource fields.
- * 
- * This is required so UI components (Steps 84-85) can display resource metadata like
- * source_contribution_id and last modified timestamps.
- * 
- * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
- * 
- * @param state - The dialectic state values
- * @param sessionId - The session identifier
- * @param stageSlug - The stage slug
- * @param iterationNumber - The iteration number
- * @param modelId - The model identifier
- * @param documentKey - The document key
- * @returns The complete EditedDocumentResource object, or undefined if not found
- */
-export const selectStageDocumentResourceMetadata = (
-    state: DialecticStateValues,
-    sessionId: string,
-    stageSlug: string,
-    iterationNumber: number,
-    modelId: string,
-    documentKey: string
-): EditedDocumentResource | undefined => {
-    const compositeKey = `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
-    return state.stageDocumentResources[compositeKey];
-};
-
-/**
- * Selector to get the complete EditedDocumentResource metadata by composite key.
- * Provides quick access to document resource metadata without requiring all key components.
- * 
- * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
- * 
- * @param state - The dialectic state values
- * @param compositeKey - The composite key for the document resource
- * @returns The complete EditedDocumentResource object, or undefined if not found
- */
-export const selectStageDocumentResourceMetadataByKey = (
-    state: DialecticStateValues,
-    compositeKey: string
-): EditedDocumentResource | undefined => {
-    return state.stageDocumentResources[compositeKey];
 };
 
 /**

@@ -7,6 +7,7 @@ import type {
 	DialecticStateValues,
 	StageDocumentCompositeKey,
 	StageDocumentContentState,
+	StageDocumentVersionInfo,
 	ApiError,
 	RenderCompletedPayload,
 	DocumentCompletedPayload,
@@ -30,9 +31,14 @@ import {
 	handleRenderCompletedLogic,
 	getStageDocumentKey,
 	ensureStageDocumentContentLogic,
+	reapplyDraftToNewBaselineLogic,
+	recordStageDocumentDraftLogic,
 	recordStageDocumentFeedbackDraftLogic,
 	flushStageDocumentFeedbackDraftLogic,
 	hydrateAllStageProgressLogic,
+	upsertStageDocumentVersionLogic,
+	fetchStageDocumentContentLogic,
+	type EnsureStageDocumentContentSeed,
 } from './dialecticStore.documents';
 import {
 	api,
@@ -40,7 +46,7 @@ import {
 	getMockDialecticClient,
 } from '@paynless/api/mocks';
 import { logger } from '@paynless/utils';
-import { produce } from 'immer';
+import { produce, type Draft } from 'immer';
 
 const mockDialecticClient = getMockDialecticClient();
 vi.mock('@paynless/api', async () => {
@@ -306,7 +312,7 @@ describe('hydrateAllStageProgressLogic', () => {
 		expect(Object.keys(state.stageRunProgress).length).toBe(0);
 	});
 
-	it('adds documents without latestRenderedResourceId to progress', async () => {
+	it('adds valid documents to progress', async () => {
 		const progressKey = `${sessionId}:thesis:${iterationNumber}`;
 		const mockResponse: GetAllStageProgressResponse = [
 			{
@@ -317,7 +323,7 @@ describe('hydrateAllStageProgressLogic', () => {
 						modelId: 'y',
 						status: 'generating',
 						jobId: 'j1',
-						latestRenderedResourceId: '',
+						latestRenderedResourceId: 'res-1',
 					},
 				],
 				stepStatuses: {},
@@ -423,6 +429,7 @@ describe('Dialectic store document refresh behaviour', () => {
 					fileName: 'test.md',
 					mimeType: 'text/markdown',
 					sourceContributionId: null,
+					resourceType: null,
 				},
 				status: 200,
 			});
@@ -593,6 +600,7 @@ describe('Dialectic store document refresh behaviour', () => {
 				sourceContributionId: null,
 				feedbackDraftMarkdown: '',
 				feedbackIsDirty: false,
+				resourceType: null,
 			};
 			state.stageRunProgress[progressKey] = {
 				documents: {},
@@ -607,6 +615,7 @@ describe('Dialectic store document refresh behaviour', () => {
 				fileName: 'test.md',
 				mimeType: 'text/markdown',
 				sourceContributionId: null,
+				resourceType: null,
 			},
 			status: 200,
 		});
@@ -641,6 +650,7 @@ describe('Dialectic store document refresh behaviour', () => {
 			sourceContributionId: null,
 			feedbackDraftMarkdown: '',
 			feedbackIsDirty: false,
+			resourceType: null,
 		};
 
 		const mockRecipe: DialecticStageRecipe = {
@@ -748,6 +758,7 @@ describe('Dialectic store document refresh behaviour', () => {
 					sourceContributionId: null,
 					feedbackDraftMarkdown: '',
 					feedbackIsDirty: false,
+					resourceType: null,
 				},
 				[secondSerialized]: {
 					baselineMarkdown: 'Doc B baseline',
@@ -765,6 +776,7 @@ describe('Dialectic store document refresh behaviour', () => {
 					sourceContributionId: null,
 					feedbackDraftMarkdown: '',
 					feedbackIsDirty: false,
+					resourceType: null,
 				},
 			},
 		});
@@ -848,6 +860,25 @@ describe('Surface document content & feedback accessors', () => {
 	});
 
 	it('submits feedback for a document and updates state', async () => {
+		const serializedKey = getStageDocumentKey(compositeKey);
+		const validContentEntry: StageDocumentContentState = {
+			baselineMarkdown: '',
+			currentDraftMarkdown: '',
+			isDirty: false,
+			isLoading: false,
+			error: null,
+			lastBaselineVersion: null,
+			pendingDiff: null,
+			lastAppliedVersionHash: null,
+			sourceContributionId: null,
+			feedbackDraftMarkdown: '',
+			feedbackIsDirty: false,
+			resourceType: null,
+		};
+		useDialecticStore.setState((state) => {
+			state.stageDocumentContent[serializedKey] = validContentEntry;
+		});
+
 		const feedbackContent = 'This is new feedback to submit.';
 		mockDialecticClient.submitStageDocumentFeedback.mockResolvedValue({
 			data: { success: true },
@@ -940,6 +971,7 @@ describe('Dialectic store document clear focused stage document', () => {
 					sourceContributionId: null,
 					feedbackDraftMarkdown: '',
 					feedbackIsDirty: false,
+					resourceType: null,
 				},
 				[secondSerialized]: {
 					baselineMarkdown: 'Doc B baseline',
@@ -957,6 +989,7 @@ describe('Dialectic store document clear focused stage document', () => {
 					sourceContributionId: null,
 					feedbackDraftMarkdown: '',
 					feedbackIsDirty: false,
+					resourceType: null,
 				},
 			},
 			focusedStageDocument: {
@@ -1018,6 +1051,31 @@ describe('submitStageDocumentFeedback', () => {
 			sourceContributionId: null,
 		};
 
+		const serializedKey = getStageDocumentKey({
+			sessionId: feedbackPayload.sessionId,
+			stageSlug: feedbackPayload.stageSlug,
+			iterationNumber: feedbackPayload.iterationNumber,
+			modelId: feedbackPayload.modelId,
+			documentKey: feedbackPayload.documentKey,
+		});
+		const validContentEntry: StageDocumentContentState = {
+			baselineMarkdown: '',
+			currentDraftMarkdown: '',
+			isDirty: false,
+			isLoading: false,
+			error: null,
+			lastBaselineVersion: null,
+			pendingDiff: null,
+			lastAppliedVersionHash: null,
+			sourceContributionId: null,
+			feedbackDraftMarkdown: '',
+			feedbackIsDirty: false,
+			resourceType: null,
+		};
+		useDialecticStore.setState((state) => {
+			state.stageDocumentContent[serializedKey] = validContentEntry;
+		});
+
 		const spy = vi
 			.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
 			.mockResolvedValue({
@@ -1050,6 +1108,31 @@ describe('submitStageDocumentFeedback', () => {
 			projectId: 'proj-test-456',
 			feedbackType: 'user_feedback',
 		};
+
+		const serializedKey = getStageDocumentKey({
+			sessionId: feedbackPayload.sessionId,
+			stageSlug: feedbackPayload.stageSlug,
+			iterationNumber: feedbackPayload.iterationNumber,
+			modelId: feedbackPayload.modelId,
+			documentKey: feedbackPayload.documentKey,
+		});
+		const validContentEntry: StageDocumentContentState = {
+			baselineMarkdown: '',
+			currentDraftMarkdown: '',
+			isDirty: false,
+			isLoading: false,
+			error: null,
+			lastBaselineVersion: null,
+			pendingDiff: null,
+			lastAppliedVersionHash: null,
+			sourceContributionId: null,
+			feedbackDraftMarkdown: '',
+			feedbackIsDirty: false,
+			resourceType: null,
+		};
+		useDialecticStore.setState((state) => {
+			state.stageDocumentContent[serializedKey] = validContentEntry;
+		});
 
 		const apiError: ApiError = {
 			message: 'Failed to submit feedback',
@@ -1101,27 +1184,23 @@ describe('submitStageDocumentFeedback', () => {
 			documentKey: feedbackPayload.documentKey,
 		};
 		const serializedKey = getStageDocumentKey(compositeKey);
-		const mockResource: EditedDocumentResource = {
-			id: 'resource-123',
-			resource_type: 'rendered_document',
-			project_id: 'proj-1',
-			session_id: feedbackPayload.sessionId,
-			stage_slug: feedbackPayload.stageSlug,
-			iteration_number: feedbackPayload.iterationNumber,
-			document_key: feedbackPayload.documentKey,
-			source_contribution_id: 'contrib-doc-123',
-			storage_bucket: 'bucket',
-			storage_path: 'path',
-			file_name: 'file.md',
-			mime_type: 'text/markdown',
-			size_bytes: 100,
-			created_at: new Date().toISOString(),
-			updated_at: new Date().toISOString(),
-		};
 
 		useDialecticStore.setState({
-			stageDocumentResources: {
-				[serializedKey]: mockResource,
+			stageDocumentContent: {
+				[serializedKey]: {
+					baselineMarkdown: '',
+					currentDraftMarkdown: '',
+					isDirty: false,
+					isLoading: false,
+					error: null,
+					lastBaselineVersion: null,
+					pendingDiff: null,
+					lastAppliedVersionHash: null,
+					sourceContributionId: 'contrib-doc-123',
+					feedbackDraftMarkdown: '',
+					feedbackIsDirty: false,
+					resourceType: null,
+				},
 			},
 		});
 
@@ -1168,27 +1247,23 @@ describe('submitStageDocumentFeedback', () => {
 			documentKey: feedbackPayload.documentKey,
 		};
 		const serializedKey = getStageDocumentKey(compositeKey);
-		const mockResource: EditedDocumentResource = {
-			id: 'resource-456',
-			resource_type: 'rendered_document',
-			project_id: 'proj-1',
-			session_id: feedbackPayload.sessionId,
-			stage_slug: feedbackPayload.stageSlug,
-			iteration_number: feedbackPayload.iterationNumber,
-			document_key: feedbackPayload.documentKey,
-			source_contribution_id: null,
-			storage_bucket: 'bucket',
-			storage_path: 'path',
-			file_name: 'file.md',
-			mime_type: 'text/markdown',
-			size_bytes: 100,
-			created_at: new Date().toISOString(),
-			updated_at: new Date().toISOString(),
-		};
 
 		useDialecticStore.setState({
-			stageDocumentResources: {
-				[serializedKey]: mockResource,
+			stageDocumentContent: {
+				[serializedKey]: {
+					baselineMarkdown: '',
+					currentDraftMarkdown: '',
+					isDirty: false,
+					isLoading: false,
+					error: null,
+					lastBaselineVersion: null,
+					pendingDiff: null,
+					lastAppliedVersionHash: null,
+					sourceContributionId: null,
+					feedbackDraftMarkdown: '',
+					feedbackIsDirty: false,
+					resourceType: null,
+				},
 			},
 		});
 
@@ -1212,6 +1287,124 @@ describe('submitStageDocumentFeedback', () => {
 		for (const field of backendContractFields) {
 			expect(expectedPayload).toHaveProperty(field);
 		}
+	});
+
+	it('reads sourceContributionId from stageDocumentContent entry not stageDocumentResources', async () => {
+		const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
+			sessionId: 'session-content',
+			stageSlug: 'synthesis',
+			iterationNumber: 1,
+			modelId: 'model-a',
+			documentKey: 'doc_1',
+			feedbackContent: 'Feedback',
+			userId: 'user-1',
+			projectId: 'proj-1',
+			feedbackType: 'user_feedback',
+		};
+		const compositeKey: StageDocumentCompositeKey = {
+			sessionId: feedbackPayload.sessionId,
+			stageSlug: feedbackPayload.stageSlug,
+			iterationNumber: feedbackPayload.iterationNumber,
+			modelId: feedbackPayload.modelId,
+			documentKey: feedbackPayload.documentKey,
+		};
+		const serializedKey = getStageDocumentKey(compositeKey);
+
+		useDialecticStore.setState({
+			stageDocumentContent: {
+				[serializedKey]: {
+					baselineMarkdown: '',
+					currentDraftMarkdown: '',
+					isDirty: false,
+					isLoading: false,
+					error: null,
+					lastBaselineVersion: null,
+					pendingDiff: null,
+					lastAppliedVersionHash: null,
+					sourceContributionId: 'contrib-from-content',
+					feedbackDraftMarkdown: '',
+					feedbackIsDirty: false,
+					resourceType: null,
+				},
+			},
+		});
+
+		const spy = vi
+			.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
+			.mockResolvedValue({
+				data: { success: true },
+				error: undefined,
+				status: 200,
+			});
+
+		await useDialecticStore.getState().submitStageDocumentFeedback(
+			feedbackPayload,
+		);
+
+		expect(spy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sourceContributionId: 'contrib-from-content',
+			}),
+		);
+	});
+
+	it('sends correct sourceContributionId when stageDocumentResources is empty load-only flow', async () => {
+		const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
+			sessionId: 'session-load-only',
+			stageSlug: 'thesis',
+			iterationNumber: 1,
+			modelId: 'model-x',
+			documentKey: 'doc_load',
+			feedbackContent: 'Feedback',
+			userId: 'user-1',
+			projectId: 'proj-1',
+			feedbackType: 'user_feedback',
+		};
+		const compositeKey: StageDocumentCompositeKey = {
+			sessionId: feedbackPayload.sessionId,
+			stageSlug: feedbackPayload.stageSlug,
+			iterationNumber: feedbackPayload.iterationNumber,
+			modelId: feedbackPayload.modelId,
+			documentKey: feedbackPayload.documentKey,
+		};
+		const serializedKey = getStageDocumentKey(compositeKey);
+
+		useDialecticStore.setState({
+			stageDocumentContent: {
+				[serializedKey]: {
+					baselineMarkdown: 'Loaded content',
+					currentDraftMarkdown: 'Loaded content',
+					isDirty: false,
+					isLoading: false,
+					error: null,
+					lastBaselineVersion: null,
+					pendingDiff: null,
+					lastAppliedVersionHash: null,
+					sourceContributionId: 'contrib-load-only',
+					feedbackDraftMarkdown: '',
+					feedbackIsDirty: false,
+					resourceType: null,
+				},
+			},
+		});
+
+		const spy = vi
+			.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
+			.mockResolvedValue({
+				data: { success: true },
+				error: undefined,
+				status: 200,
+			});
+
+		await useDialecticStore.getState().submitStageDocumentFeedback(
+			feedbackPayload,
+		);
+
+		expect(spy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sourceContributionId: 'contrib-load-only',
+			}),
+		);
 	});
 });
 
@@ -1730,6 +1923,7 @@ describe('handleDocumentCompletedLogic', () => {
 					fileName: 'test.md',
 					mimeType: 'text/markdown',
 					sourceContributionId: null,
+					resourceType: null,
 				},
 				status: 200,
 			});
@@ -1947,6 +2141,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 					fileName: 'test.md',
 					mimeType: 'text/markdown',
 					sourceContributionId: null,
+					resourceType: null,
 				},
 				status: 200,
 			});
@@ -2651,6 +2846,7 @@ describe('fetchStageDocumentContentLogic stores sourceContributionId', () => {
 				fileName: 'test.md',
 				mimeType: 'text/markdown',
 				sourceContributionId: sourceContributionId,
+				resourceType: null,
 			},
 			status: 200,
 		});
@@ -2680,6 +2876,7 @@ describe('fetchStageDocumentContentLogic stores sourceContributionId', () => {
 				fileName: 'test.md',
 				mimeType: 'text/markdown',
 				sourceContributionId: null,
+				resourceType: null,
 			},
 			status: 200,
 		});
@@ -2692,6 +2889,71 @@ describe('fetchStageDocumentContentLogic stores sourceContributionId', () => {
 		const content = state.stageDocumentContent[serializedKey];
 		expect(content).toBeDefined();
 		expect(content?.sourceContributionId).toBe(null);
+	});
+
+	it('reads resourceType from API response and stores it via reapplyDraftToNewBaseline', async () => {
+		const resourceId = 'resource-with-type';
+		const testContent = 'Content';
+		const resourceType = 'markdown';
+
+		vi.spyOn(mockDialecticClient, 'getProjectResourceContent').mockResolvedValue({
+			data: {
+				content: testContent,
+				fileName: 'test.md',
+				mimeType: 'text/markdown',
+				sourceContributionId: null,
+				resourceType,
+			},
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageDocumentContent: {},
+			stageDocumentVersions: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+		const helpers = {
+			ensureStageDocumentContent: (
+				state: Draft<DialecticStateValues>,
+				key: StageDocumentCompositeKey,
+				seed: EnsureStageDocumentContentSeed,
+			) => ensureStageDocumentContentLogic(state, key, seed),
+			recordStageDocumentDraft: (
+				state: Draft<DialecticStateValues>,
+				key: StageDocumentCompositeKey,
+				draftMarkdown: string,
+			) => recordStageDocumentDraftLogic(state, key, draftMarkdown),
+			upsertStageDocumentVersion: (
+				state: Draft<DialecticStateValues>,
+				key: StageDocumentCompositeKey,
+				info: StageDocumentVersionInfo,
+			) => upsertStageDocumentVersionLogic(state, key, info),
+			reapplyDraftToNewBaseline: (
+				state: Draft<DialecticStateValues>,
+				key: StageDocumentCompositeKey,
+				newBaseline: string,
+				newVersion: StageDocumentVersionInfo,
+				sourceContributionId: string | null,
+				resourceTypeParam: string | null,
+			) =>
+				reapplyDraftToNewBaselineLogic(
+					state,
+					key,
+					newBaseline,
+					newVersion,
+					sourceContributionId,
+					resourceTypeParam,
+				),
+		};
+
+		await fetchStageDocumentContentLogic(set, helpers, compositeKey, resourceId);
+
+		const content = state.stageDocumentContent[serializedKey];
+		expect(content).toBeDefined();
+		expect(content?.resourceType).toBe(resourceType);
 	});
 });
 
@@ -2728,6 +2990,7 @@ describe('Feedback draft logic (15.c)', () => {
 			sourceContributionId: null,
 			feedbackDraftMarkdown: '',
 			feedbackIsDirty: false,
+			resourceType: null,
 		};
 
 		useDialecticStore.setState((state) => {
@@ -2759,6 +3022,7 @@ describe('Feedback draft logic (15.c)', () => {
 				sourceContributionId: null,
 				feedbackDraftMarkdown: 'Draft feedback',
 				feedbackIsDirty: true,
+				resourceType: null,
 			};
 		});
 
@@ -2780,7 +3044,7 @@ describe('Feedback draft logic (15.c)', () => {
 		expect(useDialecticStore.getState().stageDocumentContent[serializedKey]).toBeUndefined();
 
 		useDialecticStore.setState((state) => {
-			ensureStageDocumentContentLogic(state, key, { baselineMarkdown: '' });
+			ensureStageDocumentContentLogic(state, key, { baselineMarkdown: '', version: null });
 		});
 
 		const state = useDialecticStore.getState();
@@ -2788,6 +3052,69 @@ describe('Feedback draft logic (15.c)', () => {
 		expect(entry).toBeDefined();
 		expect(entry?.feedbackDraftMarkdown).toBe('');
 		expect(entry?.feedbackIsDirty).toBe(false);
+		expect(entry?.resourceType).toBe(null);
+	});
+
+	it('ensureStageDocumentContentLogic initializes entry with resourceType null', () => {
+		const serializedKey = getStageDocumentKey(key);
+		expect(useDialecticStore.getState().stageDocumentContent[serializedKey]).toBeUndefined();
+
+		useDialecticStore.setState((state) => {
+			ensureStageDocumentContentLogic(state, key, { baselineMarkdown: '', version: null });
+		});
+
+		const entry = useDialecticStore.getState().stageDocumentContent[serializedKey];
+		expect(entry).toBeDefined();
+		expect(entry.resourceType).toBe(null);
+	});
+});
+
+describe('reapplyDraftToNewBaselineLogic', () => {
+	const key: StageDocumentCompositeKey = {
+		sessionId: 's1',
+		stageSlug: 'thesis',
+		iterationNumber: 1,
+		modelId: 'm1',
+		documentKey: 'doc_a',
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+	});
+
+	it('stores resourceType from parameter onto the content entry', () => {
+		const serializedKey = getStageDocumentKey(key);
+		const versionInfo: StageDocumentVersionInfo = {
+			resourceId: 'res-1',
+			versionHash: 'h1',
+			updatedAt: new Date().toISOString(),
+		};
+		let state: DialecticStateValues = produce(initialDialecticStateValues, (draft) => {
+			draft.stageDocumentContent[serializedKey] = {
+				baselineMarkdown: '',
+				currentDraftMarkdown: '',
+				isDirty: false,
+				isLoading: false,
+				error: null,
+				lastBaselineVersion: null,
+				pendingDiff: null,
+				lastAppliedVersionHash: null,
+				sourceContributionId: null,
+				feedbackDraftMarkdown: '',
+				feedbackIsDirty: false,
+				resourceType: null,
+			};
+		});
+
+		state = produce(state, (draft) => {
+			reapplyDraftToNewBaselineLogic(draft, key, 'New baseline', versionInfo, null, null);
+		});
+
+		const entry = state.stageDocumentContent[serializedKey];
+		expect(entry).toBeDefined();
+		expect(entry?.resourceType).toBe(null);
 	});
 });
 

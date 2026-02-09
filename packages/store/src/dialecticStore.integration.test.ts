@@ -16,6 +16,7 @@ import {
   EditedDocumentResource,
   DialecticContribution,
   StageDocumentCompositeKey,
+  GetProjectResourceContentResponse,
 } from '@paynless/types';
 import { selectIsStageReadyForSessionIteration, selectStageDocumentResource } from './dialecticStore.selectors';
 
@@ -577,6 +578,8 @@ describe('DialecticStore (integration) - saveContributionEdit', () => {
     expect(documentEntry?.isLoading).toBe(false);
     expect(documentEntry?.error).toBeNull();
     expect(documentEntry?.lastBaselineVersion?.resourceId).toBe(newResourceId);
+    expect(documentEntry?.sourceContributionId).toBe(mockResponse.sourceContributionId);
+    expect(documentEntry?.resourceType).toBe(mockResponse.resource.resource_type);
 
     // Assert dialectic_contributions is NOT mutated (except isLatestEdit flag)
     const session = finalState.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
@@ -718,6 +721,13 @@ describe('DialecticStore (integration) - fetchStageDocumentContent stores source
 
   it('9.f.i: stores sourceContributionId when getProjectResourceContent returns it, and selectStageDocumentResource provides it', async () => {
     // (1) Set up MSW to mock getProjectResourceContent API response with sourceContributionId
+    const mockResponse: GetProjectResourceContentResponse = {
+      fileName: 'test.md',
+      mimeType: 'text/markdown',
+      content: testContent,
+      sourceContributionId: sourceContributionId,
+      resourceType: null,
+    };
     server.use(
       http.post(`${MOCK_FUNCTIONS_URL}/dialectic-service`, async ({ request }) => {
         const body = await request.json();
@@ -725,15 +735,7 @@ describe('DialecticStore (integration) - fetchStageDocumentContent stores source
           action: 'getProjectResourceContent',
           payload: { resourceId },
         });
-        return HttpResponse.json(
-          {
-            fileName: 'test.md',
-            mimeType: 'text/markdown',
-            content: testContent,
-            sourceContributionId: sourceContributionId,
-          },
-          { status: 200 }
-        );
+        return HttpResponse.json(mockResponse, { status: 200 });
       })
     );
 

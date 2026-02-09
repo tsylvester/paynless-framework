@@ -41,6 +41,7 @@ import {
   beginStageDocumentEditLogic,
   clearStageDocumentDraftLogic,
   ensureStageDocumentContentLogic,
+  type EnsureStageDocumentContentSeed,
   fetchStageDocumentContentLogic,
   flushStageDocumentDraftActionLogic,
   flushStageDocumentDraftLogic,
@@ -395,7 +396,6 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isSubmittingStageDocumentFeedback: false,
   submitStageDocumentFeedbackError: null,
   activeSeedPrompt: null,
-  stageDocumentResources: {},
 };
 
 // 2. Helper function to create a new mock store instance
@@ -418,7 +418,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       const ensureStageDocumentContent = (
         state: Draft<DialecticStateValues>,
         key: StageDocumentCompositeKey,
-        seed?: { baselineMarkdown?: string; version?: StageDocumentVersionInfo },
+        seed: EnsureStageDocumentContentSeed,
       ): StageDocumentContentState => {
         return ensureStageDocumentContentLogic(state, key, seed);
       };
@@ -443,8 +443,10 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
         key: StageDocumentCompositeKey,
         newBaseline: string,
         newVersion: StageDocumentVersionInfo,
+        sourceContributionId: string | null,
+        resourceType: string | null,
       ): void => {
-        reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion);
+        reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion, sourceContributionId, resourceType);
       };
 
       return {
@@ -524,12 +526,16 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
             sourceContributionId: params.originalContributionIdToEdit,
           };
 
-          // Update stageDocumentContent state to simulate document-centric editing
-          // This allows component tests to simulate edited documents without real contributions
-          // Note: This requires deriving the composite key from params, which may need adjustment
-          // based on actual payload structure in component tests
-          // For now, tests can override this mock or call setStageDocumentResource directly
-
+          set((state) => {
+            for (const [serializedKey, documentEntry] of Object.entries(state.stageDocumentContent)) {
+              const parts = serializedKey.split(':');
+              if (parts.length >= 5 && parts[0] === params.sessionId && parts[4] === params.documentKey) {
+                documentEntry.sourceContributionId = mockResource.source_contribution_id;
+                documentEntry.resourceType = mockResource.resource_type;
+                break;
+              }
+            }
+          });
           set({ isSavingContributionEdit: false, saveContributionEditError: null });
           return { data: mockResponse, error: null, status: 200 };
       }),
@@ -673,25 +679,6 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
                 key,
                 resourceId,
             );
-        },
-      ),
-      updateStageDocumentResource: vi.fn().mockImplementation(
-        (key: StageDocumentCompositeKey, resource: EditedDocumentResource, editedContentText: string) => {
-            const versionInfo: StageDocumentVersionInfo = {
-                resourceId: resource.id,
-                versionHash: '', // Mock implementation - tests should override if versionHash is needed
-                updatedAt: resource.updated_at ?? new Date().toISOString(),
-            };
-            set((state) => {
-                const documentEntry = ensureStageDocumentContent(state, key, {
-                    baselineMarkdown: editedContentText,
-                    version: versionInfo,
-                });
-                documentEntry.currentDraftMarkdown = editedContentText;
-                documentEntry.isDirty = false;
-                documentEntry.isLoading = false;
-                documentEntry.error = null;
-            });
         },
       ),
       hydrateStageProgress: vi.fn().mockImplementation((payload: ListStageDocumentsPayload) => {

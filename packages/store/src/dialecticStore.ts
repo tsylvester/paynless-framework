@@ -49,7 +49,6 @@ import {
   type ListStageDocumentsPayload,
   type GetAllStageProgressPayload,
   StartSessionSuccessResponse,
-  type EditedDocumentResource,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useAuthStore } from './authStore';
@@ -59,6 +58,7 @@ import { selectActiveChatWalletInfo } from './walletStore.selectors';
 import { isAssembledPrompt, logger } from '@paynless/utils';
 import {
 	ensureStageDocumentContentLogic,
+	type EnsureStageDocumentContentSeed,
 	flushStageDocumentDraftLogic,
 	reapplyDraftToNewBaselineLogic,
 	recordStageDocumentDraftLogic,
@@ -189,7 +189,6 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	stageRunProgress: {},
 	focusedStageDocument: {},
 	stageDocumentContent: {},
-	stageDocumentResources: {},
 	stageDocumentVersions: {},
 	stageDocumentFeedback: {},
 	isLoadingStageDocumentFeedback: false,
@@ -222,7 +221,7 @@ export const useDialecticStore = create<DialecticStore>()(
 		const ensureStageDocumentContent = (
 			state: Draft<DialecticStateValues>,
 			key: StageDocumentCompositeKey,
-			seed?: { baselineMarkdown?: string; version?: StageDocumentVersionInfo },
+			seed: EnsureStageDocumentContentSeed,
 		): StageDocumentContentState => {
 			return ensureStageDocumentContentLogic(state, key, seed);
 		};
@@ -247,9 +246,10 @@ export const useDialecticStore = create<DialecticStore>()(
 			key: StageDocumentCompositeKey,
 			newBaseline: string,
 			newVersion: StageDocumentVersionInfo,
-			sourceContributionId?: string | null,
+			sourceContributionId: string | null,
+			resourceType: string | null,
 		) => {
-			reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion, sourceContributionId);
+			reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion, sourceContributionId, resourceType);
 		};
 
     return {
@@ -1986,7 +1986,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			payload,
 		});
 
-		const { stageDocumentContent, stageDocumentResources } = get();
+		const { stageDocumentContent } = get();
 		const keysWithWork = Object.entries(stageDocumentContent).filter(
 			([_, content]) => content.isDirty || content.feedbackIsDirty,
 		);
@@ -1999,19 +1999,11 @@ export const useDialecticStore = create<DialecticStore>()(
 			const [sessionId, stageSlug, iterationStr, modelId, documentKey] =
 				serializedKey.split(":");
 			const iterationNumber = parseInt(iterationStr, 10);
-			const resource = stageDocumentResources[serializedKey];
 
 			if (content.isDirty && content.sourceContributionId) {
-				if (!resource) {
+				if (!content.resourceType) {
 					logger.error(
-						'[DialecticStore] Missing stageDocumentResources entry for content edit',
-						{ serializedKey },
-					);
-					continue;
-				}
-				if (!resource.resource_type) {
-					logger.error(
-						'[DialecticStore] Missing resource_type for serializedKey',
+						'[DialecticStore] Missing resourceType for content edit',
 						{ serializedKey },
 					);
 					continue;
@@ -2024,19 +2016,12 @@ export const useDialecticStore = create<DialecticStore>()(
 					originalModelContributionId: content.sourceContributionId,
 					responseText: "",
 					documentKey,
-					resourceType: resource.resource_type,
+					resourceType: content.resourceType,
 				};
 				submissionPromises.push(get().saveContributionEdit(editPayload));
 			}
 
 			if (content.feedbackIsDirty) {
-				if (!resource) {
-					logger.error(
-						'[DialecticStore] Missing stageDocumentResources entry for feedback submit',
-						{ serializedKey },
-					);
-					continue;
-				}
 				const userId: string | undefined = useAuthStore.getState().user?.id;
 				const projectId: string = payload.projectId;
 				if (!userId) {
@@ -2056,7 +2041,7 @@ export const useDialecticStore = create<DialecticStore>()(
 					userId,
 					projectId,
 					feedbackType: 'user_feedback',
-					sourceContributionId: resource.source_contribution_id,
+					sourceContributionId: content.sourceContributionId,
 				};
 				submissionPromises.push(
 					get().submitStageDocumentFeedback(feedbackPayload),
@@ -2257,11 +2242,8 @@ export const useDialecticStore = create<DialecticStore>()(
                         documentEntry.isDirty = false;
                         documentEntry.isLoading = false;
                         documentEntry.error = null;
-                        
-                        // Store the complete EditedDocumentResource metadata in stageDocumentResources
-                        // This is required so UI components can access source_contribution_id and updated_at
-                        const serializedKey = getStageDocumentKey(compositeKey);
-                        state.stageDocumentResources[serializedKey] = resource;
+                        documentEntry.sourceContributionId = resource.source_contribution_id;
+                        documentEntry.resourceType = resource.resource_type;
                       }
                     }
                   }
@@ -2283,29 +2265,6 @@ export const useDialecticStore = create<DialecticStore>()(
       set({ isSavingContributionEdit: false, saveContributionEditError: networkError });
       return { data: undefined, error: networkError, status: 0 };
     }
-  },
-
-  updateStageDocumentResource: (
-    key: StageDocumentCompositeKey,
-    resource: EditedDocumentResource,
-    editedContentText: string,
-  ): void => {
-    set((state) => {
-      const versionInfo = createVersionInfo(resource.id);
-      const documentEntry = ensureStageDocumentContent(state, key, {
-        baselineMarkdown: editedContentText,
-        version: versionInfo,
-      });
-      documentEntry.currentDraftMarkdown = editedContentText;
-      documentEntry.isDirty = false;
-      documentEntry.isLoading = false;
-      documentEntry.error = null;
-      
-      // Store the complete EditedDocumentResource metadata in stageDocumentResources
-      // This is required so UI components can access source_contribution_id and updated_at
-      const serializedKey = getStageDocumentKey(key);
-      state.stageDocumentResources[serializedKey] = resource;
-    });
   },
 
 	fetchAndSetCurrentSessionDetails: async (sessionId: string) => {

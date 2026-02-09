@@ -1069,6 +1069,7 @@ export interface GetProjectResourceContentResponse {
   mimeType: string;
   content: string;
   sourceContributionId: string | null;
+  resourceType: string | null;
 }
 
 // Added for 1.2.Y.2

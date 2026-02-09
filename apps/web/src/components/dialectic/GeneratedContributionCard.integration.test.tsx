@@ -195,6 +195,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
             sourceContributionId: sourceContributionId,
             feedbackDraftMarkdown: '',
             feedbackIsDirty: false,
+            resourceType: 'rendered_document',
           },
         },
         recipesByStageSlug: {

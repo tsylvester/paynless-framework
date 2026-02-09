@@ -36,8 +36,10 @@ import type {
   StageDocumentCompositeKey,
   SelectedModels,
   GetAllStageProgressPayload,
+  SubmitStageResponsesPayload,
 } from '@paynless/types';
 import { getStageRunDocumentKey, getStageDocumentKey } from './dialecticStore.documents';
+import { useAuthStore } from './authStore';
 
 // Add the mock call here
 vi.mock('@paynless/api', async () => {
@@ -680,7 +682,6 @@ describe('useDialecticStore', () => {
             useDialecticStore.setState({
                 currentProjectDetail: projectWithSession,
                 stageDocumentContent: {},
-                stageDocumentResources: {},
             });
 
             const { saveContributionEdit } = useDialecticStore.getState();
@@ -693,6 +694,173 @@ describe('useDialecticStore', () => {
             expect(documentEntry).toBeDefined();
             expect(documentEntry?.baselineMarkdown).toBe(payloadWithDocumentKey.editedContentText);
             expect(documentEntry?.currentDraftMarkdown).toBe(payloadWithDocumentKey.editedContentText);
+        });
+    });
+
+    describe('submitStageResponses thunk', () => {
+        const projectId = 'proj-submit';
+        const sessionId = 'sess-submit';
+        const stageSlug = 'thesis';
+        const iterationNumber = 1;
+        const modelId = 'model-1';
+        const documentKey = 'doc_a';
+        const serializedKey = `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+
+        const mockProject: DialecticProject = {
+            id: projectId,
+            user_id: 'user-1',
+            project_name: 'Submit Test Project',
+            selected_domain_id: 'domain-1',
+            dialectic_domains: { name: 'Domain' },
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            status: 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            dialectic_process_templates: null,
+            process_template_id: 'pt-1',
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
+            dialectic_sessions: [{
+                id: sessionId,
+                dialectic_contributions: [],
+                iteration_count: 1,
+                project_id: projectId,
+                session_description: 'Session',
+                user_input_reference_url: null,
+                selected_models: [],
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                status: 'pending_antithesis',
+                associated_chat_id: null,
+                current_stage_id: stageSlug,
+            }],
+        };
+
+        const payload: SubmitStageResponsesPayload = {
+            projectId,
+            sessionId,
+            stageSlug,
+            currentIterationNumber: iterationNumber,
+        };
+
+        it('submitStageResponses edit path reads content.sourceContributionId and content.resourceType and succeeds without stageDocumentResources', async () => {
+            useDialecticStore.setState({
+                currentProjectDetail: mockProject,
+                stageDocumentContent: {
+                    [serializedKey]: {
+                        baselineMarkdown: 'Baseline',
+                        currentDraftMarkdown: 'Edited content',
+                        isDirty: true,
+                        isLoading: false,
+                        error: null,
+                        lastBaselineVersion: null,
+                        pendingDiff: 'Edited content',
+                        lastAppliedVersionHash: null,
+                        sourceContributionId: 'contrib-edit-1',
+                        feedbackDraftMarkdown: '',
+                        feedbackIsDirty: false,
+                        resourceType: 'rendered_document',
+                    },
+                },
+            });
+            getMockDialecticClient().saveContributionEdit.mockResolvedValue({
+                data: { resource: { id: 'res-1', resource_type: 'rendered_document', project_id: projectId, session_id: sessionId, stage_slug: stageSlug, iteration_number: iterationNumber, document_key: documentKey, source_contribution_id: 'contrib-edit-1', storage_bucket: 'b', storage_path: 'p', file_name: 'f.md', mime_type: 'text/markdown', size_bytes: 1, created_at: '', updated_at: '' }, sourceContributionId: 'contrib-edit-1' },
+                status: 201,
+            });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({ data: { updatedSession: mockProject.dialectic_sessions![0] }, status: 200 });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            expect(getMockDialecticClient().saveContributionEdit).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    originalContributionIdToEdit: 'contrib-edit-1',
+                    documentKey,
+                    resourceType: 'rendered_document',
+                    editedContentText: 'Edited content',
+                }),
+            );
+            expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
+        });
+
+        it('submitStageResponses feedback path reads content.sourceContributionId and succeeds without prior save (load-only flow)', async () => {
+            useAuthStore.setState({ user: { id: 'user-feedback-1' } });
+            useDialecticStore.setState({
+                currentProjectDetail: mockProject,
+                stageDocumentContent: {
+                    [serializedKey]: {
+                        baselineMarkdown: 'Baseline',
+                        currentDraftMarkdown: 'Baseline',
+                        isDirty: false,
+                        isLoading: false,
+                        error: null,
+                        lastBaselineVersion: null,
+                        pendingDiff: null,
+                        lastAppliedVersionHash: null,
+                        sourceContributionId: 'contrib-load-only',
+                        feedbackDraftMarkdown: 'Feedback text',
+                        feedbackIsDirty: true,
+                        resourceType: null,
+                    },
+                },
+            });
+            getMockDialecticClient().submitStageDocumentFeedback.mockResolvedValue({ data: { success: true }, status: 200 });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({ data: { updatedSession: mockProject.dialectic_sessions![0] }, status: 200 });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            expect(getMockDialecticClient().submitStageDocumentFeedback).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    sourceContributionId: 'contrib-load-only',
+                    feedbackContent: 'Feedback text',
+                    documentKey,
+                }),
+            );
+            expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
+        });
+
+        it('submitStageResponses submits both dirty edit and dirty feedback for same key in a single call', async () => {
+            useAuthStore.setState({ user: { id: 'user-both-1' } });
+            useDialecticStore.setState({
+                currentProjectDetail: mockProject,
+                stageDocumentContent: {
+                    [serializedKey]: {
+                        baselineMarkdown: 'Baseline',
+                        currentDraftMarkdown: 'Edited',
+                        isDirty: true,
+                        isLoading: false,
+                        error: null,
+                        lastBaselineVersion: null,
+                        pendingDiff: 'Edited',
+                        lastAppliedVersionHash: null,
+                        sourceContributionId: 'contrib-both-1',
+                        feedbackDraftMarkdown: 'Feedback',
+                        feedbackIsDirty: true,
+                        resourceType: 'rendered_document',
+                    },
+                },
+            });
+            getMockDialecticClient().saveContributionEdit.mockResolvedValue({
+                data: { resource: { id: 'res-both', resource_type: 'rendered_document', project_id: projectId, session_id: sessionId, stage_slug: stageSlug, iteration_number: iterationNumber, document_key: documentKey, source_contribution_id: 'contrib-both-1', storage_bucket: 'b', storage_path: 'p', file_name: 'f.md', mime_type: 'text/markdown', size_bytes: 1, created_at: '', updated_at: '' }, sourceContributionId: 'contrib-both-1' },
+                status: 201,
+            });
+            getMockDialecticClient().submitStageDocumentFeedback.mockResolvedValue({ data: { success: true }, status: 200 });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({ data: { updatedSession: mockProject.dialectic_sessions![0] }, status: 200 });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            expect(getMockDialecticClient().saveContributionEdit).toHaveBeenCalledTimes(1);
+            expect(getMockDialecticClient().submitStageDocumentFeedback).toHaveBeenCalledTimes(1);
+            expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
         });
     });
 
@@ -1172,6 +1340,7 @@ describe('useDialecticStore', () => {
                         sourceContributionId: null,
                         feedbackDraftMarkdown: '',
                         feedbackIsDirty: false,
+                        resourceType: null,
                     },
                     [secondSerialized]: {
                         baselineMarkdown: 'Doc B baseline',
@@ -1189,6 +1358,7 @@ describe('useDialecticStore', () => {
                         sourceContributionId: null,
                         feedbackDraftMarkdown: '',
                         feedbackIsDirty: false,
+                        resourceType: null,
                     },
                 },
                 focusedStageDocument: {
@@ -1209,6 +1379,7 @@ describe('useDialecticStore', () => {
                             },
                         },
                         stepStatuses: {},
+                        jobProgress: {},
                     },
                 },
             });

@@ -2367,108 +2367,107 @@
         *   `[ ]`   Progress must reflect job status (not document status)
     *   `[ ]`   **Commit** `feat(ui): DynamicProgressBar displays job-based granular step progress from SSOT selector`
 
-*   `[ ]` `[BE]` supabase/functions/_shared/services/`file_manager.ts` **Fix cleanup logic to only delete specific uploaded file**
-    *   `[ ]` `objective.md`
-        *   `[ ]` When DB registration fails after successful upload, only the specific file just uploaded should be deleted
-        *   `[ ]` Sibling files in the same directory (e.g., `seed_prompt.md`) must NOT be deleted
-    *   `[ ]` `role.md`
-        *   `[ ]` Infrastructure adapter for Supabase Storage file operations
-    *   `[ ]` `module.md`
-        *   `[ ]` Bounded to file upload, registration, and cleanup within `_shared/services`
-    *   `[ ]` `deps.md`
-        *   `[ ]` `this.supabase.storage` - Supabase storage client
-        *   `[ ]` `finalMainContentFilePath` - directory path (already in scope)
-        *   `[ ]` `finalFileName` - specific filename (already in scope)
-    *   `[ ]` interface/`file_manager.types.ts`
-        *   `[ ]` No type changes required for this fix
-    *   `[ ]` unit/`file_manager.test.ts`
-        *   `[ ]` Test: cleanup on DB error deletes only the specific uploaded file
-        *   `[ ]` Test: sibling files in same directory are preserved after cleanup
-    *   `[ ]` `file_manager.ts`
-        *   `[ ]` Replace lines 396-405: remove `list()` + loop over all files
-        *   `[ ]` Construct single path: `${finalMainContentFilePath}/${finalFileName}`
-        *   `[ ]` Call `remove([fullPathToRemove])` for only that one file
-    *   `[ ]` integration/`file_manager.integration.test.ts`
-        *   `[ ]` Test: upload file, simulate DB error, verify only that file is removed
-        *   `[ ]` Test: pre-existing sibling file survives cleanup
-    *   `[ ]` `requirements.md`
-        *   `[ ]` Cleanup must target exactly one file path
-        *   `[ ]` Cleanup must not use `list()` to enumerate directory contents
-    *   `[ ]` **Commit** `fix(be): file_manager cleanup only deletes specific uploaded file, not entire directory`
+*   `[✅]` `[BE]` supabase/functions/_shared/services/`file_manager.ts` **Fix cleanup logic to only delete specific uploaded file**
+    *   `[✅]` `objective.md`
+        *   `[✅]` When DB registration fails after successful upload, only the specific file just uploaded should be deleted
+        *   `[✅]` Sibling files in the same directory (e.g., `seed_prompt.md`) must NOT be deleted
+    *   `[✅]` `role.md`
+        *   `[✅]` Infrastructure adapter for Supabase Storage file operations
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to file upload, registration, and cleanup within `_shared/services`
+    *   `[✅]` `deps.md`
+        *   `[✅]` `this.supabase.storage` - Supabase storage client
+        *   `[✅]` `finalMainContentFilePath` - directory path (already in scope)
+        *   `[✅]` `finalFileName` - specific filename (already in scope)
+    *   `[✅]` interface/`file_manager.types.ts`
+        *   `[✅]` No type changes required for this fix
+    *   `[✅]` unit/`file_manager.test.ts`
+        *   `[✅]` Test: cleanup on DB error deletes only the specific uploaded file
+        *   `[✅]` Test: sibling files in same directory are preserved after cleanup
+    *   `[✅]` `file_manager.ts`
+        *   `[✅]` Replace lines 396-405: remove `list()` + loop over all files
+        *   `[✅]` Construct single path: `${finalMainContentFilePath}/${finalFileName}`
+        *   `[✅]` Call `remove([fullPathToRemove])` for only that one file
+    *   `[✅]` integration/`file_manager.integration.test.ts`
+        *   `[✅]` Test: upload file, simulate DB error, verify only that file is removed
+        *   `[✅]` Test: pre-existing sibling file survives cleanup
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Cleanup must target exactly one file path
+        *   `[✅]` Cleanup must not use `list()` to enumerate directory contents
+    *   `[✅]` **Commit** `fix(be): file_manager cleanup only deletes specific uploaded file, not entire directory`
 
-*   `[ ]` `[BE]` supabase/functions/_shared/utils/`path_constructor.ts` **Update UserFeedback to use original document path**
-    *   `[ ]` `objective.md`
-        *   `[ ]` `FileType.UserFeedback` must place feedback file alongside original document
-        *   `[ ]` Feedback filename must be `{original_basename}_feedback.md`
-    *   `[ ]` `role.md`
-        *   `[ ]` Domain utility for deterministic storage path construction
-    *   `[ ]` `module.md`
-        *   `[ ]` Bounded to path construction logic in `_shared/utils`
-    *   `[ ]` `deps.md`
-        *   `[ ]` `PathContext` from `file_manager.types.ts` - add `originalStoragePath` field
-        *   `[ ]` `sanitizeForPath` - existing helper in same file
-    *   `[ ]` interface/`file_manager.types.ts`
-        *   `[ ]` Add optional `originalStoragePath?: string` to `PathContext` interface
-        *   `[ ]` Add optional `originalBaseName?: string` to `PathContext` interface (for feedback filename derivation)
-    *   `[ ]` interface/tests/`path_constructor.interface.test.ts`
-        *   `[ ]` Test: `PathContext` with `originalStoragePath` satisfies interface
-        *   `[ ]` Test: `PathContext` with `originalBaseName` satisfies interface
-    *   `[ ]` interface/guards/`type_guards.file_manager.ts`
-        *   `[ ]` No new guards required (fields are optional)
-    *   `[ ]` unit/`path_constructor.test.ts`
-        *   `[ ]` Test: `UserFeedback` with `originalStoragePath` returns that path as `storagePath`
-        *   `[ ]` Test: `UserFeedback` with `originalBaseName` returns `{baseName}_feedback.md` as `fileName`
-        *   `[ ]` Test: `UserFeedback` without `originalStoragePath` falls back to legacy `stageRootPath`
-    *   `[ ]` `path_constructor.ts`
-        *   `[ ]` Update `FileType.UserFeedback` case (lines 159-161)
-        *   `[ ]` If `context.originalStoragePath` and `context.originalBaseName` provided, use them
-        *   `[ ]` Construct `fileName` as `${originalBaseName}_feedback.md`
-        *   `[ ]` Otherwise fall back to legacy behavior
-    *   `[ ]` integration/`path_constructor.integration.test.ts`
-        *   `[ ]` Test: full path context produces correct feedback path alongside rendered document
-    *   `[ ]` `requirements.md`
-        *   `[ ]` Feedback file must be in same directory as original document
-        *   `[ ]` Feedback filename must preserve original document's naming pattern
-        *   `[ ]` Legacy behavior preserved when optional fields not provided
-    *   `[ ]` **Commit** `feat(be): path_constructor UserFeedback supports original document path derivation`
+*   `[✅]` `[BE]` supabase/functions/_shared/utils/`path_constructor.ts` **Update UserFeedback to use original document path**
+    *   `[✅]` `objective.md`
+        *   `[✅]` `FileType.UserFeedback` must place feedback file alongside original document
+        *   `[✅]` Feedback filename must be `{original_basename}_feedback.md`
+    *   `[✅]` `role.md`
+        *   `[✅]` Domain utility for deterministic storage path construction
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to path construction logic in `_shared/utils`
+    *   `[✅]` `deps.md`
+        *   `[✅]` `PathContext` from `file_manager.types.ts` - add `originalStoragePath` field
+        *   `[✅]` `sanitizeForPath` - existing helper in same file
+    *   `[✅]` interface/`file_manager.types.ts`
+        *   `[✅]` Add optional `originalStoragePath?: string` to `PathContext` interface
+        *   `[✅]` Add optional `originalBaseName?: string` to `PathContext` interface (for feedback filename derivation)
+    *   `[✅]` interface/tests/`path_constructor.interface.test.ts`
+        *   `[✅]` Test: `PathContext` with `originalStoragePath` satisfies interface
+        *   `[✅]` Test: `PathContext` with `originalBaseName` satisfies interface
+    *   `[✅]` interface/guards/`type_guards.file_manager.ts`
+        *   `[✅]` No new guards required (fields are optional)
+    *   `[✅]` unit/`path_constructor.test.ts`
+        *   `[✅]` Test: `UserFeedback` with `originalStoragePath` returns that path as `storagePath`
+        *   `[✅]` Test: `UserFeedback` with `originalBaseName` returns `{baseName}_feedback.md` as `fileName`
+    *   `[✅]` `path_constructor.ts`
+        *   `[✅]` Update `FileType.UserFeedback` case (lines 159-161)
+        *   `[✅]` If `context.originalStoragePath` and `context.originalBaseName` provided, use them
+        *   `[✅]` Construct `fileName` as `${originalBaseName}_feedback.md`
+        *   `[✅]` Otherwise fall back to legacy behavior
+    *   `[✅]` integration/`path_constructor.integration.test.ts`
+        *   `[✅]` Test: full path context produces correct feedback path alongside rendered document
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Feedback file must be in same directory as original document
+        *   `[✅]` Feedback filename must preserve original document's naming pattern
+        *   `[✅]` Legacy behavior preserved when optional fields not provided
+    *   `[✅]` **Commit** `feat(be): path_constructor UserFeedback supports original document path derivation`
 
-*   `[ ]` `[BE]` supabase/functions/dialectic-service/`submitStageDocumentFeedback.ts` **Look up original document path for feedback placement**
-    *   `[ ]` `objective.md`
-        *   `[ ]` Query `dialectic_project_resources` using `sourceContributionId` to get original document's `storage_path` and `file_name`
-        *   `[ ]` Derive feedback path context from original document location
-        *   `[ ]` Pass `originalStoragePath` and `originalBaseName` to `pathContext`
-    *   `[ ]` `role.md`
-        *   `[ ]` Application service for handling user feedback submission
-    *   `[ ]` `module.md`
-        *   `[ ]` Bounded to dialectic-service feedback flow
-    *   `[ ]` `deps.md`
-        *   `[ ]` `dbClient` - Supabase client for DB queries
-        *   `[ ]` `fileManager.uploadAndRegisterFile` - for storage upload
-        *   `[ ]` `PathContext` with new optional fields from previous node
-        *   `[ ]` `dialectic_project_resources` table - to look up original document
-    *   `[ ]` interface/`dialectic.interface.ts`
-        *   `[ ]` No changes to `SubmitStageDocumentFeedbackPayload` (already has `sourceContributionId`)
-    *   `[ ]` unit/`submitStageDocumentFeedback.test.ts`
-        *   `[ ]` Test: when `sourceContributionId` provided, queries `dialectic_project_resources` for original doc
-        *   `[ ]` Test: error returned if original document lookup fails
-        *   `[ ]` Test: `pathContext` includes `originalStoragePath` from looked-up resource
-        *   `[ ]` Test: `pathContext` includes `originalBaseName` derived from looked-up `file_name`
-    *   `[ ]` `submitStageDocumentFeedback.ts`
-        *   `[ ]` After validation, query `dialectic_project_resources` where `source_contribution_id = sourceContributionId` and `resource_type = 'rendered_document'`
-        *   `[ ]` Extract `storage_path` and `file_name` from result
-        *   `[ ]` Derive `originalBaseName` by removing `.md` extension from `file_name`
-        *   `[ ]` Add `originalStoragePath` and `originalBaseName` to `uploadContext.pathContext`
-    *   `[ ]` integration/`submitStageDocumentFeedback.integration.test.ts`
-        *   `[ ]` Test: feedback file created alongside original rendered document
-        *   `[ ]` Test: feedback filename is `{original}_feedback.md`
-        *   `[ ]` Test: seed_prompt.md in same stage directory is not affected
-    *   `[ ]` `requirements.md`
-        *   `[ ]` `sourceContributionId` must be present to save feedback
-        *   `[ ]` Feedback file must be placed in original document's directory
-        *   `[ ]` Feedback filename must match pattern `{originalBaseName}_feedback.md`
-    *   `[ ]` **Commit** `feat(be): submitStageDocumentFeedback places feedback alongside original document`
+*   `[✅]` `[BE]` supabase/functions/dialectic-service/`submitStageDocumentFeedback.ts` **Look up original document path for feedback placement**
+    *   `[✅]` `objective.md`
+        *   `[✅]` Query `dialectic_project_resources` using `sourceContributionId` to get original document's `storage_path` and `file_name`
+        *   `[✅]` Derive feedback path context from original document location
+        *   `[✅]` Pass `originalStoragePath` and `originalBaseName` to `pathContext`
+    *   `[✅]` `role.md`
+        *   `[✅]` Application service for handling user feedback submission
+    *   `[✅]` `module.md`
+        *   `[✅]` Bounded to dialectic-service feedback flow
+    *   `[✅]` `deps.md`
+        *   `[✅]` `dbClient` - Supabase client for DB queries
+        *   `[✅]` `fileManager.uploadAndRegisterFile` - for storage upload
+        *   `[✅]` `PathContext` with new optional fields from previous node
+        *   `[✅]` `dialectic_project_resources` table - to look up original document
+    *   `[✅]` interface/`dialectic.interface.ts`
+        *   `[✅]` No changes to `SubmitStageDocumentFeedbackPayload` (already has `sourceContributionId`)
+    *   `[✅]` unit/`submitStageDocumentFeedback.test.ts`
+        *   `[✅]` Test: when `sourceContributionId` provided, queries `dialectic_project_resources` for original doc
+        *   `[✅]` Test: error returned if original document lookup fails
+        *   `[✅]` Test: `pathContext` includes `originalStoragePath` from looked-up resource
+        *   `[✅]` Test: `pathContext` includes `originalBaseName` derived from looked-up `file_name`
+    *   `[✅]` `submitStageDocumentFeedback.ts`
+        *   `[✅]` After validation, query `dialectic_project_resources` where `source_contribution_id = sourceContributionId` and `resource_type = 'rendered_document'`
+        *   `[✅]` Extract `storage_path` and `file_name` from result
+        *   `[✅]` Derive `originalBaseName` by removing `.md` extension from `file_name`
+        *   `[✅]` Add `originalStoragePath` and `originalBaseName` to `uploadContext.pathContext`
+    *   `[✅]` integration/`submitStageDocumentFeedback.integration.test.ts`
+        *   `[✅]` Test: feedback file created alongside original rendered document
+        *   `[✅]` Test: feedback filename is `{original}_feedback.md`
+        *   `[✅]` Test: seed_prompt.md in same stage directory is not affected
+    *   `[✅]` `requirements.md`
+        *   `[✅]` `sourceContributionId` must be present to save feedback
+        *   `[✅]` Feedback file must be placed in original document's directory
+        *   `[✅]` Feedback filename must match pattern `{originalBaseName}_feedback.md`
+    *   `[✅]` **Commit** `feat(be): submitStageDocumentFeedback places feedback alongside original document`
 
-*   `[ ]` `[COMMIT]` **Final checkpoint** `fix(be): feedback files placed correctly and cleanup preserves sibling files`
+*   `[✅]` `[COMMIT]` **Final checkpoint** `fix(be): feedback files placed correctly and cleanup preserves sibling files`
 
 
 # ToDo
@@ -2506,3 +2505,5 @@
 
    - Checklist does not correctly find documents when multiple agents are chosen 
    -- 
+
+   - Steps that collect feedback need to look in the right location for it 

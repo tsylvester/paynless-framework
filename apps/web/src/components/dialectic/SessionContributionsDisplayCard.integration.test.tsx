@@ -320,6 +320,7 @@ const buildStageDocumentContentState = (
   sourceContributionId: 'contrib-model-a',
   feedbackDraftMarkdown: '',
   feedbackIsDirty: false,
+  resourceType: 'rendered_document',
   ...overrides,
 });
 

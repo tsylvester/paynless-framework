@@ -16,6 +16,7 @@ import type {
   StageDocumentCompositeKey,
   StageDocumentContentState,
   StageRenderedDocumentChecklistEntry,
+  GetProjectResourceContentResponse,
 } from '@paynless/types';
 import { mockLogger, resetMockLogger } from '../../api/src/mocks/logger.mock';
 
@@ -281,15 +282,14 @@ describe('Store integration test for progressive document rendering lifecycle', 
           if (!isObjectWithKey(payload, 'resourceId') || payload.resourceId !== resourceId) {
             return HttpResponse.json({}, { status: 400 });
           }
-          return HttpResponse.json(
-            {
-              fileName: 'doc.md',
-              mimeType: 'text/markdown',
-              content: '# Content v1',
-              sourceContributionId: null,
-            },
-            { status: 200 },
-          );
+          const mockResponse: GetProjectResourceContentResponse = {
+            fileName: 'doc.md',
+            mimeType: 'text/markdown',
+            content: '# Content v1',
+            sourceContributionId: null,
+            resourceType: null,
+          };
+          return HttpResponse.json(mockResponse, { status: 200 });
         }),
       );
 
@@ -452,15 +452,14 @@ describe('Store integration test for progressive document rendering lifecycle', 
           if (raw.action === 'getProjectResourceContent' && isObjectWithKey(raw, 'payload')) {
             const payload = raw.payload;
             if (isObjectWithKey(payload, 'resourceId') && payload.resourceId === latestRenderedResourceId) {
-              return HttpResponse.json(
-                {
-                  fileName: 'doc.md',
-                  mimeType: 'text/markdown',
-                  content: '# Hydrated content',
-                  sourceContributionId: null,
-                },
-                { status: 200 },
-              );
+              const mockResponse: GetProjectResourceContentResponse = {
+                fileName: 'doc.md',
+                mimeType: 'text/markdown',
+                content: '# Hydrated content',
+                sourceContributionId: null,
+                resourceType: null,
+              };
+              return HttpResponse.json(mockResponse, { status: 200 });
             }
           }
           return HttpResponse.json({}, { status: 404 });
@@ -559,6 +558,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
         sourceContributionId: null,
         feedbackDraftMarkdown: '',
         feedbackIsDirty: false,
+        resourceType: null,
       };
 
       let getProjectResourceContentCallCount = 0;
@@ -568,15 +568,14 @@ describe('Store integration test for progressive document rendering lifecycle', 
           const raw = await request.json();
           if (isObjectWithKey(raw, 'action') && raw.action === 'getProjectResourceContent') {
             getProjectResourceContentCallCount += 1;
-            return HttpResponse.json(
-              {
-                fileName: 'doc.md',
-                mimeType: 'text/markdown',
-                content: '# Content v1',
-                sourceContributionId: null,
-              },
-              { status: 200 },
-            );
+            const mockResponse: GetProjectResourceContentResponse = {
+              fileName: 'doc.md',
+              mimeType: 'text/markdown',
+              content: '# Content v1',
+              sourceContributionId: null,
+              resourceType: null,
+            };
+            return HttpResponse.json(mockResponse, { status: 200 });
           }
           return HttpResponse.json({}, { status: 404 });
         }),

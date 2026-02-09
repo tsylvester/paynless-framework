@@ -354,7 +354,6 @@ export interface DialecticStateValues {
   stageRunProgress: Record<string, StageRunProgressSnapshot>;
   focusedStageDocument: Record<string, FocusedStageDocumentState | null>;
   stageDocumentContent: Record<string, StageDocumentContentState>;
-  stageDocumentResources: Record<string, EditedDocumentResource>;
   stageDocumentVersions: Record<string, StageDocumentVersionInfo>;
   stageDocumentFeedback: Record<string, StageDocumentFeedback[]>;
   isLoadingStageDocumentFeedback: boolean;
@@ -452,6 +451,7 @@ export interface StageDocumentContentState {
   sourceContributionId: string | null;
   feedbackDraftMarkdown: string;
   feedbackIsDirty: boolean;
+  resourceType: string | null;
 }
 
 /**
@@ -633,7 +633,6 @@ export interface DialecticActions {
   setSaveContributionEditError: (error: ApiError | null) => void;
   saveContributionEdit: (payload: SaveContributionEditPayload) => Promise<ApiResponse<SaveContributionEditSuccessResponse>>;
   resetSaveContributionEditError: () => void;
-  updateStageDocumentResource: (key: StageDocumentCompositeKey, resource: EditedDocumentResource, editedContentText: string) => void;
 
   // New context actions
   setActiveContextProjectId: (id: string | null) => void;
@@ -1200,6 +1199,7 @@ export interface GetProjectResourceContentResponse {
   mimeType: string;
   content: string;
   sourceContributionId: string | null;
+  resourceType: string | null;
 }
 
 // Add new payload/response types if they are not already defined from the plan for submitStageResponses and saveContributionEdit

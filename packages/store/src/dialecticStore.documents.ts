@@ -28,7 +28,7 @@ import type {
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import { api } from '@paynless/api';
-import { logger } from '@paynless/utils';
+import { logger, isStageRenderedDocumentChecklistEntry } from '@paynless/utils';
 import { selectValidMarkdownDocumentKeys } from './dialecticStore.selectors';
 
 export const computeVersionHash = (input: string): string => {
@@ -116,7 +116,7 @@ const ensureRenderedDocumentDescriptor = (
 		latestRenderedResourceId: string;
 		modelId: string;
 		versionInfo: StageDocumentVersionInfo;
-		stepKey?: string;
+		stepKey: string | undefined;
 	},
 ): StageRenderedDocumentDescriptor => {
 	const existing = progress.documents[documentsKey];
@@ -124,14 +124,8 @@ const ensureRenderedDocumentDescriptor = (
 		if (existing.descriptorType !== 'rendered') {
 			existing.descriptorType = 'rendered';
 		}
-		if (!existing.stepKey && seed.stepKey) {
-			existing.stepKey = seed.stepKey;
-		}
 		return existing;
 	}
-
-	const derivedStepKey =
-		(isPlannedDescriptor(existing) ? existing.stepKey : undefined) ?? seed.stepKey;
 
 	const rendered: StageRenderedDocumentDescriptor = {
 		descriptorType: 'rendered',
@@ -143,9 +137,8 @@ const ensureRenderedDocumentDescriptor = (
 		lastRenderedResourceId: seed.latestRenderedResourceId,
 		lastRenderAtIso: seed.versionInfo.updatedAt,
 	};
-
-	if (derivedStepKey) {
-		rendered.stepKey = derivedStepKey;
+	if (seed.stepKey !== undefined) {
+		rendered.stepKey = seed.stepKey;
 	}
 
 	progress.documents[documentsKey] = rendered;
@@ -164,10 +157,16 @@ export const upsertStageDocumentVersionLogic = (
   state.stageDocumentVersions[serializedKey] = info;
 };
 
+/** Seed for a new stage document content entry. Both fields are required. */
+export type EnsureStageDocumentContentSeed = {
+	baselineMarkdown: string;
+	version: StageDocumentVersionInfo | null;
+};
+
 export const ensureStageDocumentContentLogic = (
 	state: Draft<DialecticStateValues>,
 	key: StageDocumentCompositeKey,
-	seed?: { baselineMarkdown?: string; version?: StageDocumentVersionInfo },
+	seed: EnsureStageDocumentContentSeed,
 ): StageDocumentContentState => {
 	const serializedKey = getStageDocumentKey(key);
   const existing = state.stageDocumentContent[serializedKey];
@@ -176,13 +175,13 @@ export const ensureStageDocumentContentLogic = (
 			'[ensureStageDocumentContentLogic] Found existing entry.',
 			JSON.parse(JSON.stringify({ key, seed })),
 		);
-		if (seed?.baselineMarkdown) {
+		if (seed.baselineMarkdown !== '') {
 			console.log(
 				`[ensureStageDocumentContentLogic] Updating baseline from '${existing.baselineMarkdown}' to '${seed.baselineMarkdown}'`,
 			);
 			existing.baselineMarkdown = seed.baselineMarkdown;
 		}
-    if (seed?.version) {
+    if (seed.version !== null) {
       existing.lastBaselineVersion = seed.version;
       if (!existing.lastAppliedVersionHash) {
         existing.lastAppliedVersionHash = seed.version.versionHash;
@@ -191,8 +190,10 @@ export const ensureStageDocumentContentLogic = (
     return existing;
   }
 
-  const baselineMarkdown = seed?.baselineMarkdown ?? '';
-  const version = seed?.version ?? null;
+  const baselineMarkdown: string = seed.baselineMarkdown;
+  const version: StageDocumentVersionInfo | null = seed.version;
+  const lastAppliedVersionHash: string | null =
+    version !== null ? version.versionHash : null;
 
   const entry: StageDocumentContentState = {
     baselineMarkdown,
@@ -202,10 +203,11 @@ export const ensureStageDocumentContentLogic = (
     error: null,
     lastBaselineVersion: version,
     pendingDiff: null,
-    lastAppliedVersionHash: version?.versionHash ?? null,
+    lastAppliedVersionHash,
     sourceContributionId: null,
     feedbackDraftMarkdown: '',
     feedbackIsDirty: false,
+    resourceType: null,
   };
 
   state.stageDocumentContent[serializedKey] = entry;
@@ -217,7 +219,10 @@ export const recordStageDocumentFeedbackDraftLogic = (
 	key: StageDocumentCompositeKey,
 	feedbackMarkdown: string,
 ): void => {
-	const entry = ensureStageDocumentContentLogic(state, key);
+	const entry = ensureStageDocumentContentLogic(state, key, {
+		baselineMarkdown: '',
+		version: null,
+	});
 	entry.feedbackDraftMarkdown = feedbackMarkdown;
 	entry.feedbackIsDirty = feedbackMarkdown !== '';
 };
@@ -226,7 +231,10 @@ export const flushStageDocumentFeedbackDraftLogic = (
 	state: Draft<DialecticStateValues>,
 	key: StageDocumentCompositeKey,
 ): void => {
-	const entry = ensureStageDocumentContentLogic(state, key);
+	const entry = ensureStageDocumentContentLogic(state, key, {
+		baselineMarkdown: '',
+		version: null,
+	});
 	entry.feedbackDraftMarkdown = '';
 	entry.feedbackIsDirty = false;
 };
@@ -236,7 +244,10 @@ export const recordStageDocumentDraftLogic = (
 	key: StageDocumentCompositeKey,
   draftMarkdown: string,
 ): void => {
-	const entry = ensureStageDocumentContentLogic(state, key);
+	const entry = ensureStageDocumentContentLogic(state, key, {
+		baselineMarkdown: '',
+		version: null,
+	});
   entry.currentDraftMarkdown = draftMarkdown;
   const diff = deriveDiff(entry.baselineMarkdown, draftMarkdown);
   entry.pendingDiff = diff;
@@ -247,7 +258,10 @@ export const flushStageDocumentDraftLogic = (
 	state: Draft<DialecticStateValues>,
 	key: StageDocumentCompositeKey,
 ): void => {
-	const entry = ensureStageDocumentContentLogic(state, key);
+	const entry = ensureStageDocumentContentLogic(state, key, {
+		baselineMarkdown: '',
+		version: null,
+	});
   entry.currentDraftMarkdown = entry.baselineMarkdown;
   entry.isDirty = false;
   entry.pendingDiff = null;
@@ -261,7 +275,8 @@ export const reapplyDraftToNewBaselineLogic = (
 	key: StageDocumentCompositeKey,
   newBaseline: string,
   newVersion: StageDocumentVersionInfo,
-  sourceContributionId?: string | null,
+  sourceContributionId: string | null,
+  resourceType: string | null,
 ): void => {
 	console.log(
 		'[reapplyDraftToNewBaselineLogic] ENTERING',
@@ -287,7 +302,8 @@ export const reapplyDraftToNewBaselineLogic = (
   entry.lastAppliedVersionHash = newVersion.versionHash;
   entry.isLoading = false;
   entry.error = null;
-  entry.sourceContributionId = sourceContributionId ?? null;
+  entry.sourceContributionId = sourceContributionId;
+  entry.resourceType = resourceType;
 
   const diff = entry.pendingDiff;
   if (diff && diff.length > 0) {
@@ -307,7 +323,7 @@ type ImmerHelpers = {
 	ensureStageDocumentContent: (
 		state: Draft<DialecticStateValues>,
 		key: StageDocumentCompositeKey,
-		seed?: { baselineMarkdown?: string; version?: StageDocumentVersionInfo },
+		seed: EnsureStageDocumentContentSeed,
 	) => StageDocumentContentState;
 	recordStageDocumentDraft: (
 		state: Draft<DialecticStateValues>,
@@ -324,7 +340,8 @@ type ImmerHelpers = {
 		key: StageDocumentCompositeKey,
 		newBaseline: string,
 		newVersion: StageDocumentVersionInfo,
-		sourceContributionId?: string | null,
+		sourceContributionId: string | null,
+		resourceType: string | null,
 	) => void;
 };
 
@@ -341,21 +358,22 @@ export const beginStageDocumentEditLogic = (
 	const version = currentState.stageDocumentVersions[serializedKey];
 
 	set((state) => {
-		const entry = helpers.ensureStageDocumentContent(
-			state,
-			key,
-			existingEntry
-				? undefined
-				: version
-					? { baselineMarkdown: initialDraftMarkdown, version }
-					: { baselineMarkdown: initialDraftMarkdown },
-		);
+		const seed: EnsureStageDocumentContentSeed = existingEntry
+			? {
+					baselineMarkdown: existingEntry.baselineMarkdown,
+					version: existingEntry.lastBaselineVersion,
+				}
+			: {
+					baselineMarkdown: initialDraftMarkdown,
+					version: version !== undefined ? version : null,
+				};
+		const entry = helpers.ensureStageDocumentContent(state, key, seed);
 		if (!existingEntry) {
 			entry.baselineMarkdown = initialDraftMarkdown;
 			entry.currentDraftMarkdown = initialDraftMarkdown;
 			entry.isDirty = false;
 			entry.pendingDiff = null;
-			if (version) {
+			if (version !== undefined) {
 				entry.lastBaselineVersion = version;
 				entry.lastAppliedVersionHash = version.versionHash;
 			}
@@ -425,6 +443,7 @@ export const fetchStageDocumentContentLogic = async (
 				sourceContributionId: null,
 				feedbackDraftMarkdown: '',
 				feedbackIsDirty: false,
+				resourceType: null,
 			};
 		} else {
 			entry.isLoading = true;
@@ -462,21 +481,55 @@ export const fetchStageDocumentContentLogic = async (
 				error: errorDetails,
 			});
 			set((state) => {
-				const entry = helpers.ensureStageDocumentContent(state, key);
+				const entry = helpers.ensureStageDocumentContent(state, key, {
+					baselineMarkdown: '',
+					version: null,
+				});
 				entry.isLoading = false;
 				entry.error = errorDetails;
 			});
 			return;
 		}
 
-		const baselineMarkdown = response.data.content ?? '';
-		const sourceContributionId = response.data.sourceContributionId ?? null;
+		const data = response.data;
+		const contentValid = typeof data.content === 'string';
+		const sourceContributionIdValid =
+			data.sourceContributionId === null || typeof data.sourceContributionId === 'string';
+		const resourceTypeValid =
+			data.resourceType === null || typeof data.resourceType === 'string';
+		if (!contentValid || !sourceContributionIdValid || !resourceTypeValid) {
+			const errorDetails: ApiError = {
+				message: 'Invalid content response: required fields missing or wrong type',
+				code: 'VALIDATION_ERROR',
+			};
+			logger.error('[DialecticStore] Invalid stage document content response', {
+				sessionId: key.sessionId,
+				stageSlug: key.stageSlug,
+				iterationNumber: key.iterationNumber,
+				modelId: key.modelId,
+				documentKey: key.documentKey,
+				error: errorDetails,
+			});
+			set((state) => {
+				const entry = helpers.ensureStageDocumentContent(state, key, {
+					baselineMarkdown: '',
+					version: null,
+				});
+				entry.isLoading = false;
+				entry.error = errorDetails;
+			});
+			return;
+		}
+
+		const baselineMarkdown: string = data.content;
+		const sourceContributionId: string | null = data.sourceContributionId;
+		const resourceType: string | null = data.resourceType;
 		set((state) => {
 			console.log(
 				'[fetchStageDocumentContentLogic] Calling reapplyDraftToNewBaseline with:',
-				JSON.parse(JSON.stringify({ key, baselineMarkdown, versionInfo, sourceContributionId })),
+				JSON.parse(JSON.stringify({ key, baselineMarkdown, versionInfo, sourceContributionId, resourceType })),
 			);
-			helpers.reapplyDraftToNewBaseline(state, key, baselineMarkdown, versionInfo, sourceContributionId);
+			helpers.reapplyDraftToNewBaseline(state, key, baselineMarkdown, versionInfo, sourceContributionId, resourceType);
 		});
 	} catch (error: unknown) {
 		const networkError: ApiError = {
@@ -498,7 +551,10 @@ export const fetchStageDocumentContentLogic = async (
 			},
 		);
 		set((state) => {
-			const entry = helpers.ensureStageDocumentContent(state, key);
+			const entry = helpers.ensureStageDocumentContent(state, key, {
+				baselineMarkdown: '',
+				version: null,
+			});
 			entry.isLoading = false;
 			entry.error = networkError;
 		});
@@ -521,22 +577,20 @@ export const handlePlannerStartedLogic = (
 		logger.warn('[DialecticStore] planner_started ignored; progress bucket missing', { progressKey });
 		return;
 	}
-	const stepKey = event.step_key ?? recipe.steps.find((step) => step.job_type === 'PLAN')?.step_key;
-	if (!stepKey) {
-		logger.warn('[DialecticStore] planner_started ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
-		return;
-	}
+	const stepKey = event.step_key;
 	set((state) => {
 		const progress = state.stageRunProgress[progressKey];
 		if (!progress) {
 			return;
 		}
-		progress.stepStatuses[stepKey] = 'in_progress';
-		const jobEntry = ensureJobProgressEntry(progress, stepKey);
-		jobEntry.totalJobs = 1;
-		jobEntry.inProgressJobs = 1;
-		jobEntry.completedJobs = 0;
-		jobEntry.failedJobs = 0;
+		if (stepKey !== undefined) {
+			progress.stepStatuses[stepKey] = 'in_progress';
+			const jobEntry = ensureJobProgressEntry(progress, stepKey);
+			jobEntry.totalJobs = 1;
+			jobEntry.inProgressJobs = 1;
+			jobEntry.completedJobs = 0;
+			jobEntry.failedJobs = 0;
+		}
 	});
 };
 
@@ -592,9 +646,11 @@ export const handleExecuteStartedLogic = (
 		logger.warn('[DialecticStore] execute_started ignored; progress bucket missing', { progressKey });
 		return;
 	}
-	const stepKey = event.step_key ?? recipe.steps.find((step) => step.job_type === 'EXECUTE')?.step_key;
-	if (!stepKey) {
-		logger.warn('[DialecticStore] execute_started ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
+	const stepKey = event.step_key;
+	if (stepKey === undefined) {
+		logger.warn('[DialecticStore] execute_started ignored; step_key required', {
+			stageSlug: event.stageSlug,
+		});
 		return;
 	}
 	const modelId = event.modelId;
@@ -629,9 +685,11 @@ export const handleRenderStartedLogic = (
 		logger.warn('[DialecticStore] render_started ignored; progress bucket missing', { progressKey });
 		return;
 	}
-	const stepKey = event.step_key ?? recipe.steps.find((step) => step.job_type === 'RENDER')?.step_key;
-	if (!stepKey) {
-		logger.warn('[DialecticStore] render_started ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
+	const stepKey = event.step_key;
+	if (stepKey === undefined) {
+		logger.warn('[DialecticStore] render_started ignored; step_key required', {
+			stageSlug: event.stageSlug,
+		});
 		return;
 	}
 	setStepStatusLogic(get, set, progressKey, stepKey, 'in_progress');
@@ -653,11 +711,7 @@ export const handleDocumentStartedLogic = (
 		logger.warn('[DialecticStore] document_started ignored; progress bucket missing', { progressKey });
 		return;
 	}
-	const stepKey = event.step_key ?? recipe.steps.find((step) => step.job_type === 'EXECUTE')?.step_key;
-	if (!stepKey) {
-		logger.warn('[DialecticStore] document_started ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
-		return;
-	}
+	const stepKey = event.step_key;
 
 	// Check if document requires rendering using existing selector logic
 	const state = get();
@@ -680,8 +734,11 @@ export const handleDocumentStartedLogic = (
 			return;
 		}
 
-		progress.stepStatuses[stepKey] = 'in_progress';
 		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
+
+		if (stepKey !== undefined) {
+			progress.stepStatuses[stepKey] = 'in_progress';
+		}
 
 		// Handle planner outputs (JSON artifacts) without rendered resources
 		if (!requiresRendering && !hasLatestRenderedResourceId) {
@@ -693,13 +750,15 @@ export const handleDocumentStartedLogic = (
 					descriptorType: 'rendered',
 					status: 'generating',
 					job_id: event.job_id,
-					latestRenderedResourceId: event.job_id, // Fallback placeholder
+					latestRenderedResourceId: event.job_id,
 					modelId: event.modelId,
-					versionHash: '', // Will be set when/if rendered
-					lastRenderedResourceId: event.job_id, // Fallback placeholder
+					versionHash: '',
+					lastRenderedResourceId: event.job_id,
 					lastRenderAtIso: new Date().toISOString(),
-					stepKey,
 				};
+				if (stepKey !== undefined) {
+					minimalDescriptor.stepKey = stepKey;
+				}
 				progress.documents[documentsKey] = minimalDescriptor;
 			} else {
 				// Update existing rendered descriptor
@@ -707,7 +766,7 @@ export const handleDocumentStartedLogic = (
 				renderedDescriptor.status = 'generating';
 				renderedDescriptor.job_id = event.job_id;
 				renderedDescriptor.modelId = event.modelId;
-				if (!renderedDescriptor.stepKey && stepKey) {
+				if (stepKey !== undefined) {
 					renderedDescriptor.stepKey = stepKey;
 				}
 			}
@@ -743,7 +802,7 @@ export const handleDocumentStartedLogic = (
 				descriptor.versionHash = versionInfo.versionHash;
 				descriptor.lastRenderedResourceId = latestRenderedResourceId;
 				descriptor.lastRenderAtIso = versionInfo.updatedAt;
-				if (!descriptor.stepKey && stepKey) {
+				if (stepKey !== undefined) {
 					descriptor.stepKey = stepKey;
 				}
 			} else {
@@ -770,7 +829,7 @@ export const handleDocumentStartedLogic = (
 					renderedDescriptor.status = 'generating';
 					renderedDescriptor.job_id = event.job_id;
 					renderedDescriptor.modelId = event.modelId;
-					if (!renderedDescriptor.stepKey && stepKey) {
+					if (stepKey !== undefined) {
 						renderedDescriptor.stepKey = stepKey;
 					}
 				}
@@ -806,7 +865,7 @@ export const handleDocumentStartedLogic = (
 			descriptor.versionHash = versionInfo.versionHash;
 			descriptor.lastRenderedResourceId = latestRenderedResourceId;
 			descriptor.lastRenderAtIso = versionInfo.updatedAt;
-			if (!descriptor.stepKey && stepKey) {
+			if (stepKey !== undefined) {
 				descriptor.stepKey = stepKey;
 			}
 		}
@@ -936,9 +995,7 @@ export const handleRenderCompletedLogic = (
 		});
 		return;
 	}
-	// stepKey is optional - RENDER is a post-processing job type, not always a recipe step
-	// We still update the document descriptor even without stepKey
-	const stepKey = event.step_key ?? recipe.steps.find((step) => step.job_type === 'RENDER')?.step_key;
+	const stepKey = event.step_key;
 
 	const compositeKey: StageDocumentCompositeKey = {
 		sessionId: event.sessionId,
@@ -955,39 +1012,35 @@ export const handleRenderCompletedLogic = (
 		if (!progress) {
 			return;
 		}
-		// Only update stepStatuses if stepKey is defined
-		if (stepKey) {
+		if (stepKey !== undefined) {
 			progress.stepStatuses[stepKey] = 'completed';
 		}
 		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
 		const existingDescriptor = progress.documents[documentsKey];
-		// Preserve existing status if stepKey is undefined (progressive rendering)
-		// Only set status to 'completed' when stepKey is defined (final render step)
-		const statusToUse = stepKey ? 'completed' : (existingDescriptor && !isPlannedDescriptor(existingDescriptor) ? existingDescriptor.status : 'generating');
+		const statusToUse: StageRunDocumentStatus =
+			stepKey !== undefined
+				? 'completed'
+				: existingDescriptor && !isPlannedDescriptor(existingDescriptor)
+					? existingDescriptor.status
+					: 'generating';
 		const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 			status: statusToUse,
 			jobId: event.job_id,
 			latestRenderedResourceId,
 			modelId: event.modelId,
 			versionInfo,
-			stepKey,
+			stepKey: stepKey,
 		});
-		// Update version-related fields always
 		descriptor.job_id = event.job_id;
 		descriptor.latestRenderedResourceId = latestRenderedResourceId;
 		descriptor.modelId = event.modelId;
 		descriptor.versionHash = versionInfo.versionHash;
 		descriptor.lastRenderedResourceId = latestRenderedResourceId;
 		descriptor.lastRenderAtIso = versionInfo.updatedAt;
-		// Only update status to 'completed' if stepKey is defined
-		if (stepKey) {
+		if (stepKey !== undefined) {
 			descriptor.status = 'completed';
-			// Only set stepKey on descriptor if not already set
-			if (!descriptor.stepKey) {
-				descriptor.stepKey = stepKey;
-			}
+			descriptor.stepKey = stepKey;
 		}
-		// Note: if stepKey is undefined, status remains unchanged (preserves 'generating' state)
 
 		const serializedKey = getStageDocumentKey(compositeKey);
 		const existingVersion = state.stageDocumentVersions[serializedKey];
@@ -1048,11 +1101,10 @@ export const handleDocumentCompletedLogic = (
 			return;
 		}
 
-		// Determine step key from event or descriptor
-		const stepKey = event.step_key ?? (!isPlannedDescriptor(documentEntry) ? documentEntry.stepKey : undefined);
+		const stepKey = event.step_key;
 
 		// Update jobProgress for EXECUTE step
-		if (stepKey && event.modelId) {
+		if (stepKey !== undefined && event.modelId !== undefined && event.modelId !== '') {
 			const jobEntry = ensureJobProgressEntry(progress, stepKey);
 			jobEntry.inProgressJobs = Math.max(0, jobEntry.inProgressJobs - 1);
 			jobEntry.completedJobs += 1;
@@ -1062,8 +1114,7 @@ export const handleDocumentCompletedLogic = (
 			jobEntry.modelJobStatuses[event.modelId] = 'completed';
 		}
 
-		// Update step status if we have a step_key
-		if (stepKey) {
+		if (stepKey !== undefined) {
 			progress.stepStatuses[stepKey] = 'completed';
 		}
 
@@ -1077,7 +1128,7 @@ export const handleDocumentCompletedLogic = (
 					latestRenderedResourceId: latestRenderedResourceId,
 					modelId: event.modelId,
 					versionInfo,
-					stepKey: documentEntry.stepKey ?? event.step_key,
+					stepKey: event.step_key,
 				});
 				renderedDescriptor.status = 'completed';
 				renderedDescriptor.job_id = event.job_id;
@@ -1101,8 +1152,7 @@ export const handleDocumentCompletedLogic = (
 				renderedDescriptor.versionHash = versionInfo.versionHash;
 				renderedDescriptor.lastRenderedResourceId = latestRenderedResourceId;
 				renderedDescriptor.lastRenderAtIso = versionInfo.updatedAt;
-
-				if (!renderedDescriptor.stepKey && stepKey) {
+				if (stepKey !== undefined) {
 					renderedDescriptor.stepKey = stepKey;
 				}
 
@@ -1113,28 +1163,29 @@ export const handleDocumentCompletedLogic = (
 				});
 			}
 		} else {
-			// No latestRenderedResourceId (planner outputs) - skip version tracking but mark completed
+			// No latestRenderedResourceId (planner outputs) - mark completed only when we have valid descriptor data
 			if (isPlannedDescriptor(documentEntry)) {
-				// Convert planned descriptor to minimal rendered descriptor for planner outputs
+				const stepKeyForDescriptor = event.step_key;
 				const minimalDescriptor: StageRenderedDocumentDescriptor = {
 					descriptorType: 'rendered',
 					status: 'completed',
 					job_id: event.job_id,
-					latestRenderedResourceId: event.job_id, // Fallback placeholder
+					latestRenderedResourceId: event.job_id,
 					modelId: event.modelId,
-					versionHash: '', // Will be set when/if rendered
-					lastRenderedResourceId: event.job_id, // Fallback placeholder
+					versionHash: '',
+					lastRenderedResourceId: event.job_id,
 					lastRenderAtIso: new Date().toISOString(),
-					stepKey: documentEntry.stepKey ?? stepKey,
 				};
+				if (stepKeyForDescriptor !== undefined) {
+					minimalDescriptor.stepKey = stepKeyForDescriptor;
+				}
 				progress.documents[documentsKey] = minimalDescriptor;
 			} else {
-				// Update existing rendered descriptor without version tracking
 				const renderedDescriptor = documentEntry;
 				renderedDescriptor.status = 'completed';
 				renderedDescriptor.job_id = event.job_id;
 				renderedDescriptor.modelId = event.modelId;
-				if (stepKey && !renderedDescriptor.stepKey) {
+				if (stepKey !== undefined) {
 					renderedDescriptor.stepKey = stepKey;
 				}
 			}
@@ -1158,52 +1209,51 @@ export const handleJobFailedLogic = (
 		logger.warn('[DialecticStore] job_failed ignored; progress bucket missing', { progressKey });
 		return;
 	}
-	const stepKey = event.step_key ?? recipe.steps.find((step) => step.job_type === 'EXECUTE' || step.job_type === 'PLAN')?.step_key;
-	if (!stepKey) {
-		logger.warn('[DialecticStore] job_failed ignored; step not found', { stageSlug: event.stageSlug, providedStepKey: event.step_key });
-		return;
-	}
+	const stepKey = event.step_key;
 
-	const compositeKey: StageDocumentCompositeKey = {
-		sessionId: event.sessionId,
-		stageSlug: event.stageSlug,
-		iterationNumber: event.iterationNumber,
-		modelId: event.modelId ?? '',
-		documentKey: event.document_key ?? '',
-	};
-
+	const documentKey = event.document_key;
+	const modelId = event.modelId;
 	const hasDocumentKeyAndModelId =
-		event.document_key != null &&
-		event.document_key !== '' &&
-		event.modelId != null &&
-		event.modelId !== '';
+		documentKey != null &&
+		documentKey !== '' &&
+		modelId != null &&
+		modelId !== '';
 
 	set((state) => {
 		const progress = state.stageRunProgress[progressKey];
 		if (!progress) {
 			return;
 		}
-		progress.stepStatuses[stepKey] = 'failed';
-		const jobEntry = ensureJobProgressEntry(progress, stepKey);
-		jobEntry.inProgressJobs = Math.max(0, jobEntry.inProgressJobs - 1);
-		jobEntry.failedJobs += 1;
-		if (event.modelId) {
-			if (!jobEntry.modelJobStatuses) {
-				jobEntry.modelJobStatuses = {};
+		if (stepKey !== undefined) {
+			progress.stepStatuses[stepKey] = 'failed';
+			const jobEntry = ensureJobProgressEntry(progress, stepKey);
+			jobEntry.inProgressJobs = Math.max(0, jobEntry.inProgressJobs - 1);
+			jobEntry.failedJobs += 1;
+			if (modelId !== undefined && modelId !== null && modelId !== '') {
+				if (!jobEntry.modelJobStatuses) {
+					jobEntry.modelJobStatuses = {};
+				}
+				jobEntry.modelJobStatuses[modelId] = 'failed';
 			}
-			jobEntry.modelJobStatuses[event.modelId] = 'failed';
 		}
 		if (!hasDocumentKeyAndModelId) {
 			return;
 		}
-		const documentsKey = getStageRunDocumentKey(event.document_key!, event.modelId!);
+		const compositeKey: StageDocumentCompositeKey = {
+			sessionId: event.sessionId,
+			stageSlug: event.stageSlug,
+			iterationNumber: event.iterationNumber,
+			modelId,
+			documentKey,
+		};
+		const documentsKey = getStageRunDocumentKey(documentKey, modelId);
 		const hasLatestResource =
 			typeof event.latestRenderedResourceId === 'string' &&
 			event.latestRenderedResourceId.length > 0;
 		const existingDescriptor = progress.documents[documentsKey];
 		let descriptorVersionInfo: StageDocumentVersionInfo | null = null;
 
-		const buildFallbackVersion = (resourceId: string): StageDocumentVersionInfo =>
+		const buildVersionInfo = (resourceId: string): StageDocumentVersionInfo =>
 			createVersionInfo(resourceId);
 
 		const convertPlannedToRendered = (
@@ -1217,7 +1267,7 @@ export const handleJobFailedLogic = (
 				latestRenderedResourceId: resourceId,
 				modelId: event.modelId,
 				versionInfo,
-				stepKey: planned.stepKey ?? stepKey,
+				stepKey: planned.stepKey,
 			});
 			descriptorVersionInfo = versionInfo;
 			return renderedDescriptor;
@@ -1227,7 +1277,7 @@ export const handleJobFailedLogic = (
 			if (existingDescriptor) {
 				if (isPlannedDescriptor(existingDescriptor)) {
 					if (hasLatestResource) {
-						const versionInfo = buildFallbackVersion(event.latestRenderedResourceId!);
+						const versionInfo = buildVersionInfo(event.latestRenderedResourceId!);
 						const rendered = convertPlannedToRendered(
 							existingDescriptor,
 							event.latestRenderedResourceId!,
@@ -1236,7 +1286,7 @@ export const handleJobFailedLogic = (
 						return rendered;
 					}
 
-					const versionInfo = buildFallbackVersion(event.job_id);
+					const versionInfo = buildVersionInfo(event.job_id);
 					const renderedDescriptor: StageRenderedDocumentDescriptor = {
 						descriptorType: 'rendered',
 						status: 'failed',
@@ -1246,8 +1296,12 @@ export const handleJobFailedLogic = (
 						versionHash: versionInfo.versionHash,
 						lastRenderedResourceId: event.job_id,
 						lastRenderAtIso: versionInfo.updatedAt,
-						stepKey: existingDescriptor.stepKey ?? stepKey,
 					};
+					if (existingDescriptor.stepKey !== undefined) {
+						renderedDescriptor.stepKey = existingDescriptor.stepKey;
+					} else if (stepKey !== undefined) {
+						renderedDescriptor.stepKey = stepKey;
+					}
 					progress.documents[documentsKey] = renderedDescriptor;
 					descriptorVersionInfo = null;
 					return renderedDescriptor;
@@ -1257,7 +1311,7 @@ export const handleJobFailedLogic = (
 			}
 
 			if (hasLatestResource) {
-				const versionInfo = buildFallbackVersion(event.latestRenderedResourceId!);
+				const versionInfo = buildVersionInfo(event.latestRenderedResourceId!);
 				const renderedDescriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 					status: 'failed',
 					jobId: event.job_id,
@@ -1270,7 +1324,7 @@ export const handleJobFailedLogic = (
 				return renderedDescriptor;
 			}
 
-			const versionInfo = buildFallbackVersion(event.job_id);
+			const versionInfo = buildVersionInfo(event.job_id);
 			const renderedDescriptor: StageRenderedDocumentDescriptor = {
 				descriptorType: 'rendered',
 				status: 'failed',
@@ -1281,7 +1335,7 @@ export const handleJobFailedLogic = (
 				lastRenderedResourceId: event.job_id,
 				lastRenderAtIso: versionInfo.updatedAt,
 			};
-			if (stepKey) {
+			if (stepKey !== undefined) {
 				renderedDescriptor.stepKey = stepKey;
 			}
 			progress.documents[documentsKey] = renderedDescriptor;
@@ -1297,14 +1351,14 @@ export const handleJobFailedLogic = (
 		if (descriptor.descriptorType !== 'rendered') {
 			descriptor.descriptorType = 'rendered';
 		}
-		if (stepKey && !descriptor.stepKey) {
+		if (stepKey !== undefined) {
 			descriptor.stepKey = stepKey;
 		}
 
 		if (hasLatestResource) {
 			descriptor.latestRenderedResourceId = event.latestRenderedResourceId!;
 			if (!descriptorVersionInfo) {
-				descriptorVersionInfo = buildFallbackVersion(event.latestRenderedResourceId!);
+				descriptorVersionInfo = buildVersionInfo(event.latestRenderedResourceId!);
 			}
 			descriptor.versionHash = descriptorVersionInfo.versionHash;
 			descriptor.lastRenderedResourceId = event.latestRenderedResourceId!;
@@ -1319,7 +1373,10 @@ export const handleJobFailedLogic = (
 			});
 		}
 
-		const contentEntry = ensureStageDocumentContentLogic(state, compositeKey);
+		const contentEntry = ensureStageDocumentContentLogic(state, compositeKey, {
+			baselineMarkdown: '',
+			version: null,
+		});
 		contentEntry.error = event.error;
 		contentEntry.isLoading = false;
 	});
@@ -1381,15 +1438,14 @@ export const submitStageDocumentFeedbackLogic = async (
 			documentKey: payload.documentKey,
 		};
 		const serializedKey = getStageDocumentKey(compositeKey);
-		const resolvedResource = get().stageDocumentResources[serializedKey];
-		const sourceContributionId = resolvedResource?.source_contribution_id ?? null;
+		const contentEntry = get().stageDocumentContent[serializedKey];
 
-		// Require correct data at write time; no defaults or fallbacks
 		const missing: string[] = [];
 		if (payload.feedbackContent === undefined || payload.feedbackContent === null) missing.push('feedbackContent');
 		if (payload.userId === undefined || payload.userId === null || payload.userId === '') missing.push('userId');
 		if (payload.projectId === undefined || payload.projectId === null || payload.projectId === '') missing.push('projectId');
 		if (payload.feedbackType === undefined || payload.feedbackType === null || payload.feedbackType === '') missing.push('feedbackType');
+		if (contentEntry === undefined) missing.push('stageDocumentContent entry');
 		if (missing.length > 0) {
 			const error: ApiError = {
 				message: `Cannot submit feedback: missing required fields: ${missing.join(', ')}.`,
@@ -1405,6 +1461,8 @@ export const submitStageDocumentFeedbackLogic = async (
 			});
 			return { data: undefined, error, status: 400 };
 		}
+
+		const sourceContributionId: string | null = contentEntry.sourceContributionId;
 
 		const enrichedPayload: SubmitStageDocumentFeedbackPayload = {
 			sessionId: payload.sessionId,
@@ -1485,6 +1543,19 @@ export const hydrateStageProgressLogic = async (
 			return;
 		}
 
+		const data = response.data;
+		if (!data) return;
+
+		const allValid = data.every(isStageRenderedDocumentChecklistEntry);
+		if (!allValid) {
+			logger.error('[hydrateStageProgress] Invalid response: every document must have documentKey, modelId, jobId, and latestRenderedResourceId as non-empty strings', {
+				sessionId,
+				stageSlug,
+				iterationNumber,
+			});
+			return;
+		}
+
 		set((state) => {
 			if (!state.stageRunProgress[progressKey]) {
 				state.stageRunProgress[progressKey] = {
@@ -1495,47 +1566,29 @@ export const hydrateStageProgressLogic = async (
 			}
 
 			const progress = state.stageRunProgress[progressKey];
-			response.data?.forEach((doc) => {
-				const { documentKey, modelId, status, jobId, latestRenderedResourceId, stepKey } =
-					doc;
+			data.forEach((doc) => {
+				if (!isStageRenderedDocumentChecklistEntry(doc)) return;
 
-				if (
-					typeof latestRenderedResourceId !== 'string' ||
-					latestRenderedResourceId.length === 0
-				) {
-					logger.warn('[hydrateStageProgress] Rendered resource missing for document', {
-						documentKey,
-						modelId,
-						status,
-					});
-					return;
-				}
-
-				const versionInfo = createVersionInfo(latestRenderedResourceId);
-
-				if (!jobId) {
-					logger.warn('[hydrateStageProgress] Job ID missing for document', { documentKey, modelId, status, latestRenderedResourceId });
-					return;
-				}
-				const descriptorStatus: StageRunDocumentStatus = status;
-				const documentsKey = getStageRunDocumentKey(documentKey, modelId);
+				const versionInfo = createVersionInfo(doc.latestRenderedResourceId);
+				const descriptorStatus: StageRunDocumentStatus = doc.status;
+				const documentsKey = getStageRunDocumentKey(doc.documentKey, doc.modelId);
 				const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 					status: descriptorStatus,
-					jobId,
-					latestRenderedResourceId,
-					modelId,
+					jobId: doc.jobId,
+					latestRenderedResourceId: doc.latestRenderedResourceId,
+					modelId: doc.modelId,
 					versionInfo,
-					stepKey,
+					stepKey: doc.stepKey,
 				});
 				descriptor.status = descriptorStatus;
-				descriptor.job_id = jobId;
-				descriptor.latestRenderedResourceId = latestRenderedResourceId;
-				descriptor.modelId = modelId;
+				descriptor.job_id = doc.jobId;
+				descriptor.latestRenderedResourceId = doc.latestRenderedResourceId;
+				descriptor.modelId = doc.modelId;
 				descriptor.versionHash = versionInfo.versionHash;
-				descriptor.lastRenderedResourceId = latestRenderedResourceId;
+				descriptor.lastRenderedResourceId = doc.latestRenderedResourceId;
 				descriptor.lastRenderAtIso = versionInfo.updatedAt;
-				if (!descriptor.stepKey && stepKey) {
-					descriptor.stepKey = stepKey;
+				if (doc.stepKey !== undefined) {
+					descriptor.stepKey = doc.stepKey;
 				}
 			});
 		});
@@ -1546,7 +1599,6 @@ export const hydrateStageProgressLogic = async (
 			code: 'NETWORK_ERROR',
 		};
 		logger.error('[hydrateStageProgress] Network error', { error, ...payload });
-		// Optionally set an error state here
 	}
 };
 
@@ -1576,6 +1628,25 @@ export const hydrateAllStageProgressLogic = async (
 		}
 
 		const entries = response.data;
+
+		let responseValid = true;
+		for (const entry of entries) {
+			for (const doc of entry.documents) {
+				if (!isStageRenderedDocumentChecklistEntry(doc)) {
+					responseValid = false;
+					break;
+				}
+			}
+			if (!responseValid) break;
+		}
+		if (!responseValid) {
+			logger.error('[hydrateAllStageProgress] Invalid response: every document must have documentKey, modelId, jobId, and latestRenderedResourceId as non-empty strings', {
+				sessionId,
+				iterationNumber,
+			});
+			return;
+		}
+
 		set((state) => {
 			for (const entry of entries) {
 				const progressKey = `${sessionId}:${entry.stageSlug}:${iterationNumber}`;
@@ -1601,53 +1672,28 @@ export const hydrateAllStageProgressLogic = async (
 				}
 
 				for (const doc of entry.documents) {
-					const { documentKey, modelId, status, jobId, latestRenderedResourceId, stepKey } =
-						doc;
+					if (!isStageRenderedDocumentChecklistEntry(doc)) continue;
 
-					if (typeof documentKey !== 'string' || typeof modelId !== 'string') {
-						continue;
-					}
-
-					const descriptorStatus: StageRunDocumentStatus = status;
-					const documentsKey = getStageRunDocumentKey(documentKey, modelId);
-
-					if (
-						typeof latestRenderedResourceId !== 'string' ||
-						latestRenderedResourceId.length === 0
-					) {
-						progress.documents[documentsKey] = {
-							descriptorType: 'rendered',
-							status: descriptorStatus,
-							job_id: jobId ?? '',
-							latestRenderedResourceId: '',
-							modelId,
-							versionHash: '',
-							lastRenderedResourceId: '',
-							lastRenderAtIso: new Date().toISOString(),
-							stepKey,
-						};
-						continue;
-					}
-
-					const versionInfo = createVersionInfo(latestRenderedResourceId);
-					const resolvedJobId: string = jobId ?? '';
+					const descriptorStatus: StageRunDocumentStatus = doc.status;
+					const documentsKey = getStageRunDocumentKey(doc.documentKey, doc.modelId);
+					const versionInfo = createVersionInfo(doc.latestRenderedResourceId);
 					const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 						status: descriptorStatus,
-						jobId: resolvedJobId,
-						latestRenderedResourceId,
-						modelId,
+						jobId: doc.jobId,
+						latestRenderedResourceId: doc.latestRenderedResourceId,
+						modelId: doc.modelId,
 						versionInfo,
-						stepKey,
+						stepKey: doc.stepKey,
 					});
 					descriptor.status = descriptorStatus;
-					descriptor.job_id = resolvedJobId;
-					descriptor.latestRenderedResourceId = latestRenderedResourceId;
-					descriptor.modelId = modelId;
+					descriptor.job_id = doc.jobId;
+					descriptor.latestRenderedResourceId = doc.latestRenderedResourceId;
+					descriptor.modelId = doc.modelId;
 					descriptor.versionHash = versionInfo.versionHash;
-					descriptor.lastRenderedResourceId = latestRenderedResourceId;
+					descriptor.lastRenderedResourceId = doc.latestRenderedResourceId;
 					descriptor.lastRenderAtIso = versionInfo.updatedAt;
-					if (!descriptor.stepKey && stepKey) {
-						descriptor.stepKey = stepKey;
+					if (doc.stepKey !== undefined) {
+						descriptor.stepKey = doc.stepKey;
 					}
 				}
 			}

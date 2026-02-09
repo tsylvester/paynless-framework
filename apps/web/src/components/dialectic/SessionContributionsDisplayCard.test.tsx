@@ -13,7 +13,6 @@ import type {
   SelectedModels,
   StageDocumentContentState,
   StageRenderedDocumentDescriptor,
-  EditedDocumentResource,
 } from '@paynless/types';
 
 import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard';
@@ -237,6 +236,7 @@ const buildStageRunProgress = (
 ): StageRunProgressEntry => ({
   stepStatuses,
   documents,
+  jobProgress: {},
 });
 
 const buildStageDocumentDescriptor = (
@@ -268,33 +268,12 @@ const buildStageDocumentContent = (
   sourceContributionId: null,
   feedbackDraftMarkdown: '',
   feedbackIsDirty: false,
+  resourceType: null,
   ...overrides,
 });
 
 const buildStageDocumentKey = (modelId: string, documentKey: string): string =>
   `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
-
-const buildEditedDocumentResource = (
-  documentKey: string,
-  overrides: Partial<EditedDocumentResource> = {},
-): EditedDocumentResource => ({
-  id: `resource-${documentKey}`,
-  resource_type: 'rendered_document',
-  project_id: projectId,
-  session_id: sessionId,
-  stage_slug: stageSlug,
-  iteration_number: iterationNumber,
-  document_key: documentKey,
-  source_contribution_id: `contrib-source-${documentKey}`,
-  storage_bucket: 'bucket',
-  storage_path: `path/${documentKey}.md`,
-  file_name: `${documentKey}.md`,
-  mime_type: 'text/markdown',
-  size_bytes: 2048,
-  created_at: isoTimestamp,
-  updated_at: isoTimestamp,
-  ...overrides,
-});
 
 const renderSessionContributionsDisplayCard = () => render(<SessionContributionsDisplayCard />);
 
@@ -2367,11 +2346,8 @@ describe('SessionContributionsDisplayCard', () => {
             baselineMarkdown: 'Original content',
             currentDraftMarkdown: editedContent,
             isDirty: true, // Document has been edited
-          }),
-        },
-        stageDocumentResources: {
-          [buildStageDocumentKey('model-a', documentKey)]: buildEditedDocumentResource(documentKey, {
-            source_contribution_id: 'contrib-original',
+            sourceContributionId: 'contrib-original',
+            resourceType: 'rendered_document',
           }),
         },
       });
