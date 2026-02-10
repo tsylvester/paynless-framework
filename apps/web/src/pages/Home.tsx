@@ -1,13 +1,18 @@
+import { useEffect, useRef } from 'react'
+import { motion } from 'framer-motion'
 import {
   ArrowRight,
   Sparkles,
-  Cpu,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuthStore, useAiStore } from '@paynless/store'
-import { useEffect, useRef } from 'react'
 import { logger } from '@paynless/utils'
-import { CreateDialecticProjectForm } from '../components/dialectic/CreateDialecticProjectForm'
+import { HeroAnimation } from '../components/marketing/HeroAnimation'
+import { ProcessSteps } from '../components/marketing/ProcessSteps'
+import { FeatureCards } from '../components/marketing/FeatureCards'
+import { StatsSection } from '../components/marketing/StatsSection'
+import { UseCases } from '../components/marketing/UseCases'
+import { CTASection } from '../components/marketing/CTASection'
 
 export function HomePage() {
   const { user } = useAuthStore((state) => ({ user: state.user }))
@@ -18,7 +23,7 @@ export function HomePage() {
   const hasSetDefaults = useRef(false)
 
   useEffect(() => {
-    if (!user) return; // Don't run if user is not authenticated
+    if (!user) return
     loadAiConfig()
     startNewChat()
     hasSetDefaults.current = false
@@ -52,111 +57,113 @@ export function HomePage() {
   }, [availableProviders])
 
   return (
-    <div>
+    <div className="overflow-hidden -mt-[3.25rem] md:-mx-4 md:-mb-4">
       {/* Hero Section */}
-      <div className="relative overflow-hidden w-full">
+      <section className="relative w-full py-16 md:py-24">
+        {/* Background */}
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent dark:from-primary/20 dark:via-primary/10">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDIwIDAgTCAwIDAgMCAyMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMC4yIiBzdHJva2Utb3BhY2l0eT0iMC4xIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIiAvPjwvc3ZnPg==')] opacity-20" />
         </div>
-        <div className="relative w-full">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-36">
-            <div className="text-center">
-              <div className="inline-flex items-center px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-8 shadow-sm backdrop-blur-sm animate-fadeIn">
+
+        <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            {/* Left: Copy */}
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.7, ease: 'easeOut' }}
+            >
+              <div className="inline-flex items-center px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-8 shadow-sm backdrop-blur-sm">
                 <Sparkles className="h-4 w-4 mr-2 animate-pulse" />
-                <span>Automate Software Planning</span>
+                <span>AI-Powered Planning Engine</span>
               </div>
-              <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl md:text-6xl">
+              <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl md:text-6xl leading-[1.1]">
                 <span className="block text-textPrimary mb-2">
-                  Paynless Coding
+                  Build Plans That
                 </span>
-                <span className="block text-primary bg-clip-text bg-gradient-to-r from-primary to-primary/80">
-                  Build Better Software Faster
+                <span className="block text-primary">
+                  Actually Work
                 </span>
               </h1>
-              <p className="mt-8 max-w-2xl mx-auto text-lg text-textSecondary leading-relaxed">
-                Generate requirements, user stories, and detailed implementation
-                plans in seconds.
+              <p className="mt-8 text-lg text-textSecondary leading-relaxed max-w-xl">
+                Describe your idea and watch multiple AI models collaborate
+                through a 5-stage dialectic process to deliver production-ready
+                requirements, specs, and implementation plans.
               </p>
-              <div className="mt-12 flex justify-center gap-4">
+              <div className="mt-10 flex flex-wrap gap-4">
                 {user ? (
                   <Link
                     to="/dashboard"
-                    className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white dark:text-black bg-primary hover:bg-primary/90 transition-all duration-300 shadow-md hover:shadow-lg"
+                    className="group inline-flex items-center px-8 py-3.5 text-base font-semibold rounded-xl text-white dark:text-black bg-primary hover:bg-primary/90 transition-all duration-300 shadow-lg hover:shadow-xl hover:shadow-primary/20"
                   >
-                    Try It Now
-                    <ArrowRight
-                      className="ml-2 group-hover:translate-x-1 transition-transform"
-                      size={20}
-                    />
+                    Go to Dashboard
+                    <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
                   </Link>
                 ) : (
-                  <Link
-                    to="/register"
-                    className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white dark:text-black bg-primary hover:bg-primary/90 transition-all duration-300 shadow-md hover:shadow-lg"
-                  >
-                    Get Started
-                    <ArrowRight
-                      className="ml-2 opacity-100 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-300"
-                      size={20}
-                    />
-                  </Link>
+                  <>
+                    <Link
+                      to="/register"
+                      className="group inline-flex items-center px-8 py-3.5 text-base font-semibold rounded-xl text-white dark:text-black bg-primary hover:bg-primary/90 transition-all duration-300 shadow-lg hover:shadow-xl hover:shadow-primary/20"
+                    >
+                      Get Started Free
+                      <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                    </Link>
+                    <a
+                      href="#how-it-works"
+                      className="inline-flex items-center px-8 py-3.5 text-base font-semibold rounded-xl text-textPrimary bg-surface border border-border hover:bg-background transition-all duration-300"
+                    >
+                      See How It Works
+                    </a>
+                  </>
                 )}
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Dialectic Project Creation Section */}
-      <div className="w-full py-12 bg-surface relative">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent" />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
-          <div className="max-w-4xl mx-auto bg-background rounded-xl border border-border shadow-sm hover:shadow-md transition-all duration-300 p-8 w-full ">
-            <div className="text-center">
-              <div >
-                <p className="mx-auto text-textSecondary mb-4">
-                  Describe what you want to build or upload an .md project file.
-                </p>
-              <CreateDialecticProjectForm />
-
+              {/* Trust indicators */}
+              <div className="mt-10 flex items-center gap-6 text-sm text-textSecondary">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Free to start
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                  No credit card required
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Multi-model AI
+                </div>
               </div>
-            </div>
-          </div>          
-          <div className="text-center mt-12">
-            <div className="inline-flex items-center px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-4 shadow-sm backdrop-blur-sm">
-              <Cpu className="h-4 w-4 mr-2" />
-              <span>Paynless Planning Engine</span>
-            </div>
-            <h2 className="text-2xl font-bold text-textPrimary">
-              Explain what you want, get what you need
-            </h2>
-            <p className="mt-4 max-w-2xl mx-auto text-textSecondary">
-              Orchestrate multiple AI agents through a
-              five-stage process—Idea, Critique, Combination,
-              Formalization, and Organization—to deliver comprehensive project
-              plans.
-            </p>
+            </motion.div>
+
+            {/* Right: 3D Animation */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.8, delay: 0.2, ease: 'easeOut' }}
+              className="hidden lg:block"
+            >
+              <HeroAnimation />
+            </motion.div>
           </div>
         </div>
+      </section>
+
+      {/* How It Works - 5 Stages */}
+      <div id="how-it-works">
+        <ProcessSteps />
       </div>
 
-      {/* Perfect For Section */}
-      <div className="w-full py-24 bg-background relative">
-        <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 via-transparent to-primary/5" />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
-          <div className="text-center mb-12">
-            <h2 className="text-2xl font-bold text-textPrimary">
-              Perfect For...
-            </h2>
-            <p className="mt-4 max-w-3xl mx-auto text-textSecondary text-lg">
-              Vibe coders, SaaS startups, indie hackers, and development teams
-              who want to ship faster without compromising on quality or
-              security. If you're building, Paynless is for you.
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* Stats */}
+      <StatsSection />
 
+      {/* Feature Cards */}
+      <FeatureCards />
+
+      {/* Use Cases */}
+      <UseCases />
+
+      {/* Final CTA */}
+      <CTASection />
     </div>
   )
 }
