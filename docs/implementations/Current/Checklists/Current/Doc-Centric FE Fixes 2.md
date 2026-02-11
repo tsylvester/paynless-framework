@@ -438,6 +438,165 @@
         *   `[ ]` `dialecticStore.mock.ts` aligned: no `stageDocumentResources`, no `updateStageDocumentResource`, `saveContributionEdit` mock writes scalars
         *   `[ ]` All UI test files cleared of deleted type fields
 
+*   `[✅]` [BE] supabase/functions/dialectic-service/getAllStageProgress.ts **Fix progress tracking to handle all job types and report actual job results**
+  *   `[✅]` `objective.md`
+    *   `[✅]` **Functional Requirements:**
+      *   `[✅]` Load the complete recipe for each stage to know what steps exist (both cloned instances and template-based)
+      *   `[✅]` Query ALL jobs for the session/iteration without filtering or skipping any based on payload shape
+      *   `[✅]` Classify each job by its `job_type` column value (PLAN, EXECUTE, RENDER) using `isJobTypeEnum()` type guard
+      *   `[✅]` Match jobs to recipe steps where `planner_metadata.recipe_step_id` exists and is valid
+      *   `[✅]` Handle jobs without `planner_metadata` (root PLAN jobs, RENDER jobs) as standalone job entries
+      *   `[✅]` Group continuation jobs with their parent via `parent_job_id` when calculating step progress
+      *   `[✅]` Report RENDER jobs separately since they are the only jobs that produce rendered documents
+      *   `[✅]` Use each job's `results` field to determine what it actually produced (not payload promises)
+      *   `[✅]` Derive step-level and stage-level status from aggregated job statuses
+      *   `[✅]` For EXECUTE jobs in per-model steps, provide per-model breakdown via `modelJobStatuses`
+      *   `[✅]` Return `StageProgressEntry[]` with complete `jobProgress: StepJobProgress` tracking per step
+    *   `[✅]` **Non-Functional Requirements:**
+      *   `[✅]` Must not return 500 errors when encountering root PLAN jobs or RENDER jobs
+      *   `[✅]` Must not skip or ignore any job that exists in `dialectic_generation_jobs`
+      *   `[✅]` Must handle both cloned recipe instances and template-based instances correctly
+      *   `[✅]` Must use existing type guards (`isJobTypeEnum`, `isJobProgressEntry`, `isPlannerMetadata`, `isRecord`)
+      *   `[✅]` Must preserve all existing function signatures and return types
+      *   `[✅]` Must not create new progress tracking layers - fixes the existing one
+      *   `[✅]` Performance: minimize database queries by batching lookups
+  *   `[✅]` `role.md`
+    *   `[✅]` **Domain:** Backend data aggregation service
+    *   `[✅]` **Architectural Role:** Adapter layer between database and API response
+    *   `[✅]` **Responsibility:** Transform raw job + resource data into structured progress DTOs for frontend consumption
+  *   `[✅]` `module.md`
+    *   `[✅]` **Context Boundaries:**
+      *   `[✅]` Reads from: `dialectic_generation_jobs`, `dialectic_project_resources`, `dialectic_stage_recipe_steps`, `dialectic_recipe_template_steps`, `dialectic_stage_recipe_instances`
+      *   `[✅]` Outputs: `GetAllStageProgressResponse` (array of `StageProgressEntry`)
+      *   `[✅]` Does NOT: create/update/delete any data; run jobs; interpret business logic beyond aggregation
+    *   `[✅]` **Feature Boundaries:**
+      *   `[✅]` In scope: aggregate job statuses, map jobs to steps, derive stage/step statuses, populate `StepJobProgress`
+      *   `[✅]` Out of scope: job execution, recipe planning, document rendering, progress notifications
+  *   `[✅]` `deps.md`
+    *   `[✅]` **Internal Dependencies:**
+      *   `[✅]` Type guards: `isJobTypeEnum`, `isJobProgressEntry`, `isPlannerMetadata`, `isRecord` from `type_guards.dialectic.ts`
+      *   `[✅]` Utility: `deconstructStoragePath` from `path_deconstructor.ts`
+      *   `[✅]` Types: `JobProgressEntry`, `StepJobProgress`, `StageProgressEntry`, `GetAllStageProgressResponse`, `JobProgressStatus`, `UnifiedStageStatus`, `StageDocumentDescriptorDto`, `StageRunDocumentStatus` from `dialectic.interface.ts`
+      *   `[✅]` Database types: `Database`, `Tables` from `types_db.ts`
+    *   `[✅]` **External Dependencies:**
+      *   `[✅]` Supabase client for database queries
+      *   `[✅]` User auth context for authorization
+  *   `[✅]` interface/`dialectic.interface.ts`
+    *   `[✅]` **No interface changes required** - existing types (`JobProgressEntry`, `StepJobProgress`, `StageProgressEntry`, etc.) already support the required data structure
+  *   `[✅]` unit/`getAllStageProgress.test.ts`
+    *   `[✅]` **[RED TEST]** Create comprehensive unit test file for `getAllStageProgress`
+      *   `[✅]` **Test 1: Handles root PLAN jobs without planner_metadata**
+        *   Given: A job with `job_type: 'PLAN'`, no `planner_metadata.recipe_step_id`
+        *   When: `getAllStageProgress` is called
+        *   Then: Function completes without 500 error, job is reported in results
+      *   `[✅]` **Test 2: Handles RENDER jobs with different payload shape**
+        *   Given: A job with `job_type: 'RENDER'`, payload has `documentKey`, `sourceContributionId` but NO `planner_metadata`
+        *   When: `getAllStageProgress` is called
+        *   Then: Function completes without 500 error, RENDER job is reported separately
+      *   `[✅]` **Test 3: Matches EXECUTE jobs to steps via planner_metadata.recipe_step_id**
+        *   Given: EXECUTE jobs with valid `planner_metadata.recipe_step_id` matching recipe steps
+        *   When: Function processes jobs
+        *   Then: Jobs are correctly grouped under their step_key in `jobProgress`
+      *   `[✅]` **Test 4: Works with both cloned instances and template-based recipes**
+        *   Given: Recipe instance with `is_cloned: true` → looks up from `dialectic_stage_recipe_steps`
+        *   Given: Recipe instance with `is_cloned: false` → looks up from `dialectic_recipe_template_steps`
+        *   When: Function loads recipe steps
+        *   Then: Both paths return valid step_key mappings
+      *   `[✅]` **Test 5: Aggregates per-model status for EXECUTE jobs**
+        *   Given: Multiple EXECUTE jobs with same step_key but different `payload.model_id`
+        *   When: Function builds `jobProgress[stepKey]`
+        *   Then: `modelJobStatuses` object contains per-model breakdown
+      *   `[✅]` **Test 6: Uses job_type column, not payload inference**
+        *   Given: Jobs with `job_type` column set to PLAN/EXECUTE/RENDER
+        *   When: Function classifies jobs
+        *   Then: Uses `job_type` column directly via `isJobTypeEnum()` guard
+      *   `[✅]` **Test 7: Does not skip jobs with missing payload fields**
+        *   Given: Jobs without `payload.document_key` or `payload.model_id`
+        *   When: Function processes all jobs
+        *   Then: All jobs are counted in their respective categories (not silently skipped)
+      *   `[✅]` **Test 8: Continuation jobs group with parent under same step**
+        *   Given: Original EXECUTE job + continuation jobs with same `parent_job_id` and `recipe_step_id`
+        *   When: Function aggregates by step_key
+        *   Then: All continuations counted together in same step's progress
+      *   `[✅]` **Test 9: Derives correct step status from heterogeneous job statuses**
+        *   Given: Step has jobs in mixed states (pending, in_progress, completed, failed)
+        *   When: Function derives step status via `deriveStepStatus()`
+        *   Then: Returns 'failed' if any failed, 'in_progress' if any in_progress/retrying, 'completed' if all completed
+      *   `[✅]` **Test 10: Reports documents array from RENDER jobs, not EXECUTE jobs**
+        *   Given: EXECUTE jobs that triggered RENDER jobs
+        *   When: Function populates `documents` array
+        *   Then: Uses RENDER job metadata (documentKey, sourceContributionId) to build StageDocumentDescriptorDto entries
+  *   `[✅]` `getAllStageProgress.ts`
+    *   `[✅]` **Implementation Requirements:**
+      *   `[✅]` **Step 1: Load recipe definition**
+        *   Query `dialectic_stage_recipe_instances` to get `is_cloned` and `template_id`
+        *   If `is_cloned: true`, load from `dialectic_stage_recipe_steps` where `instance_id = instance.id`
+        *   If `is_cloned: false`, load from `dialectic_recipe_template_steps` where `template_id = instance.template_id`
+        *   Build `Map<recipeStepId, stepKey>` for all recipe steps in this stage
+      *   `[✅]` **Step 2: Query ALL jobs without payload filtering**
+        *   Query `dialectic_generation_jobs.select('id, status, payload, stage_slug, job_type, parent_job_id, results')`
+        *   Do NOT filter by payload shape at query time
+        *   Keep all jobs for classification
+      *   `[✅]` **Step 3: Classify jobs by job_type column**
+        *   For each job, validate `job.job_type` using `isJobTypeEnum(job.job_type)`
+        *   Return 500 error only if `job_type` is null or invalid (database integrity issue)
+        *   Separate into PLAN jobs, EXECUTE jobs, RENDER jobs by `job_type` value
+      *   `[✅]` **Step 4: Extract planner_metadata where present**
+        *   Check if `isRecord(job.payload)` and `isPlannerMetadata(job.payload.planner_metadata)`
+        *   If yes, extract `recipe_step_id` and look up `step_key` from Map
+        *   If no `planner_metadata` (root PLAN, RENDER), classify as "no step association"
+      *   `[✅]` **Step 5: Build step-level progress tracking**
+        *   For jobs WITH step_key: aggregate by step_key into `StepJobProgress[step_key]`
+        *   Count totalJobs, completedJobs, inProgressJobs, failedJobs per step
+        *   For EXECUTE jobs: also track per-model status via `payload.model_id` → `modelJobStatuses[modelId]`
+      *   `[✅]` **Step 6: Handle jobs without step association**
+        *   Root PLAN jobs: report as separate tracking category (e.g., step_key = 'root_orchestration')
+        *   RENDER jobs: report as separate tracking category (e.g., step_key = 'document_rendering')
+        *   Both contribute to overall stage progress but don't map to a recipe step
+      *   `[✅]` **Step 7: Build documents array from RENDER jobs**
+        *   Query `dialectic_project_resources` where `resource_type = 'rendered_document'`
+        *   For each RENDER job, extract: `payload.documentKey`, `payload.sourceContributionId`, `results.pathContext`
+        *   Match RENDER job to its source EXECUTE job via `sourceContributionId` to get `modelId`
+        *   Construct `StageDocumentDescriptorDto`: { documentKey, modelId, jobId, status, latestRenderedResourceId, stepKey }
+      *   `[✅]` **Step 8: Derive statuses**
+        *   Per step: `deriveStepStatus(jobStatuses)` from all jobs in that step
+        *   Overall stage: `deriveStageStatus(allJobStatuses)` from all jobs in stage
+      *   `[✅]` **Step 9: Validate and return**
+        *   Validate each `JobProgressEntry` with `isJobProgressEntry()` before adding to result
+        *   Return 500 only if validation fails (indicates logic bug)
+        *   Return `{ status: 200, data: GetAllStageProgressResponse }`
+  *   `[✅]` integration/`getAllStageProgress.integration.test.ts`
+    *   `[✅]` **[TEST-INT]** Integration test with real database
+      *   `[✅]` **Integration Test 1: Full thesis stage with root PLAN + EXECUTE + RENDER jobs**
+        *   Setup: Create session, run thesis stage through full DAG (similar to existing full_dag_traversal test)
+        *   Verify: `getAllStageProgress` returns complete progress including root PLAN job, all EXECUTE jobs, all RENDER jobs
+      *   `[✅]` **Integration Test 2: Synthesis stage with pairwise EXECUTE jobs**
+        *   Setup: Run synthesis stage with n=3 models (produces n³ pairwise jobs)
+        *   Verify: All pairwise jobs tracked, step_key correctly maps to recipe steps
+      *   `[✅]` **Integration Test 3: Cloned vs template recipe instances**
+        *   Setup: Create two sessions, one with cloned recipe, one with template recipe
+        *   Verify: Both return correct `step_key` mappings and progress
+  *   `[✅]` `requirements.md`
+    *   `[✅]` **Acceptance Criteria:**
+      *   `[✅]` Function does NOT return 500 error when encountering root PLAN jobs
+      *   `[✅]` Function does NOT return 500 error when encountering RENDER jobs
+      *   `[✅]` Function does NOT skip any jobs from the query results
+      *   `[✅]` Function uses `job_type` column directly for classification
+      *   `[✅]` Function correctly handles both cloned and template-based recipes
+      *   `[✅]` Function reports RENDER jobs in progress tracking (they produce the actual documents)
+      *   `[✅]` Function validates job progress entries with `isJobProgressEntry()` before returning
+      *   `[✅]` All existing integration tests continue to pass (especially `dialectic_full_dag_traversal.integration.test.ts`)
+  *   `[✅]` **[COMMIT]** `fix(be): getAllStageProgress correctly tracks PLAN/EXECUTE/RENDER jobs across all recipe types`
+    *   `[✅]` Fixed classification to use job_type column instead of inferring from payload
+    *   `[✅]` Added support for root PLAN jobs without planner_metadata
+    *   `[✅]` Added support for RENDER jobs with different payload structure
+    *   `[✅]` Fixed recipe step lookup to handle both cloned instances and template-based instances
+    *   `[✅]` Fixed documents array to report RENDER jobs (actual document producers)
+    *   `[✅]` Fixed step-level progress to include all job types, not just EXECUTE
+    *   `[✅]` Added validation using existing type guards (isJobTypeEnum, isJobProgressEntry)
+    *   `[✅]` Tests: comprehensive unit tests + integration tests for full DAG traversal
+
+
 # ToDo
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
     -- User reports that a single document failed and they liked the other documents, but had to regenerate the entire stage

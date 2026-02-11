@@ -273,6 +273,93 @@ describe('hydrateAllStageProgressLogic', () => {
 		);
 	});
 
+	it('populates multiple models producing the same documentKey without collisions', async () => {
+		const progressKey = `${sessionId}:thesis:${iterationNumber}`;
+		const mockResponse: GetAllStageProgressResponse = [
+			{
+				stageSlug: 'thesis',
+				documents: [
+					{
+						documentKey: 'business_case',
+						modelId: 'model-a',
+						status: 'completed',
+						jobId: 'job-a',
+						latestRenderedResourceId: 'res-a',
+					},
+					{
+						documentKey: 'business_case',
+						modelId: 'model-b',
+						status: 'completed',
+						jobId: 'job-b',
+						latestRenderedResourceId: 'res-b',
+					},
+				],
+				stepStatuses: { a_key: 'completed' },
+				stageStatus: 'completed',
+				jobProgress: {
+					a_key: {
+						totalJobs: 2,
+						completedJobs: 2,
+						inProgressJobs: 0,
+						failedJobs: 0,
+						modelJobStatuses: {
+							'model-a': 'completed',
+							'model-b': 'completed',
+						},
+					},
+				},
+			},
+		];
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.stepStatuses.a_key).toBe('completed');
+		expect(progress.jobProgress.a_key).toEqual(
+			expect.objectContaining({
+				totalJobs: 2,
+				completedJobs: 2,
+			}),
+		);
+
+		const keyA = stageRunDocKey('business_case', 'model-a');
+		const keyB = stageRunDocKey('business_case', 'model-b');
+		expect(progress.documents[keyA]).toBeDefined();
+		expect(progress.documents[keyB]).toBeDefined();
+		expect(keyA).not.toEqual(keyB);
+
+		expect(progress.documents[keyA]).toEqual(
+			expect.objectContaining({
+				descriptorType: 'rendered',
+				modelId: 'model-a',
+				latestRenderedResourceId: 'res-a',
+				job_id: 'job-a',
+			}),
+		);
+		expect(progress.documents[keyB]).toEqual(
+			expect.objectContaining({
+				descriptorType: 'rendered',
+				modelId: 'model-b',
+				latestRenderedResourceId: 'res-b',
+				job_id: 'job-b',
+			}),
+		);
+	});
+
 	it('handles empty response gracefully', async () => {
 		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
 			data: [],

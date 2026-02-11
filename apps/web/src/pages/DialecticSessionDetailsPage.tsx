@@ -18,7 +18,7 @@ import {
 import { SessionInfoCard } from "../components/dialectic/SessionInfoCard";
 import { StageTabCard } from "../components/dialectic/StageTabCard";
 import { SessionContributionsDisplayCard } from "../components/dialectic/SessionContributionsDisplayCard";
-import { DynamicProgressBar } from "../components/common/DynamicProgressBar";
+// import { DynamicProgressBar } from "../components/common/DynamicProgressBar";
 
 export const DialecticSessionDetailsPage: React.FC = () => {
 	const { projectId: urlProjectId, sessionId: urlSessionId } = useParams<{
@@ -153,7 +153,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 					<div className="lg:col-span-1">
 						<div className="sticky top-24 space-y-4">
 							{/* Enhanced Progress */}
-							<DynamicProgressBar sessionId={activeSessionDetail.id} />
+							{/* <DynamicProgressBar sessionId={activeSessionDetail.id} /> */}
 							{/* Stage Navigation */}
 							<div className="space-y-2">
 								<h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1">

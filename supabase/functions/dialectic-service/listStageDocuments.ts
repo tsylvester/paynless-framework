@@ -7,7 +7,6 @@ import {
   StageRunDocumentStatus,
 } from './dialectic.interface.ts';
 import { isRecord } from '../_shared/utils/type-guards/type_guards.common.ts';
-import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 
 export async function listStageDocuments(
   payload: ListStageDocumentsPayload,
@@ -49,7 +48,16 @@ export async function listStageDocuments(
     };
   }
 
-  if (!jobs || jobs.length === 0) {
+  if (!jobs) {
+    return {
+      status: 500,
+      error: {
+        message: 'Failed to fetch generation jobs: null data',
+      },
+    };
+  }
+
+  if (jobs.length === 0) {
     return {
       status: 200,
       data: [],
@@ -59,7 +67,7 @@ export async function listStageDocuments(
   // 2. Fetch all relevant rendered resources using column-based filters
   const { data: resources, error: resourcesError } = await dbClient
     .from('dialectic_project_resources')
-    .select('id, storage_path, file_name, source_contribution_id')
+    .select('id, source_contribution_id, updated_at, created_at')
     .eq('resource_type', 'rendered_document')
     .eq('session_id', sessionId)
     .eq('stage_slug', stageSlug)
@@ -74,82 +82,141 @@ export async function listStageDocuments(
     };
   }
 
-  // 3. Create lookup maps for rendered resources
-  // Map by document_key (fallback correlation method)
-  const resourceMapByDocumentKey = new Map<string, string>();
-  // Map by source_contribution_id (preferred correlation when available)
-  const resourceMapBySourceContributionId = new Map<string, string>();
+  if (!resources) {
+    return {
+      status: 500,
+      error: {
+        message: 'Failed to fetch project resources: null data',
+      },
+    };
+  }
 
-  if (resources) {
-    for (const resource of resources) {
-      // Extract document_key from file path using deconstructStoragePath
-      if (resource.storage_path && resource.file_name) {
-        const pathInfo = deconstructStoragePath({
-          storageDir: resource.storage_path,
-          fileName: resource.file_name,
-        });
-        if (pathInfo.documentKey) {
-          resourceMapByDocumentKey.set(pathInfo.documentKey, resource.id);
+  // 3. Create lookup map for rendered resources by source_contribution_id.
+  // Multiple resources per source_contribution_id are valid (edit/regenerate); select the latest deterministically.
+  const bestUpdatedAtMsBySourceContributionId = new Map<string, number>();
+  const bestCreatedAtMsBySourceContributionId = new Map<string, number>();
+  const bestResourceIdBySourceContributionId = new Map<string, string>();
+
+  for (const resourceUnknown of resources) {
+    if (!isRecord(resourceUnknown)) {
+      return { status: 500, error: { message: 'Project resource row is invalid' } };
+    }
+
+    const idUnknown: unknown = resourceUnknown['id'];
+    const sourceContributionIdUnknown: unknown = resourceUnknown['source_contribution_id'];
+    const updatedAtUnknown: unknown = resourceUnknown['updated_at'];
+    const createdAtUnknown: unknown = resourceUnknown['created_at'];
+
+    if (typeof idUnknown !== 'string' || idUnknown.length === 0) {
+      return { status: 500, error: { message: 'Project resource id is null or invalid' } };
+    }
+    if (typeof sourceContributionIdUnknown !== 'string' || sourceContributionIdUnknown.length === 0) {
+      continue;
+    }
+    if (typeof updatedAtUnknown !== 'string' || updatedAtUnknown.length === 0) {
+      return { status: 500, error: { message: `Project resource updated_at is null or invalid for resource: ${idUnknown}` } };
+    }
+    if (typeof createdAtUnknown !== 'string' || createdAtUnknown.length === 0) {
+      return { status: 500, error: { message: `Project resource created_at is null or invalid for resource: ${idUnknown}` } };
+    }
+
+    const updatedAtMs: number = Date.parse(updatedAtUnknown);
+    if (!Number.isFinite(updatedAtMs)) {
+      return { status: 500, error: { message: `Project resource updated_at is not a valid date for resource: ${idUnknown}` } };
+    }
+    const createdAtMs: number = Date.parse(createdAtUnknown);
+    if (!Number.isFinite(createdAtMs)) {
+      return { status: 500, error: { message: `Project resource created_at is not a valid date for resource: ${idUnknown}` } };
+    }
+
+    const bestUpdatedAtMs: number | undefined = bestUpdatedAtMsBySourceContributionId.get(sourceContributionIdUnknown);
+    const bestCreatedAtMs: number | undefined = bestCreatedAtMsBySourceContributionId.get(sourceContributionIdUnknown);
+    const bestResourceId: string | undefined = bestResourceIdBySourceContributionId.get(sourceContributionIdUnknown);
+
+    if (bestUpdatedAtMs === undefined || bestCreatedAtMs === undefined || bestResourceId === undefined) {
+      bestUpdatedAtMsBySourceContributionId.set(sourceContributionIdUnknown, updatedAtMs);
+      bestCreatedAtMsBySourceContributionId.set(sourceContributionIdUnknown, createdAtMs);
+      bestResourceIdBySourceContributionId.set(sourceContributionIdUnknown, idUnknown);
+      continue;
+    }
+
+    let isNewer: boolean = false;
+    if (updatedAtMs > bestUpdatedAtMs) {
+      isNewer = true;
+    } else if (updatedAtMs === bestUpdatedAtMs) {
+      if (createdAtMs > bestCreatedAtMs) {
+        isNewer = true;
+      } else if (createdAtMs === bestCreatedAtMs) {
+        if (idUnknown > bestResourceId) {
+          isNewer = true;
         }
       }
+    }
 
-      // Use source_contribution_id for preferred correlation when available
-      if (resource.source_contribution_id) {
-        resourceMapBySourceContributionId.set(
-          resource.source_contribution_id,
-          resource.id,
-        );
-      }
+    if (isNewer) {
+      bestUpdatedAtMsBySourceContributionId.set(sourceContributionIdUnknown, updatedAtMs);
+      bestCreatedAtMsBySourceContributionId.set(sourceContributionIdUnknown, createdAtMs);
+      bestResourceIdBySourceContributionId.set(sourceContributionIdUnknown, idUnknown);
     }
   }
+
+  const resourceMapBySourceContributionId = bestResourceIdBySourceContributionId;
 
   // 4. Filter, normalize, and combine the data
   const documents: StageDocumentDescriptorDto[] = [];
   for (const job of jobs) {
-    if (
-      isRecord(job.payload) &&
-      typeof job.payload.document_key === 'string' &&
-      typeof job.payload.model_id === 'string'
-    ) {
-      // Correlate resource to job: prefer source_contribution_id, fall back to document_key
-      let latestRenderedResourceId = '';
-
-      // First, try correlation via source_contribution_id if job payload includes it
-      if (
-        typeof job.payload.sourceContributionId === 'string' &&
-        resourceMapBySourceContributionId.has(job.payload.sourceContributionId)
-      ) {
-        latestRenderedResourceId = resourceMapBySourceContributionId.get(
-          job.payload.sourceContributionId,
-        ) ?? '';
-      } else {
-        // Fall back to document_key correlation
-        latestRenderedResourceId = resourceMapByDocumentKey.get(
-          job.payload.document_key,
-        ) ?? '';
-      }
-
-      // Map job status to StageRunDocumentStatus
-      const jobStatus = typeof job.status === 'string' ? job.status : '';
-      let status: StageRunDocumentStatus = 'idle';
-      if (jobStatus === 'completed') {
-        status = 'completed';
-      } else if (jobStatus === 'in_progress') {
-        status = 'generating';
-      } else if (jobStatus === 'failed') {
-        status = 'failed';
-      } else if (jobStatus === 'retrying') {
-        status = 'retrying';
-      }
-
-      documents.push({
-        documentKey: job.payload.document_key,
-        modelId: job.payload.model_id,
-        jobId: job.id,
-        status,
-        latestRenderedResourceId,
-      });
+    if (typeof job.id !== 'string' || job.id.length === 0) {
+      return { status: 500, error: { message: 'Job id is null or invalid' } };
     }
+    if (!isRecord(job.payload)) {
+      continue;
+    }
+
+    const payloadRecord: Record<PropertyKey, unknown> = job.payload;
+    const documentKeyUnknown: unknown = payloadRecord['document_key'];
+    const modelIdUnknown: unknown = payloadRecord['model_id'];
+    const sourceContributionIdUnknown: unknown = payloadRecord['sourceContributionId'];
+
+    if (typeof documentKeyUnknown !== 'string' || documentKeyUnknown.length === 0) {
+      continue;
+    }
+    if (typeof modelIdUnknown !== 'string' || modelIdUnknown.length === 0) {
+      return { status: 500, error: { message: 'Job payload model_id is null or invalid' } };
+    }
+    if (typeof sourceContributionIdUnknown !== 'string' || sourceContributionIdUnknown.length === 0) {
+      continue;
+    }
+
+    const latestRenderedResourceId: string | undefined = resourceMapBySourceContributionId.get(sourceContributionIdUnknown);
+    if (!latestRenderedResourceId) {
+      continue;
+    }
+
+    const jobStatusUnknown: unknown = job.status;
+    if (typeof jobStatusUnknown !== 'string' || jobStatusUnknown.length === 0) {
+      return { status: 500, error: { message: 'Job status is null or invalid' } };
+    }
+
+    let status: StageRunDocumentStatus;
+    if (jobStatusUnknown === 'completed') {
+      status = 'completed';
+    } else if (jobStatusUnknown === 'in_progress') {
+      status = 'generating';
+    } else if (jobStatusUnknown === 'failed') {
+      status = 'failed';
+    } else if (jobStatusUnknown === 'retrying') {
+      status = 'retrying';
+    } else {
+      return { status: 500, error: { message: `Job status is unsupported: ${jobStatusUnknown}` } };
+    }
+
+    documents.push({
+      documentKey: documentKeyUnknown,
+      modelId: modelIdUnknown,
+      jobId: job.id,
+      status,
+      latestRenderedResourceId,
+    });
   }
 
   return {

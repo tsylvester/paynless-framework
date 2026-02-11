@@ -1,2383 +1,1867 @@
 import {
+  assert,
   assertEquals,
   assertExists,
-} from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@2';
-import type { Database } from '../types_db.ts';
-import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
-import type { PathContext } from '../_shared/types/file_manager.types.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
-import { getAllStageProgress } from './getAllStageProgress.ts';
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { createClient, User } from "npm:@supabase/supabase-js@2";
+import { restoreFetch, mockFetch } from "../_shared/supabase.mock.ts";
+import { getAllStageProgress } from "./getAllStageProgress.ts";
+import { Database, Json } from "../types_db.ts";
 import {
-  GetAllStageProgressPayload,
-  GetAllStageProgressResponse,
-  StageProgressEntry,
-  StageDocumentDescriptorDto,
-  StageRunDocumentStatus,
-  DialecticProjectRow,
-  DialecticProjectResourceRow,
   DialecticJobRow,
+  DialecticProjectResourceRow,
+  DialecticStage,
   DialecticStageRecipeStep,
-  JobType,
-  UnifiedStageStatus,
-} from './dialectic.interface.ts';
+  DialecticStageRecipeInstance,
+  DialecticRecipeTemplateStep,
+  GetAllStageProgressPayload,
+  JobProgressEntry,
+  StageProgressEntry,
+  DialecticExecuteJobPayload,
+  DialecticRenderJobPayload,
+  DialecticPlanJobPayload,
+} from "./dialectic.interface.ts";
+import { FileType } from "../_shared/types/file_manager.types.ts";
+import { isJson } from "../_shared/utils/type_guards.ts";
 
-const OWNER_USER_ID = 'owner-user-id';
-const OTHER_USER_ID = 'other-user-id';
-const PROJECT_ID = 'project-xyz';
-const SESSION_ID = 'session-123';
-const ITERATION_NUMBER = 1;
+const SUPABASE_URL = "http://localhost:54321";
+const SUPABASE_ANON_KEY = "test-anon-key";
 
-const JOB_TYPE_PLAN: JobType = 'PLAN';
-const JOB_TYPE_EXECUTE: JobType = 'EXECUTE';
-const JOB_TYPE_RENDER: JobType = 'RENDER';
-
-function createMockUser(id: string): User {
-  const user: User = {
-    id,
-    app_metadata: {},
-    user_metadata: {},
-    aud: 'authenticated',
-    created_at: new Date().toISOString(),
-  };
-  return user;
-}
-
-const validPayload: GetAllStageProgressPayload = {
-  sessionId: SESSION_ID,
-  iterationNumber: ITERATION_NUMBER,
-  userId: OWNER_USER_ID,
-  projectId: PROJECT_ID,
+const basePayload: GetAllStageProgressPayload = {
+  sessionId: "sess-123",
+  iterationNumber: 1,
+  userId: "user-123",
+  projectId: "proj-123",
 };
 
-Deno.test('getAllStageProgress - returns empty array when no jobs exist for session', async () => {
-  const mockProject: DialecticProjectRow = {
-    id: PROJECT_ID,
-    user_id: OWNER_USER_ID,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    initial_prompt_resource_id: null,
-    initial_user_prompt: '',
-    process_template_id: null,
-    project_name: 'Test Project',
-    repo_url: null,
-    selected_domain_id: '',
-    selected_domain_overlay_id: null,
-    status: 'active',
-    user_domain_overlay_values: null,
-  };
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: [], error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
+const baseUser: User = {
+  id: basePayload.userId,
+  app_metadata: {},
+  user_metadata: {},
+  aud: "authenticated",
+  created_at: new Date().toISOString(),
+};
+
+Deno.test("getAllStageProgress - Test 1: Handles root PLAN jobs without planner_metadata", async () => {
+  const stageSlug = "thesis";
+  const stageId = "stage-thesis";
+  const instanceId = "instance-thesis";
+  const recipeTemplateId = "template-thesis";
+
+  const jobs: DialecticJobRow[] = [
+    {
+      id: "job-plan-root-1",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: {
+        sessionId: basePayload.sessionId,
+        projectId: basePayload.projectId,
+        model_id: "model-planner",
+        walletId: "wallet-1",
+        user_jwt: "jwt",
+        stageSlug: stageSlug,
+        iterationNumber: basePayload.iterationNumber,
+      },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "PLAN",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
     },
+  ];
+
+  const stages: DialecticStage[] = [
+    {
+      id: stageId,
+      slug: stageSlug,
+      display_name: "Thesis",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceId,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+  ];
+
+  const instances: DialecticStageRecipeInstance[] = [
+    {
+      id: instanceId,
+      stage_id: stageId,
+      template_id: recipeTemplateId,
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  mockFetch([
+    // dialectic_generation_jobs
+    new Response(JSON.stringify(jobs), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+    // dialectic_stages
+    new Response(JSON.stringify(stages), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+    // dialectic_stage_recipe_instances
+    new Response(JSON.stringify(instances), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+    // dialectic_stage_recipe_steps (may be queried even if unused by this test)
+    new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+    // dialectic_project_resources (rendered docs)
+    new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    assertEquals(result.data.length, 1);
+    assertEquals(result.data[0].stageSlug, stageSlug);
 
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const response: GetAllStageProgressResponse = result.data;
-  assertEquals(response.length, 0);
+    const stageProgress: StageProgressEntry = result.data[0];
+    assert("jobProgress" in stageProgress);
 
-  const projectsBuilders = mockSupabase.client.getHistoricBuildersForTable('dialectic_projects') ?? [];
-  assertEquals(projectsBuilders.length, 1);
-
-  const jobsBuilders = mockSupabase.client.getHistoricBuildersForTable('dialectic_generation_jobs') ?? [];
-  assertEquals(jobsBuilders.length, 1);
-
-  const resourcesBuilders = mockSupabase.client.getHistoricBuildersForTable('dialectic_project_resources') ?? [];
-  assertEquals(resourcesBuilders.length, 1);
+    const rootJobProgressKey = "__job:job-plan-root-1";
+    assert(rootJobProgressKey in stageProgress.jobProgress);
+    const root: JobProgressEntry = stageProgress.jobProgress[rootJobProgressKey];
+    assertEquals(root.totalJobs, 1);
+  } finally {
+    restoreFetch();
+  }
 });
 
-Deno.test('getAllStageProgress - returns progress entries for each stage with documents', async () => {
-  const thesisStepId = 'recipe-step-thesis-docs';
-  const synthesisStepId = 'recipe-step-synthesis-docs';
-  const thesisPathContext: PathContext = {
-    projectId: PROJECT_ID,
-    sessionId: SESSION_ID,
-    iteration: ITERATION_NUMBER,
-    stageSlug: 'thesis',
-    modelSlug: 'model-a',
-    attemptCount: 0,
-    documentKey: 'doc-a',
-    fileType: FileType.RenderedDocument,
+Deno.test("getAllStageProgress - Test 2: Handles RENDER jobs with different payload shape", async () => {
+  const stageSlug = "thesis";
+  const stageId = "stage-thesis";
+  const instanceId = "instance-thesis";
+  const recipeTemplateId = "template-thesis";
+
+  const renderPayload: DialecticRenderJobPayload = {
+    sessionId: basePayload.sessionId,
+    projectId: basePayload.projectId,
+    model_id: "model-a",
+    walletId: "wallet-1",
+    user_jwt: "jwt",
+    stageSlug: stageSlug,
+    iterationNumber: basePayload.iterationNumber,
+    documentKey: FileType.business_case,
+    sourceContributionId: "contrib-123",
+    documentIdentity: "doc-ident-1",
+    template_filename: "thesis_business_case.md",
   };
-  const thesisPath = constructStoragePath(thesisPathContext);
-  const mockProject: DialecticProjectRow = {
-    id: PROJECT_ID,
-    user_id: OWNER_USER_ID,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    initial_prompt_resource_id: null,
-    initial_user_prompt: '',
-    process_template_id: null,
-    project_name: 'Test Project',
-    repo_url: null,
-    selected_domain_id: '',
-    selected_domain_overlay_id: null,
-    status: 'active',
-    user_domain_overlay_values: null,
-  };
-  const mockJobs: DialecticJobRow[] = [
+
+  if(!isJson(renderPayload)) {
+    throw new Error("Invalid render payload");
+  }
+
+  const jobs: DialecticJobRow[] = [
     {
-      id: 'job-thesis-1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
+      id: "job-render-1",
       created_at: new Date().toISOString(),
-      started_at: new Date().toISOString(),
-      completed_at: null,
-      error_details: null,
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: renderPayload,
+      user_id: basePayload.userId,
       is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "RENDER",
       parent_job_id: null,
       prerequisite_job_id: null,
-      results: null,
       target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: thesisStepId },
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: {
+        pathContext: {
+          projectId: basePayload.projectId,
+          sessionId: basePayload.sessionId,
+          iteration: basePayload.iterationNumber,
+          stageSlug: stageSlug,
+          documentKey: "business_case",
+          fileType: "rendered_document",
+          modelSlug: "model-a",
+          sourceContributionId: "contrib-123",
+        },
       },
-    },
-    {
-      id: 'job-synthesis-1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'in_progress',
-      stage_slug: 'synthesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: new Date().toISOString(),
-      started_at: new Date().toISOString(),
-      completed_at: null,
       error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'synthesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-b',
-        model_id: 'model-b',
-        planner_metadata: { recipe_step_id: synthesisStepId },
-      },
     },
   ];
-  const now = new Date().toISOString();
-  const mockRecipeSteps: DialecticStageRecipeStep[] = [
+
+  const stages: DialecticStage[] = [
     {
-      id: thesisStepId,
-      step_key: 'thesis_doc_step',
-      branch_key: null,
-      config_override: {},
-      created_at: now,
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
-      inputs_required: [],
-      instance_id: '',
-      is_skipped: false,
-      job_type: 'EXECUTE',
-      object_filter: {},
-      output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
-      template_step_id: null,
-      updated_at: now,
-    },
-    {
-      id: synthesisStepId,
-      step_key: 'synthesis_doc_step',
-      branch_key: null,
-      config_override: {},
-      created_at: now,
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
-      inputs_required: [],
-      instance_id: '',
-      is_skipped: false,
-      job_type: 'EXECUTE',
-      object_filter: {},
-      output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
-      template_step_id: null,
-      updated_at: now,
+      id: stageId,
+      slug: stageSlug,
+      display_name: "Thesis",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceId,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
     },
   ];
-  const mockResources: DialecticProjectResourceRow[] = [
+
+  const instances: DialecticStageRecipeInstance[] = [
     {
-      id: 'resource-1',
-      project_id: PROJECT_ID,
-      file_name: thesisPath.fileName,
-      resource_type: 'rendered_document',
-      session_id: SESSION_ID,
-      stage_slug: 'thesis',
-      iteration_number: ITERATION_NUMBER,
-      source_contribution_id: null,
+      id: instanceId,
+      stage_id: stageId,
+      template_id: recipeTemplateId,
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const resources: DialecticProjectResourceRow[] = [
+    {
+      id: "res-1",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      project_id: basePayload.projectId,
+      user_id: basePayload.userId,
+      storage_bucket: "dialectic-contributions",
+      storage_path: "proj/session/iteration/documents",
+      file_name: "model-a_0_business_case.md",
+      mime_type: "text/markdown",
+      size_bytes: 1,
+      resource_type: "rendered_document",
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      source_contribution_id: "contrib-123",
       resource_description: null,
+    },
+  ];
+
+  mockFetch([
+    new Response(JSON.stringify(jobs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(stages), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(instances), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(resources), { status: 200, headers: { "Content-Type": "application/json" } }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    assertEquals(result.data.length, 1);
+    const stageProgress = result.data[0];
+
+    const renderJobProgressKey = "__job:job-render-1";
+    assert(renderJobProgressKey in stageProgress.jobProgress);
+    assertEquals(stageProgress.jobProgress[renderJobProgressKey].totalJobs, 1);
+    assertEquals(stageProgress.documents.length, 1);
+    assertEquals(stageProgress.documents[0].documentKey, "business_case");
+    assertEquals(stageProgress.documents[0].jobId, "job-render-1");
+    assertEquals(stageProgress.documents[0].latestRenderedResourceId, "res-1");
+    assertEquals(stageProgress.documents[0].stepKey, undefined);
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress - Test 3: Matches EXECUTE jobs to steps via planner_metadata.recipe_step_id", async () => {
+  const stageSlug = "thesis";
+  const stageId = "stage-thesis";
+  const instanceId = "instance-thesis";
+  const recipeTemplateId = "template-thesis";
+
+  const recipeSteps: DialecticStageRecipeStep[] = [
+    {
+      id: "step-1",
+      instance_id: instanceId,
+      step_key: "a_key",
+      step_slug: "a",
+      step_name: "A",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: null,
+      output_type: FileType.business_case,
+      granularity_strategy: "per_model",
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: {},
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      mime_type: 'text/markdown',
-      size_bytes: 100,
-      storage_bucket: 'dialectic-contributions',
-      storage_path: thesisPath.storagePath,
-      user_id: OWNER_USER_ID,
-    },
-  ];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: mockResources, error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const response: GetAllStageProgressResponse = result.data;
-  assertEquals(response.length, 2);
-
-  const thesisEntry = response.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertEquals(thesisEntry.documents.length, 1);
-  assertExists(thesisEntry.stepStatuses);
-  assertEquals(typeof thesisEntry.stepStatuses, 'object');
-  assertExists(thesisEntry.stageStatus);
-  const thesisStatus: UnifiedStageStatus = thesisEntry.stageStatus;
-  assertEquals(['not_started', 'in_progress', 'completed', 'failed'].includes(thesisStatus), true);
-  assertEquals(thesisEntry.documents[0].modelId, 'model-a');
-
-  const synthesisEntry = response.find((e: StageProgressEntry) => e.stageSlug === 'synthesis');
-  assertExists(synthesisEntry);
-  assertEquals(synthesisEntry.documents.length, 1);
-  assertExists(synthesisEntry.stepStatuses);
-  assertExists(synthesisEntry.stageStatus);
-  assertEquals(synthesisEntry.documents[0].modelId, 'model-b');
-
-  const projectsBuilders = mockSupabase.client.getHistoricBuildersForTable('dialectic_projects') ?? [];
-  assertEquals(projectsBuilders.length, 1);
-
-  const jobsBuilders = mockSupabase.client.getHistoricBuildersForTable('dialectic_generation_jobs') ?? [];
-  assertEquals(jobsBuilders.length, 1);
-  const jobsSpies = mockSupabase.spies.getLatestQueryBuilderSpies('dialectic_generation_jobs');
-  assertExists(jobsSpies);
-  assertExists(jobsSpies.eq);
-  assertEquals(jobsSpies.eq.calls[0].args[0], 'session_id');
-  assertEquals(jobsSpies.eq.calls[1].args[0], 'iteration_number');
-  assertEquals(jobsSpies.eq.calls[2].args[0], 'user_id');
-  const hasStageSlugFilter = jobsSpies.eq.calls.some((c: { args: unknown[] }) => c.args[0] === 'payload->>stageSlug');
-  assertEquals(hasStageSlugFilter, false);
-
-  const resourcesBuilders = mockSupabase.client.getHistoricBuildersForTable('dialectic_project_resources') ?? [];
-  assertEquals(resourcesBuilders.length, 1);
-  const resourcesSpies = mockSupabase.spies.getLatestQueryBuilderSpies('dialectic_project_resources');
-  assertExists(resourcesSpies);
-  assertExists(resourcesSpies.eq);
-  assertEquals(resourcesSpies.eq.calls[0].args[0], 'resource_type');
-  assertEquals(resourcesSpies.eq.calls[1].args[0], 'session_id');
-  assertEquals(resourcesSpies.eq.calls[2].args[0], 'iteration_number');
-  const hasStageSlugResourceFilter = resourcesSpies.eq.calls.some((c: { args: unknown[] }) => c.args[0] === 'stage_slug');
-  assertEquals(hasStageSlugResourceFilter, false);
-});
-
-Deno.test('getAllStageProgress - correctly maps job status to StageRunDocumentStatus', async () => {
-  const recipeStepId = 'recipe-step-status-map';
-  const now = new Date().toISOString();
-  const mockProject: DialecticProjectRow = {
-    id: PROJECT_ID,
-    user_id: OWNER_USER_ID,
-    created_at: now,
-    updated_at: now,
-    initial_prompt_resource_id: null,
-    initial_user_prompt: '',
-    process_template_id: null,
-    project_name: 'Test Project',
-    repo_url: null,
-    selected_domain_id: '',
-    selected_domain_overlay_id: null,
-    status: 'active',
-    user_domain_overlay_values: null,
-  };
-  const mockJobs: DialecticJobRow[] = [
-    {
-      id: 'job-1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: { stageSlug: 'thesis', iterationNumber: ITERATION_NUMBER, document_key: 'doc-a', model_id: 'model-a', planner_metadata: { recipe_step_id: recipeStepId } },
-    },
-    {
-      id: 'job-2',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'in_progress',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: { stageSlug: 'thesis', iterationNumber: ITERATION_NUMBER, document_key: 'doc-b', model_id: 'model-b', planner_metadata: { recipe_step_id: recipeStepId } },
-    },
-    {
-      id: 'job-3',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'failed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: { stageSlug: 'thesis', iterationNumber: ITERATION_NUMBER, document_key: 'doc-c', model_id: 'model-c', planner_metadata: { recipe_step_id: recipeStepId } },
-    },
-    {
-      id: 'job-4',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'retrying',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: { stageSlug: 'thesis', iterationNumber: ITERATION_NUMBER, document_key: 'doc-d', model_id: 'model-d', planner_metadata: { recipe_step_id: recipeStepId } },
-    },
-  ];
-  const mockRecipeSteps: DialecticStageRecipeStep[] = [
-    {
-      id: recipeStepId,
-      step_key: 'thesis_status_step',
-      branch_key: null,
-      config_override: {},
-      created_at: now,
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
-      inputs_required: [],
-      instance_id: '',
       is_skipped: false,
-      job_type: 'EXECUTE',
+      config_override: {},
       object_filter: {},
       output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
       template_step_id: null,
-      updated_at: now,
+      step_description: null,
     },
   ];
 
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
+  const executePayload: DialecticExecuteJobPayload = {
+    sessionId: basePayload.sessionId,
+    projectId: basePayload.projectId,
+    model_id: "model-a",
+    walletId: "wallet-1",
+    user_jwt: "jwt",
+    stageSlug: stageSlug,
+    iterationNumber: basePayload.iterationNumber,
+    prompt_template_id: "pt-1",
+    output_type: FileType.business_case,
+    canonicalPathParams: { contributionType: "thesis", stageSlug: stageSlug },
+    inputs: {},
+    planner_metadata: {
+      recipe_step_id: "step-1",
+      stage_slug: stageSlug,
     },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.stepStatuses);
-  assertExists(thesisEntry.stageStatus);
-
-  const docCompleted = thesisEntry.documents.find((d: StageDocumentDescriptorDto) => d.documentKey === 'doc-a');
-  assertExists(docCompleted);
-  const expectedCompleted: StageRunDocumentStatus = 'completed';
-  assertEquals(docCompleted.status, expectedCompleted);
-  assertEquals(docCompleted.modelId, 'model-a');
-
-  const docGenerating = thesisEntry.documents.find((d: StageDocumentDescriptorDto) => d.documentKey === 'doc-b');
-  assertExists(docGenerating);
-  const expectedGenerating: StageRunDocumentStatus = 'generating';
-  assertEquals(docGenerating.status, expectedGenerating);
-  assertEquals(docGenerating.modelId, 'model-b');
-
-  const docFailed = thesisEntry.documents.find((d: StageDocumentDescriptorDto) => d.documentKey === 'doc-c');
-  assertExists(docFailed);
-  const expectedFailed: StageRunDocumentStatus = 'failed';
-  assertEquals(docFailed.status, expectedFailed);
-  assertEquals(docFailed.modelId, 'model-c');
-
-  const docRetrying = thesisEntry.documents.find((d: StageDocumentDescriptorDto) => d.documentKey === 'doc-d');
-  assertExists(docRetrying);
-  const expectedRetrying: StageRunDocumentStatus = 'retrying';
-  assertEquals(docRetrying.status, expectedRetrying);
-  assertEquals(docRetrying.modelId, 'model-d');
-});
-
-Deno.test('getAllStageProgress - correlates resources to jobs via document_key', async () => {
-  const pathContext: PathContext = {
-    projectId: PROJECT_ID,
-    sessionId: SESSION_ID,
-    iteration: ITERATION_NUMBER,
-    stageSlug: 'thesis',
-    modelSlug: 'model-a',
-    attemptCount: 0,
-    documentKey: 'success_metrics',
-    fileType: FileType.RenderedDocument,
-    sourceGroupFragment: 'a0fc0d7d',
   };
-  const constructed = constructStoragePath(pathContext);
-  const recipeStepId = 'recipe-step-correlate';
-  const now = new Date().toISOString();
-  const mockProject: DialecticProjectRow = {
-    id: PROJECT_ID,
-    user_id: OWNER_USER_ID,
-    created_at: now,
-    updated_at: now,
-    initial_prompt_resource_id: null,
-    initial_user_prompt: '',
-    process_template_id: null,
-    project_name: 'Test Project',
-    repo_url: null,
-    selected_domain_id: '',
-    selected_domain_overlay_id: null,
-    status: 'active',
-    user_domain_overlay_values: null,
-  };
-  const mockJobs: DialecticJobRow[] = [
+
+  if(!isJson(executePayload)) {
+    throw new Error("Invalid execute payload");
+  }
+
+  const jobs: DialecticJobRow[] = [
     {
-      id: 'job-1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
+      id: "job-exec-1",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: executePayload,
+      user_id: basePayload.userId,
       is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
       parent_job_id: null,
       prerequisite_job_id: null,
-      results: null,
       target_contribution_id: null,
-      payload: { stageSlug: 'thesis', iterationNumber: ITERATION_NUMBER, document_key: 'success_metrics', model_id: 'model-a', planner_metadata: { recipe_step_id: recipeStepId } },
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
     },
   ];
-  const mockRecipeSteps: DialecticStageRecipeStep[] = [
+
+  const stages: DialecticStage[] = [
     {
-      id: recipeStepId,
-      step_key: 'thesis_correlate_step',
+      id: stageId,
+      slug: stageSlug,
+      display_name: "Thesis",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceId,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+  ];
+
+  const instances: DialecticStageRecipeInstance[] = [
+    {
+      id: instanceId,
+      stage_id: stageId,
+      template_id: recipeTemplateId,
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  mockFetch([
+    new Response(JSON.stringify(jobs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(stages), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(instances), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(recipeSteps), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    assertEquals(result.data.length, 1);
+    const stageProgress = result.data[0];
+    assert("a_key" in stageProgress.jobProgress);
+    assertEquals(stageProgress.jobProgress["a_key"].totalJobs, 1);
+    assertExists(stageProgress.jobProgress["a_key"].modelJobStatuses);
+    assertEquals(stageProgress.jobProgress["a_key"].modelJobStatuses["model-a"], "completed");
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress - Test 4: Works with both cloned instances and template-based recipes", async () => {
+  const stageSlugA = "thesis";
+  const stageSlugB = "synthesis";
+  const stageIdA = "stage-a";
+  const stageIdB = "stage-b";
+  const instanceIdA = "instance-a";
+  const instanceIdB = "instance-b";
+  const templateIdB = "template-b";
+
+  const jobs: DialecticJobRow[] = [
+    {
+      id: "job-a-exec",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlugA,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: {
+        sessionId: basePayload.sessionId,
+        projectId: basePayload.projectId,
+        model_id: "model-a",
+        walletId: "wallet-1",
+        user_jwt: "jwt",
+        stageSlug: stageSlugA,
+        iterationNumber: basePayload.iterationNumber,
+        prompt_template_id: "pt-a",
+        output_type: "business_case",
+        canonicalPathParams: { contributionType: "thesis" },
+        inputs: {},
+        planner_metadata: { recipe_step_id: "step-a1", stage_slug: stageSlugA },
+      },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-b-exec",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlugB,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: {
+        sessionId: basePayload.sessionId,
+        projectId: basePayload.projectId,
+        model_id: "model-b",
+        walletId: "wallet-1",
+        user_jwt: "jwt",
+        stageSlug: stageSlugB,
+        iterationNumber: basePayload.iterationNumber,
+        prompt_template_id: "pt-b",
+        output_type: "feature_spec",
+        canonicalPathParams: { contributionType: "synthesis" },
+        inputs: {},
+        planner_metadata: { recipe_step_id: "step-t1", stage_slug: stageSlugB },
+      },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+  ];
+
+  const stages: DialecticStage[] = [
+    {
+      id: stageIdA,
+      slug: stageSlugA,
+      display_name: "A",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceIdA,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+    {
+      id: stageIdB,
+      slug: stageSlugB,
+      display_name: "B",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceIdB,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+  ];
+
+  const instances: DialecticStageRecipeInstance[] = [
+    {
+      id: instanceIdA,
+      stage_id: stageIdA,
+      template_id: "template-a",
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: instanceIdB,
+      stage_id: stageIdB,
+      template_id: templateIdB,
+      is_cloned: false,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const clonedSteps: DialecticStageRecipeStep[] = [
+    {
+      id: "step-a1",
+      instance_id: instanceIdA,
+      step_key: "a_key",
+      step_slug: "a",
+      step_name: "A1",
+      execution_order: 1,
+      parallel_group: null,
       branch_key: null,
-      config_override: {},
-      created_at: now,
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: null,
+      output_type: FileType.business_case,
+      granularity_strategy: "per_model",
       inputs_required: [],
-      instance_id: '',
+      inputs_relevance: [],
+      outputs_required: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
       is_skipped: false,
-      job_type: 'EXECUTE',
+      config_override: {},
       object_filter: {},
       output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
       template_step_id: null,
-      updated_at: now,
+      step_description: null,
     },
   ];
-  const mockResources: DialecticProjectResourceRow[] = [
+
+  const templateSteps: DialecticRecipeTemplateStep[] = [
     {
-      id: 'resource-1',
-      project_id: PROJECT_ID,
-      file_name: constructed.fileName,
-      resource_type: 'rendered_document',
-      session_id: SESSION_ID,
-      stage_slug: 'thesis',
-      iteration_number: ITERATION_NUMBER,
-      source_contribution_id: null,
+      id: "step-t1",
+      template_id: templateIdB,
+      step_number: 1,
+      step_key: "t_key",
+      step_slug: "t",
+      step_name: "T1",
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: null,
+      output_type: FileType.feature_spec,
+      granularity_strategy: "per_model",
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: {},
+      parallel_group: null,
+      step_description: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  mockFetch([
+    new Response(JSON.stringify(jobs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(stages), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(instances), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(clonedSteps), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(templateSteps), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+
+    const thesis = result.data.find((s: StageProgressEntry) => s.stageSlug === stageSlugA);
+    const synthesis = result.data.find((s: StageProgressEntry) => s.stageSlug === stageSlugB);
+    assertExists(thesis);
+    assertExists(synthesis);
+    assert("a_key" in thesis.jobProgress);
+    assert("t_key" in synthesis.jobProgress);
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress - Test 5: Aggregates per-model status for EXECUTE jobs", async () => {
+  const stageSlug = "thesis";
+  const stageId = "stage-thesis";
+  const instanceId = "instance-thesis";
+
+  const recipeSteps: DialecticStageRecipeStep[] = [
+    {
+      id: "step-1",
+      instance_id: instanceId,
+      step_key: "a_key",
+      step_slug: "a",
+      step_name: "A",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: null,
+      output_type: FileType.business_case,
+      granularity_strategy: "per_model",
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: null,
+    },
+  ];
+
+  const jobs: DialecticJobRow[] = [
+    {
+      id: "job-exec-1",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: {
+        sessionId: basePayload.sessionId,
+        projectId: basePayload.projectId,
+        model_id: "model-a",
+        walletId: "wallet-1",
+        user_jwt: "jwt",
+        stageSlug: stageSlug,
+        iterationNumber: basePayload.iterationNumber,
+        prompt_template_id: "pt-1",
+        output_type: "business_case",
+        canonicalPathParams: { contributionType: "thesis" },
+        inputs: {},
+        planner_metadata: { recipe_step_id: "step-1", stage_slug: stageSlug },
+      },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-exec-2",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "failed",
+      payload: {
+        sessionId: basePayload.sessionId,
+        projectId: basePayload.projectId,
+        model_id: "model-b",
+        walletId: "wallet-1",
+        user_jwt: "jwt",
+        stageSlug: stageSlug,
+        iterationNumber: basePayload.iterationNumber,
+        prompt_template_id: "pt-1",
+        output_type: "business_case",
+        canonicalPathParams: { contributionType: "thesis" },
+        inputs: {},
+        planner_metadata: { recipe_step_id: "step-1", stage_slug: stageSlug },
+      },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+  ];
+
+  const stages: DialecticStage[] = [
+    {
+      id: stageId,
+      slug: stageSlug,
+      display_name: "Thesis",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceId,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+  ];
+
+  const instances: DialecticStageRecipeInstance[] = [
+    {
+      id: instanceId,
+      stage_id: stageId,
+      template_id: "template-thesis",
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  mockFetch([
+    new Response(JSON.stringify(jobs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(stages), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(instances), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(recipeSteps), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    const stageProgress = result.data[0];
+    assertExists(stageProgress.jobProgress["a_key"].modelJobStatuses);
+    assertEquals(stageProgress.jobProgress["a_key"].modelJobStatuses["model-a"], "completed");
+    assertEquals(stageProgress.jobProgress["a_key"].modelJobStatuses["model-b"], "failed");
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress - Test 6: Uses job_type column, not payload inference", async () => {
+  const stageSlug = "thesis";
+  const stageId = "stage-thesis";
+  const instanceId = "instance-thesis";
+
+  const executeLikePayload: DialecticExecuteJobPayload = {
+    sessionId: basePayload.sessionId,
+    projectId: basePayload.projectId,
+    model_id: "model-a",
+    walletId: "wallet-1",
+    user_jwt: "jwt",
+    stageSlug: stageSlug,
+    iterationNumber: basePayload.iterationNumber,
+    prompt_template_id: "pt-1",
+    output_type: FileType.business_case,
+    canonicalPathParams: { contributionType: "thesis", stageSlug: stageSlug },
+    inputs: {},
+    planner_metadata: { recipe_step_id: "step-1", stage_slug: stageSlug },
+  };
+
+  if(!isJson(executeLikePayload)) {
+    throw new Error("Invalid execute like payload");
+  }
+
+  const jobs: DialecticJobRow[] = [
+    {
+      id: "job-misleading-1",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: executeLikePayload,
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "PLAN",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+  ];
+
+  const stages: DialecticStage[] = [
+    {
+      id: stageId,
+      slug: stageSlug,
+      display_name: "Thesis",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceId,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+  ];
+
+  const instances: DialecticStageRecipeInstance[] = [
+    {
+      id: instanceId,
+      stage_id: stageId,
+      template_id: "template-thesis",
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  mockFetch([
+    new Response(JSON.stringify(jobs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(stages), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(instances), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    assertEquals(result.data.length, 1);
+    const stageProgress = result.data[0];
+
+    const misleadingJobProgressKey = "__job:job-misleading-1";
+    assert(misleadingJobProgressKey in stageProgress.jobProgress);
+    assertEquals(stageProgress.jobProgress[misleadingJobProgressKey].totalJobs, 1);
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress - Test 7: Does not skip jobs with missing payload fields", async () => {
+  const stageSlug = "thesis";
+  const stageId = "stage-thesis";
+  const instanceId = "instance-thesis";
+
+  const payloadWithoutModelId: Json = {
+    sessionId: basePayload.sessionId,
+    projectId: basePayload.projectId,
+    walletId: "wallet-1",
+    user_jwt: "jwt",
+    stageSlug: stageSlug,
+    iterationNumber: basePayload.iterationNumber,
+    prompt_template_id: "pt-1",
+    output_type: FileType.business_case,
+    canonicalPathParams: { contributionType: "thesis", stageSlug: stageSlug },
+    inputs: {},
+  };
+
+  const payloadWithoutDocumentKey: DialecticExecuteJobPayload = {
+    sessionId: basePayload.sessionId,
+    projectId: basePayload.projectId,
+    model_id: "model-a",
+    walletId: "wallet-1",
+    user_jwt: "jwt",
+    stageSlug: stageSlug,
+    iterationNumber: basePayload.iterationNumber,
+    prompt_template_id: "pt-1",
+    output_type: FileType.business_case,
+    canonicalPathParams: { contributionType: "thesis", stageSlug: stageSlug },
+    inputs: {},
+    planner_metadata: { recipe_step_id: "step-1", stage_slug: stageSlug },
+  };
+
+  if(!isJson(payloadWithoutDocumentKey)) {
+    throw new Error("Invalid payload without document key");
+  }
+
+  if(!isJson(payloadWithoutModelId)) {
+    throw new Error("Invalid payload without model id");
+  }
+
+  const jobs: DialecticJobRow[] = [
+    {
+      id: "job-missing-model",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: payloadWithoutModelId,
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-missing-doc-key",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: payloadWithoutDocumentKey,
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+  ];
+
+  const stages: DialecticStage[] = [
+    {
+      id: stageId,
+      slug: stageSlug,
+      display_name: "Thesis",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceId,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+  ];
+
+  const instances: DialecticStageRecipeInstance[] = [
+    {
+      id: instanceId,
+      stage_id: stageId,
+      template_id: "template-thesis",
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const recipeSteps: DialecticStageRecipeStep[] = [
+    {
+      id: "step-1",
+      instance_id: instanceId,
+      step_key: "a_key",
+      step_slug: "a",
+      step_name: "A",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: null,
+      output_type: FileType.business_case,
+      granularity_strategy: "per_model",
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: null,
+    },
+  ];
+
+  mockFetch([
+    new Response(JSON.stringify(jobs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(stages), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(instances), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(recipeSteps), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 500);
+    assertExists(result.error);
+    assertEquals(result.error.status, 500);
+    assertEquals(result.error.message, "Job payload model_id is null or invalid");
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress - Test 8: Continuation jobs group with parent under same step", async () => {
+  const stageSlug = "thesis";
+  const stageId = "stage-thesis";
+  const instanceId = "instance-thesis";
+
+  const recipeSteps: DialecticStageRecipeStep[] = [
+    {
+      id: "step-1",
+      instance_id: instanceId,
+      step_key: "a_key",
+      step_slug: "a",
+      step_name: "A",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: null,
+      output_type: FileType.business_case,
+      granularity_strategy: "per_model",
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: null,
+    },
+  ];
+
+  const parentPayload: DialecticExecuteJobPayload = {
+    sessionId: basePayload.sessionId,
+    projectId: basePayload.projectId,
+    model_id: "model-a",
+    walletId: "wallet-1",
+    user_jwt: "jwt",
+    stageSlug: stageSlug,
+    iterationNumber: basePayload.iterationNumber,
+    prompt_template_id: "pt-1",
+    output_type: FileType.business_case,
+    canonicalPathParams: { contributionType: "thesis", stageSlug: stageSlug },
+    inputs: {},
+    planner_metadata: { recipe_step_id: "step-1", stage_slug: stageSlug },
+  };
+
+  const continuationPayload: DialecticExecuteJobPayload = {
+    sessionId: basePayload.sessionId,
+    projectId: basePayload.projectId,
+    model_id: "model-a",
+    walletId: "wallet-1",
+    user_jwt: "jwt",
+    stageSlug: stageSlug,
+    iterationNumber: basePayload.iterationNumber,
+    prompt_template_id: "pt-1",
+    output_type: FileType.business_case,
+    canonicalPathParams: { contributionType: "thesis", stageSlug: stageSlug },
+    inputs: {},
+    // Intentionally omit planner_metadata to ensure parent_job_id grouping is used
+  };
+
+  if(!isJson(parentPayload)) {
+    throw new Error("Invalid parent payload");
+  }
+
+  if(!isJson(continuationPayload)) {
+    throw new Error("Invalid continuation payload");
+  }
+
+  const jobs: DialecticJobRow[] = [
+    {
+      id: "job-parent",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: parentPayload,
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-child",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: continuationPayload,
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 1,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: "job-parent",
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+  ];
+
+  const stages: DialecticStage[] = [
+    {
+      id: stageId,
+      slug: stageSlug,
+      display_name: "Thesis",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceId,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+  ];
+
+  const instances: DialecticStageRecipeInstance[] = [
+    {
+      id: instanceId,
+      stage_id: stageId,
+      template_id: "template-thesis",
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  mockFetch([
+    new Response(JSON.stringify(jobs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(stages), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(instances), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(recipeSteps), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    assertEquals(result.data[0].jobProgress["a_key"].totalJobs, 2);
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress - Test 9: Derives correct step status from heterogeneous job statuses", async () => {
+  const stageSlug = "thesis";
+  const stageId = "stage-thesis";
+  const instanceId = "instance-thesis";
+
+  const recipeSteps: DialecticStageRecipeStep[] = [
+    {
+      id: "step-1",
+      instance_id: instanceId,
+      step_key: "a_key",
+      step_slug: "a",
+      step_name: "A",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: null,
+      output_type: FileType.business_case,
+      granularity_strategy: "per_model",
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: null,
+    },
+  ];
+
+  const jobs: DialecticJobRow[] = [
+    {
+      id: "job-1",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "in_progress",
+      payload: {
+        sessionId: basePayload.sessionId,
+        projectId: basePayload.projectId,
+        model_id: "model-a",
+        walletId: "wallet-1",
+        user_jwt: "jwt",
+        stageSlug: stageSlug,
+        iterationNumber: basePayload.iterationNumber,
+        prompt_template_id: "pt-1",
+        output_type: "business_case",
+        canonicalPathParams: { contributionType: "thesis" },
+        inputs: {},
+        planner_metadata: { recipe_step_id: "step-1", stage_slug: stageSlug },
+      },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-2",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "failed",
+      payload: {
+        sessionId: basePayload.sessionId,
+        projectId: basePayload.projectId,
+        model_id: "model-b",
+        walletId: "wallet-1",
+        user_jwt: "jwt",
+        stageSlug: stageSlug,
+        iterationNumber: basePayload.iterationNumber,
+        prompt_template_id: "pt-1",
+        output_type: "business_case",
+        canonicalPathParams: { contributionType: "thesis" },
+        inputs: {},
+        planner_metadata: { recipe_step_id: "step-1", stage_slug: stageSlug },
+      },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+  ];
+
+  const stages: DialecticStage[] = [
+    {
+      id: stageId,
+      slug: stageSlug,
+      display_name: "Thesis",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceId,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+  ];
+
+  const instances: DialecticStageRecipeInstance[] = [
+    {
+      id: instanceId,
+      stage_id: stageId,
+      template_id: "template-thesis",
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  mockFetch([
+    new Response(JSON.stringify(jobs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(stages), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(instances), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(recipeSteps), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    assertEquals(result.data[0].stepStatuses["a_key"], "failed");
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress - Test 10: Reports documents array from RENDER jobs, not EXECUTE jobs", async () => {
+  const stageSlug = "thesis";
+  const stageId = "stage-thesis";
+  const instanceId = "instance-thesis";
+
+  const jobs: DialecticJobRow[] = [
+    {
+      id: "job-exec-1",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: {
+        sessionId: basePayload.sessionId,
+        projectId: basePayload.projectId,
+        model_id: "model-a",
+        walletId: "wallet-1",
+        user_jwt: "jwt",
+        stageSlug: stageSlug,
+        iterationNumber: basePayload.iterationNumber,
+        prompt_template_id: "pt-1",
+        output_type: "business_case",
+        canonicalPathParams: { contributionType: "thesis" },
+        inputs: {},
+        planner_metadata: { recipe_step_id: "step-1", stage_slug: stageSlug },
+        sourceContributionId: "contrib-1",
+      },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-render-1",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: {
+        sessionId: basePayload.sessionId,
+        projectId: basePayload.projectId,
+        model_id: "model-a",
+        walletId: "wallet-1",
+        user_jwt: "jwt",
+        stageSlug: stageSlug,
+        iterationNumber: basePayload.iterationNumber,
+        documentKey: "business_case",
+        sourceContributionId: "contrib-1",
+        documentIdentity: "doc-ident-1",
+        template_filename: "thesis_business_case.md",
+      },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "RENDER",
+      parent_job_id: "job-exec-1",
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: {
+        pathContext: {
+          projectId: basePayload.projectId,
+          sessionId: basePayload.sessionId,
+          iteration: basePayload.iterationNumber,
+          stageSlug: stageSlug,
+          documentKey: "business_case",
+          fileType: "rendered_document",
+          modelSlug: "model-a",
+          sourceContributionId: "contrib-1",
+        },
+      },
+      error_details: null,
+    },
+  ];
+
+  const stages: DialecticStage[] = [
+    {
+      id: stageId,
+      slug: stageSlug,
+      display_name: "Thesis",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceId,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+  ];
+
+  const instances: DialecticStageRecipeInstance[] = [
+    {
+      id: instanceId,
+      stage_id: stageId,
+      template_id: "template-thesis",
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const recipeSteps: DialecticStageRecipeStep[] = [
+    {
+      id: "step-1",
+      instance_id: instanceId,
+      step_key: "a_key",
+      step_slug: "a",
+      step_name: "A",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: null,
+      output_type: FileType.business_case,
+      granularity_strategy: "per_model",
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: null,
+    },
+  ];
+
+  const resources: DialecticProjectResourceRow[] = [
+    {
+      id: "res-1",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      project_id: basePayload.projectId,
+      user_id: basePayload.userId,
+      storage_bucket: "dialectic-contributions",
+      storage_path: "proj/session/iteration/documents",
+      file_name: "model-a_0_business_case.md",
+      mime_type: "text/markdown",
+      size_bytes: 1,
+      resource_type: "rendered_document",
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      source_contribution_id: "contrib-1",
       resource_description: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      mime_type: 'text/markdown',
-      size_bytes: 100,
-      storage_bucket: 'dialectic-contributions',
-      storage_path: constructed.storagePath,
-      user_id: OWNER_USER_ID,
     },
   ];
 
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: mockResources, error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
+  mockFetch([
+    new Response(JSON.stringify(jobs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(stages), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(instances), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(recipeSteps), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(resources), { status: 200, headers: { "Content-Type": "application/json" } }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertEquals(thesisEntry.documents.length, 1);
-  const doc = thesisEntry.documents[0];
-  assertEquals(doc.documentKey, 'success_metrics');
-  assertEquals(doc.latestRenderedResourceId, 'resource-1');
-  assertEquals(doc.jobId, 'job-1');
-  assertEquals(doc.modelId, 'model-a');
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    assertEquals(result.data[0].documents.length, 1);
+    assertEquals(result.data[0].documents[0].jobId, "job-render-1");
+    assertEquals(result.data[0].documents[0].documentKey, "business_case");
+    assertEquals(result.data[0].documents[0].latestRenderedResourceId, "res-1");
+    assertEquals(result.data[0].documents[0].stepKey, "a_key");
+  } finally {
+    restoreFetch();
+  }
 });
 
-Deno.test('getAllStageProgress - prefers sourceContributionId over document_key when correlating resources', async () => {
-  const contribPathContext: PathContext = {
-    projectId: PROJECT_ID,
-    sessionId: SESSION_ID,
-    iteration: ITERATION_NUMBER,
-    stageSlug: 'thesis',
-    modelSlug: 'model-a',
-    attemptCount: 0,
-    documentKey: 'doc-a',
-    fileType: FileType.RenderedDocument,
-  };
-  const contribPath = constructStoragePath(contribPathContext);
-  const recipeStepId = 'recipe-step-prefers-contrib';
-  const now = new Date().toISOString();
-  const mockProject: DialecticProjectRow = {
-    id: PROJECT_ID,
-    user_id: OWNER_USER_ID,
-    created_at: now,
-    updated_at: now,
-    initial_prompt_resource_id: null,
-    initial_user_prompt: '',
-    process_template_id: null,
-    project_name: 'Test Project',
-    repo_url: null,
-    selected_domain_id: '',
-    selected_domain_overlay_id: null,
-    status: 'active',
-    user_domain_overlay_values: null,
-  };
-  const mockJobs: DialecticJobRow[] = [
+Deno.test("getAllStageProgress - Test 11: Supports multiple rendered documents across multiple models for hydration", async () => {
+  const stageSlug = "thesis";
+  const stageId = "stage-thesis";
+  const instanceId = "instance-thesis";
+
+  const recipeSteps: DialecticStageRecipeStep[] = [
     {
-      id: 'job-1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        sourceContributionId: 'contrib-123',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-    },
-  ];
-  const mockRecipeSteps: DialecticStageRecipeStep[] = [
-    {
-      id: recipeStepId,
-      step_key: 'thesis_prefer_step',
+      id: "step-1",
+      instance_id: instanceId,
+      step_key: "a_key",
+      step_slug: "a",
+      step_name: "A",
+      execution_order: 1,
+      parallel_group: null,
       branch_key: null,
-      config_override: {},
-      created_at: now,
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: null,
+      output_type: FileType.business_case,
+      granularity_strategy: "per_model",
       inputs_required: [],
-      instance_id: '',
+      inputs_relevance: [],
+      outputs_required: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
       is_skipped: false,
-      job_type: 'EXECUTE',
+      config_override: {},
       object_filter: {},
       output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
       template_step_id: null,
-      updated_at: now,
+      step_description: null,
     },
   ];
-  const mockResources: DialecticProjectResourceRow[] = [
+
+  const execPayloadA: DialecticExecuteJobPayload = {
+    sessionId: basePayload.sessionId,
+    projectId: basePayload.projectId,
+    model_id: "model-a",
+    walletId: "wallet-1",
+    user_jwt: "jwt",
+    stageSlug: stageSlug,
+    iterationNumber: basePayload.iterationNumber,
+    prompt_template_id: "pt-1",
+    output_type: FileType.business_case,
+    canonicalPathParams: { contributionType: "thesis", stageSlug: stageSlug },
+    inputs: {},
+    planner_metadata: { recipe_step_id: "step-1", stage_slug: stageSlug },
+  };
+
+  const execPayloadB: DialecticExecuteJobPayload = {
+    sessionId: basePayload.sessionId,
+    projectId: basePayload.projectId,
+    model_id: "model-b",
+    walletId: "wallet-1",
+    user_jwt: "jwt",
+    stageSlug: stageSlug,
+    iterationNumber: basePayload.iterationNumber,
+    prompt_template_id: "pt-1",
+    output_type: FileType.business_case,
+    canonicalPathParams: { contributionType: "thesis", stageSlug: stageSlug },
+    inputs: {},
+    planner_metadata: { recipe_step_id: "step-1", stage_slug: stageSlug },
+  };
+
+  const renderPayloadA: DialecticRenderJobPayload = {
+    sessionId: basePayload.sessionId,
+    projectId: basePayload.projectId,
+    model_id: "model-a",
+    walletId: "wallet-1",
+    user_jwt: "jwt",
+    stageSlug: stageSlug,
+    iterationNumber: basePayload.iterationNumber,
+    documentKey: FileType.business_case,
+    sourceContributionId: "contrib-a",
+    documentIdentity: "doc-ident-a",
+    template_filename: "thesis_business_case.md",
+  };
+
+  const renderPayloadB: DialecticRenderJobPayload = {
+    sessionId: basePayload.sessionId,
+    projectId: basePayload.projectId,
+    model_id: "model-b",
+    walletId: "wallet-1",
+    user_jwt: "jwt",
+    stageSlug: stageSlug,
+    iterationNumber: basePayload.iterationNumber,
+    documentKey: FileType.business_case,
+    sourceContributionId: "contrib-b",
+    documentIdentity: "doc-ident-b",
+    template_filename: "thesis_business_case.md",
+  };
+
+  if (!isJson(execPayloadA) || !isJson(execPayloadB)) {
+    throw new Error("Invalid execute payload(s)");
+  }
+  if (!isJson(renderPayloadA) || !isJson(renderPayloadB)) {
+    throw new Error("Invalid render payload(s)");
+  }
+
+  const jobs: DialecticJobRow[] = [
     {
-      id: 'resource-from-contrib',
-      project_id: PROJECT_ID,
-      file_name: contribPath.fileName,
-      resource_type: 'rendered_document',
-      session_id: SESSION_ID,
-      stage_slug: 'thesis',
-      iteration_number: ITERATION_NUMBER,
-      source_contribution_id: 'contrib-123',
+      id: "job-exec-a",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: execPayloadA,
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-exec-b",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: execPayloadB,
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-render-a",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: renderPayloadA,
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "RENDER",
+      parent_job_id: "job-exec-a",
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-render-b",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: renderPayloadB,
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "RENDER",
+      parent_job_id: "job-exec-b",
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+  ];
+
+  const stages: DialecticStage[] = [
+    {
+      id: stageId,
+      slug: stageSlug,
+      display_name: "Thesis",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceId,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+  ];
+
+  const instances: DialecticStageRecipeInstance[] = [
+    {
+      id: instanceId,
+      stage_id: stageId,
+      template_id: "template-thesis",
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const resources: DialecticProjectResourceRow[] = [
+    {
+      id: "res-a",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      project_id: basePayload.projectId,
+      user_id: basePayload.userId,
+      storage_bucket: "dialectic-contributions",
+      storage_path: "proj/session/iteration/documents",
+      file_name: "model-a_0_business_case.md",
+      mime_type: "text/markdown",
+      size_bytes: 1,
+      resource_type: "rendered_document",
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      source_contribution_id: "contrib-a",
       resource_description: null,
+    },
+    {
+      id: "res-b",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      mime_type: 'text/markdown',
-      size_bytes: 100,
-      storage_bucket: 'dialectic-contributions',
-      storage_path: contribPath.storagePath,
-      user_id: OWNER_USER_ID,
+      project_id: basePayload.projectId,
+      user_id: basePayload.userId,
+      storage_bucket: "dialectic-contributions",
+      storage_path: "proj/session/iteration/documents",
+      file_name: "model-b_0_business_case.md",
+      mime_type: "text/markdown",
+      size_bytes: 1,
+      resource_type: "rendered_document",
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      source_contribution_id: "contrib-b",
+      resource_description: null,
     },
   ];
 
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: mockResources, error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
+  mockFetch([
+    new Response(JSON.stringify(jobs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(stages), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(instances), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(recipeSteps), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(resources), { status: 200, headers: { "Content-Type": "application/json" } }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    assertEquals(result.data.length, 1);
+    const stageProgress: StageProgressEntry = result.data[0];
 
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertEquals(thesisEntry.documents.length, 1);
-  assertEquals(thesisEntry.documents[0].latestRenderedResourceId, 'resource-from-contrib');
-  assertEquals(thesisEntry.documents[0].jobId, 'job-1');
+    assertExists(stageProgress.jobProgress["a_key"]);
+    assertEquals(stageProgress.jobProgress["a_key"].totalJobs, 2);
+    assertExists(stageProgress.jobProgress["a_key"].modelJobStatuses);
+    assertEquals(stageProgress.jobProgress["a_key"].modelJobStatuses["model-a"], "completed");
+    assertEquals(stageProgress.jobProgress["a_key"].modelJobStatuses["model-b"], "completed");
+
+    assertEquals(stageProgress.documents.length, 2);
+
+    const docA = stageProgress.documents.find((d) => d.modelId === "model-a");
+    const docB = stageProgress.documents.find((d) => d.modelId === "model-b");
+    assertExists(docA);
+    assertExists(docB);
+    if (!docA || !docB) {
+      throw new Error("Documents not found by modelId");
+    }
+
+    assertEquals(docA.documentKey, "business_case");
+    assertEquals(docA.jobId, "job-render-a");
+    assertEquals(docA.latestRenderedResourceId, "res-a");
+    assertEquals(docA.stepKey, "a_key");
+
+    assertEquals(docB.documentKey, "business_case");
+    assertEquals(docB.jobId, "job-render-b");
+    assertEquals(docB.latestRenderedResourceId, "res-b");
+    assertEquals(docB.stepKey, "a_key");
+  } finally {
+    restoreFetch();
+  }
 });
 
-Deno.test('getAllStageProgress - excludes jobs without document_key or model_id from documents', async () => {
-  const recipeStepId = 'recipe-step-excludes';
-  const now = new Date().toISOString();
-  const mockProject: DialecticProjectRow = {
-    id: PROJECT_ID,
-    user_id: OWNER_USER_ID,
-    created_at: now,
-    updated_at: now,
-    initial_prompt_resource_id: null,
-    initial_user_prompt: '',
-    process_template_id: null,
-    project_name: 'Test Project',
-    repo_url: null,
-    selected_domain_id: '',
-    selected_domain_overlay_id: null,
-    status: 'active',
-    user_domain_overlay_values: null,
-  };
-  const mockJobs: DialecticJobRow[] = [
-    {
-      id: 'job-valid',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: { stageSlug: 'thesis', iterationNumber: ITERATION_NUMBER, document_key: 'doc-a', model_id: 'model-a', planner_metadata: { recipe_step_id: recipeStepId } },
-    },
-    {
-      id: 'job-no-document-key',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: { stageSlug: 'thesis', iterationNumber: ITERATION_NUMBER, model_id: 'model-b', planner_metadata: { recipe_step_id: recipeStepId } },
-    },
-  ];
-  const mockRecipeSteps: DialecticStageRecipeStep[] = [
-    {
-      id: recipeStepId,
-      step_key: 'thesis_excludes_step',
-      branch_key: null,
-      config_override: {},
-      created_at: now,
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
-      inputs_required: [],
-      instance_id: '',
-      is_skipped: false,
-      job_type: 'EXECUTE',
-      object_filter: {},
-      output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
-      template_step_id: null,
-      updated_at: now,
-    },
-  ];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertEquals(thesisEntry.documents.length, 1);
-  assertEquals(thesisEntry.documents[0].documentKey, 'doc-a');
-  assertEquals(thesisEntry.documents[0].jobId, 'job-valid');
-});
-
-Deno.test('getAllStageProgress - returns 400 for missing or empty sessionId', async () => {
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {},
-  });
-
-  const missingSessionId: GetAllStageProgressPayload = {
-    sessionId: '',
-    iterationNumber: ITERATION_NUMBER,
-    userId: OWNER_USER_ID,
-    projectId: PROJECT_ID,
-  };
-
-  const result = await getAllStageProgress(
-    missingSessionId,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 400);
-  assertExists(result.error);
-  const hasProjectsQuery = mockSupabase.spies.fromSpy.calls.some(
-    (c) => c.args[0] === 'dialectic_projects',
-  );
-  assertEquals(hasProjectsQuery, false);
-});
-
-function createMalformedPayloadMissingIteration(): Omit<GetAllStageProgressPayload, 'iterationNumber'> & { iterationNumber?: undefined } {
-  return {
-    sessionId: SESSION_ID,
-    userId: OWNER_USER_ID,
-    projectId: PROJECT_ID,
-  };
-}
-
-Deno.test('getAllStageProgress - returns 400 for missing iterationNumber', async () => {
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {},
-  });
-
-  const malformedPayload = createMalformedPayloadMissingIteration();
-
-  const result = await getAllStageProgress(
-    malformedPayload as unknown as GetAllStageProgressPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 400);
-  assertExists(result.error);
-});
-
-Deno.test('getAllStageProgress - returns 400 for missing or empty userId', async () => {
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {},
-  });
-
-  const payloadMissingUserId: GetAllStageProgressPayload = {
-    sessionId: SESSION_ID,
-    iterationNumber: ITERATION_NUMBER,
-    userId: '',
-    projectId: PROJECT_ID,
-  };
-
-  const result = await getAllStageProgress(
-    payloadMissingUserId,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 400);
-  assertExists(result.error);
-});
-
-Deno.test('getAllStageProgress - returns 400 for missing or empty projectId', async () => {
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {},
-  });
-
-  const payloadMissingProjectId: GetAllStageProgressPayload = {
-    sessionId: SESSION_ID,
-    iterationNumber: ITERATION_NUMBER,
-    userId: OWNER_USER_ID,
-    projectId: '',
-  };
-
-  const result = await getAllStageProgress(
-    payloadMissingProjectId,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 400);
-  assertExists(result.error);
-});
-
-Deno.test('getAllStageProgress - returns 403 for non-owner user', async () => {
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockSupabase = createMockSupabaseClient(OTHER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OTHER_USER_ID),
-  );
-
-  assertEquals(result.status, 403);
-  assertExists(result.error);
-
-  const projectsBuilders = mockSupabase.client.getHistoricBuildersForTable('dialectic_projects') ?? [];
-  assertEquals(projectsBuilders.length, 1);
-
-  const jobsBuilders = mockSupabase.client.getHistoricBuildersForTable('dialectic_generation_jobs') ?? [];
-  assertEquals(jobsBuilders.length, 0);
-});
-
-Deno.test('getAllStageProgress - stepStatuses is populated when jobs have planner_metadata.recipe_step_id', async () => {
-  const recipeStepId1 = 'recipe-step-uuid-1';
-  const recipeStepId2 = 'recipe-step-uuid-2';
-  const stepKey1 = 'thesis_generate_business_case';
-  const stepKey2 = 'thesis_review';
-  const mockProject: DialecticProjectRow = {
-    id: PROJECT_ID,
-    user_id: OWNER_USER_ID,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    initial_prompt_resource_id: null,
-    initial_user_prompt: '',
-    process_template_id: null,
-    project_name: 'Test Project',
-    repo_url: null,
-    selected_domain_id: '',
-    selected_domain_overlay_id: null,
-    status: 'active',
-    user_domain_overlay_values: null,
-  };
-  const mockJobs: DialecticJobRow[] = [
-    {
-      id: 'job-1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: new Date().toISOString(),
-      started_at: new Date().toISOString(),
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId1 },
-      },
-    },
-    {
-      id: 'job-2',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'in_progress',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: new Date().toISOString(),
-      started_at: new Date().toISOString(),
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-b',
-        model_id: 'model-b',
-        planner_metadata: { recipe_step_id: recipeStepId2 },
-      },
-    },
-  ];
-  const mockRecipeSteps: DialecticStageRecipeStep[] = [
-    {
-      id: recipeStepId1,
-      step_key: stepKey1,
-      branch_key: null,
-      config_override: {},
-      created_at: new Date().toISOString(),
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
-      inputs_required: [],
-      instance_id: '',
-      is_skipped: false,
-      job_type: 'EXECUTE',
-      object_filter: {},
-      output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
-      template_step_id: null,
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: recipeStepId2,
-      step_key: stepKey2,
-      branch_key: null,
-      config_override: {},
-      created_at: new Date().toISOString(),
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
-      inputs_required: [],
-      instance_id: '',
-      is_skipped: false,
-      job_type: 'EXECUTE',
-      object_filter: {},
-      output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
-      template_step_id: null,
-      updated_at: new Date().toISOString(),
-    },
-  ];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.stepStatuses);
-  assertEquals(thesisEntry.stepStatuses[stepKey1], 'completed');
-  assertEquals(thesisEntry.stepStatuses[stepKey2], 'in_progress');
-});
-
-Deno.test('getAllStageProgress - stepStatuses correctly aggregates multiple jobs per step', async () => {
-  const recipeStepId = 'recipe-step-uuid-same';
-  const stepKey = 'thesis_generate_business_case';
-  const now = new Date().toISOString();
-  const mockProject: DialecticProjectRow = {
-    id: PROJECT_ID,
-    user_id: OWNER_USER_ID,
-    created_at: now,
-    updated_at: now,
-    initial_prompt_resource_id: null,
-    initial_user_prompt: '',
-    process_template_id: null,
-    project_name: 'Test Project',
-    repo_url: null,
-    selected_domain_id: '',
-    selected_domain_overlay_id: null,
-    status: 'active',
-    user_domain_overlay_values: null,
-  };
-  const mockJobs: DialecticJobRow[] = [
-    {
-      id: 'job-1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-    },
-    {
-      id: 'job-2',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-b',
-        model_id: 'model-b',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-    },
-    {
-      id: 'job-3',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'in_progress',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-c',
-        model_id: 'model-c',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-    },
-  ];
-  const mockRecipeSteps: DialecticStageRecipeStep[] = [
-    {
-      id: recipeStepId,
-      step_key: stepKey,
-      branch_key: null,
-      config_override: {},
-      created_at: now,
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
-      inputs_required: [],
-      instance_id: '',
-      is_skipped: false,
-      job_type: 'EXECUTE',
-      object_filter: {},
-      output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
-      template_step_id: null,
-      updated_at: now,
-    },
-  ];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.stepStatuses);
-  assertEquals(thesisEntry.stepStatuses[stepKey], 'in_progress');
-});
-
-Deno.test('getAllStageProgress - stepStatuses handles jobs without planner_metadata.recipe_step_id', async () => {
-  const recipeStepId = 'recipe-step-uuid-with-id';
-  const stepKey = 'thesis_generate_business_case';
-  const now = new Date().toISOString();
-  const mockProject: DialecticProjectRow = {
-    id: PROJECT_ID,
-    user_id: OWNER_USER_ID,
-    created_at: now,
-    updated_at: now,
-    initial_prompt_resource_id: null,
-    initial_user_prompt: '',
-    process_template_id: null,
-    project_name: 'Test Project',
-    repo_url: null,
-    selected_domain_id: '',
-    selected_domain_overlay_id: null,
-    status: 'active',
-    user_domain_overlay_values: null,
-  };
-  const mockJobs: DialecticJobRow[] = [
-    {
-      id: 'job-with-step-id',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-    },
-    {
-      id: 'job-without-step-id',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'in_progress',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-b',
-        model_id: 'model-b',
-      },
-    },
-  ];
-  const mockRecipeSteps: DialecticStageRecipeStep[] = [
-    {
-      id: recipeStepId,
-      step_key: stepKey,
-      branch_key: null,
-      config_override: {},
-      created_at: now,
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
-      inputs_required: [],
-      instance_id: '',
-      is_skipped: false,
-      job_type: 'EXECUTE',
-      object_filter: {},
-      output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
-      template_step_id: null,
-      updated_at: now,
-    },
-  ];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 500);
-  assertExists(result.error);
-});
-
-Deno.test('getAllStageProgress - stepStatuses maps recipe_step_id to step_key correctly', async () => {
-  const recipeStepId = 'uuid-123';
-  const stepKey = 'thesis_generate_business_case';
-  const now = new Date().toISOString();
-  const mockProject: DialecticProjectRow = {
-    id: PROJECT_ID,
-    user_id: OWNER_USER_ID,
-    created_at: now,
-    updated_at: now,
-    initial_prompt_resource_id: null,
-    initial_user_prompt: '',
-    process_template_id: null,
-    project_name: 'Test Project',
-    repo_url: null,
-    selected_domain_id: '',
-    selected_domain_overlay_id: null,
-    status: 'active',
-    user_domain_overlay_values: null,
-  };
-  const mockJobs: DialecticJobRow[] = [
-    {
-      id: 'job-1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-    },
-  ];
-  const mockRecipeSteps: DialecticStageRecipeStep[] = [
-    {
-      id: recipeStepId,
-      step_key: stepKey,
-      branch_key: null,
-      config_override: {},
-      created_at: now,
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
-      inputs_required: [],
-      instance_id: '',
-      is_skipped: false,
-      job_type: 'EXECUTE',
-      object_filter: {},
-      output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
-      template_step_id: null,
-      updated_at: now,
-    },
-  ];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.stepStatuses);
-  assertEquals(thesisEntry.stepStatuses[stepKey], 'completed');
-});
-
-Deno.test('getAllStageProgress - stepStatuses derives failed when any job for that step has status failed', async () => {
-  const recipeStepId = 'recipe-step-uuid-failed';
-  const stepKey = 'thesis_generate_business_case';
-  const now = new Date().toISOString();
-  const mockProject: DialecticProjectRow = {
-    id: PROJECT_ID,
-    user_id: OWNER_USER_ID,
-    created_at: now,
-    updated_at: now,
-    initial_prompt_resource_id: null,
-    initial_user_prompt: '',
-    process_template_id: null,
-    project_name: 'Test Project',
-    repo_url: null,
-    selected_domain_id: '',
-    selected_domain_overlay_id: null,
-    status: 'active',
-    user_domain_overlay_values: null,
-  };
-  const mockJobs: DialecticJobRow[] = [
-    {
-      id: 'job-completed',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-    },
-    {
-      id: 'job-failed',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'failed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      iteration_number: ITERATION_NUMBER,
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: now,
-      started_at: now,
-      completed_at: null,
-      error_details: null,
-      is_test_job: false,
-      parent_job_id: null,
-      prerequisite_job_id: null,
-      results: null,
-      target_contribution_id: null,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-b',
-        model_id: 'model-b',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-    },
-  ];
-  const mockRecipeSteps: DialecticStageRecipeStep[] = [
-    {
-      id: recipeStepId,
-      step_key: stepKey,
-      branch_key: null,
-      config_override: {},
-      created_at: now,
-      execution_order: 0,
-      granularity_strategy: 'per_model',
-      inputs_relevance: [],
-      inputs_required: [],
-      instance_id: '',
-      is_skipped: false,
-      job_type: 'EXECUTE',
-      object_filter: {},
-      output_overrides: {},
-      output_type: FileType.business_case,
-      outputs_required: {},
-      parallel_group: null,
-      prompt_template_id: null,
-      prompt_type: 'Turn',
-      step_description: null,
-      step_name: '',
-      step_slug: '',
-      template_step_id: null,
-      updated_at: now,
-    },
-  ];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.stepStatuses);
-  assertEquals(thesisEntry.stepStatuses[stepKey], 'failed');
-});
-
-Deno.test('getAllStageProgress - returns jobProgress with correct totalJobs count for PLAN step (exactly 1 job regardless of model count)', async () => {
-  const recipeStepId = 'recipe-step-plan-1';
-  const stepKey = 'thesis_plan_step';
-
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-plan-1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'in_progress',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_PLAN,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-plan',
-        model_id: 'planner-model',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.jobProgress);
-  assertExists(thesisEntry.jobProgress[stepKey]);
-  assertEquals(thesisEntry.jobProgress[stepKey].totalJobs, 1);
-});
-
-Deno.test('getAllStageProgress - returns jobProgress with correct totalJobs count for EXECUTE step (N jobs where N = distinct model_ids in jobs table)', async () => {
-  const recipeStepId = 'recipe-step-exec-1';
-  const stepKey = 'thesis_execute_step';
-
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-exec-a',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 'job-exec-b',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-b',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.jobProgress);
-  assertExists(thesisEntry.jobProgress[stepKey]);
-  assertEquals(thesisEntry.jobProgress[stepKey].totalJobs, 2);
-});
-
-Deno.test('getAllStageProgress - returns jobProgress.completedJobs matching count of jobs with status=completed for each step_key', async () => {
-  const recipeStepId = 'recipe-step-completed-count';
-  const stepKey = 'thesis_exec_completed_count';
-
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-c1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 'job-c2',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-b',
-        model_id: 'model-b',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 'job-ip',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'in_progress',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-c',
-        model_id: 'model-c',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.jobProgress);
-  assertExists(thesisEntry.jobProgress[stepKey]);
-  assertEquals(thesisEntry.jobProgress[stepKey].completedJobs, 2);
-});
-
-Deno.test('getAllStageProgress - returns jobProgress.inProgressJobs matching count of jobs with status=in_progress or retrying for each step_key', async () => {
-  const recipeStepId = 'recipe-step-inprogress-count';
-  const stepKey = 'thesis_exec_inprogress_count';
-
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-ip1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'in_progress',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 'job-r1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'retrying',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-b',
-        model_id: 'model-b',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 'job-c1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-c',
-        model_id: 'model-c',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.jobProgress);
-  assertExists(thesisEntry.jobProgress[stepKey]);
-  assertEquals(thesisEntry.jobProgress[stepKey].inProgressJobs, 2);
-});
-
-Deno.test('getAllStageProgress - returns jobProgress.failedJobs matching count of jobs with status=failed for each step_key', async () => {
-  const recipeStepId = 'recipe-step-failed-count';
-  const stepKey = 'thesis_exec_failed_count';
-
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-f1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'failed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 'job-c1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-b',
-        model_id: 'model-b',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.jobProgress);
-  assertExists(thesisEntry.jobProgress[stepKey]);
-  assertEquals(thesisEntry.jobProgress[stepKey].failedJobs, 1);
-});
-
-Deno.test('getAllStageProgress - returns jobProgress.modelJobStatuses with per-model status for EXECUTE steps', async () => {
-  const recipeStepId = 'recipe-step-model-status';
-  const stepKey = 'thesis_exec_model_status';
-
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-a',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 'job-b',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'in_progress',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-b',
-        model_id: 'model-b',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.jobProgress);
-  assertExists(thesisEntry.jobProgress[stepKey]);
-  assertExists(thesisEntry.jobProgress[stepKey].modelJobStatuses);
-  assertEquals(thesisEntry.jobProgress[stepKey].modelJobStatuses['model-a'], 'completed');
-  assertEquals(thesisEntry.jobProgress[stepKey].modelJobStatuses['model-b'], 'in_progress');
-});
-
-Deno.test('getAllStageProgress - modelJobStatuses keys are actual model_ids from job payloads, not from selectedModels', async () => {
-  const recipeStepId = 'recipe-step-model-keys';
-  const stepKey = 'thesis_exec_model_keys';
-
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-a',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 'job-b',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-b',
-        model_id: 'model-b',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.jobProgress);
-  assertExists(thesisEntry.jobProgress[stepKey]);
-  assertExists(thesisEntry.jobProgress[stepKey].modelJobStatuses);
-  assertEquals(Object.keys(thesisEntry.jobProgress[stepKey].modelJobStatuses).sort(), ['model-a', 'model-b']);
-});
-
-Deno.test('getAllStageProgress - PLAN step jobProgress does not include modelJobStatuses (undefined)', async () => {
-  const recipeStepId = 'recipe-step-plan-no-model-status';
-  const stepKey = 'thesis_plan_no_model_status';
-
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-plan-1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_PLAN,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-plan',
-        model_id: 'planner-model',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.jobProgress);
-  assertExists(thesisEntry.jobProgress[stepKey]);
-  assertEquals(thesisEntry.jobProgress[stepKey].modelJobStatuses, undefined);
-});
-
-Deno.test('getAllStageProgress - step_key is derived from payload.planner_metadata.recipe_step_id lookup in dialectic_stage_recipe_steps', async () => {
-  const recipeStepId = 'recipe-step-derive-step-key';
-  const stepKey = 'thesis_derived_step_key';
-
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-1',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 200);
-  assertExists(result.data);
-  const thesisEntry = result.data.find((e: StageProgressEntry) => e.stageSlug === 'thesis');
-  assertExists(thesisEntry);
-  assertExists(thesisEntry.jobProgress);
-  assertExists(thesisEntry.jobProgress[stepKey]);
-});
-
-Deno.test('getAllStageProgress - all jobs supply valid data with no defaults, fallbacks, or healing', async () => {
-  const recipeStepId = 'recipe-step-no-defaults';
-  const stepKey = 'thesis_no_defaults';
-
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-valid',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 'job-missing-recipe-step',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      job_type: JOB_TYPE_EXECUTE,
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-b',
-        model_id: 'model-b',
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-  const mockRecipeSteps = [{ id: recipeStepId, step_key: stepKey }];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 500);
-  assertExists(result.error);
-});
-
-Deno.test('getAllStageProgress - returns 500 when a job has missing or invalid stage_slug', async () => {
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-no-stage-slug',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: 'step-1' },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 500);
-  assertExists(result.error);
-});
-
-Deno.test('getAllStageProgress - returns 500 when a job has missing or invalid job_type', async () => {
-  const recipeStepId = 'recipe-step-1';
-  const mockProject = { id: PROJECT_ID, user_id: OWNER_USER_ID };
-  const mockJobs = [
-    {
-      id: 'job-no-job-type',
-      session_id: SESSION_ID,
-      user_id: OWNER_USER_ID,
-      status: 'completed',
-      stage_slug: 'thesis',
-      payload: {
-        stageSlug: 'thesis',
-        iterationNumber: ITERATION_NUMBER,
-        document_key: 'doc-a',
-        model_id: 'model-a',
-        planner_metadata: { recipe_step_id: recipeStepId },
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-  const mockRecipeSteps = [{ id: recipeStepId, step_key: 'thesis_step' }];
-
-  const mockSupabase = createMockSupabaseClient(OWNER_USER_ID, {
-    genericMockResults: {
-      'dialectic_projects': { select: { data: [mockProject], error: null } },
-      'dialectic_generation_jobs': { select: { data: mockJobs, error: null } },
-      'dialectic_project_resources': { select: { data: [], error: null } },
-      'dialectic_stage_recipe_steps': { select: { data: mockRecipeSteps, error: null } },
-    },
-  });
-
-  const result = await getAllStageProgress(
-    validPayload,
-    mockSupabase.client as unknown as SupabaseClient<Database>,
-    createMockUser(OWNER_USER_ID),
-  );
-
-  assertEquals(result.status, 500);
-  assertExists(result.error);
-});

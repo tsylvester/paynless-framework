@@ -1,445 +1,683 @@
-import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
-import type { Database } from '../types_db.ts';
+import { SupabaseClient, User } from "npm:@supabase/supabase-js@2";
+import { Database } from "../types_db.ts";
 import {
+  DialecticJobRow,
+  DialecticProjectResourceRow,
+  DialecticStage,
+  DialecticStageRecipeInstance,
   GetAllStageProgressPayload,
   GetAllStageProgressResult,
   GetAllStageProgressResponse,
   JobProgressEntry,
   JobProgressStatus,
-  StageProgressEntry,
   StageDocumentDescriptorDto,
-  StageRunDocumentStatus,
+  StageProgressEntry,
   StepJobProgress,
   UnifiedStageStatus,
-} from './dialectic.interface.ts';
-import { isRecord } from '../_shared/utils/type-guards/type_guards.common.ts';
-import { isJobProgressEntry, isJobTypeEnum } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
-import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
-
-function mapJobStatusToStageRunDocumentStatus(jobStatus: string): StageRunDocumentStatus {
-  if (jobStatus === 'completed') return 'completed';
-  if (jobStatus === 'in_progress') return 'generating';
-  if (jobStatus === 'failed') return 'failed';
-  if (jobStatus === 'retrying') return 'retrying';
-  return 'idle';
-}
-
-function mapJobStatusToJobProgressStatus(jobStatus: string): JobProgressStatus | null {
-  if (jobStatus === 'pending') return 'pending';
-  if (jobStatus === 'in_progress') return 'in_progress';
-  if (jobStatus === 'retrying') return 'in_progress';
-  if (jobStatus === 'completed') return 'completed';
-  if (jobStatus === 'failed') return 'failed';
-  return null;
-}
-
-function deriveStageStatus(jobStatuses: string[]): UnifiedStageStatus {
-  if (jobStatuses.length === 0) return 'not_started';
-  if (jobStatuses.some((s) => s === 'failed')) return 'failed';
-  if (jobStatuses.some((s) => s === 'in_progress' || s === 'retrying')) return 'in_progress';
-  if (jobStatuses.every((s) => s === 'completed')) return 'completed';
-  return 'in_progress';
-}
-
-function deriveStepStatus(jobStatuses: string[]): string {
-  if (jobStatuses.length === 0) return 'not_started';
-  if (jobStatuses.some((s) => s === 'failed')) return 'failed';
-  if (jobStatuses.some((s) => s === 'in_progress' || s === 'retrying')) return 'in_progress';
-  if (jobStatuses.every((s) => s === 'completed')) return 'completed';
-  return 'in_progress';
-}
+} from "./dialectic.interface.ts";
+import {
+  isJobProgressEntry,
+  isJobTypeEnum,
+  isPlannerMetadata,
+} from "../_shared/utils/type-guards/type_guards.dialectic.ts";
+import { isRecord } from "../_shared/utils/type-guards/type_guards.common.ts";
 
 export async function getAllStageProgress(
   payload: GetAllStageProgressPayload,
   dbClient: SupabaseClient<Database>,
   user: User,
 ): Promise<GetAllStageProgressResult> {
-  const { sessionId, iterationNumber, userId, projectId } = payload;
+  const sessionId: string = payload.sessionId;
+  const iterationNumber: number = payload.iterationNumber;
+  const userId: string = payload.userId;
+  const projectId: string = payload.projectId;
 
-  if (
-    !sessionId ||
-    iterationNumber === undefined ||
-    typeof iterationNumber !== 'number' ||
-    !userId ||
-    !projectId
-  ) {
-    return {
-      status: 400,
-      error: {
-        message: 'sessionId, iterationNumber, userId, and projectId are required',
-        code: 'VALIDATION_ERROR',
-      },
-    };
+  if (!sessionId || !userId || !projectId || !Number.isFinite(iterationNumber)) {
+    const error = { message: "sessionId, iterationNumber, userId, and projectId are required", status: 400 };
+    return { status: 400, error };
   }
 
-  const { data: project, error: projectError } = await dbClient
-    .from('dialectic_projects')
-    .select('user_id')
-    .eq('id', projectId)
-    .single();
-
-  if (projectError) {
-    if (projectError.code === 'PGRST116') {
-      return {
-        status: 404,
-        error: {
-          message: 'Project not found.',
-          code: 'NOT_FOUND',
-          details: projectError.message,
-        },
-      };
-    }
-    return {
-      status: 500,
-      error: {
-        message: 'Failed to fetch project.',
-        code: 'DB_ERROR',
-        details: projectError.message,
-      },
-    };
+  if (!user || user.id !== userId) {
+    const error = { message: "User not authorized for getAllStageProgress", status: 401 };
+    return { status: 401, error };
   }
 
-  if (!project || project.user_id !== user.id) {
-    return {
-      status: 403,
-      error: {
-        message: 'You are not authorized to access this project.',
-        code: 'FORBIDDEN',
-      },
-    };
-  }
+  const jobsSelect = "id, status, payload, stage_slug, job_type, parent_job_id, results, session_id, iteration_number, user_id, created_at, is_test_job, attempt_count, max_retries, prerequisite_job_id, target_contribution_id, started_at, completed_at, error_details";
+  const jobsResponse = await dbClient
+    .from("dialectic_generation_jobs")
+    .select(jobsSelect)
+    .eq("session_id", sessionId)
+    .eq("iteration_number", iterationNumber)
+    .eq("user_id", userId);
 
-  const { data: jobs, error: jobsError } = await dbClient
-    .from('dialectic_generation_jobs')
-    .select('id, status, payload, stage_slug, job_type')
-    .eq('session_id', sessionId)
-    .eq('iteration_number', iterationNumber)
-    .eq('user_id', userId);
-
+  const jobsError = jobsResponse.error;
   if (jobsError) {
-    return {
-      status: 500,
-      error: {
-        message: `Failed to fetch generation jobs: ${jobsError.message}`,
-        code: 'DB_ERROR',
-      },
-    };
+    const error = { message: `Failed to fetch jobs: ${jobsError.message}`, status: 500 };
+    return { status: 500, error };
   }
 
-  const { data: resources, error: resourcesError } = await dbClient
-    .from('dialectic_project_resources')
-    .select('id, storage_path, file_name, source_contribution_id, stage_slug')
-    .eq('resource_type', 'rendered_document')
-    .eq('session_id', sessionId)
-    .eq('iteration_number', iterationNumber);
+  const jobsDataUnknown: DialecticJobRow[] | null = jobsResponse.data;
+  if (!jobsDataUnknown) {
+    const error = { message: "Failed to fetch jobs: null data", status: 500 };
+    return { status: 500, error };
+  }
+  const jobsData: DialecticJobRow[] = jobsDataUnknown;
 
-  if (resourcesError) {
-    return {
-      status: 500,
-      error: {
-        message: `Failed to fetch project resources: ${resourcesError.message}`,
-        code: 'DB_ERROR',
-      },
-    };
+  if (jobsData.length === 0) {
+    const empty: GetAllStageProgressResponse = [];
+    return { status: 200, data: empty };
   }
 
-  const jobsList = jobs ?? [];
-  const resourcesList = resources ?? [];
-
-  const recipeStepIds = new Set<string>();
-  for (const job of jobsList) {
-    if (!isRecord(job.payload)) continue;
-    const pm = job.payload.planner_metadata;
-    if (!isRecord(pm) || typeof pm.recipe_step_id !== 'string' || !pm.recipe_step_id.trim()) continue;
-    recipeStepIds.add(pm.recipe_step_id.trim());
-  }
-
-  const recipeStepIdToStepKey = new Map<string, string>();
-  if (recipeStepIds.size > 0) {
-    const { data: recipeSteps, error: stepsError } = await dbClient
-      .from('dialectic_stage_recipe_steps')
-      .select('id, step_key')
-      .in('id', Array.from(recipeStepIds));
-
-    if (!stepsError && recipeSteps) {
-      for (const row of recipeSteps) {
-        if (typeof row.id === 'string' && typeof row.step_key === 'string') {
-          recipeStepIdToStepKey.set(row.id, row.step_key);
-        }
-      }
+  const stageSlugSet: Set<string> = new Set<string>();
+  for (const job of jobsData) {
+    const stageSlugUnknown: unknown = job.stage_slug;
+    if (typeof stageSlugUnknown !== "string" || stageSlugUnknown.length === 0) {
+      const error = { message: "Job stage_slug is null or invalid", status: 500 };
+      return { status: 500, error };
     }
+    stageSlugSet.add(stageSlugUnknown);
+  }
+  const stageSlugs: string[] = Array.from(stageSlugSet);
+
+  const stagesResponse = await dbClient
+    .from("dialectic_stages")
+    .select("id, slug, active_recipe_instance_id, created_at, display_name, description, expected_output_template_ids, default_system_prompt_id, recipe_template_id")
+    .in("slug", stageSlugs);
+
+  const stagesError = stagesResponse.error;
+  if (stagesError) {
+    const error = { message: `Failed to fetch stages: ${stagesError.message}`, status: 500 };
+    return { status: 500, error };
   }
 
-  const jobsByStageSlug = new Map<string, typeof jobsList>();
-  for (const job of jobsList) {
-    if (typeof job.stage_slug !== 'string' || job.stage_slug.trim().length === 0) {
-      return {
-        status: 500,
-        error: {
-          message: 'Failed to derive stageSlug from generation job row: stage_slug is missing or invalid',
-          code: 'DB_ERROR',
-        },
-      };
+  const stagesDataUnknown: DialecticStage[] | null = stagesResponse.data;
+  if (!stagesDataUnknown) {
+    const error = { message: "Failed to fetch stages: null data", status: 500 };
+    return { status: 500, error };
+  }
+  const stagesData: DialecticStage[] = stagesDataUnknown;
+
+  const stageSlugToStageId: Map<string, string> = new Map<string, string>();
+  for (const stage of stagesData) {
+    const slugUnknown: unknown = stage.slug;
+    const idUnknown: unknown = stage.id;
+    if (typeof slugUnknown !== "string" || slugUnknown.length === 0 || typeof idUnknown !== "string" || idUnknown.length === 0) {
+      const error = { message: "Stage id or slug is null or invalid", status: 500 };
+      return { status: 500, error };
     }
-
-    const slug = job.stage_slug;
-    const existing = jobsByStageSlug.get(slug) ?? [];
-    existing.push(job);
-    jobsByStageSlug.set(slug, existing);
+    stageSlugToStageId.set(slugUnknown, idUnknown);
   }
-
-  const result: GetAllStageProgressResponse = [];
-  const stageSlugs = Array.from(jobsByStageSlug.keys()).sort();
-
   for (const stageSlug of stageSlugs) {
-    const stageJobs = jobsByStageSlug.get(stageSlug) ?? [];
-    const stageResources = resourcesList.filter(
-      (r) => r.stage_slug === stageSlug,
-    );
+    if (!stageSlugToStageId.has(stageSlug)) {
+      const error = { message: `Stage not found for slug: ${stageSlug}`, status: 500 };
+      return { status: 500, error };
+    }
+  }
 
-    const resourceMapByDocumentKey = new Map<string, string>();
-    const resourceMapBySourceContributionId = new Map<string, string>();
+  const instanceIdSet: Set<string> = new Set<string>();
+  const stageSlugToInstanceId: Map<string, string> = new Map<string, string>();
+  for (const stage of stagesData) {
+    const slugUnknown: unknown = stage.slug;
+    const instanceIdUnknown: unknown = stage.active_recipe_instance_id;
+    if (typeof slugUnknown !== "string" || slugUnknown.length === 0) {
+      const error = { message: "Stage slug is null or invalid", status: 500 };
+      return { status: 500, error };
+    }
+    if (typeof instanceIdUnknown !== "string" || instanceIdUnknown.length === 0) {
+      const error = { message: `Stage active_recipe_instance_id is null or invalid for slug: ${slugUnknown}`, status: 500 };
+      return { status: 500, error };
+    }
+    stageSlugToInstanceId.set(slugUnknown, instanceIdUnknown);
+    instanceIdSet.add(instanceIdUnknown);
+  }
+  const instanceIds: string[] = Array.from(instanceIdSet);
 
-    for (const resource of stageResources) {
-      if (resource.storage_path && resource.file_name) {
-        const pathInfo = deconstructStoragePath({
-          storageDir: resource.storage_path,
-          fileName: resource.file_name,
-        });
-        if (pathInfo.documentKey) {
-          resourceMapByDocumentKey.set(pathInfo.documentKey, resource.id);
-        }
+  const instancesResponse = await dbClient
+    .from("dialectic_stage_recipe_instances")
+    .select("id, stage_id, template_id, is_cloned, cloned_at, created_at, updated_at")
+    .in("id", instanceIds);
+
+  const instancesError = instancesResponse.error;
+  if (instancesError) {
+    const error = { message: `Failed to fetch recipe instances: ${instancesError.message}`, status: 500 };
+    return { status: 500, error };
+  }
+
+  const instancesDataUnknown: DialecticStageRecipeInstance[] | null = instancesResponse.data;
+  if (!instancesDataUnknown) {
+    const error = { message: "Failed to fetch recipe instances: null data", status: 500 };
+    return { status: 500, error };
+  }
+  const instancesData: DialecticStageRecipeInstance[] = instancesDataUnknown;
+  const instanceIdToInstance: Map<string, DialecticStageRecipeInstance> = new Map<string, DialecticStageRecipeInstance>();
+  for (const instance of instancesData) {
+    if (typeof instance.id !== "string" || instance.id.length === 0) {
+      const error = { message: "Recipe instance id is null or invalid", status: 500 };
+      return { status: 500, error };
+    }
+    instanceIdToInstance.set(instance.id, instance);
+  }
+  for (const instanceId of instanceIds) {
+    if (!instanceIdToInstance.has(instanceId)) {
+      const error = { message: `Recipe instance not found for id: ${instanceId}`, status: 500 };
+      return { status: 500, error };
+    }
+  }
+
+  const instanceIdToIsCloned: Map<string, boolean> = new Map<string, boolean>();
+  const instanceIdToTemplateId: Map<string, string> = new Map<string, string>();
+  const clonedInstanceIds: string[] = [];
+  const templateIds: string[] = [];
+
+  for (const instance of instancesData) {
+    if (typeof instance.id !== "string" || instance.id.length === 0) {
+      const error = { message: "Recipe instance id is null or invalid", status: 500 };
+      return { status: 500, error };
+    }
+    const isClonedUnknown: unknown = instance.is_cloned;
+    if (typeof isClonedUnknown !== "boolean") {
+      const error = { message: `Recipe instance is_cloned is null or invalid for id: ${instance.id}`, status: 500 };
+      return { status: 500, error };
+    }
+    instanceIdToIsCloned.set(instance.id, isClonedUnknown);
+    const templateIdUnknown: unknown = instance.template_id;
+    if (typeof templateIdUnknown !== "string" || templateIdUnknown.length === 0) {
+      const error = { message: `Recipe instance template_id is null or invalid for id: ${instance.id}`, status: 500 };
+      return { status: 500, error };
+    }
+    instanceIdToTemplateId.set(instance.id, templateIdUnknown);
+    if (isClonedUnknown === true) {
+      clonedInstanceIds.push(instance.id);
+    } else {
+      templateIds.push(templateIdUnknown);
+    }
+  }
+
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>();
+  const stepKeyToGranularityStrategy: Map<string, string> = new Map<string, string>();
+
+  if (clonedInstanceIds.length > 0) {
+    const stepsResponse = await dbClient
+      .from("dialectic_stage_recipe_steps")
+      .select("id, instance_id, step_key, job_type, granularity_strategy")
+      .in("instance_id", clonedInstanceIds);
+
+    const stepsError = stepsResponse.error;
+    if (stepsError) {
+      const error = { message: `Failed to fetch stage recipe steps: ${stepsError.message}`, status: 500 };
+      return { status: 500, error };
+    }
+
+    const stepsDataUnknown: unknown = stepsResponse.data;
+    if (!stepsDataUnknown) {
+      const error = { message: "Failed to fetch stage recipe steps: null data", status: 500 };
+      return { status: 500, error };
+    }
+    if (!Array.isArray(stepsDataUnknown)) {
+      const error = { message: "Failed to fetch stage recipe steps: data is not an array", status: 500 };
+      return { status: 500, error };
+    }
+    for (const stepUnknown of stepsDataUnknown) {
+      if (!isRecord(stepUnknown)) {
+        const error = { message: "Stage recipe step row is invalid", status: 500 };
+        return { status: 500, error };
       }
-      if (resource.source_contribution_id) {
-        resourceMapBySourceContributionId.set(
-          resource.source_contribution_id,
-          resource.id,
-        );
+      const stepIdUnknown: unknown = stepUnknown["id"];
+      const stepKeyUnknown: unknown = stepUnknown["step_key"];
+      const granularityUnknown: unknown = stepUnknown["granularity_strategy"];
+
+      if (typeof stepIdUnknown !== "string" || stepIdUnknown.length === 0) {
+        const error = { message: "Stage recipe step id is null or invalid", status: 500 };
+        return { status: 500, error };
+      }
+      if (typeof stepKeyUnknown !== "string" || stepKeyUnknown.length === 0) {
+        const error = { message: `Stage recipe step_key is null or invalid for step id: ${stepIdUnknown}`, status: 500 };
+        return { status: 500, error };
+      }
+      stepIdToStepKey.set(stepIdUnknown, stepKeyUnknown);
+      if (typeof granularityUnknown === "string" && granularityUnknown.length > 0) {
+        stepKeyToGranularityStrategy.set(stepKeyUnknown, granularityUnknown);
+      }
+    }
+  }
+
+  if (templateIds.length > 0) {
+    const templateStepsResponse = await dbClient
+      .from("dialectic_recipe_template_steps")
+      .select("id, template_id, step_key, job_type, granularity_strategy")
+      .in("template_id", templateIds);
+
+    const templateStepsError = templateStepsResponse.error;
+    if (templateStepsError) {
+      const error = { message: `Failed to fetch template recipe steps: ${templateStepsError.message}`, status: 500 };
+      return { status: 500, error };
+    }
+
+    const templateStepsDataUnknown: unknown = templateStepsResponse.data;
+    if (!templateStepsDataUnknown) {
+      const error = { message: "Failed to fetch template recipe steps: null data", status: 500 };
+      return { status: 500, error };
+    }
+    if (!Array.isArray(templateStepsDataUnknown)) {
+      const error = { message: "Failed to fetch template recipe steps: data is not an array", status: 500 };
+      return { status: 500, error };
+    }
+    for (const stepUnknown of templateStepsDataUnknown) {
+      if (!isRecord(stepUnknown)) {
+        const error = { message: "Template recipe step row is invalid", status: 500 };
+        return { status: 500, error };
+      }
+      const stepIdUnknown: unknown = stepUnknown["id"];
+      const stepKeyUnknown: unknown = stepUnknown["step_key"];
+      const granularityUnknown: unknown = stepUnknown["granularity_strategy"];
+
+      if (typeof stepIdUnknown !== "string" || stepIdUnknown.length === 0) {
+        const error = { message: "Template recipe step id is null or invalid", status: 500 };
+        return { status: 500, error };
+      }
+      if (typeof stepKeyUnknown !== "string" || stepKeyUnknown.length === 0) {
+        const error = { message: `Template recipe step_key is null or invalid for step id: ${stepIdUnknown}`, status: 500 };
+        return { status: 500, error };
+      }
+      stepIdToStepKey.set(stepIdUnknown, stepKeyUnknown);
+      if (typeof granularityUnknown === "string" && granularityUnknown.length > 0) {
+        stepKeyToGranularityStrategy.set(stepKeyUnknown, granularityUnknown);
+      }
+    }
+  }
+
+  const resourcesResponse = await dbClient
+    .from("dialectic_project_resources")
+    .select("id, storage_path, file_name, source_contribution_id, resource_type, session_id, stage_slug, iteration_number, project_id, user_id, storage_bucket, mime_type, size_bytes, created_at, updated_at, resource_description")
+    .eq("resource_type", "rendered_document")
+    .eq("session_id", sessionId)
+    .in("stage_slug", stageSlugs)
+    .eq("iteration_number", iterationNumber);
+
+  const resourcesError = resourcesResponse.error;
+  if (resourcesError) {
+    const error = { message: `Failed to fetch project resources: ${resourcesError.message}`, status: 500 };
+    return { status: 500, error };
+  }
+
+  const resourcesDataUnknown: DialecticProjectResourceRow[] | null = resourcesResponse.data;
+  if (!resourcesDataUnknown) {
+    const error = { message: "Failed to fetch project resources: null data", status: 500 };
+    return { status: 500, error };
+  }
+  const resourcesData: DialecticProjectResourceRow[] = resourcesDataUnknown;
+
+  const bestResourceBySourceContributionId: Map<string, DialecticProjectResourceRow> = new Map<string, DialecticProjectResourceRow>();
+
+  for (const resource of resourcesData) {
+    if (typeof resource.id !== "string" || resource.id.length === 0) {
+      const error = { message: "Project resource id is null or invalid", status: 500 };
+      return { status: 500, error };
+    }
+    if (typeof resource.source_contribution_id !== "string" || resource.source_contribution_id.length === 0) {
+      const error = { message: `Project resource source_contribution_id is null or invalid for resource: ${resource.id}`, status: 500 };
+      return { status: 500, error };
+    }
+    if (typeof resource.updated_at !== "string" || resource.updated_at.length === 0) {
+      const error = { message: `Project resource updated_at is null or invalid for resource: ${resource.id}`, status: 500 };
+      return { status: 500, error };
+    }
+    if (typeof resource.created_at !== "string" || resource.created_at.length === 0) {
+      const error = { message: `Project resource created_at is null or invalid for resource: ${resource.id}`, status: 500 };
+      return { status: 500, error };
+    }
+
+    const updatedAtMs: number = Date.parse(resource.updated_at);
+    if (!Number.isFinite(updatedAtMs)) {
+      const error = { message: `Project resource updated_at is not a valid date for resource: ${resource.id}`, status: 500 };
+      return { status: 500, error };
+    }
+    const createdAtMs: number = Date.parse(resource.created_at);
+    if (!Number.isFinite(createdAtMs)) {
+      const error = { message: `Project resource created_at is not a valid date for resource: ${resource.id}`, status: 500 };
+      return { status: 500, error };
+    }
+
+    const existing: DialecticProjectResourceRow | undefined = bestResourceBySourceContributionId.get(resource.source_contribution_id);
+    if (!existing) {
+      bestResourceBySourceContributionId.set(resource.source_contribution_id, resource);
+      continue;
+    }
+
+    if (typeof existing.updated_at !== "string" || existing.updated_at.length === 0) {
+      const error = { message: `Project resource updated_at is null or invalid for resource: ${existing.id}`, status: 500 };
+      return { status: 500, error };
+    }
+    if (typeof existing.created_at !== "string" || existing.created_at.length === 0) {
+      const error = { message: `Project resource created_at is null or invalid for resource: ${existing.id}`, status: 500 };
+      return { status: 500, error };
+    }
+    const existingUpdatedAtMs: number = Date.parse(existing.updated_at);
+    if (!Number.isFinite(existingUpdatedAtMs)) {
+      const error = { message: `Project resource updated_at is not a valid date for resource: ${existing.id}`, status: 500 };
+      return { status: 500, error };
+    }
+    const existingCreatedAtMs: number = Date.parse(existing.created_at);
+    if (!Number.isFinite(existingCreatedAtMs)) {
+      const error = { message: `Project resource created_at is not a valid date for resource: ${existing.id}`, status: 500 };
+      return { status: 500, error };
+    }
+
+    let isNewer: boolean = false;
+    if (updatedAtMs > existingUpdatedAtMs) {
+      isNewer = true;
+    } else if (updatedAtMs === existingUpdatedAtMs) {
+      if (createdAtMs > existingCreatedAtMs) {
+        isNewer = true;
+      } else if (createdAtMs === existingCreatedAtMs) {
+        if (resource.id > existing.id) {
+          isNewer = true;
+        }
       }
     }
 
-    const documents: StageDocumentDescriptorDto[] = [];
-    const jobStatuses: string[] = [];
-    const statusesByStepKey = new Map<string, string[]>();
-    const progressStatusesByStepKey: Map<string, JobProgressStatus[]> = new Map<string, JobProgressStatus[]>();
-    const jobTypeByStepKey: Map<string, Database['public']['Enums']['dialectic_job_type_enum']> = new Map<
-      string,
-      Database['public']['Enums']['dialectic_job_type_enum']
-    >();
-    const modelStatusesByStepKey: Map<string, Map<string, JobProgressStatus[]>> = new Map<
-      string,
-      Map<string, JobProgressStatus[]>
-    >();
+    if (isNewer) {
+      bestResourceBySourceContributionId.set(resource.source_contribution_id, resource);
+    }
+  }
 
-    for (const job of stageJobs) {
-      const jobStatus = typeof job.status === 'string' ? job.status : '';
-      jobStatuses.push(jobStatus);
+  const resourceIdBySourceContributionId: Map<string, string> = new Map<string, string>();
+  for (const [sourceContributionId, resource] of bestResourceBySourceContributionId.entries()) {
+    resourceIdBySourceContributionId.set(sourceContributionId, resource.id);
+  }
 
-      if (job.job_type === null || typeof job.job_type !== 'string' || !isJobTypeEnum(job.job_type)) {
-        return {
-          status: 500,
-          error: {
-            message: 'Failed to compute jobProgress: job_type is missing or invalid on generation job row',
-            code: 'DB_ERROR',
-          },
-        };
-      }
+  const jobIdToJob: Map<string, DialecticJobRow> = new Map<string, DialecticJobRow>();
+  for (const job of jobsData) {
+    if (typeof job.id !== "string" || job.id.length === 0) {
+      const error = { message: "Job id is null or invalid", status: 500 };
+      return { status: 500, error };
+    }
+    jobIdToJob.set(job.id, job);
+  }
 
-      const recipeStepId =
-        isRecord(job.payload) && isRecord(job.payload.planner_metadata) && typeof job.payload.planner_metadata.recipe_step_id === 'string'
-          ? job.payload.planner_metadata.recipe_step_id.trim()
-          : null;
-      const stepKey = recipeStepId ? recipeStepIdToStepKey.get(recipeStepId) ?? null : null;
-      if (!stepKey) {
-        return {
-          status: 500,
-          error: {
-            message: 'Failed to compute jobProgress: planner_metadata.recipe_step_id is missing/invalid or does not map to a recipe step_key',
-            code: 'DB_ERROR',
-          },
-        };
-      }
+  const resultByStageSlug: Map<string, StageProgressEntry> = new Map<string, StageProgressEntry>();
 
-      const arr = statusesByStepKey.get(stepKey) ?? [];
-      arr.push(jobStatus);
-      statusesByStepKey.set(stepKey, arr);
+  for (const job of jobsData) {
+    const stageSlugUnknown: unknown = job.stage_slug;
+    if (typeof stageSlugUnknown !== "string" || stageSlugUnknown.length === 0) {
+      const error = { message: "Job stage_slug is null or invalid", status: 500 };
+      return { status: 500, error };
+    }
+    const stageSlug: string = stageSlugUnknown;
+    if (!resultByStageSlug.has(stageSlug)) {
+      const entry: StageProgressEntry = {
+        stageSlug: stageSlug,
+        documents: [],
+        stepStatuses: {},
+        stageStatus: "not_started",
+        jobProgress: {},
+      };
+      resultByStageSlug.set(stageSlug, entry);
+    }
 
-      const mappedProgressStatus = mapJobStatusToJobProgressStatus(jobStatus);
-      if (!mappedProgressStatus) {
-        return {
-          status: 500,
-          error: {
-            message: `Failed to compute jobProgress: unsupported job status '${jobStatus}'`,
-            code: 'DB_ERROR',
-          },
-        };
-      }
+    const jobTypeUnknown: unknown = job.job_type;
+    if (typeof jobTypeUnknown !== "string") {
+      const error = { message: "Job type is null or invalid", status: 500 };
+      return { status: 500, error };
+    }
+    if (!isJobTypeEnum(jobTypeUnknown)) {
+      const error = { message: "Job type is null or invalid", status: 500 };
+      return { status: 500, error };
+    }
+    const jobType: string = jobTypeUnknown;
 
-      const existingJobType = jobTypeByStepKey.get(stepKey) ?? null;
-      if (existingJobType && existingJobType !== job.job_type) {
-        return {
-          status: 500,
-          error: {
-            message: 'Failed to compute jobProgress: inconsistent job_type values within the same recipe step_key',
-            code: 'DB_ERROR',
-          },
-        };
-      }
-      jobTypeByStepKey.set(stepKey, job.job_type);
+    const stageEntry: StageProgressEntry | undefined = resultByStageSlug.get(stageSlug);
+    if (!stageEntry) {
+      const error = { message: `Stage progress entry missing for slug: ${stageSlug}`, status: 500 };
+      return { status: 500, error };
+    }
 
-      const progressArr = progressStatusesByStepKey.get(stepKey) ?? [];
-      progressArr.push(mappedProgressStatus);
-      progressStatusesByStepKey.set(stepKey, progressArr);
+    let stepKey: string | undefined = undefined;
+    let modelIdForJob: string | undefined = undefined;
 
-      if (job.job_type === 'EXECUTE') {
-        if (!isRecord(job.payload) || typeof job.payload.model_id !== 'string' || job.payload.model_id.trim().length === 0) {
-          return {
-            status: 500,
-            error: {
-              message: 'Failed to compute jobProgress: EXECUTE job is missing a valid payload.model_id',
-              code: 'DB_ERROR',
-            },
-          };
+    const payloadUnknown: unknown = job.payload;
+    if (!isRecord(payloadUnknown)) {
+      const error = { message: "Job payload is null or invalid", status: 500 };
+      return { status: 500, error };
+    }
+    const p: Record<PropertyKey, unknown> = payloadUnknown;
+    const modelIdUnknown: unknown = p["model_id"];
+    if (typeof modelIdUnknown !== "string" || modelIdUnknown.length === 0) {
+      const error = { message: "Job payload model_id is null or invalid", status: 500 };
+      return { status: 500, error };
+    }
+    modelIdForJob = modelIdUnknown;
+
+    if (jobType === "EXECUTE") {
+      const plannerMetadataUnknown: unknown = p["planner_metadata"];
+      if (isPlannerMetadata(plannerMetadataUnknown)) {
+        const recipeStepIdUnknown: unknown = plannerMetadataUnknown.recipe_step_id;
+        if (typeof recipeStepIdUnknown === "string" && recipeStepIdUnknown.length > 0) {
+          const mapped: string | undefined = stepIdToStepKey.get(recipeStepIdUnknown);
+          if (mapped) {
+            stepKey = mapped;
+          } else {
+            const error = { message: `planner_metadata.recipe_step_id not found in recipe steps: ${recipeStepIdUnknown}`, status: 500 };
+            return { status: 500, error };
+          }
         }
+      }
+    }
 
-        const modelId = job.payload.model_id.trim();
-        const modelBuckets = modelStatusesByStepKey.get(stepKey) ?? new Map<string, JobProgressStatus[]>();
-        const modelStatusArr = modelBuckets.get(modelId) ?? [];
-        modelStatusArr.push(mappedProgressStatus);
-        modelBuckets.set(modelId, modelStatusArr);
-        modelStatusesByStepKey.set(stepKey, modelBuckets);
+    if ((jobType === "EXECUTE" || jobType === "RENDER") && !stepKey && typeof job.parent_job_id === "string" && job.parent_job_id.length > 0) {
+      const parent: DialecticJobRow | undefined = jobIdToJob.get(job.parent_job_id);
+      if (!parent) {
+        const error = { message: `Parent job not found for id: ${job.parent_job_id}`, status: 500 };
+        return { status: 500, error };
+      }
+      const parentPayloadUnknown: unknown = parent.payload;
+      if (!isRecord(parentPayloadUnknown)) {
+        const error = { message: `Parent job payload is null or invalid for id: ${parent.id}`, status: 500 };
+        return { status: 500, error };
+      }
+      const pp: Record<PropertyKey, unknown> = parentPayloadUnknown;
+      const parentPlannerMetadataUnknown: unknown = pp["planner_metadata"];
+      if (isPlannerMetadata(parentPlannerMetadataUnknown)) {
+        const parentRecipeStepIdUnknown: unknown = parentPlannerMetadataUnknown.recipe_step_id;
+        if (typeof parentRecipeStepIdUnknown === "string" && parentRecipeStepIdUnknown.length > 0) {
+          const mapped: string | undefined = stepIdToStepKey.get(parentRecipeStepIdUnknown);
+          if (mapped) {
+            stepKey = mapped;
+          } else {
+            const error = { message: `Parent planner_metadata.recipe_step_id not found in recipe steps: ${parentRecipeStepIdUnknown}`, status: 500 };
+            return { status: 500, error };
+          }
+        }
+      }
+    }
+
+    if (jobType === "EXECUTE" && !stepKey) {
+      const error = { message: `EXECUTE job is missing recipe step association: ${job.id}`, status: 500 };
+      return { status: 500, error };
+    }
+
+    const jobStatusUnknown: unknown = job.status;
+    if (typeof jobStatusUnknown !== "string" || jobStatusUnknown.length === 0) {
+      const error = { message: "Job status is null or invalid", status: 500 };
+      return { status: 500, error };
+    }
+    const jobStatusRaw: string = jobStatusUnknown;
+    let mappedStatus: JobProgressStatus;
+    if (jobStatusRaw === "pending") {
+      mappedStatus = "pending";
+    } else if (jobStatusRaw === "in_progress" || jobStatusRaw === "retrying") {
+      mappedStatus = "in_progress";
+    } else if (jobStatusRaw === "completed") {
+      mappedStatus = "completed";
+    } else if (jobStatusRaw === "failed") {
+      mappedStatus = "failed";
+    } else {
+      const error = { message: `Job status is unsupported: ${jobStatusRaw}`, status: 500 };
+      return { status: 500, error };
+    }
+
+    const jobProgressKey: string = (() => {
+      if (jobType === "RENDER") {
+        return `__job:${job.id}`;
+      }
+      if (jobType === "PLAN" && !stepKey) {
+        return `__job:${job.id}`;
+      }
+      if (!stepKey) {
+        return `__job:${job.id}`;
+      }
+      return stepKey;
+    })();
+
+    const jobProgress: StepJobProgress = stageEntry.jobProgress;
+    const existingProgress: JobProgressEntry | undefined = jobProgress[jobProgressKey];
+
+    const isPerModel: boolean = (() => {
+      if (jobType !== "EXECUTE") {
+        return false;
+      }
+      if (!stepKey) {
+        return false;
+      }
+      const granularityUnknown: string | undefined = stepKeyToGranularityStrategy.get(stepKey);
+      if (!granularityUnknown) {
+        return false;
+      }
+      return granularityUnknown === "per_model";
+    })();
+
+    const completedDelta: number = mappedStatus === "completed" ? 1 : 0;
+    const inProgressDelta: number = mappedStatus === "in_progress" ? 1 : 0;
+    const failedDelta: number = mappedStatus === "failed" ? 1 : 0;
+
+    let updatedProgress: JobProgressEntry;
+    if (!existingProgress) {
+      const created: JobProgressEntry = {
+        totalJobs: 1,
+        completedJobs: completedDelta,
+        inProgressJobs: inProgressDelta,
+        failedJobs: failedDelta,
+      };
+      if (isPerModel) {
+        const modelStatuses: Record<string, JobProgressStatus> = {
+          [modelIdForJob]: mappedStatus,
+        };
+        created.modelJobStatuses = modelStatuses;
+      }
+      updatedProgress = created;
+    } else {
+      const next: JobProgressEntry = {
+        totalJobs: existingProgress.totalJobs + 1,
+        completedJobs: existingProgress.completedJobs + completedDelta,
+        inProgressJobs: existingProgress.inProgressJobs + inProgressDelta,
+        failedJobs: existingProgress.failedJobs + failedDelta,
+        modelJobStatuses: existingProgress.modelJobStatuses,
+      };
+
+      if (isPerModel) {
+        const existingModelStatuses: Record<string, JobProgressStatus> | undefined = existingProgress.modelJobStatuses;
+        if (!existingModelStatuses) {
+          const error = { message: `Missing modelJobStatuses for per_model step: ${jobProgressKey}`, status: 500 };
+          return { status: 500, error };
+        }
+        const nextModelStatuses: Record<string, JobProgressStatus> = {
+          ...existingModelStatuses,
+          [modelIdForJob]: mappedStatus,
+        };
+        next.modelJobStatuses = nextModelStatuses;
       }
 
-      if (
-        !isRecord(job.payload) ||
-        typeof job.payload.document_key !== 'string' ||
-        typeof job.payload.model_id !== 'string'
-      ) {
+      updatedProgress = next;
+    }
+
+    if (!isJobProgressEntry(updatedProgress)) {
+      const error = { message: "Job progress entry validation failed", status: 500 };
+      return { status: 500, error };
+    }
+    jobProgress[jobProgressKey] = updatedProgress;
+
+    if (jobType === "RENDER") {
+      if (mappedStatus !== "completed") {
         continue;
       }
 
-      let latestRenderedResourceId = '';
-      if (
-        typeof job.payload.sourceContributionId === 'string' &&
-        resourceMapBySourceContributionId.has(job.payload.sourceContributionId)
-      ) {
-        latestRenderedResourceId =
-          resourceMapBySourceContributionId.get(
-            job.payload.sourceContributionId,
-          ) ?? '';
-      } else {
-        latestRenderedResourceId =
-          resourceMapByDocumentKey.get(job.payload.document_key) ?? '';
+      const docKeyUnknown: unknown = p["documentKey"];
+      if (typeof docKeyUnknown !== "string" || docKeyUnknown.length === 0) {
+        const error = { message: `RENDER job payload documentKey is null or invalid for job: ${job.id}`, status: 500 };
+        return { status: 500, error };
+      }
+      const documentKey: string = docKeyUnknown;
+
+      const sourceContributionIdUnknown: unknown = p["sourceContributionId"];
+      if (typeof sourceContributionIdUnknown !== "string" || sourceContributionIdUnknown.length === 0) {
+        const error = { message: `RENDER job payload sourceContributionId is null or invalid for job: ${job.id}`, status: 500 };
+        return { status: 500, error };
+      }
+      const sourceContributionId: string = sourceContributionIdUnknown;
+      const latestRenderedResourceId: string | undefined = resourceIdBySourceContributionId.get(sourceContributionId);
+      if (!latestRenderedResourceId) {
+        const error = { message: `Rendered resource not found for RENDER job sourceContributionId: ${sourceContributionId}`, status: 500 };
+        return { status: 500, error };
       }
 
-      const status = mapJobStatusToStageRunDocumentStatus(jobStatus);
+      let documentStepKey: string | undefined = undefined;
+      if (typeof job.parent_job_id === "string" && job.parent_job_id.length > 0) {
+        if (!stepKey) {
+          const error = { message: `RENDER job parent association could not be derived for job: ${job.id}`, status: 500 };
+          return { status: 500, error };
+        }
+        documentStepKey = stepKey;
+      }
 
-      const doc: StageDocumentDescriptorDto = {
-        documentKey: job.payload.document_key,
-        modelId: job.payload.model_id,
+      const documentStatus: StageDocumentDescriptorDto["status"] = "completed";
+      const descriptor: StageDocumentDescriptorDto = {
+        documentKey: documentKey,
+        modelId: modelIdForJob,
         jobId: job.id,
-        status,
-        latestRenderedResourceId,
+        status: documentStatus,
+        latestRenderedResourceId: latestRenderedResourceId,
+        stepKey: documentStepKey,
       };
-      if (stepKey) {
-        doc.stepKey = stepKey;
-      }
-      documents.push(doc);
+      stageEntry.documents.push(descriptor);
     }
-
-    const stepStatuses: Record<string, string> = {};
-    for (const [key, statuses] of statusesByStepKey) {
-      stepStatuses[key] = deriveStepStatus(statuses);
-    }
-    const stageStatus = deriveStageStatus(jobStatuses);
-
-    const jobProgress: StepJobProgress = {};
-    for (const [stepKey, statuses] of progressStatusesByStepKey) {
-      const jobType = jobTypeByStepKey.get(stepKey) ?? null;
-      if (!jobType) {
-        return {
-          status: 500,
-          error: {
-            message: 'Failed to compute jobProgress: job_type missing for step_key aggregation',
-            code: 'DB_ERROR',
-          },
-        };
-      }
-
-      let completedJobs = 0;
-      let inProgressJobs = 0;
-      let failedJobs = 0;
-
-      for (const st of statuses) {
-        if (st === 'completed') completedJobs += 1;
-        if (st === 'in_progress') inProgressJobs += 1;
-        if (st === 'failed') failedJobs += 1;
-      }
-
-      const jobProgressEntry: JobProgressEntry = {
-        totalJobs: statuses.length,
-        completedJobs,
-        inProgressJobs,
-        failedJobs,
-      };
-
-      if (jobType === 'EXECUTE') {
-        const modelBuckets = modelStatusesByStepKey.get(stepKey) ?? null;
-        if (!modelBuckets || modelBuckets.size === 0) {
-          return {
-            status: 500,
-            error: {
-              message: 'Failed to compute jobProgress: EXECUTE step_key has no model status buckets',
-              code: 'DB_ERROR',
-            },
-          };
-        }
-
-        const modelJobStatuses: Record<string, JobProgressStatus> = {};
-        for (const [modelId, modelStatuses] of modelBuckets.entries()) {
-          if (modelStatuses.some((s) => s === 'failed')) {
-            modelJobStatuses[modelId] = 'failed';
-            continue;
-          }
-          if (modelStatuses.some((s) => s === 'in_progress')) {
-            modelJobStatuses[modelId] = 'in_progress';
-            continue;
-          }
-          if (modelStatuses.some((s) => s === 'pending')) {
-            modelJobStatuses[modelId] = 'pending';
-            continue;
-          }
-          modelJobStatuses[modelId] = 'completed';
-        }
-
-        jobProgressEntry.modelJobStatuses = modelJobStatuses;
-      }
-
-      if (!isJobProgressEntry(jobProgressEntry)) {
-        return {
-          status: 500,
-          error: {
-            message: 'Failed to compute jobProgress: constructed JobProgressEntry failed validation',
-            code: 'DB_ERROR',
-          },
-        };
-      }
-
-      jobProgress[stepKey] = jobProgressEntry;
-    }
-
-    const entry: StageProgressEntry = {
-      stageSlug,
-      documents,
-      stepStatuses,
-      stageStatus,
-      jobProgress,
-    };
-    result.push(entry);
   }
 
-  return {
-    status: 200,
-    data: result,
-  };
+  for (const stageEntry of resultByStageSlug.values()) {
+    const stepStatuses: Record<string, string> = {};
+    for (const [stepKey, progress] of Object.entries(stageEntry.jobProgress)) {
+      if (stepKey.startsWith("__job:")) {
+        continue;
+      }
+      let stepStatus: string = "not_started";
+      if (progress.failedJobs > 0) stepStatus = "failed";
+      else if (progress.inProgressJobs > 0) stepStatus = "in_progress";
+      else if (progress.completedJobs > 0 && progress.completedJobs === progress.totalJobs) stepStatus = "completed";
+      stageEntry.stepStatuses[stepKey] = stepStatus;
+      stepStatuses[stepKey] = stepStatus;
+    }
+
+    let stageStatus: UnifiedStageStatus = "not_started";
+    let total: number = 0;
+    let completed: number = 0;
+    let inProgress: number = 0;
+    let failed: number = 0;
+    for (const progress of Object.values(stageEntry.jobProgress)) {
+      total = total + progress.totalJobs;
+      completed = completed + progress.completedJobs;
+      inProgress = inProgress + progress.inProgressJobs;
+      failed = failed + progress.failedJobs;
+    }
+    if (failed > 0) {
+      stageStatus = "failed";
+    } else if (inProgress > 0) {
+      stageStatus = "in_progress";
+    } else if (total > 0 && completed === total) {
+      stageStatus = "completed";
+    }
+    stageEntry.stageStatus = stageStatus;
+  }
+
+  const response: GetAllStageProgressResponse = Array.from(resultByStageSlug.values());
+  return { status: 200, data: response };
 }
+
