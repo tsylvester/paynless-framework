@@ -24,6 +24,7 @@ import {
     MockQueryBuilderState 
 } from '../_shared/supabase.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
+import { isRecord } from '../_shared/utils/type_guards.ts';
 
 describe('findSourceDocuments', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
@@ -3131,5 +3132,337 @@ describe('findSourceDocuments', () => {
 
         assertEquals(documents.length, 1, 'Should find project-level resource regardless of job context');
         assertEquals(documents[0].id, 'initial-user-prompt-id', 'Should return the correct project resource');
+    });
+
+    it('feedback query includes .eq("iteration_number", iterationNumber) filter', async () => {
+        const rule: InputRule[] = [{ type: 'feedback', slug: 'test-stage', required: false }];
+        const expectedIteration = 1;
+        mockParentJob.payload.iterationNumber = expectedIteration;
+        mockParentJob.iteration_number = expectedIteration;
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_feedback: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasIterationFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'iteration_number' &&
+                                filter.value === expectedIteration,
+                        );
+                        if (!hasIterationFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('feedback queries must filter by iteration_number'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing iteration_number filter',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 0, 'No feedback rows; query shape was asserted by mock');
+    });
+
+    it('feedback query uses resource_description->>\'document_key\' eq filter instead of ilike on file_name', async () => {
+        const rule: InputRule[] = [
+            { type: 'feedback', slug: 'test-stage', document_key: FileType.business_case },
+        ];
+        const mockFeedbackRow: DialecticFeedbackRow = {
+            id: 'feedback-doc-key-id',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage_slug: 'test-stage',
+            iteration_number: 1,
+            file_name: 'business_case_feedback.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/feedback',
+            size_bytes: 100,
+            mime_type: 'text/markdown',
+            feedback_type: 'user_feedback',
+            target_contribution_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            project_id: 'proj-1',
+            resource_description: { document_key: FileType.business_case, model_id: 'model-1' },
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_feedback: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasResourceDescDocumentKeyFilter = state.filters.some(
+                            (filter) =>
+                                (filter.type === 'eq' && filter.column === 'resource_description->>document_key') ||
+                                (filter.type === 'filter' &&
+                                    filter.column === 'resource_description->>document_key' &&
+                                    filter.operator === 'eq'),
+                        );
+                        if (!hasResourceDescDocumentKeyFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error(
+                                    'feedback queries with document_key must filter by resource_description->>\'document_key\'',
+                                ),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing resource_description document_key filter',
+                            });
+                        }
+                        const hasFileNombreIlike = state.filters.some(
+                            (filter) => filter.type === 'ilike' && filter.column === 'file_name',
+                        );
+                        if (hasFileNombreIlike) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error(
+                                    'feedback queries must not use ilike on file_name for document_key; use resource_description->>\'document_key\' eq',
+                                ),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Unexpected file_name ilike filter',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [mockFeedbackRow],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 1, 'Should return feedback when query uses resource_description document_key filter');
+        assertEquals(documents[0].id, 'feedback-doc-key-id');
+    });
+
+    it('feedback query uses iterationNumber directly (consistent with other retrieval paths)', async () => {
+        const rule: InputRule[] = [{ type: 'feedback', slug: 'thesis', required: false }];
+        const expectedIteration = 2;
+        mockParentJob.payload.iterationNumber = expectedIteration;
+        mockParentJob.iteration_number = expectedIteration;
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_feedback: {
+                    select: (state: MockQueryBuilderState) => {
+                        const iterationFilter = state.filters.find(
+                            (f) => f.type === 'eq' && f.column === 'iteration_number',
+                        );
+                        if (!iterationFilter || iterationFilter.value !== expectedIteration) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error(
+                                    `feedback query must use iteration_number ${expectedIteration} from payload, got ${iterationFilter?.value ?? 'missing'}`,
+                                ),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Wrong or missing iteration_number',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 0, 'No feedback rows; iteration_number value was asserted by mock');
+    });
+
+    it('feedback query includes model_id filter when parent job has model_id', async () => {
+        const rules: InputRule[] = [{ type: 'feedback', slug: 'test-stage' }];
+        mockParentJob.payload.model_id = 'model-for-feedback';
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_feedback: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasModelIdFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'filter' &&
+                                filter.column === 'resource_description->>model_id' &&
+                                filter.operator === 'eq' &&
+                                filter.value === 'model-for-feedback',
+                        );
+
+                        if (!hasModelIdFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('Feedback query must filter by model_id from parent job'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing model_id filter',
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rules,
+        );
+    });
+
+    it('returns only the feedback matching the parent job model_id when multiple models have feedback', async () => {
+        const rules: InputRule[] = [{ type: 'feedback', slug: 'test-stage', document_key: FileType.business_case }];
+
+        const feedbackModelA: DialecticFeedbackRow = {
+            id: 'feedback-A',
+            session_id: 'sess-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            stage_slug: 'test-stage',
+            iteration_number: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            feedback_type: 'user_feedback',
+            file_name: 'business_case_feedback_A.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'path/A',
+            size_bytes: 100,
+            mime_type: 'text/markdown',
+            resource_description: { document_key: FileType.business_case, model_id: 'model-A' },
+            target_contribution_id: 'contrib-A',
+        };
+
+        const feedbackModelB: DialecticFeedbackRow = {
+            ...feedbackModelA,
+            id: 'feedback-B',
+            file_name: 'business_case_feedback_B.md',
+            resource_description: { document_key: FileType.business_case, model_id: 'model-B' },
+            target_contribution_id: 'contrib-B',
+        };
+
+        mockParentJob.payload.model_id = 'model-A';
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_feedback: {
+                    select: (state: MockQueryBuilderState) => {
+                        const allData = [feedbackModelA, feedbackModelB];
+                        const modelIdFilter = state.filters.find(
+                            (filter) => filter.type === 'filter' && filter.column === 'resource_description->>model_id'
+                        );
+                        const documentKeyFilter = state.filters.find(
+                            (filter) =>
+                                (filter.type === 'eq' && filter.column === 'resource_description->>document_key') ||
+                                (filter.type === 'filter' &&
+                                    filter.column === 'resource_description->>document_key' &&
+                                    filter.operator === 'eq'),
+                        );
+
+                        const modelIdFilterValue: string | null =
+                            modelIdFilter && typeof modelIdFilter.value === 'string'
+                                ? modelIdFilter.value
+                                : null;
+                        const documentKeyFilterValue: string | null =
+                            documentKeyFilter && typeof documentKeyFilter.value === 'string'
+                                ? documentKeyFilter.value
+                                : null;
+
+                        if (!modelIdFilterValue) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('Feedback query must filter by resource_description->>model_id when parent job has model_id'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing model_id filter',
+                            });
+                        }
+                        if (!documentKeyFilterValue) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('Feedback query must filter by resource_description->>\'document_key\' when InputRule.document_key is provided'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing document_key filter',
+                            });
+                        }
+
+                        const filteredData = allData.filter((row) => {
+                            const desc = row.resource_description;
+                            if (!isRecord(desc)) {
+                                return false;
+                            }
+
+                            const modelIdField = desc['model_id'];
+                            const documentKeyField = desc['document_key'];
+
+                            return (
+                                typeof modelIdField === 'string' &&
+                                typeof documentKeyField === 'string' &&
+                                modelIdField === modelIdFilterValue &&
+                                documentKeyField === documentKeyFilterValue
+                            );
+                        });
+
+                        return Promise.resolve({
+                            data: filteredData,
+                            error: null,
+                            count: filteredData.length,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rules,
+        );
+
+        assertEquals(documents.length, 1);
+        assertEquals(documents[0].id, 'feedback-A');
     });
 });

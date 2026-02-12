@@ -380,6 +380,7 @@ export async function assembleTurnPrompt(
     stage,
     project.initial_user_prompt,
     session.iteration_count,
+    job.payload.model_id,
   );
 
   // Merge context for prompt rendering

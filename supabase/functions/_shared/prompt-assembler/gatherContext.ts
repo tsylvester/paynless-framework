@@ -7,7 +7,6 @@ import {
   StageContext,
   GatheredRecipeContext,
 } from "./prompt-assembler.interface.ts";
-import { hasProcessingStrategy } from "../utils/type_guards.ts";
 import { DownloadStorageResult } from "../supabase_storage_utils.ts";
 import { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
 
@@ -23,6 +22,7 @@ export type GatherContextFn = (
   stage: StageContext,
   projectInitialUserPrompt: string,
   iterationNumber: number,
+  modelId?: string,
 ) => Promise<DynamicContextVariables>;
 
 export async function gatherContext(
@@ -37,16 +37,28 @@ export async function gatherContext(
   stage: StageContext,
   projectInitialUserPrompt: string,
   iterationNumber: number,
+  modelId?: string,
 ): Promise<DynamicContextVariables> {
   try {
-    const gatheredContext: GatheredRecipeContext = await gatherInputsForStageFn(
-      dbClient,
-      downloadFromStorageFn,
-      stage,
-      project,
-      session,
-      iterationNumber,
-    );
+    const gatheredContext: GatheredRecipeContext =
+      modelId !== undefined
+        ? await gatherInputsForStageFn(
+            dbClient,
+            downloadFromStorageFn,
+            stage,
+            project,
+            session,
+            iterationNumber,
+            modelId,
+          )
+        : await gatherInputsForStageFn(
+            dbClient,
+            downloadFromStorageFn,
+            stage,
+            project,
+            session,
+            iterationNumber,
+          );
 
     const dynamicContextVariables: DynamicContextVariables = {
       user_objective: project.project_name,

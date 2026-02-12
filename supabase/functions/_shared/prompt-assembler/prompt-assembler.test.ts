@@ -9,7 +9,9 @@ import { PromptAssembler } from "./prompt-assembler.ts";
 import {
   createMockSupabaseClient,
   type MockSupabaseClientSetup,
+  type MockSupabaseDataConfig,
 } from "../supabase.mock.ts";
+import { createMockDownloadFromStorage } from "../supabase_storage_utils.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database, Json } from "../../types_db.ts";
 import {
@@ -26,11 +28,15 @@ import {
   type RenderFn,
   type RenderPromptFunctionType,
   type DynamicContextVariables,
+  type GatheredRecipeContext,
 } from "./prompt-assembler.interface.ts";
+import { gatherInputsForStage, type GatherInputsForStageFn } from "./gatherInputsForStage.ts";
+import type { GatherContextFn } from "./gatherContext.ts";
 import {
   IFileManager,
   FileType,
   UploadContext,
+  type FileRecord,
 } from "../types/file_manager.types.ts";
 import type { ServiceError } from "../types.ts";
 import { FileManagerService } from "../services/file_manager.ts";
@@ -183,15 +189,147 @@ const mockJob: DialecticJobRow = {
   started_at: null,
 };
 
+// Definitive synthesis planner step shape: 20251006194549_synthesis_stage.sql plus
+// 20260109165706_state_machine_fix.sql (seed_prompt slug -> thesis) and
+// 20260112211754_antithesis_keys_fix.sql (branch_key -> header_context_pairwise).
+const synthesisPlannerOutputsRequired: OutputRule = {
+  system_materials: {
+    stage_rationale: "",
+    executive_summary: "",
+    input_artifacts_summary: "",
+  },
+  header_context_artifact: {
+    type: "header_context",
+    document_key: "header_context_pairwise",
+    artifact_class: "header_context",
+    file_type: "json",
+  },
+  context_for_documents: [
+    {
+      document_key: FileType.synthesis_pairwise_business_case,
+      content_to_include: {
+        thesis_document: "business_case",
+        critique_document: "business_case_critique",
+        comparison_signal: "comparison_vector",
+        executive_summary: "",
+      },
+    },
+  ],
+};
+
+const synthesisPlannerRecipeStep: DialecticStageRecipeStep = {
+  id: "synthesis-planner-step-id",
+  instance_id: "instance-id",
+  template_step_id: null,
+  step_key: "synthesis_prepare_pairwise_header",
+  step_slug: "prepare-pairwise-synthesis-header",
+  step_name: "Prepare Pairwise Synthesis Header",
+  step_description: "Generate HeaderContext JSON that guides pairwise synthesis turns.",
+  job_type: "PLAN",
+  prompt_type: "Planner",
+  prompt_template_id: "spt-synthesis-planner",
+  output_type: FileType.HeaderContext,
+  granularity_strategy: "all_to_one",
+  inputs_required: [
+    { type: "seed_prompt", slug: "thesis", document_key: FileType.SeedPrompt, required: true },
+  ],
+  inputs_relevance: [{ document_key: FileType.SeedPrompt, slug: "thesis", relevance: 1.0 }],
+  outputs_required: synthesisPlannerOutputsRequired,
+  config_override: {},
+  object_filter: {},
+  output_overrides: {},
+  is_skipped: false,
+  execution_order: 1,
+  parallel_group: null,
+  branch_key: "header_context_pairwise",
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
+
+const mockStageForPlanner: StageContext = {
+  ...mockStage,
+  slug: "synthesis",
+  recipe_step: synthesisPlannerRecipeStep,
+  system_prompts: { prompt_text: "Planner prompt for pairwise synthesis header." },
+};
+
+// EXECUTE step shape from 20251006194549_synthesis_stage.sql step 4.2 (synthesis_pairwise_business_case).
+const synthesisExecuteOutputsRequired: OutputRule = {
+  documents: [{
+    artifact_class: "assembled_json",
+    document_key: FileType.synthesis_pairwise_business_case,
+    template_filename: "synthesis_pairwise_business_case.json",
+    content_to_include: {},
+    file_type: "json",
+  }],
+  files_to_generate: [{
+    from_document_key: "synthesis_pairwise_business_case",
+    template_filename: "synthesis_pairwise_business_case.json",
+  }],
+};
+
+const synthesisExecuteRecipeStep: DialecticStageRecipeStep = {
+  id: "synthesis-pairwise-business-step-id",
+  instance_id: "instance-id",
+  template_step_id: null,
+  step_key: "synthesis_pairwise_business_case",
+  step_slug: "pairwise-synthesis-business-case",
+  step_name: "Pairwise Synthesis – Business Case",
+  step_description: "Combine the thesis business case with critiques.",
+  job_type: "EXECUTE",
+  prompt_type: "Turn",
+  prompt_template_id: "spt-synthesis-pairwise-business",
+  output_type: FileType.AssembledDocumentJson,
+  granularity_strategy: "per_source_document",
+  inputs_required: [],
+  inputs_relevance: [],
+  outputs_required: synthesisExecuteOutputsRequired,
+  config_override: {},
+  object_filter: {},
+  output_overrides: {},
+  is_skipped: false,
+  execution_order: 2,
+  parallel_group: 2,
+  branch_key: "synthesis_pairwise_business_case",
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
+
+const mockStageForTurn: StageContext = {
+  ...mockStage,
+  slug: "synthesis",
+  recipe_step: synthesisExecuteRecipeStep,
+  system_prompts: { prompt_text: "Turn prompt for pairwise business case." },
+};
+
+const plannerFileRecord: FileRecord = {
+  id: "planner-resource-id",
+  project_id: mockProject.id,
+  file_name: "planner_prompt.md",
+  storage_bucket: "test-bucket",
+  storage_path: "path/to/planner_prompt.md",
+  mime_type: "text/markdown",
+  size_bytes: 0,
+  resource_description: null,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  user_id: mockProject.user_id,
+  session_id: mockSession.id,
+  stage_slug: mockStageForPlanner.slug,
+  iteration_number: 1,
+  resource_type: "planner_prompt",
+  source_contribution_id: null,
+};
+
 // --- END: Mocks ---
 
 Deno.test("PromptAssembler", async (t) => {
   let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
   let denoEnvStub: any = null;
 
-  const setup = (envVars: Record<string, string> = {}) => {
+  const setup = (envVars: Record<string, string> = {}, config: MockSupabaseDataConfig = {}) => {
     denoEnvStub = stub(Deno.env, "get", (key: string) => envVars[key]);
-    mockSupabaseSetup = createMockSupabaseClient();
+    mockSupabaseSetup = createMockSupabaseClient(undefined, config);
     const client = mockSupabaseSetup.client as unknown as SupabaseClient<
       Database
     >;
@@ -709,6 +847,369 @@ Deno.test("PromptAssembler", async (t) => {
 
         assertEquals(capturedDeps?.projectInitialUserPrompt, "resolved from storage");
       } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "default gatherInputsForStageFn wrapper forwards modelId when provided",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        let capturedWrapper: GatherInputsForStageFn | null = null;
+        const captureSeedDeps = (
+          deps: AssembleSeedPromptDeps,
+        ): Promise<AssembledPrompt> => {
+          capturedWrapper = deps.gatherInputsForStageFn;
+          return Promise.resolve({
+            promptContent: "seed",
+            source_prompt_resource_id: "seed-id",
+          });
+        };
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          captureSeedDeps,
+        );
+        await assembler.assemble({
+          project: mockProject,
+          session: mockSession,
+          stage: mockStageForPlanner,
+          projectInitialUserPrompt: "init",
+          iterationNumber: 1,
+        });
+        assertEquals(capturedWrapper !== null, true);
+        const wrapper: GatherInputsForStageFn = capturedWrapper!;
+        const result: GatheredRecipeContext = await wrapper(
+          client,
+          assembler["downloadFromStorageFn"],
+          mockStageForPlanner,
+          mockProject,
+          mockSession,
+          1,
+          "test-model-id",
+        );
+        const directResult: GatheredRecipeContext = await gatherInputsForStage(
+          client,
+          assembler["downloadFromStorageFn"],
+          mockStageForPlanner,
+          mockProject,
+          mockSession,
+          1,
+          "test-model-id",
+        );
+        assertEquals(result.recipeStep, directResult.recipeStep);
+        assertEquals(Array.isArray(result.sourceDocuments), true);
+        assertEquals(result.recipeStep, synthesisPlannerRecipeStep);
+      } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "_gatherContext forwards modelId to gatherContextFn",
+    async () => {
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          system_prompts: {
+            select: {
+              data: [
+                {
+                  id: "spt-synthesis-pairwise-business",
+                  prompt_text: "Turn prompt.",
+                  document_template_id: "dt-synthesis-pairwise-business",
+                },
+              ],
+              error: null,
+            },
+          },
+          ai_providers: {
+            select: { data: [{ id: "model-1", name: "Test Model", provider: "test", slug: "test-slug" }], error: null },
+          },
+          dialectic_document_templates: {
+            select: {
+              data: [{
+                storage_bucket: "prompt-templates",
+                storage_path: "v1/dialectic",
+                file_name: "synthesis_pairwise_business.md",
+              }],
+              error: null,
+            },
+          },
+        },
+      };
+      const { client, fileManager } = setup(
+        { "SB_CONTENT_STORAGE_BUCKET": "test-bucket" },
+        config,
+      );
+      const uploadStub = stub(
+        fileManager!,
+        "uploadAndRegisterFile",
+        () => Promise.resolve({ record: plannerFileRecord, error: null }),
+      );
+      try {
+        const mockContext: DynamicContextVariables = {
+          user_objective: "obj",
+          domain: "dom",
+          context_description: "desc",
+          original_user_request: "req",
+          recipeStep: synthesisExecuteRecipeStep,
+        };
+        const calls: Parameters<GatherContextFn>[] = [];
+        const gatherContextFn: GatherContextFn = async (...args) => {
+          calls.push(args);
+          return mockContext;
+        };
+        
+        const templateContent = "template content";
+        const arrayBuffer = await new Blob([templateContent]).arrayBuffer();
+        const downloadFromStorageMock = createMockDownloadFromStorage({
+          mode: 'success',
+          data: arrayBuffer,
+        });
+
+        const assembleTurnPromptSpy = spy(
+          async (
+            _deps: AssembleTurnPromptDeps,
+            _params: AssembleTurnPromptParams,
+          ): Promise<AssembledPrompt> => {
+            return {
+              promptContent: "turn",
+              source_prompt_resource_id: "turn-id",
+            };
+          },
+        );
+
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined, // downloadFn
+          undefined, // renderPromptFn
+          undefined, // assembleSeedPromptFn
+          undefined, // assemblePlannerPromptFn
+          assembleTurnPromptSpy, // assembleTurnPromptFn
+          undefined, // assembleContinuationPromptFn
+          gatherContextFn, // gatherContextFn
+        );
+        
+        await assembler.assemble({
+          project: mockProject,
+          session: mockSession,
+          stage: mockStageForTurn,
+          projectInitialUserPrompt: "init",
+          iterationNumber: 1,
+          job: {
+            ...mockJob,
+            stage_slug: "synthesis",
+            job_type: "EXECUTE",
+            payload: {
+              model_id: "model-1",
+              model_slug: "test-slug",
+              inputs: {},
+              document_key: "synthesis_pairwise_business_case",
+            },
+          },
+        });
+        
+        assertSpyCalls(assembleTurnPromptSpy, 1);
+        const deps = assembleTurnPromptSpy.calls[0].args[0];
+        
+        // Now we can inspect the `gatherContext` function that was passed.
+        const passedGatherContext = deps.gatherContext;
+        await passedGatherContext(
+          client,
+          (bucket, path) => downloadFromStorageMock(client, bucket, path),
+          assembler['gatherInputsForStageFn'],
+          mockProject,
+          mockSession,
+          mockStageForTurn,
+          "init",
+          1,
+          "model-1"
+        );
+
+        assertEquals(calls.length, 1);
+        assertEquals(calls[0].length, 9);
+        assertEquals(calls[0][8], "model-1");
+      } finally {
+        uploadStub.restore();
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "_gatherInputsForStage forwards modelId to gatherInputsForStageFn",
+    async () => {
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          system_prompts: {
+            select: { data: [{ prompt_text: "Planner prompt.", document_template_id: null }], error: null },
+          },
+          ai_providers: {
+            select: { data: [{ id: "model-1", name: "Test Model", provider: "test", slug: "test-slug" }], error: null },
+          },
+        },
+      };
+      const { client, fileManager } = setup(
+        { "SB_CONTENT_STORAGE_BUCKET": "test-bucket" },
+        config,
+      );
+      const uploadStub = stub(
+        fileManager!,
+        "uploadAndRegisterFile",
+        () => Promise.resolve({ record: plannerFileRecord, error: null }),
+      );
+      try {
+        const mockGathered: GatheredRecipeContext = {
+          sourceDocuments: [],
+          recipeStep: synthesisPlannerRecipeStep,
+        };
+        const calls: Parameters<GatherInputsForStageFn>[] = [];
+        const gatherInputsForStageFn: GatherInputsForStageFn = async (
+          ...args
+        ) => {
+          calls.push(args);
+          return mockGathered;
+        };
+        const gatherContextCalls: Parameters<GatherContextFn>[] = [];
+        const gatherContextFn: GatherContextFn = async (...args) => {
+          gatherContextCalls.push(args);
+          return {
+            user_objective: "o",
+            domain: "d",
+            context_description: "c",
+            original_user_request: "r",
+            recipeStep: synthesisPlannerRecipeStep,
+          };
+        };
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          gatherContextFn,
+          undefined,
+          gatherInputsForStageFn,
+        );
+        await assembler.assemble({
+          project: mockProject,
+          session: mockSession,
+          stage: mockStageForPlanner,
+          projectInitialUserPrompt: "init",
+          iterationNumber: 1,
+          job: {
+            ...mockJob,
+            stage_slug: "synthesis",
+            job_type: "PLAN",
+            payload: { model_id: "model-1", model_slug: "test-slug" },
+          },
+        });
+        assertEquals(gatherContextCalls.length >= 1, true);
+        assertEquals(gatherContextCalls[0].length, 8);
+        const gatherInputsFnArg = gatherContextCalls[0][2];
+        const result: GatheredRecipeContext = await gatherInputsFnArg(
+          client,
+          assembler["downloadFromStorageFn"],
+          mockStageForPlanner,
+          mockProject,
+          mockSession,
+          1,
+          "forwarded-model-id",
+        );
+        assertEquals(result.recipeStep, synthesisPlannerRecipeStep);
+      } finally {
+        uploadStub.restore();
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "all three methods work unchanged when modelId is omitted (backward-compatible)",
+    async () => {
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          system_prompts: {
+            select: { data: [{ prompt_text: "Planner prompt.", document_template_id: null }], error: null },
+          },
+          ai_providers: {
+            select: { data: [{ id: "model-1", name: "Test Model", provider: "test", slug: "test-slug" }], error: null },
+          },
+        },
+      };
+      const { client, fileManager } = setup(
+        { "SB_CONTENT_STORAGE_BUCKET": "test-bucket" },
+        config,
+      );
+      const uploadStub = stub(
+        fileManager!,
+        "uploadAndRegisterFile",
+        () => Promise.resolve({ record: plannerFileRecord, error: null }),
+      );
+      try {
+        const mockGathered: GatheredRecipeContext = {
+          sourceDocuments: [],
+          recipeStep: synthesisPlannerRecipeStep,
+        };
+        const gatherInputsCalls: Parameters<GatherInputsForStageFn>[] = [];
+        const gatherInputsForStageFn: GatherInputsForStageFn = async (
+          ...args
+        ) => {
+          gatherInputsCalls.push(args);
+          return mockGathered;
+        };
+        const gatherContextCalls: Parameters<GatherContextFn>[] = [];
+        const gatherContextFn: GatherContextFn = async (...args) => {
+          gatherContextCalls.push(args);
+          return {
+            user_objective: "o",
+            domain: "d",
+            context_description: "c",
+            original_user_request: "r",
+            recipeStep: synthesisPlannerRecipeStep,
+          };
+        };
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          gatherContextFn,
+          undefined,
+          gatherInputsForStageFn,
+        );
+        await assembler.assemble({
+          project: mockProject,
+          session: mockSession,
+          stage: mockStageForPlanner,
+          projectInitialUserPrompt: "init",
+          iterationNumber: 1,
+          job: {
+            ...mockJob,
+            stage_slug: "synthesis",
+            job_type: "PLAN",
+            payload: { model_id: "model-1", model_slug: "test-slug" },
+          },
+        });
+        assertEquals(gatherContextCalls.length >= 1, true);
+        assertEquals(gatherContextCalls[0].length, 8);
+      } finally {
+        uploadStub.restore();
         teardown();
       }
     },

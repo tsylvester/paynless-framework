@@ -1184,7 +1184,7 @@ withSupabaseEnv("handleRequest - getProjectResourceContent", async (t) => {
     const payload = { projectId: 'proj-123', resourceId: 'res-456' };
 
     await t.step("should call getProjectResourceContent and return 200 on success", async () => {
-        const mockResponse: GetProjectResourceContentResponse = { fileName: 'test.txt', mimeType: 'text/plain', content: 'hello world', sourceContributionId: null };
+        const mockResponse: GetProjectResourceContentResponse = { fileName: 'test.txt', mimeType: 'text/plain', content: 'hello world', sourceContributionId: null, resourceType: null };
         const getSpy = spy(() => Promise.resolve({ data: mockResponse, status: 200 }));
         const mockHandlers = createMockHandlers({ getProjectResourceContent: getSpy });
 

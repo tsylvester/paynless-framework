@@ -2578,4 +2578,227 @@ Deno.test("assembleTurnPrompt", async (t) => {
     },
   );
 
+  await t.step("deps.gatherContext is called with job.payload.model_id as the 9th argument", async () => {
+    const gatherContextCalls: Parameters<GatherContextFn>[] = [];
+    const spyGatherContext: GatherContextFn = async (
+      ...args: Parameters<GatherContextFn>
+    ) => {
+      gatherContextCalls.push(args);
+      return {
+        user_objective: "mock user objective",
+        domain: "Software Development",
+        context_description: "A test context",
+        original_user_request: "The original request",
+        recipeStep: defaultRecipeStep,
+        sourceDocuments: [],
+      };
+    };
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-turn-resource-id-model-id-test",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          },
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
+      },
+      storageMock: {
+        downloadResult: (bucket, path) => {
+          const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+          if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+            return Promise.resolve({
+              data: new Blob([JSON.stringify(headerContextContent)]),
+              error: null,
+            });
+          }
+          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
+            return Promise.resolve({
+              data: new Blob([documentTemplateContent]),
+              error: null,
+            });
+          }
+          return Promise.resolve({
+            data: null,
+            error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`),
+          });
+        },
+      },
+    };
+
+    const { client } = setup(config);
+    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    try {
+      const mockDownloadFromStorage = createConditionalDownloadMock();
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        gatherContext: spyGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
+        job: mockTurnJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+      };
+      await assembleTurnPrompt(deps, params);
+
+      assertEquals(gatherContextCalls.length >= 1, true);
+      assertEquals(gatherContextCalls[0].length, 9);
+      const validatedModelId = isRecord(params.job.payload) && typeof params.job.payload.model_id === "string"
+        ? params.job.payload.model_id
+        : null;
+      assertEquals(validatedModelId, "model-123");
+      assertEquals(gatherContextCalls[0][8], validatedModelId);
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("the 9th argument to deps.gatherContext matches the validated model_id from the job payload", async () => {
+    const expectedModelId = "model-scoped-feedback-id";
+    const gatherContextCalls: Parameters<GatherContextFn>[] = [];
+    const spyGatherContext: GatherContextFn = async (
+      ...args: Parameters<GatherContextFn>
+    ) => {
+      gatherContextCalls.push(args);
+      return {
+        user_objective: "mock user objective",
+        domain: "Software Development",
+        context_description: "A test context",
+        original_user_request: "The original request",
+        recipeStep: defaultRecipeStep,
+        sourceDocuments: [],
+      };
+    };
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-turn-resource-id-9th-arg-test",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: expectedModelId, name: "Scoped Model", provider: "test", slug: "scoped-model" },
+            ],
+          },
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
+      },
+      storageMock: {
+        downloadResult: (bucket, path) => {
+          const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+          if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+            return Promise.resolve({
+              data: new Blob([JSON.stringify(headerContextContent)]),
+              error: null,
+            });
+          }
+          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
+            return Promise.resolve({
+              data: new Blob([documentTemplateContent]),
+              error: null,
+            });
+          }
+          return Promise.resolve({
+            data: null,
+            error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`),
+          });
+        },
+      },
+    };
+
+    const { client } = setup(config);
+    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("PRECONDITION_FAILED: Mock turn job payload is not a record");
+    }
+    const jobWithDistinctModelId: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        model_id: expectedModelId,
+        model_slug: "scoped-model",
+      },
+    };
+
+    try {
+      const mockDownloadFromStorage = createConditionalDownloadMock();
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        gatherContext: spyGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
+        job: jobWithDistinctModelId,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+      };
+      await assembleTurnPrompt(deps, params);
+
+      assertEquals(gatherContextCalls.length >= 1, true);
+      assertEquals(gatherContextCalls[0].length, 9);
+      assertEquals(gatherContextCalls[0][8], expectedModelId);
+      const validatedModelId = isRecord(params.job.payload) && typeof params.job.payload.model_id === "string"
+        ? params.job.payload.model_id
+        : null;
+      assertEquals(gatherContextCalls[0][8], validatedModelId);
+    } finally {
+      teardown();
+    }
+  });
+
 });

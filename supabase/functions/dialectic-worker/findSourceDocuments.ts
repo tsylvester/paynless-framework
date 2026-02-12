@@ -249,12 +249,19 @@ export async function findSourceDocuments(
 
         switch (rule.type) {
             case 'feedback': {
-                let feedbackQuery = dbClient.from('dialectic_feedback').select('*').eq('session_id', sessionId);
+                let feedbackQuery = dbClient
+                    .from('dialectic_feedback')
+                    .select('*')
+                    .eq('session_id', sessionId)
+                    .eq('iteration_number', normalizedIterationNumber);
                 if (shouldFilterByStage) {
                     feedbackQuery = feedbackQuery.eq('stage_slug', stageSlugCandidate);
                 }
                 if (rule.document_key) {
-                    feedbackQuery = feedbackQuery.ilike('file_name', `%${rule.document_key}%`);
+                    feedbackQuery = feedbackQuery.filter('resource_description->>document_key', 'eq', rule.document_key);
+                }
+                if (parentJob.payload.model_id) {
+                    feedbackQuery = feedbackQuery.filter('resource_description->>model_id', 'eq', parentJob.payload.model_id);
                 }
                 const { data, error: feedbackError } = await feedbackQuery;
                 if (feedbackError) {
@@ -264,8 +271,7 @@ export async function findSourceDocuments(
                 const feedbackRecordsRaw = (data ?? []);
                 ensureRecordsHaveStorage(feedbackRecordsRaw);
                 const feedbackRecords = sortRecordsByRecency(feedbackRecordsRaw);
-                const filteredFeedback = filterRecordsByDocumentKey(feedbackRecords, rule.document_key);
-                const dedupedFeedback = dedupeByFileName(filteredFeedback);
+                const dedupedFeedback = dedupeByFileName(feedbackRecords);
                 sourceRecords = selectRecordsForRule(dedupedFeedback, allowMultipleMatches, usedRecordKeys);
                 break;
             }
@@ -468,9 +474,13 @@ export async function findSourceDocuments(
         }
 
         if (!sourceRecords || sourceRecords.length === 0) {
-            // Only throw if the rule is required (required === true or undefined, which defaults to required).
-            // If required === false, the input is optional and we should skip it without error.
-            if (rule.required !== false) {
+            const isRuleRequired = rule.type === 'feedback'
+                ? rule.required === true
+                : rule.required !== false;
+
+            // For feedback rules, absence is non-fatal unless explicitly required.
+            // For all other rule types, required defaults to true when undefined.
+            if (isRuleRequired) {
                 throw new Error(`A required input of type '${rule.type}' was not found for the current job.`);
             }
             // If required === false, skip this rule and continue to the next one

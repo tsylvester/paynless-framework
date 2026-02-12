@@ -11,6 +11,7 @@ import { Logger } from '../_shared/logger.ts';
 import { 
   IFileManager, 
   CanonicalPathParams, 
+  DocumentKey,
   ModelContributionFileTypes, 
   FileType 
 } from '../_shared/types/file_manager.types.ts';
@@ -434,6 +435,31 @@ type GetAllStageProgressAction = {
   payload: GetAllStageProgressPayload;
 };
 
+export interface GetStageDocumentFeedbackPayload {
+  sessionId: string;
+  stageSlug: DialecticStage['slug'];
+  iterationNumber: number;
+  modelId: string;
+  documentKey: DocumentKey;
+}
+
+export interface GetStageDocumentFeedbackDeps {
+  logger: ILogger;
+}
+
+export interface StageDocumentFeedback {
+  id: string;
+  content: string;
+  createdAt: string;
+}
+
+export type GetStageDocumentFeedbackResponse = StageDocumentFeedback[];
+
+type GetStageDocumentFeedbackAction = {
+  action: 'getStageDocumentFeedback';
+  payload: GetStageDocumentFeedbackPayload;
+};
+
 // The main union type for all possible JSON requests to the service.
 export type DialecticServiceRequest =
   | ListProjectsAction
@@ -457,6 +483,7 @@ export type DialecticServiceRequest =
   | GetStageRecipeAction
   | ListStageDocumentsAction
   | GetAllStageProgressAction
+  | GetStageDocumentFeedbackAction
   | SubmitStageDocumentFeedbackAction;
 
 // --- END: Discriminated Union ---
@@ -1181,11 +1208,6 @@ export interface SubmitStageResponsesPayload {
   stageSlug: DialecticStage['slug'];
   currentIterationNumber: number;
   responses: SubmitStageResponseItem[];
-  userStageFeedback?: {
-    content: string;
-    feedbackType: string;
-    resourceDescription?: Json | null;
-  };
 }
 
 /**

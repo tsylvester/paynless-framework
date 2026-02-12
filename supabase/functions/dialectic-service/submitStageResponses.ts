@@ -358,28 +358,30 @@ export async function submitStageResponses(
         logger.error("[submitStageResponses] Critical error: input.document_key is undefined or null.");
         return { error: { message: "Internal server error: input.document_key is undefined or null.", status: 500 }, status: 500 };
       }
+      if (typeof input.slug !== 'string' || input.slug.length === 0) {
+        logger.error("[submitStageResponses] Critical error: input.slug is required and must be a non-empty string.");
+        return { error: { message: "Internal server error: input.slug is required and must be a non-empty string.", status: 500 }, status: 500 };
+      }
+      if (input.required === false) {
+        continue;
+      }
       if (input.type === 'document') {
         let resourceQuery = dbClient
           .from('dialectic_project_resources')
           .select('id')
           .eq('project_id', project.id)
-          .eq('resource_type', 'rendered_document');
+          .eq('resource_type', 'rendered_document')
+          .eq('stage_slug', input.slug);
 
         if (payload.sessionId) {
           resourceQuery = resourceQuery.eq('session_id', payload.sessionId);
-        }
-
-        if (payload.stageSlug) {
-          resourceQuery = resourceQuery.eq('stage_slug', payload.stageSlug);
         }
 
         if (iterationNumber !== undefined) {
           resourceQuery = resourceQuery.eq('iteration_number', iterationNumber);
         }
 
-        if (input.document_key) {
-          resourceQuery = resourceQuery.ilike('file_name', `%${input.document_key}%`);
-        }
+        resourceQuery = resourceQuery.ilike('file_name', `%${input.document_key}%`);
 
         const { data: requiredArtifact, error: artifactError } = await resourceQuery
           .limit(1)
@@ -387,6 +389,75 @@ export async function submitStageResponses(
 
         if (artifactError || !requiredArtifact) {
           logger.warn(`[submitStageResponses] Precondition failed for next stage: missing required document '${input.document_key}'.`);
+          return { error: { message: "Preconditions for the next stage are not met.", status: 412 }, status: 412 };
+        }
+      } else if (input.type === 'contribution') {
+        const contributionQuery = dbClient
+          .from('dialectic_contributions')
+          .select('id')
+          .eq('session_id', payload.sessionId)
+          .eq('iteration_number', iterationNumber)
+          .eq('is_latest_edit', true)
+          .eq('stage', input.slug)
+          .ilike('file_name', `%${input.document_key}%`);
+        const { data: contributionRow, error: contributionError } = await contributionQuery
+          .limit(1)
+          .maybeSingle();
+        if (contributionError || !contributionRow) {
+          logger.warn(`[submitStageResponses] Precondition failed for next stage: missing required contribution '${input.document_key}' (stage: ${input.slug}).`);
+          return { error: { message: "Preconditions for the next stage are not met.", status: 412 }, status: 412 };
+        }
+      } else if (input.type === 'header_context') {
+        const headerQuery = dbClient
+          .from('dialectic_contributions')
+          .select('id')
+          .eq('session_id', payload.sessionId)
+          .eq('iteration_number', iterationNumber)
+          .eq('is_latest_edit', true)
+          .eq('contribution_type', 'header_context')
+          .eq('stage', input.slug)
+          .ilike('file_name', `%${input.document_key}%`);
+        const { data: headerRow, error: headerError } = await headerQuery
+          .limit(1)
+          .maybeSingle();
+        if (headerError || !headerRow) {
+          logger.warn(`[submitStageResponses] Precondition failed for next stage: missing required header_context '${input.document_key}' (stage: ${input.slug}).`);
+          return { error: { message: "Preconditions for the next stage are not met.", status: 412 }, status: 412 };
+        }
+      } else if (input.type === 'feedback') {
+        let feedbackQuery = dbClient
+          .from('dialectic_feedback')
+          .select('id')
+          .eq('session_id', payload.sessionId)
+          .eq('stage_slug', input.slug)
+          .eq('iteration_number', iterationNumber)
+          .eq('user_id', project.user_id);
+        feedbackQuery = feedbackQuery.filter('resource_description->>document_key', 'eq', input.document_key);
+        const { data: feedbackRow, error: feedbackError } = await feedbackQuery
+          .limit(1)
+          .maybeSingle();
+        if (feedbackError || !feedbackRow) {
+          logger.warn(`[submitStageResponses] Precondition failed for next stage: missing required feedback '${input.document_key}' (stage: ${input.slug}).`);
+          return { error: { message: "Preconditions for the next stage are not met.", status: 412 }, status: 412 };
+        }
+      } else if (input.type === 'seed_prompt') {
+        let seedQuery = dbClient
+          .from('dialectic_project_resources')
+          .select('id')
+          .eq('project_id', project.id)
+          .eq('resource_type', 'seed_prompt')
+          .eq('stage_slug', input.slug);
+        if (payload.sessionId) {
+          seedQuery = seedQuery.eq('session_id', payload.sessionId);
+        }
+        if (iterationNumber !== undefined) {
+          seedQuery = seedQuery.eq('iteration_number', iterationNumber);
+        }
+        const { data: seedRow, error: seedError } = await seedQuery
+          .limit(1)
+          .maybeSingle();
+        if (seedError || !seedRow) {
+          logger.warn(`[submitStageResponses] Precondition failed for next stage: missing required seed_prompt (stage: ${input.slug}).`);
           return { error: { message: "Preconditions for the next stage are not met.", status: 412 }, status: 412 };
         }
       }

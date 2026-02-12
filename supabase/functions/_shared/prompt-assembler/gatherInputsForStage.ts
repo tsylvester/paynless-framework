@@ -23,6 +23,7 @@ export type GatherInputsForStageFn = (
   project: ProjectContext,
   session: SessionContext,
   iterationNumber: number,
+  modelId?: string,
 ) => Promise<GatheredRecipeContext>;
 
 export async function gatherInputsForStage(
@@ -35,6 +36,7 @@ export async function gatherInputsForStage(
   project: ProjectContext,
   session: SessionContext,
   iterationNumber: number,
+  modelId?: string,
 ): Promise<GatheredRecipeContext> {
   const gatheredContext: GatheredRecipeContext = {
     sourceDocuments: [],
@@ -249,52 +251,122 @@ export async function gatherInputsForStage(
         }
         if (criticalError) break;
       } else if (rule.type === "feedback") {
-        const targetIteration = iterationNumber > 1 ? iterationNumber - 1 : 1;
-        const { data: feedbackRecord, error: feedbackError } = await dbClient
+        let feedbackQuery = dbClient
           .from("dialectic_feedback")
           .select("id, storage_bucket, storage_path, file_name")
           .eq("session_id", session.id)
           .eq("stage_slug", rule.slug)
-          .eq("iteration_number", targetIteration)
-          .eq("user_id", project.user_id)
-          .limit(1)
-          .single();
+          .eq("iteration_number", iterationNumber)
+          .eq("user_id", project.user_id);
+        if (rule.document_key != null) {
+          feedbackQuery = feedbackQuery.filter(
+            "resource_description->>document_key",
+            "eq",
+            rule.document_key,
+          );
+        }
+        if (modelId != null) {
+          feedbackQuery = feedbackQuery.filter(
+            "resource_description->>model_id",
+            "eq",
+            modelId,
+          );
+        }
 
-        if (feedbackError || !feedbackRecord) {
-          if (rule.required !== false) {
+        if (modelId != null) {
+          const { data: feedbackRecord, error: feedbackError } = await feedbackQuery
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (feedbackError || !feedbackRecord) {
+            if (rule.required !== false) {
+              criticalError = new Error(
+                `Required feedback for stage '${displayName}' was not found.`,
+              );
+              break;
+            }
+            continue;
+          }
+
+          const feedbackPath =
+            `${feedbackRecord.storage_path}/${feedbackRecord.file_name}`;
+          const { data: feedbackContent, error: feedbackDownloadError } =
+            await downloadFromStorageFn(
+              feedbackRecord.storage_bucket,
+              feedbackPath,
+            );
+
+          if (feedbackContent && !feedbackDownloadError) {
+            const content = new TextDecoder().decode(feedbackContent);
+            gatheredContext.sourceDocuments.push({
+              id: feedbackRecord.id,
+              type: "feedback",
+              content: content,
+              metadata: {
+                displayName: displayName,
+                header: rule.section_header,
+              },
+            });
+          } else {
+            if (rule.required !== false) {
+              criticalError = new Error(
+                `Failed to download REQUIRED feedback for stage '${displayName}'.`,
+              );
+              break;
+            }
+          }
+        } else {
+          const { data: feedbackRows, error: feedbackError } = await feedbackQuery
+            .order("created_at", { ascending: false });
+
+          if (feedbackError) {
+            if (rule.required !== false) {
+              criticalError = new Error(
+                `Required feedback for stage '${displayName}' was not found.`,
+              );
+              break;
+            }
+            continue;
+          }
+
+          const rows = feedbackRows ?? [];
+          if (rows.length === 0 && rule.required !== false) {
             criticalError = new Error(
               `Required feedback for stage '${displayName}' was not found.`,
             );
             break;
           }
-          continue;
-        }
+          if (rows.length === 0) continue;
 
-        const feedbackPath =
-          `${feedbackRecord.storage_path}/${feedbackRecord.file_name}`;
-        const { data: feedbackContent, error: feedbackDownloadError } =
-          await downloadFromStorageFn(
-            feedbackRecord.storage_bucket,
-            feedbackPath,
-          );
+          for (const feedbackRecord of rows) {
+            const feedbackPath =
+              `${feedbackRecord.storage_path}/${feedbackRecord.file_name}`;
+            const { data: feedbackContent, error: feedbackDownloadError } =
+              await downloadFromStorageFn(
+                feedbackRecord.storage_bucket,
+                feedbackPath,
+              );
 
-        if (feedbackContent && !feedbackDownloadError) {
-          const content = new TextDecoder().decode(feedbackContent);
-          gatheredContext.sourceDocuments.push({
-            id: feedbackRecord.id,
-            type: "feedback",
-            content: content,
-            metadata: {
-              displayName: displayName,
-              header: rule.section_header,
-            },
-          });
-        } else {
-          if (rule.required !== false) {
-            criticalError = new Error(
-              `Failed to download REQUIRED feedback for stage '${displayName}'.`,
-            );
-            break;
+            if (feedbackContent && !feedbackDownloadError) {
+              const content = new TextDecoder().decode(feedbackContent);
+              gatheredContext.sourceDocuments.push({
+                id: feedbackRecord.id,
+                type: "feedback",
+                content: content,
+                metadata: {
+                  displayName: displayName,
+                  header: rule.section_header,
+                },
+              });
+            } else {
+              if (rule.required !== false) {
+                criticalError = new Error(
+                  `Failed to download REQUIRED feedback for stage '${displayName}'.`,
+                );
+                break;
+              }
+            }
           }
         }
       } else if (rule.type === "header_context") {

@@ -188,48 +188,6 @@
         *   `[✅]`   Overall percentage formula: (completedStages * 100 + currentStagePercentage) / totalStages
     *   `[✅]`   **Commit** `fix(store): selectUnifiedProjectProgress calculates progress from jobProgress, not selectedModels`
 
-*   `[ ]`   [UI] apps/web/src/components/common/`DynamicProgressBar.tsx` **Display granular step-by-step progress from job-based selector**
-    *   `[ ]`   `objective.md`
-        *   `[ ]`   Display overall progress percentage from selectUnifiedProjectProgress.overallPercentage
-        *   `[ ]`   No reference to selectedModels - all data from selector
-    *   `[ ]`   `role.md`
-        *   `[ ]`   UI component that visualizes progress to the user
-        *   `[ ]`   Consumes selectUnifiedProjectProgress selector output
-        *   `[ ]`   Single progress display component used across the application
-    *   `[ ]`   `module.md`
-        *   `[ ]`   Boundary: selector output → React component → rendered UI
-        *   `[ ]`   Input: sessionId prop to pass to selector
-        *   `[ ]`   Output: Visual progress bar with percentage that reflects the exact actual progress 
-    *   `[ ]`   `deps.md`
-        *   `[ ]`   useDialecticStore hook for accessing store
-        *   `[ ]`   selectUnifiedProjectProgress selector from dialecticStore.selectors.ts
-        *   `[ ]`   UnifiedProjectProgress type from @paynless/types
-        *   `[ ]`   Existing Progress UI component from shadcn/ui (or similar)
-    *   `[ ]`   unit/`DynamicProgressBar.test.tsx`
-        *   `[ ]`   Add test: `renders overall percentage from selectUnifiedProjectProgress.overallPercentage`
-        *   `[ ]`   Add test: `renders current stage name from selectUnifiedProjectProgress.currentStageSlug`
-        *   `[ ]`   Add test: `renders step progress as completedJobs/totalJobs for current stage steps`
-        *   `[ ]`   Add test: `renders 0% when jobProgress is empty (no jobs started)`
-        *   `[ ]`   Add test: `renders 100% when all jobs completed for all stages`
-        *   `[ ]`   Add test: `does not reference selectedModels`
-        *   `[ ]`   Add test: `updates in real-time as selector output changes (job notifications processed)`
-    *   `[ ]`   `DynamicProgressBar.tsx`
-        *   `[ ]`   Import selectUnifiedProjectProgress from @paynless/store
-        *   `[ ]`   Call selector with sessionId prop: `const progress = useDialecticStore(state => selectUnifiedProjectProgress(state, sessionId))`
-        *   `[ ]`   Render main progress bar with progress.overallPercentage
-        *   `[ ]`   Render current stage section showing progress.currentStageSlug
-        *   `[ ]`   For current stage, iterate progress.stageDetails[currentIndex].stepsDetail and render each step's progress
-        *   `[ ]`   Remove any existing code that reads from selectedModels or calculates progress inline
-    *   `[ ]`   integration/`DynamicProgressBar.integration.test.tsx`
-        *   `[ ]`   Add test: `displays correct percentage when stageRunProgress has jobProgress with completed jobs`
-        *   `[ ]`   Add test: `displays correct percentage after job notification updates jobProgress`
-        *   `[ ]`   Add test: `displays consistent progress with StageTabCard completion badges`
-    *   `[ ]`   `requirements.md`
-        *   `[ ]`   Progress display must match selectUnifiedProjectProgress output exactly
-        *   `[ ]`   No inline progress calculations - all from selector
-        *   `[ ]`   Progress must reflect job status (not document status)
-    *   `[ ]`   **Commit** `feat(ui): DynamicProgressBar displays job-based granular step progress from SSOT selector`
-
 *   `[✅]` `[BE]` supabase/functions/_shared/services/`file_manager.ts` **Fix cleanup logic to only delete specific uploaded file**
     *   `[✅]` `objective.md`
         *   `[✅]` When DB registration fails after successful upload, only the specific file just uploaded should be deleted
@@ -373,7 +331,7 @@
         *   `[✅]` Delete `selectStageDocumentResourceMetadataByKey` (lines 1144–1148; zero consumers in production or test code)
         *   `[✅]` Remove `EditedDocumentResource` import if now unused in this file
 
-*   `[ ]` `[STORE]` packages/store/`dialecticStore.ts` **Remove stageDocumentResources map and updateStageDocumentResource action; all identity reads from stageDocumentContent scalars**
+*   `[✅]` `[STORE]` packages/store/`dialecticStore.ts` **Remove stageDocumentResources map and updateStageDocumentResource action; all identity reads from stageDocumentContent scalars**
     *   `[✅]` interface/`dialectic.types.ts` (packages/types)
         *   `[✅]` Remove `resource: EditedDocumentResource | null` from `StageDocumentContentState`
         *   `[✅]` Remove `stageDocumentResources: Record<string, EditedDocumentResource>` from `DialecticStateValues`
@@ -390,214 +348,746 @@
         *   `[✅]` Test: `submitStageResponses` submits both dirty edit and dirty feedback for same key in a single call
         *   `[✅]` Remove all `stageDocumentResources` seeding from test state
         *   `[✅]` Remove all literal `resource:` fields from `StageDocumentContentState` constructions
-    *   `[ ]` `dialecticStore.ts`
-        *   `[ ]` Remove `stageDocumentResources: {}` from initial state (line 192)
-        *   `[ ]` Delete `updateStageDocumentResource` action entirely (lines 2288–2308)
-        *   `[ ]` `saveContributionEdit` success path (lines 2251–2264): replace `state.stageDocumentResources[serializedKey] = resource` with `documentEntry.sourceContributionId = resource.source_contribution_id; documentEntry.resourceType = resource.resource_type;` (the `documentEntry` variable already exists from `ensureStageDocumentContent` call above)
-        *   `[ ]` `submitStageResponses` (lines 1989–2064): remove `stageDocumentResources` from destructure; delete `const resource = stageDocumentResources[serializedKey]`
-        *   `[ ]` `submitStageResponses` edit path (lines 2004–2029): replace `if (!resource)` gate with `if (!content.resourceType)` gate; replace `resource.resource_type` with `content.resourceType`; `content.sourceContributionId` already used for `originalContributionIdToEdit` (line 2020)
-        *   `[ ]` `submitStageResponses` feedback path (lines 2032–2063): delete `if (!resource) { continue; }` gate entirely; replace `resource.source_contribution_id` (line 2059) with `content.sourceContributionId`
+    *   `[✅]` `dialecticStore.ts`
+        *   `[✅]` Remove `stageDocumentResources: {}` from initial state (line 192)
+        *   `[✅]` Delete `updateStageDocumentResource` action entirely (lines 2288–2308)
+        *   `[✅]` `saveContributionEdit` success path (lines 2251–2264): replace `state.stageDocumentResources[serializedKey] = resource` with `documentEntry.sourceContributionId = resource.source_contribution_id; documentEntry.resourceType = resource.resource_type;` (the `documentEntry` variable already exists from `ensureStageDocumentContent` call above)
+        *   `[✅]` `submitStageResponses` (lines 1989–2064): remove `stageDocumentResources` from destructure; delete `const resource = stageDocumentResources[serializedKey]`
+        *   `[✅]` `submitStageResponses` edit path (lines 2004–2029): replace `if (!resource)` gate with `if (!content.resourceType)` gate; replace `resource.resource_type` with `content.resourceType`; `content.sourceContributionId` already used for `originalContributionIdToEdit` (line 2020)
+        *   `[✅]` `submitStageResponses` feedback path (lines 2032–2063): delete `if (!resource) { continue; }` gate entirely; replace `resource.source_contribution_id` (line 2059) with `content.sourceContributionId`
     *   `[✅]` unit/`dialecticStore.documents.test.ts`
         *   `[✅]` Remove `expect(entry?.resource).toBe(null)` assertions (lines 3073, 3087)
         *   `[✅]` Remove all literal `resource:` fields from `StageDocumentContentState` constructions
-    *   `[ ]` integration/`dialecticStore.integration.test.ts`
-        *   `[ ]` Remove all `stageDocumentResources` seeding from test state
-        *   `[ ]` Update `saveContributionEdit` integration assertions to verify `stageDocumentContent[key].sourceContributionId` and `.resourceType` are updated from response
-        *   `[ ]` Remove all literal `resource:` fields from `StageDocumentContentState` constructions
-    *   `[ ]` **Commit** `refactor(store): delete stageDocumentResources map and updateStageDocumentResource action; saveContributionEdit writes sourceContributionId and resourceType scalars onto stageDocumentContent entry`
-        *   `[ ]` `stageDocumentResources` deleted from type, initial state, and all consumers
-        *   `[ ]` `updateStageDocumentResource` action deleted from type, implementation, mock, and tests
-        *   `[ ]` `resource: EditedDocumentResource | null` deleted from `StageDocumentContentState`
-        *   `[ ]` `saveContributionEdit` writes two scalars to existing content entry
-        *   `[ ]` `submitStageResponses` reads `content.sourceContributionId` and `content.resourceType` — no resource gates
-        *   `[ ]` `EditedDocumentResource` type preserved (backend API contract; used by API client, backend handler, type guards, API tests)
-        *   `[ ]` All three user actions (Save Edit, Save Feedback, Submit Responses) work independently from the moment a document loads
+    *   `[✅]` integration/`dialecticStore.integration.test.ts`
+        *   `[✅]` Remove all `stageDocumentResources` seeding from test state
+        *   `[✅]` Update `saveContributionEdit` integration assertions to verify `stageDocumentContent[key].sourceContributionId` and `.resourceType` are updated from response
+        *   `[✅]` Remove all literal `resource:` fields from `StageDocumentContentState` constructions
+    *   `[✅]` **Commit** `refactor(store): delete stageDocumentResources map and updateStageDocumentResource action; saveContributionEdit writes sourceContributionId and resourceType scalars onto stageDocumentContent entry`
+        *   `[✅]` `stageDocumentResources` deleted from type, initial state, and all consumers
+        *   `[✅]` `updateStageDocumentResource` action deleted from type, implementation, mock, and tests
+        *   `[✅]` `resource: EditedDocumentResource | null` deleted from `StageDocumentContentState`
+        *   `[✅]` `saveContributionEdit` writes two scalars to existing content entry
+        *   `[✅]` `submitStageResponses` reads `content.sourceContributionId` and `content.resourceType` — no resource gates
+        *   `[✅]` `EditedDocumentResource` type preserved (backend API contract; used by API client, backend handler, type guards, API tests)
+        *   `[✅]` All three user actions (Save Edit, Save Feedback, Submit Responses) work independently from the moment a document loads
 
-*   `[ ]` `[UI]` apps/web/src/components/dialectic/`GeneratedContributionCard.tsx` **Replace hardcoded resourceType with state-provided value; remove all stageDocumentResources references from UI layer**
-    *   `[ ]` `dialecticStore.mock.ts` (apps/web/src/mocks)
-        *   `[ ]` Remove `stageDocumentResources: {}` from mock initial state
-        *   `[ ]` Remove `updateStageDocumentResource` mock action (lines 678–695)
-        *   `[ ]` Remove all literal `resource:` fields from mock `StageDocumentContentState` entries
-        *   `[ ]` Rewrite `saveContributionEdit` mock (lines 503–520): remove `stageDocumentResources[serializedKey] = resource`; write `documentEntry.sourceContributionId = resource.source_contribution_id; documentEntry.resourceType = resource.resource_type;` instead
-    *   `[ ]` unit/`GeneratedContributionCard.test.tsx`
-        *   `[ ]` Test: `handleSaveEdit` reads `resourceType` from `documentResourceState.resourceType` instead of hardcoded `"rendered_document"`
-        *   `[ ]` Remove `updateStageDocumentResource` call in test (lines 835–863); replace with direct `stageDocumentContent` seeding that sets `sourceContributionId` and `resourceType`
-        *   `[ ]` Remove all `stageDocumentResources` seeding from test state
-        *   `[ ]` Remove all literal `resource:` fields from `StageDocumentContentState` constructions
-    *   `[ ]` integration/`GeneratedContributionCard.integration.test.tsx`
-        *   `[ ]` Test: Save Edit after fetch uses `resourceType` from state (populated by fetch, not hardcoded)
-        *   `[ ]` Remove all `stageDocumentResources` seeding from test state
-        *   `[ ]` Remove all literal `resource:` fields from `StageDocumentContentState` constructions
-    *   `[ ]` `GeneratedContributionCard.tsx`
-        *   `[ ]` Replace `resourceType: "rendered_document"` (line 380) with `resourceType: documentResourceState?.resourceType ?? ''`
-    *   `[ ]` unit/`SessionContributionsDisplayCard.test.tsx`
-        *   `[ ]` Remove all `stageDocumentResources` seeding from test state (collateral fix from type removal)
-        *   `[ ]` Remove all literal `resource:` fields from `StageDocumentContentState` constructions
-    *   `[ ]` **Commit** `fix(ui): use state-provided resourceType from fetch response; remove all stageDocumentResources and updateStageDocumentResource references from UI layer`
-        *   `[ ]` `GeneratedContributionCard` reads `resourceType` from store state populated on fetch
-        *   `[ ]` `dialecticStore.mock.ts` aligned: no `stageDocumentResources`, no `updateStageDocumentResource`, `saveContributionEdit` mock writes scalars
-        *   `[ ]` All UI test files cleared of deleted type fields
+*   `[✅]` `[UI]` apps/web/src/components/dialectic/`GeneratedContributionCard.tsx` **Replace hardcoded resourceType with state-provided value; remove all stageDocumentResources references from UI layer**
+    *   `[✅]` `dialecticStore.mock.ts` (apps/web/src/mocks)
+        *   `[✅]` Remove `stageDocumentResources: {}` from mock initial state
+        *   `[✅]` Remove `updateStageDocumentResource` mock action (lines 678–695)
+        *   `[✅]` Remove all literal `resource:` fields from mock `StageDocumentContentState` entries
+        *   `[✅]` Rewrite `saveContributionEdit` mock (lines 503–520): remove `stageDocumentResources[serializedKey] = resource`; write `documentEntry.sourceContributionId = resource.source_contribution_id; documentEntry.resourceType = resource.resource_type;` instead
+    *   `[✅]` unit/`GeneratedContributionCard.test.tsx`
+        *   `[✅]` Test: `handleSaveEdit` reads `resourceType` from `documentResourceState.resourceType` instead of hardcoded `"rendered_document"`
+        *   `[✅]` Remove `updateStageDocumentResource` call in test (lines 835–863); replace with direct `stageDocumentContent` seeding that sets `sourceContributionId` and `resourceType`
+        *   `[✅]` Remove all `stageDocumentResources` seeding from test state
+        *   `[✅]` Remove all literal `resource:` fields from `StageDocumentContentState` constructions
+    *   `[✅]` integration/`GeneratedContributionCard.integration.test.tsx`
+        *   `[✅]` Test: Save Edit after fetch uses `resourceType` from state (populated by fetch, not hardcoded)
+        *   `[✅]` Remove all `stageDocumentResources` seeding from test state
+        *   `[✅]` Remove all literal `resource:` fields from `StageDocumentContentState` constructions
+    *   `[✅]` `GeneratedContributionCard.tsx`
+        *   `[✅]` Replace `resourceType: "rendered_document"` (line 380) with `resourceType: documentResourceState?.resourceType ?? ''`
+    *   `[✅]` unit/`SessionContributionsDisplayCard.test.tsx`
+        *   `[✅]` Remove all `stageDocumentResources` seeding from test state (collateral fix from type removal)
+        *   `[✅]` Remove all literal `resource:` fields from `StageDocumentContentState` constructions
+    *   `[✅]` **Commit** `fix(ui): use state-provided resourceType from fetch response; remove all stageDocumentResources and updateStageDocumentResource references from UI layer`
+        *   `[✅]` `GeneratedContributionCard` reads `resourceType` from store state populated on fetch
+        *   `[✅]` `dialecticStore.mock.ts` aligned: no `stageDocumentResources`, no `updateStageDocumentResource`, `saveContributionEdit` mock writes scalars
+        *   `[✅]` All UI test files cleared of deleted type fields
 
 *   `[✅]` [BE] supabase/functions/dialectic-service/getAllStageProgress.ts **Fix progress tracking to handle all job types and report actual job results**
-  *   `[✅]` `objective.md`
-    *   `[✅]` **Functional Requirements:**
-      *   `[✅]` Load the complete recipe for each stage to know what steps exist (both cloned instances and template-based)
-      *   `[✅]` Query ALL jobs for the session/iteration without filtering or skipping any based on payload shape
-      *   `[✅]` Classify each job by its `job_type` column value (PLAN, EXECUTE, RENDER) using `isJobTypeEnum()` type guard
-      *   `[✅]` Match jobs to recipe steps where `planner_metadata.recipe_step_id` exists and is valid
-      *   `[✅]` Handle jobs without `planner_metadata` (root PLAN jobs, RENDER jobs) as standalone job entries
-      *   `[✅]` Group continuation jobs with their parent via `parent_job_id` when calculating step progress
-      *   `[✅]` Report RENDER jobs separately since they are the only jobs that produce rendered documents
-      *   `[✅]` Use each job's `results` field to determine what it actually produced (not payload promises)
-      *   `[✅]` Derive step-level and stage-level status from aggregated job statuses
-      *   `[✅]` For EXECUTE jobs in per-model steps, provide per-model breakdown via `modelJobStatuses`
-      *   `[✅]` Return `StageProgressEntry[]` with complete `jobProgress: StepJobProgress` tracking per step
-    *   `[✅]` **Non-Functional Requirements:**
-      *   `[✅]` Must not return 500 errors when encountering root PLAN jobs or RENDER jobs
-      *   `[✅]` Must not skip or ignore any job that exists in `dialectic_generation_jobs`
-      *   `[✅]` Must handle both cloned recipe instances and template-based instances correctly
-      *   `[✅]` Must use existing type guards (`isJobTypeEnum`, `isJobProgressEntry`, `isPlannerMetadata`, `isRecord`)
-      *   `[✅]` Must preserve all existing function signatures and return types
-      *   `[✅]` Must not create new progress tracking layers - fixes the existing one
-      *   `[✅]` Performance: minimize database queries by batching lookups
-  *   `[✅]` `role.md`
-    *   `[✅]` **Domain:** Backend data aggregation service
-    *   `[✅]` **Architectural Role:** Adapter layer between database and API response
-    *   `[✅]` **Responsibility:** Transform raw job + resource data into structured progress DTOs for frontend consumption
-  *   `[✅]` `module.md`
-    *   `[✅]` **Context Boundaries:**
-      *   `[✅]` Reads from: `dialectic_generation_jobs`, `dialectic_project_resources`, `dialectic_stage_recipe_steps`, `dialectic_recipe_template_steps`, `dialectic_stage_recipe_instances`
-      *   `[✅]` Outputs: `GetAllStageProgressResponse` (array of `StageProgressEntry`)
-      *   `[✅]` Does NOT: create/update/delete any data; run jobs; interpret business logic beyond aggregation
-    *   `[✅]` **Feature Boundaries:**
-      *   `[✅]` In scope: aggregate job statuses, map jobs to steps, derive stage/step statuses, populate `StepJobProgress`
-      *   `[✅]` Out of scope: job execution, recipe planning, document rendering, progress notifications
-  *   `[✅]` `deps.md`
-    *   `[✅]` **Internal Dependencies:**
-      *   `[✅]` Type guards: `isJobTypeEnum`, `isJobProgressEntry`, `isPlannerMetadata`, `isRecord` from `type_guards.dialectic.ts`
-      *   `[✅]` Utility: `deconstructStoragePath` from `path_deconstructor.ts`
-      *   `[✅]` Types: `JobProgressEntry`, `StepJobProgress`, `StageProgressEntry`, `GetAllStageProgressResponse`, `JobProgressStatus`, `UnifiedStageStatus`, `StageDocumentDescriptorDto`, `StageRunDocumentStatus` from `dialectic.interface.ts`
-      *   `[✅]` Database types: `Database`, `Tables` from `types_db.ts`
-    *   `[✅]` **External Dependencies:**
-      *   `[✅]` Supabase client for database queries
-      *   `[✅]` User auth context for authorization
-  *   `[✅]` interface/`dialectic.interface.ts`
-    *   `[✅]` **No interface changes required** - existing types (`JobProgressEntry`, `StepJobProgress`, `StageProgressEntry`, etc.) already support the required data structure
-  *   `[✅]` unit/`getAllStageProgress.test.ts`
-    *   `[✅]` **[RED TEST]** Create comprehensive unit test file for `getAllStageProgress`
-      *   `[✅]` **Test 1: Handles root PLAN jobs without planner_metadata**
-        *   Given: A job with `job_type: 'PLAN'`, no `planner_metadata.recipe_step_id`
-        *   When: `getAllStageProgress` is called
-        *   Then: Function completes without 500 error, job is reported in results
-      *   `[✅]` **Test 2: Handles RENDER jobs with different payload shape**
-        *   Given: A job with `job_type: 'RENDER'`, payload has `documentKey`, `sourceContributionId` but NO `planner_metadata`
-        *   When: `getAllStageProgress` is called
-        *   Then: Function completes without 500 error, RENDER job is reported separately
-      *   `[✅]` **Test 3: Matches EXECUTE jobs to steps via planner_metadata.recipe_step_id**
-        *   Given: EXECUTE jobs with valid `planner_metadata.recipe_step_id` matching recipe steps
-        *   When: Function processes jobs
-        *   Then: Jobs are correctly grouped under their step_key in `jobProgress`
-      *   `[✅]` **Test 4: Works with both cloned instances and template-based recipes**
-        *   Given: Recipe instance with `is_cloned: true` → looks up from `dialectic_stage_recipe_steps`
-        *   Given: Recipe instance with `is_cloned: false` → looks up from `dialectic_recipe_template_steps`
-        *   When: Function loads recipe steps
-        *   Then: Both paths return valid step_key mappings
-      *   `[✅]` **Test 5: Aggregates per-model status for EXECUTE jobs**
-        *   Given: Multiple EXECUTE jobs with same step_key but different `payload.model_id`
-        *   When: Function builds `jobProgress[stepKey]`
-        *   Then: `modelJobStatuses` object contains per-model breakdown
-      *   `[✅]` **Test 6: Uses job_type column, not payload inference**
-        *   Given: Jobs with `job_type` column set to PLAN/EXECUTE/RENDER
-        *   When: Function classifies jobs
-        *   Then: Uses `job_type` column directly via `isJobTypeEnum()` guard
-      *   `[✅]` **Test 7: Does not skip jobs with missing payload fields**
-        *   Given: Jobs without `payload.document_key` or `payload.model_id`
-        *   When: Function processes all jobs
-        *   Then: All jobs are counted in their respective categories (not silently skipped)
-      *   `[✅]` **Test 8: Continuation jobs group with parent under same step**
-        *   Given: Original EXECUTE job + continuation jobs with same `parent_job_id` and `recipe_step_id`
-        *   When: Function aggregates by step_key
-        *   Then: All continuations counted together in same step's progress
-      *   `[✅]` **Test 9: Derives correct step status from heterogeneous job statuses**
-        *   Given: Step has jobs in mixed states (pending, in_progress, completed, failed)
-        *   When: Function derives step status via `deriveStepStatus()`
-        *   Then: Returns 'failed' if any failed, 'in_progress' if any in_progress/retrying, 'completed' if all completed
-      *   `[✅]` **Test 10: Reports documents array from RENDER jobs, not EXECUTE jobs**
-        *   Given: EXECUTE jobs that triggered RENDER jobs
-        *   When: Function populates `documents` array
-        *   Then: Uses RENDER job metadata (documentKey, sourceContributionId) to build StageDocumentDescriptorDto entries
-  *   `[✅]` `getAllStageProgress.ts`
-    *   `[✅]` **Implementation Requirements:**
-      *   `[✅]` **Step 1: Load recipe definition**
-        *   Query `dialectic_stage_recipe_instances` to get `is_cloned` and `template_id`
-        *   If `is_cloned: true`, load from `dialectic_stage_recipe_steps` where `instance_id = instance.id`
-        *   If `is_cloned: false`, load from `dialectic_recipe_template_steps` where `template_id = instance.template_id`
-        *   Build `Map<recipeStepId, stepKey>` for all recipe steps in this stage
-      *   `[✅]` **Step 2: Query ALL jobs without payload filtering**
-        *   Query `dialectic_generation_jobs.select('id, status, payload, stage_slug, job_type, parent_job_id, results')`
-        *   Do NOT filter by payload shape at query time
-        *   Keep all jobs for classification
-      *   `[✅]` **Step 3: Classify jobs by job_type column**
-        *   For each job, validate `job.job_type` using `isJobTypeEnum(job.job_type)`
-        *   Return 500 error only if `job_type` is null or invalid (database integrity issue)
-        *   Separate into PLAN jobs, EXECUTE jobs, RENDER jobs by `job_type` value
-      *   `[✅]` **Step 4: Extract planner_metadata where present**
-        *   Check if `isRecord(job.payload)` and `isPlannerMetadata(job.payload.planner_metadata)`
-        *   If yes, extract `recipe_step_id` and look up `step_key` from Map
-        *   If no `planner_metadata` (root PLAN, RENDER), classify as "no step association"
-      *   `[✅]` **Step 5: Build step-level progress tracking**
-        *   For jobs WITH step_key: aggregate by step_key into `StepJobProgress[step_key]`
-        *   Count totalJobs, completedJobs, inProgressJobs, failedJobs per step
-        *   For EXECUTE jobs: also track per-model status via `payload.model_id` → `modelJobStatuses[modelId]`
-      *   `[✅]` **Step 6: Handle jobs without step association**
-        *   Root PLAN jobs: report as separate tracking category (e.g., step_key = 'root_orchestration')
-        *   RENDER jobs: report as separate tracking category (e.g., step_key = 'document_rendering')
-        *   Both contribute to overall stage progress but don't map to a recipe step
-      *   `[✅]` **Step 7: Build documents array from RENDER jobs**
-        *   Query `dialectic_project_resources` where `resource_type = 'rendered_document'`
-        *   For each RENDER job, extract: `payload.documentKey`, `payload.sourceContributionId`, `results.pathContext`
-        *   Match RENDER job to its source EXECUTE job via `sourceContributionId` to get `modelId`
-        *   Construct `StageDocumentDescriptorDto`: { documentKey, modelId, jobId, status, latestRenderedResourceId, stepKey }
-      *   `[✅]` **Step 8: Derive statuses**
-        *   Per step: `deriveStepStatus(jobStatuses)` from all jobs in that step
-        *   Overall stage: `deriveStageStatus(allJobStatuses)` from all jobs in stage
-      *   `[✅]` **Step 9: Validate and return**
-        *   Validate each `JobProgressEntry` with `isJobProgressEntry()` before adding to result
-        *   Return 500 only if validation fails (indicates logic bug)
-        *   Return `{ status: 200, data: GetAllStageProgressResponse }`
-  *   `[✅]` integration/`getAllStageProgress.integration.test.ts`
-    *   `[✅]` **[TEST-INT]** Integration test with real database
-      *   `[✅]` **Integration Test 1: Full thesis stage with root PLAN + EXECUTE + RENDER jobs**
-        *   Setup: Create session, run thesis stage through full DAG (similar to existing full_dag_traversal test)
-        *   Verify: `getAllStageProgress` returns complete progress including root PLAN job, all EXECUTE jobs, all RENDER jobs
-      *   `[✅]` **Integration Test 2: Synthesis stage with pairwise EXECUTE jobs**
-        *   Setup: Run synthesis stage with n=3 models (produces n³ pairwise jobs)
-        *   Verify: All pairwise jobs tracked, step_key correctly maps to recipe steps
-      *   `[✅]` **Integration Test 3: Cloned vs template recipe instances**
-        *   Setup: Create two sessions, one with cloned recipe, one with template recipe
-        *   Verify: Both return correct `step_key` mappings and progress
-  *   `[✅]` `requirements.md`
-    *   `[✅]` **Acceptance Criteria:**
-      *   `[✅]` Function does NOT return 500 error when encountering root PLAN jobs
-      *   `[✅]` Function does NOT return 500 error when encountering RENDER jobs
-      *   `[✅]` Function does NOT skip any jobs from the query results
-      *   `[✅]` Function uses `job_type` column directly for classification
-      *   `[✅]` Function correctly handles both cloned and template-based recipes
-      *   `[✅]` Function reports RENDER jobs in progress tracking (they produce the actual documents)
-      *   `[✅]` Function validates job progress entries with `isJobProgressEntry()` before returning
-      *   `[✅]` All existing integration tests continue to pass (especially `dialectic_full_dag_traversal.integration.test.ts`)
-  *   `[✅]` **[COMMIT]** `fix(be): getAllStageProgress correctly tracks PLAN/EXECUTE/RENDER jobs across all recipe types`
-    *   `[✅]` Fixed classification to use job_type column instead of inferring from payload
-    *   `[✅]` Added support for root PLAN jobs without planner_metadata
-    *   `[✅]` Added support for RENDER jobs with different payload structure
-    *   `[✅]` Fixed recipe step lookup to handle both cloned instances and template-based instances
-    *   `[✅]` Fixed documents array to report RENDER jobs (actual document producers)
-    *   `[✅]` Fixed step-level progress to include all job types, not just EXECUTE
-    *   `[✅]` Added validation using existing type guards (isJobTypeEnum, isJobProgressEntry)
-    *   `[✅]` Tests: comprehensive unit tests + integration tests for full DAG traversal
+    *   `[✅]` `objective.md`
+        *   `[✅]` **Functional Requirements:**
+        *   `[✅]` Load the complete recipe for each stage to know what steps exist (both cloned instances and template-based)
+        *   `[✅]` Query ALL jobs for the session/iteration without filtering or skipping any based on payload shape
+        *   `[✅]` Classify each job by its `job_type` column value (PLAN, EXECUTE, RENDER) using `isJobTypeEnum()` type guard
+        *   `[✅]` Match jobs to recipe steps where `planner_metadata.recipe_step_id` exists and is valid
+        *   `[✅]` Handle jobs without `planner_metadata` (root PLAN jobs, RENDER jobs) as standalone job entries
+        *   `[✅]` Group continuation jobs with their parent via `parent_job_id` when calculating step progress
+        *   `[✅]` Report RENDER jobs separately since they are the only jobs that produce rendered documents
+        *   `[✅]` Use each job's `results` field to determine what it actually produced (not payload promises)
+        *   `[✅]` Derive step-level and stage-level status from aggregated job statuses
+        *   `[✅]` For EXECUTE jobs in per-model steps, provide per-model breakdown via `modelJobStatuses`
+        *   `[✅]` Return `StageProgressEntry[]` with complete `jobProgress: StepJobProgress` tracking per step
+        *   `[✅]` **Non-Functional Requirements:**
+        *   `[✅]` Must not return 500 errors when encountering root PLAN jobs or RENDER jobs
+        *   `[✅]` Must not skip or ignore any job that exists in `dialectic_generation_jobs`
+        *   `[✅]` Must handle both cloned recipe instances and template-based instances correctly
+        *   `[✅]` Must use existing type guards (`isJobTypeEnum`, `isJobProgressEntry`, `isPlannerMetadata`, `isRecord`)
+        *   `[✅]` Must preserve all existing function signatures and return types
+        *   `[✅]` Must not create new progress tracking layers - fixes the existing one
+        *   `[✅]` Performance: minimize database queries by batching lookups
+    *   `[✅]` `role.md`
+        *   `[✅]` **Domain:** Backend data aggregation service
+        *   `[✅]` **Architectural Role:** Adapter layer between database and API response
+        *   `[✅]` **Responsibility:** Transform raw job + resource data into structured progress DTOs for frontend consumption
+    *   `[✅]` `module.md`
+        *   `[✅]` **Context Boundaries:**
+        *   `[✅]` Reads from: `dialectic_generation_jobs`, `dialectic_project_resources`, `dialectic_stage_recipe_steps`, `dialectic_recipe_template_steps`, `dialectic_stage_recipe_instances`
+        *   `[✅]` Outputs: `GetAllStageProgressResponse` (array of `StageProgressEntry`)
+        *   `[✅]` Does NOT: create/update/delete any data; run jobs; interpret business logic beyond aggregation
+        *   `[✅]` **Feature Boundaries:**
+        *   `[✅]` In scope: aggregate job statuses, map jobs to steps, derive stage/step statuses, populate `StepJobProgress`
+        *   `[✅]` Out of scope: job execution, recipe planning, document rendering, progress notifications
+    *   `[✅]` `deps.md`
+        *   `[✅]` **Internal Dependencies:**
+        *   `[✅]` Type guards: `isJobTypeEnum`, `isJobProgressEntry`, `isPlannerMetadata`, `isRecord` from `type_guards.dialectic.ts`
+            *   `[✅]` Utility: `deconstructStoragePath` from `path_deconstructor.ts`
+            *   `[✅]` Types: `JobProgressEntry`, `StepJobProgress`, `StageProgressEntry`, `GetAllStageProgressResponse`, `JobProgressStatus`, `UnifiedStageStatus`, `StageDocumentDescriptorDto`, `StageRunDocumentStatus` from `dialectic.interface.ts`
+            *   `[✅]` Database types: `Database`, `Tables` from `types_db.ts`
+                *   `[✅]` **External Dependencies:**
+                *   `[✅]` Supabase client for database queries
+                *   `[✅]` User auth context for authorization
+        *   `[✅]` interface/`dialectic.interface.ts`
+        *   `[✅]` **No interface changes required** - existing types (`JobProgressEntry`, `StepJobProgress`, `StageProgressEntry`, etc.) already support the required data structure
+        *   `[✅]` unit/`getAllStageProgress.test.ts`
+        *   `[✅]` **[RED TEST]** Create comprehensive unit test file for `getAllStageProgress`
+        *   `[✅]` **Test 1: Handles root PLAN jobs without planner_metadata**
+            *   Given: A job with `job_type: 'PLAN'`, no `planner_metadata.recipe_step_id`
+            *   When: `getAllStageProgress` is called
+            *   Then: Function completes without 500 error, job is reported in results
+        *   `[✅]` **Test 2: Handles RENDER jobs with different payload shape**
+            *   Given: A job with `job_type: 'RENDER'`, payload has `documentKey`, `sourceContributionId` but NO `planner_metadata`
+            *   When: `getAllStageProgress` is called
+            *   Then: Function completes without 500 error, RENDER job is reported separately
+        *   `[✅]` **Test 3: Matches EXECUTE jobs to steps via planner_metadata.recipe_step_id**
+            *   Given: EXECUTE jobs with valid `planner_metadata.recipe_step_id` matching recipe steps
+            *   When: Function processes jobs
+            *   Then: Jobs are correctly grouped under their step_key in `jobProgress`
+        *   `[✅]` **Test 4: Works with both cloned instances and template-based recipes**
+            *   Given: Recipe instance with `is_cloned: true` → looks up from `dialectic_stage_recipe_steps`
+            *   Given: Recipe instance with `is_cloned: false` → looks up from `dialectic_recipe_template_steps`
+            *   When: Function loads recipe steps
+            *   Then: Both paths return valid step_key mappings
+        *   `[✅]` **Test 5: Aggregates per-model status for EXECUTE jobs**
+            *   Given: Multiple EXECUTE jobs with same step_key but different `payload.model_id`
+            *   When: Function builds `jobProgress[stepKey]`
+            *   Then: `modelJobStatuses` object contains per-model breakdown
+        *   `[✅]` **Test 6: Uses job_type column, not payload inference**
+            *   Given: Jobs with `job_type` column set to PLAN/EXECUTE/RENDER
+            *   When: Function classifies jobs
+            *   Then: Uses `job_type` column directly via `isJobTypeEnum()` guard
+        *   `[✅]` **Test 7: Does not skip jobs with missing payload fields**
+            *   Given: Jobs without `payload.document_key` or `payload.model_id`
+            *   When: Function processes all jobs
+            *   Then: All jobs are counted in their respective categories (not silently skipped)
+        *   `[✅]` **Test 8: Continuation jobs group with parent under same step**
+            *   Given: Original EXECUTE job + continuation jobs with same `parent_job_id` and `recipe_step_id`
+            *   When: Function aggregates by step_key
+            *   Then: All continuations counted together in same step's progress
+        *   `[✅]` **Test 9: Derives correct step status from heterogeneous job statuses**
+            *   Given: Step has jobs in mixed states (pending, in_progress, completed, failed)
+            *   When: Function derives step status via `deriveStepStatus()`
+            *   Then: Returns 'failed' if any failed, 'in_progress' if any in_progress/retrying, 'completed' if all completed
+        *   `[✅]` **Test 10: Reports documents array from RENDER jobs, not EXECUTE jobs**
+            *   Given: EXECUTE jobs that triggered RENDER jobs
+            *   When: Function populates `documents` array
+            *   Then: Uses RENDER job metadata (documentKey, sourceContributionId) to build StageDocumentDescriptorDto entries
+    *   `[✅]` `getAllStageProgress.ts`
+        *   `[✅]` **Implementation Requirements:**
+        *   `[✅]` **Step 1: Load recipe definition**
+            *   Query `dialectic_stage_recipe_instances` to get `is_cloned` and `template_id`
+            *   If `is_cloned: true`, load from `dialectic_stage_recipe_steps` where `instance_id = instance.id`
+            *   If `is_cloned: false`, load from `dialectic_recipe_template_steps` where `template_id = instance.template_id`
+            *   Build `Map<recipeStepId, stepKey>` for all recipe steps in this stage
+        *   `[✅]` **Step 2: Query ALL jobs without payload filtering**
+            *   Query `dialectic_generation_jobs.select('id, status, payload, stage_slug, job_type, parent_job_id, results')`
+            *   Do NOT filter by payload shape at query time
+            *   Keep all jobs for classification
+        *   `[✅]` **Step 3: Classify jobs by job_type column**
+            *   For each job, validate `job.job_type` using `isJobTypeEnum(job.job_type)`
+            *   Return 500 error only if `job_type` is null or invalid (database integrity issue)
+            *   Separate into PLAN jobs, EXECUTE jobs, RENDER jobs by `job_type` value
+        *   `[✅]` **Step 4: Extract planner_metadata where present**
+            *   Check if `isRecord(job.payload)` and `isPlannerMetadata(job.payload.planner_metadata)`
+            *   If yes, extract `recipe_step_id` and look up `step_key` from Map
+            *   If no `planner_metadata` (root PLAN, RENDER), classify as "no step association"
+        *   `[✅]` **Step 5: Build step-level progress tracking**
+            *   For jobs WITH step_key: aggregate by step_key into `StepJobProgress[step_key]`
+            *   Count totalJobs, completedJobs, inProgressJobs, failedJobs per step
+            *   For EXECUTE jobs: also track per-model status via `payload.model_id` → `modelJobStatuses[modelId]`
+        *   `[✅]` **Step 6: Handle jobs without step association**
+            *   Root PLAN jobs: report as separate tracking category (e.g., step_key = 'root_orchestration')
+            *   RENDER jobs: report as separate tracking category (e.g., step_key = 'document_rendering')
+            *   Both contribute to overall stage progress but don't map to a recipe step
+        *   `[✅]` **Step 7: Build documents array from RENDER jobs**
+            *   Query `dialectic_project_resources` where `resource_type = 'rendered_document'`
+            *   For each RENDER job, extract: `payload.documentKey`, `payload.sourceContributionId`, `results.pathContext`
+            *   Match RENDER job to its source EXECUTE job via `sourceContributionId` to get `modelId`
+            *   Construct `StageDocumentDescriptorDto`: { documentKey, modelId, jobId, status, latestRenderedResourceId, stepKey }
+        *   `[✅]` **Step 8: Derive statuses**
+            *   Per step: `deriveStepStatus(jobStatuses)` from all jobs in that step
+            *   Overall stage: `deriveStageStatus(allJobStatuses)` from all jobs in stage
+        *   `[✅]` **Step 9: Validate and return**
+            *   Validate each `JobProgressEntry` with `isJobProgressEntry()` before adding to result
+            *   Return 500 only if validation fails (indicates logic bug)
+            *   Return `{ status: 200, data: GetAllStageProgressResponse }`
+    *   `[✅]` integration/`getAllStageProgress.integration.test.ts`
+        *   `[✅]` **[TEST-INT]** Integration test with real database
+        *   `[✅]` **Integration Test 1: Full thesis stage with root PLAN + EXECUTE + RENDER jobs**
+            *   Setup: Create session, run thesis stage through full DAG (similar to existing full_dag_traversal test)
+            *   Verify: `getAllStageProgress` returns complete progress including root PLAN job, all EXECUTE jobs, all RENDER jobs
+        *   `[✅]` **Integration Test 2: Synthesis stage with pairwise EXECUTE jobs**
+            *   Setup: Run synthesis stage with n=3 models (produces n³ pairwise jobs)
+            *   Verify: All pairwise jobs tracked, step_key correctly maps to recipe steps
+        *   `[✅]` **Integration Test 3: Cloned vs template recipe instances**
+            *   Setup: Create two sessions, one with cloned recipe, one with template recipe
+            *   Verify: Both return correct `step_key` mappings and progress
+    *   `[✅]` `requirements.md`
+        *   `[✅]` **Acceptance Criteria:**
+        *   `[✅]` Function does NOT return 500 error when encountering root PLAN jobs
+        *   `[✅]` Function does NOT return 500 error when encountering RENDER jobs
+        *   `[✅]` Function does NOT skip any jobs from the query results
+        *   `[✅]` Function uses `job_type` column directly for classification
+        *   `[✅]` Function correctly handles both cloned and template-based recipes
+        *   `[✅]` Function reports RENDER jobs in progress tracking (they produce the actual documents)
+        *   `[✅]` Function validates job progress entries with `isJobProgressEntry()` before returning
+        *   `[✅]` All existing integration tests continue to pass (especially `dialectic_full_dag_traversal.integration.test.ts`)
+    *   `[✅]` **[COMMIT]** `fix(be): getAllStageProgress correctly tracks PLAN/EXECUTE/RENDER jobs across all recipe types`
+        *   `[✅]` Fixed classification to use job_type column instead of inferring from payload
+        *   `[✅]` Added support for root PLAN jobs without planner_metadata
+        *   `[✅]` Added support for RENDER jobs with different payload structure
+        *   `[✅]` Fixed recipe step lookup to handle both cloned instances and template-based instances
+        *   `[✅]` Fixed documents array to report RENDER jobs (actual document producers)
+        *   `[✅]` Fixed step-level progress to include all job types, not just EXECUTE
+        *   `[✅]` Added validation using existing type guards (isJobTypeEnum, isJobProgressEntry)
+        *   `[✅]` Tests: comprehensive unit tests + integration tests for full DAG traversal
+
+
+# Feedback Path Fix — Work Breakdown Structure
+
+## Problem Statement
+The feedback persistence path has multiple issues: drafts are lost on tab close (in-memory only), the feedback pane shows empty after saving (no prepopulation from saved feedback), multiple DB rows can be created for the same logical document, backend ingestion paths select feedback nondeterministically, iteration numbering is inconsistent across retrieval paths, and the `getStageDocumentFeedback` backend handler does not exist — the API client and store call a route that is never serviced.
+
+## Objectives
+- Persist unsaved feedback drafts to localStorage so they survive tab close/reopen
+- Prepopulate the feedback pane from saved backend feedback, with localStorage draft overlay
+- Enforce single feedback per logical document via DB constraint + application-level upsert
+- Eliminate nondeterministic feedback selection in backend ingestion paths
+- Standardize iteration numbering across all feedback retrieval paths
+- Implement the missing `getStageDocumentFeedback` backend handler and wire it into the router
+
+## Expected Outcome
+- No lost drafts (localStorage persistence)
+- No empty pane after saving (prepopulate from saved feedback)
+- No ambiguous ingestion (one feedback per logical doc)
+- Consistent iteration semantics across all feedback read/write paths
+- Single continuous iterating file per logical doc: each save updates the same feedback artifact
+
+# Work Breakdown Structure
+
+*   `[✅]`   [DB] supabase/migrations/`20260211040003_feedback_per_document.sql` **Enforce per-document feedback uniqueness via unique index**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Drop the existing stage-level unique constraint `unique_session_stage_iteration_feedback` (too coarse — prevents multiple documents from having feedback within the same stage+iteration)
+        *   `[✅]`   Create a partial unique index on `(session_id, project_id, stage_slug, iteration_number, resource_description->>'document_key', resource_description->>'model_id')` to enforce one shared feedback row per logical document (last writer wins; no per-user feedback)
+        *   `[✅]`   Index only applies when both `document_key` and `model_id` are non-null in `resource_description` JSONB
+        *   `[✅]`   `user_id` is intentionally excluded from the index because feedback is shared per logical document across a project/session/stage/iteration/model/docKey; storage path rules for user_feedback are deterministic and cannot be user-scoped
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Infrastructure/schema — database constraint guaranteeing data integrity at the storage layer
+        *   `[✅]`   Safety net preventing duplicate feedback rows regardless of application-level bugs
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: PostgreSQL schema DDL applied via Supabase migration
+        *   `[✅]`   Affects: `dialectic_feedback` table constraint set
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Existing `dialectic_feedback` table (from migrations `20250613010842` + `20250621155452`)
+        *   `[✅]`   Existing `resource_description` JSONB column (added in `20250621155452`)
+        *   `[✅]`   Existing `unique_session_stage_iteration_feedback` constraint (to be dropped)
+    *   `[✅]`   `20260211040003_feedback_per_document.sql`
+        *   `[✅]`   `ALTER TABLE public.dialectic_feedback DROP CONSTRAINT IF EXISTS unique_session_stage_iteration_feedback;`
+        *   `[✅]`   `CREATE UNIQUE INDEX IF NOT EXISTS idx_dialectic_feedback_unique_document_model` on the 6-column expression index with partial WHERE clause
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Old stage-level constraint must be dropped before new index is created
+        *   `[✅]`   No legacy data concerns — unreleased MVP, no deduplication step required
+        *   `[✅]`   Exempt from TDD (schema-only change per Instructions for Agent §2)
+
+*   `[✅]`   [BE] supabase/functions/_shared/services/`file_manager.ts` **Implement feedback upsert: user_feedback must update-or-insert exactly one row per logical document**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   In the `isUserFeedbackContext` branch, replace blind INSERT with an update-or-insert flow scoped to the logical doc key: (session_id, project_id, stage_slug, iteration_number, `resource_description->>'document_key'`, `resource_description->>'model_id'`)
+        *   `[✅]`   If an existing feedback row exists for that logical doc key, UPDATE that row (do not INSERT a second row)
+        *   `[✅]`   If no existing feedback row exists for that logical doc key, INSERT a new row
+        *   `[✅]`   Storage object must always be written via FileManager using existing path rules: `(originalBaseName)_feedback` under `originalStoragePath` (no path construction changes)
+        *   `[✅]`   If multiple rows are returned for the logical doc lookup, treat it as a data integrity violation (unique index should prevent this once applied)
+    *   `[✅]`   `role.md`
+        *   `[✅]`   FileManager service — the single allowed writer for storage + database registration
+        *   `[✅]`   Ensures idempotent saves: submitting feedback for the same logical document always updates the same DB row and storage object (shared feedback; last writer wins)
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: FileManagerService.uploadAndRegisterFile(user_feedback) → Supabase Storage upload → dialectic_feedback update/insert
+        *   `[✅]`   Input: `UserFeedbackUploadContext` (existing type, unchanged)
+        *   `[✅]`   Output: `FileManagerResponse` returning the `dialectic_feedback` row (existing behavior, but now idempotent)
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Node 1 migration (unique index must be in place as safety net)
+        *   `[✅]`   `SupabaseClient<Database>` for DB query + update/insert inside FileManagerService (existing)
+        *   `[✅]`   `dialectic_feedback` table with `resource_description` JSONB column
+    *   `[✅]`   unit/`file_manager.upload.test.ts` (or equivalent existing FileManager test file)
+        *   `[✅]`   Add test: user_feedback with existing logical doc row updates that row (no second insert)
+        *   `[✅]`   Add test: user_feedback with no existing logical doc row inserts a new row
+        *   `[✅]`   Add test: logical doc lookup filters by `(session_id, project_id, stage_slug, iteration_number, resource_description->>'document_key', resource_description->>'model_id')`
+        *   `[✅]`   Add test: storage upload uses existing deterministic user_feedback path rules (no changes to `constructStoragePath`)
+    *   `[✅]`   `file_manager.ts`
+        *   `[✅]`   In `isUserFeedbackContext`, before insert/update, query `dialectic_feedback` for an existing row matching the logical doc key (same filters as the unique index)
+        *   `[✅]`   If existing row found, UPDATE by `id`; else INSERT
+        *   `[✅]`   Add logging to distinguish update vs insert for observability
+
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`submitStageDocumentFeedback.ts` **Remove direct DB/storage writes: validate + resolve original placement + delegate to FileManager only**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Remove any direct writes to `dialectic_feedback` and any direct bucket writes from the handler
+        *   `[✅]`   Handler must only: validate payload, deterministically select the latest rendered_document resource for `sourceContributionId` to derive `originalStoragePath` + `originalBaseName`, then call `fileManager.uploadAndRegisterFile(...)` and return its record
+        *   `[✅]`   Keep existing path and filename construction rules: user_feedback is always written as `(originalBaseName)_feedback` under `originalStoragePath` via FileManager
+    *   `[✅]`   unit/`submitStageDocumentFeedback.test.ts`
+        *   `[✅]`   Update tests to assert the handler delegates to `fileManager.uploadAndRegisterFile` and does not perform direct `dialectic_feedback` insert/update queries
+    *   `[✅]`   `submitStageDocumentFeedback.ts`
+        *   `[✅]`   Remove all direct `dbClient.from('dialectic_feedback')...` insert/update logic; the handler must not write feedback rows directly (FileManager is the only allowed writer)
+        *   `[✅]`   Ensure the handler returns the `dialectic_feedback` row returned by `fileManager.uploadAndRegisterFile(...)` (and surfaces its error without swallowing/rewrapping DB errors)
+        *   `[✅]`   Keep the deterministic “latest rendered_document wins” selection for deriving `originalStoragePath` + `originalBaseName` from `dialectic_project_resources` when `sourceContributionId` is present
+
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`getStageDocumentFeedback.ts` **New handler: fetch saved feedback content for a logical document**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Query `dialectic_feedback` by logical doc key (session_id, stage_slug, iteration_number, `resource_description->>'document_key'`, `resource_description->>'model_id'`)
+        *   `[✅]`   Download feedback content from Supabase Storage using the row's `storage_bucket`/`storage_path`/`file_name`
+        *   `[✅]`   Return the feedback record with text content so the UI can prepopulate the feedback pane
+        *   `[✅]`   Return an empty array when no feedback exists for the logical doc (preserve `StageDocumentFeedback[]` shape)
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Backend service function — read endpoint for previously saved user feedback
+        *   `[✅]`   Provides the single source of truth for "what feedback has been submitted for this document"
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: dialectic-service edge function → dialectic_feedback query → storage download → response
+        *   `[✅]`   Input: `GetStageDocumentFeedbackPayload` (sessionId, stageSlug, iterationNumber, modelId, documentKey)
+        *   `[✅]`   Output: `DialecticServiceResponse<StageDocumentFeedback[]>` (0 or 1 item; preserve existing frontend contract)
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Node 1 migration (unique index guarantees at most one matching row)
+        *   `[✅]`   `SupabaseClient<Database>` for DB query and storage download
+        *   `[✅]`   `dialectic_feedback` table with `resource_description` JSONB column
+        *   `[✅]`   Supabase Storage (bucket: `dialectic-contributions`)
+        *   `[✅]`   `ILogger` for logging
+    *   `[✅]`   interface/`dialectic.interface.ts`
+        *   `[✅]`   Add `GetStageDocumentFeedbackPayload` type: `{ sessionId: string; stageSlug: string; iterationNumber: number; modelId: string; documentKey: string }`
+        *   `[✅]`   Add `GetStageDocumentFeedbackAction` to the `DialecticServiceAction` union: `{ action: 'getStageDocumentFeedback'; payload: GetStageDocumentFeedbackPayload }`
+        *   `[✅]`   Add `GetStageDocumentFeedbackResponse` type: `StageDocumentFeedback[]` (0 or 1 item; preserve existing frontend contract)
+    *   `[✅]`   unit/`getStageDocumentFeedback.test.ts`
+        *   `[✅]`   Test: returns feedback record with content when feedback exists for the logical doc key
+        *   `[✅]`   Test: returns empty array when no feedback exists for the logical doc key
+        *   `[✅]`   Test: queries by `session_id` AND `stage_slug` AND `iteration_number` AND `resource_description->>'document_key'` AND `resource_description->>'model_id'`
+        *   `[✅]`   Test: downloads content from correct `storage_bucket`/`storage_path`/`file_name` path
+        *   `[✅]`   Test: returns error when DB query fails
+        *   `[✅]`   Test: returns error when storage download fails
+        *   `[✅]`   Test: validates required payload fields (returns error if any missing)
+    *   `[✅]`   `getStageDocumentFeedback.ts`
+        *   `[✅]`   Export `getStageDocumentFeedback(payload, dbClient, deps)` with typed signature
+        *   `[✅]`   Validate required payload fields: sessionId, stageSlug, iterationNumber, modelId, documentKey
+        *   `[✅]`   Query `dialectic_feedback` with eq filters on `session_id`, `stage_slug`, `iteration_number` and textual eq on JSONB-extracted `document_key` and `model_id`
+        *   `[✅]`   Use `.maybeSingle()` to gracefully handle zero or one result
+        *   `[✅]`   If no row found, return `{ data: [] }`
+        *   `[✅]`   If row found, download content from storage using `storage_bucket`, `storage_path`, `file_name`
+        *   `[✅]`   Decode downloaded bytes via `TextDecoder` and return `{ data: [{ id, content, createdAt }] }`
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Returns at most one feedback record per logical doc (guaranteed by unique index)
+        *   `[✅]`   Content is fetched from Supabase Storage, not from the DB row (DB has no content column)
+        *   `[✅]`   Graceful not-found handling: returns empty array, not error, when no feedback exists
+        *   `[✅]`   Authenticated endpoint: user must have valid JWT
+
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`index.ts` **Wire getStageDocumentFeedback handler into the service router**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Import `getStageDocumentFeedback` handler and its deps type from `./getStageDocumentFeedback.ts`
+        *   `[✅]`   Add `getStageDocumentFeedback` to the `Handlers` interface
+        *   `[✅]`   Add `'getStageDocumentFeedback'` to the authenticated actions array
+        *   `[✅]`   Add a `case "getStageDocumentFeedback":` to the switch statement
+        *   `[✅]`   Add to default handlers export
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Edge function router — dispatches incoming requests to the correct handler based on `action` field
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: HTTP request → action routing → handler delegation → HTTP response
+        *   `[✅]`   Follows the established pattern from `submitStageDocumentFeedback` and other handlers
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Node 3: `getStageDocumentFeedback.ts` handler (must exist before wiring)
+        *   `[✅]`   `dialectic.interface.ts` with the new `GetStageDocumentFeedbackAction` type (added in node 3)
+        *   `[✅]`   Existing router structure, authenticated actions array, and default handlers export
+    *   `[✅]`   unit/`index.test.ts`
+        *   `[✅]`   Add `getStageDocumentFeedback` to `createMockHandlers` factory (following pattern of `submitStageDocumentFeedback` mock at line 140)
+        *   `[✅]`   Add test: `handleRequest - getStageDocumentFeedback should call handler and return 200 on success`
+        *   `[✅]`   Add test: `handleRequest - getStageDocumentFeedback should return error on handler failure`
+    *   `[✅]`   `index.ts`
+        *   `[✅]`   Import `getStageDocumentFeedback` and its deps type (near line 78)
+        *   `[✅]`   Add to `Handlers` interface type (near line 188)
+        *   `[✅]`   Add `'getStageDocumentFeedback'` to authenticated actions array (near line 264-266)
+        *   `[✅]`   Add `case "getStageDocumentFeedback":` to the switch with payload extraction, deps construction, handler call, and response handling (near line 556)
+        *   `[✅]`   Add to default handlers export (near line 624-626)
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Route must be in the authenticated actions list (requires valid JWT)
+        *   `[✅]`   Response format: `{ data: GetStageDocumentFeedbackResponse }` or `{ error: { message: string } }`
+        *   `[✅]`   Must follow the identical routing pattern as `submitStageDocumentFeedback`
+
+*   `[✅]`   [BE] supabase/functions/_shared/prompt-assembler/`gatherInputsForStage.ts` **Fix nondeterministic feedback selection: add ordering, document_key filter, correct iteration value, and model_id scoping**
+    *   `[✅]`   `objective.md` (Sprint 1 — deterministic selection, document_key filter, iteration fix)
+        *   `[✅]`   Add `.order('created_at', { ascending: false })` before `.limit(1)` (line 260) to guarantee deterministic selection of the most recent feedback
+        *   `[✅]`   Add filter on `resource_description->>'document_key'` using `rule.document_key` when available (currently the feedback branch at lines 251–261 ignores `rule.document_key` even though other branches use it)
+        *   `[✅]`   Replace `.single()` with `.maybeSingle()` to prevent throwing when zero rows match for optional feedback rules
+        *   `[✅]`   Fix iteration bug: remove the `iterationNumber - 1` adjustment at line 252 (`const targetIteration = iterationNumber > 1 ? iterationNumber - 1 : 1`); use `iterationNumber` directly to match `submitStageDocumentFeedback` (which saves with `iterationNumber`) and `executeModelCallAndSave.gatherArtifacts` (which queries with `iterationNumber`)
+    *   `[✅]`   `objective.md` (Sprint 2 — model_id scoping)
+        *   `[✅]`   Add optional 7th parameter `modelId?: string` to `gatherInputsForStage` function signature (line 28)
+        *   `[✅]`   Update `GatherInputsForStageFn` type (line 16, same file) to include optional 7th param `modelId?: string`
+        *   `[✅]`   When `modelId` is provided: add `.filter('resource_description->>model_id', 'eq', modelId)` to the feedback query in the `rule.type === "feedback"` branch — selects only the feedback that annotates the specified model's output; keep `.limit(1).maybeSingle()` for single-record return
+        *   `[✅]`   When `modelId` is absent (seed prompt assembly path, no job context): replace `.limit(1).maybeSingle()` with a multi-row query; loop over results, download each, push each to `gatheredContext.sourceDocuments` — the seed prompt needs visibility into all models' feedback
+        *   `[✅]`   Downstream handling must process multiple feedback rows when `modelId` is absent (loop, download each, push each to `gatheredContext.sourceDocuments`)
+        *   `[✅]`   This mirrors the pattern already used by `findSourceDocuments` `header_context` case (line 346) and `getStageDocumentFeedback` which both filter by `model_id`
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Prompt assembler — gathers context inputs (documents + feedback) for stage processing
+        *   `[✅]`   Must deterministically select the correct feedback for a given document when constructing prompts
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: DB query → storage download → gathered context output
+        *   `[✅]`   Feedback type handling within the `rule.type === "feedback"` branch (lines 251–299)
+        *   `[✅]`   `InputRule` type already has `document_key?: FileType` field (defined in `dialectic.interface.ts` line 1471)
+        *   `[✅]`   `GatherInputsForStageFn` type definition (line 16, same file) — must gain optional 7th param
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Node 1 migration (unique index ensures at most one row per logical doc)
+        *   `[✅]`   `SupabaseClient<Database>` for DB query
+        *   `[✅]`   `downloadFromStorageFn` for content retrieval
+        *   `[✅]`   `dialectic_feedback` table with `resource_description` JSONB column
+        *   `[✅]`   `InputRule` type with `document_key` and `slug` fields
+    *   `[✅]`   interface/`gatherInputsForStage.ts` (type definition at line 16)
+        *   `[✅]`   Add `modelId?: string` as optional 7th param to `GatherInputsForStageFn` type
+    *   `[✅]`   unit/`gatherInputsForStage.test.ts` (Sprint 1)
+        *   `[✅]`   Add test: feedback query includes `.order('created_at', { ascending: false })` for deterministic selection
+        *   `[✅]`   Add test: feedback query filters by `resource_description->>'document_key'` when `rule.document_key` is present
+        *   `[✅]`   Add test: feedback query uses `iterationNumber` directly (not `iterationNumber - 1`)
+        *   `[✅]`   Add test: no error thrown when zero feedback rows match for an optional feedback rule
+        *   `[✅]`   Add test: feedback is correctly selected when `rule.document_key` is present and multiple feedback rows exist for different documents
+        *   `[✅]`   Update existing feedback tests if query structure changes affect mock expectations
+    *   `[✅]`   unit/`gatherInputsForStage.test.ts` (Sprint 2 — model_id scoping)
+        *   `[✅]`   Add test: when `modelId` is provided, feedback query includes `.filter('resource_description->>model_id', 'eq', modelId)`
+        *   `[✅]`   Add test: when `modelId` is provided and two models have feedback for the same document_key, only the specified model's feedback is returned
+        *   `[✅]`   Add test: when `modelId` is absent, all feedback rows for the document_key are returned (no `.limit(1)`) and all are downloaded and pushed to `sourceDocuments`
+        *   `[✅]`   Update existing feedback tests if signature or query structure changes affect mock expectations
+    *   `[✅]`   `gatherInputsForStage.ts` (Sprint 1)
+        *   `[✅]`   Remove `const targetIteration = iterationNumber > 1 ? iterationNumber - 1 : 1;` at line 252; use `iterationNumber` directly in the `.eq('iteration_number', iterationNumber)` call
+        *   `[✅]`   Add `.order('created_at', { ascending: false })` to the query chain before `.limit(1)`
+        *   `[✅]`   Conditionally add `.eq('resource_description->>document_key', rule.document_key)` when `rule.document_key` is defined
+        *   `[✅]`   Replace `.single()` (line 261) with `.maybeSingle()` to avoid throwing on zero results
+        *   `[✅]`   Adjust error handling: when `.maybeSingle()` returns null and `rule.required !== false`, set `criticalError`; when optional, `continue`
+        *   `[✅]`   Preserve existing logging and download behavior for the matched row
+    *   `[✅]`   `gatherInputsForStage.ts` (Sprint 2 — model_id scoping)
+        *   `[✅]`   Add optional 7th parameter `modelId?: string` to function signature (line 28)
+        *   `[✅]`   Update `GatherInputsForStageFn` type (line 16) to include optional 7th param `modelId?: string`
+        *   `[✅]`   In the `rule.type === "feedback"` branch: when `modelId` is provided, add `.filter('resource_description->>model_id', 'eq', modelId)` to the query and keep `.limit(1).maybeSingle()`
+        *   `[✅]`   When `modelId` is absent: replace `.limit(1).maybeSingle()` with a multi-row query; loop over results, download each, push each to `gatheredContext.sourceDocuments`
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Feedback selection must be deterministic: same inputs → same output every time
+        *   `[✅]`   Filter by `document_key` from the rule to prevent cross-document feedback contamination
+        *   `[✅]`   Iteration value must match the value used by `submitStageDocumentFeedback` and `executeModelCallAndSave.gatherArtifacts` — all use `iterationNumber` directly
+        *   `[✅]`   No runtime exceptions when zero feedback rows exist for optional rules
+        *   `[✅]`   When executing per-model jobs, feedback must be scoped to the executing model's `model_id` via `resource_description->>'model_id'` — prevents cross-model feedback contamination
+        *   `[✅]`   When assembling seed prompts (no model context), all feedback for the document_key must be returned so the seed prompt has visibility into all models' perspectives
+        *   `[✅]`   Optional parameter is additive and backward-compatible; existing callers that omit `modelId` continue to work unchanged
+
+*   `[✅]`   [BE] supabase/functions/_shared/prompt-assembler/`gatherContext.ts` **Thread modelId through to gatherInputsForStageFn**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Add optional 9th parameter `modelId?: string` to `gatherContext` function signature
+        *   `[✅]`   Update `GatherContextFn` type (line 14, same file) to include optional 9th param `modelId?: string`
+        *   `[✅]`   Forward `modelId` as 7th argument to `gatherInputsForStageFn(...)` call (line 42)
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Prompt assembler context aggregator — accepts model context from caller and forwards to input gatherer
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: caller (assembleTurnPrompt or PromptAssembler) → gatherContext → gatherInputsForStageFn
+        *   `[✅]`   `GatherContextFn` type definition (line 14, same file)
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `GatherInputsForStageFn` with optional 7th param `modelId?: string` (from prior node)
+        *   `[✅]`   All existing deps unchanged
+    *   `[✅]`   interface/`gatherContext.ts` (type definition at line 14)
+        *   `[✅]`   Add `modelId?: string` as optional 9th param to `GatherContextFn` type
+    *   `[✅]`   unit/`gatherContext.test.ts` (or co-located tests)
+        *   `[✅]`   Add test: when `modelId` is provided, it is forwarded as 7th argument to `gatherInputsForStageFn`
+        *   `[✅]`   Add test: when `modelId` is omitted, `gatherInputsForStageFn` is called with 6 arguments (backward-compatible)
+    *   `[✅]`   `gatherContext.ts`
+        *   `[✅]`   Add optional 9th parameter `modelId?: string` to function signature (line 28)
+        *   `[✅]`   Forward `modelId` as 7th argument to `gatherInputsForStageFn(...)` call (line 42)
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   `modelId` must be forwarded without transformation or defaulting
+        *   `[✅]`   Optional parameter is additive and backward-compatible; callers that omit `modelId` produce identical behavior to current code
+
+*   `[✅]`   [BE] supabase/functions/_shared/prompt-assembler/`prompt-assembler.ts` **Update internal wrappers to accept and forward optional modelId**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Update default `gatherInputsForStageFn` wrapper (line 73) to accept and forward optional 7th param `modelId?: string`
+        *   `[✅]`   Update `_gatherContext` method (line 226) to accept optional `modelId?: string` and forward to `this.gatherContextFn(...)` call
+        *   `[✅]`   Update `_gatherInputsForStage` method (line 259) to accept optional `modelId?: string` and forward to `this.gatherInputsForStageFn(...)` call
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Prompt assembler orchestrator — wires dependency-injected functions and forwards model context through internal method chain
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: PromptAssembler class methods → gatherContextFn → gatherInputsForStageFn
+        *   `[✅]`   Three internal methods: default wrapper (line 73), `_gatherContext` (line 226), `_gatherInputsForStage` (line 259)
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `GatherInputsForStageFn` with optional 7th param (from gatherInputsForStage node)
+        *   `[✅]`   `GatherContextFn` with optional 9th param (from gatherContext node)
+        *   `[✅]`   `gatherInputsForStage` default implementation (imported, existing)
+    *   `[✅]`   unit/`prompt-assembler.test.ts` (or co-located tests)
+        *   `[✅]`   Add test: default `gatherInputsForStageFn` wrapper forwards `modelId` when provided
+        *   `[✅]`   Add test: `_gatherContext` forwards `modelId` to `gatherContextFn`
+        *   `[✅]`   Add test: `_gatherInputsForStage` forwards `modelId` to `gatherInputsForStageFn`
+        *   `[✅]`   Add test: all three methods work unchanged when `modelId` is omitted (backward-compatible)
+    *   `[✅]`   `prompt-assembler.ts`
+        *   `[✅]`   Update default wrapper (line 73) to accept optional 7th param `modelId?: string` and forward to `gatherInputsForStage(..., modelId)`
+        *   `[✅]`   Update `_gatherContext` (line 226) to accept optional `modelId?: string` and forward to `this.gatherContextFn(..., modelId)`
+        *   `[✅]`   Update `_gatherInputsForStage` (line 259) to accept optional `modelId?: string` and forward to `this.gatherInputsForStageFn(..., modelId)`
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   All three internal methods must accept and forward `modelId` without transformation or defaulting
+        *   `[✅]`   Seed prompt path (callers of `_gatherContext` and `_gatherInputsForStage` without modelId) must continue to work unchanged
+        *   `[✅]`   Optional parameters are additive and backward-compatible
+
+*   `[✅]`   [BE] supabase/functions/_shared/prompt-assembler/`assembleTurnPrompt.ts` **Pass job.payload.model_id to deps.gatherContext for model-scoped feedback**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Pass `job.payload.model_id` as the new 9th argument to `deps.gatherContext(...)` at line 374
+        *   `[✅]`   `model_id` is already validated at lines 46–47 (`typeof job.payload.model_id !== "string"` throws); no new validation required
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Per-model turn prompt assembler — the top of the per-model execution call chain that originates `modelId` context for downstream feedback scoping
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: assembleTurnPrompt → deps.gatherContext → gatherInputsForStageFn → feedback query
+        *   `[✅]`   Wire-up point: line 374, `deps.gatherContext(...)` call
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `GatherContextFn` with optional 9th param `modelId?: string` (from gatherContext node)
+        *   `[✅]`   `AssembleTurnPromptDeps.gatherContext` field typed as `GatherContextFn` (inherits updated signature automatically)
+        *   `[✅]`   `job.payload.model_id` already validated in scope (lines 46–47)
+    *   `[✅]`   unit/`assembleTurnPrompt.test.ts`
+        *   `[✅]`   Add test: `deps.gatherContext` is called with `job.payload.model_id` as the 9th argument
+        *   `[✅]`   Add test: the 9th argument matches the validated `model_id` from the job payload
+    *   `[✅]`   `assembleTurnPrompt.ts`
+        *   `[✅]`   At line 374: add `job.payload.model_id` as the 9th argument to `deps.gatherContext(...)` call
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   `job.payload.model_id` must reach `gatherInputsForStage` so per-model jobs receive model-scoped feedback
+        *   `[✅]`   No new validation required — `model_id` is already validated at lines 46–47
+        *   `[✅]`   Backward-compatible — `GatherContextFn` param is optional, so existing test mocks that don't expect the 9th arg continue to compile
+
+*   `[✅]`   [BE] supabase/functions/dialectic-worker/`findSourceDocuments.ts` **Fix feedback query: add iteration_number filter, replace ilike with resource_description filtering, and add model_id scoping**
+    *   `[✅]`   `objective.md` (Sprint 1 — iteration filter, resource_description filtering)
+        *   `[✅]`   Add `iteration_number` filter to the feedback query (currently missing — returns feedback from all iterations)
+        *   `[✅]`   Replace `ilike('file_name', '%${rule.document_key}%')` substring match (line 257) with proper `resource_description->>'document_key'` eq filter, consistent with the approach used in other retrieval paths
+        *   `[✅]`   Use `iterationNumber` directly (matching the standardized iteration semantics from nodes 2, 3, 5)
+    *   `[✅]`   `objective.md` (Sprint 2 — model_id scoping)
+        *   `[✅]`   Add `.filter('resource_description->>model_id', 'eq', parentJob.payload.model_id)` to the feedback query — `parentJob.payload.model_id` is already available in scope (used by the `header_context` case at line 346)
+        *   `[✅]`   This ensures each model's PLAN/EXECUTE job receives only the feedback that annotates that model's prior output, not feedback for other models' outputs
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Dialectic worker — locates source documents (including feedback) for job planning
+        *   `[✅]`   Must return the correct, unambiguous feedback records for a given logical document
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: DB query → source record mapping → job planner consumption
+        *   `[✅]`   Feedback type handling within the `case 'feedback':` branch (lines 251–271)
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Node 1 migration (unique index ensures at most one row per logical doc)
+        *   `[✅]`   `SupabaseClient<Database>` for DB query
+        *   `[✅]`   `dialectic_feedback` table with `resource_description` JSONB column
+        *   `[✅]`   `isFeedbackRow` type guard (existing, line 19)
+        *   `[✅]`   `mapFeedbackToSourceDocument` mapper (existing)
+    *   `[✅]`   unit/`findSourceDocuments.test.ts` (Sprint 1)
+        *   `[✅]`   Add test: feedback query includes `.eq('iteration_number', iterationNumber)` filter
+        *   `[✅]`   Add test: feedback query uses `resource_description->>'document_key'` eq filter instead of `ilike` on `file_name`
+        *   `[✅]`   Add test: feedback query uses `iterationNumber` directly (consistent with other paths)
+        *   `[✅]`   Update existing feedback tests if query structure changes affect mock expectations
+    *   `[✅]`   unit/`findSourceDocuments.test.ts` (Sprint 2 — model_id scoping)
+        *   `[✅]`   Add test: feedback query includes `.filter('resource_description->>model_id', 'eq', parentJob.payload.model_id)` filter
+        *   `[✅]`   Add test: when two models have feedback for the same document_key, only the executing model's feedback is returned
+        *   `[✅]`   Update existing feedback tests if query structure changes affect mock expectations
+    *   `[✅]`   `findSourceDocuments.ts` (Sprint 1)
+        *   `[✅]`   At the `case 'feedback':` branch (line 251): add `.eq('iteration_number', iterationNumber)` to the query
+        *   `[✅]`   Replace `.ilike('file_name', '%${rule.document_key}%')` (line 257) with `.eq('resource_description->>document_key', rule.document_key)` when `rule.document_key` is defined
+        *   `[✅]`   Verify `iterationNumber` is available in scope and uses the same value as other retrieval paths
+    *   `[✅]`   `findSourceDocuments.ts` (Sprint 2 — model_id scoping)
+        *   `[✅]`   Add `.filter('resource_description->>model_id', 'eq', parentJob.payload.model_id)` to the feedback query chain (mirrors the `header_context` case pattern at line 346)
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Feedback records must be scoped to the correct iteration (no cross-iteration contamination)
+        *   `[✅]`   Document key filtering must use the structured JSONB field, not substring matching on filenames
+        *   `[✅]`   Iteration semantics must be consistent with `submitStageDocumentFeedback`, `getStageDocumentFeedback`, `gatherInputsForStage`, and `executeModelCallAndSave`
+        *   `[✅]`   Feedback must be scoped to the executing model's `model_id` via `resource_description->>'model_id'` — prevents cross-model feedback contamination (mirrors the `header_context` case which already filters by `model_id`)
+
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`dialectic.interface.ts` **Remove dead `userStageFeedback` field from `SubmitStageResponsesPayload`**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Remove `userStageFeedback` from `SubmitStageResponsesPayload` — the field is never read by `submitStageResponses.ts` and represents an obsolete stage-level feedback contract
+        *   `[✅]`   The current workflow is per-(documentKey, modelId) feedback via `submitStageDocumentFeedback`; the UI saves dirty feedback before calling `submitStageResponses` via the discrete save path
+        *   `[✅]`   Remove the corresponding field from the frontend `@paynless/types` mirror if present
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Type housekeeping — removes a field that lies about a contract the system doesn't honor
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: type definition cleanup in `dialectic.interface.ts` (backend) and `dialectic.types.ts` (frontend) if applicable
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `SubmitStageResponsesPayload` type in `dialectic.interface.ts`
+        *   `[✅]`   Any frontend mirror in `@paynless/types` `dialectic.types.ts`
+        *   `[✅]`   Any store-side code that populates `userStageFeedback` when constructing the payload
+    *   `[✅]`   `dialectic.interface.ts`
+        *   `[✅]`   Remove `userStageFeedback` property from `SubmitStageResponsesPayload`
+    *   `[✅]`   `dialectic.types.ts` (frontend, if field exists)
+        *   `[✅]`   Remove `userStageFeedback` property from frontend `SubmitStageResponsesPayload` mirror
+    *   `[✅]`   Audit store/UI callers
+        *   `[✅]`   Remove any code that populates `userStageFeedback` on the payload when calling `submitStageResponses`
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   `SubmitStageResponsesPayload` must not contain `userStageFeedback` — feedback is exclusively per-(documentKey, modelId) via `submitStageDocumentFeedback`
+        *   `[✅]`   The UI's "Submit Responses" button workflow is: save dirty per-document feedback via `submitStageDocumentFeedback` → advance stage via `submitStageResponses`
+
+*   `[✅]`   [TEST-INT] supabase/integration_tests/services/`feedback_dataflow_antithesis_to_synthesis.integration.test.ts` **Correct integration test to exercise both user-facing save paths and prove model-scoped feedback ingestion**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Rewrite Step 1 to exercise both user-facing feedback save paths at the API boundary:
+            *   `[✅]`   Step 1a — "Save Feedback" button path: call `submitStageDocumentFeedback` for (docA, modelA), assert feedback row returned, assert retrievable via `getStageDocumentFeedback`
+            *   `[✅]`   Step 1b — "Submit Responses" button path: call `submitStageDocumentFeedback` for (docA, modelB) simulating the dirty-feedback flush the UI performs before stage advancement, then call `submitStageResponses`, assert feedback for (docA, modelB) persisted, assert stage advanced, assert feedback from step 1a is still intact after stage advancement
+        *   `[✅]`   Fix Step 2 test setup: use distinct `modelSlug` values per model so rendered document storage paths don't collide (eliminates the 409 Duplicate errors)
+        *   `[✅]`   Fix Step 3 test setup: seed a `header_context` contribution for the Synthesis stage in `dialectic_contributions` so `gatherInputsForStage` doesn't throw before reaching the feedback assertion
+        *   `[✅]`   Step 2 assertion update: after model_id scoping is implemented, assert that `findSourceDocuments` returns only the executing model's feedback, not feedback for other models
+        *   `[✅]`   Step 3 assertion update: after model_id scoping is implemented, assert that `gatherInputsForStage` with model context returns model-scoped feedback, and without model context returns all feedback
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Integration test — proves the feedback dataflow from antithesis through synthesis at the API boundary using real Supabase DB and Storage
+        *   `[✅]`   Exercises the complete user story: save feedback per (documentKey, modelId) via both UI paths, advance stage, verify feedback is available for next-stage consumption
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: integration test → real `submitStageDocumentFeedback` / `getStageDocumentFeedback` / `submitStageResponses` / `findSourceDocuments` / `gatherInputsForStage` → real Supabase DB + Storage
+        *   `[✅]`   Depends on Nodes 5 Sprint 2 and 6 Sprint 2 (model_id scoping) being complete so the assertions can prove model-scoped feedback selection
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Node 5 Sprint 2: `gatherInputsForStage` model_id scoping
+        *   `[✅]`   Node 6 Sprint 2: `findSourceDocuments` model_id scoping
+        *   `[✅]`   Node 6.c: `userStageFeedback` dead field removed from `SubmitStageResponsesPayload`
+        *   `[✅]`   All Sprint 1 nodes (1–6): already complete
+    *   `[✅]`   `feedback_dataflow_antithesis_to_synthesis.integration.test.ts`
+        *   `[✅]`   Rewrite test "should persist per-document feedback" → split into two sub-assertions:
+            *   `[✅]`   1a: Call `submitStageDocumentFeedback` for (docA, modelA). Assert success. Call `getStageDocumentFeedback` for (docA, modelA). Assert returned feedback matches saved content.
+            *   `[✅]`   1b: Call `submitStageDocumentFeedback` for (docA, modelB). Call `submitStageResponses` for stage advancement. Assert stage advanced. Call `getStageDocumentFeedback` for (docA, modelA). Assert step 1a feedback is still intact. Call `getStageDocumentFeedback` for (docA, modelB). Assert step 1b feedback is intact.
+        *   `[✅]`   Fix `createRenderedDocumentForModel`: accept `modelSlug` parameter distinct per model (e.g., `"mock-model-a"`, `"mock-model-b"`) so storage paths don't collide
+        *   `[✅]`   In Step 3 setup: seed a `dialectic_contributions` row with `contribution_type = 'header_context'` for the Synthesis stage/session/iteration so `gatherInputsForStage` passes its precondition check
+        *   `[✅]`   Update Step 2 assertion: assert `findSourceDocuments` with modelA's job returns only modelA's feedback row, not modelB's
+        *   `[✅]`   Update Step 3 assertion: assert `gatherInputsForStage` with modelId returns 1 feedback doc (model-scoped); assert without modelId returns 2 feedback docs (all models)
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Both user-facing save paths ("Save Feedback" button and "Submit Responses" button) must be proven at the API boundary
+        *   `[✅]`   Feedback saved by one path must not be destroyed by the other
+        *   `[✅]`   Model-scoped feedback selection must be proven: feedback for modelA must not leak into modelB's job context
+        *   `[✅]`   Stage advancement must not disrupt previously saved feedback
+        *   `[✅]`   All test setup must use distinct storage paths per model to avoid 409 collisions
+
+*   `[✅]`   **Commit** `fix(be): feedback upsert, fetch handler, deterministic ingestion, iteration consistency, and model-scoped feedback selection`
+    *   `[✅]`   Node 1: Per-document unique constraint migration
+    *   `[✅]`   Node 2: `file_manager` user_feedback update-or-insert by logical doc key (single writer for storage + DB)
+    *   `[✅]`   Node 2.b: `submitStageDocumentFeedback` delegates to FileManager only (no direct DB/storage writes)
+    *   `[✅]`   Node 3: New `getStageDocumentFeedback` handler + types in `dialectic.interface.ts`
+    *   `[✅]`   Node 4: Router wiring for `getStageDocumentFeedback` in `index.ts`
+    *   `[✅]`   Node 5 Sprint 1: `gatherInputsForStage` deterministic selection + iteration fix
+    *   `[✅]`   Node 5 Sprint 2: `gatherInputsForStage` model_id scoping for per-model jobs; all-feedback for seed prompts
+    *   `[✅]`   Node 6 Sprint 1: `findSourceDocuments` iteration filter + resource_description filtering
+    *   `[✅]`   Node 6 Sprint 2: `findSourceDocuments` model_id scoping (mirrors `header_context` pattern)
+    *   `[✅]`   Node 6.c: Remove dead `userStageFeedback` from `SubmitStageResponsesPayload`
+    *   `[✅]`   Node 6.d: Integration test corrected to exercise both save paths + model-scoped ingestion
+
+*   `[ ]`   [STORE] packages/store/src/`dialecticStore.documents.ts` **Add localStorage draft persistence and saved-feedback prepopulation logic**
+    *   `[ ]`   `objective.md`
+        *   `[ ]`   On each feedback draft change, persist the draft to localStorage under a stable key derived from the logical doc identity (userId, sessionId, stageSlug, iterationNumber, modelId, documentKey)
+        *   `[ ]`   On successful save (Save Feedback or Submit Stage Responses), flush the localStorage entry for the saved logical doc
+        *   `[ ]`   Add new `initializeFeedbackDraftLogic` function that: (1) calls existing `fetchStageDocumentFeedback` to get saved feedback from backend, (2) checks localStorage for an existing draft, (3) sets `feedbackDraftMarkdown` from the draft (if present) or from the saved feedback content (if present)
+        *   `[ ]`   Prepopulation priority: localStorage draft wins over saved backend feedback (user's unsaved work takes precedence)
+    *   `[ ]`   `role.md`
+        *   `[ ]`   State management layer — maintains feedback draft state with cross-tab persistence via localStorage
+        *   `[ ]`   Orchestrates the prepopulation flow: backend fetch → localStorage check → draft initialization
+    *   `[ ]`   `module.md`
+        *   `[ ]`   Boundary: store actions → localStorage API → API client → store state mutations
+        *   `[ ]`   localStorage key format: `paynless:feedbackDraft:${userId}:${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
+        *   `[ ]`   Affected existing functions: `recordStageDocumentFeedbackDraftLogic` (add localStorage write), `flushStageDocumentFeedbackDraftLogic` (add localStorage remove)
+        *   `[ ]`   New function: `initializeFeedbackDraftLogic`
+    *   `[ ]`   `deps.md`
+        *   `[ ]`   Existing `stageDocumentContent` state structure and `StageDocumentContentState` type
+        *   `[ ]`   Existing `fetchStageDocumentFeedbackLogic` and `stageDocumentFeedback` state
+        *   `[ ]`   Existing `api.dialectic().getStageDocumentFeedback()` API client method
+        *   `[ ]`   Storage adapter (platform abstraction) for cross-platform compatibility (web localStorage + Tauri head)
+        *   `[ ]`   `StageDocumentCompositeKey` type (sessionId, stageSlug, iterationNumber, modelId, documentKey)
+        *   `[ ]`   userId from auth state (`get().user?.id`) for localStorage key construction
+        *   `[ ]`   Node 4 (backend handler wired — `getStageDocumentFeedback` must be serviceable for prepopulation fetch to succeed)
+    *   `[ ]`   unit/`dialecticStore.documents.test.ts`
+        *   `[ ]`   Add test: `recordStageDocumentFeedbackDraftLogic` writes feedbackDraftMarkdown to localStorage on each change
+        *   `[ ]`   Add test: `recordStageDocumentFeedbackDraftLogic` localStorage key contains all logical doc identity fields (userId, sessionId, stageSlug, iterationNumber, modelId, documentKey)
+        *   `[ ]`   Add test: `flushStageDocumentFeedbackDraftLogic` removes the localStorage entry for the corresponding key
+        *   `[ ]`   Add test: `initializeFeedbackDraftLogic` calls `fetchStageDocumentFeedback` and sets `feedbackDraftMarkdown` from saved feedback when no localStorage draft exists
+        *   `[ ]`   Add test: `initializeFeedbackDraftLogic` uses localStorage draft over saved feedback when both exist
+        *   `[ ]`   Add test: `initializeFeedbackDraftLogic` sets empty `feedbackDraftMarkdown` when neither localStorage draft nor saved feedback exists
+        *   `[ ]`   Add test: `initializeFeedbackDraftLogic` sets `feedbackIsDirty = true` only when loading from localStorage draft, not from saved feedback
+        *   `[ ]`   Add test: `initializeFeedbackDraftLogic` is idempotent — calling it while a dirty draft is already loaded does not overwrite the user's in-progress edits
+    *   `[ ]`   `dialecticStore.documents.ts`
+        *   `[ ]`   Add helper function `buildFeedbackLocalStorageKey(userId, key)` that constructs the deterministic localStorage key from userId + composite key fields
+        *   `[ ]`   In `recordStageDocumentFeedbackDraftLogic`: after updating state, persist via storage adapter (guarded; do not assume localStorage exists)
+        *   `[ ]`   In `flushStageDocumentFeedbackDraftLogic`: after clearing state, flush via storage adapter (guarded; do not assume localStorage exists)
+        *   `[ ]`   Add `initializeFeedbackDraftLogic(get, set, key)` that orchestrates: fetch saved feedback → check localStorage → set draft state with correct `feedbackIsDirty` flag
+        *   `[ ]`   Guard `initializeFeedbackDraftLogic` against overwriting existing dirty drafts (if `feedbackIsDirty` is already true, skip initialization)
+    *   `[ ]`   `requirements.md`
+        *   `[ ]`   Draft survives tab close and browser restart (localStorage)
+        *   `[ ]`   Draft is flushed only on explicit successful save, never on page unload
+        *   `[ ]`   Prepopulation is idempotent: repeated calls do not overwrite user's in-progress edits
+        *   `[ ]`   localStorage writes are synchronous and do not block UI rendering
+        *   `[ ]`   userId is obtained from auth state (`get().user?.id`), not from the composite key
+
+*   `[ ]`   [STORE] packages/store/src/`dialecticStore.ts` **Wire initializeFeedbackDraft action into the store**
+    *   `[ ]`   `objective.md`
+        *   `[ ]`   Add `initializeFeedbackDraft` action to the store that delegates to `initializeFeedbackDraftLogic` from `dialecticStore.documents.ts`
+        *   `[ ]`   Expose the action for UI consumption (analogous to existing `updateStageDocumentFeedbackDraft` and `submitStageDocumentFeedback` actions)
+    *   `[ ]`   `role.md`
+        *   `[ ]`   State management — Zustand store action wiring layer connecting UI to logic functions
+    *   `[ ]`   `module.md`
+        *   `[ ]`   Boundary: store action interface → logic function delegation
+        *   `[ ]`   Follows the established wiring pattern: `updateStageDocumentFeedbackDraft` (line 1361), `submitStageDocumentFeedback` (line 1399)
+    *   `[ ]`   `deps.md`
+        *   `[ ]`   Node 7: `initializeFeedbackDraftLogic` in `dialecticStore.documents.ts`
+        *   `[ ]`   `StageDocumentCompositeKey` type
+        *   `[ ]`   Existing store `get`/`set` accessors
+    *   `[ ]`   interface/store type definition
+        *   `[ ]`   Add `initializeFeedbackDraft: (key: StageDocumentCompositeKey) => Promise<void>` to the store's type definition
+    *   `[ ]`   unit/`dialecticStore.documents.test.ts` (or co-located store tests)
+        *   `[ ]`   Add test: `initializeFeedbackDraft` action calls `initializeFeedbackDraftLogic` with correct arguments
+    *   `[ ]`   `dialecticStore.ts`
+        *   `[ ]`   Import `initializeFeedbackDraftLogic` from `./dialecticStore.documents.ts`
+        *   `[ ]`   Add `initializeFeedbackDraft` action: `async (key) => { return await initializeFeedbackDraftLogic(get, set, key); }`
+    *   `[ ]`   `requirements.md`
+        *   `[ ]`   Action must be callable from UI components via `useDialecticStore(state => state.initializeFeedbackDraft)`
+        *   `[ ]`   Follows the same async action pattern as `submitStageDocumentFeedback`
+
+*   `[ ]`   [UI] apps/web/src/components/dialectic/`GeneratedContributionCard.tsx` **Wire feedback prepopulation on document expand/focus**
+    *   `[ ]`   `objective.md`
+        *   `[ ]`   When the feedback pane for a document is opened/expanded, call `initializeFeedbackDraft(compositeKey)` to prepopulate from saved feedback or localStorage draft
+        *   `[ ]`   Display loading state while the initialization fetch is in progress
+        *   `[ ]`   After initialization, the textarea reads from `feedbackDraftMarkdown` as before — no change to the editing flow
+        *   `[ ]`   The "Save Feedback" and "Submit Responses" flows remain unchanged (they already call `submitStageDocumentFeedback` which flushes the draft)
+    *   `[ ]`   `role.md`
+        *   `[ ]`   UI component — renders the feedback textarea and manages user interaction lifecycle
+        *   `[ ]`   Responsible for triggering prepopulation at the right lifecycle moment
+    *   `[ ]`   `module.md`
+        *   `[ ]`   Boundary: React component mount/expand → store action call → state subscription → textarea render
+        *   `[ ]`   Trigger point: when feedback pane becomes visible (expand/toggle or component mount)
+        *   `[ ]`   No changes to save/submit flow, only to initialization
+    *   `[ ]`   `deps.md`
+        *   `[ ]`   Node 8: `initializeFeedbackDraft` store action (must be wired in store)
+        *   `[ ]`   Existing `useDialecticStore` hook for accessing store actions and state
+        *   `[ ]`   Existing `StageDocumentCompositeKey` construction from component props/state
+        *   `[ ]`   Existing `documentResourceState?.feedbackDraftMarkdown` binding for textarea value
+    *   `[ ]`   unit/`GeneratedContributionCard.test.tsx`
+        *   `[ ]`   Add test: when feedback pane is expanded, `initializeFeedbackDraft` is called with the correct composite key
+        *   `[ ]`   Add test: `initializeFeedbackDraft` is NOT called again if feedback pane is already initialized (idempotency guard)
+        *   `[ ]`   Add test: textarea displays the value from `feedbackDraftMarkdown` after initialization completes (prepopulated from saved feedback)
+        *   `[ ]`   Add test: textarea displays the localStorage draft content when a draft exists (draft wins over saved feedback)
+        *   `[ ]`   Add test: save flow still works after prepopulation (Save Feedback calls `submitStageDocumentFeedback` and flushes the draft)
+    *   `[ ]`   `GeneratedContributionCard.tsx`
+        *   `[ ]`   Add `initializeFeedbackDraft` to the store selectors used by this component
+        *   `[ ]`   Add a `useEffect` or equivalent that calls `initializeFeedbackDraft(compositeKey)` when the feedback pane becomes visible and the draft has not yet been initialized
+        *   `[ ]`   Add a guard (e.g., a ref or state flag) to prevent re-initialization if the user has already begun editing
+        *   `[ ]`   Optionally display a brief loading indicator while initialization fetch is in progress
+    *   `[ ]`   `requirements.md`
+        *   `[ ]`   Feedback pane shows previously saved feedback on open (not empty)
+        *   `[ ]`   Unsaved localStorage draft takes precedence over saved feedback
+        *   `[ ]`   Initialization does not disrupt in-progress editing
+        *   `[ ]`   No redundant API calls (initialize once per document per session lifecycle)
+
+*   `[ ]`   **Commit** `feat(store,ui): localStorage draft persistence and feedback prepopulation`
+    *   `[ ]`   Node 7: localStorage persistence in `dialecticStore.documents.ts`
+    *   `[ ]`   Node 8: `initializeFeedbackDraft` action wiring in `dialecticStore.ts`
+    *   `[ ]`   Node 9: Prepopulation trigger in `GeneratedContributionCard.tsx`
 
 
 # ToDo
+
+    - Fix saving feedback
+    -- Upload feedback correctly
+    -- Populate existing feedback to view pane 
+    -- If not saved, hold in localStorage for a long time
+    -- When saved, flush localStorage
+    -- When viewing document, populate from localStorage or existing feedback document
+    -- Fix submitStageDocumentFeedback 
+    -- Remove double-write (fileManager writes to db)
+    -- Stop swallowing the real Postgres error message, pass it on 
+
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
     -- User reports that a single document failed and they liked the other documents, but had to regenerate the entire stage
     -- User requests option to only regenerate the exact document that failed
