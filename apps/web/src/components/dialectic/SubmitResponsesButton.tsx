@@ -117,11 +117,7 @@ export const SubmitResponsesButton: React.FC = () => {
         </Alert>
       ) : null}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        {(hasUnsavedEdits || hasUnsavedFeedback) && (
-          <span className="text-sm text-muted-foreground">
-            Unsaved work will be saved automatically
-          </span>
-        )}
+        {(hasUnsavedEdits || hasUnsavedFeedback)}
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button

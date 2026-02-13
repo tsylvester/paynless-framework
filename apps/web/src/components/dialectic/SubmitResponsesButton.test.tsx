@@ -70,8 +70,9 @@ function buildStageDocumentContent(
     pendingDiff: null,
     lastAppliedVersionHash: null,
     sourceContributionId: null,
-    feedbackDraftMarkdown: '',
+    feedbackDraftMarkdown: undefined,
     feedbackIsDirty: false,
+    resourceType: null,
     ...overrides,
   };
 }
@@ -178,6 +179,7 @@ function setupVisibleButtonState(): void {
         documents: {
           [`success_metrics:model-1`]: buildRenderedDescriptor('model-1', 'res-1'),
         },
+        jobProgress: {},
       },
     },
     isSubmittingStageResponses: false,
@@ -255,6 +257,7 @@ describe('SubmitResponsesButton', () => {
           documents: {
             ['doc:model-1']: buildRenderedDescriptor('model-1', 'res-1'),
           },
+          jobProgress: {},
         },
       },
     });
@@ -293,6 +296,7 @@ describe('SubmitResponsesButton', () => {
               latestRenderedResourceId: '',
             },
           },
+          jobProgress: {},
         },
       },
     });
@@ -476,20 +480,6 @@ describe('SubmitResponsesButton', () => {
     });
     render(<SubmitResponsesButton />);
     expect(screen.getByText('Submit failed')).toBeInTheDocument();
-  });
-
-  it('shows "Unsaved work will be saved automatically" message when hasUnsavedEdits or hasUnsavedFeedback is true', () => {
-    setupVisibleButtonState();
-    setDialecticStateValues({
-      stageDocumentContent: {
-        [`${sessionId}:${stageSlug}:${iterationNumber}:model-1:doc1`]: buildStageDocumentContent({
-          currentDraftMarkdown: 'x',
-          isDirty: true,
-        }),
-      },
-    });
-    render(<SubmitResponsesButton />);
-    expect(screen.getByText(/Unsaved work will be saved automatically/i)).toBeInTheDocument();
   });
 
   it('calls setActiveStage with next stage slug on successful submission', async () => {

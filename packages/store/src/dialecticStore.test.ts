@@ -37,6 +37,7 @@ import type {
   SelectedModels,
   GetAllStageProgressPayload,
   SubmitStageResponsesPayload,
+  StageDocumentContentState,
 } from '@paynless/types';
 import { getStageRunDocumentKey, getStageDocumentKey } from './dialecticStore.documents';
 import { useAuthStore } from './authStore';
@@ -751,23 +752,24 @@ describe('useDialecticStore', () => {
         };
 
         it('submitStageResponses edit path reads content.sourceContributionId and content.resourceType and succeeds without stageDocumentResources', async () => {
+            const documentContent: StageDocumentContentState = {
+                baselineMarkdown: 'Baseline',
+                currentDraftMarkdown: 'Edited content',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: null,
+                pendingDiff: 'Edited content',
+                lastAppliedVersionHash: null,
+                sourceContributionId: 'contrib-edit-1',
+                feedbackDraftMarkdown: undefined,
+                feedbackIsDirty: false,
+                resourceType: 'rendered_document',
+            };
             useDialecticStore.setState({
                 currentProjectDetail: mockProject,
                 stageDocumentContent: {
-                    [serializedKey]: {
-                        baselineMarkdown: 'Baseline',
-                        currentDraftMarkdown: 'Edited content',
-                        isDirty: true,
-                        isLoading: false,
-                        error: null,
-                        lastBaselineVersion: null,
-                        pendingDiff: 'Edited content',
-                        lastAppliedVersionHash: null,
-                        sourceContributionId: 'contrib-edit-1',
-                        feedbackDraftMarkdown: '',
-                        feedbackIsDirty: false,
-                        resourceType: 'rendered_document',
-                    },
+                    [serializedKey]: documentContent,
                 },
             });
             getMockDialecticClient().saveContributionEdit.mockResolvedValue({
@@ -792,23 +794,24 @@ describe('useDialecticStore', () => {
 
         it('submitStageResponses feedback path reads content.sourceContributionId and succeeds without prior save (load-only flow)', async () => {
             useAuthStore.setState({ user: { id: 'user-feedback-1' } });
+            const documentContent: StageDocumentContentState = {
+                baselineMarkdown: 'Baseline',
+                currentDraftMarkdown: 'Baseline',
+                isDirty: false,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: null,
+                pendingDiff: null,
+                lastAppliedVersionHash: null,
+                sourceContributionId: 'contrib-load-only',
+                feedbackDraftMarkdown: 'Feedback text',
+                feedbackIsDirty: true,
+                resourceType: null,
+            };
             useDialecticStore.setState({
                 currentProjectDetail: mockProject,
                 stageDocumentContent: {
-                    [serializedKey]: {
-                        baselineMarkdown: 'Baseline',
-                        currentDraftMarkdown: 'Baseline',
-                        isDirty: false,
-                        isLoading: false,
-                        error: null,
-                        lastBaselineVersion: null,
-                        pendingDiff: null,
-                        lastAppliedVersionHash: null,
-                        sourceContributionId: 'contrib-load-only',
-                        feedbackDraftMarkdown: 'Feedback text',
-                        feedbackIsDirty: true,
-                        resourceType: null,
-                    },
+                    [serializedKey]: documentContent,
                 },
             });
             getMockDialecticClient().submitStageDocumentFeedback.mockResolvedValue({ data: { success: true }, status: 200 });
@@ -829,23 +832,24 @@ describe('useDialecticStore', () => {
 
         it('submitStageResponses submits both dirty edit and dirty feedback for same key in a single call', async () => {
             useAuthStore.setState({ user: { id: 'user-both-1' } });
+            const documentContent: StageDocumentContentState = {
+                baselineMarkdown: 'Baseline',
+                currentDraftMarkdown: 'Edited',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: null,
+                pendingDiff: 'Edited',
+                lastAppliedVersionHash: null,
+                sourceContributionId: 'contrib-both-1',
+                feedbackDraftMarkdown: 'Feedback',
+                feedbackIsDirty: true,
+                resourceType: 'rendered_document',
+            };
             useDialecticStore.setState({
                 currentProjectDetail: mockProject,
                 stageDocumentContent: {
-                    [serializedKey]: {
-                        baselineMarkdown: 'Baseline',
-                        currentDraftMarkdown: 'Edited',
-                        isDirty: true,
-                        isLoading: false,
-                        error: null,
-                        lastBaselineVersion: null,
-                        pendingDiff: 'Edited',
-                        lastAppliedVersionHash: null,
-                        sourceContributionId: 'contrib-both-1',
-                        feedbackDraftMarkdown: 'Feedback',
-                        feedbackIsDirty: true,
-                        resourceType: 'rendered_document',
-                    },
+                    [serializedKey]: documentContent,
                 },
             });
             getMockDialecticClient().saveContributionEdit.mockResolvedValue({
@@ -1322,44 +1326,48 @@ describe('useDialecticStore', () => {
             const firstFocusKey = 's1:thesis:model-1';
             const secondFocusKey = 's1:thesis:model-2';
 
+            const firstDocumentContent: StageDocumentContentState = {
+                baselineMarkdown: 'Doc A baseline',
+                currentDraftMarkdown: 'Doc A baseline\nSome edits for A',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: {
+                    resourceId: 'res-a',
+                    versionHash: 'a1',
+                    updatedAt: new Date().toISOString(),
+                },
+                pendingDiff: 'Some edits for A',
+                lastAppliedVersionHash: 'a1',
+                sourceContributionId: null,
+                feedbackDraftMarkdown: undefined,
+                feedbackIsDirty: false,
+                resourceType: null,
+            };
+
+            const secondDocumentContent: StageDocumentContentState = {
+                baselineMarkdown: 'Doc B baseline',
+                currentDraftMarkdown: 'Doc B baseline\nSome edits for B',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: {
+                    resourceId: 'res-b',
+                    versionHash: 'b1',
+                    updatedAt: new Date().toISOString(),
+                },
+                pendingDiff: 'Some edits for B',
+                lastAppliedVersionHash: 'b1',
+                sourceContributionId: null,
+                feedbackDraftMarkdown: undefined,
+                feedbackIsDirty: false,
+                resourceType: null,
+            };
+
             useDialecticStore.setState({
                 stageDocumentContent: {
-                    [firstSerialized]: {
-                        baselineMarkdown: 'Doc A baseline',
-                        currentDraftMarkdown: 'Doc A baseline\nSome edits for A',
-                        isDirty: true,
-                        isLoading: false,
-                        error: null,
-                        lastBaselineVersion: {
-                            resourceId: 'res-a',
-                            versionHash: 'a1',
-                            updatedAt: new Date().toISOString(),
-                        },
-                        pendingDiff: 'Some edits for A',
-                        lastAppliedVersionHash: 'a1',
-                        sourceContributionId: null,
-                        feedbackDraftMarkdown: '',
-                        feedbackIsDirty: false,
-                        resourceType: null,
-                    },
-                    [secondSerialized]: {
-                        baselineMarkdown: 'Doc B baseline',
-                        currentDraftMarkdown: 'Doc B baseline\nSome edits for B',
-                        isDirty: true,
-                        isLoading: false,
-                        error: null,
-                        lastBaselineVersion: {
-                            resourceId: 'res-b',
-                            versionHash: 'b1',
-                            updatedAt: new Date().toISOString(),
-                        },
-                        pendingDiff: 'Some edits for B',
-                        lastAppliedVersionHash: 'b1',
-                        sourceContributionId: null,
-                        feedbackDraftMarkdown: '',
-                        feedbackIsDirty: false,
-                        resourceType: null,
-                    },
+                    [firstSerialized]: firstDocumentContent,
+                    [secondSerialized]: secondDocumentContent,
                 },
                 focusedStageDocument: {
                     [firstFocusKey]: { modelId: 'model-1', documentKey: 'doc_a' },

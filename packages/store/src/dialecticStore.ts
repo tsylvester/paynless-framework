@@ -86,6 +86,7 @@ import {
 	hydrateAllStageProgressLogic,
 	createVersionInfo,
 	getStageRunDocumentKey,
+	initializeFeedbackDraftLogic,
 } from './dialecticStore.documents';
 
 type FocusedDocumentKeyParams = Pick<SetFocusedStageDocumentPayload, 'sessionId' | 'stageSlug' | 'modelId'>;
@@ -195,6 +196,9 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	stageDocumentFeedbackError: null,
 	isSubmittingStageDocumentFeedback: false,
 	submitStageDocumentFeedbackError: null,
+
+	isInitializingFeedbackDraft: false,
+	initializeFeedbackDraftError: null,
 };
 
 export type DialecticState = DialecticStateValues & DialecticStore;
@@ -1362,8 +1366,10 @@ export const useDialecticStore = create<DialecticStore>()(
 		key: StageDocumentCompositeKey,
 		feedbackMarkdown: string,
 	) => {
+		const userId = useAuthStore.getState().user?.id || null;
+		const storage = typeof window !== 'undefined' ? window.localStorage : null;
 		set((state) => {
-			recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown);
+			recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown, storage, userId);
 		});
 	},
 
@@ -1399,7 +1405,8 @@ export const useDialecticStore = create<DialecticStore>()(
 	submitStageDocumentFeedback: async (
 		payload: SubmitStageDocumentFeedbackPayload,
 	): Promise<ApiResponse<{ success: boolean }>> => {
-		return await submitStageDocumentFeedbackLogic(get, set, payload);
+		const storage = typeof window !== 'undefined' ? window.localStorage : null;
+		return await submitStageDocumentFeedbackLogic(get, set, payload, storage);
 	},
 
 	resetSubmitStageDocumentFeedbackError: () => {
@@ -1408,6 +1415,12 @@ export const useDialecticStore = create<DialecticStore>()(
 
 	selectStageDocumentFeedback: (key: StageDocumentCompositeKey) => {
 		return selectStageDocumentFeedbackLogic(get, key);
+	},
+
+	initializeFeedbackDraft: async (key: StageDocumentCompositeKey) => {
+		const userId = useAuthStore.getState().user?.id || null;
+		const storage = typeof window !== 'undefined' ? window.localStorage : null;
+		await initializeFeedbackDraftLogic(get, set, key, storage, userId);
 	},
 
     reset: () => {
@@ -2031,18 +2044,18 @@ export const useDialecticStore = create<DialecticStore>()(
 					);
 					continue;
 				}
-				const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
-					sessionId,
-					stageSlug,
-					iterationNumber,
-					modelId,
-					documentKey,
-					feedbackContent: content.feedbackDraftMarkdown,
-					userId,
-					projectId,
-					feedbackType: 'user_feedback',
-					sourceContributionId: content.sourceContributionId,
-				};
+			const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
+				sessionId,
+				stageSlug,
+				iterationNumber,
+				modelId,
+				documentKey,
+				feedbackContent: content.feedbackDraftMarkdown ?? '',
+				userId,
+				projectId,
+				feedbackType: 'user_feedback',
+				sourceContributionId: content.sourceContributionId,
+			};
 				submissionPromises.push(
 					get().submitStageDocumentFeedback(feedbackPayload),
 				);

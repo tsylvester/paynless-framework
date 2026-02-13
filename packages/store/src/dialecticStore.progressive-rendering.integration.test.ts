@@ -556,7 +556,7 @@ describe('Store integration test for progressive document rendering lifecycle', 
         pendingDiff: null,
         lastAppliedVersionHash: 'hash-v1',
         sourceContributionId: null,
-        feedbackDraftMarkdown: '',
+        feedbackDraftMarkdown: undefined,
         feedbackIsDirty: false,
         resourceType: null,
       };

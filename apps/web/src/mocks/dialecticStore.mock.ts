@@ -45,15 +45,18 @@ import {
   fetchStageDocumentContentLogic,
   flushStageDocumentDraftActionLogic,
   flushStageDocumentDraftLogic,
+  flushStageDocumentFeedbackDraftLogic,
   handleRenderCompletedLogic,
   hydrateStageProgressLogic,
   hydrateAllStageProgressLogic,
+  initializeFeedbackDraftLogic,
   reapplyDraftToNewBaselineLogic,
   recordStageDocumentDraftLogic,
   recordStageDocumentFeedbackDraftLogic,
   updateStageDocumentDraftLogic,
   upsertStageDocumentVersionLogic,
 } from '../../../../packages/store/src/dialecticStore.documents';
+import { internalMockAuthStoreGetState } from './authStore.mock';
 
 // ---- START: Define ALL controllable selectors as top-level vi.fn() mocks ----
 // These are kept if tests rely on setting their return values directly at a global level.
@@ -396,6 +399,8 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isSubmittingStageDocumentFeedback: false,
   submitStageDocumentFeedbackError: null,
   activeSeedPrompt: null,
+  isInitializingFeedbackDraft: false,
+  initializeFeedbackDraftError: null,
 };
 
 // 2. Helper function to create a new mock store instance
@@ -621,7 +626,21 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       ensureRecipeForActiveStage: vi.fn().mockResolvedValue(undefined),
       fetchStageDocumentFeedback: vi.fn().mockResolvedValue(undefined),
       submitStageDocumentFeedback: vi.fn<[SubmitStageDocumentFeedbackPayload], Promise<ApiResponse<{ success: boolean }>>>()
-        .mockResolvedValue({ data: { success: true }, error: undefined, status: 200 }),
+        .mockImplementation(async (payload: SubmitStageDocumentFeedbackPayload) => {
+          const userId = internalMockAuthStoreGetState().user?.id ?? null;
+          const storage = typeof window !== 'undefined' ? window.localStorage : null;
+          const compositeKey: StageDocumentCompositeKey = {
+            sessionId: payload.sessionId,
+            stageSlug: payload.stageSlug,
+            iterationNumber: payload.iterationNumber,
+            modelId: payload.modelId,
+            documentKey: payload.documentKey,
+          };
+          set((state) => {
+            flushStageDocumentFeedbackDraftLogic(state, compositeKey, storage, userId);
+          });
+          return { data: { success: true }, error: undefined, status: 200 };
+        }),
       beginStageDocumentEdit: vi.fn().mockImplementation(
         (key: StageDocumentCompositeKey, initialDraftMarkdown: string) => {
             beginStageDocumentEditLogic(
@@ -655,8 +674,10 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       ),
       updateStageDocumentFeedbackDraft: vi.fn().mockImplementation(
         (key: StageDocumentCompositeKey, feedbackMarkdown: string) => {
+          const userId = internalMockAuthStoreGetState().user?.id ?? null;
+          const storage = typeof window !== 'undefined' ? window.localStorage : null;
           set((state) => {
-            recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown);
+            recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown, storage, userId);
           });
         },
       ),
@@ -687,6 +708,13 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       hydrateAllStageProgress: vi.fn().mockImplementation((payload: GetAllStageProgressPayload) => {
         hydrateAllStageProgressLogic(set, payload);
       }),
+      initializeFeedbackDraft: vi.fn().mockImplementation(
+        async (key: StageDocumentCompositeKey) => {
+          const userId = internalMockAuthStoreGetState().user?.id ?? null;
+          const storage = typeof window !== 'undefined' ? window.localStorage : null;
+          await initializeFeedbackDraftLogic(get, set, key, storage, userId);
+        },
+      ),
       resetSubmitStageDocumentFeedbackError: vi.fn(() => set({ submitStageDocumentFeedbackError: null })),
     };
   }),

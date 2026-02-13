@@ -2191,8 +2191,9 @@ describe('selectStageDocumentResource and selectEditedDocumentByKey', () => {
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-abc',
             sourceContributionId: null,
-            feedbackDraftMarkdown: '',
+            feedbackDraftMarkdown: undefined,
             feedbackIsDirty: false,
+            resourceType: null,
         };
 
         const state: DialecticStateValues = {
@@ -2225,8 +2226,9 @@ describe('selectStageDocumentResource and selectEditedDocumentByKey', () => {
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-def',
             sourceContributionId: null,
-            feedbackDraftMarkdown: '',
+            feedbackDraftMarkdown: undefined,
             feedbackIsDirty: false,
+            resourceType: null,
         };
 
         const state: DialecticStateValues = {
@@ -2273,8 +2275,9 @@ describe('selectStageDocumentResource and selectEditedDocumentByKey', () => {
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-ghi',
             sourceContributionId: null,
-            feedbackDraftMarkdown: '',
+            feedbackDraftMarkdown: undefined,
             feedbackIsDirty: false,
+            resourceType: null,
         };
 
         const staleContribution: DialecticContribution = {
@@ -2386,8 +2389,9 @@ describe('selectStageDocumentResource and selectEditedDocumentByKey', () => {
             pendingDiff: null,
             lastAppliedVersionHash: 'hash-dirty',
             sourceContributionId: null,
-            feedbackDraftMarkdown: '',
+            feedbackDraftMarkdown: undefined,
             feedbackIsDirty: false,
+            resourceType: null,
         };
 
         const state: DialecticStateValues = {
@@ -4523,8 +4527,9 @@ describe('selectStageHasUnsavedChanges', () => {
       pendingDiff: null,
       lastAppliedVersionHash: null,
       sourceContributionId: null,
-      feedbackDraftMarkdown: '',
+      feedbackDraftMarkdown: undefined,
       feedbackIsDirty: overrides.feedbackIsDirty ?? false,
+      resourceType: null,
     };
   }
 

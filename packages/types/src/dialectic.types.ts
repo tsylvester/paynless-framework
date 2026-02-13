@@ -360,6 +360,8 @@ export interface DialecticStateValues {
   stageDocumentFeedbackError: ApiError | null;
   isSubmittingStageDocumentFeedback: boolean;
   submitStageDocumentFeedbackError: ApiError | null;
+	isInitializingFeedbackDraft: boolean;
+	initializeFeedbackDraftError: ApiError | null;
   activeSeedPrompt: AssembledPrompt | null;
 }
 
@@ -449,7 +451,7 @@ export interface StageDocumentContentState {
   pendingDiff: string | null;
   lastAppliedVersionHash: string | null;
   sourceContributionId: string | null;
-  feedbackDraftMarkdown: string;
+  feedbackDraftMarkdown: string | undefined;
   feedbackIsDirty: boolean;
   resourceType: string | null;
 }
@@ -618,6 +620,7 @@ export interface DialecticActions {
   fetchStageDocumentFeedback: (key: StageDocumentCompositeKey) => Promise<void>;
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload) => Promise<ApiResponse<{ success: boolean }>>;
   resetSubmitStageDocumentFeedbackError: () => void;
+  initializeFeedbackDraft: (key: StageDocumentCompositeKey) => Promise<void>;
 
   // Action for generating contributions
   generateContributions: (payload: GenerateContributionsPayload) => Promise<ApiResponse<GenerateContributionsResponse>>;
