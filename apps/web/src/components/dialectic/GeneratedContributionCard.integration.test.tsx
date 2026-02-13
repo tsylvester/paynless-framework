@@ -6,7 +6,9 @@ import type {
   StageRenderedDocumentDescriptor,
   SaveContributionEditPayload,
   DialecticContribution,
+  StageDocumentContentState,
 } from '@paynless/types';
+import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 
 import { GeneratedContributionCard } from './GeneratedContributionCard';
 
@@ -140,6 +142,25 @@ describe('GeneratedContributionCard Integration Tests', () => {
         latestRenderedResourceId: 'resource-123',
       });
 
+      const contentState: StageDocumentContentState = {
+        baselineMarkdown: 'Original document content',
+        currentDraftMarkdown: editedContent,
+        isDirty: true,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: {
+          resourceId: 'resource-123',
+          versionHash: 'hash-1',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: sourceContributionId,
+        feedbackDraftMarkdown: undefined,
+        feedbackIsDirty: false,
+        resourceType: 'rendered_document',
+      };
+
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
@@ -174,29 +195,13 @@ describe('GeneratedContributionCard Integration Tests', () => {
           [progressKey]: {
             stepStatuses: {},
             documents: {
-              [documentKey]: documentDescriptor,
+              [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
+            jobProgress: {},
           },
         },
         stageDocumentContent: {
-          [compositeKeyString]: {
-            baselineMarkdown: 'Original document content',
-            currentDraftMarkdown: editedContent,
-            isDirty: true,
-            isLoading: false,
-            error: null,
-            lastBaselineVersion: {
-              resourceId: 'resource-123',
-              versionHash: 'hash-1',
-              updatedAt: '2024-01-01T00:00:00.000Z',
-            },
-            pendingDiff: null,
-            lastAppliedVersionHash: 'hash-1',
-            sourceContributionId: sourceContributionId,
-            feedbackDraftMarkdown: '',
-            feedbackIsDirty: false,
-            resourceType: 'rendered_document',
-          },
+          [compositeKeyString]: contentState,
         },
         recipesByStageSlug: {
           [stageSlug]: {
@@ -312,6 +317,21 @@ describe('GeneratedContributionCard Integration Tests', () => {
         latestRenderedResourceId: resourceId,
       });
 
+      const contentState2: StageDocumentContentState = {
+        baselineMarkdown: '',
+        currentDraftMarkdown: '',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: null,
+        pendingDiff: null,
+        lastAppliedVersionHash: null,
+        sourceContributionId: 'contrib-loading-1',
+        feedbackDraftMarkdown: undefined,
+        feedbackIsDirty: false,
+        resourceType: null,
+      };
+
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
@@ -346,24 +366,13 @@ describe('GeneratedContributionCard Integration Tests', () => {
           [progressKey]: {
             stepStatuses: {},
             documents: {
-              [documentKey]: documentDescriptor,
+              [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
+            jobProgress: {},
           },
         },
         stageDocumentContent: {
-          [compositeKeyString]: {
-            baselineMarkdown: '',
-            currentDraftMarkdown: '',
-            isDirty: false,
-            isLoading: false,
-            error: null,
-            lastBaselineVersion: null,
-            pendingDiff: null,
-            lastAppliedVersionHash: null,
-            sourceContributionId: 'contrib-loading-1',
-            feedbackDraftMarkdown: '',
-            feedbackIsDirty: false,
-          },
+          [compositeKeyString]: contentState2,
         },
         recipesByStageSlug: {
           [stageSlug]: {
@@ -452,6 +461,25 @@ describe('GeneratedContributionCard Integration Tests', () => {
         latestRenderedResourceId: 'resource-123',
       });
 
+      const contentState3: StageDocumentContentState = {
+        baselineMarkdown: loadedContent,
+        currentDraftMarkdown: loadedContent,
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: {
+          resourceId: 'resource-123',
+          versionHash: 'hash-1',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: 'contrib-loaded-1',
+        feedbackDraftMarkdown: undefined,
+        feedbackIsDirty: false,
+        resourceType: null,
+      };
+
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
@@ -486,28 +514,13 @@ describe('GeneratedContributionCard Integration Tests', () => {
           [progressKey]: {
             stepStatuses: {},
             documents: {
-              [documentKey]: documentDescriptor,
+              [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
+            jobProgress: {},
           },
         },
         stageDocumentContent: {
-          [compositeKeyString]: {
-            baselineMarkdown: loadedContent,
-            currentDraftMarkdown: loadedContent,
-            isDirty: false,
-            isLoading: false,
-            error: null,
-            lastBaselineVersion: {
-              resourceId: 'resource-123',
-              versionHash: 'hash-1',
-              updatedAt: '2024-01-01T00:00:00.000Z',
-            },
-            pendingDiff: null,
-            lastAppliedVersionHash: 'hash-1',
-            sourceContributionId: 'contrib-loaded-1',
-            feedbackDraftMarkdown: '',
-            feedbackIsDirty: false,
-          },
+          [compositeKeyString]: contentState3,
         },
         recipesByStageSlug: {
           [stageSlug]: {
@@ -586,6 +599,21 @@ describe('GeneratedContributionCard Integration Tests', () => {
         latestRenderedResourceId: 'resource-123',
       });
 
+      const contentState4: StageDocumentContentState = {
+        baselineMarkdown: '',
+        currentDraftMarkdown: '',
+        isDirty: false,
+        isLoading: true,
+        error: null,
+        lastBaselineVersion: null,
+        pendingDiff: null,
+        lastAppliedVersionHash: null,
+        sourceContributionId: null,
+        feedbackDraftMarkdown: undefined,
+        feedbackIsDirty: false,
+        resourceType: null,
+      };
+
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
@@ -620,24 +648,13 @@ describe('GeneratedContributionCard Integration Tests', () => {
           [progressKey]: {
             stepStatuses: {},
             documents: {
-              [documentKey]: documentDescriptor,
+              [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
+            jobProgress: {},
           },
         },
         stageDocumentContent: {
-          [compositeKeyString]: {
-            baselineMarkdown: '',
-            currentDraftMarkdown: '',
-            isDirty: false,
-            isLoading: true,
-            error: null,
-            lastBaselineVersion: null,
-            pendingDiff: null,
-            lastAppliedVersionHash: null,
-            sourceContributionId: null,
-            feedbackDraftMarkdown: '',
-            feedbackIsDirty: false,
-          },
+          [compositeKeyString]: contentState4,
         },
         recipesByStageSlug: {
           [stageSlug]: {
@@ -719,6 +736,21 @@ describe('GeneratedContributionCard Integration Tests', () => {
         latestRenderedResourceId: 'resource-123',
       });
 
+      const contentState5: StageDocumentContentState = {
+        baselineMarkdown: '',
+        currentDraftMarkdown: '',
+        isDirty: false,
+        isLoading: false,
+        error: { message: errorMessage, code: 'FETCH_ERROR' },
+        lastBaselineVersion: null,
+        pendingDiff: null,
+        lastAppliedVersionHash: null,
+        sourceContributionId: 'contrib-error-1',
+        feedbackDraftMarkdown: undefined,
+        feedbackIsDirty: false,
+        resourceType: null,
+      };
+
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
@@ -753,24 +785,13 @@ describe('GeneratedContributionCard Integration Tests', () => {
           [progressKey]: {
             stepStatuses: {},
             documents: {
-              [documentKey]: documentDescriptor,
+              [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
+            jobProgress: {},
           },
         },
         stageDocumentContent: {
-          [compositeKeyString]: {
-            baselineMarkdown: '',
-            currentDraftMarkdown: '',
-            isDirty: false,
-            isLoading: false,
-            error: { message: errorMessage, code: 'FETCH_ERROR' },
-            lastBaselineVersion: null,
-            pendingDiff: null,
-            lastAppliedVersionHash: null,
-            sourceContributionId: 'contrib-error-1',
-            feedbackDraftMarkdown: '',
-            feedbackIsDirty: false,
-          },
+          [compositeKeyString]: contentState5,
         },
         recipesByStageSlug: {
           [stageSlug]: {
@@ -851,6 +872,25 @@ describe('GeneratedContributionCard Integration Tests', () => {
         latestRenderedResourceId: 'resource-123',
       });
 
+      const contentState6: StageDocumentContentState = {
+        baselineMarkdown: 'Loaded content',
+        currentDraftMarkdown: 'Loaded content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: {
+          resourceId: 'resource-123',
+          versionHash: 'hash-1',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: 'contrib-unsaved-1',
+        feedbackDraftMarkdown: undefined,
+        feedbackIsDirty: false,
+        resourceType: null,
+      };
+
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
@@ -885,28 +925,13 @@ describe('GeneratedContributionCard Integration Tests', () => {
           [progressKey]: {
             stepStatuses: {},
             documents: {
-              [documentKey]: documentDescriptor,
+              [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
+            jobProgress: {},
           },
         },
         stageDocumentContent: {
-          [compositeKeyString]: {
-            baselineMarkdown: 'Loaded content',
-            currentDraftMarkdown: 'Loaded content',
-            isDirty: false,
-            isLoading: false,
-            error: null,
-            lastBaselineVersion: {
-              resourceId: 'resource-123',
-              versionHash: 'hash-1',
-              updatedAt: '2024-01-01T00:00:00.000Z',
-            },
-            pendingDiff: null,
-            lastAppliedVersionHash: 'hash-1',
-            sourceContributionId: 'contrib-unsaved-1',
-            feedbackDraftMarkdown: '',
-            feedbackIsDirty: false,
-          },
+          [compositeKeyString]: contentState6,
         },
         recipesByStageSlug: {
           [stageSlug]: {
@@ -973,6 +998,25 @@ describe('GeneratedContributionCard Integration Tests', () => {
         latestRenderedResourceId: 'resource-123',
       });
 
+      const contentState7: StageDocumentContentState = {
+        baselineMarkdown: 'Original content',
+        currentDraftMarkdown: 'Original content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: {
+          resourceId: 'resource-123',
+          versionHash: 'hash-1',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: 'contrib-unsaved-2',
+        feedbackDraftMarkdown: undefined,
+        feedbackIsDirty: false,
+        resourceType: null,
+      };
+
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
@@ -1007,28 +1051,13 @@ describe('GeneratedContributionCard Integration Tests', () => {
           [progressKey]: {
             stepStatuses: {},
             documents: {
-              [documentKey]: documentDescriptor,
+              [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
+            jobProgress: {},
           },
         },
         stageDocumentContent: {
-          [compositeKeyString]: {
-            baselineMarkdown: 'Original content',
-            currentDraftMarkdown: 'Original content',
-            isDirty: false,
-            isLoading: false,
-            error: null,
-            lastBaselineVersion: {
-              resourceId: 'resource-123',
-              versionHash: 'hash-1',
-              updatedAt: '2024-01-01T00:00:00.000Z',
-            },
-            pendingDiff: null,
-            lastAppliedVersionHash: 'hash-1',
-            sourceContributionId: 'contrib-unsaved-2',
-            feedbackDraftMarkdown: '',
-            feedbackIsDirty: false,
-          },
+          [compositeKeyString]: contentState7,
         },
         recipesByStageSlug: {
           [stageSlug]: {
@@ -1101,6 +1130,25 @@ describe('GeneratedContributionCard Integration Tests', () => {
         latestRenderedResourceId: 'resource-123',
       });
 
+      const contentState8: StageDocumentContentState = {
+        baselineMarkdown: 'Saved content',
+        currentDraftMarkdown: 'Saved content',
+        isDirty: true,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: {
+          resourceId: 'resource-123',
+          versionHash: 'hash-1',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: 'contrib-unsaved-3',
+        feedbackDraftMarkdown: undefined,
+        feedbackIsDirty: false,
+        resourceType: null,
+      };
+
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
@@ -1135,28 +1183,13 @@ describe('GeneratedContributionCard Integration Tests', () => {
           [progressKey]: {
             stepStatuses: {},
             documents: {
-              [documentKey]: documentDescriptor,
+              [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
+            jobProgress: {},
           },
         },
         stageDocumentContent: {
-          [compositeKeyString]: {
-            baselineMarkdown: 'Saved content',
-            currentDraftMarkdown: 'Saved content',
-            isDirty: true,
-            isLoading: false,
-            error: null,
-            lastBaselineVersion: {
-              resourceId: 'resource-123',
-              versionHash: 'hash-1',
-              updatedAt: '2024-01-01T00:00:00.000Z',
-            },
-            pendingDiff: null,
-            lastAppliedVersionHash: 'hash-1',
-            sourceContributionId: 'contrib-unsaved-3',
-            feedbackDraftMarkdown: '',
-            feedbackIsDirty: false,
-          },
+          [compositeKeyString]: contentState8,
         },
         recipesByStageSlug: {
           [stageSlug]: {
@@ -1213,25 +1246,28 @@ describe('GeneratedContributionCard Integration Tests', () => {
         expect(screen.getAllByText('Unsaved edits').length).toBeGreaterThan(0);
       });
 
+      const contentState9: StageDocumentContentState = {
+        baselineMarkdown: 'Saved content',
+        currentDraftMarkdown: 'Saved content',
+        isDirty: false,
+        isLoading: false,
+        error: null,
+        lastBaselineVersion: {
+          resourceId: 'resource-123',
+          versionHash: 'hash-1',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        pendingDiff: null,
+        lastAppliedVersionHash: 'hash-1',
+        sourceContributionId: 'contrib-unsaved-3',
+        feedbackDraftMarkdown: undefined,
+        feedbackIsDirty: false,
+        resourceType: null,
+      };
+
       setDialecticStateValues({
         stageDocumentContent: {
-          [compositeKeyString]: {
-            baselineMarkdown: 'Saved content',
-            currentDraftMarkdown: 'Saved content',
-            isDirty: false,
-            isLoading: false,
-            error: null,
-            lastBaselineVersion: {
-              resourceId: 'resource-123',
-              versionHash: 'hash-1',
-              updatedAt: '2024-01-01T00:00:00.000Z',
-            },
-            pendingDiff: null,
-            lastAppliedVersionHash: 'hash-1',
-            sourceContributionId: 'contrib-unsaved-3',
-            feedbackDraftMarkdown: '',
-            feedbackIsDirty: false,
-          },
+          [compositeKeyString]: contentState9,
         },
       });
 
@@ -1241,4 +1277,3 @@ describe('GeneratedContributionCard Integration Tests', () => {
     });
   });
 });
-

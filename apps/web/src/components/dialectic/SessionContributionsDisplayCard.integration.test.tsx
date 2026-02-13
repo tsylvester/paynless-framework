@@ -282,6 +282,7 @@ const buildStageRunProgress = (
 ): StageRunProgressEntry => ({
   stepStatuses,
   documents,
+  jobProgress: {},
 });
 
 const buildStageDocumentDescriptor = (
@@ -318,7 +319,7 @@ const buildStageDocumentContentState = (
   pendingDiff: null,
   lastAppliedVersionHash: null,
   sourceContributionId: 'contrib-model-a',
-  feedbackDraftMarkdown: '',
+  feedbackDraftMarkdown: undefined,
   feedbackIsDirty: false,
   resourceType: 'rendered_document',
   ...overrides,
@@ -704,7 +705,7 @@ describe('SessionContributionsDisplayCard Integration Tests', () => {
       renderSessionContributionsDisplayCard();
 
       const card = screen.getByTestId('generated-contribution-card-model-a');
-      expect(within(card).getAllByText('Unsaved feedback').length).toBeGreaterThanOrEqual(1);
+      expect(within(card).getAllByText('Feedback is stored locally until saved').length).toBeGreaterThanOrEqual(1);
 
       const saveFeedbackButton = within(card).getAllByRole('button', { name: 'Save Feedback' })[0];
       fireEvent.click(saveFeedbackButton);

@@ -25,6 +25,7 @@ import type {
 	PlannerStartedPayload,
 	PlannerCompletedPayload,
 	ExecuteStartedPayload,
+	IKeyValueStorage,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import {
@@ -38,6 +39,9 @@ import {
 	hydrateAllStageProgressLogic,
 	upsertStageDocumentVersionLogic,
 	fetchStageDocumentContentLogic,
+	fetchStageDocumentFeedbackLogic,
+	initializeFeedbackDraftLogic,
+	buildFeedbackLocalStorageKey,
 	type EnsureStageDocumentContentSeed,
 } from './dialecticStore.documents';
 import {
@@ -61,6 +65,14 @@ vi.mock('@paynless/api', async () => {
 		},
 	};
 });
+
+vi.mock('./authStore', () => ({
+	useAuthStore: {
+		getState: vi.fn(() => ({
+			user: { id: 'user-store-test' },
+		})),
+	},
+}));
 
 const isRenderedDescriptor = (
 	descriptor: StageRunDocumentDescriptor | undefined,
@@ -669,26 +681,27 @@ describe('Dialectic store document refresh behaviour', () => {
 			'getProjectResourceContent',
 		);
 
-		// Seed the store with a dirty document
-		useDialecticStore.setState((state: DialecticStateValues) => {
-			state.stageDocumentContent[serializedKey] = {
-				baselineMarkdown: oldBaseline,
-				currentDraftMarkdown: `${oldBaseline}\n${userEdits}`,
-				isDirty: true,
-				isLoading: false,
-				error: null,
-				lastBaselineVersion: {
-					resourceId: 'resource/old',
-					versionHash: 'old-hash',
-					updatedAt: new Date().toISOString(),
-				},
-				pendingDiff: userEdits,
-				lastAppliedVersionHash: 'old-hash',
-				sourceContributionId: null,
-				feedbackDraftMarkdown: '',
-				feedbackIsDirty: false,
-				resourceType: null,
-			};
+	// Seed the store with a dirty document
+	const seededContent: StageDocumentContentState = {
+		baselineMarkdown: oldBaseline,
+		currentDraftMarkdown: `${oldBaseline}\n${userEdits}`,
+		isDirty: true,
+		isLoading: false,
+		error: null,
+		lastBaselineVersion: {
+			resourceId: 'resource/old',
+			versionHash: 'old-hash',
+			updatedAt: new Date().toISOString(),
+		},
+		pendingDiff: userEdits,
+		lastAppliedVersionHash: 'old-hash',
+		sourceContributionId: null,
+		feedbackDraftMarkdown: undefined,
+		feedbackIsDirty: false,
+		resourceType: null,
+	};
+	useDialecticStore.setState((state: DialecticStateValues) => {
+		state.stageDocumentContent[serializedKey] = seededContent;
 			state.stageRunProgress[progressKey] = {
 				documents: {},
 				stepStatuses: {},
@@ -735,7 +748,7 @@ describe('Dialectic store document refresh behaviour', () => {
 			pendingDiff: 'User edits',
 			lastAppliedVersionHash: 'some-hash',
 			sourceContributionId: null,
-			feedbackDraftMarkdown: '',
+			feedbackDraftMarkdown: undefined,
 			feedbackIsDirty: false,
 			resourceType: null,
 		};
@@ -824,49 +837,53 @@ describe('Dialectic store document refresh behaviour', () => {
 			modelId: 'm2',
 			documentKey: 'doc_b',
 		};
-		const firstSerialized = getStageDocumentKey(firstKey);
-		const secondSerialized = getStageDocumentKey(secondKey);
+	const firstSerialized = getStageDocumentKey(firstKey);
+	const secondSerialized = getStageDocumentKey(secondKey);
 
-		useDialecticStore.setState({
-			stageDocumentContent: {
-				[firstSerialized]: {
-					baselineMarkdown: 'Doc A baseline',
-					currentDraftMarkdown: 'Doc A baseline\nSome edits for A',
-					isDirty: true,
-					isLoading: false,
-					error: null,
-					lastBaselineVersion: {
-						resourceId: 'res-a',
-						versionHash: 'a1',
-						updatedAt: new Date().toISOString(),
-					},
-					pendingDiff: 'Some edits for A',
-					lastAppliedVersionHash: 'a1',
-					sourceContributionId: null,
-					feedbackDraftMarkdown: '',
-					feedbackIsDirty: false,
-					resourceType: null,
-				},
-				[secondSerialized]: {
-					baselineMarkdown: 'Doc B baseline',
-					currentDraftMarkdown: 'Doc B baseline\nSome edits for B',
-					isDirty: true,
-					isLoading: false,
-					error: null,
-					lastBaselineVersion: {
-						resourceId: 'res-b',
-						versionHash: 'b1',
-						updatedAt: new Date().toISOString(),
-					},
-					pendingDiff: 'Some edits for B',
-					lastAppliedVersionHash: 'b1',
-					sourceContributionId: null,
-					feedbackDraftMarkdown: '',
-					feedbackIsDirty: false,
-					resourceType: null,
-				},
-			},
-		});
+	const firstContentSeed: StageDocumentContentState = {
+		baselineMarkdown: 'Doc A baseline',
+		currentDraftMarkdown: 'Doc A baseline\nSome edits for A',
+		isDirty: true,
+		isLoading: false,
+		error: null,
+		lastBaselineVersion: {
+			resourceId: 'res-a',
+			versionHash: 'a1',
+			updatedAt: new Date().toISOString(),
+		},
+		pendingDiff: 'Some edits for A',
+		lastAppliedVersionHash: 'a1',
+		sourceContributionId: null,
+		feedbackDraftMarkdown: undefined,
+		feedbackIsDirty: false,
+		resourceType: null,
+	};
+
+	const secondContentSeed: StageDocumentContentState = {
+		baselineMarkdown: 'Doc B baseline',
+		currentDraftMarkdown: 'Doc B baseline\nSome edits for B',
+		isDirty: true,
+		isLoading: false,
+		error: null,
+		lastBaselineVersion: {
+			resourceId: 'res-b',
+			versionHash: 'b1',
+			updatedAt: new Date().toISOString(),
+		},
+		pendingDiff: 'Some edits for B',
+		lastAppliedVersionHash: 'b1',
+		sourceContributionId: null,
+		feedbackDraftMarkdown: undefined,
+		feedbackIsDirty: false,
+		resourceType: null,
+	};
+
+	useDialecticStore.setState({
+		stageDocumentContent: {
+			[firstSerialized]: firstContentSeed,
+			[secondSerialized]: secondContentSeed,
+		},
+	});
 
 		useDialecticStore.getState().flushStageDocumentDraft(firstKey);
 
@@ -958,7 +975,7 @@ describe('Surface document content & feedback accessors', () => {
 			pendingDiff: null,
 			lastAppliedVersionHash: null,
 			sourceContributionId: null,
-			feedbackDraftMarkdown: '',
+			feedbackDraftMarkdown: undefined,
 			feedbackIsDirty: false,
 			resourceType: null,
 		};
@@ -1035,54 +1052,58 @@ describe('Dialectic store document clear focused stage document', () => {
 			modelId: 'model-2',
 			documentKey: 'doc_b',
 		};
-		const firstSerialized = getStageDocumentKey(firstKey);
-		const secondSerialized = getStageDocumentKey(secondKey);
-		const firstFocusKey = 's1:thesis:model-1';
-		const secondFocusKey = 's1:thesis:model-2';
+	const firstSerialized = getStageDocumentKey(firstKey);
+	const secondSerialized = getStageDocumentKey(secondKey);
+	const firstFocusKey = 's1:thesis:model-1';
+	const secondFocusKey = 's1:thesis:model-2';
 
-		useDialecticStore.setState({
-			stageDocumentContent: {
-				[firstSerialized]: {
-					baselineMarkdown: 'Doc A baseline',
-					currentDraftMarkdown: 'Doc A baseline\nSome edits for A',
-					isDirty: true,
-					isLoading: false,
-					error: null,
-					lastBaselineVersion: {
-						resourceId: 'res-a',
-						versionHash: 'a1',
-						updatedAt: new Date().toISOString(),
-					},
-					pendingDiff: 'Some edits for A',
-					lastAppliedVersionHash: 'a1',
-					sourceContributionId: null,
-					feedbackDraftMarkdown: '',
-					feedbackIsDirty: false,
-					resourceType: null,
-				},
-				[secondSerialized]: {
-					baselineMarkdown: 'Doc B baseline',
-					currentDraftMarkdown: 'Doc B baseline\nSome edits for B',
-					isDirty: true,
-					isLoading: false,
-					error: null,
-					lastBaselineVersion: {
-						resourceId: 'res-b',
-						versionHash: 'b1',
-						updatedAt: new Date().toISOString(),
-					},
-					pendingDiff: 'Some edits for B',
-					lastAppliedVersionHash: 'b1',
-					sourceContributionId: null,
-					feedbackDraftMarkdown: '',
-					feedbackIsDirty: false,
-					resourceType: null,
-				},
-			},
-			focusedStageDocument: {
-				[firstFocusKey]: { modelId: 'model-1', documentKey: 'doc_a' },
-				[secondFocusKey]: { modelId: 'model-2', documentKey: 'doc_b' },
-			},
+	const firstDocContent: StageDocumentContentState = {
+		baselineMarkdown: 'Doc A baseline',
+		currentDraftMarkdown: 'Doc A baseline\nSome edits for A',
+		isDirty: true,
+		isLoading: false,
+		error: null,
+		lastBaselineVersion: {
+			resourceId: 'res-a',
+			versionHash: 'a1',
+			updatedAt: new Date().toISOString(),
+		},
+		pendingDiff: 'Some edits for A',
+		lastAppliedVersionHash: 'a1',
+		sourceContributionId: null,
+		feedbackDraftMarkdown: undefined,
+		feedbackIsDirty: false,
+		resourceType: null,
+	};
+
+	const secondDocContent: StageDocumentContentState = {
+		baselineMarkdown: 'Doc B baseline',
+		currentDraftMarkdown: 'Doc B baseline\nSome edits for B',
+		isDirty: true,
+		isLoading: false,
+		error: null,
+		lastBaselineVersion: {
+			resourceId: 'res-b',
+			versionHash: 'b1',
+			updatedAt: new Date().toISOString(),
+		},
+		pendingDiff: 'Some edits for B',
+		lastAppliedVersionHash: 'b1',
+		sourceContributionId: null,
+		feedbackDraftMarkdown: undefined,
+		feedbackIsDirty: false,
+		resourceType: null,
+	};
+
+	useDialecticStore.setState({
+		stageDocumentContent: {
+			[firstSerialized]: firstDocContent,
+			[secondSerialized]: secondDocContent,
+		},
+		focusedStageDocument: {
+			[firstFocusKey]: { modelId: 'model-1', documentKey: 'doc_a' },
+			[secondFocusKey]: { modelId: 'model-2', documentKey: 'doc_b' },
+		},
 			stageRunProgress: {
 				's1:thesis:1': {
 					documents: {
@@ -1145,43 +1166,43 @@ describe('submitStageDocumentFeedback', () => {
 			modelId: feedbackPayload.modelId,
 			documentKey: feedbackPayload.documentKey,
 		});
-		const validContentEntry: StageDocumentContentState = {
-			baselineMarkdown: '',
-			currentDraftMarkdown: '',
-			isDirty: false,
-			isLoading: false,
-			error: null,
-			lastBaselineVersion: null,
-			pendingDiff: null,
-			lastAppliedVersionHash: null,
-			sourceContributionId: null,
-			feedbackDraftMarkdown: '',
-			feedbackIsDirty: false,
-			resourceType: null,
-		};
-		useDialecticStore.setState((state) => {
-			state.stageDocumentContent[serializedKey] = validContentEntry;
+	const validContentEntry: StageDocumentContentState = {
+		baselineMarkdown: '',
+		currentDraftMarkdown: '',
+		isDirty: false,
+		isLoading: false,
+		error: null,
+		lastBaselineVersion: null,
+		pendingDiff: null,
+		lastAppliedVersionHash: null,
+		sourceContributionId: null,
+		feedbackDraftMarkdown: undefined,
+		feedbackIsDirty: false,
+		resourceType: null,
+	};
+	useDialecticStore.setState((state) => {
+		state.stageDocumentContent[serializedKey] = validContentEntry;
+	});
+
+	const spy = vi
+		.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
+		.mockResolvedValue({
+			data: { success: true },
+			error: undefined,
+			status: 200,
 		});
 
-		const spy = vi
-			.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
-			.mockResolvedValue({
-				data: { success: true },
-				error: undefined,
-				status: 200,
-			});
+	await useDialecticStore.getState().submitStageDocumentFeedback(
+		feedbackPayload,
+	);
 
-		await useDialecticStore.getState().submitStageDocumentFeedback(
-			feedbackPayload,
-		);
-
-		expect(spy).toHaveBeenCalledWith(feedbackPayload);
-		const sentPayload = spy.mock.calls[0][0];
-		for (const field of backendContractFields) {
-			expect(sentPayload).toHaveProperty(field);
-			expect(typeof sentPayload[field]).toBe('string');
-		}
-	});
+	expect(spy).toHaveBeenCalledWith(feedbackPayload);
+	const sentPayload = spy.mock.calls[0][0];
+	for (const field of backendContractFields) {
+		expect(sentPayload).toHaveProperty(field);
+		expect(typeof sentPayload[field]).toBe('string');
+	}
+});
 
 	it('should log an error if the API call fails', async () => {
 		const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
@@ -1213,7 +1234,7 @@ describe('submitStageDocumentFeedback', () => {
 			pendingDiff: null,
 			lastAppliedVersionHash: null,
 			sourceContributionId: null,
-			feedbackDraftMarkdown: '',
+			feedbackDraftMarkdown: undefined,
 			feedbackIsDirty: false,
 			resourceType: null,
 		};
@@ -1270,26 +1291,28 @@ describe('submitStageDocumentFeedback', () => {
 			modelId: feedbackPayload.modelId,
 			documentKey: feedbackPayload.documentKey,
 		};
-		const serializedKey = getStageDocumentKey(compositeKey);
+	const serializedKey = getStageDocumentKey(compositeKey);
 
-		useDialecticStore.setState({
-			stageDocumentContent: {
-				[serializedKey]: {
-					baselineMarkdown: '',
-					currentDraftMarkdown: '',
-					isDirty: false,
-					isLoading: false,
-					error: null,
-					lastBaselineVersion: null,
-					pendingDiff: null,
-					lastAppliedVersionHash: null,
-					sourceContributionId: 'contrib-doc-123',
-					feedbackDraftMarkdown: '',
-					feedbackIsDirty: false,
-					resourceType: null,
-				},
-			},
-		});
+	const contentEntry: StageDocumentContentState = {
+		baselineMarkdown: '',
+		currentDraftMarkdown: '',
+		isDirty: false,
+		isLoading: false,
+		error: null,
+		lastBaselineVersion: null,
+		pendingDiff: null,
+		lastAppliedVersionHash: null,
+		sourceContributionId: 'contrib-doc-123',
+		feedbackDraftMarkdown: undefined,
+		feedbackIsDirty: false,
+		resourceType: null,
+	};
+
+	useDialecticStore.setState({
+		stageDocumentContent: {
+			[serializedKey]: contentEntry,
+		},
+	});
 
 		const spy = vi
 			.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
@@ -1332,44 +1355,46 @@ describe('submitStageDocumentFeedback', () => {
 			iterationNumber: feedbackPayload.iterationNumber,
 			modelId: feedbackPayload.modelId,
 			documentKey: feedbackPayload.documentKey,
-		};
-		const serializedKey = getStageDocumentKey(compositeKey);
+	};
+	const serializedKey = getStageDocumentKey(compositeKey);
 
-		useDialecticStore.setState({
-			stageDocumentContent: {
-				[serializedKey]: {
-					baselineMarkdown: '',
-					currentDraftMarkdown: '',
-					isDirty: false,
-					isLoading: false,
-					error: null,
-					lastBaselineVersion: null,
-					pendingDiff: null,
-					lastAppliedVersionHash: null,
-					sourceContributionId: null,
-					feedbackDraftMarkdown: '',
-					feedbackIsDirty: false,
-					resourceType: null,
-				},
-			},
+	const contentState: StageDocumentContentState = {
+		baselineMarkdown: '',
+		currentDraftMarkdown: '',
+		isDirty: false,
+		isLoading: false,
+		error: null,
+		lastBaselineVersion: null,
+		pendingDiff: null,
+		lastAppliedVersionHash: null,
+		sourceContributionId: null,
+		feedbackDraftMarkdown: undefined,
+		feedbackIsDirty: false,
+		resourceType: null,
+	};
+
+	useDialecticStore.setState({
+		stageDocumentContent: {
+			[serializedKey]: contentState,
+		},
+	});
+
+	const spy = vi
+		.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
+		.mockResolvedValue({
+			data: { success: true },
+			error: undefined,
+			status: 200,
 		});
 
-		const spy = vi
-			.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
-			.mockResolvedValue({
-				data: { success: true },
-				error: undefined,
-				status: 200,
-			});
+	await useDialecticStore.getState().submitStageDocumentFeedback(
+		feedbackPayload,
+	);
 
-		await useDialecticStore.getState().submitStageDocumentFeedback(
-			feedbackPayload,
-		);
-
-		const expectedPayload = {
-			...feedbackPayload,
-			sourceContributionId: null,
-		};
+	const expectedPayload = {
+		...feedbackPayload,
+		sourceContributionId: null,
+	};
 		expect(spy).toHaveBeenCalledWith(expectedPayload);
 		for (const field of backendContractFields) {
 			expect(expectedPayload).toHaveProperty(field);
@@ -1395,44 +1420,46 @@ describe('submitStageDocumentFeedback', () => {
 			modelId: feedbackPayload.modelId,
 			documentKey: feedbackPayload.documentKey,
 		};
-		const serializedKey = getStageDocumentKey(compositeKey);
+	const serializedKey = getStageDocumentKey(compositeKey);
 
-		useDialecticStore.setState({
-			stageDocumentContent: {
-				[serializedKey]: {
-					baselineMarkdown: '',
-					currentDraftMarkdown: '',
-					isDirty: false,
-					isLoading: false,
-					error: null,
-					lastBaselineVersion: null,
-					pendingDiff: null,
-					lastAppliedVersionHash: null,
-					sourceContributionId: 'contrib-from-content',
-					feedbackDraftMarkdown: '',
-					feedbackIsDirty: false,
-					resourceType: null,
-				},
-			},
+	const documentContent: StageDocumentContentState = {
+		baselineMarkdown: '',
+		currentDraftMarkdown: '',
+		isDirty: false,
+		isLoading: false,
+		error: null,
+		lastBaselineVersion: null,
+		pendingDiff: null,
+		lastAppliedVersionHash: null,
+		sourceContributionId: 'contrib-from-content',
+		feedbackDraftMarkdown: undefined,
+		feedbackIsDirty: false,
+		resourceType: null,
+	};
+
+	useDialecticStore.setState({
+		stageDocumentContent: {
+			[serializedKey]: documentContent,
+		},
+	});
+
+	const spy = vi
+		.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
+		.mockResolvedValue({
+			data: { success: true },
+			error: undefined,
+			status: 200,
 		});
 
-		const spy = vi
-			.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
-			.mockResolvedValue({
-				data: { success: true },
-				error: undefined,
-				status: 200,
-			});
+	await useDialecticStore.getState().submitStageDocumentFeedback(
+		feedbackPayload,
+	);
 
-		await useDialecticStore.getState().submitStageDocumentFeedback(
-			feedbackPayload,
-		);
-
-		expect(spy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				sourceContributionId: 'contrib-from-content',
-			}),
-		);
+	expect(spy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			sourceContributionId: 'contrib-from-content',
+		}),
+	);
 	});
 
 	it('sends correct sourceContributionId when stageDocumentResources is empty load-only flow', async () => {
@@ -1453,45 +1480,47 @@ describe('submitStageDocumentFeedback', () => {
 			iterationNumber: feedbackPayload.iterationNumber,
 			modelId: feedbackPayload.modelId,
 			documentKey: feedbackPayload.documentKey,
-		};
-		const serializedKey = getStageDocumentKey(compositeKey);
+	};
+	const serializedKey = getStageDocumentKey(compositeKey);
 
-		useDialecticStore.setState({
-			stageDocumentContent: {
-				[serializedKey]: {
-					baselineMarkdown: 'Loaded content',
-					currentDraftMarkdown: 'Loaded content',
-					isDirty: false,
-					isLoading: false,
-					error: null,
-					lastBaselineVersion: null,
-					pendingDiff: null,
-					lastAppliedVersionHash: null,
-					sourceContributionId: 'contrib-load-only',
-					feedbackDraftMarkdown: '',
-					feedbackIsDirty: false,
-					resourceType: null,
-				},
-			},
+	const loadedContent: StageDocumentContentState = {
+		baselineMarkdown: 'Loaded content',
+		currentDraftMarkdown: 'Loaded content',
+		isDirty: false,
+		isLoading: false,
+		error: null,
+		lastBaselineVersion: null,
+		pendingDiff: null,
+		lastAppliedVersionHash: null,
+		sourceContributionId: 'contrib-load-only',
+		feedbackDraftMarkdown: undefined,
+		feedbackIsDirty: false,
+		resourceType: null,
+	};
+
+	useDialecticStore.setState({
+		stageDocumentContent: {
+			[serializedKey]: loadedContent,
+		},
+	});
+
+	const spy = vi
+		.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
+		.mockResolvedValue({
+			data: { success: true },
+			error: undefined,
+			status: 200,
 		});
 
-		const spy = vi
-			.spyOn(mockDialecticClient, 'submitStageDocumentFeedback')
-			.mockResolvedValue({
-				data: { success: true },
-				error: undefined,
-				status: 200,
-			});
+	await useDialecticStore.getState().submitStageDocumentFeedback(
+		feedbackPayload,
+	);
 
-		await useDialecticStore.getState().submitStageDocumentFeedback(
-			feedbackPayload,
-		);
-
-		expect(spy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				sourceContributionId: 'contrib-load-only',
-			}),
-		);
+	expect(spy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			sourceContributionId: 'contrib-load-only',
+		}),
+	);
 	});
 });
 
@@ -3065,6 +3094,13 @@ describe('Feedback draft logic (15.c)', () => {
 
 	it('15.c.i: recordStageDocumentFeedbackDraftLogic updates only feedbackDraftMarkdown and feedbackIsDirty and does not change currentDraftMarkdown or isDirty', () => {
 		const serializedKey = getStageDocumentKey(key);
+		const testUserId = 'user-15c';
+		const setItemMock = vi.fn<[string, string], void>();
+		const testStorage: IKeyValueStorage = {
+			getItem: vi.fn<[string], string | null>().mockReturnValue(null),
+			setItem: setItemMock,
+			removeItem: vi.fn<[string], void>(),
+		};
 		const initialContent: StageDocumentContentState = {
 			baselineMarkdown: 'Baseline',
 			currentDraftMarkdown: 'Baseline\nContent edit',
@@ -3075,14 +3111,14 @@ describe('Feedback draft logic (15.c)', () => {
 			pendingDiff: 'Content edit',
 			lastAppliedVersionHash: null,
 			sourceContributionId: null,
-			feedbackDraftMarkdown: '',
+			feedbackDraftMarkdown: undefined,
 			feedbackIsDirty: false,
 			resourceType: null,
 		};
 
 		useDialecticStore.setState((state) => {
 			state.stageDocumentContent[serializedKey] = initialContent;
-			recordStageDocumentFeedbackDraftLogic(state, key, 'User feedback text');
+			recordStageDocumentFeedbackDraftLogic(state, key, 'User feedback text', testStorage, testUserId);
 		});
 
 		const state = useDialecticStore.getState();
@@ -3092,38 +3128,53 @@ describe('Feedback draft logic (15.c)', () => {
 		expect(entry?.feedbackIsDirty).toBe(true);
 		expect(entry?.currentDraftMarkdown).toBe('Baseline\nContent edit');
 		expect(entry?.isDirty).toBe(true);
+		expect(setItemMock).toHaveBeenCalledWith(
+			buildFeedbackLocalStorageKey(testUserId, key),
+			'User feedback text',
+		);
 	});
 
 	it('15.c.ii: flushStageDocumentFeedbackDraftLogic clears feedback draft and does not change content draft', () => {
 		const serializedKey = getStageDocumentKey(key);
+		const testUserId = 'user-15c';
+		const removeItemMock = vi.fn<[string], void>();
+		const testStorage: IKeyValueStorage = {
+			getItem: vi.fn<[string], string | null>().mockReturnValue(null),
+			setItem: vi.fn<[string, string], void>(),
+			removeItem: removeItemMock,
+		};
+		const draftState: StageDocumentContentState = {
+			baselineMarkdown: 'Baseline',
+			currentDraftMarkdown: 'Baseline\nContent edit',
+			isDirty: true,
+			isLoading: false,
+			error: null,
+			lastBaselineVersion: null,
+			pendingDiff: 'Content edit',
+			lastAppliedVersionHash: null,
+			sourceContributionId: null,
+			feedbackDraftMarkdown: 'Draft feedback',
+			feedbackIsDirty: true,
+			resourceType: null,
+		};
 		useDialecticStore.setState((state) => {
-			state.stageDocumentContent[serializedKey] = {
-				baselineMarkdown: 'Baseline',
-				currentDraftMarkdown: 'Baseline\nContent edit',
-				isDirty: true,
-				isLoading: false,
-				error: null,
-				lastBaselineVersion: null,
-				pendingDiff: 'Content edit',
-				lastAppliedVersionHash: null,
-				sourceContributionId: null,
-				feedbackDraftMarkdown: 'Draft feedback',
-				feedbackIsDirty: true,
-				resourceType: null,
-			};
+			state.stageDocumentContent[serializedKey] = draftState;
 		});
 
 		useDialecticStore.setState((state) => {
-			flushStageDocumentFeedbackDraftLogic(state, key);
+			flushStageDocumentFeedbackDraftLogic(state, key, testStorage, testUserId);
 		});
 
 		const state = useDialecticStore.getState();
 		const entry = state.stageDocumentContent[serializedKey];
 		expect(entry).toBeDefined();
-		expect(entry?.feedbackDraftMarkdown).toBe('');
+		expect(entry?.feedbackDraftMarkdown).toBe(undefined);
 		expect(entry?.feedbackIsDirty).toBe(false);
 		expect(entry?.currentDraftMarkdown).toBe('Baseline\nContent edit');
 		expect(entry?.isDirty).toBe(true);
+		expect(removeItemMock).toHaveBeenCalledWith(
+			buildFeedbackLocalStorageKey(testUserId, key),
+		);
 	});
 
 	it('15.c.iii: new entries from ensureStageDocumentContentLogic include feedbackDraftMarkdown and feedbackIsDirty', () => {
@@ -3137,7 +3188,7 @@ describe('Feedback draft logic (15.c)', () => {
 		const state = useDialecticStore.getState();
 		const entry = state.stageDocumentContent[serializedKey];
 		expect(entry).toBeDefined();
-		expect(entry?.feedbackDraftMarkdown).toBe('');
+		expect(entry?.feedbackDraftMarkdown).toBe(undefined);
 		expect(entry?.feedbackIsDirty).toBe(false);
 		expect(entry?.resourceType).toBe(null);
 	});
@@ -3153,6 +3204,169 @@ describe('Feedback draft logic (15.c)', () => {
 		const entry = useDialecticStore.getState().stageDocumentContent[serializedKey];
 		expect(entry).toBeDefined();
 		expect(entry.resourceType).toBe(null);
+	});
+});
+
+describe('feedback draft localStorage persistence and prepopulation', () => {
+	const key: StageDocumentCompositeKey = {
+		sessionId: 's1',
+		stageSlug: 'thesis',
+		iterationNumber: 1,
+		modelId: 'm1',
+		documentKey: 'doc_a',
+	};
+
+	const userId = 'user-1';
+	const getItemMock = vi.fn<[string], string | null>();
+	const setItemMock = vi.fn<[string, string], void>();
+	const removeItemMock = vi.fn<[string], void>();
+	let mockStorage: IKeyValueStorage;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+		getItemMock.mockReturnValue(null);
+		mockStorage = {
+			getItem: getItemMock,
+			setItem: setItemMock,
+			removeItem: removeItemMock,
+		};
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('recordStageDocumentFeedbackDraftLogic writes feedbackDraftMarkdown to localStorage on each change', () => {
+		useDialecticStore.setState((state) => {
+			recordStageDocumentFeedbackDraftLogic(state, key, 'Draft feedback text', mockStorage, userId);
+		});
+
+		expect(setItemMock).toHaveBeenCalled();
+		const [, callValue] = setItemMock.mock.calls[0];
+		expect(callValue).toBe('Draft feedback text');
+	});
+
+	it('recordStageDocumentFeedbackDraftLogic localStorage key contains all logical doc identity fields (userId, sessionId, stageSlug, iterationNumber, modelId, documentKey)', () => {
+		useDialecticStore.setState((state) => {
+			recordStageDocumentFeedbackDraftLogic(state, key, 'Draft', mockStorage, userId);
+		});
+
+		const [callKey] = setItemMock.mock.calls[0];
+		expect(callKey).toContain(userId);
+		expect(callKey).toContain(key.sessionId);
+		expect(callKey).toContain(key.stageSlug);
+		expect(callKey).toContain(String(key.iterationNumber));
+		expect(callKey).toContain(key.modelId);
+		expect(callKey).toContain(key.documentKey);
+	});
+
+	it('flushStageDocumentFeedbackDraftLogic removes the localStorage entry for the corresponding key', () => {
+		const expectedKey = buildFeedbackLocalStorageKey(userId, key);
+
+		useDialecticStore.setState((state) => {
+			flushStageDocumentFeedbackDraftLogic(state, key, mockStorage, userId);
+		});
+
+		expect(removeItemMock).toHaveBeenCalledWith(expectedKey);
+	});
+
+	it('initializeFeedbackDraftLogic calls fetchStageDocumentFeedback and sets feedbackDraftMarkdown from saved feedback when no localStorage draft exists', async () => {
+		const savedContent = 'Saved feedback content.';
+		mockDialecticClient.getStageDocumentFeedback.mockResolvedValue({
+			data: [{ id: 'fb-1', content: savedContent, createdAt: new Date().toISOString() }],
+			error: undefined,
+			status: 200,
+		});
+
+		const get = () => useDialecticStore.getState();
+		const set = (fn: (draft: DialecticStateValues) => void) => useDialecticStore.setState(fn);
+		await initializeFeedbackDraftLogic(get, set, key, mockStorage, userId);
+
+		expect(mockDialecticClient.getStageDocumentFeedback).toHaveBeenCalledWith(key);
+		const serializedKey = getStageDocumentKey(key);
+		const entry = useDialecticStore.getState().stageDocumentContent[serializedKey];
+		expect(entry?.feedbackDraftMarkdown).toBe(savedContent);
+		expect(entry?.feedbackIsDirty).toBe(false);
+	});
+
+	it('initializeFeedbackDraftLogic uses localStorage draft over saved feedback when both exist', async () => {
+		getItemMock.mockReturnValue('Local draft wins.');
+		mockDialecticClient.getStageDocumentFeedback.mockResolvedValue({
+			data: [{ id: 'fb-1', content: 'Saved feedback.', createdAt: new Date().toISOString() }],
+			error: undefined,
+			status: 200,
+		});
+
+		const get = () => useDialecticStore.getState();
+		const set = (fn: (draft: DialecticStateValues) => void) => useDialecticStore.setState(fn);
+		await initializeFeedbackDraftLogic(get, set, key, mockStorage, userId);
+
+		const serializedKey = getStageDocumentKey(key);
+		const entry = useDialecticStore.getState().stageDocumentContent[serializedKey];
+		expect(entry?.feedbackDraftMarkdown).toBe('Local draft wins.');
+		expect(entry?.feedbackIsDirty).toBe(true);
+	});
+
+	it('initializeFeedbackDraftLogic sets empty feedbackDraftMarkdown when neither localStorage draft nor saved feedback exists', async () => {
+		mockDialecticClient.getStageDocumentFeedback.mockResolvedValue({
+			data: [],
+			error: undefined,
+			status: 200,
+		});
+
+		const get = () => useDialecticStore.getState();
+		const set = (fn: (draft: DialecticStateValues) => void) => useDialecticStore.setState(fn);
+		await initializeFeedbackDraftLogic(get, set, key, mockStorage, userId);
+
+		const serializedKey = getStageDocumentKey(key);
+		const entry = useDialecticStore.getState().stageDocumentContent[serializedKey];
+		expect(entry?.feedbackDraftMarkdown).toBe('');
+		expect(entry?.feedbackIsDirty).toBe(false);
+	});
+
+	it('initializeFeedbackDraftLogic sets feedbackIsDirty = true only when loading from localStorage draft, not from saved feedback', async () => {
+		mockDialecticClient.getStageDocumentFeedback.mockResolvedValue({
+			data: [{ id: 'fb-1', content: 'Saved only.', createdAt: new Date().toISOString() }],
+			error: undefined,
+			status: 200,
+		});
+
+		const get = () => useDialecticStore.getState();
+		const set = (fn: (draft: DialecticStateValues) => void) => useDialecticStore.setState(fn);
+		await initializeFeedbackDraftLogic(get, set, key, mockStorage, userId);
+
+		const serializedKey = getStageDocumentKey(key);
+		const entry = useDialecticStore.getState().stageDocumentContent[serializedKey];
+		expect(entry?.feedbackDraftMarkdown).toBe('Saved only.');
+		expect(entry?.feedbackIsDirty).toBe(false);
+	});
+
+	it('initializeFeedbackDraftLogic is idempotent — calling it while a dirty draft is already loaded does not overwrite the user\'s in-progress edits', async () => {
+		const serializedKey = getStageDocumentKey(key);
+		useDialecticStore.setState((state) => {
+			ensureStageDocumentContentLogic(state, key, { baselineMarkdown: '', version: null });
+			const entry = state.stageDocumentContent[serializedKey];
+			if (entry) {
+				entry.feedbackDraftMarkdown = 'In-progress edit';
+				entry.feedbackIsDirty = true;
+			}
+		});
+
+		mockDialecticClient.getStageDocumentFeedback.mockResolvedValue({
+			data: [{ id: 'fb-1', content: 'New saved from server.', createdAt: new Date().toISOString() }],
+			error: undefined,
+			status: 200,
+		});
+
+		const get = () => useDialecticStore.getState();
+		const set = (fn: (draft: DialecticStateValues) => void) => useDialecticStore.setState(fn);
+		await initializeFeedbackDraftLogic(get, set, key, mockStorage, userId);
+
+		const entryAfter = useDialecticStore.getState().stageDocumentContent[serializedKey];
+		expect(entryAfter?.feedbackDraftMarkdown).toBe('In-progress edit');
+		expect(entryAfter?.feedbackIsDirty).toBe(true);
 	});
 });
 
@@ -3178,21 +3392,22 @@ describe('reapplyDraftToNewBaselineLogic', () => {
 			versionHash: 'h1',
 			updatedAt: new Date().toISOString(),
 		};
+		const initialContent: StageDocumentContentState = {
+			baselineMarkdown: '',
+			currentDraftMarkdown: '',
+			isDirty: false,
+			isLoading: false,
+			error: null,
+			lastBaselineVersion: null,
+			pendingDiff: null,
+			lastAppliedVersionHash: null,
+			sourceContributionId: null,
+			feedbackDraftMarkdown: undefined,
+			feedbackIsDirty: false,
+			resourceType: null,
+		};
 		let state: DialecticStateValues = produce(initialDialecticStateValues, (draft) => {
-			draft.stageDocumentContent[serializedKey] = {
-				baselineMarkdown: '',
-				currentDraftMarkdown: '',
-				isDirty: false,
-				isLoading: false,
-				error: null,
-				lastBaselineVersion: null,
-				pendingDiff: null,
-				lastAppliedVersionHash: null,
-				sourceContributionId: null,
-				feedbackDraftMarkdown: '',
-				feedbackIsDirty: false,
-				resourceType: null,
-			};
+			draft.stageDocumentContent[serializedKey] = initialContent;
 		});
 
 		state = produce(state, (draft) => {

@@ -73,6 +73,13 @@ const mockedApiObject = {
       error: null,
     }),
   })),
+  dialectic: () => ({
+    getStageDocumentFeedback: vi.fn().mockResolvedValue({ data: [], error: null }),
+    submitStageDocumentFeedback: vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
+    getProjectResourceContent: vi.fn().mockResolvedValue({ data: { content: '' }, error: null }),
+    getAllStageProgress: vi.fn().mockResolvedValue({ data: [], error: null }),
+    listStageDocuments: vi.fn().mockResolvedValue({ data: [], error: null }),
+  }),
 };
 
 vi.mock('@paynless/api', () => ({

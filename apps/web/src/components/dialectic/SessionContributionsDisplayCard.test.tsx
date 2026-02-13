@@ -266,7 +266,7 @@ const buildStageDocumentContent = (
   pendingDiff: null,
   lastAppliedVersionHash: null,
   sourceContributionId: null,
-  feedbackDraftMarkdown: '',
+  feedbackDraftMarkdown: undefined,
   feedbackIsDirty: false,
   resourceType: null,
   ...overrides,

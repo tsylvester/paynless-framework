@@ -12,6 +12,7 @@ import {
 	StageRunDocumentDescriptor,
 	StageDocumentVersionInfo,
 	SaveContributionEditPayload,
+	STAGE_RUN_DOCUMENT_KEY_SEPARATOR,
 } from "@paynless/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,7 @@ export const GeneratedContributionCard: React.FC<
 		saveContributionEditError,
 		activeContextProjectId,
 		fetchStageDocumentContent,
+		initializeFeedbackDraft,
 	} = useDialecticStore((state) => {
 		const sessionId = state.activeContextSessionId;
 		const stageSlug = state.activeStageSlug;
@@ -120,6 +122,7 @@ export const GeneratedContributionCard: React.FC<
 			saveContributionEditError: state.saveContributionEditError,
 			activeContextProjectId: state.activeContextProjectId,
 			fetchStageDocumentContent: state.fetchStageDocumentContent,
+			initializeFeedbackDraft: state.initializeFeedbackDraft,
 		};
 	});
 
@@ -221,6 +224,10 @@ export const GeneratedContributionCard: React.FC<
 		[compositeKey],
 	);
 
+	const isInitializingFeedbackDraft = useDialecticStore(
+		(state) => state.isInitializingFeedbackDraft,
+	);
+
 	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
 	const documentResourceState = useDialecticStore((state) => {
 		const currentSessionId = state.activeContextSessionId;
@@ -252,10 +259,14 @@ export const GeneratedContributionCard: React.FC<
 	const lastBaselineVersion: StageDocumentVersionInfo | null =
 		documentResourceState ? documentResourceState.lastBaselineVersion : null;
 
+		const documentDescriptorKey = focusedDocument
+		? `${focusedDocument.documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`
+		: null;
+	
 	const documentDescriptor: StageRunDocumentDescriptor | undefined =
-		focusedDocument && stageRunProgress
-			? stageRunProgress.documents?.[focusedDocument.documentKey]
-			: undefined;
+		focusedDocument && stageRunProgress && documentDescriptorKey
+			? stageRunProgress.documents?.[documentDescriptorKey]
+			: undefined;	
 
 	const isRenderedDescriptor = (
 		descriptor: StageRunDocumentDescriptor | undefined,
@@ -298,6 +309,16 @@ export const GeneratedContributionCard: React.FC<
 		fetchStageDocumentContent,
 		compositeKey,
 	]);
+
+	useEffect(() => {
+		// Initialize feedback draft when the editor opens for a document
+		// that has no feedback draft state yet. A draft is considered uninitialized
+		// if its value is `undefined`. An empty string `''` is an initialized, empty draft.
+		const feedbackDraftExists = documentResourceState?.feedbackDraftMarkdown !== undefined;
+		if (isEditorsOpen && compositeKey && !feedbackDraftExists) {
+			initializeFeedbackDraft(compositeKey);
+		}
+	}, [isEditorsOpen, compositeKey, documentResourceState?.feedbackDraftMarkdown, initializeFeedbackDraft]);
 
 	const handleFeedbackDraftChange = useCallback(
 		(value: string) => {
@@ -654,7 +675,7 @@ export const GeneratedContributionCard: React.FC<
 											<div className="h-full p-4 space-y-2">
 												<TextInputArea
 													label="Document Content"
-													value={documentResourceState?.currentDraftMarkdown || baselineContent}
+													value={documentResourceState?.currentDraftMarkdown ?? baselineContent}
 													onChange={handleDocumentContentChange}
 													disabled={isDraftLoading || isSavingContributionEdit}
 													placeholder="No content available."
@@ -690,18 +711,25 @@ export const GeneratedContributionCard: React.FC<
 										<ResizableHandle withHandle />
 										<ResizablePanel defaultSize={40} minSize={25}>
 											<div className="h-full p-4 bg-muted/20 space-y-2">
-												<TextInputArea
-													label="Feedback"
-													value={feedbackDraftValue}
-													onChange={handleFeedbackDraftChange}
-													placeholder={`Enter feedback for this document...`}
-													id={`stage-document-feedback-${modelId}-${selectedDocumentKey}`}
-													dataTestId={`stage-document-feedback-${modelId}-${selectedDocumentKey}`}
-													showPreviewToggle
-												/>
+													<div className="relative">
+														<TextInputArea
+															label="Feedback"
+															value={feedbackDraftValue}
+															onChange={handleFeedbackDraftChange}
+															placeholder={`Enter feedback for this document...`}
+															id={`stage-document-feedback-${modelId}-${selectedDocumentKey}`}
+															dataTestId={`stage-document-feedback-${modelId}-${selectedDocumentKey}`}
+															showPreviewToggle
+														/>
+														{isInitializingFeedbackDraft && (
+															<div data-testid="feedback-loader" className="absolute inset-0 flex items-center justify-center bg-background/50">
+																<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+															</div>
+														)}
+													</div>
 												<div className="flex flex-col gap-1">
 													{hasFeedbackChanges && (
-														<span className="text-xs text-amber-600 dark:text-amber-400">Unsaved feedback</span>
+														<span className="text-xs text-amber-600 dark:text-amber-400">Feedback is stored locally until saved</span>
 													)}
 													{submitStageDocumentFeedbackError && (
 														<span className="text-xs text-destructive">{submitStageDocumentFeedbackError.message}</span>
@@ -731,7 +759,7 @@ export const GeneratedContributionCard: React.FC<
 									<div className="space-y-2">
 										<TextInputArea
 											label="Document Content"
-											value={documentResourceState?.currentDraftMarkdown || baselineContent}
+											value={documentResourceState?.currentDraftMarkdown ?? baselineContent}
 											onChange={handleDocumentContentChange}
 											disabled={isDraftLoading || isSavingContributionEdit}
 											placeholder="No content available."
@@ -776,7 +804,7 @@ export const GeneratedContributionCard: React.FC<
 										/>
 										<div className="flex flex-col gap-1">
 											{hasFeedbackChanges && (
-												<span className="text-xs text-amber-600 dark:text-amber-400">Unsaved feedback</span>
+												<span className="text-xs text-amber-600 dark:text-amber-400">Feedback is stored locally until saved</span>
 											)}
 											{submitStageDocumentFeedbackError && (
 												<span className="text-xs text-destructive">{submitStageDocumentFeedbackError.message}</span>

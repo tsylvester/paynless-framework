@@ -554,29 +554,6 @@
         *   `[✅]` Added validation using existing type guards (isJobTypeEnum, isJobProgressEntry)
         *   `[✅]` Tests: comprehensive unit tests + integration tests for full DAG traversal
 
-
-# Feedback Path Fix — Work Breakdown Structure
-
-## Problem Statement
-The feedback persistence path has multiple issues: drafts are lost on tab close (in-memory only), the feedback pane shows empty after saving (no prepopulation from saved feedback), multiple DB rows can be created for the same logical document, backend ingestion paths select feedback nondeterministically, iteration numbering is inconsistent across retrieval paths, and the `getStageDocumentFeedback` backend handler does not exist — the API client and store call a route that is never serviced.
-
-## Objectives
-- Persist unsaved feedback drafts to localStorage so they survive tab close/reopen
-- Prepopulate the feedback pane from saved backend feedback, with localStorage draft overlay
-- Enforce single feedback per logical document via DB constraint + application-level upsert
-- Eliminate nondeterministic feedback selection in backend ingestion paths
-- Standardize iteration numbering across all feedback retrieval paths
-- Implement the missing `getStageDocumentFeedback` backend handler and wire it into the router
-
-## Expected Outcome
-- No lost drafts (localStorage persistence)
-- No empty pane after saving (prepopulate from saved feedback)
-- No ambiguous ingestion (one feedback per logical doc)
-- Consistent iteration semantics across all feedback read/write paths
-- Single continuous iterating file per logical doc: each save updates the same feedback artifact
-
-# Work Breakdown Structure
-
 *   `[✅]`   [DB] supabase/migrations/`20260211040003_feedback_per_document.sql` **Enforce per-document feedback uniqueness via unique index**
     *   `[✅]`   `objective.md`
         *   `[✅]`   Drop the existing stage-level unique constraint `unique_session_stage_iteration_feedback` (too coarse — prevents multiple documents from having feedback within the same stage+iteration)
@@ -967,126 +944,116 @@ The feedback persistence path has multiple issues: drafts are lost on tab close 
     *   `[✅]`   Node 6.c: Remove dead `userStageFeedback` from `SubmitStageResponsesPayload`
     *   `[✅]`   Node 6.d: Integration test corrected to exercise both save paths + model-scoped ingestion
 
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore.documents.ts` **Add localStorage draft persistence and saved-feedback prepopulation logic**
-    *   `[ ]`   `objective.md`
-        *   `[ ]`   On each feedback draft change, persist the draft to localStorage under a stable key derived from the logical doc identity (userId, sessionId, stageSlug, iterationNumber, modelId, documentKey)
-        *   `[ ]`   On successful save (Save Feedback or Submit Stage Responses), flush the localStorage entry for the saved logical doc
-        *   `[ ]`   Add new `initializeFeedbackDraftLogic` function that: (1) calls existing `fetchStageDocumentFeedback` to get saved feedback from backend, (2) checks localStorage for an existing draft, (3) sets `feedbackDraftMarkdown` from the draft (if present) or from the saved feedback content (if present)
-        *   `[ ]`   Prepopulation priority: localStorage draft wins over saved backend feedback (user's unsaved work takes precedence)
-    *   `[ ]`   `role.md`
-        *   `[ ]`   State management layer — maintains feedback draft state with cross-tab persistence via localStorage
-        *   `[ ]`   Orchestrates the prepopulation flow: backend fetch → localStorage check → draft initialization
-    *   `[ ]`   `module.md`
-        *   `[ ]`   Boundary: store actions → localStorage API → API client → store state mutations
-        *   `[ ]`   localStorage key format: `paynless:feedbackDraft:${userId}:${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
-        *   `[ ]`   Affected existing functions: `recordStageDocumentFeedbackDraftLogic` (add localStorage write), `flushStageDocumentFeedbackDraftLogic` (add localStorage remove)
-        *   `[ ]`   New function: `initializeFeedbackDraftLogic`
-    *   `[ ]`   `deps.md`
-        *   `[ ]`   Existing `stageDocumentContent` state structure and `StageDocumentContentState` type
-        *   `[ ]`   Existing `fetchStageDocumentFeedbackLogic` and `stageDocumentFeedback` state
-        *   `[ ]`   Existing `api.dialectic().getStageDocumentFeedback()` API client method
-        *   `[ ]`   Storage adapter (platform abstraction) for cross-platform compatibility (web localStorage + Tauri head)
-        *   `[ ]`   `StageDocumentCompositeKey` type (sessionId, stageSlug, iterationNumber, modelId, documentKey)
-        *   `[ ]`   userId from auth state (`get().user?.id`) for localStorage key construction
-        *   `[ ]`   Node 4 (backend handler wired — `getStageDocumentFeedback` must be serviceable for prepopulation fetch to succeed)
-    *   `[ ]`   unit/`dialecticStore.documents.test.ts`
-        *   `[ ]`   Add test: `recordStageDocumentFeedbackDraftLogic` writes feedbackDraftMarkdown to localStorage on each change
-        *   `[ ]`   Add test: `recordStageDocumentFeedbackDraftLogic` localStorage key contains all logical doc identity fields (userId, sessionId, stageSlug, iterationNumber, modelId, documentKey)
-        *   `[ ]`   Add test: `flushStageDocumentFeedbackDraftLogic` removes the localStorage entry for the corresponding key
-        *   `[ ]`   Add test: `initializeFeedbackDraftLogic` calls `fetchStageDocumentFeedback` and sets `feedbackDraftMarkdown` from saved feedback when no localStorage draft exists
-        *   `[ ]`   Add test: `initializeFeedbackDraftLogic` uses localStorage draft over saved feedback when both exist
-        *   `[ ]`   Add test: `initializeFeedbackDraftLogic` sets empty `feedbackDraftMarkdown` when neither localStorage draft nor saved feedback exists
-        *   `[ ]`   Add test: `initializeFeedbackDraftLogic` sets `feedbackIsDirty = true` only when loading from localStorage draft, not from saved feedback
-        *   `[ ]`   Add test: `initializeFeedbackDraftLogic` is idempotent — calling it while a dirty draft is already loaded does not overwrite the user's in-progress edits
-    *   `[ ]`   `dialecticStore.documents.ts`
-        *   `[ ]`   Add helper function `buildFeedbackLocalStorageKey(userId, key)` that constructs the deterministic localStorage key from userId + composite key fields
-        *   `[ ]`   In `recordStageDocumentFeedbackDraftLogic`: after updating state, persist via storage adapter (guarded; do not assume localStorage exists)
-        *   `[ ]`   In `flushStageDocumentFeedbackDraftLogic`: after clearing state, flush via storage adapter (guarded; do not assume localStorage exists)
-        *   `[ ]`   Add `initializeFeedbackDraftLogic(get, set, key)` that orchestrates: fetch saved feedback → check localStorage → set draft state with correct `feedbackIsDirty` flag
-        *   `[ ]`   Guard `initializeFeedbackDraftLogic` against overwriting existing dirty drafts (if `feedbackIsDirty` is already true, skip initialization)
-    *   `[ ]`   `requirements.md`
-        *   `[ ]`   Draft survives tab close and browser restart (localStorage)
-        *   `[ ]`   Draft is flushed only on explicit successful save, never on page unload
-        *   `[ ]`   Prepopulation is idempotent: repeated calls do not overwrite user's in-progress edits
-        *   `[ ]`   localStorage writes are synchronous and do not block UI rendering
-        *   `[ ]`   userId is obtained from auth state (`get().user?.id`), not from the composite key
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore.documents.ts` **Add localStorage draft persistence and saved-feedback prepopulation logic**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   On each feedback draft change, persist the draft to localStorage under a stable key derived from the logical doc identity (userId, sessionId, stageSlug, iterationNumber, modelId, documentKey)
+        *   `[✅]`   On successful save (Save Feedback or Submit Stage Responses), flush the localStorage entry for the saved logical doc
+        *   `[✅]`   Add new `initializeFeedbackDraftLogic` function that: (1) calls existing `fetchStageDocumentFeedback` to get saved feedback from backend, (2) checks localStorage for an existing draft, (3) sets `feedbackDraftMarkdown` from the draft (if present) or from the saved feedback content (if present)
+        *   `[✅]`   Prepopulation priority: localStorage draft wins over saved backend feedback (user's unsaved work takes precedence)
+    *   `[✅]`   `role.md`
+        *   `[✅]`   State management layer — maintains feedback draft state with cross-tab persistence via localStorage
+        *   `[✅]`   Orchestrates the prepopulation flow: backend fetch → localStorage check → draft initialization
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: store actions → localStorage API → API client → store state mutations
+        *   `[✅]`   localStorage key format: `paynless:feedbackDraft:${userId}:${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
+        *   `[✅]`   Affected existing functions: `recordStageDocumentFeedbackDraftLogic` (add localStorage write), `flushStageDocumentFeedbackDraftLogic` (add localStorage remove)
+        *   `[✅]`   New function: `initializeFeedbackDraftLogic`
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Existing `stageDocumentContent` state structure and `StageDocumentContentState` type
+        *   `[✅]`   Existing `fetchStageDocumentFeedbackLogic` and `stageDocumentFeedback` state
+        *   `[✅]`   Existing `api.dialectic().getStageDocumentFeedback()` API client method
+        *   `[✅]`   Storage adapter (platform abstraction) for cross-platform compatibility (web localStorage + Tauri head)
+        *   `[✅]`   `StageDocumentCompositeKey` type (sessionId, stageSlug, iterationNumber, modelId, documentKey)
+        *   `[✅]`   userId from auth state (`get().user?.id`) for localStorage key construction
+        *   `[✅]`   Node 4 (backend handler wired — `getStageDocumentFeedback` must be serviceable for prepopulation fetch to succeed)
+    *   `[✅]`   unit/`dialecticStore.documents.test.ts`
+        *   `[✅]`   Add test: `recordStageDocumentFeedbackDraftLogic` writes feedbackDraftMarkdown to localStorage on each change
+        *   `[✅]`   Add test: `recordStageDocumentFeedbackDraftLogic` localStorage key contains all logical doc identity fields (userId, sessionId, stageSlug, iterationNumber, modelId, documentKey)
+        *   `[✅]`   Add test: `flushStageDocumentFeedbackDraftLogic` removes the localStorage entry for the corresponding key
+        *   `[✅]`   Add test: `initializeFeedbackDraftLogic` calls `fetchStageDocumentFeedback` and sets `feedbackDraftMarkdown` from saved feedback when no localStorage draft exists
+        *   `[✅]`   Add test: `initializeFeedbackDraftLogic` uses localStorage draft over saved feedback when both exist
+        *   `[✅]`   Add test: `initializeFeedbackDraftLogic` sets empty `feedbackDraftMarkdown` when neither localStorage draft nor saved feedback exists
+        *   `[✅]`   Add test: `initializeFeedbackDraftLogic` sets `feedbackIsDirty = true` only when loading from localStorage draft, not from saved feedback
+        *   `[✅]`   Add test: `initializeFeedbackDraftLogic` is idempotent — calling it while a dirty draft is already loaded does not overwrite the user's in-progress edits
+    *   `[✅]`   `dialecticStore.documents.ts`
+        *   `[✅]`   Add helper function `buildFeedbackLocalStorageKey(userId, key)` that constructs the deterministic localStorage key from userId + composite key fields
+        *   `[✅]`   In `recordStageDocumentFeedbackDraftLogic`: after updating state, persist via storage adapter (guarded; do not assume localStorage exists)
+        *   `[✅]`   In `flushStageDocumentFeedbackDraftLogic`: after clearing state, flush via storage adapter (guarded; do not assume localStorage exists)
+        *   `[✅]`   Add `initializeFeedbackDraftLogic(get, set, key)` that orchestrates: fetch saved feedback → check localStorage → set draft state with correct `feedbackIsDirty` flag
+        *   `[✅]`   Guard `initializeFeedbackDraftLogic` against overwriting existing dirty drafts (if `feedbackIsDirty` is already true, skip initialization)
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Draft survives tab close and browser restart (localStorage)
+        *   `[✅]`   Draft is flushed only on explicit successful save, never on page unload
+        *   `[✅]`   Prepopulation is idempotent: repeated calls do not overwrite user's in-progress edits
+        *   `[✅]`   localStorage writes are synchronous and do not block UI rendering
+        *   `[✅]`   userId is obtained from auth state (`get().user?.id`), not from the composite key
 
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore.ts` **Wire initializeFeedbackDraft action into the store**
-    *   `[ ]`   `objective.md`
-        *   `[ ]`   Add `initializeFeedbackDraft` action to the store that delegates to `initializeFeedbackDraftLogic` from `dialecticStore.documents.ts`
-        *   `[ ]`   Expose the action for UI consumption (analogous to existing `updateStageDocumentFeedbackDraft` and `submitStageDocumentFeedback` actions)
-    *   `[ ]`   `role.md`
-        *   `[ ]`   State management — Zustand store action wiring layer connecting UI to logic functions
-    *   `[ ]`   `module.md`
-        *   `[ ]`   Boundary: store action interface → logic function delegation
-        *   `[ ]`   Follows the established wiring pattern: `updateStageDocumentFeedbackDraft` (line 1361), `submitStageDocumentFeedback` (line 1399)
-    *   `[ ]`   `deps.md`
-        *   `[ ]`   Node 7: `initializeFeedbackDraftLogic` in `dialecticStore.documents.ts`
-        *   `[ ]`   `StageDocumentCompositeKey` type
-        *   `[ ]`   Existing store `get`/`set` accessors
-    *   `[ ]`   interface/store type definition
-        *   `[ ]`   Add `initializeFeedbackDraft: (key: StageDocumentCompositeKey) => Promise<void>` to the store's type definition
-    *   `[ ]`   unit/`dialecticStore.documents.test.ts` (or co-located store tests)
-        *   `[ ]`   Add test: `initializeFeedbackDraft` action calls `initializeFeedbackDraftLogic` with correct arguments
-    *   `[ ]`   `dialecticStore.ts`
-        *   `[ ]`   Import `initializeFeedbackDraftLogic` from `./dialecticStore.documents.ts`
-        *   `[ ]`   Add `initializeFeedbackDraft` action: `async (key) => { return await initializeFeedbackDraftLogic(get, set, key); }`
-    *   `[ ]`   `requirements.md`
-        *   `[ ]`   Action must be callable from UI components via `useDialecticStore(state => state.initializeFeedbackDraft)`
-        *   `[ ]`   Follows the same async action pattern as `submitStageDocumentFeedback`
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore.ts` **Wire initializeFeedbackDraft action into the store**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Add `initializeFeedbackDraft` action to the store that delegates to `initializeFeedbackDraftLogic` from `dialecticStore.documents.ts`
+        *   `[✅]`   Expose the action for UI consumption (analogous to existing `updateStageDocumentFeedbackDraft` and `submitStageDocumentFeedback` actions)
+    *   `[✅]`   `role.md`
+        *   `[✅]`   State management — Zustand store action wiring layer connecting UI to logic functions
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: store action interface → logic function delegation
+        *   `[✅]`   Follows the established wiring pattern: `updateStageDocumentFeedbackDraft` (line 1361), `submitStageDocumentFeedback` (line 1399)
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Node 7: `initializeFeedbackDraftLogic` in `dialecticStore.documents.ts`
+        *   `[✅]`   `StageDocumentCompositeKey` type
+        *   `[✅]`   Existing store `get`/`set` accessors
+    *   `[✅]`   interface/store type definition
+        *   `[✅]`   Add `initializeFeedbackDraft: (key: StageDocumentCompositeKey) => Promise<void>` to the store's type definition
+    *   `[✅]`   unit/`dialecticStore.documents.test.ts` (or co-located store tests)
+        *   `[✅]`   Add test: `initializeFeedbackDraft` action calls `initializeFeedbackDraftLogic` with correct arguments
+    *   `[✅]`   `dialecticStore.ts`
+        *   `[✅]`   Import `initializeFeedbackDraftLogic` from `./dialecticStore.documents.ts`
+        *   `[✅]`   Add `initializeFeedbackDraft` action: `async (key) => { return await initializeFeedbackDraftLogic(get, set, key); }`
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Action must be callable from UI components via `useDialecticStore(state => state.initializeFeedbackDraft)`
+        *   `[✅]`   Follows the same async action pattern as `submitStageDocumentFeedback`
 
-*   `[ ]`   [UI] apps/web/src/components/dialectic/`GeneratedContributionCard.tsx` **Wire feedback prepopulation on document expand/focus**
-    *   `[ ]`   `objective.md`
-        *   `[ ]`   When the feedback pane for a document is opened/expanded, call `initializeFeedbackDraft(compositeKey)` to prepopulate from saved feedback or localStorage draft
-        *   `[ ]`   Display loading state while the initialization fetch is in progress
-        *   `[ ]`   After initialization, the textarea reads from `feedbackDraftMarkdown` as before — no change to the editing flow
-        *   `[ ]`   The "Save Feedback" and "Submit Responses" flows remain unchanged (they already call `submitStageDocumentFeedback` which flushes the draft)
-    *   `[ ]`   `role.md`
-        *   `[ ]`   UI component — renders the feedback textarea and manages user interaction lifecycle
-        *   `[ ]`   Responsible for triggering prepopulation at the right lifecycle moment
-    *   `[ ]`   `module.md`
-        *   `[ ]`   Boundary: React component mount/expand → store action call → state subscription → textarea render
-        *   `[ ]`   Trigger point: when feedback pane becomes visible (expand/toggle or component mount)
-        *   `[ ]`   No changes to save/submit flow, only to initialization
-    *   `[ ]`   `deps.md`
-        *   `[ ]`   Node 8: `initializeFeedbackDraft` store action (must be wired in store)
-        *   `[ ]`   Existing `useDialecticStore` hook for accessing store actions and state
-        *   `[ ]`   Existing `StageDocumentCompositeKey` construction from component props/state
-        *   `[ ]`   Existing `documentResourceState?.feedbackDraftMarkdown` binding for textarea value
-    *   `[ ]`   unit/`GeneratedContributionCard.test.tsx`
-        *   `[ ]`   Add test: when feedback pane is expanded, `initializeFeedbackDraft` is called with the correct composite key
-        *   `[ ]`   Add test: `initializeFeedbackDraft` is NOT called again if feedback pane is already initialized (idempotency guard)
-        *   `[ ]`   Add test: textarea displays the value from `feedbackDraftMarkdown` after initialization completes (prepopulated from saved feedback)
-        *   `[ ]`   Add test: textarea displays the localStorage draft content when a draft exists (draft wins over saved feedback)
-        *   `[ ]`   Add test: save flow still works after prepopulation (Save Feedback calls `submitStageDocumentFeedback` and flushes the draft)
-    *   `[ ]`   `GeneratedContributionCard.tsx`
-        *   `[ ]`   Add `initializeFeedbackDraft` to the store selectors used by this component
-        *   `[ ]`   Add a `useEffect` or equivalent that calls `initializeFeedbackDraft(compositeKey)` when the feedback pane becomes visible and the draft has not yet been initialized
-        *   `[ ]`   Add a guard (e.g., a ref or state flag) to prevent re-initialization if the user has already begun editing
-        *   `[ ]`   Optionally display a brief loading indicator while initialization fetch is in progress
-    *   `[ ]`   `requirements.md`
-        *   `[ ]`   Feedback pane shows previously saved feedback on open (not empty)
-        *   `[ ]`   Unsaved localStorage draft takes precedence over saved feedback
-        *   `[ ]`   Initialization does not disrupt in-progress editing
-        *   `[ ]`   No redundant API calls (initialize once per document per session lifecycle)
+*   `[✅]`   [UI] apps/web/src/components/dialectic/`GeneratedContributionCard.tsx` **Wire feedback prepopulation on document expand/focus**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   When the feedback pane for a document is opened/expanded, call `initializeFeedbackDraft(compositeKey)` to prepopulate from saved feedback or localStorage draft
+        *   `[✅]`   Display loading state while the initialization fetch is in progress
+        *   `[✅]`   After initialization, the textarea reads from `feedbackDraftMarkdown` as before — no change to the editing flow
+        *   `[✅]`   The "Save Feedback" and "Submit Responses" flows remain unchanged (they already call `submitStageDocumentFeedback` which flushes the draft)
+    *   `[✅]`   `role.md`
+        *   `[✅]`   UI component — renders the feedback textarea and manages user interaction lifecycle
+        *   `[✅]`   Responsible for triggering prepopulation at the right lifecycle moment
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: React component mount/expand → store action call → state subscription → textarea render
+        *   `[✅]`   Trigger point: when feedback pane becomes visible (expand/toggle or component mount)
+        *   `[✅]`   No changes to save/submit flow, only to initialization
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Node 8: `initializeFeedbackDraft` store action (must be wired in store)
+        *   `[✅]`   Existing `useDialecticStore` hook for accessing store actions and state
+        *   `[✅]`   Existing `StageDocumentCompositeKey` construction from component props/state
+        *   `[✅]`   Existing `documentResourceState?.feedbackDraftMarkdown` binding for textarea value
+    *   `[✅]`   unit/`GeneratedContributionCard.test.tsx`
+        *   `[✅]`   Add test: when feedback pane is expanded, `initializeFeedbackDraft` is called with the correct composite key
+        *   `[✅]`   Add test: `initializeFeedbackDraft` is NOT called again if feedback pane is already initialized (idempotency guard)
+        *   `[✅]`   Add test: textarea displays the value from `feedbackDraftMarkdown` after initialization completes (prepopulated from saved feedback)
+        *   `[✅]`   Add test: textarea displays the localStorage draft content when a draft exists (draft wins over saved feedback)
+        *   `[✅]`   Add test: save flow still works after prepopulation (Save Feedback calls `submitStageDocumentFeedback` and flushes the draft)
+    *   `[✅]`   `GeneratedContributionCard.tsx`
+        *   `[✅]`   Add `initializeFeedbackDraft` to the store selectors used by this component
+        *   `[✅]`   Add a `useEffect` or equivalent that calls `initializeFeedbackDraft(compositeKey)` when the feedback pane becomes visible and the draft has not yet been initialized
+        *   `[✅]`   Add a guard (e.g., a ref or state flag) to prevent re-initialization if the user has already begun editing
+        *   `[✅]`   Optionally display a brief loading indicator while initialization fetch is in progress
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Feedback pane shows previously saved feedback on open (not empty)
+        *   `[✅]`   Unsaved localStorage draft takes precedence over saved feedback
+        *   `[✅]`   Initialization does not disrupt in-progress editing
+        *   `[✅]`   No redundant API calls (initialize once per document per session lifecycle)
 
-*   `[ ]`   **Commit** `feat(store,ui): localStorage draft persistence and feedback prepopulation`
-    *   `[ ]`   Node 7: localStorage persistence in `dialecticStore.documents.ts`
-    *   `[ ]`   Node 8: `initializeFeedbackDraft` action wiring in `dialecticStore.ts`
-    *   `[ ]`   Node 9: Prepopulation trigger in `GeneratedContributionCard.tsx`
+*   `[✅]`   **Commit** `feat(store,ui): localStorage draft persistence and feedback prepopulation`
+    *   `[✅]`   Node 7: localStorage persistence in `dialecticStore.documents.ts`
+    *   `[✅]`   Node 8: `initializeFeedbackDraft` action wiring in `dialecticStore.ts`
+    *   `[✅]`   Node 9: Prepopulation trigger in `GeneratedContributionCard.tsx`
 
 
 # ToDo
-
-    - Fix saving feedback
-    -- Upload feedback correctly
-    -- Populate existing feedback to view pane 
-    -- If not saved, hold in localStorage for a long time
-    -- When saved, flush localStorage
-    -- When viewing document, populate from localStorage or existing feedback document
-    -- Fix submitStageDocumentFeedback 
-    -- Remove double-write (fileManager writes to db)
-    -- Stop swallowing the real Postgres error message, pass it on 
 
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
     -- User reports that a single document failed and they liked the other documents, but had to regenerate the entire stage
@@ -1106,13 +1073,6 @@ The feedback persistence path has multiple issues: drafts are lost on tab close 
     - New user sign in banner doesn't display, throws console error  
     -- Chase, diagnose, fix 
 
-    - Determine an index value for a full flow for 3 models and set that as the new user signup token deposit
-    -- User reports their new sign up allocation was only enough to get 3/4 docs in thesis 
-    -- Reasonable for a new user to want to complete an entire first project from their initial token allocation
-    -- Not a dev task per se, but we need to run a few e2e multi-model flows and index the cost then set the new user sign up deposit close to that value
-    -- This is not recurring, just a new user sign up 
-    -- Dep: Will need to finally set up email validation so that users can't just create new accounts for each project 
-
    - Generating spinner stays present until page refresh 
    -- Needs to react to actual progress 
    -- Stop the spinner when a condition changes 
@@ -1121,6 +1081,3 @@ The feedback persistence path has multiple issues: drafts are lost on tab close 
    -- Attempting to generate stalls with no product 
 
    - Checklist does not correctly find documents when multiple agents are chosen 
-   -- 
-
-   - Steps that collect feedback need to look in the right location for it 

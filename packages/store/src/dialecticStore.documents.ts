@@ -25,6 +25,7 @@ import type {
 	StageRunProgressSnapshot,
 	JobProgressEntry,
 	ExecuteStartedPayload,
+	IKeyValueStorage,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import { api } from '@paynless/api';
@@ -148,6 +149,9 @@ const ensureRenderedDocumentDescriptor = (
 export const getStageDocumentKey = (key: StageDocumentCompositeKey): string =>
 	`${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
 
+export const buildFeedbackLocalStorageKey = (userId: string, key: StageDocumentCompositeKey): string =>
+	`paynless:feedbackDraft:${userId}:${key.sessionId}:${key.stageSlug}:${key.iterationNumber}:${key.modelId}:${key.documentKey}`;
+
 export const upsertStageDocumentVersionLogic = (
 	state: Draft<DialecticStateValues>,
 	key: StageDocumentCompositeKey,
@@ -205,7 +209,7 @@ export const ensureStageDocumentContentLogic = (
     pendingDiff: null,
     lastAppliedVersionHash,
     sourceContributionId: null,
-    feedbackDraftMarkdown: '',
+    feedbackDraftMarkdown: undefined,
     feedbackIsDirty: false,
     resourceType: null,
   };
@@ -218,6 +222,8 @@ export const recordStageDocumentFeedbackDraftLogic = (
 	state: Draft<DialecticStateValues>,
 	key: StageDocumentCompositeKey,
 	feedbackMarkdown: string,
+	storage: IKeyValueStorage | null,
+	userId: string | null,
 ): void => {
 	const entry = ensureStageDocumentContentLogic(state, key, {
 		baselineMarkdown: '',
@@ -225,18 +231,34 @@ export const recordStageDocumentFeedbackDraftLogic = (
 	});
 	entry.feedbackDraftMarkdown = feedbackMarkdown;
 	entry.feedbackIsDirty = feedbackMarkdown !== '';
+	if (storage && userId) {
+		try {
+			storage.setItem(buildFeedbackLocalStorageKey(userId, key), feedbackMarkdown);
+		} catch (err: unknown) {
+			logger.warn('[recordStageDocumentFeedbackDraftLogic] localStorage write failed', { err });
+		}
+	}
 };
 
 export const flushStageDocumentFeedbackDraftLogic = (
 	state: Draft<DialecticStateValues>,
 	key: StageDocumentCompositeKey,
+	storage: IKeyValueStorage | null,
+	userId: string | null,
 ): void => {
 	const entry = ensureStageDocumentContentLogic(state, key, {
 		baselineMarkdown: '',
 		version: null,
 	});
-	entry.feedbackDraftMarkdown = '';
+	entry.feedbackDraftMarkdown = undefined;
 	entry.feedbackIsDirty = false;
+	if (storage && userId) {
+		try {
+			storage.removeItem(buildFeedbackLocalStorageKey(userId, key));
+		} catch (err: unknown) {
+			logger.warn('[flushStageDocumentFeedbackDraftLogic] localStorage remove failed', { err });
+		}
+	}
 };
 
 export const recordStageDocumentDraftLogic = (
@@ -431,7 +453,7 @@ export const fetchStageDocumentContentLogic = async (
 		const serializedKey = getStageDocumentKey(key);
 		const entry = state.stageDocumentContent[serializedKey];
 		if (!entry) {
-			state.stageDocumentContent[serializedKey] = {
+			const newEntry: StageDocumentContentState = {
 				baselineMarkdown: '',
 				currentDraftMarkdown: '',
 				isDirty: false,
@@ -441,10 +463,11 @@ export const fetchStageDocumentContentLogic = async (
 				pendingDiff: null,
 				lastAppliedVersionHash: versionInfo.versionHash,
 				sourceContributionId: null,
-				feedbackDraftMarkdown: '',
+				feedbackDraftMarkdown: undefined,
 				feedbackIsDirty: false,
 				resourceType: null,
 			};
+			state.stageDocumentContent[serializedKey] = newEntry;
 		} else {
 			entry.isLoading = true;
 			entry.error = null;
@@ -1422,6 +1445,7 @@ export const submitStageDocumentFeedbackLogic = async (
 	get: () => DialecticStore,
 	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
 	payload: SubmitStageDocumentFeedbackPayload,
+	storage: IKeyValueStorage | null,
 ): Promise<ApiResponse<{ success: boolean }>> => {
 	set(state => {
 		state.isSubmittingStageDocumentFeedback = true;
@@ -1495,7 +1519,7 @@ export const submitStageDocumentFeedbackLogic = async (
 			set(state => {
 				state.isSubmittingStageDocumentFeedback = false;
 				state.submitStageDocumentFeedbackError = null;
-				flushStageDocumentFeedbackDraftLogic(state, compositeKey);
+				flushStageDocumentFeedbackDraftLogic(state, compositeKey, storage, payload.userId);
 			});
 		}
 		return response;
@@ -1518,6 +1542,64 @@ export const selectStageDocumentFeedbackLogic = (
 ) => {
 	const serializedKey = getStageDocumentKey(key);
 	return get().stageDocumentFeedback[serializedKey];
+};
+
+export const initializeFeedbackDraftLogic = async (
+	get: () => DialecticStore,
+	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
+	key: StageDocumentCompositeKey,
+	storage: IKeyValueStorage | null,
+	userId: string | null,
+): Promise<void> => {
+	const serializedKey = getStageDocumentKey(key);
+	const existingEntry = get().stageDocumentContent[serializedKey];
+	if (existingEntry && existingEntry.feedbackIsDirty) {
+		return;
+	}
+
+	set(state => {
+		state.isInitializingFeedbackDraft = true;
+		state.initializeFeedbackDraftError = null;
+	});
+
+	const response = await api.dialectic().getStageDocumentFeedback(key);
+
+	let savedFeedbackContent: string | null = null;
+	if (!response.error && response.data && response.data.length > 0) {
+		savedFeedbackContent = response.data[0].content;
+	} else if (response.error) {
+		set(state => {
+			state.isInitializingFeedbackDraft = false;
+			state.initializeFeedbackDraftError = response.error;
+		});
+		// Do not return here, still check for local draft
+	}
+
+	let localDraft: string | null = null;
+	if (storage && userId) {
+		try {
+			localDraft = storage.getItem(buildFeedbackLocalStorageKey(userId, key));
+		} catch (err: unknown) {
+			logger.warn('[initializeFeedbackDraftLogic] localStorage read failed', { err });
+		}
+	}
+
+	set((state) => {
+		const draftToUse = localDraft ?? savedFeedbackContent ?? '';
+		const isDirty = localDraft !== null;
+
+		const entry = ensureStageDocumentContentLogic(state, key, {
+			baselineMarkdown: '',
+			version: null,
+		});
+		entry.feedbackDraftMarkdown = draftToUse;
+		entry.feedbackIsDirty = isDirty;
+
+		state.isInitializingFeedbackDraft = false;
+		if (!response.error) {
+			state.initializeFeedbackDraftError = null;
+		}
+	});
 };
 
 export const hydrateStageProgressLogic = async (
