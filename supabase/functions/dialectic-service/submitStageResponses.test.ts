@@ -335,19 +335,13 @@ Deno.test("submitStageResponses", async (t) => {
         `pending_${mockAntithesisStage.slug}`,
       );
 
+      // Seed prompts are created once at session initiation (thesis stage) and reused across all stages.
+      // submitStageResponses should NOT create new seed prompts during stage transitions.
       assertEquals(
         uploadAndRegisterFileSpy.calls.length,
-        1,
-        "submitStageResponses should save exactly one seed prompt via FileManager.uploadAndRegisterFile",
+        0,
+        "submitStageResponses should NOT save seed prompts - they are created once at thesis stage",
       );
-
-      const uploadCall = uploadAndRegisterFileSpy.calls[0];
-      assertExists(uploadCall);
-      const uploadContext: UploadContext = uploadCall.args[0];
-      assertEquals(uploadContext.pathContext.fileType, FileType.SeedPrompt);
-      assertEquals(uploadContext.pathContext.projectId, testProjectId);
-      assertEquals(uploadContext.pathContext.sessionId, testSessionId);
-      assertEquals(uploadContext.pathContext.stageSlug, mockAntithesisStage.slug);
     },
   );
 

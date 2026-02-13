@@ -77,21 +77,26 @@ export async function getSessionDetails(
     let activeSeedPrompt: AssembledPrompt | null = null;
     if (!skipSeedPrompt) {
       // Query for the seed prompt using only session_id and resource_type
-      // Only one seed_prompt exists per session, so no need to filter by stage_slug or iteration_number
+      // Only one seed_prompt should exist per session (created at thesis stage).
+      // Use order + limit as a defensive measure in case duplicates exist - always return the earliest (original).
       logger.info(`getSessionDetails: Querying for seed prompt for session ${sessionId}`);
       const { data: seedPromptResource, error: resourceError } = await dbClient
         .from('dialectic_project_resources')
         .select('id, storage_path, file_name, storage_bucket')
         .eq('resource_type', 'seed_prompt')
         .eq('session_id', sessionId)
-        .single();
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
       if (resourceError) {
         logger.error('getSessionDetails: Error fetching seed prompt resource', { sessionId, error: resourceError });
-        if (resourceError.code === 'PGRST116') {
-          return { error: { message: 'Seed prompt is required but not found.', code: 'MISSING_REQUIRED_RESOURCE' }, status: 500 };
-        }
         return { error: { message: 'Failed to fetch seed prompt resource.', code: 'DB_ERROR', details: resourceError.message }, status: 500 };
+      }
+
+      if (!seedPromptResource) {
+        logger.error('getSessionDetails: Seed prompt resource not found', { sessionId });
+        return { error: { message: 'Seed prompt is required but not found.', code: 'MISSING_REQUIRED_RESOURCE' }, status: 500 };
       }
 
       if (!seedPromptResource || !seedPromptResource.storage_path || !seedPromptResource.file_name || !seedPromptResource.storage_bucket) {

@@ -10,11 +10,7 @@ import {
   type DialecticProject,
   type DialecticSession,
   type SelectedModels,
-  SeedPromptRecipeStep,
 } from './dialectic.interface.ts';
-import { PromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.ts";
-import { AssembledPrompt, ProjectContext, SessionContext, StageContext } from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
-import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
 const STORAGE_BUCKET = Deno.env.get('SB_CONTENT_STORAGE_BUCKET');
@@ -464,165 +460,12 @@ export async function submitStageResponses(
     }
   }
 
-  // 5. Prepare and save the seed prompt for the NEXT stage using PromptAssembler
+  // 5. Update session status to pending for the next stage
+  // Note: The seed prompt is created once at session initiation (thesis stage) and reused across all stages.
+  // Stage-specific prompts are assembled by the worker during job execution, not at stage transition.
   logger.info(
-    `[submitStageResponses] Preparing seed prompt for next stage: ${nextStageFull.display_name}`,
+    `[submitStageResponses] Advancing session to next stage: ${nextStageFull.display_name}`,
   );
-
-  // **Perform critical checks for ProjectContext components before instantiation**
-  // Note: initial_prompt_resource_id is now always populated for all projects (both string and file inputs are stored as files)
-
-  // sessionData.project is the raw result of SELECT * from dialectic_projects
-  const rawDbProject = sessionData.project;
-
-  // Check process_template_id directly from rawDbProject
-  if (typeof rawDbProject.process_template_id !== 'string' || !rawDbProject.process_template_id) {
-    logger.error("[submitStageResponses] Critical configuration error: project.process_template_id from DB is missing or invalid.", {details: `ID was: ${rawDbProject.process_template_id}`});
-    return { error: { message: "Project configuration integrity error: Process template ID in DB is invalid.", status: 500 }, status: 500 };
-  }
-
-  if (!project.dialectic_domains || typeof project.dialectic_domains.name !== 'string' || !project.dialectic_domains.name) {
-    logger.error("[submitStageResponses] Critical configuration error: project.dialectic_domains.name is missing or invalid.");
-    return { error: { message: "Project configuration error: Missing or invalid dialectic domain name.", status: 500 }, status: 500 };
-  }
-
-  const assembler = new PromptAssembler(
-    dbClient,
-    fileManager,
-    (bucket: string, path: string) => dependencies.downloadFromStorage(dbClient, bucket, path)
-);
-
-  const projectContextForAssembler: ProjectContext = {
-      id: project.id, 
-      user_id: project.user_id, 
-      project_name: project.project_name, 
-      initial_user_prompt: project.initial_user_prompt, 
-      initial_prompt_resource_id: project.initial_prompt_resource_id ?? null, 
-      selected_domain_id: project.selected_domain_id, 
-      process_template_id: rawDbProject.process_template_id, // Checked: known to be a non-null string
-      repo_url: null, 
-      status: project.status, 
-      created_at: project.created_at, 
-      updated_at: project.updated_at, 
-      selected_domain_overlay_id: project.selected_domain_overlay_id ?? null, 
-      user_domain_overlay_values: rawDbProject.user_domain_overlay_values ?? null, 
-      dialectic_domains: { name: project.dialectic_domains.name }, 
-  };
-
-  // Omit joined fields (project, stage) from sessionData for SessionContext
-  const { project: _p, stage: _s, ...sessionBaseData } = sessionData;
-  const sessionContextForAssembler: SessionContext = {
-      ...sessionBaseData,
-  };
-  
-  const { data: systemPrompt, error: promptError } = await dbClient
-    .from('system_prompts')
-    .select('id, prompt_text')
-    .eq('id', nextStageFull.default_system_prompt_id || '')
-    .single();
-
-  if (promptError && nextStageFull.default_system_prompt_id) {
-    logger.warn(`Could not fetch system prompt for stage ${nextStageFull.slug}`, { error: promptError });
-  }
-  
-  // Fetch overlays for next stage based on (system_prompt_id, project.selected_domain_id)
-  let overlays: { overlay_values: ProjectContext['user_domain_overlay_values'] }[] | null = null;
-  if (!systemPrompt || !systemPrompt.id || !project.selected_domain_id) {
-    logger.error('[submitStageResponses] Missing required identifiers for overlay fetch.', { system_prompt: systemPrompt, selected_domain_id: project.selected_domain_id });
-    return { error: { message: 'Required domain overlays are missing for this stage.', status: 500, code: 'STAGE_CONFIG_MISSING_OVERLAYS' }, status: 500 };
-  }
-
-  const { data: overlayRows, error: overlaysError } = await dbClient
-    .from('domain_specific_prompt_overlays')
-    .select('overlay_values')
-    .eq('system_prompt_id', systemPrompt.id)
-    .eq('domain_id', project.selected_domain_id);
-
-  if (overlaysError || !overlayRows || overlayRows.length === 0) {
-    logger.error('[submitStageResponses] Overlays missing for next stage.', { overlaysError, system_prompt_id: systemPrompt.id, domain_id: project.selected_domain_id });
-    return { error: { message: 'Required domain overlays are missing for this stage.', status: 500, code: 'STAGE_CONFIG_MISSING_OVERLAYS' }, status: 500 };
-  }
-  overlays = overlayRows as { overlay_values: ProjectContext['user_domain_overlay_values'] }[];
-
-  const seedPromptRecipeStep: SeedPromptRecipeStep = {
-    prompt_type: 'Seed',
-    step_number: 1,
-    step_name: 'Assemble Seed Prompt',
-  };
-
-  const stageContextForAssembler: StageContext = {
-    ...nextStageFull,
-    recipe_step: seedPromptRecipeStep,
-    system_prompts: systemPrompt ? { prompt_text: systemPrompt.prompt_text } : null,
-    domain_specific_prompt_overlays: overlays,
-  };
-  
-  // Robust handling for getInitialPromptContent
-  const initialUserPromptData = await getInitialPromptContent(dbClient, projectContextForAssembler, logger, dependencies.downloadFromStorage);
-  if (!initialUserPromptData) {
-      logger.error("[submitStageResponses] Critical error: Initial project prompt data object is missing.");
-      return { error: { message: "Critical error: Initial project prompt data is missing.", status: 500 }, status: 500 };
-  }
-  if (initialUserPromptData.error) {
-      // Ensure errorMessage is always a non-empty string for the ServiceError's message field.
-      const errorMessage = typeof initialUserPromptData.error === 'string' && initialUserPromptData.error.trim() !== ''
-                         ? initialUserPromptData.error
-                         : "Failed to get initial project prompt content due to an unspecified error.";
-      logger.error("[submitStageResponses] Failed to get initial project prompt content due to an error.", { error: initialUserPromptData.error }); 
-      return { error: { message: errorMessage, status: 500 }, status: 500 };
-  }
-  if (typeof initialUserPromptData.content !== 'string') {
-      logger.error("[submitStageResponses] Critical error: Initial project prompt content is invalid (not a string).");
-      return { error: { message: "Critical error: Initial project prompt content is invalid.", status: 500 }, status: 500 };
-  }
-  const projectInitialUserPrompt = initialUserPromptData.content; 
-
-  let assembledSeedPrompt: AssembledPrompt;
-  try {
-    assembledSeedPrompt = await assembler.assemble({
-      project: projectContextForAssembler,
-      session: sessionContextForAssembler,
-      stage: stageContextForAssembler,
-      projectInitialUserPrompt,
-      iterationNumber,
-    });
-    console.log(
-      `[submitStageResponses DBG] Assembled seed prompt text:`,
-      assembledSeedPrompt.promptContent
-    );
-  } catch (assemblyError) {
-    logger.error(
-      `[submitStageResponses] Error assembling seed prompt: ${ (assemblyError instanceof Error) ? assemblyError.message : String(assemblyError) }`, 
-      { error: assemblyError }
-    );
-    let errorDetailsString: string | undefined = undefined;
-    if (assemblyError instanceof Error) {
-        errorDetailsString = assemblyError.stack || assemblyError.message;
-    } else if (typeof assemblyError === 'string') {
-        errorDetailsString = assemblyError;
-    } else if (assemblyError) {
-        try {
-            errorDetailsString = JSON.stringify(assemblyError);
-        } catch {
-            errorDetailsString = "Could not stringify error details.";
-        }
-    }
-    return {
-      error: {
-        message: `Failed to assemble seed prompt for next stage: ${(assemblyError instanceof Error) ? assemblyError.message : 'Unknown assembly error'}`,
-        status: 500,
-        details: errorDetailsString,
-      },
-      status: 500,
-    };
-  }
-
-  if (!assembledSeedPrompt || !assembledSeedPrompt.promptContent) {
-    logger.error("[submitStageResponses] Critical error: assembledSeedPrompt is null or has no content after assembling seed prompt.");
-    return { error: { message: "Internal server error: Failed to assemble seed prompt.", status: 500 }, status: 500 };
-  }
-
-  // 6. Update session status to pending for the next stage
   const nextSessionStatus = `pending_${nextStageFull.slug.replace(/\s+/g, '_').toLowerCase()}`;
   const { data: updatedSession, error: updateError } = await dbClient
     .from('dialectic_sessions')
