@@ -1788,7 +1788,7 @@ export const useDialecticStore = create<DialecticStore>()(
     const { sessionId, stageSlug, iterationNumber } = payload;
     logger.info('[DialecticStore] Initiating contributions generation...', { payload });
 
-    const { currentProjectDetail, selectedModels, modelCatalog } = get();
+    const { currentProjectDetail, selectedModels } = get();
     const selectedModelIdsForJob = (selectedModels || []).map((m) => m.id);
     if (!currentProjectDetail) {
       const error: ApiError = { message: 'No project loaded', code: 'PRECONDITION_FAILED' };
@@ -1797,23 +1797,11 @@ export const useDialecticStore = create<DialecticStore>()(
       return { error, status: 400 };
     }
 
+    // Build model ID to display name map from selectedModels for placeholder UI
+    // Backend independently resolves model_name from ai_providers table when creating real contributions
     const modelIdToName = new Map<string, string>();
-    for (const modelId of selectedModelIdsForJob) {
-      const modelDetails = modelCatalog.find((m) => m.id === modelId);
-      if (!modelDetails) {
-        logger.error('[DialecticStore] Model details not found for model ID:', { modelId });
-        const error: ApiError = { message: 'Model details not found for model ID.', code: 'MODEL_DETAILS_NOT_FOUND' };
-        set({ generateContributionsError: error });
-        return { error, status: 500 };
-      }
-      const name = modelDetails.model_name;
-      if (typeof name !== 'string' || name.trim().length === 0) {
-        logger.error('[DialecticStore] Model name not found for model ID:', { modelId });
-        const error: ApiError = { message: 'Model name not found for model ID.', code: 'MODEL_NAME_NOT_FOUND' };
-        set({ generateContributionsError: error });
-        return { error, status: 500 };
-      }
-      modelIdToName.set(modelId, name);
+    for (const model of (selectedModels || [])) {
+      modelIdToName.set(model.id, model.displayName);
     }
 
     // --- Step 15.b: Immediate UI feedback with placeholders ---

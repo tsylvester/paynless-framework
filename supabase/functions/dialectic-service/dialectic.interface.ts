@@ -713,7 +713,7 @@ export interface GenerateContributionsPayload {
  * for all subsequent document generation jobs within a stage.
  */
 export interface SystemMaterials {
-  progress_update?: string; // This is optional and a remnant of the old monolithic stage generation feature where we had to tell the model what documents they'd already generated.
+  progress_update?: string | null; // This is optional and a remnant of the old monolithic stage generation feature where we had to tell the model what documents they'd already generated.
   stage_rationale: string;
   executive_summary: string; // This is the primary means of the agent communicating its intent to itself through different documents, to keep the generation aligned across documents.
   input_artifacts_summary: string; // This is how we detail what artifacts the agent will use to generate the documents.
@@ -1577,13 +1577,13 @@ export interface ContextForDocument {
  * 
  * Note: files_to_generate is NOT in header_context - it's defined in the EXECUTE recipe step's outputs_required.
  * The context_for_documents array is filled by the PLAN job agent with alignment details.
- * Note: review_metadata is stage-specific (only Antithesis) and is not part of the base HeaderContext interface - 
- * it should be handled separately in stage-specific logic if needed.
+ * Note: review_metadata is stage-specific (only Antithesis) and is optionally included when present.
  */
 export interface HeaderContext {
     system_materials: SystemMaterials;
     header_context_artifact: HeaderContextArtifact;
     context_for_documents: ContextForDocument[];
+    review_metadata?: ReviewMetadata;
 }
 
 export interface RenderedDocumentArtifact {

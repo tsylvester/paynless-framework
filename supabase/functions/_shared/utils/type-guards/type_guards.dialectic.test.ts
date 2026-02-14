@@ -2111,6 +2111,66 @@ Deno.test('Type Guard: isHeaderContext', async (t) => {
         };
         assert(!isHeaderContext(invalid));
     });
+
+    await t.step('should return true when review_metadata is present and valid', () => {
+        const withReviewMetadata = {
+            ...baseContext,
+            review_metadata: {
+                proposal_identifier: {
+                    lineage_key: 'test-lineage',
+                    source_model_slug: 'test-model'
+                },
+                proposal_summary: 'Test proposal summary',
+                review_focus: ['feasibility', 'risk'],
+                user_constraints: ['constraint1'],
+                normalization_guidance: {
+                    scoring_scale: '1-5',
+                    required_dimensions: ['feasibility', 'complexity']
+                }
+            }
+        };
+        assert(isHeaderContext(withReviewMetadata));
+    });
+
+    await t.step('should return true when review_metadata is omitted', () => {
+        const withoutReviewMetadata = { ...baseContext };
+        assert(isHeaderContext(withoutReviewMetadata));
+    });
+
+    await t.step('should return false when review_metadata is present but invalid (missing proposal_identifier)', () => {
+        const invalid = {
+            ...baseContext,
+            review_metadata: {
+                proposal_summary: 'Test proposal summary',
+                review_focus: ['feasibility'],
+                user_constraints: [],
+                normalization_guidance: {
+                    scoring_scale: '1-5',
+                    required_dimensions: ['feasibility']
+                }
+            }
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return false when review_metadata is present but invalid (wrong type)', () => {
+        const invalid = {
+            ...baseContext,
+            review_metadata: 'not-an-object'
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return true when system_materials.progress_update is null', () => {
+        const withNullProgress = {
+            ...baseContext,
+            system_materials: {
+                ...baseContext.system_materials,
+                progress_update: null
+            }
+        };
+        assert(isHeaderContext(withNullProgress));
+    });
 });
 
 Deno.test('Type Guard: isDialecticContinueReason', async (t) => {
@@ -2864,6 +2924,30 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
 
     await t.step('should return false if files_to_generate contains invalid items', () => {
         const invalid = { ...validSystemMaterials, files_to_generate: [{ invalid_key: 'value' }] };
+        assert(!isSystemMaterials(invalid));
+    });
+
+    await t.step('should return true when progress_update is null', () => {
+        const withNullProgress = {
+            stage_rationale: 'Test rationale',
+            executive_summary: 'Test summary',
+            input_artifacts_summary: 'Test input summary',
+            progress_update: null,
+        };
+        assert(isSystemMaterials(withNullProgress));
+    });
+
+    await t.step('should return true when progress_update is omitted', () => {
+        const withoutProgress = {
+            stage_rationale: 'Test rationale',
+            executive_summary: 'Test summary',
+            input_artifacts_summary: 'Test input summary',
+        };
+        assert(isSystemMaterials(withoutProgress));
+    });
+
+    await t.step('should return false when progress_update has invalid type (number)', () => {
+        const invalid = { ...validSystemMaterials, progress_update: 123 };
         assert(!isSystemMaterials(invalid));
     });
 });

@@ -1070,6 +1070,8 @@
     --- PROPOSED: Implement regeneration prior to stage advancement, disable regeneration for documents who have downstream documents, set up future sprint for branching/iteration to support hints to regenerate downstream documents if a user regenerates upstream documents
     --- BLOCKER: Some stages are fundamentally dependent on all prior outputs, like synthesis, and the entire stage needs to be rerun if thesis/antithesis documents are regenerated
 
+    - hydrateAllStages doesn't, but the stage-specific one does
+
     - New user sign in banner doesn't display, throws console error  
     -- Chase, diagnose, fix 
 

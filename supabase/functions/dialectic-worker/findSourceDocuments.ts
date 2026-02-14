@@ -418,10 +418,10 @@ export async function findSourceDocuments(
             case 'project_resource': {
                 // NOTE: seed_prompt and project_resource types are user-provided inputs
                 // (initial prompt, reference documents) that exist at the project level.
-                // They should NOT be filtered by model_id, stage_slug, or iteration_number
+                // They should NOT be filtered by model_id or iteration_number
                 // since they are project-wide constants available to all stages and iterations.
-                // This is intentionally different from 'rendered_document' type which IS
-                // filtered by those fields.
+                // However, if the input rule specifies a slug (stage), we MUST filter by it
+                // to find the document from the correct stage.
                 const hasDocumentKey = typeof rule.document_key === 'string' && rule.document_key.length > 0;
                 const isInitialUserPromptProjectResource =
                     rule.type === 'project_resource' &&
@@ -437,7 +437,12 @@ export async function findSourceDocuments(
                     .eq('project_id', projectId)
                     .eq('resource_type', resourceTypeForQuery);
 
-                // NOTE: Intentionally NOT filtering by session_id, stage_slug, model_id,
+                // Filter by stage_slug if specified in the input rule
+                if (shouldFilterByStage) {
+                    resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
+                }
+
+                // NOTE: Intentionally NOT filtering by session_id, model_id,
                 // or iteration_number for project_resource/seed_prompt types.
                 // These are project-wide resources accessible from any context.
 
@@ -557,6 +562,33 @@ export async function findSourceDocuments(
                 seenDocumentPaths.add(documentPathKey);
                 allSourceDocuments.push(doc);
                 console.log(`[findSourceDocuments] Added document: stage=${doc.stage}, file_name=${doc.file_name}, source_group=${doc.document_relationships?.source_group ?? 'null'}`);
+            }
+        }
+    }
+
+    // Enrich feedback documents with source_group by matching base filenames
+    const baseNameToSourceGroup = new Map<string, string>();
+    for (const doc of allSourceDocuments) {
+        if (doc.contribution_type !== 'feedback' && doc.document_relationships?.source_group) {
+            const baseName = doc.file_name?.replace(/\.md$/, '');
+            if (baseName) {
+                baseNameToSourceGroup.set(baseName, doc.document_relationships.source_group);
+            }
+        }
+    }
+    
+    for (const doc of allSourceDocuments) {
+        if (doc.contribution_type === 'feedback' && !doc.document_relationships?.source_group) {
+            const baseName = doc.file_name?.replace(/_feedback\.md$/, '');
+            if (baseName && baseNameToSourceGroup.has(baseName)) {
+                const matchedSourceGroup = baseNameToSourceGroup.get(baseName)!;
+                doc.document_relationships = {
+                    ...(doc.document_relationships || {}),
+                    source_group: matchedSourceGroup
+                };
+                console.log(`[findSourceDocuments] Enriched feedback ${doc.file_name} with source_group=${matchedSourceGroup} from matching document ${baseName}.md`);
+            } else {
+                console.log(`[findSourceDocuments] Feedback ${doc.file_name} has no matching document - will not be grouped`);
             }
         }
     }

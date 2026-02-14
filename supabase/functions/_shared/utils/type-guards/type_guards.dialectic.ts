@@ -134,7 +134,7 @@ export function isHeaderContextSystemMaterials(value: unknown): value is {
     validation_checkpoint?: string[];
     quality_standards?: string[];
     diversity_rubric?: Record<string, string>;
-    progress_update?: string;
+    progress_update?: string | null;
 } {
     if (!isRecord(value)) return false;
 
@@ -170,7 +170,7 @@ export function isHeaderContextSystemMaterials(value: unknown): value is {
         }
     }
 
-    if ('progress_update' in value && typeof value.progress_update !== 'string') {
+    if ('progress_update' in value && value.progress_update !== null && typeof value.progress_update !== 'string') {
         return false;
     }
 
@@ -189,6 +189,11 @@ export function isHeaderContext(value: unknown): value is HeaderContext {
     }
 
     if (!('context_for_documents' in value) || !isHeaderContextDocuments(value.context_for_documents)) {
+        return false;
+    }
+
+    // Optionally validate review_metadata if present
+    if ('review_metadata' in value && value.review_metadata !== undefined && !isReviewMetadata(value.review_metadata)) {
         return false;
     }
 
@@ -588,7 +593,7 @@ export function isSystemMaterials(value: unknown): value is SystemMaterials {
         }
     }
 
-    if ('progress_update' in value && value.progress_update !== undefined && typeof value.progress_update !== 'string') {
+    if ('progress_update' in value && value.progress_update !== undefined && value.progress_update !== null && typeof value.progress_update !== 'string') {
         return false;
     }
 

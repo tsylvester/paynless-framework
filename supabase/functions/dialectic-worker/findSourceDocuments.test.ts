@@ -141,23 +141,6 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        // Assert that seed_prompt queries do NOT filter by stage_slug
-                        // (project-level resources are available across all stages)
-                        const hasStageFilter = state.filters.some(
-                            (filter) =>
-                                filter.type === 'eq' &&
-                                filter.column === 'stage_slug',
-                        );
-                        if (hasStageFilter) {
-                            return Promise.resolve({
-                                data: null,
-                                error: new Error('seed_prompt queries must NOT filter by stage_slug (project-level resource)'),
-                                count: 0,
-                                status: 400,
-                                statusText: 'Unexpected stage_slug filter',
-                            });
-                        }
-
                         const hasJsonPathFilter = state.filters.some((filter) => {
                             if (typeof filter.column === 'string' && filter.column.includes('resource_description->>')) {
                                 return true;
@@ -1162,22 +1145,7 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        // Assert that project_resource queries do NOT filter by stage_slug
-                        // (project-level resources are available across all stages)
-                        const hasStageFilter = state.filters.some(
-                            (filter) =>
-                                filter.type === 'eq' &&
-                                filter.column === 'stage_slug',
-                        );
-                        if (hasStageFilter) {
-                            return Promise.resolve({
-                                data: null,
-                                error: new Error('project_resource queries must NOT filter by stage_slug (project-level resource)'),
-                                count: 0,
-                                status: 400,
-                                statusText: 'Unexpected stage_slug filter',
-                            });
-                        }
+                        // Note: project_resource queries CAN filter by stage_slug to find resources from a specific stage
 
                         const hasJsonPathFilter = state.filters.some((filter) => {
                             if (typeof filter.column === 'string' && filter.column.includes('resource_description->>')) {
@@ -3028,21 +2996,7 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        // Assert FORBIDDEN filters are NOT present
-                        const hasStageFilter = state.filters.some(
-                            (filter) =>
-                                filter.type === 'eq' &&
-                                filter.column === 'stage_slug',
-                        );
-                        if (hasStageFilter) {
-                            return Promise.resolve({
-                                data: null,
-                                error: new Error('project_resource queries must NOT filter by stage_slug'),
-                                count: 0,
-                                status: 400,
-                                statusText: 'Unexpected stage_slug filter',
-                            });
-                        }
+                        // Note: project_resource queries CAN filter by stage_slug to find resources from a specific stage
 
                         const hasIterationFilter = state.filters.some(
                             (filter) =>
@@ -3464,5 +3418,138 @@ describe('findSourceDocuments', () => {
 
         assertEquals(documents.length, 1);
         assertEquals(documents[0].id, 'feedback-A');
+    });
+
+    it('enriches feedback documents with source_group from matching documents based on filename', async () => {
+        const sourceGroup = 'lineage-group-uuid-123';
+        
+        // Create a rendered document with a source_group
+        const businessCaseDoc: DialecticProjectResourceRow = {
+            id: 'doc-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            session_id: 'sess-1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            file_name: 'google-gemini-2.5-flash_0_business_case.md',
+            storage_bucket: 'dialectic-contributions',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
+            mime_type: 'text/markdown',
+            size_bytes: 1000,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            source_contribution_id: 'contrib-1',
+            resource_description: { document_key: FileType.business_case },
+        };
+        
+        // Create a contribution with document_relationships containing source_group
+        const businessCaseContribution: DialecticContributionRow = {
+            id: 'contrib-1',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'thesis',
+            iteration_number: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'business_case',
+            file_name: 'google-gemini-2.5-flash_0_business_case.md',
+            storage_bucket: 'dialectic-contributions',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
+            size_bytes: 1000,
+            mime_type: 'text/markdown',
+            model_id: 'model-1',
+            model_name: 'Gemini 2.5 Flash',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 100,
+            tokens_used_output: 200,
+            processing_time_ms: 1000,
+            error: null,
+            citations: null,
+            document_relationships: { source_group: sourceGroup },
+            is_header: false,
+            source_prompt_resource_id: null,
+        };
+        
+        // Create a feedback document with matching base filename but NO source_group
+        const feedbackDoc: DialecticFeedbackRow = {
+            id: 'feedback-1',
+            session_id: 'sess-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            feedback_type: 'user_feedback',
+            file_name: 'google-gemini-2.5-flash_0_business_case_feedback.md',
+            storage_bucket: 'dialectic-contributions',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
+            size_bytes: 500,
+            mime_type: 'text/markdown',
+            resource_description: { document_key: FileType.business_case, model_id: 'model-1' },
+            target_contribution_id: 'contrib-1',
+        };
+
+        const rules: InputRule[] = [
+            { type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true },
+            { type: 'feedback', slug: 'thesis', document_key: FileType.business_case, required: false },
+        ];
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({
+                        data: [businessCaseDoc],
+                        error: null,
+                        count: 1,
+                        status: 200,
+                        statusText: 'OK',
+                    }),
+                },
+                dialectic_contributions: {
+                    select: () => Promise.resolve({
+                        data: [businessCaseContribution],
+                        error: null,
+                        count: 1,
+                        status: 200,
+                        statusText: 'OK',
+                    }),
+                },
+                dialectic_feedback: {
+                    select: () => Promise.resolve({
+                        data: [feedbackDoc],
+                        error: null,
+                        count: 1,
+                        status: 200,
+                        statusText: 'OK',
+                    }),
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rules,
+        );
+
+        // Should return 2 documents: the business_case document and the feedback
+        assertEquals(documents.length, 2);
+        
+        // Find the feedback document in the results
+        const feedbackResult = documents.find(doc => doc.contribution_type === 'feedback');
+        
+        // Assert that the feedback document was enriched with the source_group from the matching document
+        assertEquals(feedbackResult?.id, 'feedback-1');
+        assertEquals(feedbackResult?.file_name, 'google-gemini-2.5-flash_0_business_case_feedback.md');
+        assertEquals(feedbackResult?.document_relationships?.source_group, sourceGroup, 
+            'Feedback document should be enriched with source_group from matching document based on filename pattern');
     });
 });
