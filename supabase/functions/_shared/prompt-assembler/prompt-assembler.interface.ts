@@ -5,7 +5,7 @@ import {
 } from "../../dialectic-service/dialectic.interface.ts";
 import { GatherContextFn } from "./gatherContext.ts";
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { IFileManager } from "../types/file_manager.types.ts";
+import { IFileManager, FileType } from "../types/file_manager.types.ts";
 import { DownloadStorageResult, DownloadFromStorageFn } from "../supabase_storage_utils.ts";
 import { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
 import { Json } from "../../types_db.ts";
@@ -167,5 +167,6 @@ export interface AssemblerSourceDocument {
 		displayName: string;
 		header?: string;
 		modelName?: string;
+		documentKey?: FileType;
 	}
 }

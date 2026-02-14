@@ -12,6 +12,7 @@ import {
 import type { DownloadStorageResult } from "../supabase_storage_utils.ts";
 import { parseInputArtifactRules } from "../utils/input-artifact-parser.ts";
 import { deconstructStoragePath } from "../utils/path_deconstructor.ts";
+import { FileType } from "../types/file_manager.types.ts";
 
 export type GatherInputsForStageFn = (
   dbClient: SupabaseClient<Database>,
@@ -197,9 +198,11 @@ export async function gatherInputsForStage(
                 displayName: string;
                 header?: string;
                 modelName?: string;
+                documentKey?: FileType;
               } = {
                 displayName: displayName,
                 header: rule.section_header,
+                documentKey: rule.document_key,
               };
               if (modelName) {
                 metadata.modelName = modelName;
@@ -306,6 +309,7 @@ export async function gatherInputsForStage(
               metadata: {
                 displayName: displayName,
                 header: rule.section_header,
+                documentKey: rule.document_key,
               },
             });
           } else {
@@ -357,6 +361,7 @@ export async function gatherInputsForStage(
                 metadata: {
                   displayName: displayName,
                   header: rule.section_header,
+                  documentKey: rule.document_key,
                 },
               });
             } else {
@@ -432,9 +437,11 @@ export async function gatherInputsForStage(
                 displayName: string;
                 header?: string;
                 modelName?: string;
+                documentKey?: FileType;
               } = {
                 displayName: displayName,
                 header: rule.section_header,
+                documentKey: rule.document_key,
               };
               if (latestContribution.model_name && typeof latestContribution.model_name === "string") {
                 metadata.modelName = latestContribution.model_name;
@@ -546,9 +553,11 @@ export async function gatherInputsForStage(
                 displayName: string;
                 header?: string;
                 modelName?: string;
+                documentKey?: FileType;
               } = {
                 displayName: displayName,
                 header: rule.section_header,
+                documentKey: rule.document_key,
               };
               if (latestContribution.model_name && typeof latestContribution.model_name === "string") {
                 metadata.modelName = latestContribution.model_name;
