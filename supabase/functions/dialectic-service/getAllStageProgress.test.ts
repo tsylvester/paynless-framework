@@ -1865,3 +1865,365 @@ Deno.test("getAllStageProgress - Test 11: Supports multiple rendered documents a
   }
 });
 
+Deno.test("getAllStageProgress - Test 12: Handles all eleven job statuses from database", async () => {
+  const stageSlug = "thesis";
+  const stageId = "stage-thesis";
+  const instanceId = "instance-thesis";
+
+  const recipeSteps: DialecticStageRecipeStep[] = [
+    {
+      id: "step-1",
+      instance_id: instanceId,
+      step_key: "a_key",
+      step_slug: "a",
+      step_name: "A",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: null,
+      output_type: FileType.business_case,
+      granularity_strategy: "per_model",
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: null,
+    },
+  ];
+
+  const createJobPayload = (modelId: string): Json => {
+    const payload: DialecticExecuteJobPayload = {
+      sessionId: basePayload.sessionId,
+      projectId: basePayload.projectId,
+      model_id: modelId,
+      walletId: "wallet-1",
+      user_jwt: "jwt",
+      stageSlug: stageSlug,
+      iterationNumber: basePayload.iterationNumber,
+      prompt_template_id: "pt-1",
+      output_type: FileType.business_case,
+      canonicalPathParams: { contributionType: "thesis", stageSlug: stageSlug },
+      inputs: {},
+      planner_metadata: { recipe_step_id: "step-1", stage_slug: stageSlug },
+    };
+    if (!isJson(payload)) {
+      throw new Error("Invalid job payload");
+    }
+    return payload;
+  };
+
+  const jobs: DialecticJobRow[] = [
+    {
+      id: "job-pending",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "pending",
+      payload: createJobPayload("model-pending"),
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 3,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-in-progress",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "in_progress",
+      payload: createJobPayload("model-in-progress"),
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 1,
+      max_retries: 3,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: new Date().toISOString(),
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-processing",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "processing",
+      payload: createJobPayload("model-processing"),
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 1,
+      max_retries: 3,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: new Date().toISOString(),
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-retrying",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "retrying",
+      payload: createJobPayload("model-retrying"),
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 2,
+      max_retries: 3,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: new Date().toISOString(),
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-waiting-for-prerequisite",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "waiting_for_prerequisite",
+      payload: createJobPayload("model-waiting-prerequisite"),
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 3,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-waiting-for-children",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "waiting_for_children",
+      payload: createJobPayload("model-waiting-children"),
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 1,
+      max_retries: 3,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: new Date().toISOString(),
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-pending-continuation",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "pending_continuation",
+      payload: createJobPayload("model-pending-continuation"),
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 1,
+      max_retries: 3,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-pending-next-step",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "pending_next_step",
+      payload: createJobPayload("model-pending-next-step"),
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 3,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-completed",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: createJobPayload("model-completed"),
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 1,
+      max_retries: 3,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-failed",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "failed",
+      payload: createJobPayload("model-failed"),
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 1,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: { message: "Job failed", code: "EXECUTION_ERROR" },
+    },
+    {
+      id: "job-retry-loop-failed",
+      created_at: new Date().toISOString(),
+      session_id: basePayload.sessionId,
+      stage_slug: stageSlug,
+      iteration_number: basePayload.iterationNumber,
+      status: "retry_loop_failed",
+      payload: createJobPayload("model-retry-loop-failed"),
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 4,
+      max_retries: 3,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      results: null,
+      error_details: { message: "Job failed after max retries", code: "RETRY_EXHAUSTED" },
+    },
+  ];
+
+  const stages: DialecticStage[] = [
+    {
+      id: stageId,
+      slug: stageSlug,
+      display_name: "Thesis",
+      description: null,
+      created_at: new Date().toISOString(),
+      expected_output_template_ids: [],
+      active_recipe_instance_id: instanceId,
+      default_system_prompt_id: null,
+      recipe_template_id: null,
+    },
+  ];
+
+  const instances: DialecticStageRecipeInstance[] = [
+    {
+      id: instanceId,
+      stage_id: stageId,
+      template_id: "template-thesis",
+      is_cloned: true,
+      cloned_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  mockFetch([
+    new Response(JSON.stringify(jobs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(stages), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(instances), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify(recipeSteps), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+  ]);
+
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const result = await getAllStageProgress(basePayload, dbClient, baseUser);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    assertEquals(result.data.length, 1);
+    
+    const stageProgress: StageProgressEntry = result.data[0];
+    assertExists(stageProgress.jobProgress["a_key"]);
+    
+    const progress: JobProgressEntry = stageProgress.jobProgress["a_key"];
+    assertEquals(progress.totalJobs, 11, "Should have 11 total jobs");
+    assertEquals(progress.completedJobs, 1, "Should have 1 completed job");
+    assertEquals(progress.inProgressJobs, 7, "Should have 7 in_progress jobs (in_progress + processing + retrying + waiting_for_prerequisite + waiting_for_children + pending_continuation + pending_next_step)");
+    assertEquals(progress.failedJobs, 2, "Should have 2 failed jobs (failed + retry_loop_failed)");
+    
+    assertExists(progress.modelJobStatuses, "Should have modelJobStatuses for per_model granularity");
+    assertEquals(progress.modelJobStatuses["model-pending"], "pending");
+    assertEquals(progress.modelJobStatuses["model-in-progress"], "in_progress");
+    assertEquals(progress.modelJobStatuses["model-processing"], "in_progress");
+    assertEquals(progress.modelJobStatuses["model-retrying"], "in_progress");
+    assertEquals(progress.modelJobStatuses["model-waiting-prerequisite"], "in_progress");
+    assertEquals(progress.modelJobStatuses["model-waiting-children"], "in_progress");
+    assertEquals(progress.modelJobStatuses["model-pending-continuation"], "in_progress");
+    assertEquals(progress.modelJobStatuses["model-pending-next-step"], "in_progress");
+    assertEquals(progress.modelJobStatuses["model-completed"], "completed");
+    assertEquals(progress.modelJobStatuses["model-failed"], "failed");
+    assertEquals(progress.modelJobStatuses["model-retry-loop-failed"], "failed");
+    
+    assertEquals(stageProgress.stepStatuses["a_key"], "failed", "Step status should be failed when any job failed");
+    assertEquals(stageProgress.stageStatus, "failed", "Stage status should be failed when any job failed");
+  } finally {
+    restoreFetch();
+  }
+});
+

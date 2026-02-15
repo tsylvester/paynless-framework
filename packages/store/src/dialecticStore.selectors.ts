@@ -301,12 +301,14 @@ export const selectIsStageReadyForSessionIteration = createSelector(
         }
 
         let pendingSteps: DialecticStageRecipeStep[] = [];
-        for (const [_orderValue, stepsAtOrder] of stepsByOrder.entries()) {
+        let pendingStepsOrder: number | null = null;
+        for (const [orderValue, stepsAtOrder] of stepsByOrder.entries()) {
             const pendingAtOrder = stepsAtOrder.filter((step) => stepStatuses[step.step_key] !== 'completed');
             if (pendingAtOrder.length === 0) {
                 continue;
             }
             pendingSteps = pendingAtOrder;
+            pendingStepsOrder = orderValue;
             break;
         }
 
@@ -325,10 +327,17 @@ export const selectIsStageReadyForSessionIteration = createSelector(
             return true;
         }
 
+        const firstExecutionOrder = Array.from(stepsByOrder.keys()).sort((a, b) => a - b)[0];
+        const shouldCheckRequirements = pendingStepsOrder === firstExecutionOrder;
+
         for (const step of pendingSteps) {
             const stepStatus = stepStatuses[step.step_key];
-            if (stepStatus && stepStatus !== 'not_started') {
+            if (stepStatus === 'in_progress') {
                 return false;
+            }
+
+            if (!shouldCheckRequirements) {
+                continue;
             }
 
             const stepRequirements = step.inputs_required ?? [];

@@ -219,10 +219,11 @@ export async function renderDocument(
   const contentBucket = base.storage_bucket;
   
   for (const chunk of uniqueChunks) {
-    const rawJsonPath = chunk.raw_response_storage_path;
-    if (!rawJsonPath || typeof rawJsonPath !== 'string') {
-      throw new Error(`Contribution ${chunk.id} is missing raw_response_storage_path`);
+    const fileName = chunk.file_name;
+    if (!fileName || typeof fileName !== 'string') {
+      throw new Error(`Contribution ${chunk.id} is missing file_name`);
     }
+    const rawJsonPath = `${chunk.storage_path}/${fileName}`;
     const text = await downloadText(dbClient, deps.downloadFromStorage, contentBucket, rawJsonPath);
     const trimmedText = text.trim();
     
@@ -469,6 +470,9 @@ export async function renderDocument(
     const renderJobId = `render-${documentIdentity}`;
     const stepKey = 'document_step';
     try {
+      if (!base.model_id) {
+        throw new Error("Base model_id is required for render_completed notification");
+      }
       await deps.notificationService.sendJobNotificationEvent({
         type: "render_completed",
         sessionId,
@@ -476,7 +480,7 @@ export async function renderDocument(
         iterationNumber,
         job_id: renderJobId,
         document_key: documentKey,
-        modelId: modelSlug,
+        modelId: base.model_id,
         latestRenderedResourceId,
         step_key: stepKey,
       }, targetUser);

@@ -114,23 +114,38 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const sessionId = "session_abc";
     const stageSlug = "thesis";
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-123",
+        model_name: "GPT-4o Mini",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
         user_id: "user_123",
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
       },
     ];
 
@@ -215,39 +230,70 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const rootId = "root-contribution-id-1";
     const sessionId = "session_abc";
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-456",
+        model_name: "GPT-4o Mini",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        user_id: null,
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
       },
       {
         id: "cont-2",
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-456",
+        model_name: "GPT-4o Mini",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_1_business_case.md",
+        file_name: "gpt-4o-mini_1_business_case_raw.json",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
+        updated_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
         target_contribution_id: rootId,
         edit_version: 2,
         is_latest_edit: true,
         user_id: "user_123",
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
       },
       // Unrelated doc in same session should be excluded
       {
@@ -255,17 +301,32 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-other",
+        model_name: "Model A",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "modelA_0_other_doc.md",
+        file_name: "modelA_0_other_doc_raw.json",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/modelA_0_other_doc_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: "another-root" },
         created_at: new Date(2025, 0, 1, 11, 59, 0).toISOString(),
+        updated_at: new Date(2025, 0, 1, 11, 59, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
         user_id: "user_123",
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
       },
     ];
 
@@ -343,40 +404,70 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const rootId = "root-contribution-id-2";
     const sessionId = "session_xyz";
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-789",
+        model_name: "GPT-4o Mini",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 2, 10, 0, 0).toISOString(),
+        updated_at: new Date(2025, 0, 2, 10, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
         user_id: "user_123",
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
       },
       {
         id: "cont-b",
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-789",
+        model_name: "GPT-4o Mini",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_1_business_case.md",
+        file_name: "gpt-4o-mini_1_business_case_raw.json",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
         created_at: new Date(2025, 0, 2, 10, 1, 0).toISOString(),
+        updated_at: new Date(2025, 0, 2, 10, 1, 0).toISOString(),
         target_contribution_id: rootId,
         edit_version: 2,
         is_latest_edit: true,
         user_id: "user_123",
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
       },
     ];
 
@@ -451,14 +542,14 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const sessionId = "session_r1";
     const stageSlug = "thesis";
 
-    const root: ContributionRowMinimal = {
+    const root: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: rootId,
       session_id: sessionId,
       stage: "THESIS",
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_abcd/iteration_1/thesis/documents",
-      file_name: "gpt-4o-mini_0_business_case.md",
+      file_name: "gpt-4o-mini_0_business_case_raw.json",
       raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
       document_relationships: { thesis: rootId },
@@ -467,9 +558,24 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       edit_version: 1,
       is_latest_edit: true,
       user_id: "user_123",
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 4, 1, 10, 0, 0).toISOString(),
     };
 
-    const contributions: ContributionRowMinimal[] = [root];
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [root];
 
     const structuredData = { executive_summary: "render-body executive summary", market_opportunity: "render-body market opportunity" };
     const agentResponse = { content: structuredData };
@@ -570,22 +676,37 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const sessionId = "session_r2";
     const stageSlug = "thesis";
     const expectedResourceId = "resource-id-render-2";
-    const contributionsNotif: ContributionRowMinimal[] = [
+    const contributionsNotif: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-notif",
+        model_name: "GPT-4o Mini",
         storage_bucket: "content",
         storage_path: "project_123/session_abcd/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
         created_at: new Date(2025, 4, 1, 11, 0, 0).toISOString(),
+        updated_at: new Date(2025, 4, 1, 11, 0, 0).toISOString(),
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -645,7 +766,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     assert(payload.stageSlug === stageSlug);
     assert(payload.job_id === 'render-root-render-2');
     assert(payload.document_key === "business_case");
-    assert(payload.modelId === 'gpt-4o-mini');
+    assert(payload.modelId === 'model-uuid-notif', "modelId should be the UUID from base.model_id, not the api_identifier");
     assert(payload.iterationNumber === 1);
     assert(typeof payload.latestRenderedResourceId === 'string', "payload should include latestRenderedResourceId as a string");
     assert(payload.latestRenderedResourceId === expectedResourceId, "latestRenderedResourceId should match the ID from the uploaded file record");
@@ -662,14 +783,14 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const sessionId = "session_r3";
     const stageSlug = "thesis";
 
-    const root: ContributionRowMinimal = {
+    const root: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: rootId,
       session_id: sessionId,
       stage: "THESIS",
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_abcd/iteration_1/thesis/documents",
-      file_name: "gpt-4o-mini_0_business_case.md",
+      file_name: "gpt-4o-mini_0_business_case_raw.json",
       raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
       document_relationships: { thesis: rootId },
@@ -677,16 +798,32 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       target_contribution_id: null,
       edit_version: 1,
       is_latest_edit: true,
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 4, 1, 12, 0, 0).toISOString(),
+      user_id: "user_123",
     };
 
-    const cont1: ContributionRowMinimal = {
+    const cont1: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: "cont-1",
       session_id: sessionId,
       stage: "THESIS",
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: root.storage_path,
-      file_name: "gpt-4o-mini_1_business_case.md",
+      file_name: "gpt-4o-mini_1_business_case_raw.json",
       raw_response_storage_path: `${root.storage_path}/gpt-4o-mini_1_business_case_raw.json`,
       mime_type: "text/markdown",
       document_relationships: { thesis: rootId },
@@ -694,9 +831,25 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       target_contribution_id: rootId,
       edit_version: 2,
       is_latest_edit: true,
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 4, 1, 12, 1, 0).toISOString(),
+      user_id: "user_123",
     };
 
-    let contributionsIdem: ContributionRowMinimal[] = [root, cont1];
+    let contributionsIdem: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [root, cont1];
 
     const bodies: Record<string, Record<string, string>> = {
       "gpt-4o-mini_0_business_case_raw.json": { executive_summary: "C1 executive summary", market_opportunity: "C1 market opportunity" },
@@ -752,7 +905,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const rendered2 = new TextDecoder().decode(r2.renderedBytes);
     assert(rendered2 === rendered1);
 
-    const cont2: ContributionRowMinimal = { ...cont1, id: "cont-2", file_name: "gpt-4o-mini_2_business_case.md", raw_response_storage_path: `${root.storage_path}/gpt-4o-mini_2_business_case_raw.json`, created_at: new Date(2025, 4, 1, 12, 2, 0).toISOString(), edit_version: 3, target_contribution_id: cont1.id };
+    const cont2: Database['public']['Tables']['dialectic_contributions']['Row'] = { ...cont1, id: "cont-2", file_name: "gpt-4o-mini_2_business_case_raw.json", raw_response_storage_path: `${root.storage_path}/gpt-4o-mini_2_business_case_raw.json`, created_at: new Date(2025, 4, 1, 12, 2, 0).toISOString(), edit_version: 3, target_contribution_id: cont1.id };
     contributionsIdem = [root, cont1, cont2];
     bodies["gpt-4o-mini_2_business_case_raw.json"] = { executive_summary: "C3 executive summary", market_opportunity: "C3 market opportunity" };
 
@@ -786,14 +939,14 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const sessionId = "session_o1";
     const stageSlug = "thesis";
 
-    const r: ContributionRowMinimal = {
+    const r: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: rootId,
       session_id: sessionId,
       stage: "THESIS",
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_abcd/iteration_1/thesis/documents",
-      file_name: "gpt-4o-mini_0_business_case.md",
+      file_name: "gpt-4o-mini_0_business_case_raw.json",
       raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
       document_relationships: { thesis: rootId },
@@ -801,10 +954,26 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       target_contribution_id: null,
       edit_version: 1,
       is_latest_edit: true,
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 5, 1, 10, 0, 0).toISOString(),
+      user_id: "user_123",
     };
-    const c1: ContributionRowMinimal = { ...r, id: "c1", file_name: "gpt-4o-mini_1_business_case.md", raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json", created_at: new Date(2025, 5, 1, 10, 1, 0).toISOString(), target_contribution_id: rootId, edit_version: 2 };
-    const c2: ContributionRowMinimal = { ...r, id: "c2", file_name: "gpt-4o-mini_2_business_case.md", raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_2_business_case_raw.json", created_at: new Date(2025, 5, 1, 10, 2, 0).toISOString(), target_contribution_id: "c1", edit_version: 3 };
-    const contributions: ContributionRowMinimal[] = [r, c1, c2];
+    const c1: Database['public']['Tables']['dialectic_contributions']['Row'] = { ...r, id: "c1", file_name: "gpt-4o-mini_1_business_case_raw.json", raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json", created_at: new Date(2025, 5, 1, 10, 1, 0).toISOString(), target_contribution_id: rootId, edit_version: 2 };
+    const c2: Database['public']['Tables']['dialectic_contributions']['Row'] = { ...r, id: "c2", file_name: "gpt-4o-mini_2_business_case_raw.json", raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_2_business_case_raw.json", created_at: new Date(2025, 5, 1, 10, 2, 0).toISOString(), target_contribution_id: "c1", edit_version: 3 };
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [r, c1, c2];
 
     const bodies: Record<string, Record<string, string>> = {
       "gpt-4o-mini_0_business_case_raw.json": { executive_summary: "X1 executive summary", market_opportunity: "X1 market opportunity" },
@@ -858,14 +1027,14 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const sessionId = "session_e1";
     const stageSlug = "thesis";
 
-    const modelChunk: ContributionRowMinimal = {
+    const modelChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: rootId,
       session_id: sessionId,
       stage: "THESIS",
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_abcd/iteration_1/thesis/documents",
-      file_name: "gpt-4o-mini_0_business_case.md",
+      file_name: "gpt-4o-mini_0_business_case_raw.json",
       raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
       document_relationships: { thesis: rootId },
@@ -874,19 +1043,34 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       edit_version: 1,
       is_latest_edit: true,
       user_id: "user_123",
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 6, 1, 10, 0, 0).toISOString(),
     };
 
-    const userEdit: ContributionRowMinimal = {
+    const userEdit: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       ...modelChunk,
       id: "edit-1",
-      file_name: "gpt-4o-mini_0_business_case.md", // edits may overwrite same name
+      file_name: "gpt-4o-mini_0_business_case_raw.json", // edits may overwrite same name
       raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       original_model_contribution_id: modelChunk.id,
       is_latest_edit: true,
       created_at: new Date(2025, 6, 1, 10, 5, 0).toISOString(),
     };
 
-    const contributions: ContributionRowMinimal[] = [modelChunk, userEdit];
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [modelChunk, userEdit];
 
     const { dbClient, clearAllStubs } = setup({
       genericMockResults: { 
@@ -931,15 +1115,17 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const sessionId = "session_f1";
     const stageSlug = "thesis";
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "project_123/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -947,6 +1133,19 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
       // Unrelated row that should be excluded by DB filtering
@@ -955,9 +1154,11 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "project_123/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_other_doc.md",
+        file_name: "gpt-4o-mini_0_other_doc_raw.json",
         raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_other_doc_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: "another-root" },
@@ -965,6 +1166,19 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -1063,15 +1277,17 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     const sessionId = "session_source_check";
     const stageSlug = "thesis";
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "project_123/session_abcd/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: "project_123/session_abcd/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -1079,6 +1295,19 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -1178,15 +1407,17 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const jsonContent = JSON.stringify({ content: structuredData });
     const expectedExtractedContent = "This is the executive summary content.";
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: rawJsonPath,
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -1194,6 +1425,19 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -1280,8 +1524,11 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     assert(rawJsonCall !== undefined, "downloadFromStorage should be called with raw_response_storage_path");
     assertEquals(rawJsonCall.bucket, "content");
 
-    const filePathCall = downloadCalls.find((call) => call.path.includes(contributions[0].file_name));
-    assert(filePathCall === undefined, "downloadFromStorage should NOT be called with file_name");
+    const filePathCall = downloadCalls.find((call) => {
+      const fileName = contributions[0].file_name;
+      return fileName !== null && call.path.includes(fileName);
+    });
+    assert(filePathCall !== undefined, "downloadFromStorage should be called with file_name");
 
     assert(rendered.includes("# Executive Summary"), "rendered document should contain Executive Summary section");
     assert(rendered.includes(expectedExtractedContent), "rendered document should contain extracted executive summary content");
@@ -1301,15 +1548,17 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const jsonContent = JSON.stringify({ content: structuredData });
     const expectedExtractedContent = 'Title\n\nQuote: "text"\nBackslash: \\path';
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: rawJsonPath,
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -1317,6 +1566,19 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -1412,15 +1674,17 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const rawMarkdownPath = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
     const markdownContent = "# Business Case\n\n## Market Opportunity\nThis is markdown content.";
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: rawMarkdownPath,
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -1428,6 +1692,19 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -1514,8 +1791,11 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     assert(rawMarkdownCall !== undefined, "downloadFromStorage should be called with raw_response_storage_path");
     assertEquals(rawMarkdownCall.bucket, "content");
 
-    const filePathCall = downloadCalls.find((call) => call.path.includes(contributions[0].file_name));
-    assert(filePathCall === undefined, "downloadFromStorage should NOT be called with file_name");
+    const filePathCall = downloadCalls.find((call) => {
+      const fileName = contributions[0].file_name;
+      return fileName !== null && call.path.includes(fileName);
+    });
+    assert(filePathCall !== undefined, "downloadFromStorage should be called with file_name");
 
     assert(rendered.includes(markdownContent), "rendered document should contain markdown content directly");
     assert(rendered.includes("# Business Case"), "rendered document should contain markdown title");
@@ -1536,15 +1816,17 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const markdownPath2 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_1_business_case.md";
     const markdownContent2 = "# Second Chunk\n\nThis is markdown.";
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: rawJsonPath1,
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -1552,6 +1834,19 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
       {
@@ -1559,6 +1854,8 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
         file_name: "gpt-4o-mini_1_business_case.md",
@@ -1569,7 +1866,20 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         target_contribution_id: rootId,
         edit_version: 2,
         is_latest_edit: true,
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
+        updated_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
       },
     ];
 
@@ -1669,15 +1979,17 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const stageSlug = "thesis";
     const documentKey = FileType.business_case;
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -1685,6 +1997,19 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -1794,15 +2119,17 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const documentKey = FileType.business_case;
     const domainId = "domain-1";
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -1810,6 +2137,19 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -1926,15 +2266,17 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const stageSlug = "thesis";
     const documentKey = FileType.business_case;
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -1942,6 +2284,19 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -2050,14 +2405,14 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     const sessionId = "session_section_test";
     const stageSlug = "thesis";
     
-    const contributions: ContributionRowMinimal[] = [{
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [{
       id: rootId,
       session_id: sessionId,
       stage: "THESIS",
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-      file_name: "gpt-4o-mini_0_business_case.md",
+      file_name: "gpt-4o-mini_0_business_case_raw.json",
       raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
       document_relationships: { thesis: rootId },
@@ -2066,6 +2421,21 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
       edit_version: 1,
       is_latest_edit: true,
       user_id: "user_123",
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
     }];
 
     // Structured data matching template sections
@@ -2163,15 +2533,17 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     // Add trailing whitespace and newlines to simulate real-world file storage behavior
     const jsonContentWithTrailingWhitespace = jsonContent + "\n\n  \t  \n";
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: rawJsonPath,
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -2179,6 +2551,19 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -2286,14 +2671,14 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
     const stageSlug = "thesis";
     const stageKey = stageSlug;
 
-    const rootChunk: ContributionRowMinimal = {
+    const rootChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: rootContributionId,
       session_id: sessionId,
       stage: stageKey,
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_5b_i/iteration_1/thesis/documents",
-      file_name: "gpt-4o-mini_0_business_case.md",
+      file_name: "gpt-4o-mini_0_business_case_raw.json",
       raw_response_storage_path: "project_123/session_5b_i/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
       document_relationships: { [stageSlug]: rootContributionId },
@@ -2302,6 +2687,21 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
       edit_version: 1,
       is_latest_edit: true,
       user_id: "user_123",
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
     };
 
     const structuredData = {
@@ -2417,14 +2817,14 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
     const stageSlug = "thesis";
     const stageKey = stageSlug;
 
-    const rootChunk: ContributionRowMinimal = {
+    const rootChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: rootContributionId,
       session_id: sessionId,
       stage: stageKey,
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_5b_ii/iteration_1/thesis/documents",
-      file_name: "gpt-4o-mini_0_business_case.md",
+      file_name: "gpt-4o-mini_0_business_case_raw.json",
       raw_response_storage_path: "project_123/session_5b_ii/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
       document_relationships: { [stageSlug]: rootContributionId },
@@ -2433,16 +2833,31 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
       edit_version: 1,
       is_latest_edit: true,
       user_id: "user_123",
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
     };
 
-    const continuationChunk: ContributionRowMinimal = {
+    const continuationChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: continuationContributionId,
       session_id: sessionId,
       stage: stageKey,
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_5b_ii/iteration_1/thesis/documents",
-      file_name: "gpt-4o-mini_1_business_case.md",
+      file_name: "gpt-4o-mini_1_business_case_raw.json",
       raw_response_storage_path: "project_123/session_5b_ii/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json",
       mime_type: "text/markdown",
       document_relationships: { [stageSlug]: rootContributionId },
@@ -2451,6 +2866,21 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
       edit_version: 2,
       is_latest_edit: true,
       user_id: "user_123",
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
     };
 
     const { dbClient, spies, clearAllStubs } = setup({
@@ -2576,14 +3006,14 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
     const stageSlug = "thesis";
     const stageKey = stageSlug;
 
-    const rootChunk: ContributionRowMinimal = {
+    const rootChunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: rootId,
       session_id: sessionId,
       stage: stageKey,
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents",
-      file_name: "gpt-4o-mini_0_business_case.md",
+      file_name: "gpt-4o-mini_0_business_case_raw.json",
       raw_response_storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
       mime_type: "text/markdown",
       document_relationships: { [stageSlug]: rootId },
@@ -2592,16 +3022,31 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
       edit_version: 1,
       is_latest_edit: true,
       user_id: "user_123",
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
     };
 
-    const cont1Chunk: ContributionRowMinimal = {
+    const cont1Chunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: cont1Id,
       session_id: sessionId,
       stage: stageKey,
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents",
-      file_name: "gpt-4o-mini_1_business_case.md",
+      file_name: "gpt-4o-mini_1_business_case_raw.json",
       raw_response_storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json",
       mime_type: "text/markdown",
       document_relationships: { [stageSlug]: rootId },
@@ -2610,16 +3055,31 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
       edit_version: 2,
       is_latest_edit: true,
       user_id: "user_123",
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
     };
 
-    const cont2Chunk: ContributionRowMinimal = {
+    const cont2Chunk: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: cont2Id,
       session_id: sessionId,
       stage: stageKey,
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents",
-      file_name: "gpt-4o-mini_2_business_case.md",
+        file_name: "gpt-4o-mini_2_business_case_raw.json",
       raw_response_storage_path: "project_123/session_5b_iii/iteration_1/thesis/documents/gpt-4o-mini_2_business_case_raw.json",
       mime_type: "text/markdown",
       document_relationships: { [stageSlug]: rootId },
@@ -2628,6 +3088,21 @@ Deno.test("DocumentRenderer - root and continuation chunk handling", async (t) =
       edit_version: 3,
       is_latest_edit: true,
       user_id: "user_123",
+      contribution_type: null,
+      citations: null,
+      error: null,
+      is_header: false,
+      original_model_contribution_id: null,
+      processing_time_ms: null,
+      prompt_template_id_used: null,
+      seed_prompt_url: null,
+      size_bytes: null,
+      source_prompt_resource_id: null,
+      tokens_used_input: null,
+      tokens_used_output: null,
+      model_id: "model-uuid-test",
+      model_name: "Test Model",
+      updated_at: new Date(2025, 0, 1, 12, 2, 0).toISOString(),
     };
 
     const { dbClient, spies, clearAllStubs } = setup({
@@ -2759,7 +3234,7 @@ Deno.test("DocumentRenderer - correctly calls FileManagerService to save the ren
         const stageSlug = "thesis";
         const documentKey = FileType.business_case;
 
-        const contributions: ContributionRowMinimal[] = [
+        const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
             {
                 id: rootId,
                 session_id: sessionId,
@@ -2767,7 +3242,7 @@ Deno.test("DocumentRenderer - correctly calls FileManagerService to save the ren
                 iteration_number: 1,
                 storage_bucket: "content",
                 storage_path: "project_123/session_s/iteration_1/thesis/documents",
-                file_name: "gpt-4o-mini_0_business_case.md",
+                file_name: "gpt-4o-mini_0_business_case_raw.json",
                 raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
                 mime_type: "text/markdown",
                 document_relationships: { thesis: rootId },
@@ -2776,6 +3251,21 @@ Deno.test("DocumentRenderer - correctly calls FileManagerService to save the ren
                 edit_version: 1,
                 is_latest_edit: true,
                 user_id: "user_123",
+                contribution_type: null,
+                citations: null,
+                error: null,
+                is_header: false,
+                original_model_contribution_id: null,
+                processing_time_ms: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                size_bytes: null,
+                source_prompt_resource_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                model_id: "model-uuid-test",
+                model_name: "Test Model",
+                updated_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
             },
         ];
 
@@ -2866,7 +3356,7 @@ Deno.test("DocumentRenderer - PathContext includes sourceGroupFragment when base
         const sourceGroup = "550e8400-e29b-41d4-a716-446655440000";
         const expectedFragment = "550e8400";
 
-        const contributions: ContributionRowMinimal[] = [
+        const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
             {
                 id: rootId,
                 session_id: sessionId,
@@ -2874,7 +3364,7 @@ Deno.test("DocumentRenderer - PathContext includes sourceGroupFragment when base
                 iteration_number: 1,
                 storage_bucket: "content",
                 storage_path: "project_123/session_s/iteration_1/thesis/documents",
-                file_name: "gpt-4o-mini_0_business_case.md",
+                file_name: "gpt-4o-mini_0_business_case_raw.json",
                 raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
                 mime_type: "text/markdown",
                 document_relationships: { 
@@ -2886,6 +3376,21 @@ Deno.test("DocumentRenderer - PathContext includes sourceGroupFragment when base
                 edit_version: 1,
                 is_latest_edit: true,
                 user_id: "user_123",
+                contribution_type: null,
+                citations: null,
+                error: null,
+                is_header: false,
+                original_model_contribution_id: null,
+                processing_time_ms: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                size_bytes: null,
+                source_prompt_resource_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                model_id: "model-uuid-test",
+                model_name: "Test Model",
+                updated_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
             },
         ];
 
@@ -2966,7 +3471,7 @@ Deno.test("DocumentRenderer - fragment extraction handles UUID with hyphens corr
         const sourceGroup = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
         const expectedFragment = "a1b2c3d4";
 
-        const contributions: ContributionRowMinimal[] = [
+        const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
             {
                 id: rootId,
                 session_id: sessionId,
@@ -2974,7 +3479,7 @@ Deno.test("DocumentRenderer - fragment extraction handles UUID with hyphens corr
                 iteration_number: 1,
                 storage_bucket: "content",
                 storage_path: "project_123/session_s/iteration_1/thesis/documents",
-                file_name: "gpt-4o-mini_0_business_case.md",
+                file_name: "gpt-4o-mini_0_business_case_raw.json",
                 raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
                 mime_type: "text/markdown",
                 document_relationships: { 
@@ -2986,7 +3491,22 @@ Deno.test("DocumentRenderer - fragment extraction handles UUID with hyphens corr
                 edit_version: 1,
                 is_latest_edit: true,
                 user_id: "user_123",
-            },
+                contribution_type: null,
+                citations: null,
+                error: null,
+                is_header: false,
+                original_model_contribution_id: null,
+                processing_time_ms: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                size_bytes: null,
+                source_prompt_resource_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                model_id: "model-uuid-test",
+                model_name: "Test Model",
+                updated_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
+              },
         ];
 
         const structuredData = { executive_summary: "Test content" };
@@ -3064,7 +3584,7 @@ Deno.test("DocumentRenderer - PathContext works without source_group", async (t)
         const stageSlug = "thesis";
         const documentKey = FileType.business_case;
 
-        const contributions: ContributionRowMinimal[] = [
+        const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
             {
                 id: rootId,
                 session_id: sessionId,
@@ -3072,7 +3592,7 @@ Deno.test("DocumentRenderer - PathContext works without source_group", async (t)
                 iteration_number: 1,
                 storage_bucket: "content",
                 storage_path: "project_123/session_s/iteration_1/thesis/documents",
-                file_name: "gpt-4o-mini_0_business_case.md",
+                file_name: "gpt-4o-mini_0_business_case_raw.json",
                 raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
                 mime_type: "text/markdown",
                 document_relationships: { 
@@ -3084,6 +3604,21 @@ Deno.test("DocumentRenderer - PathContext works without source_group", async (t)
                 edit_version: 1,
                 is_latest_edit: true,
                 user_id: "user_123",
+                contribution_type: null,
+                citations: null,
+                error: null,
+                is_header: false,
+                original_model_contribution_id: null,
+                processing_time_ms: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                size_bytes: null,
+                source_prompt_resource_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                model_id: "model-uuid-test",
+                model_name: "Test Model",
+                updated_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
             },
         ];
 
@@ -3162,7 +3697,7 @@ Deno.test("DocumentRenderer - fragment extraction handles missing document_relat
         const stageSlug = "thesis";
         const documentKey = FileType.business_case;
 
-        const contributions: ContributionRowMinimal[] = [
+        const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
             {
                 id: rootId,
                 session_id: sessionId,
@@ -3170,7 +3705,7 @@ Deno.test("DocumentRenderer - fragment extraction handles missing document_relat
                 iteration_number: 1,
                 storage_bucket: "content",
                 storage_path: "project_123/session_s/iteration_1/thesis/documents",
-                file_name: "gpt-4o-mini_0_business_case.md",
+                file_name: "gpt-4o-mini_0_business_case_raw.json",
                 raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
                 mime_type: "text/markdown",
                 // document_relationships must contain thesis for the query to work, but we test that
@@ -3184,6 +3719,21 @@ Deno.test("DocumentRenderer - fragment extraction handles missing document_relat
                 edit_version: 1,
                 is_latest_edit: true,
                 user_id: "user_123",
+                contribution_type: null,
+                citations: null,
+                error: null,
+                is_header: false,
+                original_model_contribution_id: null,
+                processing_time_ms: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                size_bytes: null,
+                source_prompt_resource_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                model_id: "model-uuid-test",
+                model_name: "Test Model",
+                updated_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
             },
         ];
 
@@ -3266,7 +3816,7 @@ Deno.test("DocumentRenderer - uses template_filename from RenderDocumentParams t
         const documentKey = FileType.business_case;
         const templateFilename = "antithesis_business_case_critique.md";
 
-        const contributions: ContributionRowMinimal[] = [
+        const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
             {
                 id: rootId,
                 session_id: sessionId,
@@ -3274,7 +3824,7 @@ Deno.test("DocumentRenderer - uses template_filename from RenderDocumentParams t
                 iteration_number: 1,
                 storage_bucket: "content",
                 storage_path: "project_123/session_s/iteration_1/antithesis/documents",
-                file_name: "claude_critiquing_gpt-4_98765432_1_business_case_critique.md",
+                file_name: "claude_critiquing_gpt-4_98765432_1_business_case_critique_raw.json",
                 raw_response_storage_path: "project_123/session_s/iteration_1/antithesis/documents/claude_critiquing_gpt-4_98765432_1_business_case_critique_raw.json",
                 mime_type: "text/markdown",
                 document_relationships: { antithesis: rootId },
@@ -3283,6 +3833,21 @@ Deno.test("DocumentRenderer - uses template_filename from RenderDocumentParams t
                 edit_version: 1,
                 is_latest_edit: true,
                 user_id: "user_123",
+                contribution_type: null,
+                citations: null,
+                error: null,
+                is_header: false,
+                original_model_contribution_id: null,
+                processing_time_ms: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                size_bytes: null,
+                source_prompt_resource_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                model_id: "model-uuid-test",
+                model_name: "Test Model",
+                updated_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
             },
         ];
 
@@ -3370,7 +3935,7 @@ Deno.test("DocumentRenderer - successfully finds template when template_filename
         const templateFilenameWithExtension = "thesis_business_case.md";
         const templateNameInDatabase = "thesis_business_case";
 
-        const contributions: ContributionRowMinimal[] = [
+        const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
             {
                 id: rootId,
                 session_id: sessionId,
@@ -3378,7 +3943,7 @@ Deno.test("DocumentRenderer - successfully finds template when template_filename
                 iteration_number: 1,
                 storage_bucket: "content",
                 storage_path: "project_123/session_s/iteration_1/thesis/documents",
-                file_name: "gpt-4o-mini_0_business_case.md",
+                file_name: "gpt-4o-mini_0_business_case_raw.json",
                 raw_response_storage_path: "project_123/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
                 mime_type: "text/markdown",
                 document_relationships: { thesis: rootId },
@@ -3387,6 +3952,21 @@ Deno.test("DocumentRenderer - successfully finds template when template_filename
                 edit_version: 1,
                 is_latest_edit: true,
                 user_id: "user_123",
+                contribution_type: null,
+                citations: null,
+                error: null,
+                is_header: false,
+                original_model_contribution_id: null,
+                processing_time_ms: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                size_bytes: null,
+                source_prompt_resource_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                model_id: "model-uuid-test",
+                model_name: "Test Model",
+                updated_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
             },
         ];
 
@@ -3469,7 +4049,7 @@ Deno.test("DocumentRenderer - successfully finds template when template_filename
         const sessionId = "session_object_content";
         const stageSlug = "thesis";
 
-        const contributions: ContributionRowMinimal[] = [
+        const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
             {
                 id: rootId,
                 session_id: sessionId,
@@ -3477,7 +4057,7 @@ Deno.test("DocumentRenderer - successfully finds template when template_filename
                 iteration_number: 1,
                 storage_bucket: "content",
                 storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-                file_name: "gpt-4o-mini_0_business_case.md",
+                file_name: "gpt-4o-mini_0_business_case_raw.json",
                 raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
                 mime_type: "text/markdown",
                 document_relationships: { thesis: rootId },
@@ -3486,6 +4066,21 @@ Deno.test("DocumentRenderer - successfully finds template when template_filename
                 edit_version: 1,
                 is_latest_edit: true,
                 user_id: "user_123",
+                contribution_type: null,
+                citations: null,
+                error: null,
+                is_header: false,
+                original_model_contribution_id: null,
+                processing_time_ms: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                size_bytes: null,
+                source_prompt_resource_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                model_id: "model-uuid-test",
+                model_name: "Test Model",
+                updated_at: new Date(2025, 8, 1, 10, 0, 0).toISOString(),
             },
         ];
 
@@ -3660,15 +4255,17 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
     };
     const jsonContent = JSON.stringify({ content: arrayContent });
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_feature_spec.md",
+        file_name: "gpt-4o-mini_0_feature_spec_raw.json",
         raw_response_storage_path: rawJsonPath,
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -3676,6 +4273,19 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -3777,15 +4387,17 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
     };
     const jsonContent = JSON.stringify({ content: arrayContent });
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_feature_spec.md",
+        file_name: "gpt-4o-mini_0_feature_spec_raw.json",
         raw_response_storage_path: rawJsonPath,
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -3793,6 +4405,19 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -3890,15 +4515,17 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
     };
     const jsonContent = JSON.stringify({ content: flatContent });
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_business_case.md",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
         raw_response_storage_path: rawJsonPath,
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -3906,6 +4533,19 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -4012,15 +4652,17 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
     };
     const jsonContent = JSON.stringify({ content: arrayContent });
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_feature_spec.md",
+        file_name: "gpt-4o-mini_0_feature_spec_raw.json",
         raw_response_storage_path: rawJsonPath,
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -4028,6 +4670,19 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];
@@ -4142,15 +4797,17 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
 {{/section:feature_objective}}
 `;
 
-    const contributions: ContributionRowMinimal[] = [
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
         id: rootId,
         session_id: sessionId,
         stage: "THESIS",
         iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
         storage_bucket: "content",
         storage_path: "proj_x/session_s/iteration_1/thesis/documents",
-        file_name: "gpt-4o-mini_0_feature_spec.md",
+        file_name: "gpt-4o-mini_0_feature_spec_raw.json",
         raw_response_storage_path: rawJsonPath,
         mime_type: "text/markdown",
         document_relationships: { thesis: rootId },
@@ -4158,6 +4815,19 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
         target_contribution_id: null,
         edit_version: 1,
         is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
         user_id: "user_123",
       },
     ];

@@ -505,11 +505,19 @@ export async function getAllStageProgress(
     let mappedStatus: JobProgressStatus;
     if (jobStatusRaw === "pending") {
       mappedStatus = "pending";
-    } else if (jobStatusRaw === "in_progress" || jobStatusRaw === "retrying") {
+    } else if (
+      jobStatusRaw === "in_progress" ||
+      jobStatusRaw === "processing" ||
+      jobStatusRaw === "retrying" ||
+      jobStatusRaw === "waiting_for_prerequisite" ||
+      jobStatusRaw === "waiting_for_children" ||
+      jobStatusRaw === "pending_continuation" ||
+      jobStatusRaw === "pending_next_step"
+    ) {
       mappedStatus = "in_progress";
     } else if (jobStatusRaw === "completed") {
       mappedStatus = "completed";
-    } else if (jobStatusRaw === "failed") {
+    } else if (jobStatusRaw === "failed" || jobStatusRaw === "retry_loop_failed") {
       mappedStatus = "failed";
     } else {
       const error = { message: `Job status is unsupported: ${jobStatusRaw}`, status: 500 };

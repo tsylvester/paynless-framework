@@ -1845,14 +1845,15 @@ describe('selectIsStageReadyForSessionIteration', () => {
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
     });
 
-    it('should return false when required document contribution is missing', () => {
+    it('should return false when first step pending but required seed_prompt is missing', () => {
         const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
         const state = buildState({
             currentProjectDetail: projectWithResource,
+            activeSeedPrompt: null,
             stageRunProgress: {
                 [progressKey]: {
                     stepStatuses: {
-                        seed_step: 'completed',
+                        seed_step: 'not_started',
                         doc_step: 'not_started',
                     },
                     documents: {},
@@ -1863,7 +1864,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
     });
 
-    it('should return false when required feedback is missing', () => {
+    it('should return true when second step pending but first step completed (ignore second step requirements)', () => {
         const sessionWithDocumentOnly: DialecticSession = {
             ...projectWithResource.dialectic_sessions![0],
             dialectic_contributions: [{
@@ -1900,7 +1901,10 @@ describe('selectIsStageReadyForSessionIteration', () => {
 
         const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
         const state = buildState({
-            currentProjectDetail: projectWithResource,
+            currentProjectDetail: {
+                ...projectWithResource,
+                dialectic_sessions: [sessionWithDocumentOnly],
+            },
             stageRunProgress: {
                 [progressKey]: {
                     stepStatuses: {
@@ -1913,10 +1917,10 @@ describe('selectIsStageReadyForSessionIteration', () => {
             },
         });
 
-        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
     });
 
-    it('should return false when header context exists but producing step is not completed', () => {
+    it('should return false when header context exists but producing step is in_progress', () => {
         const sessionWithDocAndFeedback: DialecticSession = {
             ...(projectWithResource.dialectic_sessions![0]),
             dialectic_contributions: [{
@@ -1985,6 +1989,104 @@ describe('selectIsStageReadyForSessionIteration', () => {
         });
 
         expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+
+    it('should return true when first step (order 1) failed and prerequisites are met (allow retry)', () => {
+        const sessionWithDocAndFeedback: DialecticSession = {
+            ...(projectWithResource.dialectic_sessions![0]),
+            dialectic_contributions: [{
+                id: 'contrib-1',
+                session_id: sessionId,
+                user_id: null,
+                stage: 'thesis',
+                iteration_number: iterationNumber,
+                model_id: null,
+                model_name: null,
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                edit_version: 1,
+                is_latest_edit: true,
+                original_model_contribution_id: null,
+                raw_response_storage_path: null,
+                target_contribution_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                processing_time_ms: null,
+                error: null,
+                citations: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                contribution_type: 'business_case',
+                file_name: null,
+                storage_bucket: null,
+                storage_path: null,
+                size_bytes: null,
+                mime_type: null,
+            }],
+            feedback: [{
+                id: 'feedback-1',
+                session_id: sessionId,
+                project_id: projectId,
+                user_id: 'user-1',
+                stage_slug: 'thesis',
+                iteration_number: iterationNumber,
+                storage_bucket: 'bucket',
+                storage_path: 'path',
+                file_name: 'feedback.md',
+                mime_type: 'text/markdown',
+                size_bytes: 512,
+                feedback_type: 'business_case',
+                resource_description: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            }],
+        };
+
+        const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+        const state = buildState({
+            activeSeedPrompt: mockSeedPrompt,
+            currentProjectDetail: {
+                ...projectWithResource,
+                resources: [mockHeaderContextResource],
+                dialectic_sessions: [sessionWithDocAndFeedback],
+            },
+            recipesByStageSlug: { [stageSlug]: requiredSeedPromptRecipe },
+            stageRunProgress: {
+                [progressKey]: {
+                    stepStatuses: {
+                        seed_step: 'failed',
+                        doc_step: 'not_started',
+                    },
+                    documents: {},
+                    jobProgress: {},
+                },
+            },
+        });
+
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
+    });
+
+    it('should return true when first step (order 1) completed but second step (order 2) failed (allow retry, ignore internal requirements)', () => {
+        const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+        const state = buildState({
+            activeSeedPrompt: mockSeedPrompt,
+            currentProjectDetail: projectWithResource,
+            recipesByStageSlug: { [stageSlug]: requiredSeedPromptRecipe },
+            stageRunProgress: {
+                [progressKey]: {
+                    stepStatuses: {
+                        seed_step: 'completed',
+                        doc_step: 'failed',
+                    },
+                    documents: {},
+                    jobProgress: {},
+                },
+            },
+        });
+
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
     });
 
     it('should return true when document, feedback, and completed header context are present', () => {
