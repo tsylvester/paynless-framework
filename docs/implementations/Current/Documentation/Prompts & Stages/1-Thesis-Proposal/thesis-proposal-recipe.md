@@ -60,7 +60,7 @@
 ```json
 {
   "system_materials": {
-    "executive_summary": "outline/index of all outputs in this response and how they connect to the objective",
+    "agent_internal_summary": "outline/index of all outputs in this response and how they connect to the objective",
     "input_artifacts_summary": "brief, faithful summary of user prompt and referenced materials",
     "stage_rationale": "why these choices align with constraints, standards, and stakeholder needs",
     "progress_update": "for continuation turns, summarize what is complete vs remaining; omit on first turn",
@@ -191,7 +191,7 @@
 ```json
 {
   "system_materials": {
-    "executive_summary": "outline/index of all outputs in this response and how they connect to the objective",
+    "agent_internal_summary": "outline/index of all outputs in this response and how they connect to the objective",
     "input_artifacts_summary": "brief, faithful summary of user prompt and referenced materials",
     "stage_rationale": "why these choices align with constraints, standards, and stakeholder needs",
     "progress_update": "for continuation turns, summarize what is complete vs remaining; omit on first turn",

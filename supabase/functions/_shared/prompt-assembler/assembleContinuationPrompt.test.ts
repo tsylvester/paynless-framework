@@ -26,6 +26,7 @@ import { FileRecord } from "../types/file_manager.types.ts";
 import {
   DialecticJobRow,
   DialecticRecipeStep,
+  HeaderContext,
 } from "../../dialectic-service/dialectic.interface.ts";
 import { assertSpyCall } from "jsr:@std/testing@0.225.1/mock";
 import { isRecord } from "../utils/type_guards.ts";
@@ -122,11 +123,23 @@ Deno.test("assembleContinuationPrompt", async (t) => {
     recipe_template_id: null,
   };
 
-  const headerContextContent = {
+  const headerContextContent: HeaderContext = {
     system_materials: {
-      shared_plan: "This is the shared plan.",
-      style_guide: "Use formal language.",
+      agent_internal_summary: "This is the shared plan.",
+      input_artifacts_summary: "Use formal language.",
+      stage_rationale: "Use formal language.",
+      validation_checkpoint: ["Use formal language."],
+      quality_standards: ["Use formal language."],
+      diversity_rubric: { "Use formal language.": "Use formal language." },
+      progress_update: "Use formal language.",
     },
+    header_context_artifact: {
+      type: "header_context",
+      document_key: "header_context",
+      artifact_class: "header_context",
+      file_type: "json",
+    },
+    context_for_documents: [],
   };
 
   const mockFileRecord: FileRecord = {
@@ -303,7 +316,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
             //    - Verify the final prompt includes the `system_materials`, a generic "please continue" instruction, and the exact partial markdown.
             assert(
               result.promptContent.includes(
-                headerContextContent.system_materials.shared_plan,
+                headerContextContent.system_materials.agent_internal_summary,
               ),
             );
             assert(result.promptContent.includes(MOCK_CONTINUATION_INSTRUCTION_EXPLICIT));
@@ -823,7 +836,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
 
         // 3. Assert:
         //    - Verify the prompt includes both the HeaderContext AND the CORRECTIVE instruction to COMPLETE the JSON.
-          assert(result.promptContent.includes(headerContextContent.system_materials.shared_plan));
+          assert(result.promptContent.includes(headerContextContent.system_materials.agent_internal_summary));
           assert(result.promptContent.includes(MOCK_CONTINUATION_INSTRUCTION_MALFORMED_JSON));
           assert(result.promptContent.endsWith(incompleteJson));
         //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
@@ -1080,7 +1093,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
 
         // 3. Assert:
         //    - Verify the prompt includes both the HeaderContext AND the CORRECTIVE instruction to FIX the JSON syntax.
-          assert(result.promptContent.includes(headerContextContent.system_materials.shared_plan));
+          assert(result.promptContent.includes(headerContextContent.system_materials.agent_internal_summary));
           assert(result.promptContent.includes(MOCK_CONTINUATION_INSTRUCTION_MALFORMED_JSON));
         //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
           assertSpyCall(fileManager.uploadAndRegisterFile, 0);
@@ -2083,7 +2096,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
 
             assert(
               result.promptContent.includes(
-                headerContextContent.system_materials.shared_plan,
+                headerContextContent.system_materials.agent_internal_summary,
               ),
             );
             assert(result.promptContent.includes(MOCK_CONTINUATION_INSTRUCTION_EXPLICIT));
@@ -2163,7 +2176,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
               }}),
             });
 
-            assert(!result.promptContent.includes(headerContextContent.system_materials.shared_plan));
+            assert(!result.promptContent.includes(headerContextContent.system_materials.agent_internal_summary));
             assert(result.promptContent.includes(MOCK_CONTINUATION_INSTRUCTION_EXPLICIT));
             assert(result.promptContent.endsWith(partialContent));
           } finally {
@@ -2356,7 +2369,7 @@ Deno.test("assembleContinuationPrompt", async (t) => {
 
             assert(
               result.promptContent.includes(
-                headerContextContent.system_materials.shared_plan,
+                headerContextContent.system_materials.agent_internal_summary,
               ),
             );
           } finally {

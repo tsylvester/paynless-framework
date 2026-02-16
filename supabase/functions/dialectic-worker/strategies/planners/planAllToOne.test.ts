@@ -229,7 +229,7 @@ Deno.test('planAllToOne accepts DialecticRecipeTemplateStep (not just DialecticS
         ],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_internal_summary: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -555,7 +555,7 @@ Deno.test('planAllToOne creates EXECUTE child job for PLAN recipe steps with val
         inputs_relevance: [{ document_key: FileType.ReducedSynthesis, relevance: 1.0 }],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_internal_summary: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -829,7 +829,7 @@ Deno.test('planAllToOne sets document_relationships.source_group in EXECUTE job 
         inputs_relevance: [{ document_key: FileType.ReducedSynthesis, relevance: 1.0 }],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_internal_summary: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -1007,7 +1007,7 @@ Deno.test('planAllToOne PLAN branch must not set document_relationships[stageSlu
         inputs_relevance: [{ document_key: FileType.ReducedSynthesis, relevance: 1.0 }],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_internal_summary: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -1333,7 +1333,7 @@ Deno.test('planAllToOne extracts sourceAnchorModelSlug from thesis document file
         ],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_internal_summary: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -1603,7 +1603,7 @@ Deno.test('planAllToOne PLAN branch uses relevance-selected anchor for canonical
         ],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_internal_summary: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -1815,7 +1815,7 @@ Deno.test('planAllToOne EXECUTE branch uses relevance-selected anchor for canoni
         ],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_internal_summary: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -2019,7 +2019,7 @@ Deno.test('planAllToOne throws when recipe lacks relevance metadata', () => {
         inputs_relevance: [], // NO relevance metadata - should cause error from selectAnchorSourceDocument
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_internal_summary: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -2103,7 +2103,7 @@ Deno.test('planAllToOne handles no_document_inputs_required by passing null anch
         inputs_relevance: [],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_internal_summary: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },

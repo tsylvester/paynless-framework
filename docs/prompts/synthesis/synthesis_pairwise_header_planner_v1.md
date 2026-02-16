@@ -37,7 +37,7 @@
 ```json
 {
   "system_materials": {
-    "executive_summary": "Summarize the intent of merging each Thesis document with its corresponding Antithesis critiques.",
+    "agent_internal_summary": "Summarize the intent of merging each Thesis document with its corresponding Antithesis critiques.",
     "input_artifacts_summary": "Identify the thesis and antithesis artifacts that will be combined during pairwise synthesis.",
     "stage_rationale": "Explain that this stage ensures consistent pairwise synthesis before consolidating documents across models.",
     "decision_criteria": [

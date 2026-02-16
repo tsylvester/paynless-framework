@@ -804,7 +804,7 @@ Deno.test("render", async (t) => {
     () => {
       const HEADER_CONTEXT_CONTENT: Json = JSON.parse(`{
         "system_materials": {
-          "executive_summary": "Test summary"
+          "agent_internal_summary": "Test summary"
         }
       }`);
 

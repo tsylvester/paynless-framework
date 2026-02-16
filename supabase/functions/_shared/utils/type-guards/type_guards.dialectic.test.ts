@@ -84,6 +84,7 @@ import {
     SelectAnchorResult,
     SourceDocument,
     JobProgressEntry,
+    HeaderContext,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
@@ -1595,7 +1596,7 @@ Deno.test('Type Guard: isStageWithRecipeSteps', async (t) => {
         outputs_required: {
             system_materials: {
                 stage_rationale: "rationale",
-                executive_summary: "summary",
+                agent_internal_summary: "summary",
                 input_artifacts_summary: "inputs",
                 progress_update: "progress",
                 validation_checkpoint: ["check"],
@@ -1980,10 +1981,10 @@ Deno.test('Type Guard: validatePayload', async (t) => {
 });
 
 Deno.test('Type Guard: isHeaderContext', async (t) => {
-    const baseContext = {
+    const baseContext: HeaderContext = {
         system_materials: {
             stage_rationale: 'why',
-            executive_summary: 'summary',
+            agent_internal_summary: 'summary',
             input_artifacts_summary: 'inputs',
             validation_checkpoint: ['a'],
             quality_standards: ['b'],
@@ -2011,7 +2012,7 @@ Deno.test('Type Guard: isHeaderContext', async (t) => {
         const invalid = {
             ...baseContext,
             system_materials: {
-                executive_summary: 'summary'
+                agent_internal_summary: 'summary'
             }
         };
         assert(!isHeaderContext(invalid));
@@ -2478,7 +2479,7 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
         const planOutputRule: OutputRule = {
             system_materials: {
                 stage_rationale: "Test rationale for planning.",
-                executive_summary: "Plan summary.",
+                agent_internal_summary: "Plan summary.",
                 input_artifacts_summary: "Summary of inputs for the plan.",
                 progress_update: "Planning is starting.",
                 validation_checkpoint: ["Plan validation"],
@@ -2503,7 +2504,7 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
         const planOutputRule: OutputRule = {
             system_materials: {
                 stage_rationale: "Test rationale for planning.",
-                executive_summary: "Plan summary.",
+                agent_internal_summary: "Plan summary.",
                 input_artifacts_summary: "Summary of inputs for the plan.",
                 progress_update: "Planning is starting.",
                 validation_checkpoint: ["Plan validation"],
@@ -2657,7 +2658,7 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
         const planOutputRule: OutputRule = {
             system_materials: {
                 stage_rationale: "Test rationale for planning.",
-                executive_summary: "Plan summary.",
+                agent_internal_summary: "Plan summary.",
                 input_artifacts_summary: "Summary of inputs for the plan.",
                 progress_update: "Planning is starting.",
                 validation_checkpoint: ["Plan validation"],
@@ -2728,7 +2729,7 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
         outputs_required: {
             system_materials: {
                 stage_rationale: "rationale",
-                executive_summary: "summary",
+                agent_internal_summary: "summary",
                 input_artifacts_summary: "inputs",
                 progress_update: "progress",
                 validation_checkpoint: ["check"],
@@ -2839,7 +2840,7 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
 Deno.test('Type Guard: isSystemMaterials', async (t) => {
     const validSystemMaterials: SystemMaterials = {
         stage_rationale: 'Test rationale',
-        executive_summary: 'Test summary',
+        agent_internal_summary: 'Test summary',
         input_artifacts_summary: 'Test input summary',
         progress_update: 'Test progress update',
         diversity_rubric: { key: 'value' },
@@ -2870,9 +2871,9 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
     });
 
     await t.step('should return true for an object with only required fields', () => {
-        const minimalSystemMaterials = {
+        const minimalSystemMaterials: SystemMaterials = {
             stage_rationale: 'Minimal rationale',
-            executive_summary: 'Minimal summary',
+            agent_internal_summary: 'Minimal summary',
             input_artifacts_summary: 'Minimal input summary',
             progress_update: 'Minimal progress update',
             diversity_rubric: {},
@@ -2883,7 +2884,7 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
     });
 
     await t.step('should return true for planner payload without prose fields', () => {
-        const plannerOnlySystemMaterials = {
+        const plannerOnlySystemMaterials: SystemMaterials = {
             milestones: [],
             dependency_rules: [],
             status_preservation_rules: {
@@ -2893,11 +2894,10 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
             },
             technical_requirements_outline_inputs: {
                 subsystems: [],
-                apis: [],
-                schemas: [],
-                proposed_file_tree: '',
-                architecture_overview: '',
             },
+            stage_rationale: 'Test rationale',
+            agent_internal_summary: 'Test summary',
+            input_artifacts_summary: 'Test input summary',
         };
         assert(isSystemMaterials(plannerOnlySystemMaterials));
     });
@@ -2908,7 +2908,7 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
     });
 
     await t.step('should return false if a required string property has the wrong type', () => {
-        const invalid = { ...validSystemMaterials, executive_summary: 123 };
+        const invalid = { ...validSystemMaterials, agent_internal_summary: 123 };
         assert(!isSystemMaterials(invalid));
     });
 
@@ -2928,9 +2928,9 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
     });
 
     await t.step('should return true when progress_update is null', () => {
-        const withNullProgress = {
+        const withNullProgress: SystemMaterials = {
             stage_rationale: 'Test rationale',
-            executive_summary: 'Test summary',
+            agent_internal_summary: 'Test summary',
             input_artifacts_summary: 'Test input summary',
             progress_update: null,
         };
@@ -2938,9 +2938,9 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
     });
 
     await t.step('should return true when progress_update is omitted', () => {
-        const withoutProgress = {
+        const withoutProgress: SystemMaterials = {
             stage_rationale: 'Test rationale',
-            executive_summary: 'Test summary',
+            agent_internal_summary: 'Test summary',
             input_artifacts_summary: 'Test input summary',
         };
         assert(isSystemMaterials(withoutProgress));
@@ -3490,9 +3490,22 @@ Deno.test('Type Guard: isContentToInclude', async (t) => {
         assert(!isContentToInclude(() => {}));
     });
 
-    await t.step('should return false for objects with null values', () => {
-        const invalid = { field1: null };
-        assert(!isContentToInclude(invalid));
+    await t.step('should return true for objects with null values (AI models return null for empty fields)', () => {
+        const valid = { field1: null };
+        assert(isContentToInclude(valid));
+    });
+
+    await t.step('should return true for objects mixing null with other valid types', () => {
+        const valid = {
+            risk: null,
+            impact: null,
+            likelihood: null,
+            mitigation: null,
+            mitigation_plan: 'detailed plan text',
+            required_fields: ['risk', 'impact', 'likelihood', 'mitigation'],
+            notes: 'some notes',
+        };
+        assert(isContentToInclude(valid));
     });
 
     await t.step('should return false for objects with undefined values', () => {
@@ -3526,7 +3539,7 @@ Deno.test('Type Guard: isContentToInclude', async (t) => {
         const invalid = {
             array_of_invalid: [
                 { valid_key: 'value' },
-                { invalid_key: null }
+                { invalid_key: undefined }
             ]
         };
         assert(!isContentToInclude(invalid));

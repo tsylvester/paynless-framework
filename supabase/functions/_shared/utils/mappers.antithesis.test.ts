@@ -40,7 +40,7 @@ describe('mapToStageWithRecipeSteps', () => {
                     inputs_relevance: '[{"document_key":"seed_prompt","relevance":1.0},{"document_key":"business_case","relevance":1.0},{"document_key":"feature_spec","relevance":0.9},{"document_key":"technical_approach","relevance":0.9},{"document_key":"success_metrics","relevance":0.8},{"document_key":"business_case","type":"feedback","relevance":0.6},{"document_key":"feature_spec","type":"feedback","relevance":0.6},{"document_key":"technical_approach","type":"feedback","relevance":0.6},{"document_key":"success_metrics","type":"feedback","relevance":0.6}]',
                     outputs_required: `{
                         "system_materials": {
-                            "executive_summary": "concise overview of key findings across all proposals",
+                            "agent_internal_summary": "concise overview of key findings across all proposals",
                             "input_artifacts_summary": "summary of proposals and any user feedback included for review",
                             "stage_rationale": "explain the review approach and criteria used",
                             "progress_update": "for continuation turns, summarize completed vs pending review areas; omit on first turn",

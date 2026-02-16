@@ -31,6 +31,7 @@ import { isRecord } from "../utils/type_guards.ts";
 import { GatherContextFn } from "./gatherContext.ts";
 import { createMockDownloadFromStorage } from "../supabase_storage_utils.mock.ts";
 import { DownloadFromStorageFn, DownloadStorageResult } from "../supabase_storage_utils.ts";
+import { HeaderContext } from "../../dialectic-service/dialectic.interface.ts";
 
 const STAGE_SLUG = "synthesis";
 const BUSINESS_CASE_DOCUMENT_KEY = FileType.business_case;
@@ -436,7 +437,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
   const headerContextContent = {
     system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
     },
     header_context_artifact: {
@@ -1279,10 +1280,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
       recipe_step: recipeStepWithoutFilesToGenerate
     };
 
-    const headerContextContent = {
+    const headerContextContent: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1368,10 +1369,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
 
   await t.step("should throw error when headerContext is missing context_for_documents", async () => {
     // Use an empty array to pass type validation, but runtime check will fail
-    const headerContextWithoutContextForDocs = {
+    const headerContextWithoutContextForDocs: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1465,10 +1466,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should throw error when no matching context_for_documents entry found for from_document_key", async () => {
-    const headerContextWithMismatch = {
+    const headerContextWithMismatch: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1569,10 +1570,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should throw error when context_for_documents entry has empty content_to_include", async () => {
-    const headerContextWithEmptyContent = {
+    const headerContextWithEmptyContent: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1671,12 +1672,17 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should throw error when content_to_include structure is invalid (not conforming to ContentToInclude type)", async () => {
-    const headerContextWithInvalidContent = {
+    const headerContextWithInvalidContent: HeaderContext = {
       system_materials: {
-        shared_plan: "This is the shared plan for all documents."
+        stage_rationale: "This is the stage rationale.",
+        agent_internal_summary: "This is the executive summary.",
+        input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
-        stage_summary: "Test stage summary"
+        type: 'header_context',
+        document_key: 'header_context',
+        artifact_class: 'header_context',
+        file_type: 'json'
       },
       context_for_documents: [
         {
@@ -1769,10 +1775,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should throw error when content_to_include is missing required keys from recipe step", async () => {
-    const headerContextWithMissingKeys = {
+    const headerContextWithMissingKeys: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {

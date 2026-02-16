@@ -1353,7 +1353,7 @@ Deno.test('planPerSourceDocument uses relevance-selected anchor for canonical pa
 		],
 		outputs_required: {
 			system_materials: {
-				executive_summary: '',
+				agent_internal_summary: '',
 				input_artifacts_summary: '',
 				stage_rationale: '',
 			},

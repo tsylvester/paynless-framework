@@ -26,11 +26,13 @@ import { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts"
 import {
   type DialecticRecipeStep,
   type DialecticStageRecipeStep,
+  type HeaderContext,
 } from "../../dialectic-service/dialectic.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import { GatherContextFn } from "./gatherContext.ts";
 import { createMockDownloadFromStorage } from "../supabase_storage_utils.mock.ts";
 import { DownloadFromStorageFn, DownloadStorageResult } from "../supabase_storage_utils.ts";
+import { isHeaderContextSystemMaterials, isHeaderContextArtifact, isHeaderContextDocuments } from "../utils/type-guards/type_guards.dialectic.ts";
 
 const STAGE_SLUG = "synthesis";
 const BUSINESS_CASE_DOCUMENT_KEY = FileType.business_case;
@@ -432,11 +434,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
     target_contribution_id: null,
   };
 
-  const headerContextContent = {
+  const headerContextContent: HeaderContext = {
     system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
-        input_artifacts_summary: "This is the input artifacts summary."
+        agent_internal_summary: "This is the executive summary.",
+        input_artifacts_summary: "This is the input artifacts summary.",
+        validation_checkpoint: ["This is the validation checkpoint."],
+        quality_standards: ["This is the quality standard."],
+        diversity_rubric: { "This is the diversity rubric.": "This is the diversity rubric value." },
+        progress_update: "This is the progress update."
     },
     header_context_artifact: {
         type: 'header_context',
@@ -1486,10 +1492,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
       target_contribution_id: null,
     };
 
-    const headerContextWithAlignment = {
+    const headerContextWithAlignment: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1617,10 +1623,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
       target_contribution_id: null,
     };
 
-    const headerContextWithAlignment = {
+    const headerContextWithAlignment: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1737,10 +1743,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should accept content_to_include with compatible types when all required keys exist", async () => {
-    const headerContextWithCompatibleTypes = {
+    const headerContextWithCompatibleTypes: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1877,10 +1883,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should accept content_to_include where recipe expects string but receives object", async () => {
-    const headerContextWithObject = {
+    const headerContextWithObject: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -2013,10 +2019,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should accept content_to_include where recipe expects string but receives array", async () => {
-    const headerContextWithArray = {
+    const headerContextWithArray: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -2170,10 +2176,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
       target_contribution_id: null,
     };
 
-    const headerContextWithAlignment = {
+    const headerContextWithAlignment: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_internal_summary: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -2397,16 +2403,16 @@ Deno.test("assembleTurnPrompt", async (t) => {
 
       // Verify the header_context object contains the expected structure
       assert(
-        "system_materials" in headerContextInContext,
-        "header_context must include system_materials"
+        isHeaderContextSystemMaterials(headerContextInContext.system_materials),
+        "header_context must include valid system_materials"
       );
       assert(
-        "header_context_artifact" in headerContextInContext,
-        "header_context must include header_context_artifact"
+        isHeaderContextArtifact(headerContextInContext.header_context_artifact),
+        "header_context must include valid header_context_artifact"
       );
       assert(
-        "context_for_documents" in headerContextInContext,
-        "header_context must include context_for_documents"
+        isHeaderContextDocuments(headerContextInContext.context_for_documents),
+        "header_context must include valid context_for_documents"
       );
     } finally {
       teardown();

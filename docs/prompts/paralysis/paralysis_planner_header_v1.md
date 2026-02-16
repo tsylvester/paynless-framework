@@ -36,7 +36,7 @@
 ```json
 {
   "system_materials": {
-    "executive_summary": "summary of which milestones are detailed in this iteration and why",
+    "agent_internal_summary": "summary of which milestones are detailed in this iteration and why",
     "input_artifacts_summary": "TRD sections used, Master Plan phase/milestone references",
     "stage_rationale": "explain ordering, TDD emphasis, and how checklist conforms to style guide",
     "progress_update": "summarize completed vs remaining milestones; denote updated statuses in Master Plan",

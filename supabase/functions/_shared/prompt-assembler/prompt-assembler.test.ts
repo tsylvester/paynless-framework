@@ -195,7 +195,7 @@ const mockJob: DialecticJobRow = {
 const synthesisPlannerOutputsRequired: OutputRule = {
   system_materials: {
     stage_rationale: "",
-    executive_summary: "",
+    agent_internal_summary: "",
     input_artifacts_summary: "",
   },
   header_context_artifact: {
@@ -211,7 +211,7 @@ const synthesisPlannerOutputsRequired: OutputRule = {
         thesis_document: "business_case",
         critique_document: "business_case_critique",
         comparison_signal: "comparison_vector",
-        executive_summary: "",
+        agent_internal_summary: "",
       },
     },
   ],

@@ -1052,96 +1052,115 @@
     *   `[✅]`   Node 8: `initializeFeedbackDraft` action wiring in `dialecticStore.ts`
     *   `[✅]`   Node 9: Prepopulation trigger in `GeneratedContributionCard.tsx`
 
-*   `[✅]`   `[BE]` _shared/prompt-assembler/`gatherInputsForStage` **Propagate InputRule.document_key to AssemblerSourceDocument metadata**
+*   `[✅]`   `[BE]` dialectic-service/`dialectic.interface.ts` + _shared/prompt-assembler/`gatherInputsForStage` **Remove nonexistent `section_header` from InputRule; derive `metadata.header` from `displayName` + `rule.type`**
     *   `[✅]`   `objective.md`
-        *   `[✅]`   When `gatherInputsForStage` creates an `AssemblerSourceDocument` from an `InputRule`, the resulting `metadata` must include the `document_key` from that `InputRule`, so that downstream consumers (`assemblePlannerPrompt`) can create per-document template variables matching the actual prompt template format (e.g., `{{thesis_documents.business_case}}`, `{{antithesis_documents.risk_register}}`).
-        *   `[✅]`   Every planner prompt template in `docs/prompts/` uses dot-notation placeholders: `{{section_header_snake_case.document_key}}`. Without `documentKey` in the sourceDocument metadata, the assembler cannot map individual documents to these placeholders.
-        *   `[✅]`   The `documentKey` field must be optional (`string | undefined`) because some sourceDocuments (e.g., generic feedback without a specific document target) may not have a `document_key` on their originating `InputRule`.
+        *   `[✅]`   The `InputRule` interface contains a `section_header` field (line 1498-1499) that does not exist in any database record. No migration seed data populates it. The field must be removed from the interface entirely.
+        *   `[✅]`   `gatherInputsForStage` currently sets `metadata.header = rule.section_header`, which always evaluates to `undefined` because the field does not exist. This causes `assemblePlannerPrompt` to skip every sourceDocument at line 266 (`if (!header) continue;`), producing empty dot-notation variables and empty Thesis/Feedback sections in rendered prompts.
+        *   `[✅]`   The function already possesses the data needed to derive the header: `displayName` (fetched from `dialectic_stages.display_name` via `displayNameMap` at line 104) and `rule.type` (`"document"` or `"feedback"`). The header must be derived as `"{displayName} Documents"` for `type === "document"` and `"{displayName} Feedback"` for `type === "feedback"`. Types `"header_context"` and `"contribution"` do not participate in dot-notation template rendering and must not have a header set.
     *   `[✅]`   `role.md`
-        *   `[✅]`   Adapter — gathers input artifacts from the database and Supabase Storage, then maps them into the `AssemblerSourceDocument` contract consumed by all prompt assemblers.
+        *   `[✅]`   `dialectic.interface.ts`: Type definition — defines the `InputRule` contract consumed by `parseInputArtifactRules` and `gatherInputsForStage`.
+        *   `[✅]`   `gatherInputsForStage.ts`: Adapter — gathers input artifacts from the database and Supabase Storage, maps them into `AssemblerSourceDocument` with correctly derived `metadata.header` for downstream dot-notation variable construction.
     *   `[✅]`   `module.md`
-        *   `[✅]`   Prompt assembler input gathering (`supabase/functions/_shared/prompt-assembler/`).
-        *   `[✅]`   Boundary: receives `InputRule[]` from `stage.recipe_step.inputs_required`, queries `dialectic_project_resources` (for documents), `dialectic_feedback` (for feedback), and `dialectic_contributions` (for header_context), and returns `GatheredRecipeContext` containing `sourceDocuments: AssemblerSourceDocument[]`.
+        *   `[✅]`   `dialectic.interface.ts`: Type definitions (`supabase/functions/dialectic-service/`). Boundary: defines the `InputRule` interface consumed by all prompt assembler functions.
+        *   `[✅]`   `gatherInputsForStage.ts`: Prompt assembler input gathering (`supabase/functions/_shared/prompt-assembler/`). Boundary: receives `InputRule[]` from `stage.recipe_step.inputs_required`, queries `dialectic_project_resources`, `dialectic_feedback`, and `dialectic_contributions`, derives `metadata.header` from `displayName` + `rule.type`, and returns `GatheredRecipeContext` containing `sourceDocuments: AssemblerSourceDocument[]`.
     *   `[✅]`   `deps.md`
-        *   `[✅]`   `InputRule` from `supabase/functions/dialectic-service/dialectic.interface.ts` — defines the `document_key?: FileType` field on each input rule (line 1493).
-        *   `[✅]`   `AssemblerSourceDocument` from `supabase/functions/_shared/prompt-assembler/prompt-assembler.interface.ts` — the interface whose `metadata` object must be extended (line 162-170).
-        *   `[✅]`   `GatheredRecipeContext` from `supabase/functions/_shared/prompt-assembler/prompt-assembler.interface.ts` — the return type containing `sourceDocuments[]` (line 131-134).
-        *   `[✅]`   `DownloadStorageResult` from `supabase/functions/_shared/supabase_storage_utils.ts` — used for downloading artifact content from storage.
-        *   `[✅]`   `parseInputArtifactRules` from `supabase/functions/_shared/utils/input-artifact-parser.ts` — parses raw `inputs_required` JSON into typed `InputRule[]`.
-    *   `[✅]`   interface/`prompt-assembler.interface.ts`
-        *   `[✅]`   Add `documentKey?: string` to the `metadata` object inside `AssemblerSourceDocument` (line 166-170). The field is optional because not all `InputRule` entries carry a `document_key`. After the change, the metadata type becomes: `{ displayName: string; header?: string; modelName?: string; documentKey?: string; }`.
+        *   `[✅]`   `InputRule` from `supabase/functions/dialectic-service/dialectic.interface.ts` (line 1487-1500) — the interface from which `section_header` must be removed.
+        *   `[✅]`   `AssemblerSourceDocument` from `supabase/functions/_shared/prompt-assembler/prompt-assembler.interface.ts` (line 162-172) — the `metadata.header` field remains as-is (`header?: string`); it is populated by derivation, not copied from a nonexistent field.
+        *   `[✅]`   `displayNameMap` from `gatherInputsForStage.ts` (line 92-94) — already maps `rule.slug` to `dialectic_stages.display_name`, providing the stage name used in header derivation.
+        *   `[✅]`   `parseInputArtifactRules` from `supabase/functions/_shared/utils/input-artifact-parser.ts` — parses raw `inputs_required` JSON into typed `InputRule[]`; must compile after `section_header` is removed from `InputRule`.
+    *   `[✅]`   interface/`dialectic.interface.ts`
+        *   `[✅]`   Remove `section_header?: string` and its JSDoc comment (lines 1498-1499) from the `InputRule` interface. The field does not exist in any database record and must not exist in the type.
     *   `[✅]`   unit/`gatherInputsForStage.test.ts`
-        *   `[✅]`   Add test: when an `InputRule` of type `"document"` has `document_key: FileType.business_case`, the resulting `AssemblerSourceDocument` in `gatheredContext.sourceDocuments` must have `metadata.documentKey === "business_case"`.
-        *   `[✅]`   Add test: when an `InputRule` of type `"feedback"` has `document_key: FileType.business_case`, the resulting `AssemblerSourceDocument` must have `metadata.documentKey === "business_case"`.
-        *   `[✅]`   Add test: when an `InputRule` of type `"header_context"` has `document_key: FileType.HeaderContext`, the resulting `AssemblerSourceDocument` must have `metadata.documentKey === "header_context"`.
-        *   `[✅]`   Add test: when an `InputRule` has no `document_key` (undefined), the resulting `AssemblerSourceDocument` must have `metadata.documentKey === undefined`.
+        *   `[✅]`   Remove `section_header` from every `InputRule` object constructed in tests (lines 347, 708, 715, 916, 923, 1266, 1462, 1649, 1795, 2007, 2119, 2285, 2447).
+        *   `[✅]`   Remove or rewrite the test at line 760 ("should use custom section_headers when provided in rules") — the concept of custom section_headers does not exist.
+        *   `[✅]`   Update all assertions that check `metadata.header` to assert the derived value: `"{DisplayName} Documents"` for `type === "document"`, `"{DisplayName} Feedback"` for `type === "feedback"`, `undefined` for `type === "header_context"`, `undefined` for `type === "contribution"`.
     *   `[✅]`   `gatherInputsForStage.ts`
-        *   `[✅]`   At the document-type push (around line 207): add `documentKey: rule.document_key` to the `metadata` object. The `metadata` construction becomes `{ displayName, header: rule.section_header, modelName, documentKey: rule.document_key }`.
-        *   `[✅]`   At the feedback-type single-record push (around line 302-310): add `documentKey: rule.document_key` to the `metadata` object.
-        *   `[✅]`   At the feedback-type multi-record push (around line 353-361): add `documentKey: rule.document_key` to the `metadata` object.
-        *   `[✅]`   At the header_context-type push (around line 442-447): add `documentKey: rule.document_key` to the `metadata` object.
-        *   `[✅]`   At the contribution-type push (locate the `rule.type === "contribution"` branch): add `documentKey: rule.document_key` to the `metadata` object.
+        *   `[✅]`   At the document-type metadata construction (line 204): replace `header: rule.section_header` with `header: \`\${displayName} Documents\``.
+        *   `[✅]`   At the feedback-type single-record metadata construction (line 311): replace `header: rule.section_header` with `header: \`\${displayName} Feedback\``.
+        *   `[✅]`   At the feedback-type multi-record metadata construction (line 363): replace `header: rule.section_header` with `header: \`\${displayName} Feedback\``.
+        *   `[✅]`   At the header_context-type metadata construction (line 443): remove the `header` field entirely (do not set it; `header_context` does not participate in dot-notation template rendering).
+        *   `[✅]`   At the contribution-type metadata construction (line 559): remove the `header` field entirely (do not set it; `contribution` does not participate in dot-notation template rendering).
     *   `[✅]`   `requirements.md`
-        *   `[✅]`   Every `AssemblerSourceDocument` pushed to `gatheredContext.sourceDocuments` must carry `metadata.documentKey` set to `rule.document_key` (which may be `undefined`).
-        *   `[✅]`   No existing behavior may be broken; all existing tests must remain green.
-        *   `[✅]`   The `AssemblerSourceDocument` interface must be updated before any source changes.
-    *   `[✅]`   **Commit** `feat: _shared/prompt-assembler/gatherInputsForStage propagate document_key to sourceDocument metadata`
-        *   `[✅]`   `prompt-assembler.interface.ts`: added `documentKey?: string` to `AssemblerSourceDocument.metadata`.
-        *   `[✅]`   `gatherInputsForStage.ts`: propagated `rule.document_key` to `metadata.documentKey` at all push sites.
-        *   `[✅]`   `gatherInputsForStage.test.ts`: added tests proving `documentKey` propagation for document, feedback, header_context, and undefined cases.
+        *   `[✅]`   `section_header` must not exist on the `InputRule` interface.
+        *   `[✅]`   `metadata.header` for `type === "document"` sourceDocuments must equal `"{displayName} Documents"` (e.g., `"Thesis Documents"` when `rule.slug === "thesis"`).
+        *   `[✅]`   `metadata.header` for `type === "feedback"` sourceDocuments must equal `"{displayName} Feedback"` (e.g., `"Thesis Feedback"` when `rule.slug === "thesis"`).
+        *   `[✅]`   `metadata.header` for `type === "header_context"` and `type === "contribution"` sourceDocuments must be `undefined`.
+        *   `[✅]`   All existing tests must be updated to remove `section_header` references and assert derived headers; all tests must pass after changes.
+    *   `[✅]`   **Commit** `fix(be): derive metadata.header from displayName + rule.type; remove nonexistent section_header from InputRule`
+        *   `[✅]`   `dialectic.interface.ts`: removed `section_header` from `InputRule` interface.
+        *   `[✅]`   `gatherInputsForStage.ts`: replaced `rule.section_header` with derived `"{displayName} Documents"` / `"{displayName} Feedback"` at all metadata construction sites; removed header assignment for `header_context` and `contribution` types.
+        *   `[✅]`   `gatherInputsForStage.test.ts`: removed all `section_header` from test InputRules, updated header assertions to derived values, removed custom section_header test.
 
-*   `[✅]`   `[BE]` _shared/prompt-assembler/`assemblePlannerPrompt` **Build dot-notation template variables from sourceDocuments for prompt rendering**
+*   `[✅]`   `[BE]` _shared/utils/`input-artifact-parser.test.ts` **Remove `section_header` from parser test InputRules**
     *   `[✅]`   `objective.md`
-        *   `[✅]`   Transform `sourceDocuments` gathered by `gatherContext` into dot-notation template variables that match the actual planner prompt templates in `docs/prompts/`. Every planner template (antithesis, synthesis-pairwise, parenthesis, paralysis) uses the pattern `{{section_header_snake.document_key}}` (e.g., `{{thesis_documents.business_case}}`, `{{parenthesis_documents.master_plan}}`). The function must also create section-level truthy variables (e.g., `thesis_feedback`) to enable conditional sections (`{{#section:thesis_feedback}}...{{/section:thesis_feedback}}`).
-        *   `[✅]`   The prior incorrect implementation (flat concatenated `thesis_documents` variable) must be reverted and replaced with per-document dot-notation variables.
-        *   `[✅]`   The raw `sourceDocuments[]` array must be removed from the render context because `renderPrompt` cannot substitute an array into a `{{placeholder}}`.
+        *   `[✅]`   The input artifact parser test constructs `InputRule` objects with `section_header` (lines 41, 51). After `section_header` is removed from the `InputRule` interface, these tests will not compile. Remove the field from all test InputRule objects.
     *   `[✅]`   `role.md`
-        *   `[✅]`   Domain logic — transforms the generic `sourceDocuments[]` output of `gatherContext` into template-ready named variables that `render` → `renderPrompt` can substitute into planner prompt templates.
+        *   `[✅]`   Test — unit tests for the input artifact rule parser.
     *   `[✅]`   `module.md`
-        *   `[✅]`   Prompt assembly (`supabase/functions/_shared/prompt-assembler/`).
-        *   `[✅]`   Boundary: receives `DynamicContextVariables` (containing `sourceDocuments[]`) from `gatherContext`, transforms them, passes them through `render` → `renderPrompt`, and saves the rendered prompt via `fileManager`.
+        *   `[✅]`   Input artifact parsing (`supabase/functions/_shared/utils/`). Boundary: validates and parses raw `inputs_required` JSON into typed `InputRule[]`.
     *   `[✅]`   `deps.md`
-        *   `[✅]`   `DynamicContextVariables` from `prompt-assembler.interface.ts` — contains `sourceDocuments?: AssemblerSourceDocument[]`.
-        *   `[✅]`   `AssemblerSourceDocument` from `prompt-assembler.interface.ts` — now includes `metadata.documentKey` (from Node 1).
-        *   `[✅]`   `render` from `supabase/functions/_shared/prompt-assembler/render.ts` — the real render function that calls `renderPrompt`.
-        *   `[✅]`   `renderPrompt` from `supabase/functions/_shared/prompt-renderer.ts` — performs `{{variable}}` substitution, section conditionals (`{{#section:key}}`), and unknown-placeholder cleanup.
-        *   `[✅]`   Actual planner prompt templates in `docs/prompts/` that define the expected placeholder format.
-    *   `[✅]`   unit/`assemblePlannerPrompt.test.ts`
-        *   `[✅]`   Revert the two incorrectly-added flat-variable tests ("should inject sourceDocuments as named template variables grouped by section header" and "should pass sourceDocuments as empty string variables when no documents are gathered") and the modified `expectedContext` in the first happy-path test.
-        *   `[✅]`   Add test: when `gatherContext` returns sourceDocuments with `metadata.header = "Thesis Documents"` and `metadata.documentKey = "business_case"`, the context passed to `render` must include a key `"thesis_documents.business_case"` whose value is a string containing the document content.
-        *   `[✅]`   Add test: when `gatherContext` returns multiple sourceDocuments with the same header but different documentKeys (e.g., `business_case`, `feature_spec`, `technical_approach`, `success_metrics`), each must produce its own dot-notation key in the render context.
-        *   `[✅]`   Add test: when sourceDocuments exist with `metadata.header = "Thesis Feedback"`, a truthy `"thesis_feedback"` key must exist in the render context (to satisfy `{{#section:thesis_feedback}}`).
-        *   `[✅]`   Add test: when sourceDocuments exist with `metadata.header = "Thesis Documents"` but `metadata.documentKey` is `undefined`, if documentKey is undefined the function must throw an error.
-        *   `[✅]`   Add test: when `gatherContext` returns empty `sourceDocuments`, no raw `sourceDocuments` array appears in the render context, and no dot-notation keys are created.
-        *   `[✅]`   The existing first happy-path test must be restored to its original `expectedContext` (with `sourceDocuments: []` in the spread), since the raw array stripping only applies when sourceDocuments are non-empty. (Or, if stripping always applies, the expected context must exclude `sourceDocuments` consistently.)
-    *   `[✅]`   `assemblePlannerPrompt.ts`
-        *   `[✅]`   Revert the incorrect flat-variable `sourceDocVars` logic (lines 254-288 of the current file).
-        *   `[✅]`   Implement dot-notation variable construction: iterate `context.sourceDocuments`, and for each document that has both `metadata.header` and `metadata.documentKey`, create a key `"{header_snake}.{documentKey}"` (e.g., `"thesis_documents.business_case"`) mapped to the document's `content` string. When multiple sourceDocuments share the same dot-notation key (multiple models), concatenate them with `### {modelName}` attribution headers.
-        *   `[✅]`   Reject documents with `metadata.header` but no `metadata.documentKey`: throw an error and force the developer to fix the function.
-        *   `[✅]`   Implement section-level truthy variables: for each unique `metadata.header` value found in sourceDocuments, create a truthy key `"{header_snake}"` (e.g., `"thesis_feedback" = "true"`) so that `{{#section:thesis_feedback}}` conditionals render their content.
-        *   `[✅]`   Destructure out the raw `sourceDocuments` array from the context before passing to `render`, since `renderPrompt` cannot substitute an array into `{{placeholder}}` syntax.
-        *   `[✅]`   Spread the dot-notation variables and section truthy variables into `extendedContext` alongside `context_for_documents`.
-    *   `[✅]`   integration/`assemblePlannerPrompt_sourceDocuments.integration.test.ts`
-        *   `[✅]`   Rewrite the existing incorrect integration test to use the ACTUAL template format from `docs/prompts/antithesis/antithesis_planner_review_v1.md` (or a representative subset containing `{{thesis_documents.business_case}}`, `{{thesis_documents.feature_spec}}`, `{{#section:thesis_feedback}}`, `{{thesis_feedback.business_case}}`).
-        *   `[✅]`   Exercise the REAL `render` function from `render.ts` and the REAL `renderPrompt` function from `prompt-renderer.ts` (not mocked).
-        *   `[✅]`   Mock `gatherContext` to return sourceDocuments with `metadata.header = "Thesis Documents"`, `metadata.documentKey = "business_case"`, etc., simulating what `gatherInputsForStage` would return after Node 1's changes.
-        *   `[✅]`   Assert: the rendered prompt contains the business_case content on the same line or immediately after `Business Case:`.
-        *   `[✅]`   Assert: the rendered prompt contains the feature_spec content near `Feature Specification:`.
-        *   `[✅]`   Assert: when thesis_feedback sourceDocuments are provided, the `{{#section:thesis_feedback}}` block is retained and feedback content appears.
-        *   `[✅]`   Assert: when thesis_feedback sourceDocuments are NOT provided, the `{{#section:thesis_feedback}}` block is removed entirely.
-        *   `[✅]`   Assert: no unresolved `{{...}}` placeholders remain in the rendered output (outside of code blocks in the HeaderContext Schema section).
-        *   `[✅]`   Assert: standard context variables (`{{role}}`, `{{stage_instructions}}`, etc.) are still substituted correctly.
+        *   `[✅]`   `InputRule` from `supabase/functions/dialectic-service/dialectic.interface.ts` — the interface from which `section_header` has been removed (Node above).
+    *   `[✅]`   unit/`input-artifact-parser.test.ts`
+        *   `[✅]`   Remove `section_header: 'Synthesis Insights'` from the InputRule objects at lines 41 and 51.
     *   `[✅]`   `requirements.md`
-        *   `[✅]`   Every sourceDocument with both `metadata.header` and `metadata.documentKey` must produce a dot-notation variable `"{header_snake}.{documentKey}"` in the render context.
-        *   `[✅]`   Every unique `metadata.header` from sourceDocuments must produce a truthy section variable `"{header_snake}"` for conditional section rendering.
-        *   `[✅]`   SourceDocuments with `metadata.header` but no `metadata.documentKey` must throw an error.
-        *   `[✅]`   The raw `sourceDocuments[]` array must not appear in the render context.
-        *   `[✅]`   The rendered prompt must match the format expected by all planner templates in `docs/prompts/` (verified against `antithesis_planner_review_v1.md`, `synthesis_pairwise_header_planner_v1.md`, `parenthesis_planner_header_v1.md`, `paralysis_planner_header_v1.md`).
-        *   `[✅]`   All existing assemblePlannerPrompt tests must remain green after the revert and re-implementation.
-    *   `[✅]`   **Commit** `feat: _shared/prompt-assembler/assemblePlannerPrompt build dot-notation template variables from sourceDocuments`
-        *   `[✅]`   `assemblePlannerPrompt.ts`: reverted flat-variable approach, implemented dot-notation variable construction, section truthy variables, and raw array removal.
-        *   `[✅]`   `assemblePlannerPrompt.test.ts`: reverted incorrect tests, added dot-notation variable tests, section truthy variable tests, and empty sourceDocuments tests.
-        *   `[✅]`   `assemblePlannerPrompt_sourceDocuments.integration.test.ts`: rewritten with actual antithesis planner template format, real render + renderPrompt pipeline, dot-notation verification.
+        *   `[✅]`   Test InputRules must not reference `section_header`.
+        *   `[✅]`   All parser tests must pass after changes.
+    *   `[✅]`   **Commit** `fix(be): remove section_header from input-artifact-parser test InputRules`
+        *   `[✅]`   `input-artifact-parser.test.ts`: removed `section_header` from test InputRule objects.
+
+*   `[✅]`   `[BE]` dialectic-worker/`processSimpleJob.test.ts` **Remove `section_header` from worker test InputRules**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   The processSimpleJob test constructs `InputRule` objects with `section_header` (lines 194, 207). After `section_header` is removed from the `InputRule` interface, these tests will not compile. Remove the field from all test InputRule objects.
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Test — unit tests for the dialectic job worker.
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Dialectic worker (`supabase/functions/dialectic-worker/`). Boundary: processes dialectic jobs by dispatching to appropriate assemblers.
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `InputRule` from `supabase/functions/dialectic-service/dialectic.interface.ts` — the interface from which `section_header` has been removed (Node above).
+    *   `[✅]`   unit/`processSimpleJob.test.ts`
+        *   `[✅]`   Remove `section_header: 'Business Case Inputs'` from the InputRule at line 194.
+        *   `[✅]`   Remove `section_header: 'Planner Context'` from the InputRule at line 207.
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   Test InputRules must not reference `section_header`.
+        *   `[✅]`   All worker tests must pass after changes.
+    *   `[✅]`   **Commit** `fix(be): remove section_header from processSimpleJob test InputRules`
+        *   `[✅]`   `processSimpleJob.test.ts`: removed `section_header` from test InputRule objects.
+
+*   `[✅]`   `[BE]` integration/`assemblePlannerPrompt_sourceDocuments.integration.test.ts` **Remove fabricated `section_header` from integration test InputRules; verify derived headers produce correct rendered output**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   The integration test fabricates `section_header` values on mock `inputs_required` (lines 96, 104, 807, 808, 809, 1094, 1095, 1378, 1379, 1380, 1381, 1656, 1657, 1658, 1659) that do not exist in real data. These must be removed so the test matches real conditions.
+        *   `[✅]`   The mock `sourceDocuments` hardcode `header` in metadata (e.g., `header: "Thesis Documents"` at line 210). These values are correct — they represent what `gatherInputsForStage` will now produce via derivation. The mock `gatherContext` bypasses `gatherInputsForStage`, so the hardcoded `header` values in mock sourceDocuments remain valid as they simulate the derived output.
+        *   `[✅]`   Add a new integration test that uses the ACTUAL prompt template from `docs/prompts/antithesis/antithesis_planner_review_v1.md`, uses `inputs_required` matching the real antithesis migration data (no `section_header`), and uses actual thesis stage inputs (to be supplied by user) as sourceDocument content. This test must prove the full pipeline renders Thesis Documents and Thesis Feedback sections correctly.
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Test — bounded integration test for the `assemblePlannerPrompt` → `render` → `renderPrompt` pipeline.
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Integration testing (`supabase/integration_tests/services/`). Boundary: exercises real `assemblePlannerPrompt`, real `render`, real `renderPrompt`; mocks database client, file manager, and `gatherContext`.
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `InputRule` from `supabase/functions/dialectic-service/dialectic.interface.ts` — the interface from which `section_header` has been removed.
+        *   `[✅]`   `assemblePlannerPrompt` from `supabase/functions/_shared/prompt-assembler/assemblePlannerPrompt.ts` — the function under test.
+        *   `[✅]`   `render` from `supabase/functions/_shared/prompt-assembler/render.ts` — exercised as REAL (not mocked).
+        *   `[✅]`   `renderPrompt` from `supabase/functions/_shared/prompt-renderer.ts` — exercised as REAL (not mocked).
+        *   `[✅]`   Actual prompt template `docs/prompts/antithesis/antithesis_planner_review_v1.md` — the template consumed by the new integration test.
+        *   `[✅]`   Actual thesis stage inputs (to be supplied by user) — real document content for sourceDocument construction.
+    *   `[✅]`   integration/`assemblePlannerPrompt_sourceDocuments.integration.test.ts`
+        *   `[✅]`   Remove `section_header` from every `inputs_required` InputRule across all test cases (lines 96, 104, 807, 808, 809, 1094, 1095, 1378, 1379, 1380, 1381, 1656, 1657, 1658, 1659).
+        *   `[✅]`   Add new test case: "renders antithesis planner with actual template and real thesis inputs"
+            *   `[✅]`   Load or inline the actual template from `docs/prompts/antithesis/antithesis_planner_review_v1.md`
+            *   `[✅]`   Construct `inputs_required` matching the real antithesis migration data: `[{"type":"document","slug":"thesis","document_key":"business_case","required":true}, ...]` — no `section_header`
+            *   `[✅]`   Construct mock `sourceDocuments` with `header: "Thesis Documents"` and `header: "Thesis Feedback"` (simulating the derived output of `gatherInputsForStage`) using actual thesis stage inputs as content
+            *   `[✅]`   Exercise real `render` + `renderPrompt` pipeline
+            *   `[✅]`   Assert: rendered prompt contains thesis document content after each `Business Case:`, `Feature Specification:`, `Technical Approach:`, `Success Metrics:` label
+            *   `[✅]`   Assert: when thesis feedback sourceDocuments are provided, the `{{#section:thesis_feedback}}` block is retained and feedback content appears
+            *   `[✅]`   Assert: when thesis feedback sourceDocuments are NOT provided, the `{{#section:thesis_feedback}}` block is removed entirely
+            *   `[✅]`   Assert: no unresolved `{{thesis_documents.*}}` or `{{thesis_feedback.*}}` placeholders remain
+            *   `[✅]`   Assert: standard context variables (`{{role}}`, `{{stage_instructions}}`, `{{seed_prompt}}`, `{{style_guide_markdown}}`, `{{outputs_required}}`) are substituted correctly
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   No `inputs_required` InputRule in any test case may contain `section_header`.
+        *   `[✅]`   The new integration test must use the actual antithesis planner template and actual thesis stage inputs.
+        *   `[✅]`   The rendered prompt must have populated Thesis Documents and Thesis Feedback sections (not empty).
+        *   `[✅]`   All integration tests must pass after changes.
+    *   `[✅]`   **Commit** `fix(be): remove fabricated section_header from integration tests; add actual-template integration test`
+        *   `[✅]`   `assemblePlannerPrompt_sourceDocuments.integration.test.ts`: removed `section_header` from all test InputRules, added new integration test using actual antithesis planner template and real thesis inputs.
 
 # ToDo
 

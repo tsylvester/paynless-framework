@@ -7,7 +7,7 @@ Replace the placeholder structure in the JSON snippet below with fully written J
 ```json
 {
   "system_materials": {
-    "executive_summary": "Outline/index of all outputs in this response and how they connect to the objective",
+    "agent_internal_summary": "Outline/index of all outputs in this response and how they connect to the objective",
     "input_artifacts_summary": "Succinct summary of prior proposals, critiques, and user feedback included in this synthesis",
     "stage_rationale": "Decision record explaining how signals and critiques informed selections, how conflicts were resolved, gaps were filled, and why chosen approaches best meet constraints",
     "progress_update": "For continuation turns, summarize what is complete vs remaining; omit on first turn",

@@ -38,7 +38,6 @@ Deno.test('parseInputArtifactRules - should correctly parse a rule with all opti
             document_key: FileType.business_case,
             required: false,
             multiple: true,
-            section_header: 'Synthesis Insights',
         },
     ];
     const expected: InputRule[] = [
@@ -48,7 +47,6 @@ Deno.test('parseInputArtifactRules - should correctly parse a rule with all opti
             document_key: FileType.business_case,
             required: false,
             multiple: true,
-            section_header: 'Synthesis Insights',
         },
     ];
     if(!isJson(inputRules)) {

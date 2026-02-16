@@ -129,7 +129,7 @@ export function isHeaderContextArtifact(value: unknown): value is HeaderContextA
 
 export function isHeaderContextSystemMaterials(value: unknown): value is {
     stage_rationale: string;
-    executive_summary: string;
+    agent_internal_summary: string;
     input_artifacts_summary: string;
     validation_checkpoint?: string[];
     quality_standards?: string[];
@@ -140,7 +140,7 @@ export function isHeaderContextSystemMaterials(value: unknown): value is {
 
     const requiredKeys: Array<[string, (v: unknown) => boolean]> = [
         ['stage_rationale', (v) => typeof v === 'string'],
-        ['executive_summary', (v) => typeof v === 'string'],
+        ['agent_internal_summary', (v) => typeof v === 'string'],
         ['input_artifacts_summary', (v) => typeof v === 'string'],
     ];
 
@@ -230,8 +230,13 @@ export function isContentToInclude(value: unknown): value is ContentToInclude {
             continue;
         }
         
-        // Reject null, undefined, functions, etc.
-        if (itemValue === null || itemValue === undefined || valueType === 'function') {
+        // null is a valid JSON value; AI models routinely return null for empty fields
+        if (itemValue === null) {
+            continue;
+        }
+        
+        // Reject undefined, functions, etc.
+        if (itemValue === undefined || valueType === 'function') {
             return false;
         }
         
@@ -558,7 +563,7 @@ export function isSystemMaterials(value: unknown): value is SystemMaterials {
         return false;
     }
 
-    if ('executive_summary' in value && typeof value.executive_summary !== 'string') {
+    if ('agent_internal_summary' in value && typeof value.agent_internal_summary !== 'string') {
         return false;
     }
 

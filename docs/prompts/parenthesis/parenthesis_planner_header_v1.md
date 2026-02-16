@@ -50,7 +50,7 @@
       "proposed_file_tree": "",
       "architecture_overview": ""
     },
-    "executive_summary": "overview of formalization scope and how the Master Plan will drive iterative execution",
+    "agent_internal_summary": "overview of formalization scope and how the Master Plan will drive iterative execution",
     "input_artifacts_summary": "succinct recap of synthesis outputs informing this plan",
     "stage_rationale": "why the chosen milestone breakdown, ordering, and architecture structure best fit constraints and objectives",
     "progress_update": "for continuation turns, summarize Master Plan changes since last iteration; omit on first turn",

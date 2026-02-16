@@ -70,7 +70,7 @@
 ```json
 {
   "system_materials": {
-    "executive_summary": "concise overview of key findings across all proposals",
+    "agent_internal_summary": "concise overview of key findings across all proposals",
     "input_artifacts_summary": "summary of proposals and any user feedback included for review",
     "stage_rationale": "explain the review approach and criteria used",
     "progress_update": "for continuation turns, summarize completed vs pending review areas; omit on first turn",
@@ -274,7 +274,7 @@
 ```json
 {
   "system_materials": {
-    "executive_summary": "concise overview of key findings across all proposals",
+    "agent_internal_summary": "concise overview of key findings across all proposals",
     "input_artifacts_summary": "summary of proposals and any user feedback included for review",
     "stage_rationale": "explain the review approach and criteria used",
     "progress_update": "for continuation turns, summarize completed vs pending review areas; omit on first turn",

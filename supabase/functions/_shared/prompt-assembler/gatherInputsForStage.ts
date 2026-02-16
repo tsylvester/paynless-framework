@@ -201,7 +201,7 @@ export async function gatherInputsForStage(
                 documentKey?: FileType;
               } = {
                 displayName: displayName,
-                header: rule.section_header,
+                header: `${displayName} Documents`,
                 documentKey: rule.document_key,
               };
               if (modelName) {
@@ -308,7 +308,7 @@ export async function gatherInputsForStage(
               content: content,
               metadata: {
                 displayName: displayName,
-                header: rule.section_header,
+                header: `${displayName} Feedback`,
                 documentKey: rule.document_key,
               },
             });
@@ -360,7 +360,7 @@ export async function gatherInputsForStage(
                 content: content,
                 metadata: {
                   displayName: displayName,
-                  header: rule.section_header,
+                  header: `${displayName} Feedback`,
                   documentKey: rule.document_key,
                 },
               });
@@ -440,7 +440,6 @@ export async function gatherInputsForStage(
                 documentKey?: FileType;
               } = {
                 displayName: displayName,
-                header: rule.section_header,
                 documentKey: rule.document_key,
               };
               if (latestContribution.model_name && typeof latestContribution.model_name === "string") {
@@ -556,7 +555,6 @@ export async function gatherInputsForStage(
                 documentKey?: FileType;
               } = {
                 displayName: displayName,
-                header: rule.section_header,
                 documentKey: rule.document_key,
               };
               if (latestContribution.model_name && typeof latestContribution.model_name === "string") {

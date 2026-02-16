@@ -948,7 +948,7 @@ Deno.test('planPerModel per_model EXECUTE jobs have null source_group and pass n
 		],
 		outputs_required: {
 			system_materials: {
-				executive_summary: '',
+				agent_internal_summary: '',
 				input_artifacts_summary: '',
 				stage_rationale: '',
 			},

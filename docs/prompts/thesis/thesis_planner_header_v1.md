@@ -36,7 +36,7 @@ Generate a JSON object with this exact structure. Replace all placeholder descri
 ```json
 {
   "system_materials": {
-    "executive_summary": "REQUIRED: Generate an outline/index of all outputs in this response and how they connect to the objective. Complete this last, after all other elements are filled, so that the summary refers to the actual content generated.",
+    "agent_internal_summary": "REQUIRED: Generate an outline/index of all outputs in this response and how they connect to the objective. Complete this last, after all other elements are filled, so that the summary refers to the actual content generated.",
     "input_artifacts_summary": "REQUIRED: Generate a brief, faithful summary of the user prompt and referenced materials from the User Objective.",
     "stage_rationale": "REQUIRED: Generate an explanation of why these choices align with constraints, standards, and stakeholder needs. Consider the Stage Role and Stage Instructions.",
     "progress_update": "REQUIRED: For continuation turns, generate a summary of what is complete vs remaining. Omit this field entirely on first turn (do not include it in the JSON).",
