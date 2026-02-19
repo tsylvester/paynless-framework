@@ -474,13 +474,7 @@ export async function executeModelCallAndSave(
         logger: deps.logger,
     };
     const isContinuationFlowInitial = Boolean(job.target_contribution_id || job.payload.target_contribution_id);
-    // Rendering hygiene: sanitize placeholder braces in the primary user message we send to the model
-    const sanitizeMessage = (text: string | undefined): string | undefined => {
-        if (typeof text !== 'string') return text;
-        return text.replace(/[{}]/g, '');
-    };
-    const sanitizedCurrentUserPrompt = sanitizeMessage(currentUserPrompt) ?? '';
-    
+
     // The conversation history from the prompt assembler is the source of truth for the `messages` array.
     // It must not be mutated.
     const initialAssembledMessages: Messages[] = conversationHistory
@@ -498,7 +492,7 @@ export async function executeModelCallAndSave(
 
     const fullPayload: CountableChatPayload = {
         systemInstruction,
-        message: sanitizedCurrentUserPrompt,
+        message: currentUserPrompt,
         messages: normalizedInitialMessages,
         resourceDocuments: currentResourceDocuments.map(d => ({ id: d.id, content: d.content })),
     };
@@ -581,7 +575,7 @@ export async function executeModelCallAndSave(
 
     // Build a single ChatApiRequest instance early and keep it in sync; use it to drive both sizing and send
     let chatApiRequest: ChatApiRequest = {
-        message: sanitizedCurrentUserPrompt,
+        message: currentUserPrompt,
         messages: currentAssembledMessages
                 .filter(isApiChatMessage)
                 .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
@@ -919,7 +913,7 @@ export async function executeModelCallAndSave(
             // Keep ChatApiRequest in sync and size based on the same object
             chatApiRequest = {
                 ...chatApiRequest,
-                message: sanitizedCurrentUserPrompt,
+                message: currentUserPrompt,
                 messages: currentAssembledMessages
                         .filter(isApiChatMessage)
                         .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
@@ -956,7 +950,7 @@ export async function executeModelCallAndSave(
         // Ensure chatApiRequest reflects final compressed state and size using the same object
         chatApiRequest = {
             ...chatApiRequest,
-            message: sanitizedCurrentUserPrompt,
+            message: currentUserPrompt,
             messages: currentAssembledMessages
                     .filter(isApiChatMessage)
                     .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),

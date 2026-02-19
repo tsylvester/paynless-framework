@@ -101,11 +101,9 @@ export class GoogleAdapter {
         if (request.resourceDocuments && request.resourceDocuments.length > 0) {
             const documentParts: Part[] = [];
             for (const doc of request.resourceDocuments) {
-                const label = `[Document: ${doc.document_key ?? doc.id ?? ''} from ${doc.stage_slug ?? ''}]`;
+                const label = `[Document: ${doc.document_key} from ${doc.stage_slug}]`;
                 documentParts.push({ text: label });
-                documentParts.push({
-                    inlineData: { mimeType: 'text/plain', data: doc.content },
-                });
+                documentParts.push({ text: doc.content });
             }
             finalParts = [...documentParts, ...lastMessage.parts];
         }

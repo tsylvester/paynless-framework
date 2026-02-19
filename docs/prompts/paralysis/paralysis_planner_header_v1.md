@@ -17,7 +17,7 @@
 ```json
 {
   "system_materials": {
-    "agent_internal_summary": "summary of which milestones are detailed in this iteration and why",
+    "agent_notes_to_self": "summary of which milestones are detailed in this iteration and why, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "TRD sections used, Master Plan phase/milestone references",
     "stage_rationale": "explain ordering, TDD emphasis, and how checklist conforms to style guide",
     "progress_update": "summarize completed vs remaining milestones; denote updated statuses in Master Plan",
@@ -94,7 +94,7 @@
       "document_key": "updated_master_plan",
       "content_to_include": {
         "index": [],
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
         "phases": [
           {
             "name": "",

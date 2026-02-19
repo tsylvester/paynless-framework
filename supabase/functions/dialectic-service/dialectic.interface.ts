@@ -807,7 +807,7 @@ export interface GenerateContributionsPayload {
 export interface SystemMaterials {
 	progress_update?: string | null; // This is optional and a remnant of the old monolithic stage generation feature where we had to tell the model what documents they'd already generated.
 	stage_rationale: string;
-	agent_internal_summary: string; // This is the primary means of the agent communicating its intent to itself through different documents, to keep the generation aligned across documents.
+	agent_notes_to_self: string; // This is the primary means of the agent communicating its intent to itself through different documents, to keep the generation aligned across documents.
 	input_artifacts_summary: string; // This is how we detail what artifacts the agent will use to generate the documents.
 	// Optional, for model self-correction and introspection
 	diversity_rubric?: { [key: string]: string }; // This is how the agent is directed to decide whether to use standard or non-standard approaches.

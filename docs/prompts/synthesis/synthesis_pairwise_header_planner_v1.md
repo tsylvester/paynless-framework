@@ -16,7 +16,7 @@
 ```json
 {
   "system_materials": {
-    "agent_internal_summary": "Summarize the intent of merging each Thesis document with its corresponding Antithesis critiques.",
+    "agent_notes_to_self": "Summarize the intent of merging each Thesis document with its corresponding Antithesis critiques, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "Identify the thesis and antithesis artifacts that will be combined during pairwise synthesis.",
     "stage_rationale": "Explain that this stage ensures consistent pairwise synthesis before consolidating documents across models.",
     "decision_criteria": [
@@ -54,7 +54,7 @@
         "proposal_references": [],
         "resolved_positions": [],
         "open_questions": [],
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
       }
     },
     {

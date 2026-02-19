@@ -1302,7 +1302,7 @@ Deno.test('planPairwiseByOrigin uses relevance-selected anchor for canonical pat
 		],
 		outputs_required: {
 			system_materials: {
-				agent_internal_summary: '',
+				agent_notes_to_self: '',
 				input_artifacts_summary: '',
 				stage_rationale: '',
 			},

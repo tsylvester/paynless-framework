@@ -16,7 +16,7 @@
 ```json
 {
   "system_materials": {
-    "agent_internal_summary": "Outline/index of all outputs in this response and how they connect to the objective",
+    "agent_notes_to_self": "Outline/index of all outputs in this response and how they connect to the objective, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "Succinct summary of prior proposals, critiques, and user feedback included in this synthesis",
     "stage_rationale": "Decision record explaining how signals and critiques informed selections, how conflicts were resolved, gaps were filled, and why chosen approaches best meet constraints",
     "progress_update": "For continuation turns, summarize what is complete vs remaining; omit on first turn",
@@ -105,7 +105,7 @@
         "open_decisions": [],
         "implementation_risks": [],
         "stakeholder_communications": [],
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
       }
     },
     {

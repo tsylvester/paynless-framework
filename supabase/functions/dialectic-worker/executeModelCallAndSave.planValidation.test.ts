@@ -43,7 +43,7 @@ import type { IExecuteJobContext } from './JobContext.interface.ts';
 // Helper to create a valid HeaderContext structure
 function createValidHeaderContext(): HeaderContext {
     const systemMaterials: SystemMaterials = {
-        agent_internal_summary: 'Test executive summary',
+        agent_notes_to_self: 'Test executive summary',
         input_artifacts_summary: 'Test input artifacts summary',
         stage_rationale: 'Test stage rationale',
     };
@@ -247,7 +247,7 @@ Deno.test('executeModelCallAndSave - header_context response with missing contex
     // Using type cast exception per Instructions for Agent section 5: intentionally malformed objects in error-handling tests
     const invalidHeaderContext = {
         system_materials: {
-            agent_internal_summary: 'Test executive summary',
+            agent_notes_to_self: 'Test executive summary',
             input_artifacts_summary: 'Test input artifacts summary',
             stage_rationale: 'Test stage rationale',
         },

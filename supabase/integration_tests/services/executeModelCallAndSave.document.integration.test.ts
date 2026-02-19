@@ -116,7 +116,7 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
 
     const systemMaterials: SystemMaterials = {
       stage_rationale: "Integration test stub: stage rationale",
-      agent_internal_summary: "Integration test stub: agent internal summary",
+      agent_notes_to_self: "Integration test stub: agent internal summary",
       input_artifacts_summary: "Integration test stub: input artifacts summary",
     };
 

@@ -378,7 +378,7 @@ Generate a JSON object with this exact structure:
 \`\`\`json
 {
   "system_materials": {
-    "agent_internal_summary": "REQUIRED: Generate an outline",
+    "agent_notes_to_self": "REQUIRED: Generate an outline",
     "stage_rationale": "REQUIRED: Explain why"
   },
   "header_context_artifact": {
@@ -404,7 +404,7 @@ Begin your response with \`{\` immediately.`;
 
     // The JSON code block should be preserved intact
     assertEquals(result.includes('"system_materials": {'), true, "system_materials key should be preserved");
-    assertEquals(result.includes('"agent_internal_summary": "REQUIRED: Generate an outline"'), true, "agent_internal_summary should be preserved");
+    assertEquals(result.includes('"agent_notes_to_self": "REQUIRED: Generate an outline"'), true, "agent_notes_to_self should be preserved");
     assertEquals(result.includes('"header_context_artifact": {'), true, "header_context_artifact key should be preserved");
     assertEquals(result.includes('"type": "header_context"'), true, "type field should be preserved");
     assertEquals(result.includes('"context_for_documents": []'), true, "context_for_documents should be preserved");

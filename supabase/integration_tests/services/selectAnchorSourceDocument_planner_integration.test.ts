@@ -87,7 +87,7 @@ describe("selectAnchorSourceDocument Planner Integration Tests (Step 94.f)", () 
 
     const systemMaterials: SystemMaterials = {
       stage_rationale: "Integration test stub: stage rationale",
-      agent_internal_summary: "Integration test stub: agent internal summary",
+      agent_notes_to_self: "Integration test stub: agent internal summary",
       input_artifacts_summary: "Integration test stub: input artifacts summary",
     };
 

@@ -20,8 +20,9 @@ import { createMockTokenWalletService } from '../_shared/services/tokenWalletSer
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { ICompressionStrategy, getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
+import { createMockDownloadFromStorage } from '../_shared/supabase_storage_utils.mock.ts';
 
-import { 
+import {
     createMockJob, 
     testPayload, 
     mockSessionData, 
@@ -716,6 +717,7 @@ Deno.test('should use source documents for token estimation before prompt assemb
                             // Use document-centric path so the parser can extract stage + documentKey
                             storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
                             file_name: 'modelA_1_business_case.md',
+                            storage_bucket: 'test-bucket',
                         }
                     ],
                     error: null
@@ -725,9 +727,13 @@ Deno.test('should use source documents for token estimation before prompt assemb
         'dialectic_feedback': { select: { data: [], error: null } },
     });
 
+    const oversizeContent = new TextEncoder().encode('X'.repeat(2000));
+    const oversizeBuffer = new ArrayBuffer(oversizeContent.byteLength);
+    new Uint8Array(oversizeBuffer).set(oversizeContent);
     const deps = getMockDeps({
         ragService: mockRagService,
         countTokens: countTokens,
+        downloadFromStorage: createMockDownloadFromStorage({ mode: 'success', data: oversizeBuffer }),
     });
 
     const params: ExecuteModelCallAndSaveParams = {

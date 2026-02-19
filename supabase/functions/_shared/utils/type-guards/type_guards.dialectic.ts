@@ -129,7 +129,7 @@ export function isHeaderContextArtifact(value: unknown): value is HeaderContextA
 
 export function isHeaderContextSystemMaterials(value: unknown): value is {
     stage_rationale: string;
-    agent_internal_summary: string;
+    agent_notes_to_self: string;
     input_artifacts_summary: string;
     validation_checkpoint?: string[];
     quality_standards?: string[];
@@ -140,7 +140,7 @@ export function isHeaderContextSystemMaterials(value: unknown): value is {
 
     const requiredKeys: Array<[string, (v: unknown) => boolean]> = [
         ['stage_rationale', (v) => typeof v === 'string'],
-        ['agent_internal_summary', (v) => typeof v === 'string'],
+        ['agent_notes_to_self', (v) => typeof v === 'string'],
         ['input_artifacts_summary', (v) => typeof v === 'string'],
     ];
 
@@ -563,7 +563,7 @@ export function isSystemMaterials(value: unknown): value is SystemMaterials {
         return false;
     }
 
-    if ('agent_internal_summary' in value && typeof value.agent_internal_summary !== 'string') {
+    if ('agent_notes_to_self' in value && typeof value.agent_notes_to_self !== 'string') {
         return false;
     }
 

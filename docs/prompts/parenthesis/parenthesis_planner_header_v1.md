@@ -31,7 +31,7 @@
       "proposed_file_tree": "",
       "architecture_overview": ""
     },
-    "agent_internal_summary": "overview of formalization scope and how the Master Plan will drive iterative execution",
+    "agent_notes_to_self": "overview of formalization scope and how the Master Plan will drive iterative execution, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "succinct recap of synthesis outputs informing this plan",
     "stage_rationale": "why the chosen milestone breakdown, ordering, and architecture structure best fit constraints and objectives",
     "progress_update": "for continuation turns, summarize Master Plan changes since last iteration; omit on first turn",
@@ -93,7 +93,7 @@
         "architecture": "",
         "architecture_overview": "",
         "architecture_summary": "",
-        "executive_summary": ""
+        "executive_summary": "" //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
       }
     },
     {
@@ -167,7 +167,7 @@
         "security_tooling": {},
         "shared_libraries": [],
         "third_party_services": [],
-        "executive_summary": ""
+        "executive_summary": "" //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
       }
     },
     {
@@ -237,7 +237,7 @@
         "integration_requirements": [],
         "migration_context": [],
         "architecture_summary": "",
-        "executive_summary": ""
+        "executive_summary": "" //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
       }
     }
   ]

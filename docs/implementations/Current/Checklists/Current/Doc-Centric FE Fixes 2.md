@@ -1211,42 +1211,42 @@
         *   `[✅]`   `executeModelCallAndSave.gatherArtifacts.test.ts`: added/updated tests proving storage download for each branch
         *   `[✅]`   `executeModelCallAndSave.document.integration.test.ts`: added integration test proving ChatAPI `resourceDocuments` contains real content
 
-*   `[ ]`   [PROMPT] docs/prompts/ **Remove dot-notation document content placeholders from all planner prompt templates so documents are delivered exclusively via resourceDocuments**
-    *   `[ ]`   `objective.md`
-        *   `[ ]`   Remove `{{dot.notation}}` placeholders that inline full document content (e.g., `{{thesis_documents.business_case}}`, `{{synthesis_documents.synthesis_document_business_case}}`) from every planner prompt template
-        *   `[ ]`   Retain all non-document template variables (`{{seed_prompt}}`, `{{role}}`, `{{stage_instructions}}`, `{{style_guide_markdown}}`, `{{outputs_required}}`, `{{context_for_documents}}`)
-        *   `[ ]`   The prompt renderer will skip sections whose variables are absent — removing the placeholders from templates is sufficient; no code change to `assemblePlannerPrompt` is required
-    *   `[ ]`   `role.md`
-        *   `[ ]`   Prompt template content — defines what the planner AI sees as its instructions
-        *   `[ ]`   After this change, source documents are delivered solely via `resourceDocuments` in the ChatAPI request (Fix 1)
-    *   `[ ]`   `module.md`
-        *   `[ ]`   Boundary: all 6 planner prompt templates in `docs/prompts/`
-        *   `[ ]`   `docs/prompts/thesis/thesis_planner_header_v1.md`
-        *   `[ ]`   `docs/prompts/antithesis/antithesis_planner_review_v1.md`
-        *   `[ ]`   `docs/prompts/synthesis/synthesis_pairwise_header_planner_v1.md`
-        *   `[ ]`   `docs/prompts/synthesis/synthesis_final_header_planner_v1.md`
-        *   `[ ]`   `docs/prompts/parenthesis/parenthesis_planner_header_v1.md`
-        *   `[ ]`   `docs/prompts/paralysis/paralysis_planner_header_v1.md`
-    *   `[ ]`   `deps.md`
-        *   `[ ]`   Fix 1 must be complete and proven — `resourceDocuments` must be populated before removing document inlining from prompts
-        *   `[ ]`   `renderPrompt` from `supabase/functions/_shared/prompt-renderer.ts` — must be verified to silently skip unresolved placeholders (no error on missing variables)
-    *   `[ ]`   Each prompt template
-        *   `[ ]`   Remove the `## Inputs` sections (or portions of them) that use `{{dot.notation}}` content placeholders for source documents
-        *   `[ ]`   Retain `## Inputs` sections for non-document variables (seed_prompt, role, stage_instructions, etc.)
-        *   `[ ]`   Retain the `## HeaderContext Schema` / JSON schema sections unchanged
-        *   `[ ]`   Retain `{{context_for_documents}}` placeholder unchanged
-    *   `[ ]`   integration/`executeModelCallAndSave.document.integration.test.ts` (extend from Fix 1)
-        *   `[ ]`   Test: for a PLAN recipe step's EXECUTE child job, the assembled planner prompt text does NOT contain the rendered document content (no duplication)
-        *   `[ ]`   Test: for that same job, the ChatAPI request `resourceDocuments` DOES contain the rendered document content (delivery via resourceDocuments)
-    *   `[ ]`   `requirements.md`
-        *   `[ ]`   No planner prompt template may contain `{{dot.notation}}` placeholders that resolve to full document content
-        *   `[ ]`   All non-document template variables must still render correctly
-        *   `[ ]`   The planner AI must receive documents via `resourceDocuments` — validated by Fix 1 integration test
-        *   `[ ]`   The `assemblePlannerPrompt` code path that builds `sourceDocVars` (lines 260-309) becomes inert — the templates no longer contain matching placeholders, so no content is substituted. No code change required to `assemblePlannerPrompt.ts`.
-        *   `[ ]`   Existing `assemblePlannerPrompt` integration tests must be updated to reflect the new template behavior (prompts no longer contain inlined document content)
-    *   `[ ]`   **Commit** `refactor(prompt): remove document content inlining from planner templates; documents delivered via resourceDocuments`
-        *   `[ ]`   All 6 planner prompt templates: removed `{{dot.notation}}` document content placeholders
-        *   `[ ]`   Integration test: proves planner prompt does not contain document content AND ChatAPI resourceDocuments does contain document content
+*   `[✅]`   [PROMPT] docs/prompts/ **Remove dot-notation document content placeholders from all planner prompt templates so documents are delivered exclusively via resourceDocuments**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Remove `{{dot.notation}}` placeholders that inline full document content (e.g., `{{thesis_documents.business_case}}`, `{{synthesis_documents.synthesis_document_business_case}}`) from every planner prompt template
+        *   `[✅]`   Retain all non-document template variables (`{{seed_prompt}}`, `{{role}}`, `{{stage_instructions}}`, `{{style_guide_markdown}}`, `{{outputs_required}}`, `{{context_for_documents}}`)
+        *   `[✅]`   The prompt renderer will skip sections whose variables are absent — removing the placeholders from templates is sufficient; no code change to `assemblePlannerPrompt` is required
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Prompt template content — defines what the planner AI sees as its instructions
+        *   `[✅]`   After this change, source documents are delivered solely via `resourceDocuments` in the ChatAPI request (Fix 1)
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: all 6 planner prompt templates in `docs/prompts/`
+        *   `[✅]`   `docs/prompts/thesis/thesis_planner_header_v1.md`
+        *   `[✅]`   `docs/prompts/antithesis/antithesis_planner_review_v1.md`
+        *   `[✅]`   `docs/prompts/synthesis/synthesis_pairwise_header_planner_v1.md`
+        *   `[✅]`   `docs/prompts/synthesis/synthesis_final_header_planner_v1.md`
+        *   `[✅]`   `docs/prompts/parenthesis/parenthesis_planner_header_v1.md`
+        *   `[✅]`   `docs/prompts/paralysis/paralysis_planner_header_v1.md`
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   Fix 1 must be complete and proven — `resourceDocuments` must be populated before removing document inlining from prompts
+        *   `[✅]`   `renderPrompt` from `supabase/functions/_shared/prompt-renderer.ts` — must be verified to silently skip unresolved placeholders (no error on missing variables)
+    *   `[✅]`   Each prompt template
+        *   `[✅]`   Remove the `## Inputs` sections (or portions of them) that use `{{dot.notation}}` content placeholders for source documents
+        *   `[✅]`   Retain `## Inputs` sections for non-document variables (seed_prompt, role, stage_instructions, etc.)
+        *   `[✅]`   Retain the `## HeaderContext Schema` / JSON schema sections unchanged
+        *   `[✅]`   Retain `{{context_for_documents}}` placeholder unchanged
+    *   `[✅]`   integration/`executeModelCallAndSave.document.integration.test.ts` (extend from Fix 1)
+        *   `[✅]`   Test: for a PLAN recipe step's EXECUTE child job, the assembled planner prompt text does NOT contain the rendered document content (no duplication)
+        *   `[✅]`   Test: for that same job, the ChatAPI request `resourceDocuments` DOES contain the rendered document content (delivery via resourceDocuments)
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   No planner prompt template may contain `{{dot.notation}}` placeholders that resolve to full document content
+        *   `[✅]`   All non-document template variables must still render correctly
+        *   `[✅]`   The planner AI must receive documents via `resourceDocuments` — validated by Fix 1 integration test
+        *   `[✅]`   The `assemblePlannerPrompt` code path that builds `sourceDocVars` (lines 260-309) becomes inert — the templates no longer contain matching placeholders, so no content is substituted. No code change required to `assemblePlannerPrompt.ts`.
+        *   `[✅]`   Existing `assemblePlannerPrompt` integration tests must be updated to reflect the new template behavior (prompts no longer contain inlined document content)
+    *   `[✅]`   **Commit** `refactor(prompt): remove document content inlining from planner templates; documents delivered via resourceDocuments`
+        *   `[✅]`   All 6 planner prompt templates: removed `{{dot.notation}}` document content placeholders
+        *   `[✅]`   Integration test: proves planner prompt does not contain document content AND ChatAPI resourceDocuments does contain document content
 
 *   `[❓]`   [BE] supabase/functions/dialectic-worker/`executeModelCallAndSave.ts` **Research: continuation vs JSON validation vs render-on-chunk tension**
     *   `[ ]`   `objective.md`

@@ -1671,42 +1671,6 @@ Deno.test('executeModelCallAndSave - updates source_contribution_id on originati
     clearAllStubs?.();
 });
 
-
-Deno.test('executeModelCallAndSave - rendering hygiene: final message has no placeholders; systemInstruction is passthrough only', async () => {
-  const { client: dbClient } = setupMockClient({
-    'ai_providers': {
-      select: { data: [mockFullProviderData], error: null }
-    }
-  });
-
-  const deps = getMockDeps();
-  const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
-
-  // Provide a prompt with an unrendered placeholder; worker should not send placeholders in final message
-  const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
-    // Intentionally omit systemInstruction to assert passthrough-only (no synthesis)
-    systemInstruction: undefined,
-    conversationHistory: [ { role: 'assistant', content: 'Welcome back.' } ],
-    resourceDocuments: [],
-    currentUserPrompt: 'Hello {name}, please summarize the report.'
-  });
-
-  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { promptConstructionPayload });
-  await executeModelCallAndSave(params);
-
-  assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
-  const firstArg = callUnifiedAISpy.calls[0].args[0];
-  assert(isChatApiRequest(firstArg), 'First argument to callUnifiedAIModel should be a ChatApiRequest');
-
-  // RED: assert no placeholders remain in the final message
-  const sentMessage = firstArg.message;
-  assert(typeof sentMessage === 'string', 'Final message must be a string');
-  assert(!sentMessage.includes('{') && !sentMessage.includes('}'), 'Final message must not contain placeholder braces');
-
-  // Assert systemInstruction is passthrough-only (undefined when not provided)
-  assertEquals(firstArg.systemInstruction, undefined, 'systemInstruction should be undefined when not provided (no synthesis)');
-});
-
 Deno.test('when the model produces malformed JSON, it should trigger a retry, not a continuation', async () => {
     // Arrange
     const { client: dbClient, clearAllStubs } = setupMockClient({

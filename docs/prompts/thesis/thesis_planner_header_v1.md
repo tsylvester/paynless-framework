@@ -36,7 +36,7 @@ Generate a JSON object with this exact structure. Replace all placeholder descri
 ```json
 {
   "system_materials": {
-    "agent_internal_summary": "REQUIRED: Generate an outline/index of all outputs in this response and how they connect to the objective. Complete this last, after all other elements are filled, so that the summary refers to the actual content generated.",
+    "agent_notes_to_self": "REQUIRED: Generate an outline/index of all outputs in this response and how they connect to the objective, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "REQUIRED: Generate a brief, faithful summary of the user prompt and referenced materials from the User Objective.",
     "stage_rationale": "REQUIRED: Generate an explanation of why these choices align with constraints, standards, and stakeholder needs. Consider the Stage Role and Stage Instructions.",
     "progress_update": "REQUIRED: For continuation turns, generate a summary of what is complete vs remaining. Omit this field entirely on first turn (do not include it in the JSON).",
@@ -79,7 +79,7 @@ Generate a JSON object with this exact structure. Replace all placeholder descri
         "threats": "",
         "next_steps": "",
         "proposal_references": [],
-        "executive_summary": ""
+        "executive_summary": "" //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
       }
     },
     {

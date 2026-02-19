@@ -73,7 +73,7 @@
 ```json
 {
   "system_materials": {
-    "agent_internal_summary": "overview of formalization scope and how the Master Plan will drive iterative execution",
+    "agent_notes_to_self": "overview of formalization scope and how the Master Plan will drive iterative execution, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "succinct recap of synthesis outputs informing this plan",
     "stage_rationale": "why the chosen milestone breakdown, ordering, and architecture structure best fit constraints and objectives",
     "progress_update": "for continuation turns, summarize Master Plan changes since last iteration; omit on first turn",
@@ -296,7 +296,7 @@
         },
         "feature_scope": [],
         "features": [],
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
         "mvp_description": "",
         "market_opportunity": "",
         "competitive_analysis": "",
@@ -408,7 +408,7 @@ When this step is executed for subsequent iterations, provide the most recent `t
         "file_type": "markdown",
         "content_to_include": {
           "index": [],
-          "executive_summary": "",
+          "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
           "subsystems": [{ "name": "", "objective": "", "implementation_notes": "" }],
           "apis": [{ "name": "", "description": "", "contracts": [] }],
           "schemas": [{ "name": "", "columns": [], "indexes": [], "rls": [] }],
@@ -530,7 +530,7 @@ Present the previously generated Master Plan and feedback during iterative runs 
         "file_type": "markdown",
         "content_to_include": {
           "index": [<list the milestone(s) included in this section>],
-          "executive_summary": "<extract from header_context>",
+          "executive_summary": "<summarize the milestones and the reason for including them>", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
           "phases": [
             {
               "name": "<extract_from_synthesis_documents>",
@@ -578,7 +578,7 @@ Present the previously generated Master Plan and feedback during iterative runs 
         "artifact_class": "assembled_document_json",
         "fields": [
           "index[]",
-          "executive_summary",
+          "executive_summary", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
           "phases[].name",
           "phases[].objective",
           "phases[].technical_context",
@@ -681,7 +681,7 @@ Provide the previous milestone schema and related feedback on subsequent executi
         "file_type": "markdown",
         "content_to_include": {
           "index": [],
-          "executive_summary": "",
+          "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
           "fields": [
             {
               "name": "id",

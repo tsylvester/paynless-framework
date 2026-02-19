@@ -70,7 +70,7 @@
 ```json
 {
   "system_materials": {
-    "agent_internal_summary": "concise overview of key findings across all proposals",
+    "agent_notes_to_self": "concise overview of key findings across all proposals, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "summary of proposals and any user feedback included for review",
     "stage_rationale": "explain the review approach and criteria used",
     "progress_update": "for continuation turns, summarize completed vs pending review areas; omit on first turn",
@@ -274,7 +274,7 @@
 ```json
 {
   "system_materials": {
-    "agent_internal_summary": "concise overview of key findings across all proposals",
+    "agent_notes_to_self": "concise overview of key findings across all proposals, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "summary of proposals and any user feedback included for review",
     "stage_rationale": "explain the review approach and criteria used",
     "progress_update": "for continuation turns, summarize completed vs pending review areas; omit on first turn",
@@ -331,7 +331,7 @@
     {
       "document_key": "business_case_critique",
       "content_to_include": {
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
         "user_problem_validation": "",
         "market_opportunity": "",
         "competitive_analysis": "",

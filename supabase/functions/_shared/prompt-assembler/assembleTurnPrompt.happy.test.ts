@@ -437,7 +437,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
   const headerContextContent: HeaderContext = {
     system_materials: {
         stage_rationale: "This is the stage rationale.",
-        agent_internal_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary.",
         validation_checkpoint: ["This is the validation checkpoint."],
         quality_standards: ["This is the quality standard."],
@@ -1495,7 +1495,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     const headerContextWithAlignment: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        agent_internal_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1626,7 +1626,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     const headerContextWithAlignment: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        agent_internal_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1746,7 +1746,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     const headerContextWithCompatibleTypes: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        agent_internal_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1886,7 +1886,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     const headerContextWithObject: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        agent_internal_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -2022,7 +2022,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     const headerContextWithArray: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        agent_internal_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -2179,7 +2179,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
     const headerContextWithAlignment: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        agent_internal_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {

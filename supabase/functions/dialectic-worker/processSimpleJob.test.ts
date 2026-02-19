@@ -215,7 +215,7 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
     const templateOutputsRequired: OutputRule = {
         system_materials: {
             stage_rationale: 'Align business case with feature spec for this iteration.',
-            agent_internal_summary: 'Summarize the dialectic findings across artifacts.',
+            agent_notes_to_self: 'Summarize the dialectic findings across artifacts.',
             input_artifacts_summary: 'Business case + feature spec + header context.',
             quality_standards: ['Tie evidence directly to documents', 'Preserve prior commitments'],
             validation_checkpoint: ['All referenced artifacts exist', 'Instructions follow dependency order'],
@@ -280,7 +280,7 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
     const stageOutputsRequired: OutputRule = {
         system_materials: {
             stage_rationale: 'Align business case with feature spec for this iteration.',
-            agent_internal_summary: 'Summarize the dialectic findings across artifacts.',
+            agent_notes_to_self: 'Summarize the dialectic findings across artifacts.',
             input_artifacts_summary: 'Business case + feature spec + header context.',
             validation_checkpoint: ['All referenced artifacts exist', 'Instructions follow dependency order'],
             document_order: ['business_case'],
@@ -1450,7 +1450,7 @@ Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_r
   const customOutputsRequired: OutputRule = {
     system_materials: {
       stage_rationale: 'Ensure business-case alignment.',
-      agent_internal_summary: 'Summarize execution intent.',
+      agent_notes_to_self: 'Summarize execution intent.',
       input_artifacts_summary: 'Business case, feature spec, header context.',
       document_order: ['business_case'],
       current_document: 'business_case',
