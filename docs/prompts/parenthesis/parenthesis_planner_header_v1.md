@@ -11,26 +11,7 @@
 - **Stage Role**: {{role}}
 - **Stage Instructions**: {{stage_instructions}}
 - **Style Guide Markdown**: {{style_guide_markdown}}
-- **Synthesis Documents**:
-  - PRD: {{synthesis_documents.product_requirements}}
-  - System Architecture Overview: {{synthesis_documents.system_architecture}}
-  - Tech Stack Recommendations: {{synthesis_documents.tech_stack}}
-{{#section:synthesis_feedback}}
-- **Synthesis Feedback**:
-  - PRD Feedback: {{synthesis_feedback.product_requirements}}
-  - System Architecture Feedback: {{synthesis_feedback.system_architecture}}
-  - Tech Stack Feedback: {{synthesis_feedback.tech_stack}}
-{{/#section:synthesis_feedback}}
-{{#section:parenthesis_iteration}}
-- **Prior Parenthesis Documents (for iterative refinement)**:
-  - Master Plan: {{parenthesis_documents.master_plan}}
-  - TRD: {{parenthesis_documents.technical_requirements}}
-{{/#section:parenthesis_iteration}}
-{{#section:parenthesis_feedback}}
-- **Prior Parenthesis Feedback**:
-  - Master Plan Feedback: {{parenthesis_feedback.master_plan}}
-  - TRD Feedback: {{parenthesis_feedback.technical_requirements}}
-{{/#section:parenthesis_feedback}}
+- **Expected Output Artifacts Definition**: {{outputs_required}}
 
 ## HeaderContext Schema
 ```json

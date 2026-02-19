@@ -11,26 +11,7 @@
 - **Stage Role**: {{role}}
 - **Stage Instructions**: {{stage_instructions}}
 - **Style Guide Markdown**: {{style_guide_markdown}}
-- **Parenthesis Documents**:
-  - TRD: {{parenthesis_documents.technical_requirements}}
-  - Master Plan: {{parenthesis_documents.master_plan}}
-  - Milestone Schema: {{parenthesis_documents.milestone_schema}}
-{{#section:parenthesis_feedback}}
-- **Parenthesis Feedback (optional)**:
-  - TRD Feedback: {{parenthesis_feedback.technical_requirements}}
-  - Master Plan Feedback: {{parenthesis_feedback.master_plan}}
-  - Milestone Schema Feedback: {{parenthesis_feedback.milestone_schema}}
-  {{/#section:parenthesis_feedback}}
-  {{#section:paralysis_iteration}}
-- **Prior Paralysis Documents (optional, for iterative refinement)**:
-  - Actionable Checklist: {{paralysis_documents.actionable_checklist}}
-  - Updated Master Plan: {{paralysis_documents.updated_master_plan}}
-{{/#section:paralysis_iteration}}
-{{#section:paralysis_feedback}}
-- **Prior Paralysis Feedback (optional)**:
-  - Actionable Checklist Feedback: {{paralysis_feedback.actionable_checklist}}
-  - Updated Master Plan Feedback: {{paralysis_feedback.updated_master_plan}}
-{{/#section:paralysis_feedback}}
+- **Expected Output Artifacts Definition**: {{outputs_required}}
 
 ## HeaderContext Schema
 ```json

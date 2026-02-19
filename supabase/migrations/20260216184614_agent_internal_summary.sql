@@ -10,45 +10,21 @@
 -- Update dialectic_recipe_template_steps
 UPDATE public.dialectic_recipe_template_steps
 SET outputs_required = 
-    -- Only update if system_materials.executive_summary exists
-    CASE 
-        WHEN outputs_required->'system_materials'->>'executive_summary' IS NOT NULL THEN
-            outputs_required 
-            -- Remove old key
-            #- '{system_materials,executive_summary}'
-            -- Add new key with the old value
-            || jsonb_build_object(
-                'system_materials', 
-                (outputs_required->'system_materials' - 'executive_summary') 
-                || jsonb_build_object(
-                    'agent_internal_summary', 
-                    outputs_required->'system_materials'->'executive_summary'
-                )
-            )
-        ELSE outputs_required
-    END
+    jsonb_set(
+        outputs_required #- '{system_materials,executive_summary}',
+        '{system_materials,agent_internal_summary}',
+        outputs_required->'system_materials'->'executive_summary'
+    )
 WHERE job_type = 'PLAN'
-  AND outputs_required->'system_materials'->>'executive_summary' IS NOT NULL;
+  AND outputs_required->'system_materials' ? 'executive_summary';
 
 -- Update dialectic_stage_recipe_steps
 UPDATE public.dialectic_stage_recipe_steps
 SET outputs_required = 
-    -- Only update if system_materials.executive_summary exists
-    CASE 
-        WHEN outputs_required->'system_materials'->>'executive_summary' IS NOT NULL THEN
-            outputs_required 
-            -- Remove old key
-            #- '{system_materials,executive_summary}'
-            -- Add new key with the old value
-            || jsonb_build_object(
-                'system_materials', 
-                (outputs_required->'system_materials' - 'executive_summary') 
-                || jsonb_build_object(
-                    'agent_internal_summary', 
-                    outputs_required->'system_materials'->'executive_summary'
-                )
-            )
-        ELSE outputs_required
-    END
+    jsonb_set(
+        outputs_required #- '{system_materials,executive_summary}',
+        '{system_materials,agent_internal_summary}',
+        outputs_required->'system_materials'->'executive_summary'
+    )
 WHERE job_type = 'PLAN'
-  AND outputs_required->'system_materials'->>'executive_summary' IS NOT NULL;
+  AND outputs_required->'system_materials' ? 'executive_summary';

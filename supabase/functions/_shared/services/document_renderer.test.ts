@@ -1539,6 +1539,135 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     clearAllStubs?.();
   });
 
+  await t.step("renders successfully when JSON has no content wrapper and metadata fields are present", async () => {
+    const rootId = "root-unwrapped-1";
+    const sessionId = "session_unwrapped1";
+    const stageSlug = "thesis";
+    const structuredData = { executive_summary: "Unwrapped executive summary.", market_opportunity: "Unwrapped market opportunity." };
+    const jsonContent = JSON.stringify({ continuation_needed: false, stop_reason: "complete", ...structuredData });
+
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
+      {
+        id: rootId,
+        session_id: sessionId,
+        stage: "THESIS",
+        iteration_number: 1,
+        model_id: "model-uuid-test",
+        model_name: "Test Model",
+        storage_bucket: "content",
+        storage_path: "proj_x/session_s/iteration_1/thesis/documents",
+        file_name: "gpt-4o-mini_0_business_case_raw.json",
+        raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+        mime_type: "text/markdown",
+        document_relationships: { thesis: rootId },
+        created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        target_contribution_id: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+        user_id: "user_123",
+      },
+    ];
+
+    const rawJsonPath = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient,
+      _bucket: string,
+      path: string,
+    ) => {
+      if (path === rawJsonPath) {
+        const blob = new Blob([jsonContent], { type: "application/json" });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+      const blob = new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" });
+      return { data: await blob.arrayBuffer(), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [
+              {
+                id: "template-1",
+                created_at: "2025-01-01T00:00:00Z",
+                description: null,
+                domain_id: "domain-1",
+                file_name: "thesis_business_case.md",
+                is_active: true,
+                name: "thesis_business_case",
+                storage_bucket: "prompt-templates",
+                storage_path: "templates/thesis",
+                updated_at: "2025-01-01T00:00:00Z",
+              },
+            ],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootId,
+      documentKey: FileType.business_case,
+      sourceContributionId: rootId,
+      template_filename: "thesis_business_case.md",
+    };
+
+    const result: RenderDocumentResult = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage: mockDownloadFromStorage,
+        fileManager: (() => {
+          const fm = new MockFileManagerService();
+          fm.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+          return fm;
+        })(),
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      },
+      params,
+    );
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+
+    assert(rendered.includes("# Executive Summary"), "rendered document should contain Executive Summary section");
+    assert(rendered.includes("Unwrapped executive summary."), "rendered document should contain unwrapped executive summary content");
+    assert(rendered.includes("# Market Opportunity"), "rendered document should contain Market Opportunity section");
+    assert(rendered.includes("Unwrapped market opportunity."), "rendered document should contain unwrapped market opportunity content");
+    assert(!rendered.includes("continuation_needed"), "rendered document should NOT contain continuation_needed metadata");
+    assert(!rendered.includes("stop_reason"), "rendered document should NOT contain stop_reason metadata");
+
+    clearAllStubs?.();
+  });
+
   await t.step("converts escaped newlines, quotes, and backslashes correctly", async () => {
     const rootId = "root-json-2";
     const sessionId = "session_json2";
@@ -4912,6 +5041,328 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
     // But actual content should still be present
     assert(rendered.includes("Feature One"), "feature name should still be present");
     assert(rendered.includes("Objective One"), "feature objective should still be present");
+
+    clearAllStubs?.();
+  });
+
+  await t.step("renders tech_stack JSON with nested objects and subordinate arrays", async () => {
+    const rootId = "root-tech-stack-1";
+    const sessionId = "session_tech_stack1";
+    const stageSlug = "synthesis";
+
+    // Representative tech_stack JSON matching real agent output structure:
+    // Top-level has BOTH nested objects (frontend_stack, backend_stack) AND
+    // arrays of objects (third_party_services, components).
+    // The bug: the renderer's primary-array heuristic falsely picks third_party_services
+    // as the "primary array", discards all object-valued keys, and produces repeated empty headers.
+    const techStackData = {
+      document_key: "tech_stack",
+      continuation_needed: false,
+      stop_reason: "complete",
+      frontend_stack: {
+        recommended_option: "React with TypeScript",
+        rationale: "React offers a strong component-based architecture.",
+        alternatives: [
+          { name: "Vue.js", tradeoffs: "Smaller ecosystem than React." },
+        ],
+        risk_signals: ["Excessive bundle sizes impacting load times."],
+        integration_requirements: ["GraphQL client for data fetching."],
+        operational_owners: ["Frontend Development Team"],
+        migration_plan: [],
+      },
+      backend_stack: {
+        recommended_option: "Node.js and Java/Kotlin Spring Boot",
+        rationale: "Polyglot approach leverages strengths of each language.",
+        alternatives: [
+          { name: "Go", tradeoffs: "Team familiarity is lower." },
+        ],
+        risk_signals: ["Memory leaks in Node.js under sustained load."],
+        integration_requirements: ["GraphQL server implementation."],
+        operational_owners: ["Backend Development Team"],
+        migration_plan: [],
+      },
+      data_platform: {
+        recommended_option: "Kafka + Flink + ClickHouse + PostgreSQL",
+        rationale: "Robust real-time data pipeline.",
+        alternatives: [],
+        risk_signals: ["Data loss in Kafka topics."],
+        integration_requirements: ["Kafka Connectors for data sources."],
+        operational_owners: ["Data Engineering Team"],
+        migration_plan: [],
+      },
+      shared_libraries: [
+        "Internal common utility libraries for logging and error handling.",
+        "Data validation libraries for enforcing data integrity.",
+      ],
+      third_party_services: [
+        { service_name: "E-commerce Platform APIs", purpose: "Primary data source.", vendor: "Shopify" },
+        { service_name: "Email Service", purpose: "Sending alerts.", vendor: "AWS SES" },
+      ],
+      components: [
+        {
+          component_name: "Frontend Framework",
+          recommended_option: "React with TypeScript",
+          rationale: "Excellent balance of productivity and performance.",
+          alternatives: [{ name: "Vue.js", tradeoffs: "Smaller ecosystem." }],
+          risk_signals: ["Performance issues on initial load."],
+          integration_requirements: ["GraphQL client."],
+          operational_owners: ["Frontend Development Team"],
+          migration_plan: [],
+        },
+      ],
+      open_questions: [
+        "What are the final performance benchmarks for Flink and ClickHouse?",
+        "What are the data retention policies?",
+      ],
+      next_steps: [
+        "Conduct proof-of-concept for Flink-ClickHouse integration.",
+        "Define deployment topologies for EKS clusters.",
+      ],
+    };
+    const jsonContent = JSON.stringify(techStackData);
+
+    const rawJsonPath = "proj_x/session_s/iteration_1/3_synthesis/raw_responses/google-gemini-2.5-flash_0_tech_stack_raw.json";
+
+    // Template from docs/templates/synthesis/synthesis_tech_stack.md
+    const TECH_STACK_TEMPLATE = `# Tech Stack Recommendations
+
+{{#section:frontend_stack}}
+## Frontend Stack
+{frontend_stack}
+{{/section:frontend_stack}}
+
+{{#section:backend_stack}}
+## Backend Stack
+{backend_stack}
+{{/section:backend_stack}}
+
+{{#section:data_platform}}
+## Data Platform
+{data_platform}
+{{/section:data_platform}}
+
+{{#section:devops_tooling}}
+## DevOps Tooling
+{devops_tooling}
+{{/section:devops_tooling}}
+
+{{#section:security_tooling}}
+## Security Tooling
+{security_tooling}
+{{/section:security_tooling}}
+
+{{#section:shared_libraries}}
+## Shared Libraries
+{shared_libraries}
+{{/section:shared_libraries}}
+
+{{#section:third_party_services}}
+## Third-Party Services
+{third_party_services}
+{{/section:third_party_services}}
+
+{{#section:components}}
+## Component Recommendations
+{components}
+{{/section:components}}
+
+{{#section:open_questions}}
+## Open Questions
+{open_questions}
+{{/section:open_questions}}
+
+{{#section:next_steps}}
+## Next Steps
+{next_steps}
+{{/section:next_steps}}
+
+{{#section:_extra_content}}
+## Additional Content
+{_extra_content}
+{{/section:_extra_content}}
+`;
+
+    const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
+      {
+        id: rootId,
+        session_id: sessionId,
+        stage: "SYNTHESIS",
+        iteration_number: 1,
+        model_id: "model-uuid-gemini",
+        model_name: "Google Gemini 2.5 Flash",
+        storage_bucket: "content",
+        storage_path: "proj_x/session_s/iteration_1/3_synthesis/raw_responses",
+        file_name: "google-gemini-2.5-flash_0_tech_stack_raw.json",
+        raw_response_storage_path: rawJsonPath,
+        mime_type: "application/json",
+        document_relationships: { synthesis: rootId },
+        created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+        target_contribution_id: null,
+        edit_version: 1,
+        is_latest_edit: true,
+        user_id: "user_123",
+        contribution_type: null,
+        citations: null,
+        error: null,
+        is_header: false,
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        seed_prompt_url: null,
+        size_bytes: null,
+        source_prompt_resource_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+      },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient,
+      _bucket: string,
+      path: string,
+    ) => {
+      if (path === rawJsonPath) {
+        const blob = new Blob([jsonContent], { type: "application/json" });
+        return { data: await blob.arrayBuffer(), error: null };
+      }
+      const blob = new Blob([TECH_STACK_TEMPLATE], { type: "text/markdown" });
+      return { data: await blob.arrayBuffer(), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: {
+          select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: {
+            data: [
+              {
+                id: "template-tech-stack-1",
+                created_at: "2025-01-01T00:00:00Z",
+                description: null,
+                domain_id: "domain-1",
+                file_name: "synthesis_tech_stack.md",
+                is_active: true,
+                name: "synthesis_tech_stack",
+                storage_bucket: "prompt-templates",
+                storage_path: "templates/synthesis",
+                updated_at: "2025-01-01T00:00:00Z",
+              },
+            ],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId,
+      iterationNumber: 1,
+      stageSlug,
+      documentIdentity: rootId,
+      documentKey: FileType.tech_stack,
+      sourceContributionId: rootId,
+      template_filename: "synthesis_tech_stack.md",
+    };
+
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+
+    const result: RenderDocumentResult = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage: mockDownloadFromStorage,
+        fileManager: mockFileManager,
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      },
+      params,
+    );
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+
+    // ── Structural: headers appear correctly ──
+
+    const mainHeaderCount = (rendered.match(/# Tech Stack Recommendations/g) ?? []).length;
+    assertEquals(mainHeaderCount, 1, `Main header should appear once, found ${mainHeaderCount} times`);
+
+    assert(rendered.includes("## Frontend Stack"), "section header: Frontend Stack");
+    assert(rendered.includes("## Backend Stack"), "section header: Backend Stack");
+    assert(rendered.includes("## Data Platform"), "section header: Data Platform");
+    assert(rendered.includes("## Shared Libraries"), "section header: Shared Libraries");
+    assert(rendered.includes("## Third-Party Services"), "section header: Third-Party Services");
+    assert(rendered.includes("## Component Recommendations"), "section header: Component Recommendations");
+    assert(rendered.includes("## Open Questions"), "section header: Open Questions");
+    assert(rendered.includes("## Next Steps"), "section header: Next Steps");
+
+    // No item-separator artefact from the old array-path bug
+    const separatorCount = (rendered.match(/\n---\n/g) ?? []).length;
+    assertEquals(separatorCount, 0, `Should not contain item separators, found ${separatorCount}`);
+
+    // ── No raw JSON: the formatter must convert objects to Markdown ──
+
+    assert(!rendered.includes('"recommended_option"'), "raw JSON key recommended_option must not appear");
+    assert(!rendered.includes('"rationale"'), "raw JSON key rationale must not appear");
+    assert(!rendered.includes('"alternatives"'), "raw JSON key alternatives must not appear");
+    assert(!rendered.includes('"risk_signals"'), "raw JSON key risk_signals must not appear");
+    assert(!rendered.includes('"service_name"'), "raw JSON key service_name must not appear");
+    assert(!rendered.includes('{"'), "opening JSON brace must not appear in rendered output");
+
+    // ── formatObjectFieldsAsMarkdown: object string fields → **Label:** value ──
+
+    assert(rendered.includes("**Recommended option:** React with TypeScript"), "frontend_stack.recommended_option formatted as labelled field");
+    assert(rendered.includes("**Recommended option:** Node.js and Java/Kotlin Spring Boot"), "backend_stack.recommended_option formatted as labelled field");
+    assert(rendered.includes("**Recommended option:** Kafka + Flink + ClickHouse + PostgreSQL"), "data_platform.recommended_option formatted as labelled field");
+    assert(rendered.includes("**Rationale:** React offers a strong component-based architecture."), "frontend_stack.rationale formatted as labelled field");
+    assert(rendered.includes("**Rationale:** Polyglot approach leverages strengths of each language."), "backend_stack.rationale formatted as labelled field");
+
+    // ── formatObjectFieldsAsMarkdown: array-of-strings → bullet list ──
+
+    assert(rendered.includes("**Risk signals:**"), "risk_signals array rendered with label");
+    assert(rendered.includes("- Excessive bundle sizes impacting load times."), "risk_signals items rendered as bullets");
+    assert(rendered.includes("- Memory leaks in Node.js under sustained load."), "backend risk_signals rendered as bullets");
+    assert(rendered.includes("**Integration requirements:**"), "integration_requirements array rendered with label");
+    assert(rendered.includes("- GraphQL client for data fetching."), "integration_requirements items rendered as bullets");
+
+    // ── formatObjectFieldsAsMarkdown: array-of-objects → indented sub-items ──
+
+    assert(rendered.includes("**Alternatives:**"), "alternatives array rendered with label");
+    assert(rendered.includes("**Name:** Vue.js"), "alternatives sub-object name formatted");
+    assert(rendered.includes("**Tradeoffs:** Smaller ecosystem than React."), "alternatives sub-object tradeoffs formatted");
+    assert(rendered.includes("**Name:** Go"), "backend alternatives name formatted");
+    assert(rendered.includes("**Tradeoffs:** Team familiarity is lower."), "backend alternatives tradeoffs formatted");
+
+    // ── Top-level array-of-objects (third_party_services) → formatted items ──
+
+    assert(rendered.includes("**Service name:** E-commerce Platform APIs"), "third_party_services item formatted");
+    assert(rendered.includes("**Purpose:** Primary data source."), "third_party_services purpose formatted");
+    assert(rendered.includes("**Vendor:** Shopify"), "third_party_services vendor formatted");
+    assert(rendered.includes("**Service name:** Email Service"), "second third_party_services item formatted");
+
+    // ── Top-level array-of-objects (components) → formatted items ──
+
+    assert(rendered.includes("**Component name:** Frontend Framework"), "components item formatted");
+    assert(rendered.includes("**Recommended option:** React with TypeScript"), "components recommended_option formatted");
+
+    // ── Top-level string arrays (already joined by pipeline) ──
+
+    assert(rendered.includes("common utility libraries"), "shared_libraries content present");
+    assert(rendered.includes("performance benchmarks"), "open_questions content present");
+    assert(rendered.includes("proof-of-concept"), "next_steps content present");
+
+    // ── Empty arrays skipped ──
+
+    assert(!rendered.includes("**Migration plan:**"), "empty migration_plan arrays should be skipped");
 
     clearAllStubs?.();
   });

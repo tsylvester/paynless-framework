@@ -77,7 +77,7 @@ describe("executeModelCallAndSave Fragment Propagation Integration Tests (Step 7
 
     const systemMaterials: SystemMaterials = {
       stage_rationale: "Integration test stub: stage rationale",
-      executive_summary: "Integration test stub: executive summary",
+      agent_internal_summary: "Integration test stub: agent internal summary",
       input_artifacts_summary: "Integration test stub: input artifacts summary",
     };
 

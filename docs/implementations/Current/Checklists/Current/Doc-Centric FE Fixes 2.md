@@ -1162,6 +1162,121 @@
     *   `[✅]`   **Commit** `fix(be): remove fabricated section_header from integration tests; add actual-template integration test`
         *   `[✅]`   `assemblePlannerPrompt_sourceDocuments.integration.test.ts`: removed `section_header` from all test InputRules, added new integration test using actual antithesis planner template and real thesis inputs.
 
+*   `[✅]`   [BE] supabase/functions/dialectic-worker/`executeModelCallAndSave.ts` **Fix gatherArtifacts to download document content from Supabase Storage instead of reading non-existent content column**
+    *   `[✅]`   `objective.md`
+        *   `[✅]`   Every branch of `gatherArtifacts` (`document`, `feedback`, `seed_prompt`, `project_resource`, `header_context`) must download file content from Supabase Storage using the row's `storage_bucket`, `storage_path`, `file_name` fields
+        *   `[✅]`   Replace every instance of `const content = isRecord(u) && typeof u['content'] === 'string' ? u['content'] : '';` with a storage download — there is no `content` column on `dialectic_project_resources` or `dialectic_contributions`
+        *   `[✅]`   If a storage download fails for a required input, throw immediately — no empty-string fallback
+        *   `[✅]`   If a storage download fails for an optional input, skip and continue
+        *   `[✅]`   The `downloadFromStorage` dependency must be injected — `gatherArtifacts` currently has access to `dbClient` and `deps` which does not include a download function; this must be resolved
+    *   `[✅]`   `role.md`
+        *   `[✅]`   Infrastructure adapter — bridges database row metadata to Supabase Storage file content
+        *   `[✅]`   This function is the sole provider of `resourceDocuments` content for ALL EXECUTE jobs (both planner and turn)
+    *   `[✅]`   `module.md`
+        *   `[✅]`   Boundary: `gatherArtifacts` inner function within `executeModelCallAndSave`
+        *   `[✅]`   Input: `inputsRequired` rules array from recipe step, `dbClient` for row queries, storage download function for content retrieval
+        *   `[✅]`   Output: `IdentityDoc[]` where `content` is the actual file content downloaded from storage, not an empty string
+    *   `[✅]`   `deps.md`
+        *   `[✅]`   `dbClient: SupabaseClient<Database>` — for querying `dialectic_project_resources` and `dialectic_contributions`
+        *   `[✅]`   `downloadFromStorage` — must be made available within `gatherArtifacts` scope (currently available on the outer function's `deps` or can be passed from `processSimpleJob`)
+        *   `[✅]`   `deconstructStoragePath` — already imported, used for row filtering
+        *   `[✅]`   `isRecord` type guard — already imported
+    *   `[✅]`   interface/`dialectic.interface.ts`
+        *   `[✅]`   Verify `ExecuteModelCallAndSaveParams` includes or can receive a `downloadFromStorage` dependency — if not, add it
+    *   `[✅]`   unit/`executeModelCallAndSave.gatherArtifacts.test.ts`
+        *   `[✅]`   Test: `document` branch downloads content from storage using `storage_bucket`, `storage_path`, `file_name` from the row — asserts `content` is the downloaded text, not empty string
+        *   `[✅]`   Test: `feedback` branch downloads content from storage
+        *   `[✅]`   Test: `seed_prompt` branch downloads content from storage
+        *   `[✅]`   Test: `project_resource` branch downloads content from storage
+        *   `[✅]`   Test: `header_context` branch downloads content from storage
+        *   `[✅]`   Test: required input with failed storage download throws — does NOT fall back to empty string
+        *   `[✅]`   Test: optional input with failed storage download skips — does NOT throw
+    *   `[✅]`   `executeModelCallAndSave.ts`
+        *   `[✅]`   Replace content extraction from non-existent column with storage download in `document` branch (line 289)
+        *   `[✅]`   Replace content extraction in `feedback` branch (line 337)
+        *   `[✅]`   Replace content extraction in `seed_prompt` branch (line 369)
+        *   `[✅]`   Replace content extraction in `project_resource` branch (line 403)
+        *   `[✅]`   Replace content extraction in `header_context` / fallback branch (line 440)
+        *   `[✅]`   Wire `downloadFromStorage` dependency into `gatherArtifacts` scope
+    *   `[✅]`   integration/`executeModelCallAndSave.document.integration.test.ts`
+        *   `[✅]`   Test: capture the `ChatApiRequest` emitted by `executeModelCallAndSave` and assert that `resourceDocuments` array contains entries with non-empty `content` strings matching the storage file content
+        *   `[✅]`   Test: for a job with `inputs_required` containing a `document` rule, the `resourceDocuments` in the ChatAPI request contain the rendered document content from storage — not empty strings
+    *   `[✅]`   `requirements.md`
+        *   `[✅]`   No `gatherArtifacts` branch may read a `content` column from database rows — all content must come from Supabase Storage download
+        *   `[✅]`   No empty-string fallback for content — download succeeds or the function throws (for required) or skips (for optional)
+        *   `[✅]`   The ChatAPI request `resourceDocuments` must contain actual document content
+        *   `[✅]`   All existing unit and integration tests must pass after changes
+    *   `[✅]`   **Commit** `fix(be): gatherArtifacts downloads content from Supabase Storage instead of reading non-existent content column`
+        *   `[✅]`   `executeModelCallAndSave.ts`: replaced empty-string content fallback with storage download in all 5 branches of `gatherArtifacts`
+        *   `[✅]`   `executeModelCallAndSave.gatherArtifacts.test.ts`: added/updated tests proving storage download for each branch
+        *   `[✅]`   `executeModelCallAndSave.document.integration.test.ts`: added integration test proving ChatAPI `resourceDocuments` contains real content
+
+*   `[ ]`   [PROMPT] docs/prompts/ **Remove dot-notation document content placeholders from all planner prompt templates so documents are delivered exclusively via resourceDocuments**
+    *   `[ ]`   `objective.md`
+        *   `[ ]`   Remove `{{dot.notation}}` placeholders that inline full document content (e.g., `{{thesis_documents.business_case}}`, `{{synthesis_documents.synthesis_document_business_case}}`) from every planner prompt template
+        *   `[ ]`   Retain all non-document template variables (`{{seed_prompt}}`, `{{role}}`, `{{stage_instructions}}`, `{{style_guide_markdown}}`, `{{outputs_required}}`, `{{context_for_documents}}`)
+        *   `[ ]`   The prompt renderer will skip sections whose variables are absent — removing the placeholders from templates is sufficient; no code change to `assemblePlannerPrompt` is required
+    *   `[ ]`   `role.md`
+        *   `[ ]`   Prompt template content — defines what the planner AI sees as its instructions
+        *   `[ ]`   After this change, source documents are delivered solely via `resourceDocuments` in the ChatAPI request (Fix 1)
+    *   `[ ]`   `module.md`
+        *   `[ ]`   Boundary: all 6 planner prompt templates in `docs/prompts/`
+        *   `[ ]`   `docs/prompts/thesis/thesis_planner_header_v1.md`
+        *   `[ ]`   `docs/prompts/antithesis/antithesis_planner_review_v1.md`
+        *   `[ ]`   `docs/prompts/synthesis/synthesis_pairwise_header_planner_v1.md`
+        *   `[ ]`   `docs/prompts/synthesis/synthesis_final_header_planner_v1.md`
+        *   `[ ]`   `docs/prompts/parenthesis/parenthesis_planner_header_v1.md`
+        *   `[ ]`   `docs/prompts/paralysis/paralysis_planner_header_v1.md`
+    *   `[ ]`   `deps.md`
+        *   `[ ]`   Fix 1 must be complete and proven — `resourceDocuments` must be populated before removing document inlining from prompts
+        *   `[ ]`   `renderPrompt` from `supabase/functions/_shared/prompt-renderer.ts` — must be verified to silently skip unresolved placeholders (no error on missing variables)
+    *   `[ ]`   Each prompt template
+        *   `[ ]`   Remove the `## Inputs` sections (or portions of them) that use `{{dot.notation}}` content placeholders for source documents
+        *   `[ ]`   Retain `## Inputs` sections for non-document variables (seed_prompt, role, stage_instructions, etc.)
+        *   `[ ]`   Retain the `## HeaderContext Schema` / JSON schema sections unchanged
+        *   `[ ]`   Retain `{{context_for_documents}}` placeholder unchanged
+    *   `[ ]`   integration/`executeModelCallAndSave.document.integration.test.ts` (extend from Fix 1)
+        *   `[ ]`   Test: for a PLAN recipe step's EXECUTE child job, the assembled planner prompt text does NOT contain the rendered document content (no duplication)
+        *   `[ ]`   Test: for that same job, the ChatAPI request `resourceDocuments` DOES contain the rendered document content (delivery via resourceDocuments)
+    *   `[ ]`   `requirements.md`
+        *   `[ ]`   No planner prompt template may contain `{{dot.notation}}` placeholders that resolve to full document content
+        *   `[ ]`   All non-document template variables must still render correctly
+        *   `[ ]`   The planner AI must receive documents via `resourceDocuments` — validated by Fix 1 integration test
+        *   `[ ]`   The `assemblePlannerPrompt` code path that builds `sourceDocVars` (lines 260-309) becomes inert — the templates no longer contain matching placeholders, so no content is substituted. No code change required to `assemblePlannerPrompt.ts`.
+        *   `[ ]`   Existing `assemblePlannerPrompt` integration tests must be updated to reflect the new template behavior (prompts no longer contain inlined document content)
+    *   `[ ]`   **Commit** `refactor(prompt): remove document content inlining from planner templates; documents delivered via resourceDocuments`
+        *   `[ ]`   All 6 planner prompt templates: removed `{{dot.notation}}` document content placeholders
+        *   `[ ]`   Integration test: proves planner prompt does not contain document content AND ChatAPI resourceDocuments does contain document content
+
+*   `[❓]`   [BE] supabase/functions/dialectic-worker/`executeModelCallAndSave.ts` **Research: continuation vs JSON validation vs render-on-chunk tension**
+    *   `[ ]`   `objective.md`
+        *   `[ ]`   Determine a correct approach to handle the three-way tension between: (1) deferring JSON validation until all continuations complete, (2) maintaining render-on-chunk delivery so users see documents incrementally, and (3) ensuring the final assembled object is valid before downstream consumption
+        *   `[ ]`   This is a RESEARCH step, not an implementation step — produce findings and a proposed architecture, then halt for review
+    *   `[ ]`   `problem_statement.md`
+        *   `[ ]`   **Current behavior (broken):** `executeModelCallAndSave.ts` line 1194 calls `JSON.parse` on AI response content BEFORE checking finish_reason for continuation signals at line 1242. If the AI's JSON output is truncated mid-stream (`finish_reason = max_tokens`), the parse fails and the job RETRIES instead of CONTINUING. This destroys partial work and makes continuation inaccessible for large JSON objects.
+        *   `[ ]`   **Desired behavior:** When `finish_reason` indicates continuation (`max_tokens`, `length`, `content_truncated`), save the raw content and enqueue continuation WITHOUT parsing. Only parse and validate JSON when the finish_reason is `stop` (agent explicitly says it's done).
+        *   `[ ]`   **Tension with render-on-chunk:** The current system sanitizes and validates JSON on EVERY chunk (`executeModelCallAndSave.ts` lines 1159-1215) so that RENDER jobs can be enqueued to deliver incremental document previews to the user (`executeModelCallAndSave.ts` lines 1581-1599). If we defer sanitization and validation until all continuations complete, the user cannot see rendered documents until the entire continuation chain finishes.
+    *   `[ ]`   `references.md`
+        *   `[ ]`   `executeModelCallAndSave.ts` line 1159-1215: JSON sanitization and parse — runs before continuation detection
+        *   `[ ]`   `executeModelCallAndSave.ts` line 1217-1253: finish_reason resolution and continuation detection — runs AFTER JSON.parse
+        *   `[ ]`   `executeModelCallAndSave.ts` line 1581-1599: `shouldEnqueueRenderJob` — decides whether to create a RENDER job for this chunk
+        *   `[ ]`   `executeModelCallAndSave.ts` line 1866-1903: `needsContinuation` and `continueJob` — enqueues continuation
+        *   `[ ]`   `executeModelCallAndSave.ts` line 1905-1941: `isFinalChunk` and `assembleAndSaveFinalDocument` — merges chunks on final completion
+        *   `[ ]`   `continueJob.ts` line 59-71: malformed JSON detection — checks raw `aiResponse.content` but runs AFTER `executeModelCallAndSave` already parsed or retried
+        *   `[ ]`   `sanitizeJsonContent` from `supabase/functions/_shared/utils/jsonSanitizer.ts` — attempts structural fixes on truncated JSON (closing brackets, etc.)
+        *   `[ ]`   `assembleTurnPrompt.ts` lines 238-259: key validation on HeaderContext — runs in downstream EXECUTE turn job, validates that the HeaderContext has all required `content_to_include` keys. This validation is correct and must stay hard.
+    *   `[ ]`   `questions_to_resolve.md`
+        *   `[ ]`   Can we split the flow: save raw content + enqueue continuation when `finish_reason` indicates continuation, but ALSO attempt sanitization + render for the raw chunk as a best-effort preview (without throwing on failure)?
+        *   `[ ]`   If sanitization of a partial chunk produces a valid-but-incomplete JSON, is the rendered preview misleading to the user (shows 12 of 33 keys as if complete)?
+        *   `[ ]`   Is render-on-chunk actually valuable for header_context outputs (JSON), or only for markdown document outputs? Header contexts are never shown to the user directly — they're consumed by downstream EXECUTE jobs. If render-on-chunk is only meaningful for markdown documents, the tension may not apply to JSON outputs.
+        *   `[ ]`   Can the RENDER job itself be aware that the chunk is not final and render a "partial/in-progress" indicator to the user?
+        *   `[ ]`   Does `assembleAndSaveFinalDocument` correctly merge continuation chunks for JSON outputs? Is the merge strategy (concatenation? deep merge?) appropriate for JSON?
+    *   `[ ]`   `requirements.md`
+        *   `[ ]`   Produce a written analysis answering each question in `questions_to_resolve.md`
+        *   `[ ]`   Propose a concrete architecture that resolves the tension, or explain why render-on-chunk and deferred validation are incompatible and recommend one over the other
+        *   `[ ]`   Do not implement — halt after analysis for user review
+
+
 # ToDo
 
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
@@ -1179,6 +1294,9 @@
     --- PROPOSED: Implement regeneration prior to stage advancement, disable regeneration for documents who have downstream documents, set up future sprint for branching/iteration to support hints to regenerate downstream documents if a user regenerates upstream documents
     --- BLOCKER: Some stages are fundamentally dependent on all prior outputs, like synthesis, and the entire stage needs to be rerun if thesis/antithesis documents are regenerated
 
+    - Set baseline values for each stage "Generate" action and encourage users to top up their account if they are at risk of NSF
+    -- Pause the work mid-stream if NSF and encourage user to top up to continue 
+
     - hydrateAllStages doesn't, but the stage-specific one does
 
     - New user sign in banner doesn't display, throws console error  
@@ -1192,3 +1310,10 @@
    -- Attempting to generate stalls with no product 
 
    - Checklist does not correctly find documents when multiple agents are chosen 
+
+   - Refactor EMCAS to break apart the functions, segment out the tests
+   -- Move gatherArtifacts call to processSimpleJob
+   -- Decide where to measure & RAG
+
+   - Build test fixtures for major function groups 
+   -- Provide standard mock factories and objects 
