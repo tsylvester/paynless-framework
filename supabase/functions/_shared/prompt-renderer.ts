@@ -96,12 +96,10 @@ export function renderPrompt(
   // Find code block ranges to protect from placeholder processing
   const codeBlockRanges = findCodeBlockRanges(renderedText);
   
-  // We use new RegExp objects with 'g' flag for exec loops
-  // Capture content inside braces non-greedily
-  const doubleBraceScanRegex = /{{([\s\S]*?)}}/g;
-  // Use lookarounds to ensure we don't match double braces as single braces
-  // Also exclude {" which indicates JSON structure, not a placeholder
-  const singleBraceScanRegex = /(?<!{){(?!{)(?!")([\s\S]*?)(?<!})}(?!})/g;
+  // Only match {{word_chars}} placeholders
+  const doubleBraceScanRegex = /{{(\s*[\w&]+\s*)}}/g;
+  // Only match {word_chars} placeholders — prevents matching JSON structures like {}
+  const singleBraceScanRegex = /(?<!{){(?!{)(?!")(\s*[\w&]+\s*)}(?!})/g;
   
   // We need to identify which placeholders in the text are NOT covered by mergedVariables.
   // Since keys in mergedVariables can have whitespace and be matched by regexes in step 5,

@@ -1073,65 +1073,8 @@ export async function executeModelCallAndSave(
         return;
     }
 
-    // Unconditionally validate the response is parsable JSON before any other logic.
-    // First sanitize the content to handle common wrapper patterns (quotes, backticks, whitespace).
-    const sanitizationResult: JsonSanitizationResult = sanitizeJsonContent(aiResponse.content);
-    
-    if (!isJsonSanitizationResult(sanitizationResult)) {
-        // Type guard failure - log and retry
-        deps.logger.warn(`[executeModelCallAndSave] Invalid sanitization result for job ${job.id}. Triggering retry.`);
-        await deps.retryJob(
-            { logger: deps.logger, notificationService: deps.notificationService },
-            dbClient,
-            job,
-            job.attempt_count + 1,
-            [{
-                modelId: providerDetails.id,
-                api_identifier: providerDetails.api_identifier,
-                error: 'Invalid JSON sanitization result',
-                processingTimeMs: processingTimeMs,
-            }],
-            projectOwnerUserId
-        );
-        return;
-    }
-    
-    // Log sanitization event if sanitization was performed
-    if (sanitizationResult.wasSanitized) {
-        deps.logger.info(`[executeModelCallAndSave] JSON content sanitized for job ${job.id}`, { 
-            originalLength: sanitizationResult.originalLength, 
-            sanitizedLength: sanitizationResult.sanitized.length,
-            wasStructurallyFixed: sanitizationResult.wasStructurallyFixed
-        });
-    }
-    
-    // Attempt to parse the sanitized content
-    let parsedContent: unknown;
-    try {
-        parsedContent = JSON.parse(sanitizationResult.sanitized);
-    } catch (e) {
-        // This handles a malformed JSON response that cannot be fixed by sanitization, which is a retryable failure.
-        deps.logger.warn(`[executeModelCallAndSave] Malformed JSON response for job ${job.id} after sanitization. Triggering retry.`, { error: e instanceof Error ? e.message : String(e) });
-        
-        await deps.retryJob(
-            { logger: deps.logger, notificationService: deps.notificationService },
-            dbClient,
-            job,
-            job.attempt_count + 1,
-            [{
-                modelId: providerDetails.id,
-                api_identifier: providerDetails.api_identifier,
-                error: `Malformed JSON response: ${e instanceof Error ? e.message : String(e)}`,
-                processingTimeMs: processingTimeMs,
-            }],
-            projectOwnerUserId
-        );
-        
-        // Halt processing immediately.
-        return;
-    }
-
-    // Determine finish reason from either top-level or raw provider response
+    // Resolve finish_reason BEFORE sanitization so truncation-signaled responses
+    // can skip JSON parsing (incomplete chunks are expected to be invalid JSON).
     let resolvedFinish: FinishReason = null;
     if (isFinishReason(aiResponse.finish_reason)) {
         resolvedFinish = aiResponse.finish_reason;
@@ -1158,18 +1101,81 @@ export async function executeModelCallAndSave(
 
     let shouldContinue = isDialecticContinueReason(resolvedFinish);
 
-    // Check the content for a continuation flag if the finish_reason doesn't already indicate it.
-    if (!shouldContinue && isRecord(parsedContent)) {
-        if (
-            parsedContent.continuation_needed === true ||
-            parsedContent.stop_reason === 'continuation' ||
-            parsedContent.stop_reason === 'token_limit'
-        ) {
-            shouldContinue = true;
+    // When finish_reason indicates truncation and the job opts into continuation,
+    // skip sanitization and JSON parsing — the content is intentionally incomplete.
+    // Only the final chunk (finish_reason indicating completion) gets validated.
+    const skipSanitizeForContinuation = shouldContinue && !!job.payload.continueUntilComplete;
+
+    let contentForStorage: string;
+    if (skipSanitizeForContinuation) {
+        contentForStorage = aiResponse.content;
+        deps.logger.info(`[executeModelCallAndSave] Skipping sanitize/parse for continuation chunk (finish_reason: ${resolvedFinish})`, { jobId });
+    } else {
+        const sanitizationResult: JsonSanitizationResult = sanitizeJsonContent(aiResponse.content);
+        
+        if (!isJsonSanitizationResult(sanitizationResult)) {
+            deps.logger.warn(`[executeModelCallAndSave] Invalid sanitization result for job ${job.id}. Triggering retry.`);
+            await deps.retryJob(
+                { logger: deps.logger, notificationService: deps.notificationService },
+                dbClient,
+                job,
+                job.attempt_count + 1,
+                [{
+                    modelId: providerDetails.id,
+                    api_identifier: providerDetails.api_identifier,
+                    error: 'Invalid JSON sanitization result',
+                    processingTimeMs: processingTimeMs,
+                }],
+                projectOwnerUserId
+            );
+            return;
+        }
+        
+        if (sanitizationResult.wasSanitized) {
+            deps.logger.info(`[executeModelCallAndSave] JSON content sanitized for job ${job.id}`, { 
+                originalLength: sanitizationResult.originalLength, 
+                sanitizedLength: sanitizationResult.sanitized.length,
+                wasStructurallyFixed: sanitizationResult.wasStructurallyFixed
+            });
+        }
+        
+        let parsedContent: unknown;
+        try {
+            parsedContent = JSON.parse(sanitizationResult.sanitized);
+        } catch (e) {
+            deps.logger.warn(`[executeModelCallAndSave] Malformed JSON response for job ${job.id} after sanitization. Triggering retry.`, { error: e instanceof Error ? e.message : String(e) });
+            
+            await deps.retryJob(
+                { logger: deps.logger, notificationService: deps.notificationService },
+                dbClient,
+                job,
+                job.attempt_count + 1,
+                [{
+                    modelId: providerDetails.id,
+                    api_identifier: providerDetails.api_identifier,
+                    error: `Malformed JSON response: ${e instanceof Error ? e.message : String(e)}`,
+                    processingTimeMs: processingTimeMs,
+                }],
+                projectOwnerUserId
+            );
+            
+            return;
+        }
+
+        contentForStorage = sanitizationResult.sanitized;
+
+        // Check content-level continuation flags when finish_reason didn't indicate continuation
+        if (!shouldContinue && isRecord(parsedContent)) {
+            if (
+                parsedContent.continuation_needed === true ||
+                parsedContent.stop_reason === 'continuation' ||
+                parsedContent.stop_reason === 'token_limit' ||
+                (typeof parsedContent.resume_cursor === 'string' && parsedContent.resume_cursor.trim() !== '')
+            ) {
+                shouldContinue = true;
+            }
         }
     }
-
-    const contentForStorage: string = sanitizationResult.sanitized;
     
     // This is the correct implementation. The semantic relationships are inherited
     // directly from the job payload. The structural link for continuations is

@@ -289,6 +289,7 @@ export async function handleJob(
       })
       .eq('id', jobId)
       .neq('status', 'processing')
+      .neq('status', 'waiting_for_prerequisite')
       .select()
       .single();
 

@@ -134,16 +134,22 @@ const baseSavedContribution: DialecticContributionRow = {
     // GROUP 1: Basic Continuation Logic - FinishReason Variations
     // =================================================================
     
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is "stop"', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is "stop" (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const aiResponse: UnifiedAIResponse = { finish_reason: 'stop', content: 'final part' };
         const testJob = createMockJob(basePayload);
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0, "Insert should not have been called");
+        assertEquals(insertSpy?.callCount ?? 0, 1, "Insert should have been called");
     });
 
     await t.step('FINISH_REASON: should enqueue when finish_reason is "length"', async () => {
@@ -167,56 +173,80 @@ const baseSavedContribution: DialecticContributionRow = {
         assertEquals(insertSpy.callCount, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is "tool_calls"', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is "tool_calls" (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: 'tool_calls', content: 'response with tools' };
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is "content_filter"', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is "content_filter" (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: 'content_filter', content: 'filtered response' };
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is "function_call"', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is "function_call" (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: 'function_call', content: 'function call response' };
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is "error"', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is "error" (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: 'error', content: 'error response' };
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
     await t.step('FINISH_REASON: should enqueue when finish_reason is "unknown"', async () => {
@@ -238,30 +268,42 @@ const baseSavedContribution: DialecticContributionRow = {
         assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is null', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is null (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: null, content: 'null finish reason' };
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is undefined', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is undefined (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { content: undefined } as unknown as UnifiedAIResponse;
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
     // =================================================================
@@ -1078,11 +1120,11 @@ const baseSavedContribution: DialecticContributionRow = {
         assertExists(errorLogCall, 'Should log database error');
     });
 
-    await t.step('LOGGING: should not log anything when continuation is not needed', async () => {
+    await t.step('LOGGING: should not log continuation when continueUntilComplete is false', async () => {
         setup();
         const infoSpy = spy(mockLogger, 'info');
         const errorSpy = spy(mockLogger, 'error');
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
+        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: false, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: 'stop', content: 'final part' };
         
@@ -1092,7 +1134,7 @@ const baseSavedContribution: DialecticContributionRow = {
             call.args[0] && typeof call.args[0] === 'string' &&
             (call.args[0].includes('Continuation') || call.args[0].includes('continuation'))
         );
-        assertEquals(continuationLogCalls.length, 0, 'Should not log anything about continuation when not needed');
+        assertEquals(continuationLogCalls.length, 0, 'Should not log anything about continuation when continueUntilComplete is false');
     });
 });
 

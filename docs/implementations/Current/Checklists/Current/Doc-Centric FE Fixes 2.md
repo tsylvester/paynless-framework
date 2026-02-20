@@ -1248,34 +1248,83 @@
         *   `[✅]`   All 6 planner prompt templates: removed `{{dot.notation}}` document content placeholders
         *   `[✅]`   Integration test: proves planner prompt does not contain document content AND ChatAPI resourceDocuments does contain document content
 
-*   `[❓]`   [BE] supabase/functions/dialectic-worker/`executeModelCallAndSave.ts` **Research: continuation vs JSON validation vs render-on-chunk tension**
-    *   `[ ]`   `objective.md`
-        *   `[ ]`   Determine a correct approach to handle the three-way tension between: (1) deferring JSON validation until all continuations complete, (2) maintaining render-on-chunk delivery so users see documents incrementally, and (3) ensuring the final assembled object is valid before downstream consumption
-        *   `[ ]`   This is a RESEARCH step, not an implementation step — produce findings and a proposed architecture, then halt for review
-    *   `[ ]`   `problem_statement.md`
-        *   `[ ]`   **Current behavior (broken):** `executeModelCallAndSave.ts` line 1194 calls `JSON.parse` on AI response content BEFORE checking finish_reason for continuation signals at line 1242. If the AI's JSON output is truncated mid-stream (`finish_reason = max_tokens`), the parse fails and the job RETRIES instead of CONTINUING. This destroys partial work and makes continuation inaccessible for large JSON objects.
-        *   `[ ]`   **Desired behavior:** When `finish_reason` indicates continuation (`max_tokens`, `length`, `content_truncated`), save the raw content and enqueue continuation WITHOUT parsing. Only parse and validate JSON when the finish_reason is `stop` (agent explicitly says it's done).
-        *   `[ ]`   **Tension with render-on-chunk:** The current system sanitizes and validates JSON on EVERY chunk (`executeModelCallAndSave.ts` lines 1159-1215) so that RENDER jobs can be enqueued to deliver incremental document previews to the user (`executeModelCallAndSave.ts` lines 1581-1599). If we defer sanitization and validation until all continuations complete, the user cannot see rendered documents until the entire continuation chain finishes.
-    *   `[ ]`   `references.md`
-        *   `[ ]`   `executeModelCallAndSave.ts` line 1159-1215: JSON sanitization and parse — runs before continuation detection
-        *   `[ ]`   `executeModelCallAndSave.ts` line 1217-1253: finish_reason resolution and continuation detection — runs AFTER JSON.parse
-        *   `[ ]`   `executeModelCallAndSave.ts` line 1581-1599: `shouldEnqueueRenderJob` — decides whether to create a RENDER job for this chunk
-        *   `[ ]`   `executeModelCallAndSave.ts` line 1866-1903: `needsContinuation` and `continueJob` — enqueues continuation
-        *   `[ ]`   `executeModelCallAndSave.ts` line 1905-1941: `isFinalChunk` and `assembleAndSaveFinalDocument` — merges chunks on final completion
-        *   `[ ]`   `continueJob.ts` line 59-71: malformed JSON detection — checks raw `aiResponse.content` but runs AFTER `executeModelCallAndSave` already parsed or retried
-        *   `[ ]`   `sanitizeJsonContent` from `supabase/functions/_shared/utils/jsonSanitizer.ts` — attempts structural fixes on truncated JSON (closing brackets, etc.)
-        *   `[ ]`   `assembleTurnPrompt.ts` lines 238-259: key validation on HeaderContext — runs in downstream EXECUTE turn job, validates that the HeaderContext has all required `content_to_include` keys. This validation is correct and must stay hard.
-    *   `[ ]`   `questions_to_resolve.md`
-        *   `[ ]`   Can we split the flow: save raw content + enqueue continuation when `finish_reason` indicates continuation, but ALSO attempt sanitization + render for the raw chunk as a best-effort preview (without throwing on failure)?
-        *   `[ ]`   If sanitization of a partial chunk produces a valid-but-incomplete JSON, is the rendered preview misleading to the user (shows 12 of 33 keys as if complete)?
-        *   `[ ]`   Is render-on-chunk actually valuable for header_context outputs (JSON), or only for markdown document outputs? Header contexts are never shown to the user directly — they're consumed by downstream EXECUTE jobs. If render-on-chunk is only meaningful for markdown documents, the tension may not apply to JSON outputs.
-        *   `[ ]`   Can the RENDER job itself be aware that the chunk is not final and render a "partial/in-progress" indicator to the user?
-        *   `[ ]`   Does `assembleAndSaveFinalDocument` correctly merge continuation chunks for JSON outputs? Is the merge strategy (concatenation? deep merge?) appropriate for JSON?
-    *   `[ ]`   `requirements.md`
-        *   `[ ]`   Produce a written analysis answering each question in `questions_to_resolve.md`
-        *   `[ ]`   Propose a concrete architecture that resolves the tension, or explain why render-on-chunk and deferred validation are incompatible and recommend one over the other
-        *   `[ ]`   Do not implement — halt after analysis for user review
-
+*   `[✅]` _shared/utils/jsonSanitizer **Add duplicate-key deduplication via `jsonc-parser` AST before any `JSON.parse()` call**
+    *   `[✅]` `objective.md`
+        *   `[✅]` AI models producing long complex JSON frequently re-emit keys — content-bearing value first, empty placeholder value second in the same object
+        *   `[✅]` Standard `JSON.parse()` silently resolves duplicates via last-value-wins, destroying the content-bearing first occurrence
+        *   `[✅]` `sanitizeJsonContent` currently calls `JSON.parse()` nine times internally (lines 71, 83, 90, 99, 107, 115, 123, 140, 152) for structural validation; any of these silently drops duplicate keys before consumers see the data
+        *   `[✅]` Observed failure: Gemini 2.5 Flash produced a header context where keys like `subsystems`, `feature_scope`, `guardrails`, `feasibility_insights` appeared twice — first with content, then with empty `[]`/`""` — causing `JSON.parse()` to keep the empties, producing an empty rendered document and cascading job failures
+        *   `[✅]` The fix must parse the raw string with `jsonc-parser`'s `parseTree` (which preserves duplicate keys in its AST) and reconstruct the object with deterministic merge semantics, BEFORE any `JSON.parse()` call
+        *   `[✅]` Merge semantics: one empty + one populated → keep populated; both populated objects → deep merge recursively; both populated arrays → concatenate; both populated primitives → keep first; both empty → keep first
+        *   `[✅]` The deduplication is fail-safe: if `parseTree` returns null, the original string passes through unchanged to existing logic
+    *   `[✅]` `role.md`
+        *   `[✅]` Domain utility — JSON sanitization and normalization of AI model output before any downstream parsing or processing
+    *   `[✅]` `module.md`
+        *   `[✅]` Extends the existing `sanitizeJsonContent` function with a pre-parse deduplication step
+        *   `[✅]` All new functions are module-private helpers serving `sanitizeJsonContent`; the module's exported surface does not change
+        *   `[✅]` Deduplication runs after text cleanup (backtick removal, quote removal, whitespace trimming at steps 1–4) but before the structural-fix block (step 5) where all nine `JSON.parse()` calls live
+    *   `[✅]` `deps.md`
+        *   `[✅]` NEW: `jsonc-parser@3.2.0` via `https://esm.sh/jsonc-parser@3.2.0` — Microsoft's tolerant JSON parser used in VS Code; `parseTree` returns an AST that preserves duplicate keys; `Node` type for AST node traversal; zero transitive dependencies, ~15KB minified, battle-tested
+        *   `[✅]` EXISTING: `JsonSanitizationResult` from `_shared/types/jsonSanitizer.interface.ts`
+    *   `[✅]` _shared/types/`jsonSanitizer.interface.ts`
+        *   `[✅]` Add field `hasDuplicateKeys: boolean` — flag indicating duplicate keys were detected and resolved
+        *   `[✅]` Add field `duplicateKeysResolved: string[]` — unique key names that were found duplicated and merged (deduplicated via `Set`), for diagnostic logging by callers
+    *   `[✅]` _shared/utils/type-guards/`type_guards.jsonSanitizer.test.ts`
+        *   `[✅]` Test: result object with `hasDuplicateKeys: true` and `duplicateKeysResolved: ['subsystems']` passes the type guard
+        *   `[✅]` Test: result object with `hasDuplicateKeys: false` and `duplicateKeysResolved: []` passes the type guard
+        *   `[✅]` Test: result object missing `hasDuplicateKeys` field fails the type guard
+        *   `[✅]` Test: result object where `duplicateKeysResolved` is not an array fails the type guard
+    *   `[✅]` _shared/utils/type-guards/`type_guards.jsonSanitizer.ts`
+        *   `[✅]` Update `isJsonSanitizationResult` to validate `hasDuplicateKeys` is boolean and `duplicateKeysResolved` is an array of strings
+    *   `[✅]` _shared/utils/`jsonSanitizer.test.ts`
+        *   `[✅]` Test: valid JSON with no duplicate keys — passes through unchanged, `hasDuplicateKeys` is `false`, `duplicateKeysResolved` is `[]`
+        *   `[✅]` Test: duplicate key, first has content array, second is empty `[]` — result keeps the content array, `hasDuplicateKeys` is `true`, key name in `duplicateKeysResolved`
+        *   `[✅]` Test: duplicate key, first is empty `""`, second has content string — result keeps the content string
+        *   `[✅]` Test: duplicate key, first is empty `{}`, second has populated object — result keeps the populated object
+        *   `[✅]` Test: duplicate key, both populated objects — result is deep-merged object containing keys from both instances
+        *   `[✅]` Test: duplicate key, both populated arrays — result is concatenated array
+        *   `[✅]` Test: duplicate key, both populated primitives — result keeps first value
+        *   `[✅]` Test: deeply nested duplicate keys (inside `context_for_documents[0].content_to_include`) — deduplication applies recursively at all nesting levels
+        *   `[✅]` Test: mirrors the real failure — header context structure with `"subsystems": [{...}]` then `"subsystems": []` later in same object — content array survives
+        *   `[✅]` Test: unparseable/invalid JSON — deduplication step fails gracefully (returns original string), `hasDuplicateKeys` is `false`, existing sanitization logic proceeds unchanged
+        *   `[✅]` Test: JSON wrapped in backticks with duplicate keys — backtick removal runs first (steps 1–3), then deduplication resolves duplicates, verifying correct step ordering
+        *   `[✅]` Test: all existing tests continue to pass — no regression in backtick removal, quote removal, trimming, or structural-fix behavior
+    *   `[✅]` _shared/utils/`jsonSanitizer.ts`
+        *   `[✅]` Import `parseTree` and `Node as JsonNode` from `https://esm.sh/jsonc-parser@3.2.0`
+        *   `[✅]` Add module-private `isEmpty(value)` — returns `true` for `null`, `""`, `[]` (length 0), `{}` (no own keys)
+        *   `[✅]` Add module-private `isPlainObject(v)` — returns `true` for non-null, non-array objects
+        *   `[✅]` Add module-private `mergeValues(a, b)` — if one `isEmpty` return the other; both arrays → `[...a, ...b]`; both plain objects → spread `a`, iterate `b` keys, recurse `mergeValues` on shared keys; otherwise return `a`
+        *   `[✅]` Add module-private `buildNode(node: JsonNode, duplicatesFound: Set<string>)` — switch on `node.type`: `"object"` → iterate `node.children`, extract key from `prop.children[0].value`, value from recursive `buildNode(prop.children[1])`, if `key in result` add key to `duplicatesFound` (`Set.add` — idempotent, prevents noisy duplicate entries when a key appears 3+ times or the same key name duplicates at multiple nesting levels) and call `mergeValues(result[key], value)`, else set `result[key] = value`; `"array"` → map children through `buildNode`; default → return `node.value`
+        *   `[✅]` Add module-private `deduplicateJsonKeys(raw: string)` → initializes `const duplicatesFound = new Set<string>()`; calls `parseTree(raw)`, if root is null returns `{ deduplicated: raw, hasDuplicateKeys: false, duplicateKeysResolved: [] }`; otherwise calls `buildNode(root, duplicatesFound)`, returns `{ deduplicated: JSON.stringify(result, null, 2), hasDuplicateKeys: duplicatesFound.size > 0, duplicateKeysResolved: [...duplicatesFound] }`; note: `JSON.stringify` with indent normalizes formatting — this is acceptable because Step 5 re-parses the string anyway
+        *   `[✅]` Modify `sanitizeJsonContent`: insert call to `deduplicateJsonKeys(sanitized)` AFTER Step 4 (whitespace trimming, line 63) and BEFORE Step 5 (structural fixes, line 66) — if `hasDuplicateKeys`, replace `sanitized` with deduplicated string and set `wasSanitized = true`; carry `hasDuplicateKeys` and `duplicateKeysResolved` through to the final `JsonSanitizationResult`
+        *   `[✅]` All nine existing `JSON.parse()` calls in the structural-fix block now operate on already-deduplicated content
+    *   `[✅]` integration/`prompt_assembler.integration.test.ts` — **duplicate-key deduplication end-to-end proof**
+        *   `[✅]` File: `supabase/integration_tests/prompt_assembler.integration.test.ts` — add new `it()` case inside the existing `describe('assembleTurnPrompt')` block; reuses harness `beforeAll` setup (`adminClient`, `testUser`, `session`, `project`, `testDeps`, `fileManager`, `jwt`); uses `stageSlug = 'parenthesis'`
+        *   `[✅]` Delete: `supabase/integration_tests/services/jsonSanitizer.integration.test.ts` — the existing test is invalid (wrong context construction, vacuous assertions, never exercises actual call stack)
+        *   `[✅]` Input artifact: read raw flawed JSON from `example/google-gemini-2.5-flash_0_0742819d_header_context.json` via `Deno.readTextFile` — this is the ACTUAL raw AI response string containing duplicate keys; it MUST NOT be `JSON.parse`d or re-serialized before injection because the raw string itself IS the bug
+        *   `[✅]` Prerequisite: `seed_prompt_templates.ts` has been run as part of standard dev environment setup, so the template `docs/prompts/parenthesis/parenthesis_technical_requirements_turn_v1.md` already exists in the `prompt-templates` Supabase Storage bucket — `assembleTurnPrompt` will call `downloadFromStorage` to retrieve it via the `document_template_id` reference (migration `20251006194558`, line 86: `prompt_text = null`)
+        *   `[✅]` Step 1 — Negative control: `JSON.parse(rawFlawedJson)`, navigate to `context_for_documents` entry where `document_key === "technical_requirements"`, assert `content_to_include.subsystems` is `[]`, `content_to_include.feature_scope` is `[]`, `content_to_include.guardrails` is `[]` — proves the raw file genuinely exhibits `JSON.parse` last-value-wins data destruction
+        *   `[✅]` Step 2 — Store flawed HeaderContext via actual `executeModelCallAndSave`: construct deps with `callUnifiedAIModel: async () => ({ content: rawFlawedJson, finish_reason: 'stop', ... })` (same pattern as existing test lines 926–962); create EXECUTE job row with `output_type: FileType.HeaderContext`, `document_key: FileType.HeaderContext` (same pattern as lines 851–902); call actual `executeModelCallAndSave` (same pattern as lines 964–976) — this is the entry point where `sanitizeJsonContent` runs, deduplicating duplicate keys via `jsonc-parser` AST before storage
+        *   `[✅]` Step 3 — Fetch stored contribution: query `dialectic_contributions` by session/stage/iteration (same pattern as lines 980–995); assert contribution exists
+        *   `[✅]` Step 4 — Consume HeaderContext via actual `processSimpleJob`: create EXECUTE job row with `inputs: { header_context_id: contribution.id }`, `document_key: "technical_requirements"` (same pattern as lines 1001–1068); construct deps with `executeModelCallAndSave` overridden to capture `params.promptConstructionPayload.currentUserPrompt` (the rendered prompt) and return without calling AI; call actual `processSimpleJob` (same pattern as lines 1070–1094) — this internally calls `ctx.promptAssembler.assemble()` → `assembleTurnPrompt` which: retrieves the stored HeaderContext from Supabase Storage, `JSON.parse`s it (now clean), extracts `content_to_include` for `document_key === "technical_requirements"`, builds `mergedContext`, downloads template from `prompt-templates` bucket, calls `render` → `renderPrompt`
+        *   `[✅]` Assert: captured rendered prompt contains `"Frontend User Interface"` (a known subsystem name surviving deduplication); does NOT contain `"subsystems":[]` (the empty placeholder `JSON.parse()` alone would have preserved); contains the template's static text `"In this turn you are defining the technical requirements"`
+        *   `[✅]` Step 5 — Write output file: write captured rendered prompt to `example/integration_test_rendered_technical_requirements_prompt.md` via `Deno.writeTextFile` — ACTUAL FILE OUTPUT artifact
+        *   `[✅]` Call stack exercised: raw AI response → `executeModelCallAndSave` → `sanitizeJsonContent` (AST deduplication) → `JSON.parse` (clean) → Supabase Storage → `processSimpleJob` → `assembleTurnPrompt` → `downloadFromStorage` (template) → `JSON.parse` (HeaderContext) → `content_to_include` extraction → context merge → `render` → `renderPrompt` → rendered prompt with populated data
+        *   `[✅]` Only I/O is mocked: `callUnifiedAIModel` in Step 2 (returns raw flawed JSON), `executeModelCallAndSave` in Step 4 (captures rendered prompt); all business logic uses ACTUAL application functions via the ACTUAL DI graph
+    *   `[✅]` `requirements.md`
+        *   `[✅]` Duplicate keys in AI model JSON output are detected and resolved before any `JSON.parse()` call within the sanitizer
+        *   `[✅]` Content-bearing values are never silently overwritten by empty placeholder duplicates
+        *   `[✅]` Deduplication is fail-safe: unparseable input passes through unchanged to existing sanitization logic
+        *   `[✅]` `JsonSanitizationResult` reports whether deduplication occurred and which keys were affected, enabling diagnostic logging by `executeModelCallAndSave` and other callers
+        *   `[✅]` Existing sanitization behavior (backtick removal, quote removal, trimming, structural fixes) is completely unchanged
+        *   `[✅]` All existing tests continue to pass with no regression
+    *   `[✅]` **Commit** `fix(_shared): add duplicate-key deduplication to jsonSanitizer using jsonc-parser AST`
+        *   `[✅]` Added `jsonc-parser@3.2.0` dependency for AST-preserving JSON parse
+        *   `[✅]` Added `isEmpty`, `isPlainObject`, `mergeValues`, `buildNode`, `deduplicateJsonKeys` as module-private helpers in `jsonSanitizer.ts`
+        *   `[✅]` Inserted deduplication step between text cleanup and structural fixes in `sanitizeJsonContent`
+        *   `[✅]` Extended `JsonSanitizationResult` with `hasDuplicateKeys` and `duplicateKeysResolved` fields
+        *   `[✅]` Updated `isJsonSanitizationResult` type guard and its tests for new fields
+        *   `[✅]` Added test coverage for all duplicate-key scenarios including regression from real Gemini 2.5 Flash failure
 
 # ToDo
 
@@ -1306,14 +1355,16 @@
    -- Needs to react to actual progress 
    -- Stop the spinner when a condition changes 
 
-   -  Third stage doesn't seem to do anything 
-   -- Attempting to generate stalls with no product 
-
    - Checklist does not correctly find documents when multiple agents are chosen 
 
    - Refactor EMCAS to break apart the functions, segment out the tests
    -- Move gatherArtifacts call to processSimpleJob
    -- Decide where to measure & RAG
 
+   - Switch to stream-to-buffer instead of chunking
+   -- This lets us render the buffer in real time to show document progress 
+
    - Build test fixtures for major function groups 
    -- Provide standard mock factories and objects 
+
+   - Show exact job progress in front end as pop up while working, then minimize to documents once documents arrive 

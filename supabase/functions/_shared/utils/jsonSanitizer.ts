@@ -1,4 +1,5 @@
-import type { JsonSanitizationResult } from '../types/jsonSanitizer.interface.ts';
+import { JsonSanitizationResult } from '../types/jsonSanitizer.interface.ts';
+import { parseTree, Node } from 'https://esm.sh/jsonc-parser@3.2.0';
 
 /**
  * Sanitizes JSON content by removing common wrapper patterns (triple backticks, quotes, whitespace).
@@ -59,6 +60,17 @@ export function sanitizeJsonContent(rawContent: string): JsonSanitizationResult 
     const trimmed = sanitized.trim();
     if (trimmed !== sanitized) {
         sanitized = trimmed;
+        wasSanitized = true;
+    }
+
+    // Step 4.5: Deduplicate keys using AST
+    // Run this BEFORE structural fixes (which rely on JSON.parse)
+    const deduplicationResult = deduplicateJsonKeys(sanitized);
+    const hasDuplicateKeys = deduplicationResult.hasDuplicateKeys;
+    const duplicateKeysResolved = deduplicationResult.duplicateKeysResolved;
+    
+    if (hasDuplicateKeys) {
+        sanitized = deduplicationResult.deduplicated;
         wasSanitized = true;
     }
 
@@ -165,9 +177,96 @@ export function sanitizeJsonContent(rawContent: string): JsonSanitizationResult 
         sanitized: structurallyFixed,
         wasSanitized: wasSanitized,
         wasStructurallyFixed: wasStructurallyFixed,
+        hasDuplicateKeys: hasDuplicateKeys,
+        duplicateKeysResolved: duplicateKeysResolved,
         originalLength: originalLength
     };
 
     return result;
 }
 
+// --- Module-Private Helpers for Deduplication ---
+
+function isEmpty(value: unknown): boolean {
+    if (value === null) return true;
+    if (value === "") return true;
+    if (Array.isArray(value) && value.length === 0) return true;
+    if (isPlainObject(value) && Object.keys(value).length === 0) return true;
+    return false;
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+    return typeof v === 'object' && v !== null && !Array.isArray(v) && v !== undefined;
+}
+
+function mergeValues(a: unknown, b: unknown): unknown {
+    if (isEmpty(a)) return b;
+    if (isEmpty(b)) return a;
+    
+    if (Array.isArray(a) && Array.isArray(b)) {
+        return [...a, ...b];
+    }
+    
+    if (isPlainObject(a) && isPlainObject(b)) {
+        const result = { ...a };
+        for (const key of Object.keys(b)) {
+            if (key in result) {
+                result[key] = mergeValues(result[key], b[key]);
+            } else {
+                result[key] = b[key];
+            }
+        }
+        return result;
+    }
+    
+    // Primitives or mixed types: first one wins if both populated
+    return a;
+}
+
+function buildNode(node: Node, duplicatesFound: Set<string>): unknown {
+    if (node.type === 'object' && node.children) {
+        const result: Record<string, unknown> = {};
+        for (const prop of node.children) {
+            if (prop.children && prop.children.length === 2) {
+                const keyNode = prop.children[0];
+                const valueNode = prop.children[1];
+                // Remove quotes from key if present
+                const key = keyNode.value;
+                const value = buildNode(valueNode, duplicatesFound);
+                
+                if (key in result) {
+                    duplicatesFound.add(key);
+                    result[key] = mergeValues(result[key], value);
+                } else {
+                    result[key] = value;
+                }
+            }
+        }
+        return result;
+    } else if (node.type === 'array' && node.children) {
+        return node.children.map(child => buildNode(child, duplicatesFound));
+    } else {
+        return node.value;
+    }
+}
+
+function deduplicateJsonKeys(raw: string): { deduplicated: string, hasDuplicateKeys: boolean, duplicateKeysResolved: string[] } {
+    const duplicatesFound = new Set<string>();
+    const root = parseTree(raw);
+    
+    if (!root) {
+        return { deduplicated: raw, hasDuplicateKeys: false, duplicateKeysResolved: [] };
+    }
+    
+    const result = buildNode(root, duplicatesFound);
+    
+    if (duplicatesFound.size > 0) {
+        return {
+            deduplicated: JSON.stringify(result, null, 2),
+            hasDuplicateKeys: true,
+            duplicateKeysResolved: Array.from(duplicatesFound)
+        };
+    }
+    
+    return { deduplicated: raw, hasDuplicateKeys: false, duplicateKeysResolved: [] };
+}

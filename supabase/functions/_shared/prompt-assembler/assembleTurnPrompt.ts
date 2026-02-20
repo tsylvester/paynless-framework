@@ -393,7 +393,7 @@ export async function assembleTurnPrompt(
   };
 
   const mergedContext = requiresHeaderContext
-    ? { ...baseContext, ...validatedContentToInclude, header_context: headerContext }
+    ? { ...baseContext, header_context: headerContext }
     : baseContext;
 
   // Create stage with template content for deps.render
