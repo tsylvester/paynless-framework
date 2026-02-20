@@ -294,7 +294,15 @@ export async function handleJob(
       .single();
 
     if (updateError || !updatedJob) {
-      throw new Error(`Job ${jobId} is already processing or could not be updated.`);
+      // Claim failure is expected for duplicate invocations, race conditions, and
+      // non-actionable statuses (e.g. waiting_for_prerequisite). Return silently
+      // instead of throwing — the catch block would unconditionally mark the job
+      // as 'failed', destroying prerequisite chains for skeleton PLAN jobs.
+      deps.logger.info(
+        `[dialectic-worker] [handleJob] Job ${jobId} could not be claimed ` +
+        `(status: ${job.status}). Skipping gracefully.`
+      );
+      return;
     }
 
     // Notify user that the job has started
