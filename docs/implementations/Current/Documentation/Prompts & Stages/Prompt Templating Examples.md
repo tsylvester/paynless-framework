@@ -383,6 +383,41 @@ The Parenthesis stage overlay now references the recipe's `outputs_required` dat
 }
 ```
 
+## Parenthesis Expected Output Artifacts (System Instructions Inserts)
+```json
+{
+  "content": {
+    "index": ["M1"],
+    "pipeline_context": "Decomposing dependency frontier into architectural work nodes",
+    "selection_criteria": "dependency frontier: only milestones whose deps are [✅] or in current batch",
+    "shared_infrastructure": [],
+    "milestones": [
+      {
+        "id": "M1",
+        "title": "Core Authentication",
+        "status": "pending",
+        "objective": "Implement secure user authentication",
+        "nodes": [
+          {
+            "path": "supabase/functions/auth",
+            "title": "Auth Helpers",
+            "objective": "Centralize auth logic",
+            "role": "Shared Utility",
+            "module": "Auth",
+            "deps": ["supabase-js"],
+            "provides": ["getUser", "signIn"],
+            "directionality": "Infrastructure",
+            "requirements": ["Handle JWT", "Refresh tokens"]
+          }
+        ]
+      }
+    ],
+    "iteration_semantics": "replace, don't extend; reference prior schema for continuity",
+    "executive_summary": "Milestone 1 focuses on establishing the core authentication infrastructure."
+  }
+}
+```
+
 For complete recipe specifications, input requirements, output schemas, and continuation policies, refer to [`parenthesis-planning-recipe.md`](4-Parenthesis-Planning/parenthesis-planning-recipe.md).
 ---
 
@@ -417,6 +452,86 @@ The Paralysis stage overlay now references the recipe's `outputs_required` data 
   "generation_limits": { "max_steps": 200, "target_steps": "120-180", "max_output_lines": "600-800" },
   "style_guide_markdown": "<see StyleGuide.md for style guide specifications>",
   "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; follow the style guide exactly"
+}
+```
+
+## Paralysis Expected Output Artifacts (System Instructions Inserts)
+```json
+{
+  "content": {
+    "milestone_ids": ["M1"],
+    "index": ["M1"],
+    "milestone_reference": {
+      "id": "M1",
+      "phase": "Foundation",
+      "dependencies": "None"
+    },
+    "nodes": [
+      {
+        "path": "supabase/functions/auth/utils.ts",
+        "title": "Auth Utilities",
+        "objective": [
+          "Implement JWT validation",
+          "Implement token refresh"
+        ],
+        "role": [
+          "Infrastructure Utility"
+        ],
+        "module": [
+          "Authentication"
+        ],
+        "deps": [
+          "supabase-js - External Lib - Infrastructure - Auth Client"
+        ],
+        "context_slice": [
+          "SupabaseClient interface",
+          "UserSession type"
+        ],
+        "interface": [
+          "interface IAuthUtils { validateToken(token: string): Promise<boolean>; }"
+        ],
+        "interface_tests": [
+          "should return true for valid token",
+          "should return false for expired token"
+        ],
+        "interface_guards": [
+          "isAuthError(error: unknown): error is AuthError"
+        ],
+        "unit_tests": [
+          "validateToken returns true when supabase client returns user"
+        ],
+        "construction": [
+          "export const createAuthUtils = (client: SupabaseClient) => IAuthUtils"
+        ],
+        "source": [
+          "Implementation of validateToken using supabase.auth.getUser"
+        ],
+        "provides": [
+          "validateToken",
+          "refreshToken"
+        ],
+        "mocks": [
+          "mockAuthUtils - intercepts validateToken"
+        ],
+        "integration_tests": [
+          "validateToken integrates with real Supabase instance"
+        ],
+        "directionality": [
+          "Infrastructure Layer",
+          "Depends on: supabase-js",
+          "Provides to: Domain/App Layers"
+        ],
+        "requirements": [
+          "Must handle network errors gracefully",
+          "Must support Bearer token format"
+        ],
+        "commit": [
+          "feat(auth): implement auth utility functions"
+        ]
+      }
+    ],
+    "milestone_summary": "Implemented core authentication utilities required for downstream features."
+  }
 }
 ```
 

@@ -65,28 +65,28 @@
       "content_to_include": {
         "milestone_ids": ["<list the next milestone(s) to detail from the master_plan and milestone_schema>"],
         "index": [],
-        "milestone_reference": {
-          "id": "",
-          "phase": "",
-          "dependencies": ""
+        "elaboration_instruction": "For each milestone from the milestone_schema, expand into a fully described work node with all the elements provided. Elaborate in dependency order. If generation limits are reached before exhausting the batch, use continuation flags.",
+        "node_skeleton": {
+          "path": "",
+          "title": "",
+          "objective": [],
+          "role": [],
+          "module": [],
+          "deps": [],
+          "context_slice": [],
+          "interface": [],
+          "interface_tests": [],
+          "interface_guards": [],
+          "unit_tests": [],
+          "construction": [],
+          "source": [],
+          "provides": [],
+          "mocks": [],
+          "integration_tests": [],
+          "directionality": [],
+          "requirements": [],
+          "commit": []
         },
-        "steps": [
-          {
-            "status": "",
-            "component_label": "",
-            "numbering": "",
-            "title": "",
-            "description": "",
-            "inputs": "",
-            "outputs": "",
-            "validation": "",
-            "red_test": "",
-            "implementation": "",
-            "green_test": "",
-            "refactor": "",
-            "commit_message": ""
-          }
-        ],
         "milestone_summary": ""
       }
     },
@@ -107,19 +107,11 @@
                 "title": "",
                 "status": "[ ]",
                 "objective": "",
-                "description": "",
-                "technical_complexity": "",
-                "effort_estimate": "",
-                "implementation_approach": "",
-                "test_strategy": "",
-                "component_labels": [],
-                "inputs": [],
-                "outputs": [],
-                "validation": [],
-                "dependencies": [],
-                "coverage_notes": "",
-                "iteration_delta": "",
-                "acceptance_criteria": []
+                "deps": [],
+                "provides": [],
+                "directionality": "",
+                "requirements": [],
+                "iteration_delta": ""
               }
             ]
           }

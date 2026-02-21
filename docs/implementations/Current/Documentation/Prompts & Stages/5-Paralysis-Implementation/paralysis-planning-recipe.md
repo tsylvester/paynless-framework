@@ -82,10 +82,10 @@
       "advisor_recommendations"
     ],
     "current_document": "actionable_checklist",
-    "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; 1/a/i numbering; component labels",
+    "exhaustiveness_requirement": "extreme detail; no summaries; each node includes objective, role, module, deps, context, interface, tests, implementation, provides, requirements; follow the style guide and provided structure exactly",
     "validation_checkpoint": [
-      "checklist uses style guide (status, numbering, labels)",
-      "steps are atomic and testable",
+      "checklist uses provided style and structure (status, labels, nesting)",
+      "nodes are atomic and testable",
       "dependency ordering enforced",
       "coverage aligns to milestone acceptance criteria"
     ],
@@ -100,7 +100,7 @@
     {
       "key": "actionable_checklist",
       "template_filename": "paralysis_actionable_checklist.md",
-      "content_to_include": "full low-level checklist using style guide: status markers, 1/a/i numbering, component labels; each step contains inputs, outputs, validation; one-file-per-step prompts"
+      "content_to_include": "full low-level checklist expanding milestone work nodes into complete nodes; includes objective, role, module, deps, context, interface, tests, implementation, provides, requirements per node"
     },
     {
       "key": "updated_master_plan",
@@ -230,17 +230,17 @@
       "advisor_recommendations"
     ],
     "current_document": "actionable_checklist",
-    "exhaustiveness_requirement": "extreme detail; no summaries; each step includes inputs, outputs, validation; follow the style guide exactly",
+    "exhaustiveness_requirement": "extreme detail; no summaries; each node includes objective, role, module, deps, context, interface, tests, implementation, provides, requirements; follow the style guide and provided structure exactly",
     "validation_checkpoint": [
-      "checklist uses style guide (status, numbering, labels)",
-      "steps are atomic and testable",
+      "checklist uses provided style and structure (status, labels, nesting)",
+      "nodes are atomic and testable",
       "dependency ordering enforced",
       "coverage aligns to milestone acceptance criteria"
     ],
     "quality_standards": [
       "TDD sequence present",
       "no missing dependencies",
-      "no speculative steps beyond selected milestones",
+      "no speculative nodes beyond selected milestones",
       "clear file-by-file prompts"
     ],
     "iteration_metadata": {
@@ -265,12 +265,50 @@
     {
       "document_key": "actionable_checklist",
       "content_to_include": {
-        "milestone_ids": [<list the next milestone(s) to detail from the master_plan and milestone_schema>],
+        "elaboration_instruction": "For each milestone from the milestone_schema, expand into a fully described work node with all the elements provided. Elaborate in dependency order. If generation limits are reached before exhausting the batch, use continuation flags.",
+        "node_skeleton": {
+          "path": "",
+          "title": "",
+          "objective": [],
+          "role": [],
+          "module": [],
+          "deps": [],
+          "context_slice": [],
+          "interface": [],
+          "interface_tests": [],
+          "interface_guards": [],
+          "unit_tests": [],
+          "construction": [],
+          "source": [],
+          "provides": [],
+          "mocks": [],
+          "integration_tests": [],
+          "directionality": [],
+          "requirements": [],
+          "commit": []
+        }
       }
     },
     {
       "document_key": "updated_master_plan",
       "content_to_include": {
+        "phases": [
+          {
+            "milestones": [
+              {
+                "id": "",
+                "title": "",
+                "status": "",
+                "objective": "",
+                "deps": [],
+                "provides": [],
+                "directionality": "",
+                "requirements": [],
+                "iteration_delta": ""
+              }
+            ]
+          }
+        ],
         "preserve_completed": true,
         "set_in_progress": "[🚧]",
         "future_status": "[ ]",
@@ -291,7 +329,7 @@
 ```
 
 ### Step 2: Generate Actionable Checklist
-- **Objective:** Produce the detailed implementation checklist for the next milestone slice, adhering to the style guide and referencing the Parenthesis TRD and Master Plan.
+- **Objective:** Produce the detailed implementation checklist for the next milestone slice by expanding `milestone_schema` work nodes into full TDD cycles, adhering to the style guide and referencing the Parenthesis TRD and Master Plan.
 - **Prompt Type:** `Turn`
 - **Prompt Template Name:** `paralysis_actionable_checklist_turn_v1`
 - **Input Source References:**
@@ -304,7 +342,7 @@
   - `technical_requirements` (type `feedback`, stage `parenthesis`, required=false)
   - `master_plan` (type `feedback`, stage `parenthesis`, required=false)
   - `milestone_schema` (type `feedback`, stage `parenthesis`, required=false)
-- **Output Artifact Description:** Markdown checklist plus assembled JSON capturing each step’s identifiers, dependencies, inputs, outputs, and validation instructions.
+- **Output Artifact Description:** Markdown checklist expanding milestone work nodes into Example Checklist nodes, plus assembled JSON capturing each node's skeleton fields.
 
 **Recipe Step Definition JSON (target):**
 ```json
@@ -354,14 +392,25 @@
         "document_key": "actionable_checklist",
         "artifact_class": "assembled_document_json",
         "fields": [
-          "steps[].id",
-          "steps[].status",
-          "steps[].component_label",
-          "steps[].inputs",
-          "steps[].outputs",
-          "steps[].validation",
-          "steps[].tdd_sequence",
-          "steps[].dependencies"
+          "nodes[].path",
+          "nodes[].title",
+          "nodes[].objective[]",
+          "nodes[].role[]",
+          "nodes[].module[]",
+          "nodes[].deps[]",
+          "nodes[].context_slice[]",
+          "nodes[].interface[]",
+          "nodes[].interface_tests[]",
+          "nodes[].interface_guards[]",
+          "nodes[].unit_tests[]",
+          "nodes[].construction[]",
+          "nodes[].source[]",
+          "nodes[].provides[]",
+          "nodes[].mocks[]",
+          "nodes[].integration_tests[]",
+          "nodes[].directionality[]",
+          "nodes[].requirements[]",
+          "nodes[].commit[]"
         ]
       }
     ],
@@ -376,47 +425,74 @@
 ```json
 {
   "documents": [
-    {
-      "document_key": "actionable_checklist",
-      "template_filename": "paralysis_actionable_checklist.md",
-      "content_to_include": {
-        "index": [<list the milestone(s) resolved in this section>],
-        "milestone_summary": "<explain the desired outcome of this milestone>",
-        "milestone_reference": {
-          "id": "<extracted_from_header_context.milestones_to_detail>",
-          "phase": "<extracted_from_master_plan>",
-          "dependencies": "<extracted_from_milestone_schema>"
-        },
-        "steps": [
-          {
-            "status": "[<derived from the style guide legend>]",
-            "component_label": "<derived_from_technical_requirements.components[]_context>",
-            "numbering": "<derived_from_milestone_position>",
-            "title": "<extracted_from_master_plan.milestone.title>",
-            "description": "<extracted_from_technical_requirements.technical_requirements>",
-            "inputs": "<extracted_from_milestone.acceptance_criteria>",
-            "outputs": "<derived_from_step_purpose>",
-            "validation": "<extracted_from_milestone_schema>",
-            "red_test": "<stateless test that proves the flaw or gap>",
-            "implementation": "<description of code required for red test to pass>",
-            "green_test": "<rerun red_test to prove it passes>",
-            "refactor": "<analyse against SRP, DRY, consider if the produced code can be simplified or extracted to a separate function>",
-            "commit_message": "<derive a rational message using the examples in style_guide>"
+      {
+        "document_key": "actionable_checklist",
+        "template_filename": "paralysis_actionable_checklist.md",
+        "content_to_include": {
+          "index": [<list the milestone(s) resolved in this section>],
+          "milestone_summary": "<explain the desired outcome of this milestone>",
+          "milestone_reference": {
+            "id": "<extracted_from_header_context.milestones_to_detail>",
+            "phase": "<extracted_from_master_plan>",
+            "dependencies": "<extracted_from_milestone_schema>"
+          },
+          "nodes": [
+            {
+              "path": "",
+              "title": "",
+              "objective": [],
+              "role": [],
+              "module": [],
+              "deps": [],
+              "context_slice": [],
+              "interface": [],
+              "interface_tests": [],
+              "interface_guards": [],
+              "unit_tests": [],
+              "construction": [],
+              "source": [],
+              "provides": [],
+              "mocks": [],
+              "integration_tests": [],
+              "directionality": [],
+              "requirements": [],
+              "commit": []
+            }
+          ],
+          "generation_limits": {
+            "max_steps": 200,
+            "target_steps": "120-180",
+            "max_output_lines": "600-800"
           }
-        ],
-        "generation_limits": {
-          "max_steps": 200,
-          "target_steps": "120-180",
-          "max_output_lines": "600-800"
         }
       }
-    }
   ],
   "assembled_json": [
     {
       "document_key": "actionable_checklist",
       "artifact_class": "assembled_document_json",
-      "file_type": "json"
+      "file_type": "json",
+      "fields": [
+        "nodes[].path",
+        "nodes[].title",
+        "nodes[].objective[]",
+        "nodes[].role[]",
+        "nodes[].module[]",
+        "nodes[].deps[]",
+        "nodes[].context_slice[]",
+        "nodes[].interface[]",
+        "nodes[].interface_tests[]",
+        "nodes[].interface_guards[]",
+        "nodes[].unit_tests[]",
+        "nodes[].construction[]",
+        "nodes[].source[]",
+        "nodes[].provides[]",
+        "nodes[].mocks[]",
+        "nodes[].integration_tests[]",
+        "nodes[].directionality[]",
+        "nodes[].requirements[]",
+        "nodes[].commit[]"
+      ]
     }
   ]
 }
@@ -484,8 +560,10 @@
           "phases[].milestones[].id",
           "phases[].milestones[].status",
           "phases[].milestones[].objective",
-          "phases[].milestones[].dependencies",
-          "phases[].milestones[].acceptance_criteria",
+          "phases[].milestones[].deps[]",
+          "phases[].milestones[].provides[]",
+          "phases[].milestones[].directionality",
+          "phases[].milestones[].requirements[]",
           "iteration_delta"
         ]
       }
@@ -519,16 +597,10 @@
                   "title": "<extract_from_master_plan>",
                   "status": "[<derive_from_iteration_state>]",
                   "objective": "<extract_from_technical_requirements>",
-                  "description": "<derive_from_architecture_and_features>",
-                  "technical_complexity": "<assess_from_architecture>",
-                  "effort_estimate": "<derive_from_scope_and_complexity>",
-                  "implementation_approach": "<derive_from_tech_stack>",
-                  "test_strategy": "<derive_from_validation_requirements>",
-                  "component_labels": ["<derive_from_architecture>"],
-                  "inputs": ["<extract_from_dependencies>"],
-                  "outputs": ["<derive_from_deliverables>"],
-                  "validation": ["<extract_from_acceptance_criteria>"],
-                  "dependencies": ["<extract_from_master_plan>"],
+                  "deps": ["<extract_from_dependencies>"],
+                  "provides": ["<derive_from_deliverables>"],
+                  "directionality": "<derive_from_architecture>",
+                  "requirements": ["<extract_from_acceptance_criteria>"],
                   "iteration_delta": "<derive_from_change_tracking>"
                 }
               ]
@@ -561,17 +633,10 @@
           "phases[].milestones[].title",
           "phases[].milestones[].status",
           "phases[].milestones[].objective",
-          "phases[].milestones[].description",
-          "phases[].milestones[].technical_complexity",
-          "phases[].milestones[].effort_estimate",
-          "phases[].milestones[].implementation_approach",
-          "phases[].milestones[].test_strategy",
-          "phases[].milestones[].component_labels[]",
-          "phases[].milestones[].inputs[]",
-          "phases[].milestones[].outputs[]",
-          "phases[].milestones[].validation[]",
-          "phases[].milestones[].dependencies[]",
-          "phases[].milestones[].acceptance_criteria[]",
+          "phases[].milestones[].deps[]",
+          "phases[].milestones[].provides[]",
+          "phases[].milestones[].directionality",
+          "phases[].milestones[].requirements[]",
           "phases[].milestones[].iteration_delta",
           "status_summary.completed[]",
           "status_summary.in_progress[]",

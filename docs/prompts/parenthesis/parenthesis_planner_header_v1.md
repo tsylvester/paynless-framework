@@ -110,20 +110,12 @@
               {
                 "id": "",
                 "title": "",
-                "objective": "",
-                "description": "",
-                "technical_complexity": "",
-                "effort_estimate": "",
-                "implementation_approach": "",
-                "test_strategy": "",
-                "component_labels": [],
-                "inputs": [],
-                "outputs": [],
-                "dependencies": [],
-                "acceptance_criteria": [],
-                "validation": [],
                 "status": "[ ]",
-                "coverage_notes": "",
+                "objective": "",
+                "deps": [],
+                "provides": [],
+                "directionality": "",
+                "requirements": [],
                 "iteration_delta": ""
               }
             ]
@@ -174,59 +166,31 @@
       "document_key": "milestone_schema",
       "content_to_include": {
         "index": [],
-        "fields": [
+        "pipeline_context": "framing paragraph explaining middle-zoom role",
+        "selection_criteria": "dependency frontier: only milestones whose deps are [✅] or in current batch",
+        "shared_infrastructure": [],
+        "milestones": [
           {
-            "name": "id",
-            "type": "string",
-            "description": "Stable milestone identifier (e.g., M1, M1.a)"
-          },
-          {
-            "name": "title",
-            "type": "string",
-            "description": "Short milestone name"
-          },
-          {
-            "name": "objective",
-            "type": "string",
-            "description": "Narrative summary of milestone goal"
-          },
-          {
-            "name": "dependencies",
-            "type": "string[]",
-            "description": "List of prerequisite milestone IDs"
-          },
-          {
-            "name": "acceptance_criteria",
-            "type": "string[]",
-            "description": "Checklist of validation outcomes"
-          },
-          {
-            "name": "inputs",
-            "type": "string[]",
-            "description": "Artifacts required before work begins"
-          },
-          {
-            "name": "outputs",
-            "type": "string[]",
-            "description": "Artifacts produced when milestone completes"
-          },
-          {
-            "name": "status",
-            "type": "enum",
-            "values": ["[ ]", "[🚧]", "[✅]"],
-            "description": "Current completion status"
+            "id": "",
+            "title": "",
+            "status": "",
+            "objective": "",
+            "nodes": [
+              {
+                "path": "",
+                "title": "",
+                "objective": "",
+                "role": "",
+                "module": "",
+                "deps": [],
+                "provides": [],
+                "directionality": "",
+                "requirements": []
+              }
+            ]
           }
         ],
-        "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps will be generated in the next stage.",
-        "validation_rules": [
-          "Status must be one of [ ], [🚧], [✅]",
-          "Dependencies must reference existing milestone IDs",
-          "Acceptance criteria must be non-empty for every milestone"
-        ],
-        "iteration_guidance": {
-          "reuse_policy": "Carry forward schema; append new fields under migration log if expanded",
-          "versioning": "Increment schema_version when fields change"
-        },
+        "iteration_semantics": "replace, don't extend; reference prior schema for continuity",
         "features": [],
         "feasibility_insights": [],
         "non_functional_alignment": [],

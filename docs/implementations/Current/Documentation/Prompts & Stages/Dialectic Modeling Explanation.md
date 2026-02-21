@@ -33,8 +33,8 @@ The current dialectic implementation serves as a template to define the requirem
 | **Thesis** | `thesis` | Generate initial proposals from the user's objective | Business Case, Feature Spec, Technical Approach, Success Metrics |
 | **Antithesis** | `antithesis` | Critique and challenge each proposal | Business Case Critique, Feasibility Assessment, Risk Register, NFRs, Dependency Map, Comparison Vector |
 | **Synthesis** | `synthesis` | Combine proposals and critiques into refined documents | Product Requirements Document, System Architecture, Tech Stack |
-| **Parenthesis** | `parenthesis` | Formalize into a detailed, executable plan | Technical Requirements, Master Plan, Milestone Schema |
-| **Paralysis** | `paralysis` | Finalize into production-ready implementation details | Actionable Checklist, Updated Master Plan, Advisor Recommendations |
+| **Parenthesis** | `parenthesis` | Formalize into a detailed, executable plan | Technical Requirements, Master Plan, Milestone Work Breakdown — dependency-ordered architectural work nodes per milestone |
+| **Paralysis** | `paralysis` | Finalize into production-ready implementation details | Actionable Checklist — Example Checklist structure with full TDD cycle per source file, Updated Master Plan, Advisor Recommendations |
 
 ---
 
@@ -357,7 +357,7 @@ Paralysis: n
 | 3 | `generate-master-plan` | EXECUTE | master_plan | `per_source_document` | after Step 2 |
 | 4 | `generate-milestone-schema` | EXECUTE | milestone_schema | `per_source_document` | after Step 3 |
 
-**Sequential**: TRD → Master Plan → Milestone Schema (each depends on the previous).
+**Sequential**: TRD → Master Plan → Milestone Schema (Decompose dependency-frontier milestones into architectural work nodes).
 
 ---
 
@@ -371,6 +371,8 @@ Paralysis: n
 | 2 | `generate-actionable-checklist` | EXECUTE | actionable_checklist | `per_source_document` | parallel |
 | 3 | `generate-updated-master-plan` | EXECUTE | updated_master_plan | `per_source_document` | parallel |
 | 4 | `generate-advisor-recommendations` | EXECUTE | advisor_recommendations | `per_source_document` | after 2,3 |
+
+**Note**: Step 2 expands milestone nodes into the full work node structure.
 
 ---
 

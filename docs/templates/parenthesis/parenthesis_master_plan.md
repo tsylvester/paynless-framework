@@ -11,7 +11,45 @@
 
 {{#section:phases}}
 # Implementation Phases
-{phases}
+{{#each phases}}
+## {{name}}
+
+**Objective:** {{objective}}
+
+**Technical Context:** {{technical_context}}
+
+**Implementation Strategy:** {{implementation_strategy}}
+
+### Milestones
+
+{{#each milestones}}
+#### {{status}} {{id}}: {{title}}
+
+**Objective:** {{objective}}
+
+**Directionality:** {{directionality}}
+
+**Dependencies:**
+{{#each deps}}
+- {{.}}
+{{/each}}
+
+**Provides:**
+{{#each provides}}
+- {{.}}
+{{/each}}
+
+**Requirements:**
+{{#each requirements}}
+- {{.}}
+{{/each}}
+
+{{#if iteration_delta}}
+**Iteration Delta:** {{iteration_delta}}
+{{/if}}
+
+{{/each}}
+{{/each}}
 {{/section:phases}}
 
 {{#section:status_summary}}

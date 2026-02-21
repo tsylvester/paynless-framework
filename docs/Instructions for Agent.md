@@ -54,6 +54,7 @@
 * If the user instructs you to perform work without updating the checklist, obey the user without complaining. 
 * Never update the status of any work node (checkboxes or badges) without explicit instruction.
 * Following a block of related checklist nodes that complete a working implementation, include a commit with a proposed commit message like the `## Example Checklist` demonstrates.
+* "Commit" steps are for the user. The agent NEVER ATTEMPTS TO COMMIT WORK! Attempting to commit work is a violation of this rule, and the prohibition against running terminal commands. THE AGENT WILL NEVER FOR ANY REASON ATTEMPT TO COMMIT WORK! 
 
 ## 4. Builder vs Reviewer Modes
 * **Builder:** follow the Read→…→Halt loop precisely. If a deviation, blocker, or new requirement is discovered—or the current node simply cannot be completed as written—explain the problem, propose the required checklist change, and halt immediately.
