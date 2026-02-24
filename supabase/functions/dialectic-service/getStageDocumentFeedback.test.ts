@@ -24,10 +24,10 @@ import type {
   GetStageDocumentFeedbackPayload,
   GetStageDocumentFeedbackResponse,
   StageDocumentFeedback,
+  GetStageDocumentFeedbackDeps,
 } from './dialectic.interface.ts';
 import {
   getStageDocumentFeedback,
-  type GetStageDocumentFeedbackDeps,
 } from './getStageDocumentFeedback.ts';
 
 const USER_ID = 'user-feedback-fetch-123';
