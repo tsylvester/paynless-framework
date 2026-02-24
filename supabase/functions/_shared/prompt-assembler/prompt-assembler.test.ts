@@ -512,7 +512,6 @@ Deno.test("PromptAssembler", async (t) => {
           project: mockProject,
           session: mockSession,
           stage: mockStage,
-          continuationContent: "continue this...",
           gatherContext: assembler["gatherContextFn"],
         };
 
@@ -689,13 +688,107 @@ Deno.test("PromptAssembler", async (t) => {
           stage: mockStage,
           projectInitialUserPrompt: "init prompt",
           iterationNumber: 1,
-          job: mockJob,
-          continuationContent: "continue this...",
+          job: {
+            ...mockJob,
+            target_contribution_id: "prev-contribution-id",
+          },
         };
 
         await assembler.assemble(options);
 
         assertSpyCalls(continuationSpy, 1);
+      } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "assemble router should delegate to assembleContinuationPrompt when target_contribution_id is set, regardless of job type",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          mockAssembleContinuationPrompt,
+        );
+        const continuationSpy = spy(assembler, "assembleContinuationPrompt");
+
+        // Force job type to PLAN, but provide target_contribution_id
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          job: {
+            ...mockJob,
+            job_type: "PLAN",
+            target_contribution_id: "prev-contribution-id",
+          },
+        };
+
+        await assembler.assemble(options);
+
+        assertSpyCalls(continuationSpy, 1);
+      } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "assemble router should NOT delegate to assembleContinuationPrompt when target_contribution_id is null",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        
+        const assembleTurnSpy = spy(mockAssembleTurnPrompt);
+        const assembleContinuationSpy = spy(mockAssembleContinuationPrompt);
+        
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          assembleTurnSpy,
+          assembleContinuationSpy,
+        );
+
+        // Standard EXECUTE job, no target_contribution_id
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStageForTurn,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          job: {
+            ...mockJob,
+            job_type: "EXECUTE",
+            target_contribution_id: null,
+            payload: {
+                model_id: "model-1",
+                model_slug: "test-slug"
+            }
+          },
+        };
+
+        await assembler.assemble(options);
+
+        assertSpyCalls(assembleContinuationSpy, 0);
+        assertSpyCalls(assembleTurnSpy, 1);
       } finally {
         teardown();
       }

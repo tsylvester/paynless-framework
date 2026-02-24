@@ -84,7 +84,7 @@ export class PromptAssembler implements IPromptAssembler {
         const sourceContributionId = this.resolveSourceContributionId(options);
 
         if (options.job) {
-            if (options.continuationContent) {
+            if (typeof options.job.target_contribution_id === 'string' && options.job.target_contribution_id.length > 0) {
                 return this.assembleContinuationPrompt({
                     dbClient: this.dbClient,
                     fileManager: this.fileManager,
@@ -92,7 +92,6 @@ export class PromptAssembler implements IPromptAssembler {
                     project: options.project,
                     session: options.session,
                     stage: options.stage,
-                    continuationContent: options.continuationContent,
                     gatherContext: this.gatherContextFn,
                     sourceContributionId
                 });

@@ -690,7 +690,147 @@ milestone nodes into the Example Checklist format from Instructions for Agent.
         *   `[✅]`   No orphaned references to fields[], style_guide_notes, validation_rules, iteration_guidance in any recipe step definition
         *   `[✅]`   No orphaned references to steps[].red_test, steps[].green_test, steps[].refactor in any paralysis recipe step definition
     *   `[✅]`   **Commit** `test(integration): validate parenthesis→paralysis pipeline with milestone work nodes`
-    
+
+*   `[✅]`   `[BE]` prompt-assembler/`assembleContinuationPrompt` **Self-fetch prior raw output from `target_contribution_id`; remove caller-provided `continuationContent`**
+    *   `[✅]`   `objective`
+        *   `[✅]`   `assembleContinuationPrompt` must resolve the prior model output content itself by querying `dialectic_contributions` for the row identified by `target_contribution_id` and downloading the stored file — identically to how it already fetches the header context contribution
+        *   `[✅]`   The `continuationContent: string` field must be removed from `AssembleContinuationPromptDeps` — it is not a caller concern; the function owns this fetch entirely
+        *   `[✅]`   The function must throw `PRECONDITION_FAILED: target_contribution_id is required` when `job.payload` does not narrow through `isRecord` to a payload with a non-empty string `target_contribution_id`
+        *   `[✅]`   The function must throw when the `dialectic_contributions` query for the prior output contribution fails or returns no row
+        *   `[✅]`   The function must throw when the storage download for the prior output contribution fails
+        *   `[✅]`   The resolved and downloaded content replaces `continuationContent` as the local variable passed to `getJsonCorrectiveInstruction` and appended to `promptParts` — all downstream logic is unchanged
+        *   `[✅]`   No caller may supply or override this content
+    *   `[✅]`   `role`
+        *   `[✅]`   Prompt-assembly leaf function; adapter layer
+        *   `[✅]`   Pure producer: called by `prompt-assembler.ts` facade; has no consumers of its own output beyond the facade
+    *   `[✅]`   `module`
+        *   `[✅]`   `supabase/functions/_shared/prompt-assembler/`
+        *   `[✅]`   Operates exclusively on `dialectic_contributions` and storage; no write side-effects to either
+        *   `[✅]`   Boundary: receives typed deps struct; returns `AssembledPrompt`; all I/O is injected via `dbClient` and `fileManager`
+    *   `[✅]`   `deps`
+        *   `[✅]`   `prompt-assembler.interface.ts` · adapter · inward · `AssembleContinuationPromptDeps` (type only — `continuationContent` removed)
+        *   `[✅]`   `supabase_storage_utils.ts` · adapter · inward · `downloadFromStorage` (already imported; used for both header context and prior output downloads)
+        *   `[✅]`   `type_guards.ts` · adapter · inward · `isRecord` (already imported; used to narrow `job.payload` before accessing `target_contribution_id`)
+        *   `[✅]`   `dialectic.interface.ts` · domain · inward · `HeaderContext` (unchanged)
+        *   `[✅]`   `file_manager.types.ts` · port · inward · `FileType` (unchanged)
+        *   `[✅]`   Confirm no reverse dependency introduced: function does not import from `prompt-assembler.ts`, `processSimpleJob.ts`, or any consumer layer
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   `AssembleContinuationPromptDeps` provides: `dbClient`, `fileManager`, `job`, `project`, `session`, `stage`, `gatherContext`, `sourceContributionId?` — `continuationContent` is removed
+        *   `[✅]`   All injection is interface-shaped; no concrete supabase client or file manager is imported
+    *   `[✅]`   interface/`prompt-assembler.interface.ts`
+        *   `[✅]`   `AssembleContinuationPromptDeps`: remove `continuationContent: string` — field is deleted entirely, not made optional
+        *   `[✅]`   No other fields added or removed from this interface in this node
+        *   `[✅]`   `AssemblePromptOptions` is NOT modified in this node (that is Node 2's concern)
+    *   `[✅]`   unit/`assembleContinuationPrompt.test.ts`
+        *   `[✅]`   Replace the top-level `createHeaderContextContributionMock` helper with a `createContributionsMock` helper typed as `(entries: Record<string, { storage_bucket: string; storage_path: string; file_name: string; contribution_type: string }>) => { select: (state: MockQueryBuilderState) => Promise<...> }` — dispatches on the `id` eq-filter value to return the matching typed row, returns a typed 404 error shape for any unknown ID; no untyped fields or partial objects
+        *   `[✅]`   Every test job fixture must set `target_contribution_id` on `job.payload.target_contribution_id` to a constant `PRIOR_OUTPUT_CONTRIB_ID` (e.g. `"prior-output-contrib-123"`)
+        *   `[✅]`   Every test must configure `dialectic_contributions` in the mock client using `createContributionsMock`, mapping `PRIOR_OUTPUT_CONTRIB_ID` to a valid contribution row (`storage_bucket: "dialectic_contributions"`, `storage_path: "path/to/prior"`, `file_name: "prior_output.json"`, `contribution_type: "antithesis"`) and where applicable mapping `HEADER_CONTEXT_CONTRIBUTION_ID` to its header-context row
+        *   `[✅]`   Every test must configure `storageMock.downloadResult` to return the prior output content as a `Blob` when called with the prior output bucket and path, in addition to any existing header-context path handling
+        *   `[✅]`   Every call to `assembleContinuationPrompt` must have `continuationContent` removed from the argument object — passing it is a type error after the interface change
+        *   `[✅]`   Category A (A.1–A.4): assert that the storage download spy for the prior output path is called; assert `result.promptContent.endsWith(priorOutputContent)` where `priorOutputContent` is the string returned by the storage mock for the prior output contribution
+        *   `[✅]`   Category B (B.1–B.6): the incomplete or malformed JSON that previously was `continuationContent` is now returned by the storage mock for the prior output contribution; assert `result.promptContent.endsWith(incompleteJson)` or `.endsWith(malformedJson)` respectively
+        *   `[✅]`   Category C (C.1–C.4): same pattern — content served from mock storage for the prior output contribution
+        *   `[✅]`   D.1: rewrite entirely — remove all three `assertRejects` calls for `null`/`undefined`/`""` `continuationContent`; replace with a test that provides a job whose `payload.target_contribution_id` is absent (payload does not contain the key), asserts `assertRejects` with `Error` and message containing `"PRECONDITION_FAILED"`
+        *   `[✅]`   D.2: add `target_contribution_id` to `job.payload` + prior output contribution mock + storage mock for prior output; existing assertion that header-context storage failure throws `"Failed to download header context file from storage"` is unchanged
+        *   `[✅]`   D.3: add `target_contribution_id` to `job.payload` + prior output contribution mock + storage mock for prior output; existing assertion that the call succeeds without header context for PLAN jobs is unchanged
+        *   `[✅]`   D.4: add `target_contribution_id` to `job.payload` + prior output contribution mock + storage mock for prior output so the function reaches the FileManager call; existing `assertRejects` for FileManager error is unchanged
+        *   `[✅]`   D.5: no `target_contribution_id` needed — the function throws on `selected_model_ids` before reaching the contribution fetch; no change to this test
+        *   `[✅]`   E.1: `target_contribution_id` is already in `job.payload` in the existing fixture; add prior output contribution mock + storage mock; remove `continuationContent` from the call; existing `sourceContributionId` forwarding assertion is unchanged
+        *   `[✅]`   F (10.b.i–10.b.iv): add `target_contribution_id` to `job.payload` + prior output contribution + storage mock to each fixture; remove `continuationContent` from each call; existing header-context assertions are unchanged
+    *   `[✅]`   `construction`
+        *   `[✅]`   After the existing `selected_model_ids` check: call `isRecord(job.payload)` — if it does not narrow, throw `"PRECONDITION_FAILED: target_contribution_id is required"`
+        *   `[✅]`   After narrowing: if `typeof job.payload.target_contribution_id !== 'string' || job.payload.target_contribution_id.length === 0`, throw `"PRECONDITION_FAILED: target_contribution_id is required"` — no fallback to row-level field; continuation jobs always carry this in the payload (set by `continueJob.ts`)
+        *   `[✅]`   Assign `const targetContributionId: string = job.payload.target_contribution_id` — fully typed, no cast
+        *   `[✅]`   Query `dialectic_contributions` selecting `id, storage_bucket, storage_path, file_name` where `id = targetContributionId` — same query shape as the existing header context fetch
+        *   `[✅]`   Validate `storage_bucket`, `storage_path`, and `file_name` are non-empty strings on the returned row — same guard pattern as header context
+        *   `[✅]`   Construct path as `${priorContrib.storage_path}/${priorContrib.file_name}` — same pattern as header context path construction
+        *   `[✅]`   Download via `downloadFromStorage(dbClient, priorContrib.storage_bucket, priorPath)` and throw `"Failed to download prior output file from storage"` on error or missing data
+        *   `[✅]`   Decode: `const continuationContent: string = new TextDecoder().decode(buffer)` — typed, no cast; all downstream usage is unchanged
+    *   `[✅]`   `assembleContinuationPrompt.ts`
+        *   `[✅]`   Remove the `!continuationContent` precondition check and its throw
+        *   `[✅]`   After `selected_model_ids` check: add `isRecord` guard on `job.payload`, then non-empty string check on `job.payload.target_contribution_id`, throw `PRECONDITION_FAILED` on either failure
+        *   `[✅]`   Add prior output contribution DB query, storage path validation, storage download, and decode to produce `continuationContent: string`
+        *   `[✅]`   All other logic (header context fetch, `getJsonCorrectiveInstruction`, `promptParts` assembly, `fileManager.uploadAndRegisterFile`) remains structurally unchanged
+    *   `[✅]`   `requirements`
+        *   `[✅]`   A continuation job produces a prompt whose final segment is exactly the raw content stored at the prior output contribution path
+        *   `[✅]`   The function never relies on the caller for content; any caller that previously passed `continuationContent` receives a TypeScript compile error
+        *   `[✅]`   All existing instruction-selection logic is driven by the fetched content, not a caller-supplied string
+        *   `[✅]`   All existing header context, FileType routing, `turnIndex`, `branchKey`, `parallelGroup` behaviors are preserved
+    *   `[✅]`   **Commit** `fix: supabase/functions/_shared/prompt-assembler assembleContinuationPrompt self-fetches prior output from target_contribution_id; removes caller-supplied continuationContent`
+        *   `[✅]`   `prompt-assembler.interface.ts`: removed `continuationContent: string` from `AssembleContinuationPromptDeps`
+        *   `[✅]`   `assembleContinuationPrompt.test.ts`: replaced `createHeaderContextContributionMock` with `createContributionsMock`; all tests supply `target_contribution_id` in payload and prior-output storage mock; removed `continuationContent` from all call sites; D.1 rewritten to assert PRECONDITION_FAILED on missing payload `target_contribution_id`
+        *   `[✅]`   `assembleContinuationPrompt.ts`: removed `continuationContent` precondition; added `isRecord` guard, `target_contribution_id` check and throw, contribution query, storage download, and decode; downstream logic unchanged
+
+*   `[✅]`   `[BE]` prompt-assembler/`prompt-assembler` **Route continuation by `target_contribution_id` on `DialecticJobRow`; remove `continuationContent` from `AssemblePromptOptions`**
+    *   `[✅]`   `objective`
+        *   `[✅]`   The `assemble()` facade currently routes to `assembleContinuationPrompt` when `options.continuationContent` is truthy — this condition will never be true after Node 1 removes the field; routing must change to detect a continuation job by checking `options.job.target_contribution_id`, which is typed directly on `DialecticJobRow` as `string | null` — no narrowing or cast required
+        *   `[✅]`   `continuationContent?: string` must be removed from `AssemblePromptOptions` — passing it is no longer meaningful and the interface must not permit it
+        *   `[✅]`   The `assembleContinuationPrompt` call site inside `assemble()` must not pass `continuationContent` in the deps object
+        *   `[✅]`   All other routing branches (PLAN → `assemblePlannerPrompt`, EXECUTE → `assembleTurnPrompt`, etc.) are unchanged
+    *   `[✅]`   `role`
+        *   `[✅]`   Facade / router; adapter layer
+        *   `[✅]`   Immediate consumer of `assembleContinuationPrompt`; immediate producer for `processSimpleJob.ts`
+    *   `[✅]`   `module`
+        *   `[✅]`   `supabase/functions/_shared/prompt-assembler/`
+        *   `[✅]`   Boundary: `IPromptAssembler.assemble(options: AssemblePromptOptions)` is the only public entry point for continuation routing
+    *   `[✅]`   `deps`
+        *   `[✅]`   `assembleContinuationPrompt.ts` · adapter · inward · `AssembleContinuationPromptDeps` (updated in Node 1 — no `continuationContent`)
+        *   `[✅]`   `prompt-assembler.interface.ts` · adapter · inward · `AssemblePromptOptions` (updated here — `continuationContent` removed)
+        *   `[✅]`   Confirm no reverse dependency introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   `AssemblePromptOptions` after this node: `project`, `session`, `stage`, `projectInitialUserPrompt`, `iterationNumber`, `job?`, `sourceContributionId?` — `continuationContent` deleted
+        *   `[✅]`   Routing predicate reads `options.job.target_contribution_id` — typed as `string | null` on `DialecticJobRow`, no narrowing or guard required; condition is `typeof options.job.target_contribution_id === 'string' && options.job.target_contribution_id.length > 0`
+    *   `[✅]`   interface/`prompt-assembler.interface.ts`
+        *   `[✅]`   `AssemblePromptOptions`: remove `continuationContent?: string` — field deleted entirely
+        *   `[✅]`   `AssembleContinuationPromptDeps` is already corrected in Node 1 and must not be re-edited here
+    *   `[✅]`   unit/`prompt-assembler.test.ts`
+        *   `[✅]`   Any existing test that passes `continuationContent` to `assemble()` must be updated to instead set `target_contribution_id` on the job fixture — confirm the test still asserts routing to `assembleContinuationPrompt`
+        *   `[✅]`   Add a test asserting that a job with a non-empty string `target_contribution_id` routes to `assembleContinuationPrompt` regardless of job type
+        *   `[✅]`   Add a test asserting that a job with `target_contribution_id: null` does NOT route to `assembleContinuationPrompt`
+        *   `[✅]`   All other routing tests are unchanged
+    *   `[✅]`   `prompt-assembler.ts`
+        *   `[✅]`   In `assemble()`: replace `if (options.continuationContent)` with `if (options.job && typeof options.job.target_contribution_id === 'string' && options.job.target_contribution_id.length > 0)` — `target_contribution_id` is a direct typed field on `DialecticJobRow`, no cast or narrowing required
+        *   `[✅]`   Remove `continuationContent: options.continuationContent` from the deps object passed to `this.assembleContinuationPrompt()`
+        *   `[✅]`   All other branches in `assemble()` are unchanged
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Any job with a non-empty `target_contribution_id` routes to `assembleContinuationPrompt`; any job without one follows existing PLAN/EXECUTE routing
+        *   `[✅]`   No caller can inject content through `AssemblePromptOptions`; the type system enforces this
+    *   `[✅]`   **Commit** `fix: supabase/functions/_shared/prompt-assembler prompt-assembler routes continuation by target_contribution_id; removes continuationContent from AssemblePromptOptions`
+        *   `[✅]`   `prompt-assembler.interface.ts`: removed `continuationContent?: string` from `AssemblePromptOptions`
+        *   `[✅]`   `prompt-assembler.test.ts`: updated routing tests to use `target_contribution_id`; added two new routing boundary tests
+        *   `[✅]`   `prompt-assembler.ts`: replaced `options.continuationContent` routing condition with `options.job.target_contribution_id` check; removed `continuationContent` from `assembleContinuationPrompt` call site
+
+*   `[✅]`   `[BE]` dialectic-worker/`processSimpleJob` **Remove hardcoded `continuationContent` placeholder**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Remove the `let continuationContent: string | undefined` declaration and the `continuationContent = 'Please continue.'` assignment — dead code after Nodes 1 and 2
+        *   `[✅]`   Remove the `if (continuationContent) { assembleOptions.continuationContent = continuationContent; }` block — `AssemblePromptOptions` no longer has this field; passing it is a type error
+        *   `[✅]`   The `sourceContributionId` variable and its `assembleOptions.sourceContributionId = sourceContributionId` assignment remain — still forwarded for storage path metadata
+    *   `[✅]`   `role`
+        *   `[✅]`   Job orchestrator; adapter layer
+        *   `[✅]`   Consumer of `IPromptAssembler.assemble()`; the change here is a pure removal of dead scaffolding
+    *   `[✅]`   `module`
+        *   `[✅]`   `supabase/functions/dialectic-worker/`
+    *   `[✅]`   `deps`
+        *   `[✅]`   `prompt-assembler.interface.ts` · adapter · inward · `AssemblePromptOptions` (updated in Node 2 — no `continuationContent`)
+        *   `[✅]`   Confirm no reverse dependency introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   `AssemblePromptOptions` passed to `assemble()`: `project`, `session`, `stage`, `projectInitialUserPrompt`, `iterationNumber`, `job`, `sourceContributionId?` — no `continuationContent`
+    *   `[✅]`   unit/`processSimpleJob.test.ts`
+        *   `[✅]`   Locate the existing test that asserts `assembleOptions.continuationContent === 'Please continue.'` and remove it.
+        *   `[✅]`   Assert that `assembleOptions.sourceContributionId` is still forwarded correctly when `target_contribution_id` is present
+        *   `[✅]`   All other `processSimpleJob` tests are unchanged
+    *   `[✅]`   `processSimpleJob.ts`
+        *   `[✅]`   Delete the `let continuationContent: string | undefined` declaration
+        *   `[✅]`   Delete the `continuationContent = 'Please continue.'` assignment
+        *   `[✅]`   Delete the `if (continuationContent) { assembleOptions.continuationContent = continuationContent; }` block
+        *   `[✅]`   Retain the `sourceContributionId` resolution and `assembleOptions.sourceContributionId = sourceContributionId` assignment unchanged
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Continuation jobs produce prompts whose content comes from the stored prior output — not from a hardcoded string in the orchestrator
+        *   `[✅]`   `processSimpleJob` is agnostic to content continuation; it passes the job to `assemble()` and the facade and leaf function handle the rest
+    *   `[✅]`   **Commit** `fix: supabase/functions/dialectic-worker processSimpleJob removes hardcoded continuationContent placeholder`
+        *   `[✅]`   `processSimpleJob.test.ts`: updated test to assert no `continuationContent` in `assembleOptions`; retained `sourceContributionId` forwarding assertion
+        *   `[✅]`   `processSimpleJob.ts`: removed `continuationContent` variable, assignment, and conditional pass-through
+   
 # ToDo
 
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 

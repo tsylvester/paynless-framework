@@ -41,7 +41,6 @@ export interface AssembleContinuationPromptDeps {
   project: ProjectContext;
   session: SessionContext;
   stage: StageContext;
-  continuationContent: string;
   gatherContext: GatherContextFn;
   sourceContributionId?: string | null;
 }
@@ -108,7 +107,6 @@ export type AssemblePromptOptions = {
     projectInitialUserPrompt: string;
     iterationNumber: number;
     job?: DialecticJobRow;
-    continuationContent?: string;
     sourceContributionId?: string | null;
 };
 

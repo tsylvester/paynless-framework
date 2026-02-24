@@ -14,24 +14,6 @@ export const MOCK_CONTINUATION_INSTRUCTION_INCOMPLETE_JSON =
 export const MOCK_CONTINUATION_INSTRUCTION_MALFORMED_JSON =
   "The previous response was a malformed JSON object. Please correct the following JSON object, ensuring it is syntactically valid:";
 
-function getJsonCorrectiveInstruction(content: string): string | null {
-  if (!content.trim().startsWith("{") && !content.trim().startsWith("[")) {
-    return null;
-  }
-  try {
-    JSON.parse(content);
-    return null;
-  } catch (e) {
-    if (e instanceof SyntaxError) {
-      // Any syntax error is treated as a signal to send a corrective prompt.
-      // We don't need to differentiate between "incomplete" and other syntax errors.
-      return MOCK_CONTINUATION_INSTRUCTION_MALFORMED_JSON;
-    }
-    // Non-SyntaxError exceptions are also treated as malformed content.
-    return MOCK_CONTINUATION_INSTRUCTION_MALFORMED_JSON;
-  }
-}
-
 export async function assembleContinuationPrompt(
   {
     dbClient,
@@ -40,15 +22,8 @@ export async function assembleContinuationPrompt(
     project,
     session,
     stage,
-    continuationContent,
   }: AssembleContinuationPromptDeps,
 ): Promise<AssembledPrompt> {
-  if (!continuationContent) {
-    throw new Error(
-      "PRECONDITION_FAILED: continuationContent must be a non-empty string.",
-    );
-  }
-
   if (!session.selected_model_ids || session.selected_model_ids.length === 0) {
     throw new Error("PRECONDITION_FAILED: Session has no selected models.");
   }
@@ -112,10 +87,8 @@ export async function assembleContinuationPrompt(
     }
 
     // Construct storage path
-    const fileName = headerContrib.file_name || "";
-    const pathToDownload = fileName
-      ? `${headerContrib.storage_path}/${fileName}`
-      : headerContrib.storage_path;
+    const fileName = headerContrib.file_name;
+    const pathToDownload = headerContrib.storage_path + "/" + fileName;
 
     // Download using the contribution's bucket
     const { data: buffer, error } = await downloadFromStorage(
@@ -141,33 +114,62 @@ export async function assembleContinuationPrompt(
     }
   }
 
-  const correctiveInstruction = getJsonCorrectiveInstruction(continuationContent);
-  const instruction = correctiveInstruction ??
-    MOCK_CONTINUATION_INSTRUCTION_EXPLICIT;
-
   const promptParts: string[] = [];
 
   if (headerContext?.system_materials) {
     promptParts.push(JSON.stringify(headerContext.system_materials, null, 2));
   }
 
-  promptParts.push(instruction);
+  const targetContributionId = job.payload.target_contribution_id;
+  if (typeof targetContributionId !== "string" || targetContributionId.length === 0) {
+    throw new Error("PRECONDITION_FAILED: target_contribution_id is required");
+  }
+
+  // Query prior contribution
+  const { data: priorContrib, error: priorContribError } = await dbClient
+    .from("dialectic_contributions")
+    .select("id, storage_bucket, storage_path, file_name")
+    .eq("id", targetContributionId)
+    .single();
+
+  if (priorContribError || !priorContrib) {
+    throw new Error(
+      `Failed to resolve prior contribution ${targetContributionId}: ${priorContribError?.message}`,
+    );
+  }
+
+  if (
+    !priorContrib.storage_bucket || !priorContrib.storage_path ||
+    !priorContrib.file_name
+  ) {
+    throw new Error(
+      `Prior contribution ${targetContributionId} is missing storage metadata`,
+    );
+  }
+
+  const priorPath = `${priorContrib.storage_path}/${priorContrib.file_name}`;
+  const { data: priorBuffer, error: priorDownloadError } =
+    await downloadFromStorage(
+      dbClient,
+      priorContrib.storage_bucket,
+      priorPath,
+    );
+
+  if (priorDownloadError || !priorBuffer) {
+    throw new Error(
+      `Failed to download prior output file from storage: ${priorDownloadError?.message}`,
+    );
+  }
+
+  const continuationContent = new TextDecoder().decode(priorBuffer);
   promptParts.push(continuationContent);
 
   const finalPrompt = promptParts.join("\n\n");
 
   const { payload } = job;
-  const modelSlug = typeof payload.model_slug === "string"
-    ? payload.model_slug
-    : "unknown-model";
 
-  let sourceContributionId: string | undefined;
-  if (
-    typeof payload.target_contribution_id === "string" &&
-    payload.target_contribution_id.trim().length > 0
-  ) {
-    sourceContributionId = payload.target_contribution_id;
-  }
+
+  const sourceContributionId = payload.target_contribution_id;
 
   let fileType: FileType;
   if (job.job_type === "PLAN") {
@@ -176,6 +178,16 @@ export async function assembleContinuationPrompt(
     fileType = FileType.TurnPrompt;
   }
 
+if (typeof payload.model_slug !== "string") {
+  throw new Error("PRECONDITION_FAILED: Job payload is missing 'model_slug'.");
+}
+if (typeof payload.document_key !== "string") {
+  throw new Error("PRECONDITION_FAILED: Job payload is missing 'document_key'.");
+}
+if (typeof sourceContributionId !== "string") {
+  throw new Error("PRECONDITION_FAILED: sourceContributionId is not a string.");
+}
+
   const response = await fileManager.uploadAndRegisterFile({
     pathContext: {
       projectId: project.id,
@@ -183,11 +195,9 @@ export async function assembleContinuationPrompt(
       iteration: session.iteration_count,
       stageSlug: stage.slug,
       fileType: fileType,
-      modelSlug: modelSlug,
+      modelSlug: payload.model_slug,
       attemptCount: job.attempt_count,
-      documentKey: typeof payload.document_key === "string"
-        ? payload.document_key
-        : undefined,
+      documentKey: payload.document_key,
       stepName: stage.recipe_step?.step_name,
       isContinuation: true,
       turnIndex: (job.attempt_count || 0) + 1,
