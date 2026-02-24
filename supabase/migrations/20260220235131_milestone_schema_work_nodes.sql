@@ -35,9 +35,26 @@ BEGIN
           "schemas": [],
           "proposed_file_tree": "",
           "architecture_overview": ""
-        }
+        },
+        "agent_notes_to_self": "overview of formalization scope and how the Master Plan will drive iterative execution, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
+        "input_artifacts_summary": "succinct recap of synthesis outputs informing this plan",
+        "stage_rationale": "why the chosen milestone breakdown, ordering, and architecture structure best fit constraints and objectives",
+        "progress_update": "for continuation turns, summarize Master Plan changes since last iteration; omit on first turn",
+        "validation_checkpoint": [
+          "complete coverage of synthesized scope",
+          "dependency ordering validated",
+          "milestone acceptance criteria present",
+          "style guide structure applied"
+        ],
+        "quality_standards": [
+          "consistent formatting",
+          "explicit ordering",
+          "clear acceptance criteria",
+          "testability of milestones"
+        ]
       },
       "header_context_artifact": {
+        "type": "header_context",
         "document_key": "header_context",
         "artifact_class": "header_context",
         "file_type": "json"
@@ -47,13 +64,16 @@ BEGIN
           "document_key": "technical_requirements",
           "template_filename": "parenthesis_technical_requirements.md",
           "content_to_include": {
+            "index": [],
+            "executive_summary": "",
             "subsystems": [],
             "apis": [],
             "schemas": [],
             "proposed_file_tree": "",
             "architecture_overview": "",
+            "delta_summary": "",
+            "iteration_notes": "",
             "feature_scope": [],
-            "features": [],
             "feasibility_insights": [],
             "non_functional_alignment": [],
             "outcome_alignment": "",
@@ -86,10 +106,14 @@ BEGIN
           "document_key": "master_plan",
           "template_filename": "parenthesis_master_plan.md",
           "content_to_include": {
+            "index": [],
+            "executive_summary": "",
             "phases": [
               {
                 "name": "",
                 "objective": "",
+                "technical_context": "",
+                "implementation_strategy": "",
                 "milestones": [
                   {
                     "id": "",
@@ -105,36 +129,15 @@ BEGIN
                 ]
               }
             ],
-            "status_markers": {
-              "unstarted": "[ ]",
-              "in_progress": "[🚧]",
-              "completed": "[✅]"
+            "status_summary": {
+              "completed": [],
+              "in_progress": [],
+              "up_next": []
             },
-            "dependency_rules": [],
-            "generation_limits": {
-              "max_steps": 200,
-              "target_steps": "120-180",
-              "max_output_lines": "600-800"
-            },
-            "feature_scope": [],
-            "features": [],
-            "executive_summary": "",
-            "mvp_description": "",
-            "market_opportunity": "",
-            "competitive_analysis": "",
-            "architecture_summary": "",
-            "architecture": "",
-            "services": [],
-            "components": [],
-            "integration_points": [],
-            "dependency_resolution": [],
-            "frontend_stack": {},
-            "backend_stack": {},
-            "data_platform": {},
-            "devops_tooling": {},
-            "security_tooling": {},
-            "shared_libraries": [],
-            "third_party_services": []
+            "technical_context": "",
+            "implementation_context": "",
+            "test_framework": "",
+            "component_mapping": ""
           }
         },
         {
@@ -293,26 +296,26 @@ BEGIN
     UPDATE public.dialectic_recipe_template_steps
     SET step_description = 'Decompose dependency-frontier milestones into architectural work nodes for downstream checklist expansion.',
         inputs_required = '[
-            { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context", "required": true },
-            { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": true },
-            { "type": "document", "stage_slug": "synthesis", "document_key": "system_architecture", "required": true },
-            { "type": "document", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": true },
-            { "type": "document", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false },
-            { "type": "feedback", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
-            { "type": "feedback", "stage_slug": "synthesis", "document_key": "system_architecture", "required": false },
-            { "type": "feedback", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": false },
-            { "type": "feedback", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false }
+            { "type": "header_context", "slug": "parenthesis", "document_key": "header_context", "required": true },
+            { "type": "document", "slug": "parenthesis", "document_key": "master_plan", "required": true },
+            { "type": "document", "slug": "synthesis", "document_key": "system_architecture", "required": true },
+            { "type": "document", "slug": "parenthesis", "document_key": "technical_requirements", "required": true },
+            { "type": "document", "slug": "parenthesis", "document_key": "milestone_schema", "required": false },
+            { "type": "feedback", "slug": "parenthesis", "document_key": "master_plan", "required": false },
+            { "type": "feedback", "slug": "synthesis", "document_key": "system_architecture", "required": false },
+            { "type": "feedback", "slug": "parenthesis", "document_key": "technical_requirements", "required": false },
+            { "type": "feedback", "slug": "parenthesis", "document_key": "milestone_schema", "required": false }
         ]'::jsonb,
         inputs_relevance = '[
-            { "document_key": "header_context", "stage_slug": "parenthesis", "relevance": 1.0 },
-            { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.90 },
-            { "document_key": "system_architecture", "stage_slug": "synthesis", "relevance": 0.92 },
-            { "document_key": "technical_requirements", "stage_slug": "parenthesis", "relevance": 0.88 },
-            { "document_key": "milestone_schema", "stage_slug": "parenthesis", "relevance": 0.95 },
-            { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.80 },
-            { "document_key": "system_architecture", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.70 },
-            { "document_key": "technical_requirements", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.70 },
-            { "document_key": "milestone_schema", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.85 }
+            { "document_key": "header_context", "slug": "parenthesis", "relevance": 1.0 },
+            { "document_key": "master_plan", "slug": "parenthesis", "relevance": 0.90 },
+            { "document_key": "system_architecture", "slug": "synthesis", "relevance": 0.92 },
+            { "document_key": "technical_requirements", "slug": "parenthesis", "relevance": 0.88 },
+            { "document_key": "milestone_schema", "slug": "parenthesis", "relevance": 0.95 },
+            { "document_key": "master_plan", "slug": "parenthesis", "type": "feedback", "relevance": 0.80 },
+            { "document_key": "system_architecture", "slug": "synthesis", "type": "feedback", "relevance": 0.70 },
+            { "document_key": "technical_requirements", "slug": "parenthesis", "type": "feedback", "relevance": 0.70 },
+            { "document_key": "milestone_schema", "slug": "parenthesis", "type": "feedback", "relevance": 0.85 }
         ]'::jsonb,
         outputs_required = '{
             "documents": [
@@ -387,26 +390,26 @@ BEGIN
     IF v_instance_id IS NOT NULL THEN
         UPDATE public.dialectic_stage_recipe_steps
         SET inputs_required = '[
-            { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context", "required": true },
-            { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": true },
-            { "type": "document", "stage_slug": "synthesis", "document_key": "system_architecture", "required": true },
-            { "type": "document", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": true },
-            { "type": "document", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false },
-            { "type": "feedback", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
-            { "type": "feedback", "stage_slug": "synthesis", "document_key": "system_architecture", "required": false },
-            { "type": "feedback", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": false },
-            { "type": "feedback", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false }
+            { "type": "header_context", "slug": "parenthesis", "document_key": "header_context", "required": true },
+            { "type": "document", "slug": "parenthesis", "document_key": "master_plan", "required": true },
+            { "type": "document", "slug": "synthesis", "document_key": "system_architecture", "required": true },
+            { "type": "document", "slug": "parenthesis", "document_key": "technical_requirements", "required": true },
+            { "type": "document", "slug": "parenthesis", "document_key": "milestone_schema", "required": false },
+            { "type": "feedback", "slug": "parenthesis", "document_key": "master_plan", "required": false },
+            { "type": "feedback", "slug": "synthesis", "document_key": "system_architecture", "required": false },
+            { "type": "feedback", "slug": "parenthesis", "document_key": "technical_requirements", "required": false },
+            { "type": "feedback", "slug": "parenthesis", "document_key": "milestone_schema", "required": false }
         ]'::jsonb,
         inputs_relevance = '[
-            { "document_key": "header_context", "stage_slug": "parenthesis", "relevance": 1.0 },
-            { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.90 },
-            { "document_key": "system_architecture", "stage_slug": "synthesis", "relevance": 0.92 },
-            { "document_key": "technical_requirements", "stage_slug": "parenthesis", "relevance": 0.88 },
-            { "document_key": "milestone_schema", "stage_slug": "parenthesis", "relevance": 0.95 },
-            { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.80 },
-            { "document_key": "system_architecture", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.70 },
-            { "document_key": "technical_requirements", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.70 },
-            { "document_key": "milestone_schema", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.85 }
+            { "document_key": "header_context", "slug": "parenthesis", "relevance": 1.0 },
+            { "document_key": "master_plan", "slug": "parenthesis", "relevance": 0.90 },
+            { "document_key": "system_architecture", "slug": "synthesis", "relevance": 0.92 },
+            { "document_key": "technical_requirements", "slug": "parenthesis", "relevance": 0.88 },
+            { "document_key": "milestone_schema", "slug": "parenthesis", "relevance": 0.95 },
+            { "document_key": "master_plan", "slug": "parenthesis", "type": "feedback", "relevance": 0.80 },
+            { "document_key": "system_architecture", "slug": "synthesis", "type": "feedback", "relevance": 0.70 },
+            { "document_key": "technical_requirements", "slug": "parenthesis", "type": "feedback", "relevance": 0.70 },
+            { "document_key": "milestone_schema", "slug": "parenthesis", "type": "feedback", "relevance": 0.85 }
         ]'::jsonb,
         outputs_required = '{
             "documents": [
@@ -578,6 +581,8 @@ BEGIN
         {
           "document_key": "updated_master_plan",
           "content_to_include": {
+            "index": [],
+            "executive_summary": "",
             "phases": [
               {
                 "milestones": [
@@ -595,6 +600,28 @@ BEGIN
                 ]
               }
             ],
+            "status_summary": {
+              "completed": [],
+              "in_progress": [],
+              "up_next": []
+            },
+            "technical_context": "",
+            "implementation_context": "",
+            "test_framework": "",
+            "component_mapping": "",
+            "architecture_summary": "",
+            "architecture": "",
+            "services": [],
+            "components": [],
+            "integration_points": [],
+            "dependency_resolution": [],
+            "frontend_stack": {},
+            "backend_stack": {},
+            "data_platform": {},
+            "devops_tooling": {},
+            "security_tooling": {},
+            "shared_libraries": [],
+            "third_party_services": [],
             "preserve_completed": true,
             "set_in_progress": "[🚧]",
             "future_status": "[ ]",
@@ -607,7 +634,17 @@ BEGIN
             "require_comparison_matrix": true,
             "summarize_tradeoffs": true,
             "capture_final_recommendation": true,
-            "tie_breaker_guidance": true
+            "tie_breaker_guidance": true,
+            "comparison_matrix": [],
+            "analysis": {
+              "summary": "",
+              "tradeoffs": "",
+              "consensus": ""
+            },
+            "recommendation": {
+              "rankings": [],
+              "tie_breakers": []
+            }
           }
         }
       ]

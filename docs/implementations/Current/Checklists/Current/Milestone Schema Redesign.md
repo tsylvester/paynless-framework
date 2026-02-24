@@ -667,29 +667,29 @@ milestone nodes into the Example Checklist format from Instructions for Agent.
         *   `[✅]`   Examples must demonstrate realistic content, not just placeholders
     *   `[✅]`   **Commit** `docs(prompts): update templating examples for milestone work nodes and Example Checklist`
 
-*   `[ ]`   [TEST-INT] Integration validation pass **Verify end-to-end parenthesis→paralysis document flow with new structures**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Confirm the full pipeline: parenthesis planner emits HeaderContext with milestones[] context → milestone_schema turn produces milestones[].nodes[] → paralysis planner reads milestone_schema and emits checklist context → actionable_checklist turn produces Example Checklist nodes
-    *   `[ ]`   `role`
-        *   `[ ]`   Integration validation; proves the synchronization chain holds across all artifacts
-    *   `[ ]`   `module`
-        *   `[ ]`   Bounded to the parenthesis Step 1→4 → paralysis Step 1→2 document flow
-    *   `[ ]`   `deps`
-        *   `[ ]`   All nodes from Milestones 1 and 2 must be complete
-        *   `[ ]`   supabase/integration_tests/services/dialectic_full_dag_traversal.integration.test.ts — if this test exists and covers parenthesis→paralysis, it needs fixture updates
-    *   `[ ]`   Integration validation
-        *   `[ ]`   Apply the migration to a local Supabase instance
-        *   `[ ]`   Verify the recipe step rows contain the correct inputs_required, inputs_relevance, outputs_required values by querying both template and instance tables
-        *   `[ ]`   Verify the mapper tests pass: `deno test mappers.parenthesis.test.ts` and `deno test mappers.paralysis.test.ts`
-        *   `[ ]`   If dialectic_full_dag_traversal.integration.test.ts references milestone_schema or actionable_checklist content structures, update its fixtures
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Integration test layer; validates the full artifact chain
-    *   `[ ]`   `requirements`
-        *   `[ ]`   Migration applies cleanly with no errors
-        *   `[ ]`   All mapper tests pass
-        *   `[ ]`   No orphaned references to fields[], style_guide_notes, validation_rules, iteration_guidance in any recipe step definition
-        *   `[ ]`   No orphaned references to steps[].red_test, steps[].green_test, steps[].refactor in any paralysis recipe step definition
-    *   `[ ]`   **Commit** `test(integration): validate parenthesis→paralysis pipeline with milestone work nodes`
+*   `[✅]`   [TEST-INT] Integration validation pass **Verify end-to-end parenthesis→paralysis document flow with new structures**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Confirm the full pipeline: parenthesis planner emits HeaderContext with milestones[] context → milestone_schema turn produces milestones[].nodes[] → paralysis planner reads milestone_schema and emits checklist context → actionable_checklist turn produces Example Checklist nodes
+    *   `[✅]`   `role`
+        *   `[✅]`   Integration validation; proves the synchronization chain holds across all artifacts
+    *   `[✅]`   `module`
+        *   `[✅]`   Bounded to the parenthesis Step 1→4 → paralysis Step 1→2 document flow
+    *   `[✅]`   `deps`
+        *   `[✅]`   All nodes from Milestones 1 and 2 must be complete
+        *   `[✅]`   supabase/integration_tests/services/dialectic_full_dag_traversal.integration.test.ts — if this test exists and covers parenthesis→paralysis, it needs fixture updates
+    *   `[✅]`   Integration validation
+        *   `[✅]`   Apply the migration to a local Supabase instance
+        *   `[✅]`   Verify the recipe step rows contain the correct inputs_required, inputs_relevance, outputs_required values by querying both template and instance tables
+        *   `[✅]`   Verify the mapper tests pass: `deno test mappers.parenthesis.test.ts` and `deno test mappers.paralysis.test.ts`
+        *   `[✅]`   If dialectic_full_dag_traversal.integration.test.ts references milestone_schema or actionable_checklist content structures, update its fixtures
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Integration test layer; validates the full artifact chain
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Migration applies cleanly with no errors
+        *   `[✅]`   All mapper tests pass
+        *   `[✅]`   No orphaned references to fields[], style_guide_notes, validation_rules, iteration_guidance in any recipe step definition
+        *   `[✅]`   No orphaned references to steps[].red_test, steps[].green_test, steps[].refactor in any paralysis recipe step definition
+    *   `[✅]`   **Commit** `test(integration): validate parenthesis→paralysis pipeline with milestone work nodes`
     
 # ToDo
 

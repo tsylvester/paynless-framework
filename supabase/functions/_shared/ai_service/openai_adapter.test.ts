@@ -1,6 +1,6 @@
 // supabase/functions/_shared/ai_service/openai_adapter.test.ts
 import "npm:openai/shims/web";
-import { assert, assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertExists, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { APIPromise } from 'npm:openai/core';
 import type { FinalRequestOptions } from 'npm:openai/core';
@@ -17,12 +17,14 @@ import { MockLogger } from "../logger.mock.ts";
 import { Tables } from "../../types_db.ts";
 import { isJson } from "../utils/type_guards.ts";
 
+import { Page } from 'npm:openai/pagination';
+
 // --- Mock Data & Helpers ---
 
 const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
-    api_identifier: 'gpt-4o',
-    input_token_cost_rate: 0,
-    output_token_cost_rate: 0,
+    api_identifier: 'openai-gpt-4o',
+    input_token_cost_rate: 2.5,
+    output_token_cost_rate: 10.0,
     tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
 };
 const mockLogger = new MockLogger();
@@ -99,14 +101,42 @@ function buildApiResponseProps(): ApiResponseProps {
 function createMockAPIPromise<T extends object>(resp: T): APIPromise<T> {
     const responsePromise: ApiResponsePromise = Promise.resolve(buildApiResponseProps());
     const requestId = 'test-request-id';
-    const parseResponse = (_props: ApiResponseProps): Promise<T & { requestId: string }> =>
-        Promise.resolve(Object.assign({}, resp, { requestId }));
-    // WithRequestID<T> is internal; T & { requestId: string } is structurally equivalent for test doubles.
-    // @ts-expect-error - parseResponse return type matches runtime shape; no type cast used.
-    return new APIPromise<T>(responsePromise, parseResponse);
+    const parseResponse = (_props: ApiResponseProps) =>
+        Promise.resolve(Object.assign({}, resp, { _request_id: requestId }));
+    return new APIPromise<T>(responsePromise, parseResponse as any);
+} 
+
+class MockPagePromise<T extends Page<Item>, Item> extends APIPromise<T> implements PagePromise<T, Item> {
+    constructor(private page: T) {
+        super(
+            Promise.resolve(buildApiResponseProps()),
+            (() => Promise.resolve(Object.assign(page, { _request_id: 'req' }))) as any
+        );
+    }
+    
+    async *[Symbol.asyncIterator](): AsyncGenerator<Item, any, unknown> {
+        for (const item of this.page.getPaginatedItems()) {
+            yield item;
+        }
+    }
+
+    getPaginatedItems(): Item[] {
+        return this.page.getPaginatedItems();
+    }
+    
+    hasNextPage(): boolean {
+        return this.page.hasNextPage();
+    }
+    
+    nextPageParams(): Partial<Record<string, unknown>> | null {
+        return this.page.nextPageParams();
+    }
+    
+    nextPageInfo(): Record<string, unknown> | null {
+        return this.page.nextPageInfo();
+    }
 }
 
-// This is the mock API that the test contract will spy on.
 const mockOpenAiApi: MockApi = {
     sendMessage: async (request: ChatApiRequest): Promise<AdapterResponsePayload> => {
         const tokenUsage = MOCK_OPENAI_SUCCESS_RESPONSE.usage!;
@@ -233,9 +263,13 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o-seri
 });
 
 Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for legacy chat models", async () => {
+
     const LEGACY_PROVIDER: Tables<'ai_providers'> = {
         ...MOCK_PROVIDER,
         api_identifier: 'openai-gpt-3.5-turbo',
+        config: Object.assign({}, MOCK_MODEL_CONFIG, {
+            api_identifier: 'openai-gpt-3.5-turbo',
+        }),
     };
 
     const adapter = new OpenAiAdapter(LEGACY_PROVIDER, 'sk-test-key', mockLogger);
@@ -348,5 +382,54 @@ Deno.test("OpenAiAdapter - resourceDocuments: empty resourceDocuments does not a
         assertEquals(getMessageTextContent(payloadUnknown.messages[0]), 'User prompt', 'Only user message must be present');
     } finally {
         chatCreateStub.restore();
+    }
+});
+
+Deno.test("OpenAiAdapter - Specific Tests: listModels returns clean config (does not spread provider config)", async () => {
+    const DIRTY_MODEL_CONFIG: AiModelExtendedConfig = {
+        api_identifier: 'openai-gpt-4o', 
+        input_token_cost_rate: 1000, 
+        output_token_cost_rate: 2000, 
+        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+        context_window_tokens: 500,
+    };
+    
+    if(!isJson(DIRTY_MODEL_CONFIG)) {
+        throw new Error('DIRTY_MODEL_CONFIG is not a valid JSON object');
+    }
+
+    const DIRTY_PROVIDER: Tables<'ai_providers'> = {
+        ...MOCK_PROVIDER,
+        id: 'dirty-provider-id',
+        config: DIRTY_MODEL_CONFIG,
+    };
+
+    const adapter = new OpenAiAdapter(DIRTY_PROVIDER, 'sk-test-key', mockLogger);
+
+    // Create a valid Page object using the OpenAI library
+    const client = new OpenAI({ apiKey: 'mock' });
+    const response = new Response();
+    const body = { data: MOCK_OPENAI_MODELS_RESPONSE_DATA, object: 'list' };
+    const options: FinalRequestOptions = { method: 'get', path: '/v1/models' };
+    
+    const realPage = new Page<Model>(client, response, body, options);
+    
+    // Stub Models.list to return the mock page promise
+    const listStub = stub(OpenAI.Models.prototype, "list", () => new MockPagePromise(realPage));
+    
+    try {
+        const models = await adapter.listModels();
+        
+        assertEquals(listStub.calls.length, 1);
+        
+        const gpt4o = models.find(m => m.api_identifier === 'openai-gpt-4o');
+        assertExists(gpt4o);
+        
+        // Assert it does NOT have any config property (it should be undefined)
+        // This ensures no dirty values from the provider are leaked, and no fake defaults are invented.
+        assertEquals(gpt4o.config, undefined, "config should be undefined");
+        
+    } finally {
+        listStub.restore();
     }
 });

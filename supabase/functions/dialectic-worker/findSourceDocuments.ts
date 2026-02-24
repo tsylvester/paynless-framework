@@ -6,6 +6,7 @@ import { SourceDocument } from '../dialectic-service/dialectic.interface.ts';
 import { isDocumentRelationships } from '../_shared/utils/type_guards.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import { isRecord } from '../_shared/utils/type_guards.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
 
 // Type guards to differentiate between the different source table row types.
 function isContributionRow(record: unknown): record is DialecticContributionRow {
@@ -254,6 +255,7 @@ export async function findSourceDocuments(
                     .select('*')
                     .eq('session_id', sessionId)
                     .eq('iteration_number', normalizedIterationNumber);
+                // Filter by stage_slug if specified in the input rule.
                 if (shouldFilterByStage) {
                     feedbackQuery = feedbackQuery.eq('stage_slug', stageSlugCandidate);
                 }
@@ -437,8 +439,9 @@ export async function findSourceDocuments(
                     .eq('project_id', projectId)
                     .eq('resource_type', resourceTypeForQuery);
 
-                // Filter by stage_slug if specified in the input rule
-                if (shouldFilterByStage) {
+                // Filter by stage_slug if specified in the input rule.
+                // Exclude initial_user_prompt: it is a project-level resource with no stage_slug.
+                if (shouldFilterByStage && !isInitialUserPromptProjectResource) {
                     resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
                 }
 

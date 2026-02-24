@@ -3549,7 +3549,100 @@ describe('findSourceDocuments', () => {
         // Assert that the feedback document was enriched with the source_group from the matching document
         assertEquals(feedbackResult?.id, 'feedback-1');
         assertEquals(feedbackResult?.file_name, 'google-gemini-2.5-flash_0_business_case_feedback.md');
-        assertEquals(feedbackResult?.document_relationships?.source_group, sourceGroup, 
+        assertEquals(feedbackResult?.document_relationships?.source_group, sourceGroup,
             'Feedback document should be enriched with source_group from matching document based on filename pattern');
+    });
+
+    it("returns 'project_resource' initial_user_prompt without filtering by stage_slug", async () => {
+        const rule: InputRule[] = [{
+            type: 'project_resource',
+            slug: 'project',
+            document_key: FileType.InitialUserPrompt,
+            required: true,
+        }];
+        const mockResource: DialecticProjectResourceRow = {
+            id: 'initial-prompt-resource-id',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'initial_user_prompt.txt',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources/initial_user_prompt.txt',
+            mime_type: 'text/plain',
+            size_bytes: 100,
+            resource_description: { description: 'Initial user prompt', type: FileType.InitialUserPrompt },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: null,
+            resource_type: 'initial_user_prompt',
+            session_id: null,
+            source_contribution_id: null,
+            stage_slug: null,
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: () =>
+                        Promise.resolve({
+                            data: null,
+                            error: new Error('project_resource test must not query contributions'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        }),
+                },
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasStageSlugFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'stage_slug',
+                        );
+                        if (hasStageSlugFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('initial_user_prompt must not filter by stage_slug'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Unexpected stage_slug filter',
+                            });
+                        }
+
+                        const hasResourceTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'resource_type' &&
+                                filter.value === 'initial_user_prompt',
+                        );
+                        if (!hasResourceTypeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('initial_user_prompt must filter by resource_type = initial_user_prompt'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing resource_type filter',
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: [mockResource],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 1);
+        assertEquals(documents[0].id, 'initial-prompt-resource-id');
     });
 });
