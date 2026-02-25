@@ -414,16 +414,38 @@ export async function findSourceDocuments(
                 );
                 break;
             }
-            case 'seed_prompt':
+            case 'seed_prompt': {
+                // seed_prompt is a single project-level resource (file_name seed_prompt.md, resource_type seed_prompt).
+                // Do not filter by stage_slug, session_id, model_id, or iteration_number.
+                const seedPromptQuery = dbClient.from('dialectic_project_resources')
+                    .select('*')
+                    .eq('project_id', projectId)
+                    .eq('resource_type', 'seed_prompt');
+
+                const { data: seedPromptData, error: seedPromptError } = await seedPromptQuery;
+                if (seedPromptError) {
+                    throw new Error(
+                        `Failed to fetch source documents for type 'seed_prompt' from project_resources: ${seedPromptError.message}`,
+                    );
+                }
+
+                if (!seedPromptData) {
+                    throw new Error(`Supabase returned null data without error for type 'seed_prompt' from project_resources`);
+                }
+                ensureRecordsHaveStorage(seedPromptData);
+                const seedPromptRecords = sortRecordsByRecency(seedPromptData);
+                const seedPromptCandidates = rule.document_key
+                    ? filterRecordsByDocumentKey(seedPromptRecords, rule.document_key)
+                    : seedPromptRecords;
+                sourceRecords = selectRecordsForRule(
+                    dedupeByFileName(seedPromptCandidates),
+                    allowMultipleMatches,
+                    usedRecordKeys,
+                );
+                break;
+            }
             case 'project_resource': {
-                // NOTE: seed_prompt and project_resource types are user-provided inputs
-                // (initial prompt, reference documents) that exist at the project level.
-                // They should NOT be filtered by model_id or iteration_number
-                // since they are project-wide constants available to all stages and iterations.
-                // However, if the input rule specifies a slug (stage), we MUST filter by it
-                // to find the document from the correct stage.
                 const isInitialUserPromptProjectResource =
-                    rule.type === 'project_resource' &&
                     rule.document_key === 'initial_user_prompt';
 
                 const resourceTypeForQuery = isInitialUserPromptProjectResource
@@ -435,15 +457,9 @@ export async function findSourceDocuments(
                     .eq('project_id', projectId)
                     .eq('resource_type', resourceTypeForQuery);
 
-                // Filter by stage_slug if specified in the input rule.
-                // Exclude initial_user_prompt: it is a project-level resource with no stage_slug.
                 if (shouldFilterByStage && !isInitialUserPromptProjectResource) {
                     resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
                 }
-
-                // NOTE: Intentionally NOT filtering by session_id, model_id,
-                // or iteration_number for project_resource/seed_prompt types.
-                // These are project-wide resources accessible from any context.
 
                 const { data: resourceData, error: resourceError } = await resourceQuery;
                 if (resourceError) {
@@ -457,21 +473,16 @@ export async function findSourceDocuments(
                 }
                 ensureRecordsHaveStorage(resourceData);
                 const resourceRecords = sortRecordsByRecency(resourceData);
-                // Skip document_key filtering for initial_user_prompt: the DB query already
-                // filters by resource_type='initial_user_prompt', and the user-controlled
-                // filename will never parse to documentKey='initial_user_prompt'.
                 const resourceCandidates = isInitialUserPromptProjectResource
                     ? resourceRecords
                     : (rule.document_key
                         ? filterRecordsByDocumentKey(resourceRecords, rule.document_key)
                         : resourceRecords);
-                const effectiveRecords = selectRecordsForRule(
+                sourceRecords = selectRecordsForRule(
                     dedupeByFileName(resourceCandidates),
                     allowMultipleMatches,
                     usedRecordKeys,
                 );
-
-                sourceRecords = effectiveRecords;
                 break;
             }
             default: {

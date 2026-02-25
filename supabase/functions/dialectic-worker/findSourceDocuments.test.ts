@@ -74,25 +74,28 @@ describe('findSourceDocuments', () => {
         };
     });
 
-    it("successfully returns a 'seed_prompt' from dialectic_project_resources", async () => {
-        const rule: InputRule[] = [{ type: 'seed_prompt', slug: 'test-stage' }];
+    it("successfully returns a 'seed_prompt' from dialectic_project_resources without filtering by stage_slug", async () => {
+        // Rule has slug so implementation might incorrectly add stage_slug filter.
+        // Target: seed_prompt is project-level (file_name always seed_prompt.md, resource_type seed_prompt);
+        // query must NOT filter by stage_slug so the single project seed_prompt is always found.
+        const rule: InputRule[] = [{ type: 'seed_prompt', slug: 'thesis', document_key: FileType.SeedPrompt, required: true }];
         const mockSeedPromptResource: DialecticProjectResourceRow = {
             id: 'seed-prompt-resource-id',
             project_id: 'proj-1',
             user_id: 'user-123',
-            file_name: 'seed.txt',
+            file_name: 'seed_prompt.md',
             storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/resources',
             mime_type: 'text/plain',
             size_bytes: 123,
-            resource_description: { "description": "A test seed prompt", type: 'seed_prompt' },
+            resource_description: { "description": "A test seed prompt", type: 'seed_prompt', document_key: 'seed_prompt' },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             iteration_number: null,
             resource_type: 'seed_prompt',
             session_id: null,
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: null,
         };
 
         mockSupabase = createMockSupabaseClient(undefined, {
@@ -141,6 +144,21 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
+                        const hasStageSlugFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'stage_slug',
+                        );
+                        if (hasStageSlugFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('seed_prompt queries must NOT filter by stage_slug'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'stage_slug filter not allowed for seed_prompt',
+                            });
+                        }
+
                         const hasJsonPathFilter = state.filters.some((filter) => {
                             if (typeof filter.column === 'string' && filter.column.includes('resource_description->>')) {
                                 return true;
@@ -181,6 +199,7 @@ describe('findSourceDocuments', () => {
 
         assertEquals(documents.length, 1);
         assertEquals(documents[0].id, 'seed-prompt-resource-id');
+        assertEquals(documents[0].file_name, 'seed_prompt.md');
     });
 
     it("successfully returns a 'header_context' from dialectic_contributions", async () => {
