@@ -1,10 +1,10 @@
 /**
  * Proof script: calls the real renderDocument function with real raw JSON
  * artifacts and real document templates read from disk. Writes rendered
- * markdown to the example/ folder and validates structure + formatting
- * for all four document types (three synthesis + one thesis per-item).
+ * markdown to the example/ folder (or same dir as raw JSON) and validates
+ * structure + formatting for synthesis, thesis, and parenthesis document types.
  *
- * Usage (from repo root):
+ * Usage (run from repo root or supabase/functions; paths are resolved from script location):
  *   deno run --allow-read --allow-write supabase/scripts/prove_tech_stack_render.ts
  */
 
@@ -17,6 +17,19 @@ import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../functi
 import { MockFileManagerService } from "../functions/_shared/services/file_manager.mock.ts";
 import { mockNotificationService } from "../functions/_shared/utils/notification.service.mock.ts";
 import { logger } from "../functions/_shared/logger.ts";
+
+// ── Path resolution (script may be run from any cwd) ──────────────────────
+
+const repoRootUrl = new URL("../../", import.meta.url);
+
+/** Resolve a path relative to repo root, or return as-is if already absolute. */
+function resolveFromRepo(relativePath: string): URL | string {
+  if (relativePath.length >= 2 && relativePath[1] === ":" && /[a-zA-Z]/.test(relativePath[0])) {
+    return relativePath;
+  }
+  if (relativePath.startsWith("/")) return relativePath;
+  return new URL(relativePath, repoRootUrl);
+}
 
 // ── Case definitions ────────────────────────────────────────────────────
 
@@ -242,6 +255,82 @@ const cases: ProofCase[] = [
       ['No raw JSON opening brace', !rendered.includes('{"')],
     ],
   },
+  {
+    label: "Technical Requirements (parenthesis)",
+    rawJsonPath: "example/google-gemini-3-flash-preview_0_technical_requirements_raw.json",
+    templatePath: "docs/templates/parenthesis/parenthesis_technical_requirements.md",
+    templateName: "parenthesis_technical_requirements",
+    templateFileName: "parenthesis_technical_requirements.md",
+    documentKey: FileType.technical_requirements,
+    stageSlug: "parenthesis",
+    checks: (rendered: string) => [
+      ["# Index present", rendered.includes("# Index")],
+      ["# Executive Summary present", rendered.includes("# Executive Summary")],
+      ["# Subsystems present", rendered.includes("# Subsystems")],
+      ["# APIs present", rendered.includes("# APIs")],
+      ["# Database Schemas present", rendered.includes("# Database Schemas")],
+      ["# Proposed File Tree present", rendered.includes("# Proposed File Tree")],
+      ["subsystems content: Identity & Access", rendered.includes("Identity & Access")],
+      ["subsystems content: Deterministic NLP", rendered.includes("Deterministic NLP")],
+      ["schemas content: profiles", rendered.includes("profiles")],
+      ["schemas content: tasks", rendered.includes("tasks")],
+      ["executive_summary content present", rendered.includes("Technical requirements")],
+      ["No literal template syntax", !rendered.includes("{{#each")],
+      ["No literal dotted placeholder", !rendered.includes("{status_summary.")],
+      ['No raw JSON opening brace', !rendered.includes('{"')],
+    ],
+  },
+  {
+    label: "Milestone Schema (parenthesis)",
+    rawJsonPath: "example/google-gemini-3-flash-preview_0_milestone_schema_raw.json",
+    templatePath: "docs/templates/parenthesis/parenthesis_milestone_schema.md",
+    templateName: "parenthesis_milestone_schema",
+    templateFileName: "parenthesis_milestone_schema.md",
+    documentKey: FileType.milestone_schema,
+    stageSlug: "parenthesis",
+    checks: (rendered: string) => [
+      ["# Index present", rendered.includes("# Index")],
+      ["# Pipeline Context present", rendered.includes("# Pipeline Context")],
+      ["# Selection Criteria present", rendered.includes("# Selection Criteria")],
+      ["# Shared Infrastructure present", rendered.includes("# Shared Infrastructure")],
+      ["# Milestones present", rendered.includes("# Milestones")],
+      ["# Iteration Semantics present", rendered.includes("# Iteration Semantics")],
+      ["pipeline_context content present", rendered.includes("Middle Zoom")],
+      ["shared_infrastructure content present", rendered.includes("Next.js 14")],
+      ["milestones content: M1", rendered.includes("M1")],
+      ["milestones content: Foundation", rendered.includes("Foundation")],
+      ["milestones content: Relational Schema", rendered.includes("Relational Schema")],
+      ["No literal {{#each}}", !rendered.includes("{{#each")],
+      ["No literal {this} placeholder", !rendered.includes("{this}")],
+      ['No raw JSON opening brace', !rendered.includes('{"')],
+    ],
+  },
+  {
+    label: "Master Plan (parenthesis)",
+    rawJsonPath: "example/google-gemini-3-flash-preview_0_master_plan_raw.json",
+    templatePath: "docs/templates/parenthesis/parenthesis_master_plan.md",
+    templateName: "parenthesis_master_plan",
+    templateFileName: "parenthesis_master_plan.md",
+    documentKey: FileType.master_plan,
+    stageSlug: "parenthesis",
+    checks: (rendered: string) => [
+      ["# Index present", rendered.includes("# Index")],
+      ["# Executive Summary present", rendered.includes("# Executive Summary")],
+      ["# Implementation Phases present", rendered.includes("# Implementation Phases")],
+      ["# Status Summary present", rendered.includes("# Status Summary")],
+      ["# Status Markers present", rendered.includes("# Status Markers")],
+      ["phases content: Phase 1", rendered.includes("Phase 1")],
+      ["phases content: Secure Foundation", rendered.includes("Secure Foundation")],
+      ["phases content: M1", rendered.includes("M1")],
+      ["phases content: M2", rendered.includes("M2")],
+      ["executive_summary content present", rendered.includes("3-phase")],
+      ["No literal {{#each phases}}", !rendered.includes("{{#each phases}}")],
+      ["No literal {{#each milestones}}", !rendered.includes("{{#each milestones}}")],
+      ["No literal dotted placeholder", !rendered.includes("{status_summary.completed}")],
+      ["No HTML comment in output", !rendered.includes("<!-- Missing sections")],
+      ['No raw JSON opening brace', !rendered.includes('{"')],
+    ],
+  },
 ];
 
 // ── Run each case ───────────────────────────────────────────────────────
@@ -256,9 +345,11 @@ for (const proofCase of cases) {
   console.log(`  Raw JSON : ${proofCase.rawJsonPath}`);
   console.log(`  Template : ${proofCase.templatePath}`);
 
-  // Read real files from disk
-  const rawJsonContent = await Deno.readTextFile(proofCase.rawJsonPath);
-  const templateContent = await Deno.readTextFile(proofCase.templatePath);
+  // Read real files from disk (paths resolved from repo root so cwd does not matter)
+  const rawJsonResolved = resolveFromRepo(proofCase.rawJsonPath);
+  const templateResolved = resolveFromRepo(proofCase.templatePath);
+  const rawJsonContent = await Deno.readTextFile(rawJsonResolved);
+  const templateContent = await Deno.readTextFile(templateResolved);
 
   // Build mock infrastructure for renderDocument
   const rootId = `root-proof-${proofCase.label.replace(/\s+/g, "-").toLowerCase()}`;
@@ -323,7 +414,7 @@ for (const proofCase of cases) {
               is_active: true,
               name: proofCase.templateName,
               storage_bucket: "prompt-templates",
-              storage_path: "templates/synthesis",
+              storage_path: proofCase.stageSlug === "parenthesis" ? "templates/parenthesis" : proofCase.stageSlug === "hypothesis" ? "templates/thesis" : "templates/synthesis",
               updated_at: "2025-01-01T00:00:00Z",
             },
           ],
@@ -402,9 +493,10 @@ for (const proofCase of cases) {
 
   const rendered = new TextDecoder().decode(result.renderedBytes);
 
-  // Write rendered output to example/ folder
+  // Write rendered output next to raw JSON (or in example/ for repo-relative paths)
   const outputPath = proofCase.rawJsonPath.replace(/_raw\.json$/, "_rendered.md");
-  await Deno.writeTextFile(outputPath, rendered);
+  const outputResolved = resolveFromRepo(outputPath);
+  await Deno.writeTextFile(outputResolved, rendered);
   console.log(`  Output   : ${outputPath}`);
   console.log(`  Size     : ${result.renderedBytes.length} bytes\n`);
 
@@ -433,4 +525,4 @@ if (totalFailed > 0) {
   Deno.exit(1);
 }
 
-console.log("All checks passed across all four document types.");
+console.log("All checks passed across all document types.");

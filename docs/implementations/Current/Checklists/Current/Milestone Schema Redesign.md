@@ -997,6 +997,10 @@ milestone nodes into the Example Checklist format from Instructions for Agent.
     -- Pause the work mid-stream if NSF and encourage user to top up to continue 
 
     - hydrateAllStages doesn't, but the stage-specific one does
+    -- Front end shows "complete" and "Submit Responses" as soon as a document is available instead of waiting for the entire stage to actually complete 
+    -- Populating document list is unreliable
+    -- Total progress indicator loses track constantly
+    -- Stage completion indicators lose track the moment they're defocused
 
     - New user sign in banner doesn't display, throws console error  
     -- Chase, diagnose, fix 

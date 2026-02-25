@@ -21,44 +21,12 @@
 
     {{#section:shared_infrastructure}}
     # Shared Infrastructure
-    {{#each shared_infrastructure}}
-    - {this}
-    {{/each}}
+    {shared_infrastructure}
     {{/section:shared_infrastructure}}
 
     {{#section:milestones}}
     # Milestones
-
-    {{#each milestones}}
-    ## {id} — {title} [{status}]
-
-    {objective}
-
-    {{#each nodes}}
-    ### {path} {title}
-
-    - **Objective**: {objective}
-    - **Role**: {role}
-    - **Module**: {module}
-    - **Directionality**: {directionality}
-
-    **Dependencies**:
-    {{#each deps}}
-    - {this}
-    {{/each}}
-
-    **Provides**:
-    {{#each provides}}
-    - {this}
-    {{/each}}
-
-    **Requirements**:
-    {{#each requirements}}
-    - {this}
-    {{/each}}
-
-    {{/each}}
-    {{/each}}
+    {milestones}
     {{/section:milestones}}
 
     {{#section:iteration_semantics}}
@@ -116,7 +84,5 @@
     {migration_context}
     {{/section:migration_context}}
 
-    <!-- Missing sections will be omitted by the renderer -->
     {{#section:_not_provided}}
-    <!-- Section not provided by model: {_not_provided} -->
     {{/section:_not_provided}}

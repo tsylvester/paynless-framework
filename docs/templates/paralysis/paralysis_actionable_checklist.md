@@ -18,85 +18,13 @@
 
 {{#section:milestone_reference}}
 ## Milestone Reference
-- ID: {milestone_reference.id}
-- Phase: {milestone_reference.phase}
-- Dependencies: {milestone_reference.dependencies}
+{milestone_reference}
 {{/section:milestone_reference}}
 
-{{#section:steps}}
+{{#section:nodes}}
 ## Steps
-{{#each nodes}}
-*   `[ ]`   {path} **{title}**
-    *   `[ ]`   `objective`
-        {{#each objective}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `role`
-        {{#each role}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `module`
-        {{#each module}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `deps`
-        {{#each deps}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `context_slice`
-        {{#each context_slice}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `interface`
-        {{#each interface}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `interface_tests`
-        {{#each interface_tests}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `interface_guards`
-        {{#each interface_guards}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `unit_tests`
-        {{#each unit_tests}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `construction`
-        {{#each construction}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `source`
-        {{#each source}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `provides`
-        {{#each provides}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `mocks`
-        {{#each mocks}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `integration_tests`
-        {{#each integration_tests}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `directionality`
-        {{#each directionality}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `requirements`
-        {{#each requirements}}
-        *   `[ ]`   {this}
-        {{/each}}
-    *   `[ ]`   `commit`
-        {{#each commit}}
-        *   `[ ]`   {this}
-        {{/each}}
-{{/each}}
-{{/section:steps}}
+{nodes}
+{{/section:nodes}}
 
 {{#section:_extra_content}}
 # Additional Content

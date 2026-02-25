@@ -166,7 +166,17 @@
         "require_comparison_matrix": true,
         "summarize_tradeoffs": true,
         "capture_final_recommendation": true,
-        "tie_breaker_guidance": true
+        "tie_breaker_guidance": true,
+        "comparison_matrix": [],
+        "analysis": {
+          "summary": "",
+          "tradeoffs": "",
+          "consensus": ""
+        },
+        "recommendation": {
+          "rankings": [],
+          "tie_breakers": []
+        }
       }
     }
   ]

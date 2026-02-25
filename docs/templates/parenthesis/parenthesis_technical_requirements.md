@@ -181,8 +181,6 @@
 {third_party_services}
 {{/section:third_party_services}}
 
-<!-- Missing sections will be omitted by the renderer -->
 {{#section:_not_provided}}
-<!-- Section not provided by model: {_not_provided} -->
 {{/section:_not_provided}}
 

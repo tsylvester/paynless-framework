@@ -434,11 +434,9 @@ export async function findSourceDocuments(
                 }
                 ensureRecordsHaveStorage(seedPromptData);
                 const seedPromptRecords = sortRecordsByRecency(seedPromptData);
-                const seedPromptCandidates = rule.document_key
-                    ? filterRecordsByDocumentKey(seedPromptRecords, rule.document_key)
-                    : seedPromptRecords;
+                // No document_key filter: seed_prompt is uniquely identified by resource_type and file_name seed_prompt.md.
                 sourceRecords = selectRecordsForRule(
-                    dedupeByFileName(seedPromptCandidates),
+                    dedupeByFileName(seedPromptRecords),
                     allowMultipleMatches,
                     usedRecordKeys,
                 );

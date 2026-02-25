@@ -7,25 +7,12 @@
 
 {{#section:analysis}}
 ## Analysis
-
-### Summary
-{analysis.summary}
-
-### Tradeoffs
-{analysis.tradeoffs}
-
-### Consensus
-{analysis.consensus}
+{analysis}
 {{/section:analysis}}
 
 {{#section:recommendation}}
 ## Recommendation
-
-### Rankings
-{recommendation.rankings}
-
-### Tie Breakers
-{recommendation.tie_breakers}
+{recommendation}
 {{/section:recommendation}}
 
 {{#section:_extra_content}}
