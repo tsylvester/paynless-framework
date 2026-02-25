@@ -278,10 +278,6 @@ export async function processSimpleJob(
         ) {
             sourceContributionId = job.payload.target_contribution_id;
         }
-        let continuationContent: string | undefined;
-        if (sourceContributionId) {
-            continuationContent = 'Please continue.';
-        }
 
         // Assemble prompt using the unified facade
         const assembleOptions: AssemblePromptOptions = {
@@ -292,9 +288,6 @@ export async function processSimpleJob(
             iterationNumber: sessionData.iteration_count,
             job,
         };
-        if (continuationContent) {
-            assembleOptions.continuationContent = continuationContent;
-        }
         if (sourceContributionId) {
             assembleOptions.sourceContributionId = sourceContributionId;
         }

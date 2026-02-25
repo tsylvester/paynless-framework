@@ -24,7 +24,7 @@ export async function getProjectResourceContent(
     // 1. Fetch the resource record to get storage path and verify ownership
     const { data: resource, error: resourceError } = await dbClient
       .from('dialectic_project_resources')
-      .select('project_id, user_id, file_name, mime_type, storage_bucket, storage_path, source_contribution_id')
+      .select('project_id, user_id, file_name, mime_type, storage_bucket, storage_path, source_contribution_id, resource_type')
       .eq('id', resourceId)
       .single();
 
@@ -91,6 +91,7 @@ export async function getProjectResourceContent(
       mimeType: resource.mime_type,
       content: content,
       sourceContributionId: resource.source_contribution_id,
+      resourceType: resource.resource_type,
     };
 
     logger.info(`[getProjectResourceContent] Preparing to return response data.`, { 

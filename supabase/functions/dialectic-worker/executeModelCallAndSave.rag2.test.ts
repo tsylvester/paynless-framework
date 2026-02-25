@@ -24,8 +24,10 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
 import { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
 import { IRagService } from '../_shared/services/rag_service.interface.ts';
 import { IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
-import { 
-    createMockJob, 
+import { createMockDownloadFromStorage } from '../_shared/supabase_storage_utils.mock.ts';
+import type { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
+import {
+    createMockJob,
     testPayload, 
     mockSessionData, 
     mockProviderData, 
@@ -285,11 +287,11 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
           data: [
             {
               id: 'doc-high', content: 'high relevance', stage_slug: 'stage-a', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_product_requirements.md'
+              storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_product_requirements.md', storage_bucket: 'test-bucket'
             },
             {
               id: 'doc-low', content: 'low relevance', stage_slug: 'stage-a', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_business_case.md'
+              storage_path: 'project-abc/session_session-456/iteration_1/stage-a/documents', file_name: 'model-collect_1_business_case.md', storage_bucket: 'test-bucket'
             },
           ],
           error: null
@@ -322,11 +324,15 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
     },
   };
 
+  const docEncoded1 = new TextEncoder().encode('mock document content');
+  const docBuffer1 = new ArrayBuffer(docEncoded1.byteLength);
+  new Uint8Array(docBuffer1).set(docEncoded1);
   const deps = getMockDeps({
     tokenWalletService,
     embeddingClient,
     ragService,
     countTokens: deterministicCountTokens,
+    downloadFromStorage: createMockDownloadFromStorage({ mode: 'success', data: docBuffer1 }),
   });
 
   // Use the real matrix strategy to order candidates; ties will be broken by inputsRelevance
@@ -450,11 +456,11 @@ Deno.test('inputsRelevance effects: higher relevance ranks later; stage_slug-spe
           data: [
             {
               id: 'A', content: 'x', stage_slug: 's1', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'model-collect_1_success_metrics.md'
+              storage_path: 'project-abc/session_session-456/iteration_1/s1/documents', file_name: 'model-collect_1_success_metrics.md', storage_bucket: 'test-bucket'
             },
             {
               id: 'B', content: 'x', stage_slug: 's2', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'model-collect_1_business_case.md'
+              storage_path: 'project-abc/session_session-456/iteration_1/s2/documents', file_name: 'model-collect_1_business_case.md', storage_bucket: 'test-bucket'
             },
           ],
           error: null
@@ -485,11 +491,15 @@ Deno.test('inputsRelevance effects: higher relevance ranks later; stage_slug-spe
     },
   };
 
+  const docEncoded2 = new TextEncoder().encode('mock document content');
+  const docBuffer2 = new ArrayBuffer(docEncoded2.byteLength);
+  new Uint8Array(docBuffer2).set(docEncoded2);
   const deps = getMockDeps({
     tokenWalletService,
     embeddingClient,
     ragService,
     countTokens: deterministicCountTokens,
+    downloadFromStorage: createMockDownloadFromStorage({ mode: 'success', data: docBuffer2 }),
   });
 
   // Use real strategy
@@ -569,11 +579,11 @@ Deno.test('empty inputsRelevance: similarity-only behavior is deterministic', as
           data: [
             {
               id: 'alpha', content: 'alpha', stage_slug: 't', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_business_case.md'
+              storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_business_case.md', storage_bucket: 'test-bucket'
             },
             {
               id: 'beta', content: 'beta', stage_slug: 't', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_success_metrics.md'
+              storage_path: 'project-abc/session_session-456/iteration_1/t/documents', file_name: 'model-collect_1_success_metrics.md', storage_bucket: 'test-bucket'
             },
           ],
           error: null
@@ -605,11 +615,19 @@ Deno.test('empty inputsRelevance: similarity-only behavior is deterministic', as
     },
   };
 
+  const contentByPath: DownloadFromStorageFn = async (_client, _bucket, path) => {
+    const text = path.includes('business_case') ? 'alpha' : 'beta';
+    const enc = new TextEncoder().encode(text);
+    const buf = new ArrayBuffer(enc.byteLength);
+    new Uint8Array(buf).set(enc);
+    return { data: buf, mimeType: 'text/markdown', error: null };
+  };
   const deps = getMockDeps({
     tokenWalletService,
     embeddingClient,
     ragService,
     countTokens: deterministicCountTokens,
+    downloadFromStorage: contentByPath,
   });
 
   const compressionStrategy = getSortedCompressionCandidates;
@@ -824,11 +842,11 @@ Deno.test('ties without inputsRelevance: candidates are in non-decreasing effect
           data: [
             {
               id: 'A', content: 'x', stage_slug: 's', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_business_case.md'
+              storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_business_case.md', storage_bucket: 'test-bucket'
             },
             {
               id: 'B', content: 'x', stage_slug: 's', project_id: 'project-abc', session_id: 'session-456', iteration_number: 1, resource_type: 'rendered_document', created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_success_metrics.md'
+              storage_path: 'project-abc/session_session-456/iteration_1/s/documents', file_name: 'model-collect_1_success_metrics.md', storage_bucket: 'test-bucket'
             },
           ],
           error: null
@@ -849,7 +867,10 @@ Deno.test('ties without inputsRelevance: candidates are in non-decreasing effect
     } 
   };
 
-  const deps = getMockDeps({ tokenWalletService, embeddingClient, countTokens: deterministicCountTokens });
+  const docEncoded4 = new TextEncoder().encode('mock document content');
+  const docBuffer4 = new ArrayBuffer(docEncoded4.byteLength);
+  new Uint8Array(docBuffer4).set(docEncoded4);
+  const deps = getMockDeps({ tokenWalletService, embeddingClient, countTokens: deterministicCountTokens, downloadFromStorage: createMockDownloadFromStorage({ mode: 'success', data: docBuffer4 }) });
 
   // Capture candidates returned by real strategy via wrapper
   let returnedCandidates: { effectiveScore?: number }[] | null = null;

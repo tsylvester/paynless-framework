@@ -211,7 +211,7 @@
 ```json
 {
   "system_materials": {
-    "executive_summary": "Summarize the intent of merging each Thesis document with its corresponding Antithesis critiques.",
+    "agent_notes_to_self": "Summarize the intent of merging each Thesis document with its corresponding Antithesis critiques, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "Identify the thesis and antithesis artifacts that will be combined during pairwise synthesis.",
     "stage_rationale": "Explain that this stage ensures consistent pairwise synthesis before consolidating documents across models.",
     "decision_criteria": [
@@ -235,7 +235,7 @@
         "thesis_document": "business_case",
         "critique_document": "business_case_critique",
         "comparison_signal": "comparison_vector",
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
         "user_problem_validation": "",
         "market_opportunity": "",
         "competitive_analysis": "",
@@ -378,7 +378,7 @@
         "<derived from antithesis reviewer or reviewer combination>"
       ],
       "content_to_include": {
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
         "user_problem_validation": "",
         "market_opportunity": "",
         "competitive_analysis": "",
@@ -685,7 +685,7 @@
       "lineage_key": "<>",
       "source_model_slug": "<>",
       "content_to_include": {
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
         "user_problem_validation": "",
         "market_opportunity": "",
         "competitive_analysis": "",
@@ -949,7 +949,7 @@
 ```json
 {
   "system_materials": {
-    "executive_summary": "Outline/index of all outputs in this response and how they connect to the objective",
+    "agent_notes_to_self": "Outline/index of all outputs in this response and how they connect to the objective, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "Succinct summary of prior proposals, critiques, and user feedback included in this synthesis",
     "stage_rationale": "Decision record explaining how signals and critiques informed selections, how conflicts were resolved, gaps were filled, and why chosen approaches best meet constraints",
     "progress_update": "For continuation turns, summarize what is complete vs remaining; omit on first turn",

@@ -948,7 +948,7 @@ Deno.test('planPerModel per_model EXECUTE jobs have null source_group and pass n
 		],
 		outputs_required: {
 			system_materials: {
-				executive_summary: '',
+				agent_notes_to_self: '',
 				input_artifacts_summary: '',
 				stage_rationale: '',
 			},
@@ -1956,6 +1956,278 @@ Deno.test('planPerModel adds header_context_id to inputs when recipe step requir
 			executePayload.inputs.header_context_id,
 			'header-context-id-123',
 			'header_context_id should match the header_context document id with matching model_id'
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
+});
+
+Deno.test('planPerModel selects header_context source doc by document_key when rule has document_key FileType.HeaderContext', () => {
+	const headerContextDoc: SourceDocument = {
+		id: 'header-context-plain-id',
+		contribution_type: 'header_context',
+		content: '',
+		citations: null,
+		error: null,
+		mime_type: 'application/json',
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		size_bytes: 0,
+		target_contribution_id: null,
+		seed_prompt_url: null,
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_relationships: null,
+		attempt_count: 0,
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'parenthesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-parent_0_header_context.json',
+		storage_bucket: 'dialectic-contributions',
+		storage_path: 'project-xyz/session_abc/iteration_1/4_parenthesis',
+		model_id: 'model-parent',
+		model_name: null,
+		prompt_template_id_used: null,
+		document_key: FileType.HeaderContext,
+	};
+	const headerContextPairwiseDoc: SourceDocument = {
+		id: 'header-context-pairwise-id',
+		contribution_type: 'header_context',
+		content: '',
+		citations: null,
+		error: null,
+		mime_type: 'application/json',
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		size_bytes: 0,
+		target_contribution_id: null,
+		seed_prompt_url: null,
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_relationships: null,
+		attempt_count: 0,
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'parenthesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-parent_0_header_context_pairwise.json',
+		storage_bucket: 'dialectic-contributions',
+		storage_path: 'project-xyz/session_abc/iteration_1/4_parenthesis',
+		model_id: 'model-parent',
+		model_name: null,
+		prompt_template_id_used: null,
+		document_key: FileType.header_context_pairwise,
+	};
+	const documentDoc: SourceDocument = {
+		id: 'document-doc-1',
+		contribution_type: 'synthesis',
+		content: 'Document content',
+		citations: null,
+		error: null,
+		mime_type: 'text/markdown',
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		size_bytes: 0,
+		target_contribution_id: null,
+		seed_prompt_url: null,
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_relationships: null,
+		attempt_count: 0,
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'synthesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-parent_0_system_architecture.md',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-xyz/session_abc/iteration_1/3_synthesis/documents',
+		model_id: 'model-parent',
+		model_name: null,
+		prompt_template_id_used: null,
+		document_key: FileType.system_architecture,
+	};
+	const sourceDocs: SourceDocument[] = [headerContextPairwiseDoc, headerContextDoc, documentDoc];
+	const recipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		inputs_required: [
+			{ type: 'header_context', slug: 'parenthesis', document_key: FileType.HeaderContext, required: true },
+			{ type: 'document', slug: 'synthesis', document_key: FileType.system_architecture, required: true },
+		],
+		outputs_required: {
+			documents: [{ artifact_class: 'rendered_document', file_type: 'markdown', document_key: FileType.technical_requirements, template_filename: 'technical_requirements.md' }],
+			assembled_json: [],
+			files_to_generate: [{ from_document_key: FileType.technical_requirements, template_filename: 'technical_requirements.md' }],
+		},
+	};
+	const childJobs = planPerModel(sourceDocs, MOCK_PARENT_JOB, recipeStep, MOCK_PARENT_JOB.payload.user_jwt);
+	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+	const job = childJobs[0];
+	assertExists(job, 'Child job should exist');
+	if (isDialecticExecuteJobPayload(job)) {
+		const executePayload: DialecticExecuteJobPayload = job;
+		assertEquals(
+			executePayload.inputs.header_context_id,
+			'header-context-plain-id',
+			'header_context_id must match the document whose document_key is FileType.HeaderContext, not the first header_context in the array'
+		);
+	} else {
+		throw new Error('Expected EXECUTE job');
+	}
+});
+
+Deno.test('planPerModel selects header_context source doc by document_key when rule has document_key FileType.header_context_pairwise', () => {
+	const headerContextDoc: SourceDocument = {
+		id: 'header-context-plain-id',
+		contribution_type: 'header_context',
+		content: '',
+		citations: null,
+		error: null,
+		mime_type: 'application/json',
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		size_bytes: 0,
+		target_contribution_id: null,
+		seed_prompt_url: null,
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_relationships: null,
+		attempt_count: 0,
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'parenthesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-parent_0_header_context.json',
+		storage_bucket: 'dialectic-contributions',
+		storage_path: 'project-xyz/session_abc/iteration_1/4_parenthesis',
+		model_id: 'model-parent',
+		model_name: null,
+		prompt_template_id_used: null,
+		document_key: FileType.HeaderContext,
+	};
+	const headerContextPairwiseDoc: SourceDocument = {
+		id: 'header-context-pairwise-id',
+		contribution_type: 'header_context',
+		content: '',
+		citations: null,
+		error: null,
+		mime_type: 'application/json',
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		size_bytes: 0,
+		target_contribution_id: null,
+		seed_prompt_url: null,
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_relationships: null,
+		attempt_count: 0,
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'parenthesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-parent_0_header_context_pairwise.json',
+		storage_bucket: 'dialectic-contributions',
+		storage_path: 'project-xyz/session_abc/iteration_1/4_parenthesis',
+		model_id: 'model-parent',
+		model_name: null,
+		prompt_template_id_used: null,
+		document_key: FileType.header_context_pairwise,
+	};
+	const documentDoc: SourceDocument = {
+		id: 'document-doc-1',
+		contribution_type: 'synthesis',
+		content: 'Document content',
+		citations: null,
+		error: null,
+		mime_type: 'text/markdown',
+		original_model_contribution_id: null,
+		raw_response_storage_path: null,
+		tokens_used_input: 0,
+		tokens_used_output: 0,
+		processing_time_ms: 0,
+		size_bytes: 0,
+		target_contribution_id: null,
+		seed_prompt_url: null,
+		is_header: false,
+		source_prompt_resource_id: null,
+		document_relationships: null,
+		attempt_count: 0,
+		session_id: 'session-abc',
+		user_id: 'user-def',
+		stage: 'synthesis',
+		iteration_number: 1,
+		edit_version: 1,
+		is_latest_edit: true,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+		file_name: 'model-parent_0_system_architecture.md',
+		storage_bucket: 'dialectic-project-resources',
+		storage_path: 'project-xyz/session_abc/iteration_1/3_synthesis/documents',
+		model_id: 'model-parent',
+		model_name: null,
+		prompt_template_id_used: null,
+		document_key: FileType.system_architecture,
+	};
+	const sourceDocs: SourceDocument[] = [headerContextDoc, headerContextPairwiseDoc, documentDoc];
+	const recipeStep: DialecticStageRecipeStep = {
+		...MOCK_RECIPE_STEP,
+		job_type: 'EXECUTE',
+		inputs_required: [
+			{ type: 'header_context', slug: 'parenthesis', document_key: FileType.header_context_pairwise, required: true },
+			{ type: 'document', slug: 'synthesis', document_key: FileType.system_architecture, required: true },
+		],
+		outputs_required: {
+			documents: [{ artifact_class: 'rendered_document', file_type: 'markdown', document_key: FileType.technical_requirements, template_filename: 'technical_requirements.md' }],
+			assembled_json: [],
+			files_to_generate: [{ from_document_key: FileType.technical_requirements, template_filename: 'technical_requirements.md' }],
+		},
+	};
+	const childJobs = planPerModel(sourceDocs, MOCK_PARENT_JOB, recipeStep, MOCK_PARENT_JOB.payload.user_jwt);
+	assertEquals(childJobs.length, 1, 'Should create exactly one child job');
+	const job = childJobs[0];
+	assertExists(job, 'Child job should exist');
+	if (isDialecticExecuteJobPayload(job)) {
+		const executePayload: DialecticExecuteJobPayload = job;
+		assertEquals(
+			executePayload.inputs.header_context_id,
+			'header-context-pairwise-id',
+			'header_context_id must match the document whose document_key is FileType.header_context_pairwise, not the first header_context in the array'
 		);
 	} else {
 		throw new Error('Expected EXECUTE job');

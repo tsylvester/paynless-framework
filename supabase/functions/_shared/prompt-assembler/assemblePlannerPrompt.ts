@@ -251,11 +251,72 @@ export async function assemblePlannerPrompt(
 
 The context_for_documents array below contains empty content_to_include object models that you must fill in with specific alignment values.`;
 
-  // Extend context with context_for_documents wrapped in an object that includes instructions
-  // This embeds the instructions as a predicate property (_instructions) within the structure
-  // so they are consumed together when {{context_for_documents}} is rendered
+  // Transform sourceDocuments into dot-notation template variables matching the actual
+  // planner prompt format (e.g., {{thesis_documents.business_case}}, {{thesis_feedback.feature_spec}}).
+  // Also create section-level truthy variables for conditional sections (e.g., {{#section:thesis_feedback}}).
+  const sourceDocVars: Record<string, string> = {};
+  const sectionTruthyVars: Set<string> = new Set();
+
+  if (context.sourceDocuments && context.sourceDocuments.length > 0) {
+    // Group documents by their dot-notation key for multi-model concatenation
+    const dotNotationGroups: Record<string, Array<{ content: string; modelName?: string }>> = {};
+
+    for (const doc of context.sourceDocuments) {
+      const header = doc.metadata.header;
+      if (!header) continue;
+
+      const headerSnake = header.toLowerCase().replace(/\s+/g, '_');
+      sectionTruthyVars.add(headerSnake);
+
+      const docKey = doc.metadata.documentKey;
+      
+      if (!docKey) {
+        throw new Error(
+          `ASSEMBLE_PLANNER_PROMPT_ERROR: sourceDocument with id="${doc.id}" has metadata.header="${header}" but missing required metadata.documentKey. All sourceDocuments must have a documentKey for dot-notation variable construction.`
+        );
+      }
+
+      // Dot-notation path: header_snake.document_key
+      const dotNotationKey = `${headerSnake}.${docKey}`;
+      if (!dotNotationGroups[dotNotationKey]) {
+        dotNotationGroups[dotNotationKey] = [];
+      }
+      dotNotationGroups[dotNotationKey].push({
+        content: doc.content,
+        modelName: doc.metadata.modelName,
+      });
+    }
+
+    // Build dot-notation variables with multi-model concatenation
+    for (const [key, docs] of Object.entries(dotNotationGroups)) {
+      const parts: string[] = [];
+      for (const doc of docs) {
+        if (doc.modelName && docs.length > 1) {
+          parts.push(`### ${doc.modelName}\n\n${doc.content}`);
+        } else {
+          parts.push(doc.content);
+        }
+      }
+      sourceDocVars[key] = parts.join('\n\n').trimEnd();
+    }
+
+    // Create section-level truthy variables for conditional sections
+    for (const sectionKey of sectionTruthyVars) {
+      if (!sourceDocVars[sectionKey]) {
+        sourceDocVars[sectionKey] = "true";
+      }
+    }
+  }
+
+  // Build the extended context:
+  // 1. Spread base context (minus the raw sourceDocuments array which templates cannot consume)
+  // 2. Inject dot-notation and section truthy variables
+  // 3. Add context_for_documents wrapped with instructions
+  const { sourceDocuments: _rawSourceDocs, ...contextWithoutRawDocs } = context;
+
   const extendedContext = {
-    ...context,
+    ...contextWithoutRawDocs,
+    ...sourceDocVars,
     context_for_documents: {
       _instructions: contextForDocumentsInstructions,
       documents: contextForDocuments,

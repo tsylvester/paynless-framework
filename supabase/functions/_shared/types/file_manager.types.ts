@@ -111,7 +111,7 @@ export interface PathContext {
   fileType: FileType
   sessionId?: string
   iteration?: number
-    stageSlug?: string
+  stageSlug?: string
   contributionType?: ContributionType | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
   modelSlug?: string
   attemptCount?: number
@@ -127,6 +127,8 @@ export interface PathContext {
   documentKey?: string; // e.g., 'executive_summary', 'technical_design'
   stepName?: string; // e.g., 'critique_and_improve'
   sourceGroupFragment?: string; // First 8 characters of source_group UUID (sanitized) for filename disambiguation
+  originalStoragePath?: string; // For UserFeedback: directory of original document so feedback is placed alongside it
+  originalBaseName?: string; // For UserFeedback: base name of original document for feedback filename derivation ({baseName}_feedback.md)
 }
 
 /**

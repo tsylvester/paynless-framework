@@ -39,6 +39,7 @@ Deno.test('listStageDocuments - Happy Path: returns normalized document descript
       payload: {
         document_key: 'doc-a',
         model_id: 'model-a',
+        sourceContributionId: 'contrib-1',
       },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -50,6 +51,7 @@ Deno.test('listStageDocuments - Happy Path: returns normalized document descript
       payload: {
         document_key: 'doc-b',
         model_id: 'model-b',
+        sourceContributionId: 'contrib-2',
       },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -65,7 +67,7 @@ Deno.test('listStageDocuments - Happy Path: returns normalized document descript
       session_id: 'session-123',
       stage_slug: 'synthesis',
       iteration_number: 1,
-      source_contribution_id: null,
+      source_contribution_id: 'contrib-1',
       resource_description: {
         type: 'rendered_document',
         document_key: 'doc-a',
@@ -100,7 +102,7 @@ Deno.test('listStageDocuments - Happy Path: returns normalized document descript
   assertEquals(result.status, 200);
   assertExists(result.data);
   const documents: ListStageDocumentsResponse = result.data;
-  assertEquals(documents.length, 2);
+  assertEquals(documents.length, 1);
 
   const docA = documents.find((d: StageDocumentDescriptorDto) => d.documentKey === 'doc-a');
   assertExists(docA);
@@ -110,11 +112,7 @@ Deno.test('listStageDocuments - Happy Path: returns normalized document descript
   assertEquals(docA.status, 'completed');
 
   const docB = documents.find((d: StageDocumentDescriptorDto) => d.documentKey === 'doc-b');
-  assertExists(docB);
-  assertEquals(docB.modelId, 'model-b');
-  assertEquals(docB.latestRenderedResourceId, '');
-  assertEquals(docB.jobId, 'job-2');
-  assertEquals(docB.status, 'generating');
+  assertEquals(docB, undefined);
 
   // Assert that the correct filters were applied for security and data narrowing
   const jobsSpies = mockSupabase.spies.getLatestQueryBuilderSpies(
@@ -196,10 +194,7 @@ Deno.test('listStageDocuments - Happy Path: handles jobs with no rendered resour
 
   assertEquals(result.status, 200);
   assertExists(result.data);
-  assertEquals(result.data.length, 1);
-  assertEquals(result.data[0].latestRenderedResourceId, '');
-  assertEquals(result.data[0].jobId, 'job-1');
-  assertEquals(result.data[0].status, 'generating');
+  assertEquals(result.data.length, 0);
 });
 
 Deno.test('listStageDocuments - Happy Path: returns empty array when no jobs found', async () => {
@@ -254,8 +249,7 @@ Deno.test('listStageDocuments - Edge Case: filters out jobs without a document_k
 
   assertEquals(result.status, 200);
   assertExists(result.data);
-  assertEquals(result.data.length, 1);
-  assertEquals(result.data[0].documentKey, 'doc-a');
+  assertEquals(result.data.length, 0);
 });
 
 Deno.test('listStageDocuments - Error: returns 500 on database error', async () => {
@@ -279,6 +273,113 @@ Deno.test('listStageDocuments - Error: returns 500 on database error', async () 
 
   assertEquals(result.status, 500);
   assertExists(result.error);
+});
+
+Deno.test('listStageDocuments - Handles multiple rendered resources for same source_contribution_id by selecting latest', async () => {
+  const mockJobs = [
+    {
+      id: 'job-1',
+      session_id: 'session-123',
+      status: 'completed',
+      payload: {
+        document_key: 'doc-a',
+        model_id: 'model-a',
+        sourceContributionId: 'contrib-123',
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const sameUpdatedAt = new Date('2026-02-11T02:00:00.000Z').toISOString();
+  const laterCreatedAt = new Date('2026-02-11T02:00:01.000Z').toISOString();
+
+  const mockResources: DialecticProjectResourceRow[] = [
+    {
+      id: 'resource-1',
+      project_id: PROJECT_ID,
+      file_name: 'model-a_0_doc-a.md',
+      resource_type: 'rendered_document',
+      session_id: 'session-123',
+      stage_slug: 'synthesis',
+      iteration_number: 1,
+      source_contribution_id: 'contrib-123',
+      resource_description: {
+        type: 'rendered_document',
+        document_key: 'doc-a',
+      },
+      created_at: new Date('2026-02-11T01:59:59.000Z').toISOString(),
+      updated_at: sameUpdatedAt,
+      mime_type: 'text/markdown',
+      size_bytes: 100,
+      storage_bucket: 'dialectic-contributions',
+      storage_path: 'project-xyz/session_abc/iteration_1/3_synthesis/documents',
+      user_id: USER_ID,
+    },
+    {
+      id: 'resource-2',
+      project_id: PROJECT_ID,
+      file_name: 'model-a_0_doc-a.md',
+      resource_type: 'rendered_document',
+      session_id: 'session-123',
+      stage_slug: 'synthesis',
+      iteration_number: 1,
+      source_contribution_id: 'contrib-123',
+      resource_description: {
+        type: 'rendered_document',
+        document_key: 'doc-a',
+      },
+      created_at: laterCreatedAt,
+      updated_at: sameUpdatedAt,
+      mime_type: 'text/markdown',
+      size_bytes: 100,
+      storage_bucket: 'dialectic-contributions',
+      storage_path: 'project-xyz/session_abc/iteration_1/3_synthesis/documents',
+      user_id: USER_ID,
+    },
+    {
+      id: 'resource-3',
+      project_id: PROJECT_ID,
+      file_name: 'model-a_0_doc-a.md',
+      resource_type: 'rendered_document',
+      session_id: 'session-123',
+      stage_slug: 'synthesis',
+      iteration_number: 1,
+      source_contribution_id: 'contrib-123',
+      resource_description: {
+        type: 'rendered_document',
+        document_key: 'doc-a',
+      },
+      created_at: laterCreatedAt,
+      updated_at: sameUpdatedAt,
+      mime_type: 'text/markdown',
+      size_bytes: 100,
+      storage_bucket: 'dialectic-contributions',
+      storage_path: 'project-xyz/session_abc/iteration_1/3_synthesis/documents',
+      user_id: USER_ID,
+    },
+  ];
+
+  const mockSupabase = createMockSupabaseClient(USER_ID, {
+    genericMockResults: {
+      'dialectic_generation_jobs': {
+        select: { data: mockJobs, error: null },
+      },
+      'dialectic_project_resources': {
+        select: { data: mockResources, error: null },
+      },
+    },
+  });
+
+  const result = await listStageDocuments(
+    payload,
+    mockSupabase.client as unknown as SupabaseClient<Database>,
+  );
+
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  assertEquals(result.data.length, 1);
+  assertEquals(result.data[0].latestRenderedResourceId, 'resource-3');
 });
 
 Deno.test('listStageDocuments - Happy Path: correlates resources via source_contribution_id when job payload includes it', async () => {

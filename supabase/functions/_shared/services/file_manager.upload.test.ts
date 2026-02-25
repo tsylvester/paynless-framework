@@ -20,6 +20,7 @@ import {
   FileType,
   ContributionMetadata,
   PathContext,
+  UserFeedbackUploadContext,
 } from '../types/file_manager.types.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
 import { 
@@ -146,24 +147,19 @@ Deno.test('FileManagerService', async (t) => {
           },
           storageMock: {
             uploadResult: { data: { path: expectedFullPath }, error: null },
-            // Ensure cleanup path executes (list returns the uploaded file name)
-            listResult: { data: [{ name: expectedPathParts.fileName }], error: null },
             removeResult: { data: [], error: null },
           },
         };
         beforeEach(config);
-        // Initialize spy before the call so it tracks the remove call
         const storageBucket = setup.spies.storage.from('test-bucket');
+        const listSpy = storageBucket.listSpy;
         const removeSpy = storageBucket.removeSpy;
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
-        // Expect RED: prove intended behavior (message + details) and cleanup attempted
         assertEquals(record, null);
         assertExists(error);
         assertEquals(error?.message, 'Database registration failed after successful upload.');
-        // Intended: details should include DB code/details for easier diagnosis
-        // This will be RED until implementation propagates details
         if (isPostgrestError(error)) {
           assertExists(error.details, 'PostgrestError should have details');
           assert(typeof error.details === 'string', 'error.details should be a string');
@@ -174,13 +170,11 @@ Deno.test('FileManagerService', async (t) => {
           assert(detailsText.includes('PGRST116') || detailsText.includes('constraint'));
         }
 
-        // Ensure we attempted to remove the uploaded file path
-        assertExists(removeSpy, "Remove spy should exist");
-        assert(removeSpy.calls.length > 0, "Remove should have been called");
-        const removedPathsArg = removeSpy.calls[0]?.args[0];
-        assertExists(removedPathsArg);
-        assert(Array.isArray(removedPathsArg), 'removedPathsArg should be an array');
-        assert(removedPathsArg.some((p: string) => p === expectedFullPath));
+        // Cleanup must target only the specific uploaded file; must not use list()
+        assert(listSpy.calls.length === 0, 'Cleanup must not call storage.list');
+        assertExists(removeSpy, 'Remove spy should exist');
+        assertEquals(removeSpy.calls.length, 1, 'Remove should have been called exactly once');
+        assertEquals(removeSpy.calls[0].args[0], [expectedFullPath], 'Remove must be called with only the uploaded file path');
       } finally {
         afterEach();
       }
@@ -773,38 +767,55 @@ Deno.test('FileManagerService', async (t) => {
     async () => {
       try {
         const feedbackDataMock = { id: 'feedback-123', project_id: 'project-feedback-proj' };
-        const config: MockSupabaseDataConfig = {
-          genericMockResults: {
-            dialectic_feedback: { 
-              insert: { data: [feedbackDataMock], error: null },
-            },
-          },
-          storageMock: {
-            uploadResult: { data: { path: 'projects/project-feedback-proj/sessions/session-feedback-sess/iteration_3/3_synthesis/user_feedback_3_synthesis.md' }, error: null },
-          }
+        const projectId = 'project-feedback-proj';
+        const sessionId = 'session-feedback-sess';
+        const iteration = 3;
+        const stageSlug = '3_synthesis';
+        const sourceDocPathContext: PathContext = {
+          projectId,
+          sessionId,
+          iteration,
+          stageSlug,
+          modelSlug: 'claude-3-opus',
+          attemptCount: 0,
+          documentKey: 'business_case',
+          fileType: FileType.business_case,
         };
-        beforeEach(config);
-
-
-        const context: UploadContext = {
+        const sourceDocPath = constructStoragePath(sourceDocPathContext);
+        const originalStoragePath = sourceDocPath.storagePath;
+        const originalBaseName = sourceDocPath.fileName.endsWith('.md') ? sourceDocPath.fileName.slice(0, -3) : sourceDocPath.fileName;
+        const pathContext: PathContext & { fileType: FileType.UserFeedback } = {
+          fileType: FileType.UserFeedback,
+          projectId,
+          sessionId,
+          iteration,
+          stageSlug,
+          originalStoragePath,
+          originalBaseName,
+          documentKey: 'business_case',
+          modelSlug: 'claude-3-opus',
+        };
+        const context: UserFeedbackUploadContext = {
           ...baseUploadContext,
-          pathContext: {
-            fileType: FileType.UserFeedback,
-            projectId: 'project-feedback-proj',
-            sessionId: 'session-feedback-sess',
-            iteration: 3,
-            stageSlug: '3_synthesis',
-            originalFileName: 'user_feedback_3_synthesis.md',
-          },
+          pathContext,
           mimeType: 'text/markdown',
           fileContent: '# My Feedback Content',
           userId: 'user-feedback-user-id',
           feedbackTypeForDb: 'some-feedback-type',
           resourceDescriptionForDb: { description: "A test feedback resource" }
         };
-        
         const expectedPath = constructStoragePath(context.pathContext);
-        config.storageMock!.uploadResult = {data: {path: expectedPath.storagePath}, error: null}
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_feedback: {
+              insert: { data: [feedbackDataMock], error: null },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedPath.storagePath }, error: null },
+          },
+        };
+        beforeEach(config);
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
@@ -830,13 +841,322 @@ Deno.test('FileManagerService', async (t) => {
         const expectedResourceDesc: Json = context.resourceDescriptionForDb!;
         assertEquals(insertData.resource_description, expectedResourceDesc);
         
-        const derivedFileName = expectedPath.fileName;
-        assertEquals(insertData.file_name, derivedFileName);
+        assertEquals(insertData.file_name, expectedPath.fileName);
         assertEquals(insertData.storage_path, expectedPath.storagePath);
         assertEquals(insertData.mime_type, context.mimeType);
 
       } finally {
         afterEach()
+      }
+    });
+
+  await t.step('uploadAndRegisterFile user_feedback with no existing logical doc row inserts a new row',
+    async () => {
+      try {
+        const documentKey = 'synthesis_document_business_case';
+        const modelId = 'model-abc-123';
+        const newRow = { id: 'new-feedback-id', project_id: 'proj-upsert', session_id: 'sess-upsert' };
+        const projectId = 'proj-upsert';
+        const sessionId = 'sess-upsert';
+        const iteration = 2;
+        const stageSlug = '2_synthesis';
+        const sourceDocPathContext: PathContext = {
+          projectId,
+          sessionId,
+          iteration,
+          stageSlug,
+          modelSlug: 'model-abc',
+          attemptCount: 0,
+          documentKey,
+          fileType: FileType.synthesis_document_business_case,
+        };
+        const sourceDocPath = constructStoragePath(sourceDocPathContext);
+        const originalStoragePath = sourceDocPath.storagePath;
+        const originalBaseName = sourceDocPath.fileName.endsWith('.md') ? sourceDocPath.fileName.slice(0, -3) : sourceDocPath.fileName;
+        const pathContext: PathContext & { fileType: FileType.UserFeedback } = {
+          fileType: FileType.UserFeedback,
+          projectId,
+          sessionId,
+          iteration,
+          stageSlug,
+          originalStoragePath,
+          originalBaseName,
+          documentKey,
+          modelSlug: modelId,
+        };
+        const context: UserFeedbackUploadContext = {
+          ...baseUploadContext,
+          pathContext,
+          mimeType: 'text/markdown',
+          fileContent: '# New feedback',
+          userId: 'user-upsert',
+          feedbackTypeForDb: 'general-feedback',
+          resourceDescriptionForDb: { document_key: documentKey, model_id: modelId },
+        };
+        const expectedPath = constructStoragePath(context.pathContext);
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_feedback: {
+              select: { data: [], error: null },
+              insert: { data: [newRow], error: null },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedPath.storagePath }, error: null },
+          },
+        };
+        beforeEach(config);
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+        assertEquals(error, null, error?.message);
+        assertExists(record);
+        assertEquals(record?.id, newRow.id);
+
+        const selectHistoric = setup.spies.getHistoricQueryBuilderSpies?.('dialectic_feedback', 'select') ?? { callCount: 0, callsArgs: [] };
+        assert(selectHistoric.callCount >= 1, 'dialectic_feedback select (logical doc lookup) should have been called');
+        const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_feedback')?.insert;
+        assertExists(insertSpy, 'Insert spy for dialectic_feedback not found');
+        assertEquals(insertSpy.calls.length, 1, 'Insert should be called exactly once when no existing row');
+      } finally {
+        afterEach();
+      }
+    });
+
+  await t.step('uploadAndRegisterFile user_feedback with existing logical doc row updates that row (no second insert)',
+    async () => {
+      try {
+        const documentKey = 'business_case';
+        const modelId = 'model-existing';
+        const existingId = 'existing-feedback-uuid';
+        const updatedRow = { id: existingId, project_id: 'proj-upd', session_id: 'sess-upd', file_name: 'updated_feedback.md' };
+        const projectId = 'proj-upd';
+        const sessionId = 'sess-upd';
+        const iteration = 1;
+        const stageSlug = '1_thesis';
+        const sourceDocPathContext: PathContext = {
+          projectId,
+          sessionId,
+          iteration,
+          stageSlug,
+          modelSlug: 'model-upd',
+          attemptCount: 0,
+          documentKey,
+          fileType: FileType.business_case,
+        };
+        const sourceDocPath = constructStoragePath(sourceDocPathContext);
+        const originalStoragePath = sourceDocPath.storagePath;
+        const originalBaseName = sourceDocPath.fileName.endsWith('.md') ? sourceDocPath.fileName.slice(0, -3) : sourceDocPath.fileName;
+        const pathContext: PathContext & { fileType: FileType.UserFeedback } = {
+          fileType: FileType.UserFeedback,
+          projectId,
+          sessionId,
+          iteration,
+          stageSlug,
+          originalStoragePath,
+          originalBaseName,
+          documentKey,
+          modelSlug: modelId,
+        };
+        const context: UserFeedbackUploadContext = {
+          ...baseUploadContext,
+          pathContext,
+          mimeType: 'text/markdown',
+          fileContent: '# Updated feedback content',
+          userId: 'user-upd',
+          feedbackTypeForDb: 'general-feedback',
+          resourceDescriptionForDb: { document_key: documentKey, model_id: modelId },
+        };
+        const expectedPath = constructStoragePath(context.pathContext);
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_feedback: {
+              select: { data: [{ id: existingId }], error: null },
+              update: { data: [updatedRow], error: null },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedPath.storagePath }, error: null },
+          },
+        };
+        beforeEach(config);
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+        assertEquals(error, null, error?.message);
+        assertExists(record);
+        assertEquals(record?.id, existingId);
+
+        const updateSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_feedback')?.update;
+        assertExists(updateSpy, 'Update spy for dialectic_feedback not found');
+        assertEquals(updateSpy.calls.length, 1, 'Update should be called exactly once when existing row found');
+        const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_feedback')?.insert;
+        const insertCalls = insertSpy?.calls.length ?? 0;
+        assertEquals(insertCalls, 0, 'Insert must not be called when updating existing feedback row');
+      } finally {
+        afterEach();
+      }
+    });
+
+  await t.step('uploadAndRegisterFile user_feedback logical doc lookup filters by session_id project_id stage_slug iteration_number document_key model_id',
+    async () => {
+      try {
+        const documentKey = 'feature_spec';
+        const modelId = 'model-filter-test';
+        const projectId = 'p';
+        const sessionId = 's';
+        const iteration = 1;
+        const stageSlug = '1_thesis';
+        const sourceDocPathContext: PathContext = {
+          projectId,
+          sessionId,
+          iteration,
+          stageSlug,
+          modelSlug: 'model-f',
+          attemptCount: 0,
+          documentKey,
+          fileType: FileType.feature_spec,
+        };
+        const sourceDocPath = constructStoragePath(sourceDocPathContext);
+        const originalStoragePath = sourceDocPath.storagePath;
+        const originalBaseName = sourceDocPath.fileName.endsWith('.md') ? sourceDocPath.fileName.slice(0, -3) : sourceDocPath.fileName;
+        const pathContext: PathContext & { fileType: FileType.UserFeedback } = {
+          fileType: FileType.UserFeedback,
+          projectId,
+          sessionId,
+          iteration,
+          stageSlug,
+          originalStoragePath,
+          originalBaseName,
+          documentKey,
+          modelSlug: modelId,
+        };
+        const context: UserFeedbackUploadContext = {
+          ...baseUploadContext,
+          pathContext,
+          mimeType: 'text/markdown',
+          fileContent: '# Feedback',
+          userId: 'u',
+          feedbackTypeForDb: 'general-feedback',
+          resourceDescriptionForDb: { document_key: documentKey, model_id: modelId },
+        };
+        const expectedPath = constructStoragePath(context.pathContext);
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_feedback: {
+              select: { data: [], error: null },
+              insert: { data: [{ id: 'filter-test-id' }], error: null },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedPath.storagePath }, error: null },
+          },
+        };
+        beforeEach(config);
+
+        await fileManager.uploadAndRegisterFile(context);
+
+        const eqSpy = setup.spies.getHistoricQueryBuilderSpies?.('dialectic_feedback', 'eq') ?? { callCount: 0, callsArgs: [] };
+        const filterSpy = setup.spies.getHistoricQueryBuilderSpies?.('dialectic_feedback', 'filter') ?? { callCount: 0, callsArgs: [] };
+        assert(eqSpy.callCount >= 4, 'Logical doc lookup must filter by session_id, project_id, stage_slug, iteration_number');
+        const eqCalls = eqSpy.callsArgs;
+        const hasSessionId = eqCalls.some((args) => args[0] === 'session_id' && args[1] === context.pathContext.sessionId);
+        const hasProjectId = eqCalls.some((args) => args[0] === 'project_id' && args[1] === context.pathContext.projectId);
+        const hasStageSlug = eqCalls.some((args) => args[0] === 'stage_slug' && args[1] === context.pathContext.stageSlug);
+        const hasIteration = eqCalls.some((args) => args[0] === 'iteration_number' && args[1] === context.pathContext.iteration);
+        assert(hasSessionId, 'Lookup must include eq(session_id, ...)');
+        assert(hasProjectId, 'Lookup must include eq(project_id, ...)');
+        assert(hasStageSlug, 'Lookup must include eq(stage_slug, ...)');
+        assert(hasIteration, 'Lookup must include eq(iteration_number, ...)');
+        assert(filterSpy.callCount >= 2, 'Logical doc lookup must filter by resource_description document_key and model_id');
+        const filterCalls = filterSpy.callsArgs;
+        const hasDocumentKey = filterCalls.some(
+          (args) => typeof args[0] === 'string' && args[0].includes('document_key') && args[2] === documentKey
+        );
+        const hasModelId = filterCalls.some(
+          (args) => typeof args[0] === 'string' && args[0].includes('model_id') && args[2] === modelId
+        );
+        assert(hasDocumentKey, 'Lookup must include filter on resource_description document_key');
+        assert(hasModelId, 'Lookup must include filter on resource_description model_id');
+      } finally {
+        afterEach();
+      }
+    });
+
+  await t.step('uploadAndRegisterFile user_feedback storage upload uses existing deterministic path from constructStoragePath',
+    async () => {
+      try {
+        const projectId = 'path-proj';
+        const sessionId = 'path-sess';
+        const iteration = 2;
+        const stageSlug = '2_synthesis';
+        const sourceDocPathContext: PathContext = {
+          projectId,
+          sessionId,
+          iteration,
+          stageSlug,
+          modelSlug: 'path-model',
+          attemptCount: 0,
+          documentKey: 'synthesis_document_feature_spec',
+          fileType: FileType.synthesis_document_feature_spec,
+        };
+        const sourceDocPath = constructStoragePath(sourceDocPathContext);
+        const originalStoragePath = sourceDocPath.storagePath;
+        const originalBaseName = sourceDocPath.fileName.endsWith('.md') ? sourceDocPath.fileName.slice(0, -3) : sourceDocPath.fileName;
+        const pathContext: PathContext & { fileType: FileType.UserFeedback } = {
+          fileType: FileType.UserFeedback,
+          projectId,
+          sessionId,
+          iteration,
+          stageSlug,
+          originalStoragePath,
+          originalBaseName,
+          documentKey: 'synthesis_document_feature_spec',
+          modelSlug: 'path-model',
+        };
+        const context: UserFeedbackUploadContext = {
+          ...baseUploadContext,
+          pathContext,
+          mimeType: 'text/markdown',
+          fileContent: '# Path test',
+          userId: 'path-user',
+          feedbackTypeForDb: 'general-feedback',
+          resourceDescriptionForDb: { document_key: 'synthesis_document_feature_spec', model_id: 'path-model' },
+        };
+        const expectedPath = constructStoragePath(context.pathContext);
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_feedback: {
+              select: { data: [], error: null },
+              insert: { data: [{ id: 'path-test-id' }], error: null },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedPath.storagePath }, error: null },
+          },
+        };
+        beforeEach(config);
+        const storageBucket = setup.spies.storage.from('test-bucket');
+
+        const { error } = await fileManager.uploadAndRegisterFile(context);
+
+        assertEquals(error, null, error?.message);
+        assertExists(storageBucket.uploadSpy);
+        assertEquals(storageBucket.uploadSpy.calls.length, 1, 'Storage upload should be called once');
+        const uploadPathArgRaw: unknown = storageBucket.uploadSpy.calls[0].args[0];
+        assert(typeof uploadPathArgRaw === 'string', 'Upload path must be a string');
+        const uploadPathArg: string = uploadPathArgRaw;
+        const lastSlash = uploadPathArg.lastIndexOf('/');
+        const uploadDir = lastSlash >= 0 ? uploadPathArg.slice(0, lastSlash) : '';
+        const uploadFile = lastSlash >= 0 ? uploadPathArg.slice(lastSlash + 1) : uploadPathArg;
+        assertEquals(uploadDir, expectedPath.storagePath, 'Upload path directory must match constructStoragePath storagePath');
+        assertEquals(uploadFile, expectedPath.fileName, 'Upload path filename must match constructStoragePath fileName');
+        assert(
+          expectedPath.fileName.endsWith('_feedback.md'),
+          'user_feedback fileName must follow (originalBaseName)_feedback.md pattern'
+        );
+      } finally {
+        afterEach();
       }
     });
 
@@ -895,22 +1215,14 @@ Deno.test('FileManagerService', async (t) => {
             },
           },
           storageMock: {
-            uploadResult: { data: { path: expectedFullPath }, error: null }, // Upload succeeds
-            listResult: { data: [{ 
-              name: expectedPathParts.fileName, 
-              id: 'file-id-for-cleanup',
-              updated_at: new Date().toISOString(),
-              created_at: new Date().toISOString(),
-              last_accessed_at: new Date().toISOString(),
-              metadata: { 'e-tag': 'abc'} 
-            }], error: null }, // Mock the list call
-            removeResult: { data: [{ name: 'test-bucket' }], error: null }, // Mock the subsequent remove call
+            uploadResult: { data: { path: expectedFullPath }, error: null },
+            removeResult: { data: [], error: null },
           },
         };
         beforeEach(config);
-        // Initialize spy before the call so it tracks the list call
         const storageBucket = setup.spies.storage.from('test-bucket');
         const listSpy = storageBucket.listSpy;
+        const removeSpy = storageBucket.removeSpy;
 
         const context: UploadContext = {
           ...baseUploadContext,
@@ -925,7 +1237,6 @@ Deno.test('FileManagerService', async (t) => {
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
         assertExists(error);
-        // Error should be wrapped with descriptive message when upload succeeds but DB fails
         if (isPostgrestError(error)) {
           assertEquals(error.message, 'Simulated DB insert error');
           assertEquals(error.code, 'XXYYZ');
@@ -937,15 +1248,11 @@ Deno.test('FileManagerService', async (t) => {
         }
         assertEquals(record, null);
 
-        // Check that storage.list was called for cleanup
-        assertExists(listSpy, "List spy should exist");
-        assertExists(listSpy.calls[0], "List should have been called");
-        assertEquals(listSpy.calls[0].args[0], expectedPathParts.storagePath);
-        
-        // Check that storage.remove was called with the correct file path
-        const removeSpy = storageBucket.removeSpy;
+        // Sibling files preserved: cleanup must not use list(); only the specific uploaded file path is removed
+        assert(listSpy.calls.length === 0, 'Cleanup must not call storage.list');
         assertExists(removeSpy);
-        assertEquals(removeSpy.calls[0].args[0], [expectedFullPath]);
+        assertEquals(removeSpy.calls.length, 1, 'Remove should have been called exactly once');
+        assertEquals(removeSpy.calls[0].args[0], [expectedFullPath], 'Remove must be called with only the uploaded file path');
 
       } finally {
         afterEach();

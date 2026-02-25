@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { 
-    isUserRole, 
+import {
+    StageRunDocumentStatus,
+    StagePlannedDocumentChecklistEntry,
+} from '@paynless/types';
+import {
+    isUserRole,
     isChatContextPreferences,
     isDialecticLifecycleEventType,
     isDialecticContribution,
@@ -11,6 +15,7 @@ import {
     isUserConsentRefused,
     isOrgWalletUnavailableByPolicy,
     isAssembledPrompt,
+    isStageRenderedDocumentChecklistEntry,
 } from './type_guards';
 
 describe('isUserRole', () => {
@@ -250,5 +255,85 @@ describe('isAssembledPrompt', () => {
         expect(isAssembledPrompt(123)).toBe(false);
         expect(isAssembledPrompt(undefined)).toBe(false);
         expect(isAssembledPrompt([])).toBe(false);
+    });
+});
+
+describe('isStageRenderedDocumentChecklistEntry', () => {
+    const status: StageRunDocumentStatus = 'completed';
+    const validEntry = {
+        documentKey: 'doc-1',
+        modelId: 'model-1',
+        jobId: 'job-1',
+        latestRenderedResourceId: 'res-1',
+        status,
+    };
+
+    it('returns true for an object with non-empty documentKey, modelId, jobId, latestRenderedResourceId and valid status', () => {
+        expect(isStageRenderedDocumentChecklistEntry(validEntry)).toBe(true);
+    });
+
+    it('returns true for valid entry with optional stepKey', () => {
+        expect(isStageRenderedDocumentChecklistEntry({ ...validEntry, stepKey: 'render_step' })).toBe(true);
+    });
+
+    it('returns false when documentKey is missing', () => {
+        const { documentKey: _, ...rest } = validEntry;
+        expect(isStageRenderedDocumentChecklistEntry(rest)).toBe(false);
+    });
+
+    it('returns false when documentKey is empty string', () => {
+        expect(isStageRenderedDocumentChecklistEntry({ ...validEntry, documentKey: '' })).toBe(false);
+    });
+
+    it('returns false when documentKey is not a string', () => {
+        expect(isStageRenderedDocumentChecklistEntry({ ...validEntry, documentKey: 123 })).toBe(false);
+    });
+
+    it('returns false when modelId is missing', () => {
+        const { modelId: _, ...rest } = validEntry;
+        expect(isStageRenderedDocumentChecklistEntry(rest)).toBe(false);
+    });
+
+    it('returns false when modelId is empty string', () => {
+        expect(isStageRenderedDocumentChecklistEntry({ ...validEntry, modelId: '' })).toBe(false);
+    });
+
+    it('returns false when jobId is missing', () => {
+        const { jobId: _, ...rest } = validEntry;
+        expect(isStageRenderedDocumentChecklistEntry(rest)).toBe(false);
+    });
+
+    it('returns false when jobId is empty string', () => {
+        expect(isStageRenderedDocumentChecklistEntry({ ...validEntry, jobId: '' })).toBe(false);
+    });
+
+    it('returns false when latestRenderedResourceId is missing', () => {
+        const { latestRenderedResourceId: _, ...rest } = validEntry;
+        expect(isStageRenderedDocumentChecklistEntry(rest)).toBe(false);
+    });
+
+    it('returns false when latestRenderedResourceId is empty string', () => {
+        expect(isStageRenderedDocumentChecklistEntry({ ...validEntry, latestRenderedResourceId: '' })).toBe(false);
+    });
+
+    it('returns false for planned entry (jobId null, latestRenderedResourceId null)', () => {
+        const planned: StagePlannedDocumentChecklistEntry = {
+            descriptorType: 'planned',
+            documentKey: 'doc-1',
+            status: 'not_started',
+            jobId: null,
+            latestRenderedResourceId: null,
+            modelId: 'model-1',
+            stepKey: 'planner_step',
+        };
+        expect(isStageRenderedDocumentChecklistEntry(planned)).toBe(false);
+    });
+
+    it('returns false for non-object inputs', () => {
+        expect(isStageRenderedDocumentChecklistEntry(null)).toBe(false);
+        expect(isStageRenderedDocumentChecklistEntry(undefined)).toBe(false);
+        expect(isStageRenderedDocumentChecklistEntry('string')).toBe(false);
+        expect(isStageRenderedDocumentChecklistEntry(123)).toBe(false);
+        expect(isStageRenderedDocumentChecklistEntry([])).toBe(false);
     });
 });

@@ -175,6 +175,18 @@ Deno.test('Type Guard: isUserFeedbackContext', async (t) => {
     const { feedbackTypeForDb, ...rest } = mockUserFeedbackContext
     assert(!isUserFeedbackContext(rest))
   })
+
+  await t.step('should return true for UserFeedbackUploadContext with originalStoragePath and originalBaseName in pathContext', () => {
+    const contextWithOriginalPath: UserFeedbackUploadContext = {
+      ...mockUserFeedbackContext,
+      pathContext: {
+        ...mockUserFeedbackContext.pathContext,
+        originalStoragePath: 'project-123/session_abc/iteration_1/1_thesis/documents',
+        originalBaseName: 'business_case_0_claude',
+      },
+    }
+    assert(isUserFeedbackContext(contextWithOriginalPath))
+  })
 })
 
 Deno.test('Type Guard: isResourceContext', async (t) => {

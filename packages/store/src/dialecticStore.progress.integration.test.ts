@@ -205,6 +205,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
     useDialecticStore.setState({
       ...initialDialecticStateValues,
       currentProjectDetail: project,
+      currentProcessTemplate: templateTwoStages,
       selectedModels: progressSelectedModels,
       recipesByStageSlug: { [stageSlug]: recipeThesis },
       stageRunProgress: {
@@ -215,6 +216,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
             render_step: 'not_started',
           },
           documents: {},
+          jobProgress: {},
         },
       },
     });
@@ -258,20 +260,31 @@ describe('Integration test: Frontend progress tracking from notifications to dis
   it('planner_step completed (non-model step) counts as 1/1 and selector returns 100% for that step', () => {
     useDialecticStore.setState((state) => {
       const progress = state.stageRunProgress[progressKey];
-      if (progress) progress.stepStatuses.planner_step = 'completed';
+      if (!progress) return;
+      progress.stepStatuses.planner_step = 'completed';
+      if (progress.jobProgress) {
+        progress.jobProgress.planner_step = { totalJobs: 1, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
+      }
     });
 
     const state: DialecticStateValues = useDialecticStore.getState();
     const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
     const thesisStage = result.stageDetails.find((s) => s.stageSlug === stageSlug);
     const plannerStepDetail = thesisStage?.stepsDetail.find((s) => s.stepKey === 'planner_step');
-    expect(plannerStepDetail?.totalModels).toBe(1);
-    expect(plannerStepDetail?.completedModels).toBe(1);
+    expect(plannerStepDetail?.totalJobs).toBe(1);
+    expect(plannerStepDetail?.completedJobs).toBe(1);
     expect(plannerStepDetail?.stepPercentage).toBe(100);
     expect(plannerStepDetail?.status).toBe('completed');
   });
 
   it('document_started notification updates step status and selector returns in_progress for document step', () => {
+    useDialecticStore.setState((state) => {
+      const progress = state.stageRunProgress[progressKey];
+      if (progress?.jobProgress) {
+        progress.jobProgress.document_step = { totalJobs: 1, completedJobs: 0, inProgressJobs: 1, failedJobs: 0 };
+      }
+    });
+
     const notification: Notification = buildNotification(
       'document_started',
       {
@@ -304,7 +317,10 @@ describe('Integration test: Frontend progress tracking from notifications to dis
     useDialecticStore.setState((state) => {
       const progress = state.stageRunProgress[progressKey];
       if (!progress) return;
-      progress.documents['business_case'] = {
+      if (progress.jobProgress) {
+        progress.jobProgress.document_step = { totalJobs: 3, completedJobs: 1, inProgressJobs: 2, failedJobs: 0 };
+      }
+      progress.documents[getStageRunDocumentKey('business_case', 'model-1')] = {
         descriptorType: 'rendered',
         status: 'completed',
         job_id: 'job-1',
@@ -321,8 +337,8 @@ describe('Integration test: Frontend progress tracking from notifications to dis
     const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
     const thesisStage = result.stageDetails.find((s) => s.stageSlug === stageSlug);
     const documentStepDetail = thesisStage?.stepsDetail.find((s) => s.stepKey === 'document_step');
-    expect(documentStepDetail?.totalModels).toBe(3);
-    expect(documentStepDetail?.completedModels).toBe(1);
+    expect(documentStepDetail?.totalJobs).toBe(3);
+    expect(documentStepDetail?.completedJobs).toBe(1);
     expect(documentStepDetail?.stepPercentage).toBeGreaterThan(0);
     expect(documentStepDetail?.stepPercentage).toBeLessThan(100);
     expect(documentStepDetail?.status).toBe('in_progress');
@@ -333,7 +349,10 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       const progress = state.stageRunProgress[progressKey];
       if (!progress) return;
       progress.stepStatuses.planner_step = 'completed';
-      progress.documents['business_case'] = {
+      if (progress.jobProgress) {
+        progress.jobProgress.document_step = { totalJobs: 3, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
+      }
+      progress.documents[getStageRunDocumentKey('business_case', 'model-1')] = {
         descriptorType: 'rendered',
         status: 'completed',
         job_id: 'job-1',
@@ -422,8 +441,8 @@ describe('Integration test: Frontend progress tracking from notifications to dis
     const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
     const thesisStage = result.stageDetails.find((s) => s.stageSlug === stageSlug);
     const documentStepDetail = thesisStage?.stepsDetail.find((s) => s.stepKey === 'document_step');
-    expect(documentStepDetail?.totalModels).toBe(3);
-    expect(documentStepDetail?.completedModels).toBe(3);
+    expect(documentStepDetail?.totalJobs).toBe(3);
+    expect(documentStepDetail?.completedJobs).toBe(3);
     expect(documentStepDetail?.stepPercentage).toBe(100);
     expect(documentStepDetail?.status).toBe('completed');
   });
@@ -432,7 +451,10 @@ describe('Integration test: Frontend progress tracking from notifications to dis
     useDialecticStore.setState((state) => {
       const progress = state.stageRunProgress[progressKey];
       if (!progress) return;
-      progress.documents['business_case'] = {
+      if (progress.jobProgress) {
+        progress.jobProgress.render_step = { totalJobs: 1, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
+      }
+      progress.documents[getStageRunDocumentKey('business_case', 'model-1')] = {
         descriptorType: 'rendered',
         status: 'generating',
         job_id: 'job-render',
@@ -513,7 +535,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
     useDialecticStore.setState((state) => {
       const progress = state.stageRunProgress[progressKey];
       if (!progress) return;
-      progress.documents['business_case'] = {
+      progress.documents[getStageRunDocumentKey('business_case', 'model-1')] = {
         descriptorType: 'rendered',
         status: 'generating',
         job_id: 'job-doc',
@@ -561,6 +583,11 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       progress.stepStatuses.planner_step = 'completed';
       progress.stepStatuses.document_step = 'completed';
       progress.stepStatuses.render_step = 'completed';
+      if (progress.jobProgress) {
+        progress.jobProgress.planner_step = { totalJobs: 1, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
+        progress.jobProgress.document_step = { totalJobs: 3, completedJobs: 3, inProgressJobs: 0, failedJobs: 0 };
+        progress.jobProgress.render_step = { totalJobs: 1, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
+      }
       const baseDescriptor: Omit<StageRenderedDocumentDescriptor, 'modelId'> = {
         descriptorType: 'rendered',
         status: 'completed',
@@ -601,6 +628,11 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       progress.stepStatuses.planner_step = 'completed';
       progress.stepStatuses.document_step = 'completed';
       progress.stepStatuses.render_step = 'completed';
+      if (progress.jobProgress) {
+        progress.jobProgress.planner_step = { totalJobs: 1, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
+        progress.jobProgress.document_step = { totalJobs: 3, completedJobs: 3, inProgressJobs: 0, failedJobs: 0 };
+        progress.jobProgress.render_step = { totalJobs: 1, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
+      }
       const baseDescriptor: Omit<StageRenderedDocumentDescriptor, 'modelId'> = {
         descriptorType: 'rendered',
         status: 'completed',

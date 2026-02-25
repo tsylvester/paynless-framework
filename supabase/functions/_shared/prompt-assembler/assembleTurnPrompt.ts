@@ -380,6 +380,7 @@ export async function assembleTurnPrompt(
     stage,
     project.initial_user_prompt,
     session.iteration_count,
+    job.payload.model_id,
   );
 
   // Merge context for prompt rendering
@@ -392,7 +393,7 @@ export async function assembleTurnPrompt(
   };
 
   const mergedContext = requiresHeaderContext
-    ? { ...baseContext, ...validatedContentToInclude, header_context: headerContext }
+    ? { ...baseContext, header_context: headerContext }
     : baseContext;
 
   // Create stage with template content for deps.render

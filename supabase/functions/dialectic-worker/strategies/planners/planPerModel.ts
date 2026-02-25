@@ -4,7 +4,9 @@ import type {
 	DialecticPlanJobPayload,
 	GranularityPlannerFn,
 	ContextForDocument,
+	InputRule,
 	SelectAnchorResult,
+	SourceDocument,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { selectAnchorSourceDocument } from '../helpers.ts';
@@ -108,7 +110,6 @@ export const planPerModel: GranularityPlannerFn = (
 		
 		// Create PLAN job payload
 		const planPayload: DialecticPlanJobPayload = {
-			// Inherit ALL fields from parent job payload (defensive programming)
 			projectId: parentJob.payload.projectId,
 			sessionId: parentJob.payload.sessionId,
 			stageSlug: parentJob.payload.stageSlug,
@@ -116,19 +117,26 @@ export const planPerModel: GranularityPlannerFn = (
 			model_id: parentJob.payload.model_id,
 			user_jwt: parentJob.payload.user_jwt,
 			walletId: parentJob.payload.walletId,
-			
-			// Optional fields - include only if present in parent
-			...(parentJob.payload.model_slug ? { model_slug: parentJob.payload.model_slug } : {}),
-			...(parentJob.payload.continueUntilComplete !== undefined ? { continueUntilComplete: parentJob.payload.continueUntilComplete } : {}),
-			...(parentJob.payload.maxRetries !== undefined ? { maxRetries: parentJob.payload.maxRetries } : {}),
-			...(parentJob.payload.continuation_count !== undefined ? { continuation_count: parentJob.payload.continuation_count } : {}),
-			...(typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0
-				? { target_contribution_id: parentJob.payload.target_contribution_id }
-				: {}),
-			...(parentJob.payload.is_test_job !== undefined ? { is_test_job: parentJob.payload.is_test_job } : {}),
-
 			context_for_documents: contextForDocuments,
-	};
+		};
+		if (parentJob.payload.model_slug !== undefined && parentJob.payload.model_slug !== null) {
+			planPayload.model_slug = parentJob.payload.model_slug;
+		}
+		if (parentJob.payload.continueUntilComplete !== undefined) {
+			planPayload.continueUntilComplete = parentJob.payload.continueUntilComplete;
+		}
+		if (parentJob.payload.maxRetries !== undefined) {
+			planPayload.maxRetries = parentJob.payload.maxRetries;
+		}
+		if (parentJob.payload.continuation_count !== undefined) {
+			planPayload.continuation_count = parentJob.payload.continuation_count;
+		}
+		if (typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0) {
+			planPayload.target_contribution_id = parentJob.payload.target_contribution_id;
+		}
+		if (parentJob.payload.is_test_job !== undefined) {
+			planPayload.is_test_job = parentJob.payload.is_test_job;
+		}
 		
 		console.log(`[planPerModel] Created 1 child job for model ${modelId}.`);
 		
@@ -195,8 +203,10 @@ export const planPerModel: GranularityPlannerFn = (
 
 		// Use first doc for lineage/sourceContributionId
 		const anchorDoc = sourceDocs[0];
-		let sourceContributionId: string | null = anchorDoc.id;
-		if (typeof sourceContributionId !== 'string' || sourceContributionId.length === 0) {
+		let sourceContributionId: string | null;
+		if (typeof anchorDoc.id === 'string' && anchorDoc.id.length > 0) {
+			sourceContributionId = anchorDoc.id;
+		} else {
 			sourceContributionId = null;
 		}
 
@@ -205,7 +215,12 @@ export const planPerModel: GranularityPlannerFn = (
 		if (anchorResult.status === 'anchor_not_found') {
 			throw new Error(`Anchor document not found for stage '${anchorResult.targetSlug}' document_key '${anchorResult.targetDocumentKey}'`);
 		}
-		const anchorForCanonicalPathParams = anchorResult.status === 'anchor_found' ? anchorResult.document : null;
+		let anchorForCanonicalPathParams: SourceDocument | null;
+		if (anchorResult.status === 'anchor_found') {
+			anchorForCanonicalPathParams = anchorResult.document;
+		} else {
+			anchorForCanonicalPathParams = null;
+		}
 
 	const canonicalPathParams = createCanonicalPathParams(
 		sourceDocs,
@@ -216,8 +231,14 @@ export const planPerModel: GranularityPlannerFn = (
 
 	// 96.d.ii: When selectAnchorSourceDocument returns 'no_anchor_required', set source_group = null
 	// This signals the producer to create a new lineage root (set source_group = self.id after save)
+	let sourceGroup: string | null;
+	if (anchorResult.status === 'no_anchor_required') {
+		sourceGroup = null;
+	} else {
+		sourceGroup = anchorDoc.id;
+	}
 	const document_relationships: Record<string, string | null> = {
-		source_group: anchorResult.status === 'no_anchor_required' ? null : anchorDoc.id,
+		source_group: sourceGroup,
 	};
 
 	// 96.d.i & 96.d.iv: Bundle ALL sourceDocs into inputs, grouped by contribution_type
@@ -236,16 +257,44 @@ export const planPerModel: GranularityPlannerFn = (
 	}
 
 	// If this step requires a header_context input, ensure we can supply header_context_id in payload.inputs.
-	const requiresHeaderContext = Array.isArray(recipeStep.inputs_required)
-		&& recipeStep.inputs_required.some((rule) => rule?.type === 'header_context');
-	const headerContextId = requiresHeaderContext
-		? sourceDocs.find((d) => 
+	let headerContextRule: InputRule | undefined;
+	if (Array.isArray(recipeStep.inputs_required)) {
+		headerContextRule = recipeStep.inputs_required.find((rule) => rule?.type === 'header_context');
+	} else {
+		headerContextRule = undefined;
+	}
+	const requiresHeaderContext = headerContextRule !== undefined;
+	let requiredDocumentKey: InputRule['document_key'];
+	if (headerContextRule !== undefined && 'document_key' in headerContextRule) {
+		requiredDocumentKey = headerContextRule.document_key;
+	} else {
+		requiredDocumentKey = undefined;
+	}
+	let headerContextId: string | undefined;
+	if (requiresHeaderContext) {
+		const found = sourceDocs.find((d) =>
 			d.contribution_type === 'header_context' &&
-			d.model_id === modelId
-		)?.id
-		: undefined;
+			d.model_id === modelId &&
+			(requiredDocumentKey === undefined || d.document_key === requiredDocumentKey)
+		);
+		if (found !== undefined) {
+			headerContextId = found.id;
+		} else {
+			headerContextId = undefined;
+		}
+	} else {
+		headerContextId = undefined;
+	}
 	if (requiresHeaderContext && (typeof headerContextId !== 'string' || headerContextId.length === 0)) {
-		throw new Error('planPerModel requires a sourceDoc with contribution_type \'header_context\' and matching model_id when recipeStep.inputs_required includes header_context');
+		let requiredDocumentKeyLabel: string;
+		if (requiredDocumentKey !== undefined) {
+			requiredDocumentKeyLabel = String(requiredDocumentKey);
+		} else {
+			requiredDocumentKeyLabel = 'none';
+		}
+		throw new Error(
+			`planPerModel requires a sourceDoc with contribution_type 'header_context' and matching model_id when recipeStep.inputs_required includes header_context (requiredDocumentKey: ${requiredDocumentKeyLabel})`
+		);
 	}
 	if (requiresHeaderContext && headerContextId) {
 		inputs.header_context_id = headerContextId;
@@ -285,26 +334,13 @@ export const planPerModel: GranularityPlannerFn = (
 		}
 
 		const newPayload: DialecticExecuteJobPayload = {
-			// Inherit ALL fields from parent job payload (defensive programming)
 			projectId: parentJob.payload.projectId,
 			sessionId: parentJob.payload.sessionId,
 			stageSlug: parentJob.payload.stageSlug,
 			iterationNumber: parentJob.payload.iterationNumber,
-			model_id: modelId, // Assign the job to the specific model from the parent planner
+			model_id: modelId,
 			user_jwt: parentJob.payload.user_jwt,
 			walletId: parentJob.payload.walletId,
-			
-			// Optional fields - include only if present in parent
-			...(parentJob.payload.model_slug ? { model_slug: parentJob.payload.model_slug } : {}),
-			...(parentJob.payload.continueUntilComplete !== undefined ? { continueUntilComplete: parentJob.payload.continueUntilComplete } : {}),
-			...(parentJob.payload.maxRetries !== undefined ? { maxRetries: parentJob.payload.maxRetries } : {}),
-			...(parentJob.payload.continuation_count !== undefined ? { continuation_count: parentJob.payload.continuation_count } : {}),
-			...(typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0
-				? { target_contribution_id: parentJob.payload.target_contribution_id }
-				: {}),
-			...(parentJob.payload.is_test_job !== undefined ? { is_test_job: parentJob.payload.is_test_job } : {}),
-			
-			// Override job-specific properties
 			prompt_template_id: recipeStep.prompt_template_id,
 			output_type: recipeStep.output_type,
 			canonicalPathParams,
@@ -314,6 +350,24 @@ export const planPerModel: GranularityPlannerFn = (
 			planner_metadata: { recipe_step_id: recipeStep.id },
 			document_key: documentKey,
 		};
+		if (parentJob.payload.model_slug !== undefined && parentJob.payload.model_slug !== null) {
+			newPayload.model_slug = parentJob.payload.model_slug;
+		}
+		if (parentJob.payload.continueUntilComplete !== undefined) {
+			newPayload.continueUntilComplete = parentJob.payload.continueUntilComplete;
+		}
+		if (parentJob.payload.maxRetries !== undefined) {
+			newPayload.maxRetries = parentJob.payload.maxRetries;
+		}
+		if (parentJob.payload.continuation_count !== undefined) {
+			newPayload.continuation_count = parentJob.payload.continuation_count;
+		}
+		if (typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0) {
+			newPayload.target_contribution_id = parentJob.payload.target_contribution_id;
+		}
+		if (parentJob.payload.is_test_job !== undefined) {
+			newPayload.is_test_job = parentJob.payload.is_test_job;
+		}
 
 		childPayloads.push(newPayload);
 

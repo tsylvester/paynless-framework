@@ -16,7 +16,6 @@ import type {
     StageRenderedDocumentDescriptor,
     StagePlannedDocumentDescriptor,
     StageDocumentContentState,
-    EditedDocumentResource,
     UnifiedProjectProgress,
     StepProgressDetail,
     StageProgressDetail,
@@ -302,12 +301,14 @@ export const selectIsStageReadyForSessionIteration = createSelector(
         }
 
         let pendingSteps: DialecticStageRecipeStep[] = [];
-        for (const [_orderValue, stepsAtOrder] of stepsByOrder.entries()) {
+        let pendingStepsOrder: number | null = null;
+        for (const [orderValue, stepsAtOrder] of stepsByOrder.entries()) {
             const pendingAtOrder = stepsAtOrder.filter((step) => stepStatuses[step.step_key] !== 'completed');
             if (pendingAtOrder.length === 0) {
                 continue;
             }
             pendingSteps = pendingAtOrder;
+            pendingStepsOrder = orderValue;
             break;
         }
 
@@ -326,10 +327,17 @@ export const selectIsStageReadyForSessionIteration = createSelector(
             return true;
         }
 
+        const firstExecutionOrder = Array.from(stepsByOrder.keys()).sort((a, b) => a - b)[0];
+        const shouldCheckRequirements = pendingStepsOrder === firstExecutionOrder;
+
         for (const step of pendingSteps) {
             const stepStatus = stepStatuses[step.step_key];
-            if (stepStatus && stepStatus !== 'not_started') {
+            if (stepStatus === 'in_progress') {
                 return false;
+            }
+
+            if (!shouldCheckRequirements) {
+                continue;
             }
 
             const stepRequirements = step.inputs_required ?? [];
@@ -792,28 +800,17 @@ function getSortedStagesFromTemplate(template: DialecticProcessTemplate | null):
     });
 }
 
-function isModelStep(step: DialecticStageRecipeStep): boolean {
-    if (step.job_type === 'RENDER') return false;
-    const outputs = step.outputs_required;
-    if (!outputs?.length) return false;
-    const hasDocumentOutput = outputs.some((o: { artifact_class: string; file_type?: string }) =>
-        (o.artifact_class === 'rendered_document' || o.artifact_class === 'assembled_document_json') && (o.file_type === 'markdown' || !o.file_type));
-    return hasDocumentOutput;
-}
+const isExecuteStep = (step: DialecticStageRecipeStep): boolean => step.job_type === 'EXECUTE';
 
 export const selectUnifiedProjectProgress = (
     state: DialecticStateValues,
     sessionId: string
 ): UnifiedProjectProgress => {
-    const project = state.currentProjectDetail;
-    const template = project?.dialectic_process_templates ?? null;
+    const template = state.currentProcessTemplate ?? null;
     const stages = template ? getSortedStagesFromTemplate(template) : [];
     const totalStages = stages.length;
     const session = selectSessionById(state, sessionId);
     const iterationNumber = session?.iteration_count ?? 0;
-    const selectedModels = state.selectedModels || [];
-    const totalModels = selectedModels.length;
-    const selectedModelIdSet = new Set(selectedModels.map((m) => m.id));
 
     const currentStageId = session?.current_stage_id ?? null;
     const currentStage: DialecticStage | null = currentStageId
@@ -841,7 +838,6 @@ export const selectUnifiedProjectProgress = (
         const stageSlug = stage.slug;
         const recipe = state.recipesByStageSlug[stageSlug];
         const progress = selectStageRunProgress(state, sessionId, stageSlug, iterationNumber);
-        const validMarkdownKeys = selectValidMarkdownDocumentKeys(state, stageSlug);
         const steps = recipe?.steps ?? [];
         const sortedSteps = [...steps].sort((a, b) => {
             if (a.execution_order !== b.execution_order) return a.execution_order - b.execution_order;
@@ -854,51 +850,41 @@ export const selectUnifiedProjectProgress = (
 
         for (const step of sortedSteps) {
             const stepKey = step.step_key;
-            const stepStatusFromProgress = progress?.stepStatuses?.[stepKey];
-            const isModel = isModelStep(step);
+            const jobEntry = progress?.jobProgress?.[stepKey];
 
-            let totalModelsForStep: number;
-            let completedModelsForStep: number;
-            let stepPercentage: number;
+            if (!jobEntry) {
+                stepsDetail.push({
+                    stepKey,
+                    stepName: step.step_name,
+                    totalJobs: 0,
+                    completedJobs: 0,
+                    inProgressJobs: 0,
+                    failedJobs: 0,
+                    stepPercentage: 0,
+                    status: 'not_started',
+                });
+                continue;
+            }
+
+            const totalJobs: number = jobEntry.totalJobs;
+            const completedJobs: number = jobEntry.completedJobs;
+            const inProgressJobs: number = jobEntry.inProgressJobs;
+            const failedJobs: number = jobEntry.failedJobs;
+
+            const isExecute = isExecuteStep(step);
+            const stepPercentage: number = isExecute
+                ? (totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0)
+                : (completedJobs > 0 ? 100 : 0);
+
             let stepStatus: UnifiedProjectStatus;
-
-            if (isModel) {
-                totalModelsForStep = totalModels;
-                const outputDocKeys = (step.outputs_required ?? [])
-                    .filter((o: { artifact_class: string; file_type?: string }) =>
-                        (o.artifact_class === 'rendered_document' || o.artifact_class === 'assembled_document_json') &&
-                        (o.file_type === 'markdown' || !o.file_type))
-                    .map((o: { document_key: string }) => o.document_key);
-                let completed = 0;
-                let hasFailed = false;
-                let hasInProgress = false;
-                const docs = progress?.documents ?? {};
-                const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
-                for (const compositeKey of Object.keys(docs)) {
-                    const desc = docs[compositeKey];
-                    if (!desc) continue;
-                    const documentKey = compositeKey.includes(sep)
-                        ? compositeKey.slice(0, compositeKey.indexOf(sep))
-                        : compositeKey;
-                    if (!validMarkdownKeys.has(documentKey)) continue;
-                    const matchesOutput = outputDocKeys.length === 0 || outputDocKeys.some((k: string) => documentKey === k);
-                    if (!matchesOutput) continue;
-                    if (!desc.modelId) throw new Error(`document ${compositeKey} has no modelId`);
-                    if (!selectedModelIdSet.has(desc.modelId)) continue;
-                    if (desc.status === 'completed') completed += 1;
-                    else if (desc.status === 'failed') hasFailed = true;
-                    else hasInProgress = true;
-                }
-                completedModelsForStep = completed;
-                stepPercentage = totalModelsForStep > 0 ? (completed / totalModelsForStep) * 100 : 0;
-                if (completed === 0 && hasInProgress && stepPercentage === 0) stepPercentage = 0.01;
-                stepStatus = hasFailed ? 'failed' : (hasInProgress || completed < totalModelsForStep ? 'in_progress' : 'completed');
+            if (failedJobs > 0) {
+                stepStatus = 'failed';
+            } else if (inProgressJobs > 0) {
+                stepStatus = 'in_progress';
+            } else if (completedJobs === totalJobs && totalJobs > 0) {
+                stepStatus = 'completed';
             } else {
-                totalModelsForStep = 1;
-                const done = stepStatusFromProgress === 'completed';
-                completedModelsForStep = done ? 1 : 0;
-                stepPercentage = done ? 100 : 0;
-                stepStatus = stepStatusFromProgress === 'failed' ? 'failed' : (done ? 'completed' : (stepStatusFromProgress === 'in_progress' ? 'in_progress' : 'not_started'));
+                stepStatus = 'not_started';
             }
 
             stepSum += stepPercentage;
@@ -909,8 +895,10 @@ export const selectUnifiedProjectProgress = (
             stepsDetail.push({
                 stepKey,
                 stepName: step.step_name,
-                totalModels: totalModelsForStep,
-                completedModels: completedModelsForStep,
+                totalJobs,
+                completedJobs,
+                inProgressJobs,
+                failedJobs,
                 stepPercentage,
                 status: stepStatus,
             });
@@ -1013,7 +1001,7 @@ export const selectFocusedStageDocument = (
     if (!focusMap) {
         return null;
     }
-    const entry = focusMap[key] ?? null;
+    const entry = focusMap[key];
     if (!entry) {
         return null;
     }
@@ -1078,52 +1066,46 @@ export const selectEditedDocumentByKey = (
     return state.stageDocumentContent[compositeKey];
 };
 
+/** Aggregate dirty state for documents in a stage run. Used by SubmitResponsesButton and unsaved-work indicators. */
+export interface StageUnsavedChangesResult {
+    hasUnsavedEdits: boolean;
+    hasUnsavedFeedback: boolean;
+}
+
 /**
- * Selector to get the complete EditedDocumentResource metadata from stageDocumentResources.
- * This returns the full resource metadata including source_contribution_id, updated_at,
- * resource_type, document_key, id, storage_path, mime_type, size_bytes, created_at,
- * and all other EditedDocumentResource fields.
- * 
- * This is required so UI components (Steps 84-85) can display resource metadata like
- * source_contribution_id and last modified timestamps.
- * 
- * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
- * 
+ * Returns whether any document in the given stage run has unsaved edits (isDirty) or unsaved feedback (feedbackIsDirty).
+ * Pure selector over stageDocumentContent; only considers keys matching sessionId:stageSlug:iterationNumber.
+ *
  * @param state - The dialectic state values
  * @param sessionId - The session identifier
  * @param stageSlug - The stage slug
  * @param iterationNumber - The iteration number
- * @param modelId - The model identifier
- * @param documentKey - The document key
- * @returns The complete EditedDocumentResource object, or undefined if not found
+ * @returns Aggregate dirty state for the stage run
  */
-export const selectStageDocumentResourceMetadata = (
+export const selectStageHasUnsavedChanges = (
     state: DialecticStateValues,
     sessionId: string,
     stageSlug: string,
-    iterationNumber: number,
-    modelId: string,
-    documentKey: string
-): EditedDocumentResource | undefined => {
-    const compositeKey = `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
-    return state.stageDocumentResources[compositeKey];
-};
-
-/**
- * Selector to get the complete EditedDocumentResource metadata by composite key.
- * Provides quick access to document resource metadata without requiring all key components.
- * 
- * The composite key format is: `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`
- * 
- * @param state - The dialectic state values
- * @param compositeKey - The composite key for the document resource
- * @returns The complete EditedDocumentResource object, or undefined if not found
- */
-export const selectStageDocumentResourceMetadataByKey = (
-    state: DialecticStateValues,
-    compositeKey: string
-): EditedDocumentResource | undefined => {
-    return state.stageDocumentResources[compositeKey];
+    iterationNumber: number
+): StageUnsavedChangesResult => {
+    const keyPrefix = `${sessionId}:${stageSlug}:${iterationNumber}:`;
+    let hasUnsavedEdits = false;
+    let hasUnsavedFeedback = false;
+    for (const [key, entry] of Object.entries(state.stageDocumentContent)) {
+        if (!key.startsWith(keyPrefix)) {
+            continue;
+        }
+        if (entry.isDirty) {
+            hasUnsavedEdits = true;
+        }
+        if (entry.feedbackIsDirty) {
+            hasUnsavedFeedback = true;
+        }
+        if (hasUnsavedEdits && hasUnsavedFeedback) {
+            break;
+        }
+    }
+    return { hasUnsavedEdits, hasUnsavedFeedback };
 };
 
 /**

@@ -29,15 +29,20 @@ import {
   DialecticJobRow,
   DialecticExecuteJobPayload,
   ExecuteModelCallAndSaveParams,
-  IDialecticJobDeps,
 } from "../../functions/dialectic-service/dialectic.interface.ts";
+import { IExecuteJobContext } from "../../functions/dialectic-worker/JobContext.interface.ts";
 import { createProject } from "../../functions/dialectic-service/createProject.ts";
 import { startSession } from "../../functions/dialectic-service/startSession.ts";
 import { FileManagerService } from "../../functions/_shared/services/file_manager.ts";
-import { constructStoragePath } from "../../functions/_shared/utils/path_constructor.ts";
+import {
+  constructStoragePath,
+  generateShortId,
+  mapStageSlugToDirName,
+  sanitizeForPath,
+} from "../../functions/_shared/utils/path_constructor.ts";
 import { downloadFromStorage } from "../../functions/_shared/supabase_storage_utils.ts";
 import { NotificationService } from "../../functions/_shared/utils/notification.service.ts";
-import { FileType } from "../../functions/_shared/types/file_manager.types.ts";
+import { FileType, PathContext } from "../../functions/_shared/types/file_manager.types.ts";
 import { executeModelCallAndSave } from "../../functions/dialectic-worker/executeModelCallAndSave.ts";
 import { callUnifiedAIModel } from "../../functions/dialectic-service/callModel.ts";
 import { countTokens } from "../../functions/_shared/utils/tokenizer_utils.ts";
@@ -47,7 +52,11 @@ import { continueJob } from "../../functions/dialectic-worker/continueJob.ts";
 import { retryJob } from "../../functions/dialectic-worker/retryJob.ts";
 import { isJson, isRecord } from "../../functions/_shared/utils/type_guards.ts";
 import { createMockTokenWalletService } from "../../functions/_shared/services/tokenWalletService.mock.ts";
+import { MockPromptAssembler } from "../../functions/_shared/prompt-assembler/prompt-assembler.mock.ts";
+import { MockIndexingService } from "../../functions/_shared/services/indexing_service.mock.ts";
 import { getExtensionFromMimeType } from "../../functions/_shared/path_utils.ts";
+import { extractSourceGroupFragment } from "../../functions/_shared/utils/path_utils.ts";
+import { ShouldEnqueueRenderJobResult } from "../../functions/_shared/types/shouldEnqueueRenderJob.interface.ts";
 
 describe("path_constructor Integration Tests", () => {
   let adminClient: SupabaseClient<Database>;
@@ -72,7 +81,7 @@ describe("path_constructor Integration Tests", () => {
     assertExists(user, "Test user could not be created");
     testUser = user;
 
-    fileManager = new FileManagerService(adminClient, { constructStoragePath });
+    fileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger });
 
     // Create test project using FormData
     const formData = new FormData();
@@ -200,7 +209,7 @@ describe("path_constructor Integration Tests", () => {
     }).instance;
 
     // Mock AI model to return successful response for root chunk
-    const rootDeps: IDialecticJobDeps = {
+    const rootDeps: IExecuteJobContext = {
       callUnifiedAIModel: async () => {
         const structuredData = {
           business_objective: "Test business objective",
@@ -226,6 +235,22 @@ describe("path_constructor Integration Tests", () => {
           },
         };
       },
+      getAiProviderAdapter: () => ({
+        sendMessage: async () => ({
+          role: "assistant" as const,
+          content: "mock",
+          ai_provider_id: null,
+          system_prompt_id: null,
+          token_usage: null,
+        }),
+        listModels: async () => [],
+      }),
+      getAiProviderConfig: async () => ({
+        api_identifier: "mock-model",
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+        tokenization_strategy: { type: "none" as const },
+      }),
       getExtensionFromMimeType,
       logger: testLogger,
       fileManager: fileManager,
@@ -233,26 +258,11 @@ describe("path_constructor Integration Tests", () => {
       notificationService: new NotificationService(adminClient),
       getSeedPromptForStage: (dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn) => getSeedPromptForStage(dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn),
       retryJob: (deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId) => retryJob(deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId),
-      downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+      downloadFromStorage: (supabase: SupabaseClient<Database>, bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
       randomUUID: crypto.randomUUID,
       deleteFromStorage: () => Promise.resolve({ error: null }),
-      executeModelCallAndSave: async () => {},
       tokenWalletService: tokenWalletService,
       countTokens,
-      documentRenderer: {
-        renderDocument: async () => ({
-          pathContext: {
-            projectId: "",
-            sessionId: "",
-            iteration: 0,
-            stageSlug: "",
-            documentKey: "",
-            fileType: FileType.RenderedDocument,
-            modelSlug: "",
-          },
-          renderedBytes: new Uint8Array(),
-        }),
-      },
       embeddingClient: {
         getEmbedding: async () => ({
           embedding: [],
@@ -266,9 +276,17 @@ describe("path_constructor Integration Tests", () => {
           error: undefined,
         }),
       },
+      indexingService: new MockIndexingService(),
+      promptAssembler: new MockPromptAssembler(adminClient, fileManager),
+      extractSourceGroupFragment,
+      shouldEnqueueRenderJob: async (): Promise<ShouldEnqueueRenderJobResult> => ({
+        shouldRender: false,
+        reason: "is_json",
+      }),
     };
 
     // (1) Call executeModelCallAndSave to create a root chunk
+    const rootLineageSourceGroup = crypto.randomUUID();
     const rootExecuteJobPayload: DialecticExecuteJobPayload = {
       prompt_template_id: "__none__",
       inputs: {},
@@ -286,6 +304,7 @@ describe("path_constructor Integration Tests", () => {
         stageSlug: stageSlug,
       },
       document_key: documentKey,
+      document_relationships: { source_group: rootLineageSourceGroup },
     };
 
     if (!isJson(rootExecuteJobPayload)) {
@@ -365,15 +384,15 @@ describe("path_constructor Integration Tests", () => {
       sessionData: {
         id: testSession.id,
         project_id: testSession.project_id,
-        session_description: testSession.session_description ?? null,
-        user_input_reference_url: testSession.user_input_reference_url ?? null,
+        session_description: testSession.session_description,
+        user_input_reference_url: testSession.user_input_reference_url,
         iteration_count: testSession.iteration_count,
-        selected_model_ids: testSession.selected_model_ids ?? null,
-        status: testSession.status ?? "pending_thesis",
+        selected_models: testSession.selected_models,
+        status: testSession.status,
         created_at: testSession.created_at,
         updated_at: testSession.updated_at,
         current_stage_id: testSession.current_stage_id,
-        associated_chat_id: testSession.associated_chat_id ?? null,
+        associated_chat_id: testSession.associated_chat_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -437,11 +456,11 @@ describe("path_constructor Integration Tests", () => {
       });
     }
 
-    // Update root chunk's document_relationships to use the actual contribution ID
+    // Update root chunk's document_relationships to use the actual contribution ID and preserve source_group
     const { error: updateRootRelationshipsError } = await adminClient
       .from("dialectic_contributions")
       .update({
-        document_relationships: { [stageSlug]: rootContributionId },
+        document_relationships: { [stageSlug]: rootContributionId, source_group: rootLineageSourceGroup },
       })
       .eq("id", rootContributionId);
 
@@ -449,7 +468,7 @@ describe("path_constructor Integration Tests", () => {
 
     // (3) Call executeModelCallAndSave to create a continuation chunk with continuation_count: 1
     // Mock AI model to return successful response for continuation chunk
-    const continuationDeps: IDialecticJobDeps = {
+    const continuationDeps: IExecuteJobContext = {
       ...rootDeps,
       callUnifiedAIModel: async () => {
         const structuredData = {
@@ -496,7 +515,7 @@ describe("path_constructor Integration Tests", () => {
       document_key: documentKey,
       target_contribution_id: rootContributionId,
       continuation_count: 1,
-      document_relationships: { [stageSlug]: rootContributionId },
+      document_relationships: { [stageSlug]: rootContributionId, source_group: rootLineageSourceGroup },
     };
 
     if (!isJson(continuationExecuteJobPayload)) {
@@ -580,15 +599,15 @@ describe("path_constructor Integration Tests", () => {
       sessionData: {
         id: testSession.id,
         project_id: testSession.project_id,
-        session_description: testSession.session_description ?? null,
-        user_input_reference_url: testSession.user_input_reference_url ?? null,
+        session_description: testSession.session_description,
+        user_input_reference_url: testSession.user_input_reference_url,
         iteration_count: testSession.iteration_count,
-        selected_model_ids: testSession.selected_model_ids ?? null,
+        selected_models: testSession.selected_models,
         status: testSession.status ?? "pending_thesis",
         created_at: testSession.created_at,
         updated_at: testSession.updated_at,
         current_stage_id: testSession.current_stage_id,
-        associated_chat_id: testSession.associated_chat_id ?? null,
+        associated_chat_id: testSession.associated_chat_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -678,6 +697,50 @@ describe("path_constructor Integration Tests", () => {
     assert(
       continuationStoragePath.includes("_continuation_1"),
       `Continuation chunk path should include _continuation_1 suffix. Got: ${continuationStoragePath}`
+    );
+  });
+
+  it("full path context produces correct feedback path alongside rendered document", async () => {
+    const iteration = 1;
+    const stageSlug = "thesis";
+    const documentKey = "business_case";
+    const attemptCount = 0;
+
+    const { data: providerData, error: providerError } = await adminClient
+      .from("ai_providers")
+      .select("api_identifier")
+      .eq("id", testModelId)
+      .single();
+    assert(!providerError, `Failed to fetch provider: ${providerError?.message}`);
+    assertExists(providerData, "Provider should exist");
+    assertExists(providerData.api_identifier, "Provider api_identifier should exist");
+
+    const modelSlugSanitized = sanitizeForPath(providerData.api_identifier);
+    const shortSessionId = generateShortId(testSession.id);
+    const mappedStageDir = mapStageSlugToDirName(stageSlug);
+    const stageRootPath = `${testProject.id}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
+    const originalStoragePath = `${stageRootPath}/documents`;
+    const sanitizedDocumentKey = sanitizeForPath(documentKey);
+    const originalBaseName = `${modelSlugSanitized}_${attemptCount}_${sanitizedDocumentKey}`;
+
+    const context: PathContext = {
+      projectId: testProject.id,
+      fileType: FileType.UserFeedback,
+      originalStoragePath,
+      originalBaseName,
+    };
+
+    const result = constructStoragePath(context);
+
+    assertEquals(
+      result.storagePath,
+      originalStoragePath,
+      "UserFeedback storagePath must be the same directory as the original document"
+    );
+    assertEquals(
+      result.fileName,
+      `${sanitizeForPath(originalBaseName)}_feedback.md`,
+      "UserFeedback fileName must be {originalBaseName}_feedback.md"
     );
   });
 });

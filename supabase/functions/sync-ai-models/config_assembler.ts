@@ -120,14 +120,16 @@ export class ConfigAssembler {
     this.logger.info(`[ConfigAssembler] Calculating dynamic defaults based on ${configuredModels.length} configured models for ${newModelCount} new models...`);
     
     // Absolute failsafe values, used if no configured models are available.
+    // Updated for 2026: Using rational defaults based on mid-to-high tier models (e.g. GPT-4o/Opus class)
+    // to prevent dangerous under-estimation of costs or capabilities for new models.
     const DEFAULTS: AiModelExtendedConfig = {
         api_identifier: 'default',
-        input_token_cost_rate: 0.000075, // Based on Claude 3 Opus (expensive)
-        output_token_cost_rate: 0.000015, // Based on Claude 3 Opus
-        context_window_tokens: 8192,     // A safe, low value
-        hard_cap_output_tokens: 4096,
-        provider_max_input_tokens: 8192,
-        provider_max_output_tokens: 4096,
+        input_token_cost_rate: 15, // Rational default (~$15/1M, high-end safety margin)
+        output_token_cost_rate: 75, // Rational default (~$75/1M, high-end safety margin)
+        context_window_tokens: 128000, // Modern standard baseline
+        hard_cap_output_tokens: 65536,
+        provider_max_input_tokens: 128000,
+        provider_max_output_tokens: 65536,
         tokenization_strategy: { type: 'rough_char_count', chars_per_token_ratio: 4 }
     };
 
@@ -252,7 +254,8 @@ export class ConfigAssembler {
         if (/^openai-gpt-4o/i.test(apiIdentifier)) return { window: 128_000, outputCap: 4_096 };
         return { window: 128_000, outputCap: 4_096 };
       }
-      return { window: 8_192, outputCap: 4_096 };
+      // Default to modern baseline for unknown providers
+      return { window: 128_000, outputCap: 65_536 };
     };
 
     if (cohort.length === 0) {

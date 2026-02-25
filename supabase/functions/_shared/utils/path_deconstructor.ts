@@ -42,6 +42,7 @@ export function deconstructStoragePath(
   const modelContribPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/(.+)_(\\d+)_(.+)\\.md$";
   const contributionDocumentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/([^/]+)$";
   const userFeedbackPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/user_feedback_([^/]+)\\.md$";
+  const userFeedbackAlongsideDocumentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/(.+)_feedback\\.md$";
   const seedPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/seed_prompt\\.md$";
   const projectReadmePatternString = "^([^/]+)/project_readme\\.md$";
   const projectSettingsFilePatternString = "^([^/]+)/project_settings\\.json$";
@@ -691,6 +692,20 @@ export function deconstructStoragePath(
     return info;
   }
   
+  // Path: {projectId}/session_{shortSessionId}/iteration_{iteration}/{mappedStageDir}/documents/{originalBaseName}_feedback.md (must be before contributionDocument)
+  matches = fullPath.match(new RegExp(userFeedbackAlongsideDocumentPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.parsedFileNameFromPath = `${matches[5]}_feedback.md`;
+    info.fileTypeGuess = FileType.UserFeedback;
+    info.documentKey = FileType.UserFeedback;
+    return info;
+  }
+
   // Path: {projectId}/session_{shortSessionId}/iteration_{iteration}/{mappedStageDir}/documents/{sanitizedOriginalFileName}
   matches = fullPath.match(new RegExp(contributionDocumentPatternString));
   if (matches) {

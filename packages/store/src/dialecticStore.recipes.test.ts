@@ -5,6 +5,7 @@ import {
     DialecticStageRecipeStep,
     StageDocumentCompositeKey,
     StageRenderedDocumentDescriptor,
+    StageDocumentContentState,
 } from '@paynless/types';
 import { getStageDocumentKey, getStageRunDocumentKey } from './dialecticStore.documents';
 
@@ -243,6 +244,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
 
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
+          jobProgress: {},
           documents: {
             [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
@@ -282,6 +284,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
 
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
+          jobProgress: {},
           documents: {
             [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
@@ -320,13 +323,14 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
 
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
+          jobProgress: {},
           documents: {
             [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
         };
         // Content IS cached with matching version
-        state.stageDocumentContent[serializedKey] = {
+        const cachedContent: StageDocumentContentState = {
           baselineMarkdown: 'Cached content',
           currentDraftMarkdown: 'Cached content',
           isDirty: false,
@@ -340,9 +344,11 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
           pendingDiff: null,
           lastAppliedVersionHash: 'hash-cached',
           sourceContributionId: null,
-          feedbackDraftMarkdown: '',
+          feedbackDraftMarkdown: undefined,
           feedbackIsDirty: false,
+          resourceType: null,
         };
+        state.stageDocumentContent[serializedKey] = cachedContent;
       });
 
       const fetchSpy = vi.spyOn(useDialecticStore.getState(), 'fetchStageDocumentContent');
@@ -377,13 +383,14 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
 
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
+          jobProgress: {},
           documents: {
             [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
         };
         // Content cached but with OLD resource ID (stale)
-        state.stageDocumentContent[serializedKey] = {
+        const staleContent: StageDocumentContentState = {
           baselineMarkdown: 'Old content',
           currentDraftMarkdown: 'Old content',
           isDirty: false,
@@ -397,9 +404,11 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
           pendingDiff: null,
           lastAppliedVersionHash: 'hash-old',
           sourceContributionId: null,
-          feedbackDraftMarkdown: '',
+          feedbackDraftMarkdown: undefined,
           feedbackIsDirty: false,
+          resourceType: null,
         };
+        state.stageDocumentContent[serializedKey] = staleContent;
       });
 
       const fetchSpy = vi.spyOn(useDialecticStore.getState(), 'fetchStageDocumentContent');
@@ -431,6 +440,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
 
       useDialecticStore.setState((state) => {
         state.stageRunProgress[progressKey] = {
+          jobProgress: {},
           documents: {
             [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },

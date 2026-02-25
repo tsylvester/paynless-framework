@@ -11,7 +11,10 @@ export interface JsonSanitizationResult {
     wasSanitized: boolean;
     /** A flag indicating whether structural fixes were applied (adding missing braces/brackets). */
     wasStructurallyFixed: boolean;
+    /** A flag indicating whether duplicate keys were detected and resolved. */
+    hasDuplicateKeys: boolean;
+    /** Unique key names that were found duplicated and merged. */
+    duplicateKeysResolved: string[];
     /** The original content length before sanitization for debugging/logging purposes. */
     originalLength: number;
 }
-

@@ -74,7 +74,7 @@ describe('document lifecycle handlers write composite key and consumer reads cor
 
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = recipe;
-			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {} };
+			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {} };
 		});
 
 		const notification: Notification = {
@@ -155,6 +155,7 @@ describe('document lifecycle handlers write composite key and consumer reads cor
 					},
 				},
 				stepStatuses: { execute_step: 'in_progress' },
+				jobProgress: {},
 			};
 		});
 
@@ -230,6 +231,7 @@ describe('document lifecycle handlers write composite key and consumer reads cor
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = recipe;
 			state.stageRunProgress[progressKey] = {
+				jobProgress: {},
 				documents: {
 					[getStageRunDocumentKey(document_key, modelId)]: {
 						descriptorType: 'rendered',
@@ -331,6 +333,7 @@ describe('document lifecycle handlers write composite key and consumer reads cor
 					},
 				},
 				stepStatuses: { execute_step: 'in_progress' },
+				jobProgress: {},
 			};
 		});
 
@@ -406,7 +409,7 @@ describe('document lifecycle handlers write composite key and consumer reads cor
 
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = recipe;
-			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {} };
+			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {} };
 		});
 
 		const docStarted1: Notification = {

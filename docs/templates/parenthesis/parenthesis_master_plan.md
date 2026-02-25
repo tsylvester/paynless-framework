@@ -16,21 +16,12 @@
 
 {{#section:status_summary}}
 # Status Summary
-## Completed
-{status_summary.completed}
-
-## In Progress
-{status_summary.in_progress}
-
-## Up Next
-{status_summary.up_next}
+{status_summary}
 {{/section:status_summary}}
 
 {{#section:status_markers}}
 # Status Markers
-- **Unstarted**: {status_markers.unstarted}
-- **In Progress**: {status_markers.in_progress}
-- **Completed**: {status_markers.completed}
+{status_markers}
 {{/section:status_markers}}
 
 {{#section:dependency_rules}}
@@ -40,9 +31,7 @@
 
 {{#section:generation_limits}}
 # Generation Limits
-- **Max Steps**: {generation_limits.max_steps}
-- **Target Steps**: {generation_limits.target_steps}
-- **Max Output Lines**: {generation_limits.max_output_lines}
+{generation_limits}
 {{/section:generation_limits}}
 
 {{#section:feature_scope}}
@@ -155,7 +144,5 @@
 {third_party_services}
 {{/section:third_party_services}}
 
-<!-- Missing sections will be omitted by the renderer -->
 {{#section:_not_provided}}
-<!-- Section not provided by model: {_not_provided} -->
 {{/section:_not_provided}}

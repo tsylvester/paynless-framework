@@ -11,32 +11,13 @@
 - **Stage Role**: {{role}}
 - **Stage Instructions**: {{stage_instructions}}
 - **Style Guide Markdown**: {{style_guide_markdown}}
-- **Parenthesis Documents**:
-  - TRD: {{parenthesis_documents.technical_requirements}}
-  - Master Plan: {{parenthesis_documents.master_plan}}
-  - Milestone Schema: {{parenthesis_documents.milestone_schema}}
-{{#section:parenthesis_feedback}}
-- **Parenthesis Feedback (optional)**:
-  - TRD Feedback: {{parenthesis_feedback.technical_requirements}}
-  - Master Plan Feedback: {{parenthesis_feedback.master_plan}}
-  - Milestone Schema Feedback: {{parenthesis_feedback.milestone_schema}}
-  {{/#section:parenthesis_feedback}}
-  {{#section:paralysis_iteration}}
-- **Prior Paralysis Documents (optional, for iterative refinement)**:
-  - Actionable Checklist: {{paralysis_documents.actionable_checklist}}
-  - Updated Master Plan: {{paralysis_documents.updated_master_plan}}
-{{/#section:paralysis_iteration}}
-{{#section:paralysis_feedback}}
-- **Prior Paralysis Feedback (optional)**:
-  - Actionable Checklist Feedback: {{paralysis_feedback.actionable_checklist}}
-  - Updated Master Plan Feedback: {{paralysis_feedback.updated_master_plan}}
-{{/#section:paralysis_feedback}}
+- **Expected Output Artifacts Definition**: {{outputs_required}}
 
 ## HeaderContext Schema
 ```json
 {
   "system_materials": {
-    "executive_summary": "summary of which milestones are detailed in this iteration and why",
+    "agent_notes_to_self": "summary of which milestones are detailed in this iteration and why, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "TRD sections used, Master Plan phase/milestone references",
     "stage_rationale": "explain ordering, TDD emphasis, and how checklist conforms to style guide",
     "progress_update": "summarize completed vs remaining milestones; denote updated statuses in Master Plan",
@@ -84,28 +65,28 @@
       "content_to_include": {
         "milestone_ids": ["<list the next milestone(s) to detail from the master_plan and milestone_schema>"],
         "index": [],
-        "milestone_reference": {
-          "id": "",
-          "phase": "",
-          "dependencies": ""
+        "elaboration_instruction": "For each milestone from the milestone_schema, expand into a fully described work node with all the elements provided. Elaborate in dependency order. If generation limits are reached before exhausting the batch, use continuation flags.",
+        "node_skeleton": {
+          "path": "",
+          "title": "",
+          "objective": [],
+          "role": [],
+          "module": [],
+          "deps": [],
+          "context_slice": [],
+          "interface": [],
+          "interface_tests": [],
+          "interface_guards": [],
+          "unit_tests": [],
+          "construction": [],
+          "source": [],
+          "provides": [],
+          "mocks": [],
+          "integration_tests": [],
+          "directionality": [],
+          "requirements": [],
+          "commit": []
         },
-        "steps": [
-          {
-            "status": "",
-            "component_label": "",
-            "numbering": "",
-            "title": "",
-            "description": "",
-            "inputs": "",
-            "outputs": "",
-            "validation": "",
-            "red_test": "",
-            "implementation": "",
-            "green_test": "",
-            "refactor": "",
-            "commit_message": ""
-          }
-        ],
         "milestone_summary": ""
       }
     },
@@ -113,7 +94,7 @@
       "document_key": "updated_master_plan",
       "content_to_include": {
         "index": [],
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
         "phases": [
           {
             "name": "",
@@ -126,19 +107,11 @@
                 "title": "",
                 "status": "[ ]",
                 "objective": "",
-                "description": "",
-                "technical_complexity": "",
-                "effort_estimate": "",
-                "implementation_approach": "",
-                "test_strategy": "",
-                "component_labels": [],
-                "inputs": [],
-                "outputs": [],
-                "validation": [],
-                "dependencies": [],
-                "coverage_notes": "",
-                "iteration_delta": "",
-                "acceptance_criteria": []
+                "deps": [],
+                "provides": [],
+                "directionality": "",
+                "requirements": [],
+                "iteration_delta": ""
               }
             ]
           }
@@ -193,7 +166,17 @@
         "require_comparison_matrix": true,
         "summarize_tradeoffs": true,
         "capture_final_recommendation": true,
-        "tie_breaker_guidance": true
+        "tie_breaker_guidance": true,
+        "comparison_matrix": [],
+        "analysis": {
+          "summary": "",
+          "tradeoffs": "",
+          "consensus": ""
+        },
+        "recommendation": {
+          "rankings": [],
+          "tie_breakers": []
+        }
       }
     }
   ]

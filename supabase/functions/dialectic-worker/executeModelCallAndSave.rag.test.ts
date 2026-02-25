@@ -26,6 +26,7 @@ import {
 } from '../_shared/utils/vector_utils.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
+import { createMockDownloadFromStorage } from '../_shared/supabase_storage_utils.mock.ts';
 import { 
     createMockJob, 
     testPayload, 
@@ -57,7 +58,8 @@ Deno.test('resource documents are used for sizing but not included in ChatApiReq
                   resource_type: 'rendered_document',
                   // Path deconstructor expects directory in storage_path and full file name in file_name
                   storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
-                  file_name: 'modelA_1_business_case.md'
+                  file_name: 'modelA_1_business_case.md',
+                  storage_bucket: 'test-bucket'
                 }
               ],
               error: null
@@ -66,7 +68,12 @@ Deno.test('resource documents are used for sizing but not included in ChatApiReq
       }
   });
 
-    const deps = getMockDeps();
+    const docEncoded = new TextEncoder().encode('DOC: sizing only');
+    const docBuffer = new ArrayBuffer(docEncoded.byteLength);
+    new Uint8Array(docBuffer).set(docEncoded);
+    const deps = getMockDeps({
+        downloadFromStorage: createMockDownloadFromStorage({ mode: 'success', data: docBuffer }),
+    });
     const callModelSpy = spy(deps, 'callUnifiedAIModel');
 
     // Capture full sized payload (no casts), and also a simple string view for doc presence

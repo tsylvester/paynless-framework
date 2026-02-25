@@ -60,7 +60,7 @@
 ```json
 {
   "system_materials": {
-    "executive_summary": "outline/index of all outputs in this response and how they connect to the objective",
+    "agent_notes_to_self": "outline/index of all outputs in this response and how they connect to the objective, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "brief, faithful summary of user prompt and referenced materials",
     "stage_rationale": "why these choices align with constraints, standards, and stakeholder needs",
     "progress_update": "for continuation turns, summarize what is complete vs remaining; omit on first turn",
@@ -191,7 +191,7 @@
 ```json
 {
   "system_materials": {
-    "executive_summary": "outline/index of all outputs in this response and how they connect to the objective",
+    "agent_notes_to_self": "outline/index of all outputs in this response and how they connect to the objective, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "brief, faithful summary of user prompt and referenced materials",
     "stage_rationale": "why these choices align with constraints, standards, and stakeholder needs",
     "progress_update": "for continuation turns, summarize what is complete vs remaining; omit on first turn",
@@ -320,7 +320,7 @@
       "artifact_class": "rendered_document",
       "file_type": "markdown",
       "content_to_include": {
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
         "user_problem_validation": "",
         "market_opportunity": "",
         "competitive_analysis": "",

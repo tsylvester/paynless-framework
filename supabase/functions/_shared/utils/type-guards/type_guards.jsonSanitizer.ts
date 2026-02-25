@@ -16,6 +16,14 @@ export function isJsonSanitizationResult(value: unknown): value is JsonSanitizat
         return false;
     }
 
+    if (!('hasDuplicateKeys' in value) || typeof value.hasDuplicateKeys !== 'boolean') {
+        return false;
+    }
+
+    if (!('duplicateKeysResolved' in value) || !Array.isArray(value.duplicateKeysResolved) || !value.duplicateKeysResolved.every((k: unknown) => typeof k === 'string')) {
+        return false;
+    }
+
     if (!('originalLength' in value) || typeof value.originalLength !== 'number') {
         return false;
     }
@@ -35,4 +43,3 @@ export function isValidJsonString(value: unknown): boolean {
         return false;
     }
 }
-

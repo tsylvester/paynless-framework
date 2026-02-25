@@ -1,0 +1,229 @@
+{
+  "continuation_needed": false,
+  "stop_reason": "complete",
+  "resume_cursor": {},
+  "content": {
+    "index": [
+      "1. Executive Summary",
+      "2. Roadmap Overview",
+      "3. Phase 1: Secure Foundation (Milestone 1)",
+      "4. Phase 2: Core Utility & Intelligence (Milestones 2-3)",
+      "5. Phase 3: Engagement & Mobile Parity (Milestone 4)",
+      "6. Governance & Quality Standards"
+    ],
+    "phases": [
+      {
+        "name": "Phase 1: Secure Foundation",
+        "objective": "Establish a production-ready, multi-tenant environment with strictly enforced data isolation.",
+        "technical_context": "Next.js 14 App Router, Supabase Auth (PKCE), and PostgreSQL Row Level Security (RLS).",
+        "implementation_strategy": "Database-first development. Establish security guardrails and authentication middleware before any feature UI is built.",
+        "milestones": [
+          {
+            "id": "M1",
+            "title": "Foundation & Multi-Tenant Architecture",
+            "objective": "Establish secure Next.js/Supabase environment with Row Level Security.",
+            "deps": [
+              "Supabase Account",
+              "Vercel Project"
+            ],
+            "provides": [
+              "Secure Auth Middleware",
+              "Multi-tenant Database Schema",
+              "Authenticated API Base"
+            ],
+            "directionality": "Backend -> Infrastructure",
+            "requirements": [
+              "Supabase project linked with local CLI",
+              "Prisma schema deployed with RLS enabled",
+              "Magic Link auth flow functional"
+            ],
+            "status": "[ ]",
+            "coverage_notes": "Focuses on the 'Security-First' mandate. Covers Profiles and initial Task table structures.",
+            "iteration_delta": "Greenfield setup"
+          }
+        ]
+      },
+      {
+        "name": "Phase 2: Core Utility & Intelligence",
+        "objective": "Implement the 'Actionable Minimalism' loop through deterministic NLP capture and the ritual dashboard.",
+        "technical_context": "Chrono.js integration, Next.js Server Actions, and shadcn/ui primitives.",
+        "implementation_strategy": "Logic-to-View progression. Validate NLP parsing accuracy via unit tests before mounting the capture UI.",
+        "milestones": [
+          {
+            "id": "M2",
+            "title": "Deterministic NLP Capture Engine",
+            "objective": "Implement Chrono.js parsing within Server Actions for task extraction.",
+            "deps": [
+              "M1"
+            ],
+            "provides": [
+              "Parsing Server Action",
+              "Visual Confirmation UI",
+              "Task Persistence Logic"
+            ],
+            "directionality": "Logic -> Backend -> UI",
+            "requirements": [
+              "Successful parsing of 'tomorrow at 5pm'",
+              "Visual Confirmation Badge UI functional",
+              "Task persistence in Postgres"
+            ],
+            "status": "[ ]",
+            "coverage_notes": "Critical path for reducing interaction friction. Must handle timezone offsets correctly.",
+            "iteration_delta": "Intelligence Layer"
+          },
+          {
+            "id": "M3",
+            "title": "Intelligent Ritual Dashboard",
+            "objective": "Build the personalized 'Hello World' landing with temporal orientation.",
+            "deps": [
+              "M2"
+            ],
+            "provides": [
+              "Greeting Logic Component",
+              "Unified Activity Feed",
+              "Edge-rendered Dashboard Shell"
+            ],
+            "directionality": "UI -> Orchestration",
+            "requirements": [
+              "Greeting logic handles time-of-day correctly",
+              "Unified feed renders tasks and notes chronologically",
+              "FCP < 500ms on Vercel Edge"
+            ],
+            "status": "[ ]",
+            "coverage_notes": "Optimizing for First Contentful Paint (FCP) using Edge-side rendering for the ritual greeting.",
+            "iteration_delta": "UX & Ritual Layer"
+          }
+        ]
+      },
+      {
+        "name": "Phase 3: Engagement & Mobile Parity",
+        "objective": "Transition the web application into a proactive productivity companion through PWA features.",
+        "technical_context": "Web Push API, Service Workers, and Web App Manifest.",
+        "implementation_strategy": "Staging-heavy validation. Push notifications require HTTPS and production-like environments for testing.",
+        "milestones": [
+          {
+            "id": "M4",
+            "title": "Proactive Reminders & PWA",
+            "objective": "Enable Web Push notifications and offline manifest for mobile parity.",
+            "deps": [
+              "M3"
+            ],
+            "provides": [
+              "Offline-ready Service Worker",
+              "VAPID Push Subscription flow",
+              "Installable PWA Manifest"
+            ],
+            "directionality": "Browser API -> Infrastructure",
+            "requirements": [
+              "Service Worker registered successfully",
+              "Web Push receipt on desktop and mobile",
+              "Add to Home Screen prompt functional"
+            ],
+            "status": "[ ]",
+            "coverage_notes": "Enables the 'Proactive' value proposition. Requires VAPID key configuration and user permission handling.",
+            "iteration_delta": "Mobility & Engagement Layer"
+          }
+        ]
+      }
+    ],
+    "status_summary": {
+      "completed": [],
+      "in_progress": [],
+      "up_next": [
+        "M1: Foundation & Multi-Tenant Architecture"
+      ]
+    },
+    "status_markers": {
+      "unstarted": "[ ]",
+      "in_progress": "[🚧]",
+      "completed": "[✅]"
+    },
+    "dependency_rules": [
+      "Backend data isolation (RLS) must precede any UI development to prevent data leaks.",
+      "NLP parsing logic must be validated via unit tests before UI integration to ensure determinism.",
+      "PWA notification testing requires a production-like staging environment (HTTPS) as per browser security standards."
+    ],
+    "generation_limits": {
+      "max_steps": 200,
+      "target_steps": "120-180",
+      "max_output_lines": "600-800"
+    },
+    "feature_scope": [
+      "Identity (Supabase Magic Link)",
+      "Deterministic NLP Parsing (Chrono.js)",
+      "Ritual Greeting Dashboard",
+      "Unified Chronological Feed",
+      "Web Push Notifications",
+      "Installable PWA"
+    ],
+    "features": [
+      "NLP-enabled Task Entry",
+      "Time-of-day Personalization",
+      "Multi-tenant Data Privacy",
+      "Low-latency Edge Rendering"
+    ],
+    "mvp_description": "A high-speed, minimalist productivity notepad featuring a personalized 'Hello World' ritual dashboard, zero-friction task capture via deterministic NLP, and proactive mobile-parity reminders through a PWA architecture.",
+    "market_opportunity": "Targets the 'Actionable Minimalism' segment, providing a faster alternative to heavy project management tools and more intelligence than static note apps.",
+    "competitive_analysis": "Faster than Notion due to Edge-first architecture; more proactive than Apple Notes via Web Push scheduling.",
+    "technical_context": "The plan assumes an Edge-first serverless architecture on Vercel, utilizing Supabase as the unified BaaS for Auth and Postgres, and Chrono.js for low-latency client/server-side parsing.",
+    "implementation_context": "Delivery follows a three-phase approach: Foundation (Security), Utility (NLP & Feed), and Retention (PWA). Each phase is delivered via iterative implementation checklists with TDD-first logic validation.",
+    "test_framework": "Vitest for NLP unit tests; Playwright for E2E PWA and Auth flows.",
+    "component_mapping": "Standardizing on shadcn/ui primitives for the Capture, Ritual, and Feed interfaces to ensure rapid development and consistent accessibility.",
+    "architecture_summary": "Vercel Edge Functions + Supabase PostgreSQL RLS. A secure, multi-tier serverless stack optimized for minimal latency and high-velocity interaction.",
+    "architecture": "The system follows a Next.js App Router orchestration pattern. Security is pushed to the database tier via RLS, while intelligence (NLP) is handled in Server Actions. Persistence is centralized in Supabase, and engagement is driven by browser-native Web Push APIs.",
+    "services": [
+      "Supabase Auth",
+      "Supabase Database",
+      "Vercel Hosting",
+      "Postmark (Magic Links)"
+    ],
+    "components": [
+      "CommandInput",
+      "GreetingHeader",
+      "ActivityFeed",
+      "NotificationManager"
+    ],
+    "integration_points": [
+      "VAPID for Push Notifications",
+      "Chrono.js for Text Parsing",
+      "PostHog for Analytics"
+    ],
+    "dependency_resolution": [
+      "DB Schema -> Server Actions -> Client UI",
+      "VAPID Keys -> Service Worker -> Push Service"
+    ],
+    "frontend_stack": {
+      "framework": "Next.js 14",
+      "styling": "Tailwind CSS",
+      "ui_components": "shadcn/ui"
+    },
+    "backend_stack": {
+      "runtime": "Node.js (Edge Runtime)",
+      "orm": "Prisma",
+      "logic": "Server Actions"
+    },
+    "data_platform": {
+      "database": "PostgreSQL",
+      "provider": "Supabase"
+    },
+    "devops_tooling": {
+      "hosting": "Vercel",
+      "ci_cd": "GitHub Actions"
+    },
+    "security_tooling": {
+      "auth": "Supabase PKCE",
+      "isolation": "Postgres RLS",
+      "validation": "Zod"
+    },
+    "shared_libraries": [
+      "Chrono.js",
+      "date-fns",
+      "Lucide React"
+    ],
+    "third_party_services": [
+      "PostHog",
+      "Sentry"
+    ],
+    "executive_summary": "This master plan outlines a 3-phase execution roadmap for the Hello World Productivity Suite. We prioritize a 'Security-First' foundation in Phase 1 by establishing RLS-protected multi-tenancy. Phase 2 introduces the core value proposition: a deterministic NLP capture engine and a personalized ritual dashboard. Phase 3 secures user retention with PWA parity and Web Push reminders. This sequencing ensures technical risks like data isolation and parsing accuracy are mitigated early, while deferring the complexity of browser-specific PWA implementations until the core utility is proven."
+  }
+}

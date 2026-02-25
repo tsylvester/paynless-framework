@@ -50,6 +50,7 @@ import {
     isObjectWithOptionalId,
     isArrayWithOptionalId,
     isSelectAnchorResult,
+    isJobProgressEntry,
 } from './type_guards.dialectic.ts';
 import { 
     BranchKey, 
@@ -82,6 +83,8 @@ import {
     DialecticRenderJobPayload,
     SelectAnchorResult,
     SourceDocument,
+    JobProgressEntry,
+    HeaderContext,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
@@ -1593,7 +1596,7 @@ Deno.test('Type Guard: isStageWithRecipeSteps', async (t) => {
         outputs_required: {
             system_materials: {
                 stage_rationale: "rationale",
-                executive_summary: "summary",
+                agent_notes_to_self: "summary",
                 input_artifacts_summary: "inputs",
                 progress_update: "progress",
                 validation_checkpoint: ["check"],
@@ -1978,10 +1981,10 @@ Deno.test('Type Guard: validatePayload', async (t) => {
 });
 
 Deno.test('Type Guard: isHeaderContext', async (t) => {
-    const baseContext = {
+    const baseContext: HeaderContext = {
         system_materials: {
             stage_rationale: 'why',
-            executive_summary: 'summary',
+            agent_notes_to_self: 'summary',
             input_artifacts_summary: 'inputs',
             validation_checkpoint: ['a'],
             quality_standards: ['b'],
@@ -2009,7 +2012,7 @@ Deno.test('Type Guard: isHeaderContext', async (t) => {
         const invalid = {
             ...baseContext,
             system_materials: {
-                executive_summary: 'summary'
+                agent_notes_to_self: 'summary'
             }
         };
         assert(!isHeaderContext(invalid));
@@ -2108,6 +2111,66 @@ Deno.test('Type Guard: isHeaderContext', async (t) => {
             ]
         };
         assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return true when review_metadata is present and valid', () => {
+        const withReviewMetadata = {
+            ...baseContext,
+            review_metadata: {
+                proposal_identifier: {
+                    lineage_key: 'test-lineage',
+                    source_model_slug: 'test-model'
+                },
+                proposal_summary: 'Test proposal summary',
+                review_focus: ['feasibility', 'risk'],
+                user_constraints: ['constraint1'],
+                normalization_guidance: {
+                    scoring_scale: '1-5',
+                    required_dimensions: ['feasibility', 'complexity']
+                }
+            }
+        };
+        assert(isHeaderContext(withReviewMetadata));
+    });
+
+    await t.step('should return true when review_metadata is omitted', () => {
+        const withoutReviewMetadata = { ...baseContext };
+        assert(isHeaderContext(withoutReviewMetadata));
+    });
+
+    await t.step('should return false when review_metadata is present but invalid (missing proposal_identifier)', () => {
+        const invalid = {
+            ...baseContext,
+            review_metadata: {
+                proposal_summary: 'Test proposal summary',
+                review_focus: ['feasibility'],
+                user_constraints: [],
+                normalization_guidance: {
+                    scoring_scale: '1-5',
+                    required_dimensions: ['feasibility']
+                }
+            }
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return false when review_metadata is present but invalid (wrong type)', () => {
+        const invalid = {
+            ...baseContext,
+            review_metadata: 'not-an-object'
+        };
+        assert(!isHeaderContext(invalid));
+    });
+
+    await t.step('should return true when system_materials.progress_update is null', () => {
+        const withNullProgress = {
+            ...baseContext,
+            system_materials: {
+                ...baseContext.system_materials,
+                progress_update: null
+            }
+        };
+        assert(isHeaderContext(withNullProgress));
     });
 });
 
@@ -2416,7 +2479,7 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
         const planOutputRule: OutputRule = {
             system_materials: {
                 stage_rationale: "Test rationale for planning.",
-                executive_summary: "Plan summary.",
+                agent_notes_to_self: "Plan summary.",
                 input_artifacts_summary: "Summary of inputs for the plan.",
                 progress_update: "Planning is starting.",
                 validation_checkpoint: ["Plan validation"],
@@ -2441,7 +2504,7 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
         const planOutputRule: OutputRule = {
             system_materials: {
                 stage_rationale: "Test rationale for planning.",
-                executive_summary: "Plan summary.",
+                agent_notes_to_self: "Plan summary.",
                 input_artifacts_summary: "Summary of inputs for the plan.",
                 progress_update: "Planning is starting.",
                 validation_checkpoint: ["Plan validation"],
@@ -2595,7 +2658,7 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
         const planOutputRule: OutputRule = {
             system_materials: {
                 stage_rationale: "Test rationale for planning.",
-                executive_summary: "Plan summary.",
+                agent_notes_to_self: "Plan summary.",
                 input_artifacts_summary: "Summary of inputs for the plan.",
                 progress_update: "Planning is starting.",
                 validation_checkpoint: ["Plan validation"],
@@ -2666,7 +2729,7 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
         outputs_required: {
             system_materials: {
                 stage_rationale: "rationale",
-                executive_summary: "summary",
+                agent_notes_to_self: "summary",
                 input_artifacts_summary: "inputs",
                 progress_update: "progress",
                 validation_checkpoint: ["check"],
@@ -2777,7 +2840,7 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
 Deno.test('Type Guard: isSystemMaterials', async (t) => {
     const validSystemMaterials: SystemMaterials = {
         stage_rationale: 'Test rationale',
-        executive_summary: 'Test summary',
+        agent_notes_to_self: 'Test summary',
         input_artifacts_summary: 'Test input summary',
         progress_update: 'Test progress update',
         diversity_rubric: { key: 'value' },
@@ -2808,9 +2871,9 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
     });
 
     await t.step('should return true for an object with only required fields', () => {
-        const minimalSystemMaterials = {
+        const minimalSystemMaterials: SystemMaterials = {
             stage_rationale: 'Minimal rationale',
-            executive_summary: 'Minimal summary',
+            agent_notes_to_self: 'Minimal summary',
             input_artifacts_summary: 'Minimal input summary',
             progress_update: 'Minimal progress update',
             diversity_rubric: {},
@@ -2821,7 +2884,7 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
     });
 
     await t.step('should return true for planner payload without prose fields', () => {
-        const plannerOnlySystemMaterials = {
+        const plannerOnlySystemMaterials: SystemMaterials = {
             milestones: [],
             dependency_rules: [],
             status_preservation_rules: {
@@ -2831,11 +2894,10 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
             },
             technical_requirements_outline_inputs: {
                 subsystems: [],
-                apis: [],
-                schemas: [],
-                proposed_file_tree: '',
-                architecture_overview: '',
             },
+            stage_rationale: 'Test rationale',
+            agent_notes_to_self: 'Test summary',
+            input_artifacts_summary: 'Test input summary',
         };
         assert(isSystemMaterials(plannerOnlySystemMaterials));
     });
@@ -2846,7 +2908,7 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
     });
 
     await t.step('should return false if a required string property has the wrong type', () => {
-        const invalid = { ...validSystemMaterials, executive_summary: 123 };
+        const invalid = { ...validSystemMaterials, agent_notes_to_self: 123 };
         assert(!isSystemMaterials(invalid));
     });
 
@@ -2862,6 +2924,30 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
 
     await t.step('should return false if files_to_generate contains invalid items', () => {
         const invalid = { ...validSystemMaterials, files_to_generate: [{ invalid_key: 'value' }] };
+        assert(!isSystemMaterials(invalid));
+    });
+
+    await t.step('should return true when progress_update is null', () => {
+        const withNullProgress: SystemMaterials = {
+            stage_rationale: 'Test rationale',
+            agent_notes_to_self: 'Test summary',
+            input_artifacts_summary: 'Test input summary',
+            progress_update: null,
+        };
+        assert(isSystemMaterials(withNullProgress));
+    });
+
+    await t.step('should return true when progress_update is omitted', () => {
+        const withoutProgress: SystemMaterials = {
+            stage_rationale: 'Test rationale',
+            agent_notes_to_self: 'Test summary',
+            input_artifacts_summary: 'Test input summary',
+        };
+        assert(isSystemMaterials(withoutProgress));
+    });
+
+    await t.step('should return false when progress_update has invalid type (number)', () => {
+        const invalid = { ...validSystemMaterials, progress_update: 123 };
         assert(!isSystemMaterials(invalid));
     });
 });
@@ -3404,9 +3490,22 @@ Deno.test('Type Guard: isContentToInclude', async (t) => {
         assert(!isContentToInclude(() => {}));
     });
 
-    await t.step('should return false for objects with null values', () => {
-        const invalid = { field1: null };
-        assert(!isContentToInclude(invalid));
+    await t.step('should return true for objects with null values (AI models return null for empty fields)', () => {
+        const valid = { field1: null };
+        assert(isContentToInclude(valid));
+    });
+
+    await t.step('should return true for objects mixing null with other valid types', () => {
+        const valid = {
+            risk: null,
+            impact: null,
+            likelihood: null,
+            mitigation: null,
+            mitigation_plan: 'detailed plan text',
+            required_fields: ['risk', 'impact', 'likelihood', 'mitigation'],
+            notes: 'some notes',
+        };
+        assert(isContentToInclude(valid));
     });
 
     await t.step('should return false for objects with undefined values', () => {
@@ -3440,7 +3539,7 @@ Deno.test('Type Guard: isContentToInclude', async (t) => {
         const invalid = {
             array_of_invalid: [
                 { valid_key: 'value' },
-                { invalid_key: null }
+                { invalid_key: undefined }
             ]
         };
         assert(!isContentToInclude(invalid));
@@ -3813,6 +3912,46 @@ Deno.test('Type Guard: isSelectAnchorResult', async (t) => {
             unknownProperty: 'value',
         };
         assert(!isSelectAnchorResult(result));
+    });
+});
+
+Deno.test('Type Guard: isJobProgressEntry', async (t) => {
+    await t.step('returns true for valid JobProgressEntry with all required fields', () => {
+        const value: JobProgressEntry = {
+            totalJobs: 2,
+            completedJobs: 1,
+            inProgressJobs: 1,
+            failedJobs: 0,
+        };
+        assert(isJobProgressEntry(value));
+    });
+
+    await t.step('returns false when totalJobs is missing or not a number', () => {
+        assert(!isJobProgressEntry({ completedJobs: 0, inProgressJobs: 0, failedJobs: 0 }));
+        assert(!isJobProgressEntry({ totalJobs: '1', completedJobs: 0, inProgressJobs: 0, failedJobs: 0 }));
+        assert(!isJobProgressEntry({ totalJobs: null, completedJobs: 0, inProgressJobs: 0, failedJobs: 0 }));
+    });
+
+    await t.step('returns true when optional modelJobStatuses is present with valid status values', () => {
+        const value: JobProgressEntry = {
+            totalJobs: 2,
+            completedJobs: 1,
+            inProgressJobs: 1,
+            failedJobs: 0,
+            modelJobStatuses: { 'model-a': 'completed', 'model-b': 'in_progress' },
+        };
+        assert(isJobProgressEntry(value));
+    });
+
+    await t.step('returns false when modelJobStatuses contains invalid status value', () => {
+        const value = {
+            totalJobs: 2,
+            completedJobs: 1,
+            inProgressJobs: 1,
+            failedJobs: 0,
+            modelJobStatuses: { 'model-a': 'invalid_status' },
+        };
+        assert(!isJobProgressEntry(value));
     });
 });
 

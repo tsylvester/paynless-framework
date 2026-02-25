@@ -92,7 +92,7 @@ describe("task_isolator.findSourceDocuments Integration Tests", () => {
 
     const systemMaterials: SystemMaterials = {
       stage_rationale: "Integration test stub: stage rationale",
-      executive_summary: "Integration test stub: executive summary",
+      agent_notes_to_self: "Integration test stub: agent internal summary",
       input_artifacts_summary: "Integration test stub: input artifacts summary",
     };
 

@@ -103,6 +103,7 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
   let workerDeps: IJobContext;
   // Shared session that persists across tests for multi-stage testing
   let sharedSession: DialecticSession | null = null;
+  let capturedChatApiRequests: ChatApiRequest[] = [];
 
   const mockAndProcessJob = async (job: DialecticJobRow, deps: IJobContext) => {
     const payload = job.payload;
@@ -115,7 +116,7 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
 
     const systemMaterials: SystemMaterials = {
       stage_rationale: "Integration test stub: stage rationale",
-      executive_summary: "Integration test stub: executive summary",
+      agent_notes_to_self: "Integration test stub: agent internal summary",
       input_artifacts_summary: "Integration test stub: input artifacts summary",
     };
 
@@ -127,31 +128,33 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
     };
 
     // Populate content_to_include keys required by the real recipe validation (see failing logs).
-    const emptyString = "";
-    const emptyStringArray: string[] = [];
+    // Non-empty stub values ensure renderPrompt preserves section blocks and produces renderable output,
+    // so that gatherArtifacts downloads non-empty content from storage into ChatApiRequest.resourceDocuments.
+    const stubString = "Integration test stub content";
+    const stubStringArray: string[] = ["Integration test stub item"];
 
     const businessCaseContentToInclude: ContentToInclude = {
-      threats: emptyString,
-      strengths: emptyString,
-      next_steps: emptyString,
-      weaknesses: emptyString,
-      opportunities: emptyString,
-      executive_summary: emptyString,
-      market_opportunity: emptyString,
-      "risks_&_mitigation": emptyString,
-      proposal_references: emptyStringArray,
-      competitive_analysis: emptyString,
-      user_problem_validation: emptyString,
-      "differentiation_&_value_proposition": emptyString,
+      threats: stubString,
+      strengths: stubString,
+      next_steps: stubString,
+      weaknesses: stubString,
+      opportunities: stubString,
+      executive_summary: stubString,
+      market_opportunity: stubString,
+      "risks_&_mitigation": stubString,
+      proposal_references: stubStringArray,
+      competitive_analysis: stubString,
+      user_problem_validation: stubString,
+      "differentiation_&_value_proposition": stubString,
     };
 
     const featureSpecFeature: ContentToInclude = {
-      dependencies: emptyStringArray,
-      feature_name: emptyString,
-      user_stories: emptyStringArray,
-      success_metrics: emptyStringArray,
-      feature_objective: emptyString,
-      acceptance_criteria: emptyStringArray,
+      dependencies: stubStringArray,
+      feature_name: stubString,
+      user_stories: stubStringArray,
+      success_metrics: stubStringArray,
+      feature_objective: stubString,
+      acceptance_criteria: stubStringArray,
     };
     const featureSpecFeatures: ContentToInclude[] = [featureSpecFeature];
     const featureSpecContentToInclude: ContentToInclude = {
@@ -159,29 +162,265 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
     };
 
     const technicalApproachContentToInclude: ContentToInclude = {
-      data: emptyString,
-      components: emptyString,
-      deployment: emptyString,
-      sequencing: emptyString,
-      architecture: emptyString,
-      open_questions: emptyString,
-      risk_mitigation: emptyString,
+      data: stubString,
+      components: stubString,
+      deployment: stubString,
+      sequencing: stubString,
+      architecture: stubString,
+      open_questions: stubString,
+      risk_mitigation: stubString,
     };
 
     const successMetricsContentToInclude: ContentToInclude = {
-      ownership: emptyString,
-      guardrails: emptyString,
-      next_steps: emptyString,
-      data_sources: emptyStringArray,
-      primary_kpis: emptyString,
-      risk_signals: emptyString,
-      escalation_plan: emptyString,
-      measurement_plan: emptyString,
-      north_star_metric: emptyString,
-      outcome_alignment: emptyString,
-      reporting_cadence: emptyString,
-      lagging_indicators: emptyString,
-      leading_indicators: emptyString,
+      ownership: stubString,
+      guardrails: stubString,
+      next_steps: stubString,
+      data_sources: stubStringArray,
+      primary_kpis: stubString,
+      risk_signals: stubString,
+      escalation_plan: stubString,
+      measurement_plan: stubString,
+      north_star_metric: stubString,
+      outcome_alignment: stubString,
+      reporting_cadence: stubString,
+      lagging_indicators: stubString,
+      leading_indicators: stubString,
+    };
+
+    const businessCaseCritiqueContentToInclude: ContentToInclude = {
+      notes: stubStringArray,
+      errors: stubStringArray,
+      threats: stubStringArray,
+      problems: stubStringArray,
+      obstacles: stubStringArray,
+      omissions: stubStringArray,
+      strengths: stubStringArray,
+      next_steps: stubString,
+      weaknesses: stubStringArray,
+      feasibility: stubString,
+      discrepancies: stubStringArray,
+      opportunities: stubStringArray,
+      recommendations: stubStringArray,
+      risks_mitigation: stubString,
+      executive_summary: stubString,
+      market_opportunity: stubString,
+      proposal_references: stubString,
+      competitive_analysis: stubString,
+      areas_for_improvement: stubStringArray,
+      user_problem_validation: stubString,
+      fit_to_original_user_request: stubString,
+      differentiation_value_proposition: stubString,
+    };
+
+    const technicalFeasibilityContentToInclude: ContentToInclude = {
+      cost: stubString,
+      data: stubString,
+      team: stubString,
+      summary: stubString,
+      findings: stubStringArray,
+      timeline: stubString,
+      compliance: stubString,
+      components: stubString,
+      deployment: stubString,
+      sequencing: stubString,
+      integration: stubString,
+      architecture: stubString,
+      open_questions: stubString,
+      risk_mitigation: stubString,
+      constraint_checklist: stubStringArray,
+    };
+
+    const riskRegisterContentToInclude: ContentToInclude = {
+      risk: stubString,
+      notes: stubString,
+      impact: stubString,
+      overview: stubString,
+      likelihood: stubString,
+      mitigation: stubString,
+      seed_examples: stubStringArray,
+      mitigation_plan: stubString,
+      required_fields: stubStringArray,
+    };
+
+    const nonFunctionalRequirementsContentToInclude: ContentToInclude = {
+      overview: stubString,
+      security: stubString,
+      categories: stubStringArray,
+      compliance: stubString,
+      guardrails: stubString,
+      next_steps: stubString,
+      performance: stubString,
+      reliability: stubString,
+      scalability: stubString,
+      primary_kpis: stubString,
+      risk_signals: stubString,
+      maintainability: stubString,
+      measurement_plan: stubString,
+      outcome_alignment: stubString,
+      lagging_indicators: stubString,
+      leading_indicators: stubString,
+    };
+
+    const dependencyMapContentToInclude: ContentToInclude = {
+      overview: stubString,
+      components: stubStringArray,
+      sequencing: stubString,
+      dependencies: stubString,
+      conflict_flags: stubStringArray,
+      open_questions: stubString,
+      risk_mitigation: stubString,
+      integration_points: stubStringArray,
+    };
+
+    const comparisonVectorContentToInclude: ContentToInclude = {
+      proposal: { lineage_key: stubString, source_model_slug: stubString },
+      dimensions: {
+        feasibility: { score: 1, rationale: stubString },
+        complexity: { score: 1, rationale: stubString },
+        security: { score: 1, rationale: stubString },
+        performance: { score: 1, rationale: stubString },
+        maintainability: { score: 1, rationale: stubString },
+        scalability: { score: 1, rationale: stubString },
+        cost: { score: 1, rationale: stubString },
+        time_to_market: { score: 1, rationale: stubString },
+        compliance_risk: { score: 1, rationale: stubString },
+        alignment_with_constraints: { score: 1, rationale: stubString },
+      },
+    };
+
+    const synthPairwiseBusinessCaseContentToInclude: ContentToInclude = {
+      thesis_document: stubString,
+      critique_document: stubString,
+      comparison_signal: stubString,
+      executive_summary: stubString,
+      user_problem_validation: stubString,
+      market_opportunity: stubString,
+      competitive_analysis: stubString,
+      "differentiation_&_value_proposition": stubString,
+      "risks_&_mitigation": stubString,
+      strengths: stubStringArray,
+      weaknesses: stubStringArray,
+      opportunities: stubStringArray,
+      threats: stubStringArray,
+      critique_alignment: stubString,
+      resolved_positions: stubStringArray,
+      open_questions: stubStringArray,
+      next_steps: stubString,
+      proposal_references: stubStringArray,
+    };
+
+    const synthPairwiseFeatureSpecContentToInclude: ContentToInclude = {
+      thesis_document: stubString,
+      feasibility_document: stubString,
+      nfr_document: stubString,
+      comparison_signal: stubString,
+      features: [{ feature_name: stubString, feature_objective: stubString, user_stories: stubStringArray, acceptance_criteria: stubStringArray, dependencies: stubStringArray, success_metrics: stubStringArray, risk_mitigation: stubString, open_questions: stubString, feasibility_insights: stubStringArray, non_functional_alignment: stubStringArray, score_adjustments: stubStringArray }],
+      feature_scope: stubStringArray,
+      tradeoffs: stubStringArray,
+    };
+
+    const synthPairwiseTechnicalApproachContentToInclude: ContentToInclude = {
+      thesis_document: stubString,
+      risk_document: stubString,
+      dependency_document: stubString,
+      architecture: stubString,
+      components: stubStringArray,
+      data: stubString,
+      deployment: stubString,
+      sequencing: stubString,
+      architecture_alignment: stubStringArray,
+      risk_mitigations: stubStringArray,
+      dependency_resolution: stubStringArray,
+      open_questions: stubStringArray,
+    };
+
+    const synthPairwiseSuccessMetricsContentToInclude: ContentToInclude = {
+      thesis_document: stubString,
+      critique_document: stubString,
+      comparison_signal: stubString,
+      outcome_alignment: stubString,
+      north_star_metric: stubString,
+      primary_kpis: stubStringArray,
+      leading_indicators: stubStringArray,
+      lagging_indicators: stubStringArray,
+      guardrails: stubStringArray,
+      measurement_plan: stubString,
+      risk_signals: stubStringArray,
+      next_steps: stubString,
+      metric_alignment: stubStringArray,
+      tradeoffs: stubStringArray,
+      validation_checks: stubStringArray,
+    };
+
+    const productRequirementsContentToInclude: ContentToInclude = {
+      executive_summary: stubString,
+      mvp_description: stubString,
+      user_problem_validation: stubString,
+      market_opportunity: stubString,
+      competitive_analysis: stubString,
+      "differentiation_&_value_proposition": stubString,
+      "risks_&_mitigation": stubString,
+      strengths: stubStringArray,
+      weaknesses: stubStringArray,
+      opportunities: stubStringArray,
+      threats: stubStringArray,
+      feature_scope: stubStringArray,
+      features: [{ feature_name: stubString, feature_objective: stubString, user_stories: stubStringArray, acceptance_criteria: stubStringArray, dependencies: stubStringArray, success_metrics: stubStringArray, risk_mitigation: stubString, open_questions: stubString, tradeoffs: stubStringArray }],
+      feasibility_insights: stubStringArray,
+      non_functional_alignment: stubStringArray,
+      score_adjustments: stubStringArray,
+      outcome_alignment: stubString,
+      north_star_metric: stubString,
+      primary_kpis: stubStringArray,
+      leading_indicators: stubStringArray,
+      lagging_indicators: stubStringArray,
+      guardrails: stubStringArray,
+      measurement_plan: stubString,
+      risk_signals: stubStringArray,
+      resolved_positions: stubStringArray,
+      open_questions: stubStringArray,
+      next_steps: stubString,
+      proposal_references: stubStringArray,
+      release_plan: stubStringArray,
+      assumptions: stubStringArray,
+      open_decisions: stubStringArray,
+      implementation_risks: stubStringArray,
+      stakeholder_communications: stubStringArray,
+    };
+
+    const systemArchitectureContentToInclude: ContentToInclude = {
+      architecture_summary: stubString,
+      architecture: stubString,
+      services: stubStringArray,
+      components: stubStringArray,
+      data_flows: stubStringArray,
+      interfaces: stubStringArray,
+      integration_points: stubStringArray,
+      dependency_resolution: stubStringArray,
+      conflict_flags: stubStringArray,
+      sequencing: stubString,
+      risk_mitigations: stubStringArray,
+      risk_signals: stubStringArray,
+      security_measures: stubStringArray,
+      observability_strategy: stubStringArray,
+      scalability_plan: stubStringArray,
+      resilience_strategy: stubStringArray,
+      compliance_controls: stubStringArray,
+      open_questions: stubStringArray,
+      rationale: stubString,
+    };
+
+    const techStackContentToInclude: ContentToInclude = {
+      frontend_stack: {},
+      backend_stack: {},
+      data_platform: {},
+      devops_tooling: {},
+      security_tooling: {},
+      shared_libraries: stubStringArray,
+      third_party_services: stubStringArray,
+      components: [{ component_name: stubString, recommended_option: stubString, rationale: stubString, alternatives: stubStringArray, tradeoffs: stubStringArray, risk_signals: stubStringArray, integration_requirements: stubStringArray, operational_owners: stubStringArray, migration_plan: stubStringArray }],
+      open_questions: stubStringArray,
+      next_steps: stubStringArray,
     };
 
     const contextForDocuments: ContextForDocument[] = [
@@ -189,6 +428,19 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
       { document_key: FileType.feature_spec, content_to_include: featureSpecContentToInclude },
       { document_key: FileType.technical_approach, content_to_include: technicalApproachContentToInclude },
       { document_key: FileType.success_metrics, content_to_include: successMetricsContentToInclude },
+      { document_key: FileType.business_case_critique, content_to_include: businessCaseCritiqueContentToInclude },
+      { document_key: FileType.technical_feasibility_assessment, content_to_include: technicalFeasibilityContentToInclude },
+      { document_key: FileType.risk_register, content_to_include: riskRegisterContentToInclude },
+      { document_key: FileType.non_functional_requirements, content_to_include: nonFunctionalRequirementsContentToInclude },
+      { document_key: FileType.dependency_map, content_to_include: dependencyMapContentToInclude },
+      { document_key: FileType.comparison_vector, content_to_include: comparisonVectorContentToInclude },
+      { document_key: FileType.synthesis_pairwise_business_case, content_to_include: synthPairwiseBusinessCaseContentToInclude },
+      { document_key: FileType.synthesis_pairwise_feature_spec, content_to_include: synthPairwiseFeatureSpecContentToInclude },
+      { document_key: FileType.synthesis_pairwise_technical_approach, content_to_include: synthPairwiseTechnicalApproachContentToInclude },
+      { document_key: FileType.synthesis_pairwise_success_metrics, content_to_include: synthPairwiseSuccessMetricsContentToInclude },
+      { document_key: FileType.product_requirements, content_to_include: productRequirementsContentToInclude },
+      { document_key: FileType.system_architecture, content_to_include: systemArchitectureContentToInclude },
+      { document_key: FileType.tech_stack, content_to_include: techStackContentToInclude },
     ];
 
     const headerContext: HeaderContext = {
@@ -197,17 +449,43 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
       context_for_documents: contextForDocuments,
     };
 
-    const documentStub: Record<string, unknown> = {
-      content: { content: `# ${outputType}\n\nThis is an integration test stub document body.` },
-    };
-
     const shouldReturnHeaderContext =
       outputType === FileType.HeaderContext ||
       outputType === "header_context" ||
       outputType === "header_context_pairwise" ||
       outputType === "synthesis_header_context";
 
-    const stubContentObject: unknown = shouldReturnHeaderContext ? headerContext : documentStub;
+    const assembledDocumentJsonStub: ContentToInclude = { assembled_content: stubString };
+
+    const contentByOutputType: Record<string, ContentToInclude> = {
+      [FileType.business_case]: businessCaseContentToInclude,
+      [FileType.feature_spec]: featureSpecContentToInclude,
+      [FileType.technical_approach]: technicalApproachContentToInclude,
+      [FileType.success_metrics]: successMetricsContentToInclude,
+      [FileType.business_case_critique]: businessCaseCritiqueContentToInclude,
+      [FileType.technical_feasibility_assessment]: technicalFeasibilityContentToInclude,
+      [FileType.risk_register]: riskRegisterContentToInclude,
+      [FileType.non_functional_requirements]: nonFunctionalRequirementsContentToInclude,
+      [FileType.dependency_map]: dependencyMapContentToInclude,
+      assembled_document_json: assembledDocumentJsonStub,
+      [FileType.product_requirements]: productRequirementsContentToInclude,
+      [FileType.system_architecture]: systemArchitectureContentToInclude,
+      [FileType.tech_stack]: techStackContentToInclude,
+    };
+
+    let stubContentObject: unknown;
+    if (shouldReturnHeaderContext) {
+      stubContentObject = headerContext;
+    } else if (outputType === undefined) {
+      // RENDER jobs are created by DB triggers and carry no output_type.
+      // They never invoke callUnifiedAIModel, so stub content is irrelevant.
+      stubContentObject = { content: stubString };
+    } else {
+      if (!(outputType in contentByOutputType)) {
+        throw new Error(`mockAndProcessJob: no stub defined for output_type '${outputType}'. Add an explicit entry to contentByOutputType.`);
+      }
+      stubContentObject = { content: contentByOutputType[outputType] };
+    }
     const response: UnifiedAIResponse = {
       content: JSON.stringify(stubContentObject),
       finish_reason: finishReason,
@@ -221,10 +499,13 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
       deps,
       "callUnifiedAIModel",
       async (
-        _chatApiRequest: ChatApiRequest,
+        chatApiRequest: ChatApiRequest,
         _userAuthToken: string,
         _dependencies?: CallModelDependencies,
-      ): Promise<UnifiedAIResponse> => response,
+      ): Promise<UnifiedAIResponse> => {
+        capturedChatApiRequests.push(chatApiRequest);
+        return response;
+      },
     );
     try {
       await handleJob(adminClient, job, deps, testUserJwt);
@@ -464,6 +745,8 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
     assertEquals(finalResources.length, 4, "Should have created 4 rendered document resources");
     
     // 6. Verify stage completion by checking the session status.
+    // All thesis jobs (PLAN + EXECUTE + RENDER) complete → status transitions to 'thesis_completed'.
+    // Stage advancement to 'pending_antithesis' requires an explicit submitStageResponses call.
     const { data: updatedSession, error: updatedSessionError } = await adminClient
       .from("dialectic_sessions")
       .select("status")
@@ -472,7 +755,52 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
 
     assert(!updatedSessionError, `Failed to fetch updated session: ${updatedSessionError?.message}`);
     assertExists(updatedSession, "Updated session should exist");
-    assertEquals(updatedSession.status, "pending_antithesis", "Session status should be advanced to 'pending_antithesis' after all jobs are complete");
+    assertEquals(updatedSession.status, "thesis_completed", "Session status should be 'thesis_completed' after all thesis jobs complete");
+
+    // 7. Advance session to antithesis via submitStageResponses so sharedSession is ready for subsequent tests.
+    const { data: thesisContributions } = await adminClient
+      .from("dialectic_contributions")
+      .select("id")
+      .eq("session_id", thesisSession.id)
+      .eq("stage", "thesis")
+      .eq("contribution_type", "thesis")
+      .eq("iteration_number", 1);
+
+    assertExists(thesisContributions, "Thesis contributions must exist to advance session");
+    assert(thesisContributions.length > 0, "Must have at least one thesis contribution to advance");
+
+    const advanceFileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger });
+    const advanceIndexingService = new MockIndexingService();
+    const advanceMockConfig = { ...MOCK_MODEL_CONFIG, output_token_cost_rate: 0.001 };
+    const { instance: advanceMockAdapter } = getMockAiProviderAdapter(testLogger, advanceMockConfig);
+    const advanceAdapterWithEmbedding = {
+      ...advanceMockAdapter,
+      getEmbedding: async (_text: string) => ({
+        embedding: Array(1536).fill(0.1),
+        usage: { prompt_tokens: 0, total_tokens: 0 },
+      }),
+    };
+    const advanceEmbeddingClient = new EmbeddingClient(advanceAdapterWithEmbedding);
+    const advanceDeps: SubmitStageResponsesDependencies = {
+      logger: testLogger,
+      fileManager: advanceFileManager,
+      downloadFromStorage,
+      indexingService: advanceIndexingService,
+      embeddingClient: advanceEmbeddingClient,
+    };
+
+    const advancePayload: SubmitStageResponsesPayload = {
+      sessionId: thesisSession.id,
+      projectId: testProject.id,
+      stageSlug: "thesis",
+      currentIterationNumber: 1,
+      responses: thesisContributions.map(c => ({
+        originalContributionId: c.id,
+        responseText: `Integration test response for contribution ${c.id}`,
+      })),
+    };
+    const advanceResult = await submitStageResponses(advancePayload, adminClient, testUser, advanceDeps);
+    assert(advanceResult.data, `Failed to advance session to antithesis: ${advanceResult.error?.message}`);
 
     // Save session for subsequent tests that need to continue from thesis stage
     sharedSession = thesisSession;
@@ -659,11 +987,11 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
     }, adminClient);
 
     assert(!listError, `Failed to list stage documents: ${listError?.message}`);
-    if(!documents || !documents.documents) {
+    if(!documents) {
       throw new Error("listStageDocuments should return documents");
     }
     
-    const renderedDocuments = documents.documents.filter(d => d.documentKey.includes('rendered_'));
+    const renderedDocuments = documents.filter(d => d.documentKey.includes('rendered_'));
     assertEquals(renderedDocuments.length, 0, "No rendered_document should be created for JSON-only artifacts");
   });
 
@@ -695,23 +1023,20 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
     const planJobsResult = await generateContributions(adminClient, generateContributionsPayload, testUser, workerDeps, testUserJwt);
     assert(planJobsResult.success, `Failed to generate contributions: ${planJobsResult.error?.message}`);
 
-    // 3. Simulate the worker.
-    let pendingJobsExist = true;
-    while (pendingJobsExist) {
-      const { data: pendingJobs, error: pendingJobsError } = await adminClient
-        .from("dialectic_generation_jobs")
-        .select("*")
-        .eq("session_id", thesisSession.id)
-        .in("status", ["pending", "retrying", "pending_continuation"]);
-      assert(!pendingJobsError, `Failed to fetch pending jobs: ${pendingJobsError?.message}`);
-      if (pendingJobs.length === 0) {
-        pendingJobsExist = false;
-        continue;
-      }
-      for (const job of pendingJobs) {
-        await mockAndProcessJob(job, workerDeps);
-      }
-    }
+    // 3. Simulate the worker using the robust helpers so RENDER jobs created by
+    //    DB triggers are also picked up after EXECUTE jobs complete.
+    await processJobQueueUntilCompletion(thesisSession.id, workerDeps, testUserJwt);
+    await pollForCondition(
+      async () => {
+        const { data: jobs } = await adminClient
+          .from("dialectic_generation_jobs")
+          .select("status")
+          .eq("session_id", thesisSession.id)
+          .in("status", ["pending", "retrying", "pending_continuation", "pending_next_step"]);
+        return !jobs || jobs.length === 0;
+      },
+      "All thesis jobs to reach terminal state",
+    );
 
     // 4. Verify the final rendered document contains both chunks.
     const { data: documents, error: listError } = await listStageDocuments({
@@ -726,15 +1051,15 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
     if(!documents) {
       throw new Error("listStageDocuments should return documents");
     }
-    assertExists(documents.documents, "listStageDocuments should return documents");
+    assertExists(documents, "listStageDocuments should return documents");
     
-    const renderedDoc = documents.documents.find(d => d.documentKey.includes('rendered_'));
-    assertExists(renderedDoc, "A rendered document should exist");
+    const renderedDoc = documents.find(d => d.documentKey === FileType.business_case);
+    assertExists(renderedDoc, "A rendered business_case document should exist");
 
     if(!renderedDoc) {
       throw new Error("Rendered document should have a last rendered resource ID");
     }
-    const { data: content, error: contentError } = await getProjectResourceContent({ resourceId: renderedDoc.lastRenderedResourceId! }, adminClient, testUser);
+    const { data: content, error: contentError } = await getProjectResourceContent({ resourceId: renderedDoc.latestRenderedResourceId! }, adminClient, testUser);
     assert(!contentError, `Failed to get resource content: ${contentError?.message}`);
     assertExists(content, "Rendered document should have content");
     if(!content) {
@@ -771,31 +1096,30 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
     const planJobsResult = await generateContributions(adminClient, generateContributionsPayload, testUser, workerDeps, testUserJwt);
     assert(planJobsResult.success, `Failed to generate contributions: ${planJobsResult.error?.message}`);
 
-    // 3. Simulate the worker, processing all jobs to completion.
-    let pendingJobsExist = true;
-    while (pendingJobsExist) {
-      const { data: pendingJobs, error: pendingJobsError } = await adminClient
-        .from("dialectic_generation_jobs")
-        .select("*")
-        .eq("session_id", cleanSession.id)
-        .in("status", ["pending", "retrying"]);
-      assert(!pendingJobsError, `Failed to fetch pending jobs: ${pendingJobsError?.message}`);
-      if (pendingJobs.length === 0) {
-        pendingJobsExist = false;
-        continue;
-      }
-      for (const job of pendingJobs) {
-        await mockAndProcessJob(job, workerDeps);
-      }
-    }
+    // 3. Simulate the worker using the robust helpers so RENDER jobs created by
+    //    DB triggers are also picked up after EXECUTE jobs complete.
+    await processJobQueueUntilCompletion(cleanSession.id, workerDeps, testUserJwt);
+    await pollForCondition(
+      async () => {
+        const { data: jobs } = await adminClient
+          .from("dialectic_generation_jobs")
+          .select("status")
+          .eq("session_id", cleanSession.id)
+          .in("status", ["pending", "retrying", "pending_continuation", "pending_next_step"]);
+        return !jobs || jobs.length === 0;
+      },
+      "All thesis jobs to reach terminal state",
+    );
 
     // 4. USE THE APPLICATION'S FUNCTIONS to verify stage completion.
+    // All thesis jobs complete → status is 'thesis_completed'. Advancing to 'pending_antithesis'
+    // requires a separate submitStageResponses call which is outside this test's scope.
     const { data: updatedSession, error: sessionError } = await getSessionDetails({ sessionId: cleanSession.id }, adminClient, testUser);
     assert(!sessionError, `Failed to get session details: ${sessionError?.message}`);
     if(!updatedSession) {
       throw new Error("getSessionDetails should return session data");
     }
-    assertEquals(updatedSession.session.status, "pending_antithesis", "Session status should be advanced to the next stage upon completion of the current one");
+    assertEquals(updatedSession.session.status, "thesis_completed", "Session status should be 'thesis_completed' after all thesis jobs complete");
   });
 
   it("21.b.v: should NOT mark stage complete when RENDER jobs are stuck in pending status", async () => {
@@ -879,14 +1203,129 @@ describe("executeModelCallAndSave Document Generation End-to-End Integration Tes
     }, adminClient);
     
     assert(!listError, `Failed to list stage documents: ${listError?.message}`);
-    if (!documents || !documents.documents) {
+    if (!documents) {
       throw new Error("listStageDocuments should return documents");
     }
     
     // Synthesis produces final deliverables (product_requirements, system_architecture, tech_stack)
-    const productRequirementsDocs = documents.documents.filter(d => 
+    const productRequirementsDocs = documents.filter(d => 
       d.documentKey.includes(FileType.product_requirements)
     );
     assert(productRequirementsDocs.length >= 1, "Should have at least 1 product_requirements document from synthesis stage");
+  });
+
+  it("21.b.vii: EXECUTE jobs with document-type input rules send non-empty resourceDocuments content to the AI model", async () => {
+    capturedChatApiRequests = [];
+    const iterationNumber = 1;
+
+    // Start a new isolated session for this test to ensure clean, independent verification
+    const sessionPayload: StartSessionPayload = {
+      projectId: testProject.id,
+      selectedModelIds: [testModelId],
+      stageSlug: "thesis",
+    };
+    const sessionResult = await startSession(testUser, adminClient, sessionPayload);
+    if (sessionResult.error || !sessionResult.data) {
+      throw new Error(`Failed to start session: ${sessionResult.error?.message}`);
+    }
+    const isolatedSession = sessionResult.data;
+
+    // 1. Process thesis stage to completion — this creates rendered_document resources in storage
+    //    that antithesis EXECUTE jobs will consume via document-type input rules.
+    const thesisPayload: GenerateContributionsPayload = {
+      projectId: testProject.id,
+      sessionId: isolatedSession.id,
+      stageSlug: "thesis",
+      iterationNumber: iterationNumber,
+      walletId: testWalletId,
+      user_jwt: testUserJwt,
+      is_test_job: true,
+    };
+    const thesisResult = await generateContributions(adminClient, thesisPayload, testUser, workerDeps, testUserJwt);
+    assert(thesisResult.success, `Failed to generate thesis contributions: ${thesisResult.error?.message}`);
+    await processJobQueueUntilCompletion(isolatedSession.id, workerDeps, testUserJwt);
+
+    // Reset captures — we care only about requests sent by jobs that have document-type input rules
+    capturedChatApiRequests = [];
+
+    // 2. Advance session from thesis to antithesis
+    const { data: thesisContributions } = await adminClient
+      .from("dialectic_contributions")
+      .select("id")
+      .eq("session_id", isolatedSession.id)
+      .eq("stage", "thesis")
+      .eq("contribution_type", "thesis")
+      .eq("iteration_number", iterationNumber);
+
+    assertExists(thesisContributions, "Thesis contributions must exist before advancing");
+    assert(thesisContributions.length > 0, "Must have at least one thesis contribution to advance");
+
+    const fileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger });
+    const indexingService = new MockIndexingService();
+    const validMockConfig = { ...MOCK_MODEL_CONFIG, output_token_cost_rate: 0.001 };
+    const { instance: mockAdapter } = getMockAiProviderAdapter(testLogger, validMockConfig);
+    const adapterWithEmbedding = {
+      ...mockAdapter,
+      getEmbedding: async (_text: string) => ({
+        embedding: Array(1536).fill(0.1),
+        usage: { prompt_tokens: 0, total_tokens: 0 },
+      }),
+    };
+    const embeddingClient = new EmbeddingClient(adapterWithEmbedding);
+    const submitDeps: SubmitStageResponsesDependencies = {
+      logger: testLogger,
+      fileManager,
+      downloadFromStorage,
+      indexingService,
+      embeddingClient,
+    };
+
+    const thesisSubmitPayload: SubmitStageResponsesPayload = {
+      sessionId: isolatedSession.id,
+      projectId: testProject.id,
+      stageSlug: "thesis",
+      currentIterationNumber: iterationNumber,
+      responses: thesisContributions.map(c => ({
+        originalContributionId: c.id,
+        responseText: `Integration test response for contribution ${c.id}`,
+      })),
+    };
+    const thesisSubmitResult = await submitStageResponses(thesisSubmitPayload, adminClient, testUser, submitDeps);
+    assert(thesisSubmitResult.data, `Failed to advance session to antithesis: ${thesisSubmitResult.error?.message}`);
+
+    // 3. Generate and process antithesis stage.
+    //    Antithesis EXECUTE jobs have document-type input rules that reference thesis rendered documents.
+    //    gatherArtifacts must download those documents from Supabase Storage and populate resourceDocuments.
+    const antithesisPayload: GenerateContributionsPayload = {
+      projectId: testProject.id,
+      sessionId: isolatedSession.id,
+      stageSlug: "antithesis",
+      iterationNumber: iterationNumber,
+      walletId: testWalletId,
+      user_jwt: testUserJwt,
+      is_test_job: true,
+    };
+    const antithesisResult = await generateContributions(adminClient, antithesisPayload, testUser, workerDeps, testUserJwt);
+    assert(antithesisResult.success, `Failed to generate antithesis contributions: ${antithesisResult.error?.message}`);
+    await processJobQueueUntilCompletion(isolatedSession.id, workerDeps, testUserJwt);
+
+    // 4. Assert: at least one captured ChatApiRequest has non-empty resourceDocuments.
+    //    This proves gatherArtifacts downloaded real content from storage rather than returning empty strings.
+    const requestsWithDocuments = capturedChatApiRequests.filter(
+      req => Array.isArray(req.resourceDocuments) && req.resourceDocuments.length > 0,
+    );
+    assert(
+      requestsWithDocuments.length > 0,
+      `Expected at least one ChatApiRequest with non-empty resourceDocuments from EXECUTE jobs with document-type input rules, but found none. Total captured requests: ${capturedChatApiRequests.length}`,
+    );
+
+    for (const req of requestsWithDocuments) {
+      for (const doc of req.resourceDocuments!) {
+        assert(
+          typeof doc.content === "string" && doc.content.length > 0,
+          `Expected resourceDocuments entry to have non-empty content string, but got: ${JSON.stringify(doc.content)}`,
+        );
+      }
+    }
   });
 });

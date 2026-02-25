@@ -1355,6 +1355,8 @@ Deno.test('executeModelCallAndSave - comprehensive continuation triggers', async
     { name: 'should continue when content contains "continuation_needed": true', response: { content: '{"continuation_needed": true}', finish_reason: 'stop' }, shouldContinue: true },
     { name: 'should continue when content contains "stop_reason": "continuation"', response: { content: '{"stop_reason": "continuation"}', finish_reason: 'stop' }, shouldContinue: true },
     { name: 'should continue when content contains "stop_reason": "token_limit"', response: { content: '{"stop_reason": "token_limit"}', finish_reason: 'stop' }, shouldContinue: true },
+    { name: 'should continue when content contains non-empty "resume_cursor"', response: { content: '{"resume_cursor": "feasibility_insights"}', finish_reason: 'stop' }, shouldContinue: true },
+    { name: 'should NOT continue when content contains empty "resume_cursor"', response: { content: '{"resume_cursor": ""}', finish_reason: 'stop' }, shouldContinue: false },
     
     // --- NEGATIVE CASES (SHOULD NOT CONTINUE) ---
     { name: 'should NOT continue for normal "stop" reason with no flags', response: { content: '{"result": "complete"}', finish_reason: 'stop' }, shouldContinue: false },

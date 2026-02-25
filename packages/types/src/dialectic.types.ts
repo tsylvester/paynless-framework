@@ -354,13 +354,14 @@ export interface DialecticStateValues {
   stageRunProgress: Record<string, StageRunProgressSnapshot>;
   focusedStageDocument: Record<string, FocusedStageDocumentState | null>;
   stageDocumentContent: Record<string, StageDocumentContentState>;
-  stageDocumentResources: Record<string, EditedDocumentResource>;
   stageDocumentVersions: Record<string, StageDocumentVersionInfo>;
   stageDocumentFeedback: Record<string, StageDocumentFeedback[]>;
   isLoadingStageDocumentFeedback: boolean;
   stageDocumentFeedbackError: ApiError | null;
   isSubmittingStageDocumentFeedback: boolean;
   submitStageDocumentFeedbackError: ApiError | null;
+	isInitializingFeedbackDraft: boolean;
+	initializeFeedbackDraftError: ApiError | null;
   activeSeedPrompt: AssembledPrompt | null;
 }
 
@@ -450,8 +451,9 @@ export interface StageDocumentContentState {
   pendingDiff: string | null;
   lastAppliedVersionHash: string | null;
   sourceContributionId: string | null;
-  feedbackDraftMarkdown: string;
+  feedbackDraftMarkdown: string | undefined;
   feedbackIsDirty: boolean;
+  resourceType: string | null;
 }
 
 /**
@@ -473,10 +475,21 @@ export interface StageRunDocumentKeyParts {
   modelId: string;
 }
 
+export interface JobProgressEntry {
+  totalJobs: number;
+  completedJobs: number;
+  inProgressJobs: number;
+  failedJobs: number;
+  modelJobStatuses?: Record<string, 'pending' | 'in_progress' | 'completed' | 'failed'>;
+}
+
+export type StepJobProgress = Record<string, JobProgressEntry>;
+
 export interface StageRunProgressSnapshot {
   stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed'>;
   /** Keyed by StageRunDocumentKey (documentKey:modelId). One document key can have N descriptors. */
   documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
+  jobProgress: StepJobProgress;
 }
 
 export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
@@ -484,8 +497,10 @@ export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' |
 export interface StepProgressDetail {
   stepKey: string;
   stepName: string;
-  totalModels: number;
-  completedModels: number;
+  totalJobs: number;
+  completedJobs: number;
+  inProgressJobs: number;
+  failedJobs: number;
   stepPercentage: number;
   status: UnifiedProjectStatus;
 }
@@ -605,6 +620,7 @@ export interface DialecticActions {
   fetchStageDocumentFeedback: (key: StageDocumentCompositeKey) => Promise<void>;
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload) => Promise<ApiResponse<{ success: boolean }>>;
   resetSubmitStageDocumentFeedbackError: () => void;
+  initializeFeedbackDraft: (key: StageDocumentCompositeKey) => Promise<void>;
 
   // Action for generating contributions
   generateContributions: (payload: GenerateContributionsPayload) => Promise<ApiResponse<GenerateContributionsResponse>>;
@@ -620,7 +636,6 @@ export interface DialecticActions {
   setSaveContributionEditError: (error: ApiError | null) => void;
   saveContributionEdit: (payload: SaveContributionEditPayload) => Promise<ApiResponse<SaveContributionEditSuccessResponse>>;
   resetSaveContributionEditError: () => void;
-  updateStageDocumentResource: (key: StageDocumentCompositeKey, resource: EditedDocumentResource, editedContentText: string) => void;
 
   // New context actions
   setActiveContextProjectId: (id: string | null) => void;
@@ -1021,6 +1036,7 @@ export interface StageProgressEntry {
   documents: StageDocumentChecklistEntry[];
   stepStatuses: Record<string, string>;
   stageStatus: UnifiedProjectStatus;
+  jobProgress: StepJobProgress;
 }
 
 export type GetAllStageProgressResponse = StageProgressEntry[];
@@ -1186,6 +1202,7 @@ export interface GetProjectResourceContentResponse {
   mimeType: string;
   content: string;
   sourceContributionId: string | null;
+  resourceType: string | null;
 }
 
 // Add new payload/response types if they are not already defined from the plan for submitStageResponses and saveContributionEdit

@@ -6,7 +6,6 @@ import {
   type IContinueJobDeps,
   type IContinueJobResult,
 } from '../dialectic-service/dialectic.interface.ts';
-import { shouldContinue } from '../_shared/utils/continue_util.ts';
 import {
   isContinuablePayload,
   isDialecticExecuteJobPayload,
@@ -56,26 +55,10 @@ export async function continueJob(
     return { enqueued: false, error };
   }
 
-  // Malformed/incomplete JSON detection: treat as a trigger to continue even if finish_reason === 'stop'
-  const content = aiResponse.content ?? null;
-  let malformedJson = false;
-  if (typeof content === 'string') {
-    const trimmed = content.trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try {
-        JSON.parse(trimmed);
-      } catch (_e) {
-        malformedJson = true;
-      }
-    }
-  }
-
+  // The caller (executeModelCallAndSave) has already determined that continuation
+  // is warranted. This function enforces structural safety limits only.
   const underMaxContinuations = (job.payload.continuation_count ?? 0) < 5;
-  const continuableByFinishReason = shouldContinue(aiResponse.finish_reason ?? null, job.payload.continuation_count ?? 0, 5);
-  const continuableByMalformedJson = malformedJson && underMaxContinuations;
-  const willContinue = (continuableByFinishReason || continuableByMalformedJson) && !!job.payload.continueUntilComplete;
-  
-  if (!willContinue) {
+  if (!underMaxContinuations || !job.payload.continueUntilComplete) {
     return { enqueued: false };
   }
 

@@ -7,6 +7,7 @@ import { isDocumentRelationships } from '../_shared/utils/type_guards.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import { isRecord } from '../_shared/utils/type_guards.ts';
 
+
 // Type guards to differentiate between the different source table row types.
 function isContributionRow(record: unknown): record is DialecticContributionRow {
     return record != null && typeof record === 'object' && 'contribution_type' in record;
@@ -26,7 +27,10 @@ function mapContributionToSourceDocument(row: DialecticContributionRow): SourceD
     const { document_relationships, ...rest } = row;
     const docRels = document_relationships && isDocumentRelationships(document_relationships) ? document_relationships : null;
     const deconstructedPath = deconstructStoragePath({ storageDir: row.storage_path!, fileName: row.file_name! });
-    return { ...rest, content: '', document_relationships: docRels, attempt_count: deconstructedPath.attemptCount ?? 1, document_key: deconstructedPath.documentKey };
+    if (deconstructedPath.attemptCount == null) {
+        throw new Error(`deconstructStoragePath failed to extract attemptCount for contribution ${row.id} (storage_path: ${row.storage_path}, file_name: ${row.file_name})`);
+    }
+    return { ...rest, content: '', document_relationships: docRels, attempt_count: deconstructedPath.attemptCount, document_key: deconstructedPath.documentKey };
 }
 
 // Note: content is set to empty string because planners only need metadata, not content. Content is fetched later in executeModelCallAndSave.gatherArtifacts() when constructing the API call.
@@ -129,11 +133,12 @@ function getDocumentKeyFromResource(row: DialecticProjectResourceRow): string | 
     return null;
 }
 
-function fileNameContainsDocumentKey(fileName: string | null | undefined, documentKey: string): boolean {
-    if (!fileName) {
+function fileNameMatchesDocumentKeyExact(record: SourceRecord, documentKey: string): boolean {
+    if (record.storage_path == null || record.file_name == null) {
         return false;
     }
-    return fileName.toLowerCase().includes(documentKey.toLowerCase());
+    const deconstructed = deconstructStoragePath({ storageDir: record.storage_path, fileName: record.file_name });
+    return deconstructed.documentKey === documentKey;
 }
 
 function recordMatchesDocumentKey(record: SourceRecord, documentKey: string | undefined): boolean {
@@ -141,7 +146,7 @@ function recordMatchesDocumentKey(record: SourceRecord, documentKey: string | un
         return true;
     }
 
-    if (fileNameContainsDocumentKey(record.file_name ?? null, documentKey)) {
+    if (fileNameMatchesDocumentKeyExact(record, documentKey)) {
         return true;
     }
 
@@ -173,9 +178,11 @@ function dedupeByFileName(records: SourceRecord[]): SourceRecord[] {
     const seen = new Set<string>();
     const deduped: SourceRecord[] = [];
     for (const record of records) {
-        const key = record.file_name ?? record.id;
-        if (!seen.has(key)) {
-            seen.add(key);
+        if (!record.file_name) {
+            throw new Error(`Record ${record.id} is missing file_name in dedupeByFileName — ensureRecordsHaveStorage should have caught this`);
+        }
+        if (!seen.has(record.file_name)) {
+            seen.add(record.file_name);
             deduped.push(record);
         }
     }
@@ -209,10 +216,10 @@ function ensureRecordsHaveStorage(records: SourceRecord[]): void {
 }
 
 function getRecordUniqueKey(record: SourceRecord): string {
-    const bucket = record.storage_bucket ?? '';
-    const path = record.storage_path ?? '';
-    const fileName = record.file_name ?? record.id;
-    return `${bucket}|${path}|${fileName}`;
+    if (!record.storage_bucket || !record.storage_path || !record.file_name) {
+        throw new Error(`Record ${record.id} is missing storage info in getRecordUniqueKey — ensureRecordsHaveStorage should have caught this`);
+    }
+    return `${record.storage_bucket}|${record.storage_path}|${record.file_name}`;
 }
 
 function selectRecordsForRule(
@@ -242,30 +249,41 @@ export async function findSourceDocuments(
     for (const rule of inputsRequired) {
         const stageSlugCandidate = typeof rule.slug === 'string' ? rule.slug.trim() : '';
         const shouldFilterByStage = stageSlugCandidate.length > 0 && stageSlugCandidate !== 'any';
-        const normalizedIterationNumber = typeof iterationNumber === 'number' ? iterationNumber : 0;
+        if (typeof iterationNumber !== 'number') {
+            throw new Error(`iterationNumber must be a number, got ${typeof iterationNumber}: ${JSON.stringify(iterationNumber)}`);
+        }
         const allowMultipleMatches = rule.multiple === true;
 
         let sourceRecords: SourceRecord[] = [];
 
         switch (rule.type) {
             case 'feedback': {
-                let feedbackQuery = dbClient.from('dialectic_feedback').select('*').eq('session_id', sessionId);
+                let feedbackQuery = dbClient
+                    .from('dialectic_feedback')
+                    .select('*')
+                    .eq('session_id', sessionId)
+                    .eq('iteration_number', iterationNumber);
+                // Filter by stage_slug if specified in the input rule.
                 if (shouldFilterByStage) {
                     feedbackQuery = feedbackQuery.eq('stage_slug', stageSlugCandidate);
                 }
                 if (rule.document_key) {
-                    feedbackQuery = feedbackQuery.ilike('file_name', `%${rule.document_key}%`);
+                    feedbackQuery = feedbackQuery.filter('resource_description->>document_key', 'eq', rule.document_key);
+                }
+                if (parentJob.payload.model_id) {
+                    feedbackQuery = feedbackQuery.filter('resource_description->>model_id', 'eq', parentJob.payload.model_id);
                 }
                 const { data, error: feedbackError } = await feedbackQuery;
                 if (feedbackError) {
                     throw new Error(`Failed to fetch source documents for type '${rule.type}': ${feedbackError.message}`);
                 }
 
-                const feedbackRecordsRaw = (data ?? []);
-                ensureRecordsHaveStorage(feedbackRecordsRaw);
-                const feedbackRecords = sortRecordsByRecency(feedbackRecordsRaw);
-                const filteredFeedback = filterRecordsByDocumentKey(feedbackRecords, rule.document_key);
-                const dedupedFeedback = dedupeByFileName(filteredFeedback);
+                if (!data) {
+                    throw new Error(`Supabase returned null data without error for type '${rule.type}' from dialectic_feedback`);
+                }
+                ensureRecordsHaveStorage(data);
+                const feedbackRecords = sortRecordsByRecency(data);
+                const dedupedFeedback = dedupeByFileName(feedbackRecords);
                 sourceRecords = selectRecordsForRule(dedupedFeedback, allowMultipleMatches, usedRecordKeys);
                 break;
             }
@@ -288,12 +306,8 @@ export async function findSourceDocuments(
                     resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
                 }
 
-                resourceQuery = resourceQuery.eq('iteration_number', normalizedIterationNumber);
+                resourceQuery = resourceQuery.eq('iteration_number', iterationNumber);
 
-                if (rule.document_key) {
-                    const documentKey = rule.document_key;
-                    resourceQuery = resourceQuery.ilike('file_name', `%${documentKey}%`);
-                }
                 const { data: resourceData, error: resourceError } = await resourceQuery;
                 if (resourceError) {
                     throw new Error(
@@ -301,14 +315,14 @@ export async function findSourceDocuments(
                     );
                 }
 
-                const resourceRecordsRaw = (resourceData ?? []);
-                ensureRecordsHaveStorage(resourceRecordsRaw);
-                const resourceRecords = sortRecordsByRecency(resourceRecordsRaw);
-                const filteredResources = filterRecordsByDocumentKey(resourceRecords, rule.document_key);
-                const hasDocumentKey = typeof rule.document_key === 'string' && rule.document_key.length > 0;
-                const resourceCandidates = hasDocumentKey && filteredResources.length > 0
-                    ? filteredResources
-                    : (hasDocumentKey && filteredResources.length === 0 ? [] : resourceRecords);
+                if (!resourceData) {
+                    throw new Error(`Supabase returned null data without error for type '${rule.type}' from project_resources`);
+                }
+                ensureRecordsHaveStorage(resourceData);
+                const resourceRecords = sortRecordsByRecency(resourceData);
+                const resourceCandidates = rule.document_key
+                    ? filterRecordsByDocumentKey(resourceRecords, rule.document_key)
+                    : resourceRecords;
 
                 // Check if resources were found
                 if (resourceCandidates.length > 0) {
@@ -336,18 +350,13 @@ export async function findSourceDocuments(
                 let contributionQuery = dbClient.from('dialectic_contributions')
                     .select('*')
                     .eq('session_id', sessionId)
-                    .eq('iteration_number', normalizedIterationNumber)
+                    .eq('iteration_number', iterationNumber)
                     .eq('is_latest_edit', true)
                     .eq('contribution_type', 'header_context')
                     .eq('model_id', parentModelId);
 
                 if (shouldFilterByStage) {
                     contributionQuery = contributionQuery.eq('stage', stageSlugCandidate);
-                }
-
-                if (rule.document_key) {
-                    const documentKey = rule.document_key;
-                    contributionQuery = contributionQuery.ilike('file_name', `%${documentKey}%`);
                 }
 
                 const { data: headerContributions, error: headerError } = await contributionQuery;
@@ -357,14 +366,14 @@ export async function findSourceDocuments(
                     );
                 }
 
-                const headerRecordsRaw = (headerContributions ?? []);
-                ensureRecordsHaveStorage(headerRecordsRaw);
-                const headerRecords = sortRecordsByRecency(headerRecordsRaw);
-                const filteredHeaderContributions = filterRecordsByDocumentKey(headerRecords, rule.document_key);
-                const hasDocumentKey = typeof rule.document_key === 'string' && rule.document_key.length > 0;
-                const headerCandidates = hasDocumentKey
-                    ? filteredHeaderContributions
-                    : (filteredHeaderContributions.length > 0 ? filteredHeaderContributions : headerRecords);
+                if (!headerContributions) {
+                    throw new Error(`Supabase returned null data without error for type '${rule.type}' from contributions`);
+                }
+                ensureRecordsHaveStorage(headerContributions);
+                const headerRecords = sortRecordsByRecency(headerContributions);
+                const headerCandidates = rule.document_key
+                    ? filterRecordsByDocumentKey(headerRecords, rule.document_key)
+                    : headerRecords;
                 const dedupedHeaderContributions = dedupeByFileName(headerCandidates);
                 sourceRecords = selectRecordsForRule(
                     dedupedHeaderContributions,
@@ -377,16 +386,11 @@ export async function findSourceDocuments(
                 let contributionQuery = dbClient.from('dialectic_contributions')
                     .select('*')
                     .eq('session_id', sessionId)
-                    .eq('iteration_number', normalizedIterationNumber)
+                    .eq('iteration_number', iterationNumber)
                     .eq('is_latest_edit', true);
 
                 if (shouldFilterByStage) {
                     contributionQuery = contributionQuery.eq('stage', stageSlugCandidate);
-                }
-
-                if (rule.document_key) {
-                    const key = rule.document_key;
-                    contributionQuery = contributionQuery.or(`file_name.ilike.%${key}%,contribution_type.eq.${key}`);
                 }
 
                 const { data: contribData, error: contribError } = await contributionQuery;
@@ -396,9 +400,11 @@ export async function findSourceDocuments(
                     );
                 }
 
-                const contribRecordsRaw = (contribData ?? []);
-                ensureRecordsHaveStorage(contribRecordsRaw);
-                const contribRecords = sortRecordsByRecency(contribRecordsRaw);
+                if (!contribData) {
+                    throw new Error(`Supabase returned null data without error for type '${rule.type}' from contributions`);
+                }
+                ensureRecordsHaveStorage(contribData);
+                const contribRecords = sortRecordsByRecency(contribData);
                 const filteredContribs = filterRecordsByDocumentKey(contribRecords, rule.document_key);
 
                 sourceRecords = selectRecordsForRule(
@@ -408,18 +414,36 @@ export async function findSourceDocuments(
                 );
                 break;
             }
-            case 'seed_prompt':
+            case 'seed_prompt': {
+                // seed_prompt is a single project-level resource (file_name seed_prompt.md, resource_type seed_prompt).
+                // Do not filter by stage_slug, session_id, model_id, or iteration_number.
+                const seedPromptQuery = dbClient.from('dialectic_project_resources')
+                    .select('*')
+                    .eq('project_id', projectId)
+                    .eq('resource_type', 'seed_prompt');
+
+                const { data: seedPromptData, error: seedPromptError } = await seedPromptQuery;
+                if (seedPromptError) {
+                    throw new Error(
+                        `Failed to fetch source documents for type 'seed_prompt' from project_resources: ${seedPromptError.message}`,
+                    );
+                }
+
+                if (!seedPromptData) {
+                    throw new Error(`Supabase returned null data without error for type 'seed_prompt' from project_resources`);
+                }
+                ensureRecordsHaveStorage(seedPromptData);
+                const seedPromptRecords = sortRecordsByRecency(seedPromptData);
+                // No document_key filter: seed_prompt is uniquely identified by resource_type and file_name seed_prompt.md.
+                sourceRecords = selectRecordsForRule(
+                    dedupeByFileName(seedPromptRecords),
+                    allowMultipleMatches,
+                    usedRecordKeys,
+                );
+                break;
+            }
             case 'project_resource': {
-                // NOTE: seed_prompt and project_resource types are user-provided inputs
-                // (initial prompt, reference documents) that exist at the project level.
-                // They should NOT be filtered by model_id, stage_slug, or iteration_number
-                // since they are project-wide constants available to all stages and iterations.
-                // This is intentionally different from 'rendered_document' type which IS
-                // filtered by those fields.
-                const hasDocumentKey = typeof rule.document_key === 'string' && rule.document_key.length > 0;
                 const isInitialUserPromptProjectResource =
-                    rule.type === 'project_resource' &&
-                    hasDocumentKey &&
                     rule.document_key === 'initial_user_prompt';
 
                 const resourceTypeForQuery = isInitialUserPromptProjectResource
@@ -431,14 +455,10 @@ export async function findSourceDocuments(
                     .eq('project_id', projectId)
                     .eq('resource_type', resourceTypeForQuery);
 
-                // NOTE: Intentionally NOT filtering by session_id, stage_slug, model_id,
-                // or iteration_number for project_resource/seed_prompt types.
-                // These are project-wide resources accessible from any context.
-
-                if (!isInitialUserPromptProjectResource && rule.document_key) {
-                    const documentKey = rule.document_key;
-                    resourceQuery = resourceQuery.ilike('file_name', `%${documentKey}%`);
+                if (shouldFilterByStage && !isInitialUserPromptProjectResource) {
+                    resourceQuery = resourceQuery.eq('stage_slug', stageSlugCandidate);
                 }
+
                 const { data: resourceData, error: resourceError } = await resourceQuery;
                 if (resourceError) {
                     throw new Error(
@@ -446,20 +466,21 @@ export async function findSourceDocuments(
                     );
                 }
 
-                const resourceRecordsRaw = (resourceData ?? []);
-                ensureRecordsHaveStorage(resourceRecordsRaw);
-                const resourceRecords = sortRecordsByRecency(resourceRecordsRaw);
-                const filteredResources = filterRecordsByDocumentKey(resourceRecords, rule.document_key);
-                const resourceCandidates = hasDocumentKey && filteredResources.length === 0
+                if (!resourceData) {
+                    throw new Error(`Supabase returned null data without error for type '${rule.type}' from project_resources`);
+                }
+                ensureRecordsHaveStorage(resourceData);
+                const resourceRecords = sortRecordsByRecency(resourceData);
+                const resourceCandidates = isInitialUserPromptProjectResource
                     ? resourceRecords
-                    : (filteredResources.length > 0 ? filteredResources : resourceRecords);
-                const effectiveRecords = selectRecordsForRule(
+                    : (rule.document_key
+                        ? filterRecordsByDocumentKey(resourceRecords, rule.document_key)
+                        : resourceRecords);
+                sourceRecords = selectRecordsForRule(
                     dedupeByFileName(resourceCandidates),
                     allowMultipleMatches,
                     usedRecordKeys,
                 );
-
-                sourceRecords = effectiveRecords;
                 break;
             }
             default: {
@@ -468,9 +489,13 @@ export async function findSourceDocuments(
         }
 
         if (!sourceRecords || sourceRecords.length === 0) {
-            // Only throw if the rule is required (required === true or undefined, which defaults to required).
-            // If required === false, the input is optional and we should skip it without error.
-            if (rule.required !== false) {
+            const isRuleRequired = rule.type === 'feedback'
+                ? rule.required === true
+                : rule.required !== false;
+
+            // For feedback rules, absence is non-fatal unless explicitly required.
+            // For all other rule types, required defaults to true when undefined.
+            if (isRuleRequired) {
                 throw new Error(`A required input of type '${rule.type}' was not found for the current job.`);
             }
             // If required === false, skip this rule and continue to the next one
@@ -531,22 +556,48 @@ export async function findSourceDocuments(
                 const doc = mapResourceToSourceDocument(record);
                 // Merge document_relationships from source contribution if available
                 if (record.source_contribution_id && docRelsMap.has(record.source_contribution_id)) {
-                    doc.document_relationships = docRelsMap.get(record.source_contribution_id) ?? null;
+                    doc.document_relationships = docRelsMap.get(record.source_contribution_id)!;
                 }
                 return doc;
             } else if (isContributionRow(record)) {
                 return mapContributionToSourceDocument(record);
             }
-            return null;
+            throw new Error(`Record ${(record as SourceRecord).id} is not a recognized SourceRecord type (feedback, project_resource, or contribution)`);
         });
 
-        const validDocuments = documents.filter((doc): doc is SourceDocument => doc !== null);
-        for (const doc of validDocuments) {
+        for (const doc of documents) {
             const documentPathKey = `${doc.storage_bucket}|${doc.storage_path}|${doc.file_name}`;
             if (!seenDocumentPaths.has(documentPathKey)) {
                 seenDocumentPaths.add(documentPathKey);
                 allSourceDocuments.push(doc);
                 console.log(`[findSourceDocuments] Added document: stage=${doc.stage}, file_name=${doc.file_name}, source_group=${doc.document_relationships?.source_group ?? 'null'}`);
+            }
+        }
+    }
+
+    // Enrich feedback documents with source_group by matching base filenames
+    const baseNameToSourceGroup = new Map<string, string>();
+    for (const doc of allSourceDocuments) {
+        if (doc.contribution_type !== 'feedback' && doc.document_relationships?.source_group) {
+            const baseName = doc.file_name?.replace(/\.md$/, '');
+            if (baseName) {
+                baseNameToSourceGroup.set(baseName, doc.document_relationships.source_group);
+            }
+        }
+    }
+    
+    for (const doc of allSourceDocuments) {
+        if (doc.contribution_type === 'feedback' && !doc.document_relationships?.source_group) {
+            const baseName = doc.file_name?.replace(/_feedback\.md$/, '');
+            if (baseName && baseNameToSourceGroup.has(baseName)) {
+                const matchedSourceGroup = baseNameToSourceGroup.get(baseName)!;
+                doc.document_relationships = {
+                    ...(doc.document_relationships || {}),
+                    source_group: matchedSourceGroup
+                };
+                console.log(`[findSourceDocuments] Enriched feedback ${doc.file_name} with source_group=${matchedSourceGroup} from matching document ${baseName}.md`);
+            } else {
+                console.log(`[findSourceDocuments] Feedback ${doc.file_name} has no matching document - will not be grouped`);
             }
         }
     }

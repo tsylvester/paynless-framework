@@ -1311,7 +1311,7 @@ Deno.test('planPerSourceDocumentByLineage includes context_for_documents in EXEC
         inputs_relevance: [{ document_key: FileType.PairwiseSynthesisChunk, relevance: 1.0 }],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_notes_to_self: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -1756,7 +1756,7 @@ Deno.test('planPerSourceDocumentByLineage should create EXECUTE child jobs for P
         inputs_relevance: [{ document_key: FileType.business_case, relevance: 1.0 }],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_notes_to_self: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -1901,7 +1901,7 @@ Deno.test('planPerSourceDocumentByLineage extracts sourceAnchorModelSlug from mo
         ],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_notes_to_self: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -2055,7 +2055,7 @@ Deno.test('planPerSourceDocumentByLineage EXECUTE branch uses relevance-selected
         ],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_notes_to_self: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -2181,7 +2181,7 @@ Deno.test('planPerSourceDocumentByLineage throws when recipe has no relevance me
         inputs_relevance: [], // NO relevance metadata - should cause error
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_notes_to_self: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -2256,7 +2256,7 @@ Deno.test('planPerSourceDocumentByLineage handles no_document_inputs_required by
         inputs_relevance: [],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_notes_to_self: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -2669,7 +2669,7 @@ Deno.test('planPerSourceDocumentByLineage includes shared global documents (seed
         execution_order: 1,
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_notes_to_self: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
@@ -2956,7 +2956,7 @@ Deno.test('planPerSourceDocumentByLineage throws error when any lineage group is
         execution_order: 1,
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_notes_to_self: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },
