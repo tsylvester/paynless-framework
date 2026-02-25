@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { gatherContext } from "./gatherContext.ts";
+import type { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
 import {
   ProjectContext,
   SessionContext,
@@ -331,5 +332,88 @@ Deno.test("gatherContext", async (t) => {
             teardown();
         }
     }
+  );
+
+  await t.step(
+    "when modelId is provided, it is forwarded as 7th argument to gatherInputsForStageFn",
+    async () => {
+      const { mockSupabaseClient } = setup();
+
+      try {
+        const mockGatheredContext: GatheredRecipeContext = {
+          sourceDocuments: [],
+          recipeStep: mockSimpleRecipeStep,
+        };
+        const gatherInputsFn = spy(
+          (..._args: Parameters<GatherInputsForStageFn>): Promise<GatheredRecipeContext> =>
+            Promise.resolve(mockGatheredContext),
+        );
+
+        const downloadFn = (bucket: string, path: string) =>
+          downloadFromStorage(
+            mockSupabaseClient as unknown as SupabaseClient<Database>,
+            bucket,
+            path,
+          );
+
+        await gatherContext(
+          mockSupabaseClient as unknown as SupabaseClient<Database>,
+          downloadFn,
+          gatherInputsFn,
+          defaultProject,
+          defaultSession,
+          defaultStage,
+          defaultProject.initial_user_prompt,
+          1,
+          "model-xyz",
+        );
+
+        assertEquals(gatherInputsFn.calls.length, 1);
+        assertEquals(gatherInputsFn.calls[0].args.length, 7);
+        assertEquals(gatherInputsFn.calls[0].args[6], "model-xyz");
+      } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "when modelId is omitted, gatherInputsForStageFn is called with 6 arguments",
+    async () => {
+      const { mockSupabaseClient } = setup();
+
+      try {
+        const mockGatheredContext: GatheredRecipeContext = {
+          sourceDocuments: [],
+          recipeStep: mockSimpleRecipeStep,
+        };
+        const gatherInputsFn = spy(() =>
+          Promise.resolve(mockGatheredContext),
+        );
+
+        const downloadFn = (bucket: string, path: string) =>
+          downloadFromStorage(
+            mockSupabaseClient as unknown as SupabaseClient<Database>,
+            bucket,
+            path,
+          );
+
+        await gatherContext(
+          mockSupabaseClient as unknown as SupabaseClient<Database>,
+          downloadFn,
+          gatherInputsFn,
+          defaultProject,
+          defaultSession,
+          defaultStage,
+          defaultProject.initial_user_prompt,
+          1,
+        );
+
+        assertEquals(gatherInputsFn.calls.length, 1);
+        assertEquals(gatherInputsFn.calls[0].args.length, 6);
+      } finally {
+        teardown();
+      }
+    },
   );
 });

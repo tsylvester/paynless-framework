@@ -70,6 +70,8 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     documentKey,
     stepName,
     sourceGroupFragment,
+    originalStoragePath,
+    originalBaseName,
   } = context;
 
   // Validate ALL required values for document file types BEFORE any path construction logic
@@ -156,9 +158,12 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     case FileType.SeedPrompt:
       if (!stageRootPath) throw new Error('Base path context required for seed_prompt.');
       return { storagePath: stageRootPath, fileName: 'seed_prompt.md' };
-    case FileType.UserFeedback:
-      if (!stageRootPath || !rawStageSlug) throw new Error('Base path context and stageSlug required for user_feedback.');
-      return { storagePath: stageRootPath, fileName: `user_feedback_${sanitizeForPath(rawStageSlug)}.md` };
+    case FileType.UserFeedback: {
+      if (typeof originalStoragePath !== 'string' || originalStoragePath.trim() === '' || typeof originalBaseName !== 'string' || originalBaseName.trim() === '') {
+        throw new Error('originalStoragePath and originalBaseName are required for user_feedback.');
+      }
+      return { storagePath: originalStoragePath.trim(), fileName: `${sanitizeForPath(originalBaseName)}_feedback.md` };
+    }
     case FileType.PlannerPrompt: {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
         throw new Error('Required context missing for planner_prompt.');

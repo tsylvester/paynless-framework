@@ -41,24 +41,34 @@ import {
   beginStageDocumentEditLogic,
   clearStageDocumentDraftLogic,
   ensureStageDocumentContentLogic,
+  type EnsureStageDocumentContentSeed,
   fetchStageDocumentContentLogic,
   flushStageDocumentDraftActionLogic,
   flushStageDocumentDraftLogic,
+  flushStageDocumentFeedbackDraftLogic,
   handleRenderCompletedLogic,
   hydrateStageProgressLogic,
   hydrateAllStageProgressLogic,
+  initializeFeedbackDraftLogic,
   reapplyDraftToNewBaselineLogic,
   recordStageDocumentDraftLogic,
   recordStageDocumentFeedbackDraftLogic,
   updateStageDocumentDraftLogic,
   upsertStageDocumentVersionLogic,
 } from '../../../../packages/store/src/dialecticStore.documents';
+import { internalMockAuthStoreGetState } from './authStore.mock';
 
 // ---- START: Define ALL controllable selectors as top-level vi.fn() mocks ----
 // These are kept if tests rely on setting their return values directly at a global level.
 // However, preferring selectors that operate on the store's state is generally better.
 export const selectIsStageReadyForSessionIteration = vi.fn<[DialecticStateValues, string, string, string, number], boolean>().mockReturnValue(false);
 export const selectFeedbackForStageIteration = vi.fn<[DialecticStateValues, string, string, string, number], DialecticFeedback[] | null>().mockReturnValue(null);
+export const selectStageHasUnsavedChanges = vi
+	.fn<
+		[DialecticStateValues, string, string, number],
+		{ hasUnsavedEdits: boolean; hasUnsavedFeedback: boolean }
+	>()
+	.mockReturnValue({ hasUnsavedEdits: false, hasUnsavedFeedback: false });
 
 // Changed to actual selectors
 export const selectIsLoadingProjectDetail = (state: DialecticStateValues): boolean => state.isLoadingProjectDetail;
@@ -389,7 +399,8 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isSubmittingStageDocumentFeedback: false,
   submitStageDocumentFeedbackError: null,
   activeSeedPrompt: null,
-  stageDocumentResources: {},
+  isInitializingFeedbackDraft: false,
+  initializeFeedbackDraftError: null,
 };
 
 // 2. Helper function to create a new mock store instance
@@ -412,7 +423,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       const ensureStageDocumentContent = (
         state: Draft<DialecticStateValues>,
         key: StageDocumentCompositeKey,
-        seed?: { baselineMarkdown?: string; version?: StageDocumentVersionInfo },
+        seed: EnsureStageDocumentContentSeed,
       ): StageDocumentContentState => {
         return ensureStageDocumentContentLogic(state, key, seed);
       };
@@ -437,8 +448,10 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
         key: StageDocumentCompositeKey,
         newBaseline: string,
         newVersion: StageDocumentVersionInfo,
+        sourceContributionId: string | null,
+        resourceType: string | null,
       ): void => {
-        reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion);
+        reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion, sourceContributionId, resourceType);
       };
 
       return {
@@ -518,12 +531,16 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
             sourceContributionId: params.originalContributionIdToEdit,
           };
 
-          // Update stageDocumentContent state to simulate document-centric editing
-          // This allows component tests to simulate edited documents without real contributions
-          // Note: This requires deriving the composite key from params, which may need adjustment
-          // based on actual payload structure in component tests
-          // For now, tests can override this mock or call setStageDocumentResource directly
-
+          set((state) => {
+            for (const [serializedKey, documentEntry] of Object.entries(state.stageDocumentContent)) {
+              const parts = serializedKey.split(':');
+              if (parts.length >= 5 && parts[0] === params.sessionId && parts[4] === params.documentKey) {
+                documentEntry.sourceContributionId = mockResource.source_contribution_id;
+                documentEntry.resourceType = mockResource.resource_type;
+                break;
+              }
+            }
+          });
           set({ isSavingContributionEdit: false, saveContributionEditError: null });
           return { data: mockResponse, error: null, status: 200 };
       }),
@@ -609,7 +626,21 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       ensureRecipeForActiveStage: vi.fn().mockResolvedValue(undefined),
       fetchStageDocumentFeedback: vi.fn().mockResolvedValue(undefined),
       submitStageDocumentFeedback: vi.fn<[SubmitStageDocumentFeedbackPayload], Promise<ApiResponse<{ success: boolean }>>>()
-        .mockResolvedValue({ data: { success: true }, error: undefined, status: 200 }),
+        .mockImplementation(async (payload: SubmitStageDocumentFeedbackPayload) => {
+          const userId = internalMockAuthStoreGetState().user?.id ?? null;
+          const storage = typeof window !== 'undefined' ? window.localStorage : null;
+          const compositeKey: StageDocumentCompositeKey = {
+            sessionId: payload.sessionId,
+            stageSlug: payload.stageSlug,
+            iterationNumber: payload.iterationNumber,
+            modelId: payload.modelId,
+            documentKey: payload.documentKey,
+          };
+          set((state) => {
+            flushStageDocumentFeedbackDraftLogic(state, compositeKey, storage, userId);
+          });
+          return { data: { success: true }, error: undefined, status: 200 };
+        }),
       beginStageDocumentEdit: vi.fn().mockImplementation(
         (key: StageDocumentCompositeKey, initialDraftMarkdown: string) => {
             beginStageDocumentEditLogic(
@@ -643,8 +674,10 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       ),
       updateStageDocumentFeedbackDraft: vi.fn().mockImplementation(
         (key: StageDocumentCompositeKey, feedbackMarkdown: string) => {
+          const userId = internalMockAuthStoreGetState().user?.id ?? null;
+          const storage = typeof window !== 'undefined' ? window.localStorage : null;
           set((state) => {
-            recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown);
+            recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown, storage, userId);
           });
         },
       ),
@@ -669,31 +702,19 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
             );
         },
       ),
-      updateStageDocumentResource: vi.fn().mockImplementation(
-        (key: StageDocumentCompositeKey, resource: EditedDocumentResource, editedContentText: string) => {
-            const versionInfo: StageDocumentVersionInfo = {
-                resourceId: resource.id,
-                versionHash: '', // Mock implementation - tests should override if versionHash is needed
-                updatedAt: resource.updated_at ?? new Date().toISOString(),
-            };
-            set((state) => {
-                const documentEntry = ensureStageDocumentContent(state, key, {
-                    baselineMarkdown: editedContentText,
-                    version: versionInfo,
-                });
-                documentEntry.currentDraftMarkdown = editedContentText;
-                documentEntry.isDirty = false;
-                documentEntry.isLoading = false;
-                documentEntry.error = null;
-            });
-        },
-      ),
       hydrateStageProgress: vi.fn().mockImplementation((payload: ListStageDocumentsPayload) => {
         hydrateStageProgressLogic(set, payload);
       }),
       hydrateAllStageProgress: vi.fn().mockImplementation((payload: GetAllStageProgressPayload) => {
         hydrateAllStageProgressLogic(set, payload);
       }),
+      initializeFeedbackDraft: vi.fn().mockImplementation(
+        async (key: StageDocumentCompositeKey) => {
+          const userId = internalMockAuthStoreGetState().user?.id ?? null;
+          const storage = typeof window !== 'undefined' ? window.localStorage : null;
+          await initializeFeedbackDraftLogic(get, set, key, storage, userId);
+        },
+      ),
       resetSubmitStageDocumentFeedbackError: vi.fn(() => set({ submitStageDocumentFeedbackError: null })),
     };
   }),
@@ -748,6 +769,7 @@ export const initializeMockDialecticState = (initialStateOverrides?: Partial<Dia
   // Ensure that selectors converted to actual functions are NOT reset as vi.fn()
   selectIsStageReadyForSessionIteration.mockClear().mockReturnValue(false);
   selectFeedbackForStageIteration.mockClear().mockReturnValue(null);
+  selectStageHasUnsavedChanges.mockClear().mockReturnValue({ hasUnsavedEdits: false, hasUnsavedFeedback: false });
   selectSelectedModels.mockClear().mockReturnValue([]);
   selectOverlay.mockClear();
 

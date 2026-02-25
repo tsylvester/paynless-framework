@@ -49,7 +49,6 @@ import {
   type ListStageDocumentsPayload,
   type GetAllStageProgressPayload,
   StartSessionSuccessResponse,
-  type EditedDocumentResource,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useAuthStore } from './authStore';
@@ -59,6 +58,7 @@ import { selectActiveChatWalletInfo } from './walletStore.selectors';
 import { isAssembledPrompt, logger } from '@paynless/utils';
 import {
 	ensureStageDocumentContentLogic,
+	type EnsureStageDocumentContentSeed,
 	flushStageDocumentDraftLogic,
 	reapplyDraftToNewBaselineLogic,
 	recordStageDocumentDraftLogic,
@@ -71,6 +71,7 @@ import {
 	fetchStageDocumentContentLogic,
 	handlePlannerStartedLogic,
 	handlePlannerCompletedLogic,
+	handleExecuteStartedLogic,
 	handleDocumentStartedLogic,
 	handleDocumentChunkCompletedLogic,
 	handleDocumentCompletedLogic,
@@ -85,6 +86,7 @@ import {
 	hydrateAllStageProgressLogic,
 	createVersionInfo,
 	getStageRunDocumentKey,
+	initializeFeedbackDraftLogic,
 } from './dialecticStore.documents';
 
 type FocusedDocumentKeyParams = Pick<SetFocusedStageDocumentPayload, 'sessionId' | 'stageSlug' | 'modelId'>;
@@ -188,13 +190,15 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	stageRunProgress: {},
 	focusedStageDocument: {},
 	stageDocumentContent: {},
-	stageDocumentResources: {},
 	stageDocumentVersions: {},
 	stageDocumentFeedback: {},
 	isLoadingStageDocumentFeedback: false,
 	stageDocumentFeedbackError: null,
 	isSubmittingStageDocumentFeedback: false,
 	submitStageDocumentFeedbackError: null,
+
+	isInitializingFeedbackDraft: false,
+	initializeFeedbackDraftError: null,
 };
 
 export type DialecticState = DialecticStateValues & DialecticStore;
@@ -221,7 +225,7 @@ export const useDialecticStore = create<DialecticStore>()(
 		const ensureStageDocumentContent = (
 			state: Draft<DialecticStateValues>,
 			key: StageDocumentCompositeKey,
-			seed?: { baselineMarkdown?: string; version?: StageDocumentVersionInfo },
+			seed: EnsureStageDocumentContentSeed,
 		): StageDocumentContentState => {
 			return ensureStageDocumentContentLogic(state, key, seed);
 		};
@@ -246,9 +250,10 @@ export const useDialecticStore = create<DialecticStore>()(
 			key: StageDocumentCompositeKey,
 			newBaseline: string,
 			newVersion: StageDocumentVersionInfo,
-			sourceContributionId?: string | null,
+			sourceContributionId: string | null,
+			resourceType: string | null,
 		) => {
-			reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion, sourceContributionId);
+			reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion, sourceContributionId, resourceType);
 		};
 
     return {
@@ -1361,8 +1366,10 @@ export const useDialecticStore = create<DialecticStore>()(
 		key: StageDocumentCompositeKey,
 		feedbackMarkdown: string,
 	) => {
+		const userId = useAuthStore.getState().user?.id || null;
+		const storage = typeof window !== 'undefined' ? window.localStorage : null;
 		set((state) => {
-			recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown);
+			recordStageDocumentFeedbackDraftLogic(state, key, feedbackMarkdown, storage, userId);
 		});
 	},
 
@@ -1398,7 +1405,8 @@ export const useDialecticStore = create<DialecticStore>()(
 	submitStageDocumentFeedback: async (
 		payload: SubmitStageDocumentFeedbackPayload,
 	): Promise<ApiResponse<{ success: boolean }>> => {
-		return await submitStageDocumentFeedbackLogic(get, set, payload);
+		const storage = typeof window !== 'undefined' ? window.localStorage : null;
+		return await submitStageDocumentFeedbackLogic(get, set, payload, storage);
 	},
 
 	resetSubmitStageDocumentFeedbackError: () => {
@@ -1407,6 +1415,12 @@ export const useDialecticStore = create<DialecticStore>()(
 
 	selectStageDocumentFeedback: (key: StageDocumentCompositeKey) => {
 		return selectStageDocumentFeedbackLogic(get, key);
+	},
+
+	initializeFeedbackDraft: async (key: StageDocumentCompositeKey) => {
+		const userId = useAuthStore.getState().user?.id || null;
+		const storage = typeof window !== 'undefined' ? window.localStorage : null;
+		await initializeFeedbackDraftLogic(get, set, key, storage, userId);
 	},
 
     reset: () => {
@@ -1468,6 +1482,7 @@ export const useDialecticStore = create<DialecticStore>()(
             handlers._handleDocumentStarted(payload);
             break;
         case 'execute_started':
+            handleExecuteStartedLogic(get, set, payload);
             if (payload.document_key !== undefined && payload.document_key !== '') {
                 handlers._handleDocumentStarted({
                     type: 'document_started',
@@ -1772,7 +1787,7 @@ export const useDialecticStore = create<DialecticStore>()(
   generateContributions: async (payload: GenerateContributionsPayload): Promise<ApiResponse<GenerateContributionsResponse>> => {
     const { sessionId, stageSlug, iterationNumber } = payload;
     logger.info('[DialecticStore] Initiating contributions generation...', { payload });
-  
+
     const { currentProjectDetail, selectedModels } = get();
     const selectedModelIdsForJob = (selectedModels || []).map((m) => m.id);
     if (!currentProjectDetail) {
@@ -1781,7 +1796,14 @@ export const useDialecticStore = create<DialecticStore>()(
       set({ generateContributionsError: error });
       return { error, status: 400 };
     }
-  
+
+    // Build model ID to display name map from selectedModels for placeholder UI
+    // Backend independently resolves model_name from ai_providers table when creating real contributions
+    const modelIdToName = new Map<string, string>();
+    for (const model of (selectedModels || [])) {
+      modelIdToName.set(model.id, model.displayName);
+    }
+
     // --- Step 15.b: Immediate UI feedback with placeholders ---
     set(state => {
       const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
@@ -1791,21 +1813,21 @@ export const useDialecticStore = create<DialecticStore>()(
         if (!session.dialectic_contributions) {
           session.dialectic_contributions = [];
         }
-        
-        selectedModelIdsForJob.forEach((modelId: string, index: number) => {
-          // Find model details from catalog to get the name
-          const modelDetails = state.modelCatalog.find(m => m.id === modelId);
+        selectedModelIdsForJob.forEach((modelId: string, index: number): void => {
+          const modelName = modelIdToName.get(modelId);
+          if (modelName === undefined) {
+            return;
+          }
           const tempId = `placeholder-${sessionId}-${modelId}-${iterationNumber}-${index}`;
           const placeholder: DialecticContribution = {
             id: tempId,
-            job_id: null, // Initialized to null, will be updated after API call
+            job_id: null,
             session_id: sessionId,
             stage: stageSlug,
             iteration_number: iterationNumber,
             model_id: modelId,
-            model_name: modelDetails?.model_name || 'Unknown Model',
+            model_name: modelName,
             status: 'pending',
-            // --- Fill in other required fields with default/null values ---
             user_id: null,
             prompt_template_id_used: null,
             seed_prompt_url: null,
@@ -1834,7 +1856,7 @@ export const useDialecticStore = create<DialecticStore>()(
         });
       }
     });
-  
+
     try {
       // Enrich payload with active walletId from wallet store
       const activeWalletInfo = selectActiveChatWalletInfo(
@@ -1965,7 +1987,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			payload,
 		});
 
-		const { stageDocumentContent, stageDocumentResources } = get();
+		const { stageDocumentContent } = get();
 		const keysWithWork = Object.entries(stageDocumentContent).filter(
 			([_, content]) => content.isDirty || content.feedbackIsDirty,
 		);
@@ -1978,19 +2000,11 @@ export const useDialecticStore = create<DialecticStore>()(
 			const [sessionId, stageSlug, iterationStr, modelId, documentKey] =
 				serializedKey.split(":");
 			const iterationNumber = parseInt(iterationStr, 10);
-			const resource = stageDocumentResources[serializedKey];
 
 			if (content.isDirty && content.sourceContributionId) {
-				if (!resource) {
+				if (!content.resourceType) {
 					logger.error(
-						'[DialecticStore] Missing stageDocumentResources entry for content edit',
-						{ serializedKey },
-					);
-					continue;
-				}
-				if (!resource.resource_type) {
-					logger.error(
-						'[DialecticStore] Missing resource_type for serializedKey',
+						'[DialecticStore] Missing resourceType for content edit',
 						{ serializedKey },
 					);
 					continue;
@@ -2003,19 +2017,12 @@ export const useDialecticStore = create<DialecticStore>()(
 					originalModelContributionId: content.sourceContributionId,
 					responseText: "",
 					documentKey,
-					resourceType: resource.resource_type,
+					resourceType: content.resourceType,
 				};
 				submissionPromises.push(get().saveContributionEdit(editPayload));
 			}
 
 			if (content.feedbackIsDirty) {
-				if (!resource) {
-					logger.error(
-						'[DialecticStore] Missing stageDocumentResources entry for feedback submit',
-						{ serializedKey },
-					);
-					continue;
-				}
 				const userId: string | undefined = useAuthStore.getState().user?.id;
 				const projectId: string = payload.projectId;
 				if (!userId) {
@@ -2025,18 +2032,18 @@ export const useDialecticStore = create<DialecticStore>()(
 					);
 					continue;
 				}
-				const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
-					sessionId,
-					stageSlug,
-					iterationNumber,
-					modelId,
-					documentKey,
-					feedbackContent: content.feedbackDraftMarkdown,
-					userId,
-					projectId,
-					feedbackType: 'user_feedback',
-					sourceContributionId: resource.source_contribution_id,
-				};
+			const feedbackPayload: SubmitStageDocumentFeedbackPayload = {
+				sessionId,
+				stageSlug,
+				iterationNumber,
+				modelId,
+				documentKey,
+				feedbackContent: content.feedbackDraftMarkdown ?? '',
+				userId,
+				projectId,
+				feedbackType: 'user_feedback',
+				sourceContributionId: content.sourceContributionId,
+			};
 				submissionPromises.push(
 					get().submitStageDocumentFeedback(feedbackPayload),
 				);
@@ -2236,11 +2243,8 @@ export const useDialecticStore = create<DialecticStore>()(
                         documentEntry.isDirty = false;
                         documentEntry.isLoading = false;
                         documentEntry.error = null;
-                        
-                        // Store the complete EditedDocumentResource metadata in stageDocumentResources
-                        // This is required so UI components can access source_contribution_id and updated_at
-                        const serializedKey = getStageDocumentKey(compositeKey);
-                        state.stageDocumentResources[serializedKey] = resource;
+                        documentEntry.sourceContributionId = resource.source_contribution_id;
+                        documentEntry.resourceType = resource.resource_type;
                       }
                     }
                   }
@@ -2262,29 +2266,6 @@ export const useDialecticStore = create<DialecticStore>()(
       set({ isSavingContributionEdit: false, saveContributionEditError: networkError });
       return { data: undefined, error: networkError, status: 0 };
     }
-  },
-
-  updateStageDocumentResource: (
-    key: StageDocumentCompositeKey,
-    resource: EditedDocumentResource,
-    editedContentText: string,
-  ): void => {
-    set((state) => {
-      const versionInfo = createVersionInfo(resource.id);
-      const documentEntry = ensureStageDocumentContent(state, key, {
-        baselineMarkdown: editedContentText,
-        version: versionInfo,
-      });
-      documentEntry.currentDraftMarkdown = editedContentText;
-      documentEntry.isDirty = false;
-      documentEntry.isLoading = false;
-      documentEntry.error = null;
-      
-      // Store the complete EditedDocumentResource metadata in stageDocumentResources
-      // This is required so UI components can access source_contribution_id and updated_at
-      const serializedKey = getStageDocumentKey(key);
-      state.stageDocumentResources[serializedKey] = resource;
-    });
   },
 
 	fetchAndSetCurrentSessionDetails: async (sessionId: string) => {
@@ -2649,6 +2630,7 @@ export const useDialecticStore = create<DialecticStore>()(
         state.stageRunProgress[progressKey] = {
           documents: {},
           stepStatuses,
+          jobProgress: {},
         };
         return;
       }

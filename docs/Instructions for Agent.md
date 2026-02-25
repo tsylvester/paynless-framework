@@ -54,6 +54,7 @@
 * If the user instructs you to perform work without updating the checklist, obey the user without complaining. 
 * Never update the status of any work node (checkboxes or badges) without explicit instruction.
 * Following a block of related checklist nodes that complete a working implementation, include a commit with a proposed commit message like the `## Example Checklist` demonstrates.
+* "Commit" steps are for the user. The agent NEVER ATTEMPTS TO COMMIT WORK! Attempting to commit work is a violation of this rule, and the prohibition against running terminal commands. THE AGENT WILL NEVER FOR ANY REASON ATTEMPT TO COMMIT WORK! 
 
 ## 4. Builder vs Reviewer Modes
 * **Builder:** follow the Read→…→Halt loop precisely. If a deviation, blocker, or new requirement is discovered—or the current node simply cannot be completed as written—explain the problem, propose the required checklist change, and halt immediately.
@@ -120,7 +121,7 @@
 * Prove the functional gap, the implemented fix, and regressions through tests before moving on; never assume success without proof.
 
 ## 9. Logging, Defaults, and Error Handling
-* Do remove logging unless the user explicitly instructs you to do so.
+* Do not remove logging unless the user explicitly instructs you to do so.
 * The first step to debugging is to add logging. Do not guess at the problem, add logging to see what's happening.
 * Adding console logs solely for troubleshooting is exempt from TDD and checklist obligations, but the exemption applies only to the logging statements themselves.
 * Believe failing tests, linter flags, and user-reported errors literally; fix the stated condition before chasing deeper causes.
@@ -225,18 +226,26 @@
 
 ## Example Checklist
 *   `[ ]`   [path]/[function] **Descriptive explanatory title**
-  *   `[ ]`   `objective.md`  
+  *   `[ ]`   `objective`  
     *   `[ ]`   Explain the functional and non-functional requirements to meet the objective
     *   `[ ]`   Each requirement is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   `role.md`  
+  *   `[ ]`   `role`  
     *   `[ ]`   Explain the role that this module will play to contribute to delivery of the objective
     *   `[ ]`   Ex: domain, app, port, adapter, infrastructure
-  *   `[ ]`   `module.md`  
+  *   `[ ]`   `module`  
     *   `[ ]`   Provide boundaries for the context or feature area of the role this module plays
     *   `[ ]`   Each boundary is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   `deps.md`  
-    *   `[ ]`   Detail all the deps that the function will have
-    *   `[ ]`   Each dep is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   `deps`
+    *   `[ ]`   List each dependency as:
+          - Provider node or package import
+          - Abstraction layer (domain/app/port/adapter/infra)
+          - Direction justification
+          - Context slice required
+    *   `[ ]`   Confirm no reverse dependency is introduced
+  *   `[ ]`   `context_slice`
+    *   `[ ]`   Define the minimal surface required from each dependency
+    *   `[ ]`   Define the injection shape (interface only, never concrete)
+    *   `[ ]`   Confirm no concrete imports from higher or lateral layers
   *   `[ ]`   interface/`interface.ts`  
     *   `[ ]`   Detail all the interfaces that describe the extent of the object, this includes the signature, return, parameters
     *   `[ ]`   Each type is its own nested item so that they can be cleanly compared, revised, iterated
@@ -249,19 +258,32 @@
   *   `[ ]`   unit/`[function].test.ts` 
     *   `[ ]`   Tests that prove the signature, return, and parameter contracts of the function
     *   `[ ]`   Each test is its own nested item so that they can be cleanly compared, revised, iterated
+  *   `[ ]`   `construction`
+    *   `[ ]`   Define canonical constructor(s) or factory entrypoints
+    *   `[ ]`   Declare prohibited construction contexts
+    *   `[ ]`   Declare object completeness requirements at construction boundary
+    *   `[ ]`   Define initialization order (if applicable)
   *   `[ ]`   `[function].ts`  
     *   `[ ]`   Implementation of the requirements of the contracts of the function
     *   `[ ]`   Each requirement is its own nested item so that they can be cleanly compared, revised, iterated
   *   `[ ]`   provides/`[function].provides.ts`
     *   `[ ]`   This is the bounded outer surface of the module, every I/O interaction beyond the module's boundary must flow through `[function].provides.ts` to be valid
     *   `[ ]`   Each exported symbol, semantic guarantee, stability expectation, route, endpoint, etc is its own nested item so that they can be cleanly compared, revised, iterated
+    *   `[ ]`   Declare all externally visible symbols
+    *   `[ ]`   Declare stability guarantees
+    *   `[ ]`   Declare semantic guarantees
+    *   `[ ]`   Confirm no external access bypasses this file
   *   `[ ]`   `[function].mock.ts`
     *   `[ ]`   When called the mock can intercept all internal and external I/O and return proscribed values. All function and object mocks can be constructed against all contracts.  
     *   `[ ]`   Each exported symbol, semantic guarantee, stability expectation, route, endpoint, etc is its own nested item so that they can be cleanly compared, revised, iterated
   *   `[ ]`   integration/`[function].integration.test.ts`
     *   `[ ]`   Tests for every defined and expected interaction with providers and consumers, generally proposed as provider->[function] or [function]->consumer or provider->[function]->consumer
     *   `[ ]`   Each test is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   `requirements.md`
+  *   `[ ]`   `directionality`
+    *   `[ ]`   Declare this node’s layer (domain/app/port/adapter/infra)
+    *   `[ ]`   Confirm all dependencies are inward-facing
+    *   `[ ]`   Confirm all provides are outward-facing
+  *   `[ ]`   `requirements`
     *   `[ ]`   Detail the functional obligations and acceptance criteria to consider the work correct and complete.
     *   `[ ]`   Each obligation or criteria is its own nested item so that they can be cleanly compared, revised, iterated
   *   `[ ]`   **Commit** `[type of work] [address of work] [brief explanation of work]`

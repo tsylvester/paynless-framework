@@ -191,7 +191,6 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
             slug: defaultStepSlug,
             document_key: FileType.business_case,
             required: true,
-            section_header: 'Business Case Inputs',
         },
         {
             type: 'document',
@@ -204,7 +203,6 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
             slug: defaultStepSlug,
             document_key: FileType.HeaderContext,
             required: true,
-            section_header: 'Planner Context',
         },
     ];
 
@@ -217,7 +215,7 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
     const templateOutputsRequired: OutputRule = {
         system_materials: {
             stage_rationale: 'Align business case with feature spec for this iteration.',
-            executive_summary: 'Summarize the dialectic findings across artifacts.',
+            agent_notes_to_self: 'Summarize the dialectic findings across artifacts.',
             input_artifacts_summary: 'Business case + feature spec + header context.',
             quality_standards: ['Tie evidence directly to documents', 'Preserve prior commitments'],
             validation_checkpoint: ['All referenced artifacts exist', 'Instructions follow dependency order'],
@@ -282,7 +280,7 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
     const stageOutputsRequired: OutputRule = {
         system_materials: {
             stage_rationale: 'Align business case with feature spec for this iteration.',
-            executive_summary: 'Summarize the dialectic findings across artifacts.',
+            agent_notes_to_self: 'Summarize the dialectic findings across artifacts.',
             input_artifacts_summary: 'Business case + feature spec + header context.',
             validation_checkpoint: ['All referenced artifacts exist', 'Instructions follow dependency order'],
             document_order: ['business_case'],
@@ -756,7 +754,7 @@ Deno.test('processSimpleJob - renders prompt template and omits systemInstructio
     clearAllStubs?.();
 });
 
-Deno.test('processSimpleJob - should call gatherContinuationInputs for a continuation job', async () => {    
+Deno.test('processSimpleJob - should assemble with sourceContributionId for a continuation job', async () => {    
   const trueRootId = 'true-root-id-for-test';
     const continuationChunkId = 'prev-contrib-id';
     const stageSlug = 'synthesis';
@@ -808,7 +806,7 @@ Deno.test('processSimpleJob - should call gatherContinuationInputs for a continu
     assertEquals(promptAssembler.assemble.calls.length, 1, "Expected assemble to be called once for a continuation job.");
     const [assembleOptions] = promptAssembler.assemble.calls[0].args;
     assertExists(assembleOptions.job);
-    assertEquals(assembleOptions.continuationContent, "Please continue.");
+    assertEquals(assembleOptions.sourceContributionId, continuationChunkId);
 
     clearAllStubs?.();
 });
@@ -1452,7 +1450,7 @@ Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_r
   const customOutputsRequired: OutputRule = {
     system_materials: {
       stage_rationale: 'Ensure business-case alignment.',
-      executive_summary: 'Summarize execution intent.',
+      agent_notes_to_self: 'Summarize execution intent.',
       input_artifacts_summary: 'Business case, feature spec, header context.',
       document_order: ['business_case'],
       current_document: 'business_case',

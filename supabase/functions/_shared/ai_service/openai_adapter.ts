@@ -36,6 +36,12 @@ export class OpenAiAdapter {
   ): Promise<AdapterResponsePayload> {
     this.logger.debug('[OpenAiAdapter] sendMessage called', { modelIdentifier });
     const modelApiName = modelIdentifier.replace(/^openai-/i, '');
+    
+    // Ensure the adapter is configured for the requested model
+    const configApiName = this.modelConfig.api_identifier.replace(/^openai-/i, '');
+    if (modelApiName !== configApiName) {
+        throw new Error(`[OpenAiAdapter] Model mismatch: requested '${modelApiName}' but adapter is configured for '${configApiName}'.`);
+    }
 
     // Placeholder for token validation logic, as per the plan
     // This should use a token counting utility and check against this.modelConfig
@@ -134,12 +140,16 @@ export class OpenAiAdapter {
           break;
       }
       
-      const tokenUsage = completion.usage ? {
-        prompt_tokens: completion.usage.prompt_tokens,
-        completion_tokens: completion.usage.completion_tokens,
-        total_tokens: completion.usage.total_tokens,
-      } : null;
+      const tokenUsage = completion.usage;
 
+      if (!tokenUsage) {
+        this.logger.error('[OpenAiAdapter] OpenAI response did not include usage data.', { modelApiName });
+        throw new Error('OpenAI response did not include usage data.');
+      }
+      if(!isJson(tokenUsage)) {
+        this.logger.error('[OpenAiAdapter] OpenAI usage data is not a valid JSON object.', { modelApiName, tokenUsage });
+        throw new Error('OpenAI usage data is not a valid JSON object.');
+      }
       const assistantResponse: AdapterResponsePayload = {
         role: 'assistant',
         content: aiContent,
@@ -179,16 +189,9 @@ export class OpenAiAdapter {
 
       for (const model of modelsPage.data) {
         if (model.id && (model.id.includes('gpt') || model.id.includes('instruct') || model.id.includes('text-embedding'))) {
-          const config: AiModelExtendedConfig = {
-            ...this.modelConfig,
-            api_identifier: model.id,
-          };
-          
           models.push({
             api_identifier: `openai-${model.id}`,
             name: `OpenAI ${model.id}`,
-            description: `Owned by: ${model.owned_by}`,
-            config: config,
           });
         }
       }

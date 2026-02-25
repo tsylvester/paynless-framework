@@ -101,16 +101,37 @@ export async function gatherContinuationInputs(
     throw new Error(`Root contribution ${rootChunk.id} is missing a storage_path.`);
   }
 
-  // 4. Resolve stage root and download seed prompt.
-  // Continuation chunks (including the first partial result) are stored under '/_work'.
-  // The seed prompt is always stored at the stage root. Normalize by stripping '/_work' when present.
-  const storagePath = rootChunk.storage_path;
-  const stageRootPath = storagePath.includes("/_work")
-    ? storagePath.split("/_work")[0]
-    : storagePath;
-  const seedPromptPath = `${stageRootPath}/seed_prompt.md`;
+  // 4. Query for the session's seed_prompt from dialectic_project_resources.
+  // The seed prompt is created once per session (at thesis stage) and reused across all stages.
+  // It is stored as a project-level resource, not stage-specific.
+  const { data: seedPromptResource, error: seedResourceError } = await dbClient
+    .from("dialectic_project_resources")
+    .select("storage_path, file_name, storage_bucket")
+    .eq("resource_type", "seed_prompt")
+    .eq("session_id", rootChunk.session_id)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (seedResourceError || !seedPromptResource) {
+    console.error(
+      `[gatherContinuationInputs] Failed to query seed prompt resource.`,
+      { error: seedResourceError, sessionId: rootChunk.session_id, chunkId },
+    );
+    throw new Error(`Failed to query seed prompt for session ${rootChunk.session_id}.`);
+  }
+
+  if (!seedPromptResource.storage_path || !seedPromptResource.file_name || !seedPromptResource.storage_bucket) {
+    console.error(
+      `[gatherContinuationInputs] Seed prompt resource missing required fields.`,
+      { seedPromptResource, sessionId: rootChunk.session_id, chunkId },
+    );
+    throw new Error(`Seed prompt resource incomplete for session ${rootChunk.session_id}.`);
+  }
+
+  const seedPromptPath = `${seedPromptResource.storage_path}/${seedPromptResource.file_name}`;
   const { data: seedPromptContentData, error: seedDownloadError } =
-    await downloadFromStorageFn(rootChunk.storage_bucket!, seedPromptPath);
+    await downloadFromStorageFn(seedPromptResource.storage_bucket, seedPromptPath);
 
   if (seedDownloadError || !seedPromptContentData) {
     console.error(

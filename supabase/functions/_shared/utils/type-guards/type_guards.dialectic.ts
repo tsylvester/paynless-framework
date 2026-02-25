@@ -43,6 +43,8 @@ import {
     ContentToInclude,
     SelectAnchorResult,
     SourceDocument,
+    JobProgressEntry,
+    JobProgressStatus,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { isFileType } from './type_guards.file_manager.ts';
@@ -127,18 +129,18 @@ export function isHeaderContextArtifact(value: unknown): value is HeaderContextA
 
 export function isHeaderContextSystemMaterials(value: unknown): value is {
     stage_rationale: string;
-    executive_summary: string;
+    agent_notes_to_self: string;
     input_artifacts_summary: string;
     validation_checkpoint?: string[];
     quality_standards?: string[];
     diversity_rubric?: Record<string, string>;
-    progress_update?: string;
+    progress_update?: string | null;
 } {
     if (!isRecord(value)) return false;
 
     const requiredKeys: Array<[string, (v: unknown) => boolean]> = [
         ['stage_rationale', (v) => typeof v === 'string'],
-        ['executive_summary', (v) => typeof v === 'string'],
+        ['agent_notes_to_self', (v) => typeof v === 'string'],
         ['input_artifacts_summary', (v) => typeof v === 'string'],
     ];
 
@@ -168,7 +170,7 @@ export function isHeaderContextSystemMaterials(value: unknown): value is {
         }
     }
 
-    if ('progress_update' in value && typeof value.progress_update !== 'string') {
+    if ('progress_update' in value && value.progress_update !== null && typeof value.progress_update !== 'string') {
         return false;
     }
 
@@ -187,6 +189,11 @@ export function isHeaderContext(value: unknown): value is HeaderContext {
     }
 
     if (!('context_for_documents' in value) || !isHeaderContextDocuments(value.context_for_documents)) {
+        return false;
+    }
+
+    // Optionally validate review_metadata if present
+    if ('review_metadata' in value && value.review_metadata !== undefined && !isReviewMetadata(value.review_metadata)) {
         return false;
     }
 
@@ -223,8 +230,13 @@ export function isContentToInclude(value: unknown): value is ContentToInclude {
             continue;
         }
         
-        // Reject null, undefined, functions, etc.
-        if (itemValue === null || itemValue === undefined || valueType === 'function') {
+        // null is a valid JSON value; AI models routinely return null for empty fields
+        if (itemValue === null) {
+            continue;
+        }
+        
+        // Reject undefined, functions, etc.
+        if (itemValue === undefined || valueType === 'function') {
             return false;
         }
         
@@ -551,7 +563,7 @@ export function isSystemMaterials(value: unknown): value is SystemMaterials {
         return false;
     }
 
-    if ('executive_summary' in value && typeof value.executive_summary !== 'string') {
+    if ('agent_notes_to_self' in value && typeof value.agent_notes_to_self !== 'string') {
         return false;
     }
 
@@ -586,7 +598,7 @@ export function isSystemMaterials(value: unknown): value is SystemMaterials {
         }
     }
 
-    if ('progress_update' in value && value.progress_update !== undefined && typeof value.progress_update !== 'string') {
+    if ('progress_update' in value && value.progress_update !== undefined && value.progress_update !== null && typeof value.progress_update !== 'string') {
         return false;
     }
 
@@ -1455,4 +1467,23 @@ export function isSelectAnchorResult(value: unknown): value is SelectAnchorResul
     return false;
 }
 
+const validJobProgressStatuses: Set<string> = new Set<JobProgressStatus>(['pending', 'in_progress', 'completed', 'failed']);
+
+export function isJobProgressEntry(value: unknown): value is JobProgressEntry {
+    if (!isRecord(value)) return false;
+
+    if (typeof value.totalJobs !== 'number' || value.totalJobs < 0) return false;
+    if (typeof value.completedJobs !== 'number' || value.completedJobs < 0) return false;
+    if (typeof value.inProgressJobs !== 'number' || value.inProgressJobs < 0) return false;
+    if (typeof value.failedJobs !== 'number' || value.failedJobs < 0) return false;
+
+    if ('modelJobStatuses' in value && value.modelJobStatuses !== undefined) {
+        if (!isRecord(value.modelJobStatuses)) return false;
+        for (const status of Object.values(value.modelJobStatuses)) {
+            if (typeof status !== 'string' || !validJobProgressStatuses.has(status)) return false;
+        }
+    }
+
+    return true;
+}
 

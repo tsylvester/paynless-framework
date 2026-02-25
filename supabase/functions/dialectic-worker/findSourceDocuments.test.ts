@@ -24,6 +24,7 @@ import {
     MockQueryBuilderState 
 } from '../_shared/supabase.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
+import { isRecord } from '../_shared/utils/type_guards.ts';
 
 describe('findSourceDocuments', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
@@ -73,25 +74,28 @@ describe('findSourceDocuments', () => {
         };
     });
 
-    it("successfully returns a 'seed_prompt' from dialectic_project_resources", async () => {
-        const rule: InputRule[] = [{ type: 'seed_prompt', slug: 'test-stage' }];
+    it("successfully returns a 'seed_prompt' from dialectic_project_resources without filtering by stage_slug", async () => {
+        // Rule has slug so implementation might incorrectly add stage_slug filter.
+        // Target: seed_prompt is project-level (file_name always seed_prompt.md, resource_type seed_prompt);
+        // query must NOT filter by stage_slug so the single project seed_prompt is always found.
+        const rule: InputRule[] = [{ type: 'seed_prompt', slug: 'thesis', document_key: FileType.SeedPrompt, required: true }];
         const mockSeedPromptResource: DialecticProjectResourceRow = {
             id: 'seed-prompt-resource-id',
             project_id: 'proj-1',
             user_id: 'user-123',
-            file_name: 'seed.txt',
+            file_name: 'seed_prompt.md',
             storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/resources',
             mime_type: 'text/plain',
             size_bytes: 123,
-            resource_description: { "description": "A test seed prompt", type: 'seed_prompt' },
+            resource_description: { "description": "A test seed prompt", type: 'seed_prompt', document_key: 'seed_prompt' },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             iteration_number: null,
             resource_type: 'seed_prompt',
             session_id: null,
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: null,
         };
 
         mockSupabase = createMockSupabaseClient(undefined, {
@@ -140,20 +144,18 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        // Assert that seed_prompt queries do NOT filter by stage_slug
-                        // (project-level resources are available across all stages)
-                        const hasStageFilter = state.filters.some(
+                        const hasStageSlugFilter = state.filters.some(
                             (filter) =>
                                 filter.type === 'eq' &&
                                 filter.column === 'stage_slug',
                         );
-                        if (hasStageFilter) {
+                        if (hasStageSlugFilter) {
                             return Promise.resolve({
                                 data: null,
-                                error: new Error('seed_prompt queries must NOT filter by stage_slug (project-level resource)'),
+                                error: new Error('seed_prompt queries must NOT filter by stage_slug'),
                                 count: 0,
                                 status: 400,
-                                statusText: 'Unexpected stage_slug filter',
+                                statusText: 'stage_slug filter not allowed for seed_prompt',
                             });
                         }
 
@@ -197,6 +199,7 @@ describe('findSourceDocuments', () => {
 
         assertEquals(documents.length, 1);
         assertEquals(documents[0].id, 'seed-prompt-resource-id');
+        assertEquals(documents[0].file_name, 'seed_prompt.md');
     });
 
     it("successfully returns a 'header_context' from dialectic_contributions", async () => {
@@ -224,9 +227,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header.json',
+            file_name: 'model-1_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
@@ -381,9 +384,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header_model_a.json',
+            file_name: 'model-A_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/1_thesis/_work/context',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
@@ -396,7 +399,7 @@ describe('findSourceDocuments', () => {
             id: 'header-context-model-B',
             model_id: 'model-B',
             model_name: 'Model B',
-            file_name: 'header_model_b.json',
+            file_name: 'model-B_0_header_context.json',
         };
 
         const mockHeaderContextModelC: DialecticContributionRow = {
@@ -404,7 +407,7 @@ describe('findSourceDocuments', () => {
             id: 'header-context-model-C',
             model_id: 'model-C',
             model_name: 'Model C',
-            file_name: 'header_model_c.json',
+            file_name: 'model-C_0_header_context.json',
         };
 
         // Set parent job to model-A
@@ -745,9 +748,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'sess-1_test-stage_header_context_v1.json',
+            file_name: 'model-3_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 2048,
             mime_type: 'application/json',
             document_relationships: null,
@@ -778,9 +781,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'sess-1_test-stage_header_context_v2.json',
+            file_name: 'model-3_1_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 2049,
             mime_type: 'application/json',
             document_relationships: null,
@@ -935,9 +938,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header-iter-1.json',
+            file_name: 'model-1_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
@@ -968,9 +971,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header-iter-2.json',
+            file_name: 'model-1_0_header_context_iter2.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_2/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_2/test-stage/_work/context',
             size_bytes: 81,
             mime_type: 'application/json',
             document_relationships: null,
@@ -1161,22 +1164,7 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        // Assert that project_resource queries do NOT filter by stage_slug
-                        // (project-level resources are available across all stages)
-                        const hasStageFilter = state.filters.some(
-                            (filter) =>
-                                filter.type === 'eq' &&
-                                filter.column === 'stage_slug',
-                        );
-                        if (hasStageFilter) {
-                            return Promise.resolve({
-                                data: null,
-                                error: new Error('project_resource queries must NOT filter by stage_slug (project-level resource)'),
-                                count: 0,
-                                status: 400,
-                                statusText: 'Unexpected stage_slug filter',
-                            });
-                        }
+                        // Note: project_resource queries CAN filter by stage_slug to find resources from a specific stage
 
                         const hasJsonPathFilter = state.filters.some((filter) => {
                             if (typeof filter.column === 'string' && filter.column.includes('resource_description->>')) {
@@ -1826,9 +1814,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header_context.json',
+            file_name: 'model-1_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
@@ -1968,14 +1956,23 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'comparison_vector',
-            file_name: 'comparison_vector.json',
+            file_name: 'model-1_1_comparison_vector_raw.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/raw_responses',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/raw_responses',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
             is_header: false,
             source_prompt_resource_id: null,
+        };
+
+        // A record whose file_name contains 'comparison_vector' as a substring but
+        // deconstructs to a DIFFERENT documentKey — must be excluded by exact matching.
+        const substringFalsePositive: DialecticContributionRow = {
+            ...mockContribution,
+            id: 'false-positive-id',
+            contribution_type: 'comparison_vector_detailed',
+            file_name: 'model-1_1_comparison_vector_detailed_raw.json',
         };
 
         mockSupabase = createMockSupabaseClient(undefined, {
@@ -2024,21 +2021,11 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        // Check for document_key filtering (either ilike file_name OR eq contribution_type)
-                        const hasDocumentKeyFilter = state.filters.some(
-                            (filter) =>
-                                (filter.type === 'ilike' &&
-                                filter.column === 'file_name' &&
-                                String(filter.value).includes('comparison_vector')) ||
-                                (filter.type === 'eq' &&
-                                filter.column === 'contribution_type' &&
-                                filter.value === 'comparison_vector')
-                        );
-                        
+                        // DB returns both records — document_key filtering happens in TypeScript
                         return Promise.resolve({
-                            data: [mockContribution],
+                            data: [mockContribution, substringFalsePositive],
                             error: null,
-                            count: 1,
+                            count: 2,
                             status: 200,
                             statusText: 'OK',
                         });
@@ -2053,7 +2040,7 @@ describe('findSourceDocuments', () => {
             rule,
         );
 
-        assertEquals(documents.length, 1);
+        assertEquals(documents.length, 1, 'Exact match only — substring false positive must be excluded');
         assertEquals(documents[0].id, 'contribution-id');
         assertEquals(documents[0].contribution_type, 'comparison_vector');
     });
@@ -2346,9 +2333,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header_context.json',
+            file_name: 'model-1_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
@@ -2864,6 +2851,15 @@ describe('findSourceDocuments', () => {
             job_type: 'PLAN',
         };
 
+        // A header_context contribution whose documentKey is 'header_context' (not 'header_context_pairwise').
+        // With exact matching via deconstructStoragePath, requesting 'header_context_pairwise' must NOT
+        // return a record whose documentKey is 'header_context'.
+        const nonMatchingHeaderContext: DialecticContributionRow = {
+            ...mockHeaderContextContribution,
+            id: 'non-matching-header-context',
+            file_name: 'full-dag-test-model-b_0_0b39478c_header_context.json',
+        };
+
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 dialectic_contributions: {
@@ -2900,10 +2896,11 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
+                        // DB returns both records (no ilike pre-filter); exact matching in TypeScript
                         return Promise.resolve({
-                            data: [mockHeaderContextContribution],
+                            data: [mockHeaderContextContribution, nonMatchingHeaderContext],
                             error: null,
-                            count: 1,
+                            count: 2,
                             status: 200,
                             statusText: 'OK',
                         });
@@ -2918,8 +2915,8 @@ describe('findSourceDocuments', () => {
             rule,
         );
 
-        assertEquals(documents.length, 1, 'Should return one header_context document');
-        assertEquals(documents[0].id, '91155b5f-d710-4325-9ee3-836a385d09f9', 'Should return the correct header_context contribution');
+        assertEquals(documents.length, 1, 'Exact match only — header_context record must be excluded when rule requests header_context_pairwise');
+        assertEquals(documents[0].id, '91155b5f-d710-4325-9ee3-836a385d09f9', 'Should return the correct header_context_pairwise contribution');
         assertEquals(documents[0].model_id, '77afe5e0-a0d8-4a01-974f-f74f9f89a4ef', 'Should have correct model_id');
         assertEquals(documents[0].contribution_type, 'header_context', 'Should have correct contribution_type');
         assertEquals(documents[0].document_key, 'header_context_pairwise', 'Should have document_key extracted from filename by deconstructStoragePath');
@@ -3027,21 +3024,7 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        // Assert FORBIDDEN filters are NOT present
-                        const hasStageFilter = state.filters.some(
-                            (filter) =>
-                                filter.type === 'eq' &&
-                                filter.column === 'stage_slug',
-                        );
-                        if (hasStageFilter) {
-                            return Promise.resolve({
-                                data: null,
-                                error: new Error('project_resource queries must NOT filter by stage_slug'),
-                                count: 0,
-                                status: 400,
-                                statusText: 'Unexpected stage_slug filter',
-                            });
-                        }
+                        // Note: project_resource queries CAN filter by stage_slug to find resources from a specific stage
 
                         const hasIterationFilter = state.filters.some(
                             (filter) =>
@@ -3088,21 +3071,6 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        const hasFileNameIlikeFilter = state.filters.some(
-                            (filter) =>
-                                filter.type === 'ilike' &&
-                                filter.column === 'file_name',
-                        );
-                        if (hasFileNameIlikeFilter) {
-                            return Promise.resolve({
-                                data: null,
-                                error: new Error('initial_user_prompt project resource queries must NOT filter by file_name'),
-                                count: 0,
-                                status: 400,
-                                statusText: 'Unexpected file_name ilike filter',
-                            });
-                        }
-
                         return Promise.resolve({
                             data: [projectWideResource],
                             error: null,
@@ -3131,5 +3099,549 @@ describe('findSourceDocuments', () => {
 
         assertEquals(documents.length, 1, 'Should find project-level resource regardless of job context');
         assertEquals(documents[0].id, 'initial-user-prompt-id', 'Should return the correct project resource');
+    });
+
+    it('feedback query includes .eq("iteration_number", iterationNumber) filter', async () => {
+        const rule: InputRule[] = [{ type: 'feedback', slug: 'test-stage', required: false }];
+        const expectedIteration = 1;
+        mockParentJob.payload.iterationNumber = expectedIteration;
+        mockParentJob.iteration_number = expectedIteration;
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_feedback: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasIterationFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'iteration_number' &&
+                                filter.value === expectedIteration,
+                        );
+                        if (!hasIterationFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('feedback queries must filter by iteration_number'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing iteration_number filter',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 0, 'No feedback rows; query shape was asserted by mock');
+    });
+
+    it('feedback query uses resource_description->>\'document_key\' eq filter for document_key matching', async () => {
+        const rule: InputRule[] = [
+            { type: 'feedback', slug: 'test-stage', document_key: FileType.business_case },
+        ];
+        const mockFeedbackRow: DialecticFeedbackRow = {
+            id: 'feedback-doc-key-id',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage_slug: 'test-stage',
+            iteration_number: 1,
+            file_name: 'business_case_feedback.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/feedback',
+            size_bytes: 100,
+            mime_type: 'text/markdown',
+            feedback_type: 'user_feedback',
+            target_contribution_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            project_id: 'proj-1',
+            resource_description: { document_key: FileType.business_case, model_id: 'model-1' },
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_feedback: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasResourceDescDocumentKeyFilter = state.filters.some(
+                            (filter) =>
+                                (filter.type === 'eq' && filter.column === 'resource_description->>document_key') ||
+                                (filter.type === 'filter' &&
+                                    filter.column === 'resource_description->>document_key' &&
+                                    filter.operator === 'eq'),
+                        );
+                        if (!hasResourceDescDocumentKeyFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error(
+                                    'feedback queries with document_key must filter by resource_description->>\'document_key\'',
+                                ),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing resource_description document_key filter',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [mockFeedbackRow],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 1, 'Should return feedback when query uses resource_description document_key filter');
+        assertEquals(documents[0].id, 'feedback-doc-key-id');
+    });
+
+    it('feedback query uses iterationNumber directly (consistent with other retrieval paths)', async () => {
+        const rule: InputRule[] = [{ type: 'feedback', slug: 'thesis', required: false }];
+        const expectedIteration = 2;
+        mockParentJob.payload.iterationNumber = expectedIteration;
+        mockParentJob.iteration_number = expectedIteration;
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_feedback: {
+                    select: (state: MockQueryBuilderState) => {
+                        const iterationFilter = state.filters.find(
+                            (f) => f.type === 'eq' && f.column === 'iteration_number',
+                        );
+                        if (!iterationFilter || iterationFilter.value !== expectedIteration) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error(
+                                    `feedback query must use iteration_number ${expectedIteration} from payload, got ${iterationFilter?.value ?? 'missing'}`,
+                                ),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Wrong or missing iteration_number',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 0, 'No feedback rows; iteration_number value was asserted by mock');
+    });
+
+    it('feedback query includes model_id filter when parent job has model_id', async () => {
+        const rules: InputRule[] = [{ type: 'feedback', slug: 'test-stage' }];
+        mockParentJob.payload.model_id = 'model-for-feedback';
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_feedback: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasModelIdFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'filter' &&
+                                filter.column === 'resource_description->>model_id' &&
+                                filter.operator === 'eq' &&
+                                filter.value === 'model-for-feedback',
+                        );
+
+                        if (!hasModelIdFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('Feedback query must filter by model_id from parent job'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing model_id filter',
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rules,
+        );
+    });
+
+    it('returns only the feedback matching the parent job model_id when multiple models have feedback', async () => {
+        const rules: InputRule[] = [{ type: 'feedback', slug: 'test-stage', document_key: FileType.business_case }];
+
+        const feedbackModelA: DialecticFeedbackRow = {
+            id: 'feedback-A',
+            session_id: 'sess-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            stage_slug: 'test-stage',
+            iteration_number: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            feedback_type: 'user_feedback',
+            file_name: 'business_case_feedback_A.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'path/A',
+            size_bytes: 100,
+            mime_type: 'text/markdown',
+            resource_description: { document_key: FileType.business_case, model_id: 'model-A' },
+            target_contribution_id: 'contrib-A',
+        };
+
+        const feedbackModelB: DialecticFeedbackRow = {
+            ...feedbackModelA,
+            id: 'feedback-B',
+            file_name: 'business_case_feedback_B.md',
+            resource_description: { document_key: FileType.business_case, model_id: 'model-B' },
+            target_contribution_id: 'contrib-B',
+        };
+
+        mockParentJob.payload.model_id = 'model-A';
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_feedback: {
+                    select: (state: MockQueryBuilderState) => {
+                        const allData = [feedbackModelA, feedbackModelB];
+                        const modelIdFilter = state.filters.find(
+                            (filter) => filter.type === 'filter' && filter.column === 'resource_description->>model_id'
+                        );
+                        const documentKeyFilter = state.filters.find(
+                            (filter) =>
+                                (filter.type === 'eq' && filter.column === 'resource_description->>document_key') ||
+                                (filter.type === 'filter' &&
+                                    filter.column === 'resource_description->>document_key' &&
+                                    filter.operator === 'eq'),
+                        );
+
+                        const modelIdFilterValue: string | null =
+                            modelIdFilter && typeof modelIdFilter.value === 'string'
+                                ? modelIdFilter.value
+                                : null;
+                        const documentKeyFilterValue: string | null =
+                            documentKeyFilter && typeof documentKeyFilter.value === 'string'
+                                ? documentKeyFilter.value
+                                : null;
+
+                        if (!modelIdFilterValue) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('Feedback query must filter by resource_description->>model_id when parent job has model_id'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing model_id filter',
+                            });
+                        }
+                        if (!documentKeyFilterValue) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('Feedback query must filter by resource_description->>\'document_key\' when InputRule.document_key is provided'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing document_key filter',
+                            });
+                        }
+
+                        const filteredData = allData.filter((row) => {
+                            const desc = row.resource_description;
+                            if (!isRecord(desc)) {
+                                return false;
+                            }
+
+                            const modelIdField = desc['model_id'];
+                            const documentKeyField = desc['document_key'];
+
+                            return (
+                                typeof modelIdField === 'string' &&
+                                typeof documentKeyField === 'string' &&
+                                modelIdField === modelIdFilterValue &&
+                                documentKeyField === documentKeyFilterValue
+                            );
+                        });
+
+                        return Promise.resolve({
+                            data: filteredData,
+                            error: null,
+                            count: filteredData.length,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rules,
+        );
+
+        assertEquals(documents.length, 1);
+        assertEquals(documents[0].id, 'feedback-A');
+    });
+
+    it('enriches feedback documents with source_group from matching documents based on filename', async () => {
+        const sourceGroup = 'lineage-group-uuid-123';
+        
+        // Create a rendered document with a source_group
+        const businessCaseDoc: DialecticProjectResourceRow = {
+            id: 'doc-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            session_id: 'sess-1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            file_name: 'google-gemini-2.5-flash_0_business_case.md',
+            storage_bucket: 'dialectic-contributions',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
+            mime_type: 'text/markdown',
+            size_bytes: 1000,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            source_contribution_id: 'contrib-1',
+            resource_description: { document_key: FileType.business_case },
+        };
+        
+        // Create a contribution with document_relationships containing source_group
+        const businessCaseContribution: DialecticContributionRow = {
+            id: 'contrib-1',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'thesis',
+            iteration_number: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'business_case',
+            file_name: 'google-gemini-2.5-flash_0_business_case.md',
+            storage_bucket: 'dialectic-contributions',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
+            size_bytes: 1000,
+            mime_type: 'text/markdown',
+            model_id: 'model-1',
+            model_name: 'Gemini 2.5 Flash',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 100,
+            tokens_used_output: 200,
+            processing_time_ms: 1000,
+            error: null,
+            citations: null,
+            document_relationships: { source_group: sourceGroup },
+            is_header: false,
+            source_prompt_resource_id: null,
+        };
+        
+        // Create a feedback document with matching base filename but NO source_group
+        const feedbackDoc: DialecticFeedbackRow = {
+            id: 'feedback-1',
+            session_id: 'sess-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            feedback_type: 'user_feedback',
+            file_name: 'google-gemini-2.5-flash_0_business_case_feedback.md',
+            storage_bucket: 'dialectic-contributions',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
+            size_bytes: 500,
+            mime_type: 'text/markdown',
+            resource_description: { document_key: FileType.business_case, model_id: 'model-1' },
+            target_contribution_id: 'contrib-1',
+        };
+
+        const rules: InputRule[] = [
+            { type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true },
+            { type: 'feedback', slug: 'thesis', document_key: FileType.business_case, required: false },
+        ];
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({
+                        data: [businessCaseDoc],
+                        error: null,
+                        count: 1,
+                        status: 200,
+                        statusText: 'OK',
+                    }),
+                },
+                dialectic_contributions: {
+                    select: () => Promise.resolve({
+                        data: [businessCaseContribution],
+                        error: null,
+                        count: 1,
+                        status: 200,
+                        statusText: 'OK',
+                    }),
+                },
+                dialectic_feedback: {
+                    select: () => Promise.resolve({
+                        data: [feedbackDoc],
+                        error: null,
+                        count: 1,
+                        status: 200,
+                        statusText: 'OK',
+                    }),
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rules,
+        );
+
+        // Should return 2 documents: the business_case document and the feedback
+        assertEquals(documents.length, 2);
+        
+        // Find the feedback document in the results
+        const feedbackResult = documents.find(doc => doc.contribution_type === 'feedback');
+        
+        // Assert that the feedback document was enriched with the source_group from the matching document
+        assertEquals(feedbackResult?.id, 'feedback-1');
+        assertEquals(feedbackResult?.file_name, 'google-gemini-2.5-flash_0_business_case_feedback.md');
+        assertEquals(feedbackResult?.document_relationships?.source_group, sourceGroup,
+            'Feedback document should be enriched with source_group from matching document based on filename pattern');
+    });
+
+    it("returns 'project_resource' initial_user_prompt without filtering by stage_slug", async () => {
+        const rule: InputRule[] = [{
+            type: 'project_resource',
+            slug: 'project',
+            document_key: FileType.InitialUserPrompt,
+            required: true,
+        }];
+        const mockResource: DialecticProjectResourceRow = {
+            id: 'initial-prompt-resource-id',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'initial_user_prompt.txt',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources/initial_user_prompt.txt',
+            mime_type: 'text/plain',
+            size_bytes: 100,
+            resource_description: { description: 'Initial user prompt', type: FileType.InitialUserPrompt },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: null,
+            resource_type: 'initial_user_prompt',
+            session_id: null,
+            source_contribution_id: null,
+            stage_slug: null,
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: () =>
+                        Promise.resolve({
+                            data: null,
+                            error: new Error('project_resource test must not query contributions'),
+                            count: 0,
+                            status: 500,
+                            statusText: 'Intentional Failure',
+                        }),
+                },
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        const hasStageSlugFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'stage_slug',
+                        );
+                        if (hasStageSlugFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('initial_user_prompt must not filter by stage_slug'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Unexpected stage_slug filter',
+                            });
+                        }
+
+                        const hasResourceTypeFilter = state.filters.some(
+                            (filter) =>
+                                filter.type === 'eq' &&
+                                filter.column === 'resource_type' &&
+                                filter.value === 'initial_user_prompt',
+                        );
+                        if (!hasResourceTypeFilter) {
+                            return Promise.resolve({
+                                data: null,
+                                error: new Error('initial_user_prompt must filter by resource_type = initial_user_prompt'),
+                                count: 0,
+                                status: 400,
+                                statusText: 'Missing resource_type filter',
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: [mockResource],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const documents = await findSourceDocuments(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            rule,
+        );
+
+        assertEquals(documents.length, 1);
+        assertEquals(documents[0].id, 'initial-prompt-resource-id');
     });
 });

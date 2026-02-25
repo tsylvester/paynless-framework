@@ -1,6 +1,6 @@
 import { SupabaseClient } from 'npm:@supabase/supabase-js@^2.43.4';
 import type { Database } from '../types_db.ts';
-import type { DialecticSession, UpdateSessionModelsPayload, SelectedModels } from './dialectic.interface.ts';
+import type { DialecticSession, UpdateSessionModelsPayload } from './dialectic.interface.ts';
 import type { ServiceError } from '../_shared/types.ts';
 import { logger } from '../_shared/logger.ts';
 
@@ -9,7 +9,7 @@ export async function handleUpdateSessionModels(
   payload: UpdateSessionModelsPayload,
   userId: string,
 ): Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }> {
-  const { sessionId, selectedModelIds } = payload;
+  const { sessionId, selectedModels }: UpdateSessionModelsPayload = payload;
 
   logger.info(`[handleUpdateSessionModels] Attempting to update models for session ${sessionId} by user ${userId}.`, { payload });
 
@@ -53,7 +53,7 @@ export async function handleUpdateSessionModels(
   // Proceed with the update
   const { data: updatedSession, error: updateError } = await dbClient
     .from('dialectic_sessions')
-    .update({ selected_model_ids: selectedModelIds })
+    .update({ selected_model_ids: selectedModels.map(model => model.id) })
     .eq('id', sessionId)
     .select(
       `
@@ -107,15 +107,7 @@ export async function handleUpdateSessionModels(
       return { error: { message: 'Selected model details not found in catalog.', status: 500, code: 'DB_ERROR', details: `Missing display names for model ids: ${missingIds.join(', ')}` }, status: 500 };
     }
   }
-  const selectedModels: SelectedModels[] = [];
-  for (const id of ids) {
-    const displayName = displayNameById.get(id);
-    if (displayName === undefined) {
-      logger.error('[handleUpdateSessionModels] Selected model id missing from catalog (invariant)', { sessionId, id });
-      return { error: { message: 'Selected model details not found in catalog.', status: 500, code: 'DB_ERROR' }, status: 500 };
-    }
-    selectedModels.push({ id, displayName });
-  }
+
 
   const data: DialecticSession = {
     id: updatedSession.id,

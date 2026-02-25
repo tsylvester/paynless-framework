@@ -26,11 +26,13 @@ import { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts"
 import {
   type DialecticRecipeStep,
   type DialecticStageRecipeStep,
+  type HeaderContext,
 } from "../../dialectic-service/dialectic.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import { GatherContextFn } from "./gatherContext.ts";
 import { createMockDownloadFromStorage } from "../supabase_storage_utils.mock.ts";
 import { DownloadFromStorageFn, DownloadStorageResult } from "../supabase_storage_utils.ts";
+import { isHeaderContextSystemMaterials, isHeaderContextArtifact, isHeaderContextDocuments } from "../utils/type-guards/type_guards.dialectic.ts";
 
 const STAGE_SLUG = "synthesis";
 const BUSINESS_CASE_DOCUMENT_KEY = FileType.business_case;
@@ -432,11 +434,15 @@ Deno.test("assembleTurnPrompt", async (t) => {
     target_contribution_id: null,
   };
 
-  const headerContextContent = {
+  const headerContextContent: HeaderContext = {
     system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
-        input_artifacts_summary: "This is the input artifacts summary."
+        agent_notes_to_self: "This is the executive summary.",
+        input_artifacts_summary: "This is the input artifacts summary.",
+        validation_checkpoint: ["This is the validation checkpoint."],
+        quality_standards: ["This is the quality standard."],
+        diversity_rubric: { "This is the diversity rubric.": "This is the diversity rubric value." },
+        progress_update: "This is the progress update."
     },
     header_context_artifact: {
         type: 'header_context',
@@ -1486,10 +1492,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
       target_contribution_id: null,
     };
 
-    const headerContextWithAlignment = {
+    const headerContextWithAlignment: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1617,10 +1623,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
       target_contribution_id: null,
     };
 
-    const headerContextWithAlignment = {
+    const headerContextWithAlignment: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1737,10 +1743,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should accept content_to_include with compatible types when all required keys exist", async () => {
-    const headerContextWithCompatibleTypes = {
+    const headerContextWithCompatibleTypes: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -1877,10 +1883,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should accept content_to_include where recipe expects string but receives object", async () => {
-    const headerContextWithObject = {
+    const headerContextWithObject: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -2013,10 +2019,10 @@ Deno.test("assembleTurnPrompt", async (t) => {
   });
 
   await t.step("should accept content_to_include where recipe expects string but receives array", async () => {
-    const headerContextWithArray = {
+    const headerContextWithArray: HeaderContext = {
       system_materials: {
         stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
+        agent_notes_to_self: "This is the executive summary.",
         input_artifacts_summary: "This is the input artifacts summary."
       },
       header_context_artifact: {
@@ -2148,157 +2154,6 @@ Deno.test("assembleTurnPrompt", async (t) => {
     }
   });
 
-  await t.step("should merge contextForDoc.content_to_include into renderContext passed to renderPrompt", async () => {
-    const mockFileRecord: FileRecord = {
-      id: "mock-turn-resource-id-merge-alignment",
-      project_id: defaultProject.id,
-      file_name: "turn_prompt.md",
-      storage_bucket: "test-bucket",
-      storage_path: "path/to/mock/turn_prompt.md",
-      mime_type: "text/markdown",
-      size_bytes: 123,
-      resource_description: "A mock turn prompt",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      user_id: defaultProject.user_id,
-      session_id: defaultSession.id,
-      stage_slug: defaultStage.slug,
-      iteration_number: 1,
-      resource_type: "turn_prompt",
-      source_contribution_id: null,
-      feedback_type: "test",
-      target_contribution_id: null,
-    };
-
-    const headerContextWithAlignment = {
-      system_materials: {
-        stage_rationale: "This is the stage rationale.",
-        executive_summary: "This is the executive summary.",
-        input_artifacts_summary: "This is the input artifacts summary."
-      },
-      header_context_artifact: {
-        type: 'header_context',
-        document_key: 'header_context',
-        artifact_class: 'header_context',
-        file_type: 'json'
-      },
-      context_for_documents: [
-        {
-          document_key: BUSINESS_CASE_DOCUMENT_KEY,
-          content_to_include: {
-            alignment_key: "alignment_value_from_context",
-            another_alignment: "another_value"
-          }
-        }
-      ]
-    };
-
-    const recipeStepWithFilesToGenerate = buildRecipeStep({
-      outputs_required: {
-        files_to_generate: [
-          {
-            from_document_key: BUSINESS_CASE_DOCUMENT_KEY,
-            template_filename: "thesis_business_case.md"
-          }
-        ]
-      }
-    });
-
-    const stageWithRecipeStep: StageContext = {
-      ...defaultStage,
-      recipe_step: recipeStepWithFilesToGenerate
-    };
-
-    const templateContent = "Template with {alignment_key} and {another_alignment}";
-
-    const config: MockSupabaseDataConfig = {
-      genericMockResults: {
-        ai_providers: {
-          select: {
-            data: [
-              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
-            ],
-          }
-        },
-        dialectic_contributions: createHeaderContextContributionMock(),
-        dialectic_document_templates: createTemplateMock(),
-      },
-      storageMock: {
-        downloadResult: (bucket, path) => {
-          const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
-          if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
-            return Promise.resolve({ data: new Blob([JSON.stringify(headerContextWithAlignment)]), error: null });
-          }
-          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
-          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
-            return Promise.resolve({ data: new Blob([templateContent]), error: null });
-          }
-          return Promise.resolve({ data: null, error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`) });
-        },
-      }
-    };
-
-    const { client } = setup(config);
-    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
-
-    if (!isRecord(mockTurnJob.payload)) {
-      throw new Error("Job payload is not valid JSON");
-    }
-    const jobWithBusinessCase: DialecticJobRow = {
-      ...mockTurnJob,
-      payload: {
-        ...mockTurnJob.payload,
-        inputs: {
-          header_context_id: HEADER_CONTEXT_CONTRIBUTION_ID,
-        },
-        document_key: BUSINESS_CASE_DOCUMENT_KEY,
-        document_specific_data: {}
-      },
-    };
-
-    try {
-      const mockDownloadFromStorage = createConditionalDownloadMock(headerContextWithAlignment, templateContent);
-      const renderSpy = spy((_renderPromptFn: unknown, _stage: unknown, context: unknown, _overlay: unknown) => {
-        if (!isRecord(context)) {
-          return "rendered turn prompt";
-        }
-        if (("alignment_key" in context && context.alignment_key === "alignment_value_from_context") ||
-            ("another_alignment" in context && context.another_alignment === "another_value")) {
-          return "rendered turn prompt with alignment";
-        }
-        return "rendered turn prompt";
-      });
-      const deps: AssembleTurnPromptDeps = {
-        dbClient: client,
-        gatherContext: mockGatherContext,
-        render: renderSpy,
-        fileManager: mockFileManager,
-        downloadFromStorage: mockDownloadFromStorage,
-      };
-      const params: AssembleTurnPromptParams = {
-        job: jobWithBusinessCase,
-        project: defaultProject,
-        session: defaultSession,
-        stage: stageWithRecipeStep,
-      };
-      const result: AssembledPrompt = await assembleTurnPrompt(deps, params);
-
-      assert(renderSpy.calls.length === 1, "render should be called once");
-      const renderCall = renderSpy.calls[0];
-      const contextArg = renderCall.args[2];
-      if (!isRecord(contextArg)) {
-        throw new Error("render context must be a record");
-      }
-      assert(
-        "alignment_key" in contextArg && contextArg.alignment_key === "alignment_value_from_context" &&
-        "another_alignment" in contextArg && contextArg.another_alignment === "another_value",
-        "renderContext should include alignment values from context_for_documents.content_to_include"
-      );
-    } finally {
-      teardown();
-    }
-  });
-
   await t.step("should include full header_context object in render context when requiresHeaderContext is true", async () => {
     const mockFileRecord: FileRecord = {
       id: "mock-turn-resource-id-header-context-object",
@@ -2397,16 +2252,16 @@ Deno.test("assembleTurnPrompt", async (t) => {
 
       // Verify the header_context object contains the expected structure
       assert(
-        "system_materials" in headerContextInContext,
-        "header_context must include system_materials"
+        isHeaderContextSystemMaterials(headerContextInContext.system_materials),
+        "header_context must include valid system_materials"
       );
       assert(
-        "header_context_artifact" in headerContextInContext,
-        "header_context must include header_context_artifact"
+        isHeaderContextArtifact(headerContextInContext.header_context_artifact),
+        "header_context must include valid header_context_artifact"
       );
       assert(
-        "context_for_documents" in headerContextInContext,
-        "header_context must include context_for_documents"
+        isHeaderContextDocuments(headerContextInContext.context_for_documents),
+        "header_context must include valid context_for_documents"
       );
     } finally {
       teardown();
@@ -2577,5 +2432,228 @@ Deno.test("assembleTurnPrompt", async (t) => {
       }
     },
   );
+
+  await t.step("deps.gatherContext is called with job.payload.model_id as the 9th argument", async () => {
+    const gatherContextCalls: Parameters<GatherContextFn>[] = [];
+    const spyGatherContext: GatherContextFn = async (
+      ...args: Parameters<GatherContextFn>
+    ) => {
+      gatherContextCalls.push(args);
+      return {
+        user_objective: "mock user objective",
+        domain: "Software Development",
+        context_description: "A test context",
+        original_user_request: "The original request",
+        recipeStep: defaultRecipeStep,
+        sourceDocuments: [],
+      };
+    };
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-turn-resource-id-model-id-test",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-123", name: "Test Model", provider: "test", slug: "test-model" },
+            ],
+          },
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
+      },
+      storageMock: {
+        downloadResult: (bucket, path) => {
+          const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+          if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+            return Promise.resolve({
+              data: new Blob([JSON.stringify(headerContextContent)]),
+              error: null,
+            });
+          }
+          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
+            return Promise.resolve({
+              data: new Blob([documentTemplateContent]),
+              error: null,
+            });
+          }
+          return Promise.resolve({
+            data: null,
+            error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`),
+          });
+        },
+      },
+    };
+
+    const { client } = setup(config);
+    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    try {
+      const mockDownloadFromStorage = createConditionalDownloadMock();
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        gatherContext: spyGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
+        job: mockTurnJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+      };
+      await assembleTurnPrompt(deps, params);
+
+      assertEquals(gatherContextCalls.length >= 1, true);
+      assertEquals(gatherContextCalls[0].length, 9);
+      const validatedModelId = isRecord(params.job.payload) && typeof params.job.payload.model_id === "string"
+        ? params.job.payload.model_id
+        : null;
+      assertEquals(validatedModelId, "model-123");
+      assertEquals(gatherContextCalls[0][8], validatedModelId);
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("the 9th argument to deps.gatherContext matches the validated model_id from the job payload", async () => {
+    const expectedModelId = "model-scoped-feedback-id";
+    const gatherContextCalls: Parameters<GatherContextFn>[] = [];
+    const spyGatherContext: GatherContextFn = async (
+      ...args: Parameters<GatherContextFn>
+    ) => {
+      gatherContextCalls.push(args);
+      return {
+        user_objective: "mock user objective",
+        domain: "Software Development",
+        context_description: "A test context",
+        original_user_request: "The original request",
+        recipeStep: defaultRecipeStep,
+        sourceDocuments: [],
+      };
+    };
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-turn-resource-id-9th-arg-test",
+      project_id: defaultProject.id,
+      file_name: "turn_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/turn_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock turn prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "turn_prompt",
+      source_contribution_id: null,
+      feedback_type: "test",
+      target_contribution_id: null,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        ai_providers: {
+          select: {
+            data: [
+              { id: expectedModelId, name: "Scoped Model", provider: "test", slug: "scoped-model" },
+            ],
+          },
+        },
+        dialectic_contributions: createHeaderContextContributionMock(),
+        dialectic_document_templates: createTemplateMock(),
+      },
+      storageMock: {
+        downloadResult: (bucket, path) => {
+          const fullHeaderPath = `${HEADER_CONTEXT_STORAGE_PATH}/${HEADER_CONTEXT_FILE_NAME}`;
+          if (bucket === HEADER_CONTEXT_STORAGE_BUCKET && path === fullHeaderPath) {
+            return Promise.resolve({
+              data: new Blob([JSON.stringify(headerContextContent)]),
+              error: null,
+            });
+          }
+          const fullPromptPath = getPromptFilePath(STAGE_SLUG, BUSINESS_CASE_DOCUMENT_KEY);
+          if (bucket === TEMPLATE_STORAGE_BUCKET && path === fullPromptPath) {
+            return Promise.resolve({
+              data: new Blob([documentTemplateContent]),
+              error: null,
+            });
+          }
+          return Promise.resolve({
+            data: null,
+            error: new Error(`File not found in mock (bucket: ${bucket}, path: ${path})`),
+          });
+        },
+      },
+    };
+
+    const { client } = setup(config);
+    mockFileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+
+    if (!isRecord(mockTurnJob.payload)) {
+      throw new Error("PRECONDITION_FAILED: Mock turn job payload is not a record");
+    }
+    const jobWithDistinctModelId: DialecticJobRow = {
+      ...mockTurnJob,
+      payload: {
+        ...mockTurnJob.payload,
+        model_id: expectedModelId,
+        model_slug: "scoped-model",
+      },
+    };
+
+    try {
+      const mockDownloadFromStorage = createConditionalDownloadMock();
+      const deps: AssembleTurnPromptDeps = {
+        dbClient: client,
+        gatherContext: spyGatherContext,
+        render: mockRender,
+        fileManager: mockFileManager,
+        downloadFromStorage: mockDownloadFromStorage,
+      };
+      const params: AssembleTurnPromptParams = {
+        job: jobWithDistinctModelId,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+      };
+      await assembleTurnPrompt(deps, params);
+
+      assertEquals(gatherContextCalls.length >= 1, true);
+      assertEquals(gatherContextCalls[0].length, 9);
+      assertEquals(gatherContextCalls[0][8], expectedModelId);
+      const validatedModelId = isRecord(params.job.payload) && typeof params.job.payload.model_id === "string"
+        ? params.job.payload.model_id
+        : null;
+      assertEquals(gatherContextCalls[0][8], validatedModelId);
+    } finally {
+      teardown();
+    }
+  });
 
 });

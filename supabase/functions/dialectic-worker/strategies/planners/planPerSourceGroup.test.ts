@@ -908,7 +908,7 @@ Deno.test('planPerSourceGroup uses relevance-selected anchor for canonical path 
         ],
         outputs_required: {
             system_materials: {
-                executive_summary: '',
+                agent_notes_to_self: '',
                 input_artifacts_summary: '',
                 stage_rationale: '',
             },

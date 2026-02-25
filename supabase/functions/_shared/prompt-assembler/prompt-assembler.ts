@@ -70,7 +70,7 @@ export class PromptAssembler implements IPromptAssembler {
         this.assembleContinuationPromptFn = assembleContinuationPromptFn || assembleContinuationPrompt;
         this.gatherContextFn = gatherContextFn || gatherContext;
         this.renderFn = renderFn || render;
-        this.gatherInputsForStageFn = gatherInputsForStageFn || ((dbClient: SupabaseClient<Database>, downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>, stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number) => gatherInputsForStage(dbClient, downloadFromStorageFn, stage, project, session, iterationNumber));
+        this.gatherInputsForStageFn = gatherInputsForStageFn || ((dbClient: SupabaseClient<Database>, downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>, stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number, modelId?: string) => gatherInputsForStage(dbClient, downloadFromStorageFn, stage, project, session, iterationNumber, modelId));
         this.gatherContinuationInputsFn = gatherContinuationInputsFn || gatherContinuationInputs;
 
         const bucketFromEnv = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
@@ -84,7 +84,7 @@ export class PromptAssembler implements IPromptAssembler {
         const sourceContributionId = this.resolveSourceContributionId(options);
 
         if (options.job) {
-            if (options.continuationContent) {
+            if (typeof options.job.target_contribution_id === 'string' && options.job.target_contribution_id.length > 0) {
                 return this.assembleContinuationPrompt({
                     dbClient: this.dbClient,
                     fileManager: this.fileManager,
@@ -92,7 +92,6 @@ export class PromptAssembler implements IPromptAssembler {
                     project: options.project,
                     session: options.session,
                     stage: options.stage,
-                    continuationContent: options.continuationContent,
                     gatherContext: this.gatherContextFn,
                     sourceContributionId
                 });
@@ -229,6 +228,7 @@ export class PromptAssembler implements IPromptAssembler {
         stage: StageContext,
         projectInitialUserPrompt: string,
         iterationNumber: number,
+        modelId?: string,
     ): Promise<DynamicContextVariables> {
         return this.gatherContextFn(
             this.dbClient,
@@ -239,6 +239,7 @@ export class PromptAssembler implements IPromptAssembler {
             stage,
             projectInitialUserPrompt,
             iterationNumber,
+            modelId,
         );
     }
 
@@ -256,14 +257,15 @@ export class PromptAssembler implements IPromptAssembler {
         );
     }
 
-    private async _gatherInputsForStage(stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number) {
+    private async _gatherInputsForStage(stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number, modelId?: string) {
         return this.gatherInputsForStageFn(
             this.dbClient,
             this.downloadFromStorageFn,
             stage,
             project,
             session,
-            iterationNumber
+            iterationNumber,
+            modelId,
         );
     }
 

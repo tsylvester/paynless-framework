@@ -167,6 +167,22 @@ Deno.test("PromptAssembler", async (t) => {
                         return Promise.resolve({ data: mockContributions, error: null });
                     }
                 },
+                dialectic_project_resources: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isSeedPromptQuery = modifier.filters.some(f => f.column === 'resource_type' && f.value === 'seed_prompt');
+                        if (isSeedPromptQuery) {
+                            return Promise.resolve({
+                                data: [{
+                                    storage_path: 'path/to',
+                                    file_name: 'seed_prompt.md',
+                                    storage_bucket: 'test-bucket'
+                                }],
+                                error: null
+                            });
+                        }
+                        return Promise.resolve({ data: [], error: null });
+                    }
+                },
             },
             storageMock: {
                 downloadResult: (_bucket, path) => {
@@ -259,7 +275,23 @@ Deno.test("PromptAssembler", async (t) => {
                         // Return all chunks for the .contains query
                         return Promise.resolve({ data: mockChunks, error: null });
                     }
-                }
+                },
+                dialectic_project_resources: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isSeedPromptQuery = modifier.filters.some(f => f.column === 'resource_type' && f.value === 'seed_prompt');
+                        if (isSeedPromptQuery) {
+                            return Promise.resolve({
+                                data: [{
+                                    storage_path: 'path/to',
+                                    file_name: 'seed_prompt.md',
+                                    storage_bucket: 'test-bucket'
+                                }],
+                                error: null
+                            });
+                        }
+                        return Promise.resolve({ data: [], error: null });
+                    }
+                },
             },
             storageMock: {
                 downloadResult: (_bucket, path) => {
@@ -354,6 +386,22 @@ Deno.test("PromptAssembler", async (t) => {
                         return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
                     },
                 },
+                dialectic_project_resources: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isSeedPromptQuery = modifier.filters.some(f => f.column === 'resource_type' && f.value === 'seed_prompt');
+                        if (isSeedPromptQuery) {
+                            return Promise.resolve({
+                                data: [{
+                                    storage_path: stageRoot,
+                                    file_name: 'seed_prompt.md',
+                                    storage_bucket: bucket
+                                }],
+                                error: null
+                            });
+                        }
+                        return Promise.resolve({ data: [], error: null });
+                    }
+                },
             },
             storageMock: {
                 downloadResult: async (_bucket: string, path: string) => {
@@ -441,7 +489,23 @@ Deno.test("PromptAssembler", async (t) => {
                         }
                         return Promise.resolve({ data: [rootChunk, contChunk], error: null });
                     }
-                }
+                },
+                dialectic_project_resources: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isSeedPromptQuery = modifier.filters.some(f => f.column === 'resource_type' && f.value === 'seed_prompt');
+                        if (isSeedPromptQuery) {
+                            return Promise.resolve({
+                                data: [{
+                                    storage_path: stageRootPath,
+                                    file_name: 'seed_prompt.md',
+                                    storage_bucket: 'test-bucket'
+                                }],
+                                error: null
+                            });
+                        }
+                        return Promise.resolve({ data: [], error: null });
+                    }
+                },
             },
             storageMock: {
                 // Only return data when the CORRECT seed prompt path (no _work) is requested
@@ -449,19 +513,40 @@ Deno.test("PromptAssembler", async (t) => {
                     if (path === expectedSeedPromptPath) {
                         return Promise.resolve({ data: new Blob(["seed content"]), error: null });
                     }
+                    if (path.includes('root_chunk.md')) {
+                        return Promise.resolve({ data: new Blob(["root chunk content"]), error: null });
+                    }
+                    if (path.includes('cont.md')) {
+                        return Promise.resolve({ data: new Blob(["cont content"]), error: null });
+                    }
                     return Promise.resolve({ data: null, error: new Error('Wrong path requested') });
                 }
             }
         });
 
         try {
-            await assertRejects(
-                async () => {
-                    await gatherContinuationInputs(client, downloadFn, rootContributionId);
-                },
-                Error,
-                'Failed to download content for chunk'
-            );
+            // This test verifies that:
+            // 1. The seed_prompt is stored at the FIRST STAGE root (e.g., 1_thesis/) for any process template
+            // 2. The seed_prompt database record does NOT have _work in its storage_path
+            // 3. The function uses ONLY the database path (not the contribution's storage_path)
+            // 4. Even if contributions are stored in _work, the seed_prompt is always at the first stage root
+            
+            const messages = await gatherContinuationInputs(client, downloadFn, rootContributionId);
+            
+            // Verify the seed prompt was retrieved from the correct database path
+            // The database path should be at the first stage root (1_thesis/), NOT in _work
+            // Expected: seed (user) + root (assistant) + "Please continue." (user) + cont (assistant) = 4 messages
+            assertEquals(messages.length, 4, 'Should return seed + root + "Please continue." + cont messages');
+            assertEquals(messages[0].role, 'user', 'First message should be user (seed prompt)');
+            assertEquals(messages[0].content, 'seed content', 'Seed prompt retrieved from first stage root (no _work)');
+            assertEquals(messages[1].role, 'assistant', 'Second message should be assistant (root)');
+            assertEquals(messages[2].role, 'user', 'Third message should be user (continuation prompt)');
+            assertEquals(messages[2].content, 'Please continue.', 'Third message should be continuation prompt');
+            assertEquals(messages[3].role, 'assistant', 'Fourth message should be assistant (cont)');
+            
+            // Verify the database path used was the first stage root (no _work)
+            // The storage mock only returns data for expectedSeedPromptPath (first stage root)
+            // If the function had tried to use wrongWorkPath (with _work), the download would have failed
         } finally {
             teardown();
         }
@@ -534,7 +619,23 @@ Deno.test("PromptAssembler", async (t) => {
                         // Return scrambled list to ensure client-side sort is applied
                         return Promise.resolve({ data: scrambled, error: null });
                     }
-                }
+                },
+                dialectic_project_resources: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isSeedPromptQuery = modifier.filters.some(f => f.column === 'resource_type' && f.value === 'seed_prompt');
+                        if (isSeedPromptQuery) {
+                            return Promise.resolve({
+                                data: [{
+                                    storage_path: 'path/to',
+                                    file_name: 'seed_prompt.md',
+                                    storage_bucket: 'test-bucket'
+                                }],
+                                error: null
+                            });
+                        }
+                        return Promise.resolve({ data: [], error: null });
+                    }
+                },
             },
             storageMock: {
                 downloadResult: (_bucket, path) => {
@@ -621,9 +722,33 @@ Deno.test("PromptAssembler", async (t) => {
                         return Promise.resolve({ data: [], error: new Error(`Query was called with incorrect stage slug`) });
                     }
                 },
+                dialectic_project_resources: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isSeedPromptQuery = modifier.filters.some(f => f.column === 'resource_type' && f.value === 'seed_prompt');
+                        if (isSeedPromptQuery) {
+                            return Promise.resolve({
+                                data: [{
+                                    storage_path: 'path/to',
+                                    file_name: 'seed_prompt.md',
+                                    storage_bucket: 'test-bucket'
+                                }],
+                                error: null
+                            });
+                        }
+                        return Promise.resolve({ data: [], error: null });
+                    }
+                },
             },
             storageMock: {
-                downloadResult: () => Promise.resolve({ data: new Blob(["seed content"]), error: null })
+                downloadResult: (_bucket, path) => {
+                    if (path.includes('seed_prompt.md')) {
+                        return Promise.resolve({ data: new Blob(["seed content"]), error: null });
+                    }
+                    if (path.includes('root_chunk.md')) {
+                        return Promise.resolve({ data: new Blob(["root content"]), error: null });
+                    }
+                    return Promise.resolve({ data: new Blob(["default content"]), error: null });
+                }
             }
         };
 
@@ -673,7 +798,23 @@ Deno.test("PromptAssembler", async (t) => {
                         // Simulate no other chunks being found.
                         return Promise.resolve({ data: [], error: null });
                     }
-                }
+                },
+                dialectic_project_resources: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isSeedPromptQuery = modifier.filters.some(f => f.column === 'resource_type' && f.value === 'seed_prompt');
+                        if (isSeedPromptQuery) {
+                            return Promise.resolve({
+                                data: [{
+                                    storage_path: 'path/to',
+                                    file_name: 'seed_prompt.md',
+                                    storage_bucket: 'test-bucket'
+                                }],
+                                error: null
+                            });
+                        }
+                        return Promise.resolve({ data: [], error: null });
+                    }
+                },
             },
             storageMock: {
                 downloadResult: (_bucket, path) => {
@@ -801,6 +942,22 @@ Deno.test("PromptAssembler", async (t) => {
                         return Promise.resolve({ data: [rootChunk], error: null });
                     }
                 },
+                dialectic_project_resources: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isSeedPromptQuery = modifier.filters.some(f => f.column === 'resource_type' && f.value === 'seed_prompt');
+                        if (isSeedPromptQuery) {
+                            return Promise.resolve({
+                                data: [{
+                                    storage_path: 'path/to',
+                                    file_name: 'seed_prompt.md',
+                                    storage_bucket: 'test-bucket'
+                                }],
+                                error: null
+                            });
+                        }
+                        return Promise.resolve({ data: [], error: null });
+                    }
+                },
             },
         };
 
@@ -886,7 +1043,23 @@ Deno.test("PromptAssembler", async (t) => {
                         }
                         return Promise.resolve({ data: mockChunks, error: null });
                     }
-                }
+                },
+                dialectic_project_resources: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isSeedPromptQuery = modifier.filters.some(f => f.column === 'resource_type' && f.value === 'seed_prompt');
+                        if (isSeedPromptQuery) {
+                            return Promise.resolve({
+                                data: [{
+                                    storage_path: 'path/to',
+                                    file_name: 'seed_prompt.md',
+                                    storage_bucket: 'test-bucket'
+                                }],
+                                error: null
+                            });
+                        }
+                        return Promise.resolve({ data: [], error: null });
+                    }
+                },
             },
             storageMock: {
                 downloadResult: (_bucket, path) => {

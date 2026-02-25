@@ -8,6 +8,7 @@ import {
   AssembledPrompt,
   DynamicContextVariables,
   RenderFn,
+  AssemblerSourceDocument,
 } from "./prompt-assembler.interface.ts";
 import { type GatherContextFn } from "./gatherContext.ts";
 import {
@@ -306,9 +307,10 @@ Deno.test("assemblePlannerPrompt", async (t) => {
           stageArgForRender.system_prompts!.prompt_text,
           plannerPromptText,
         );
-        // assemblePlannerPrompt adds context_for_documents to the context before rendering
+        // assemblePlannerPrompt adds context_for_documents and removes raw sourceDocuments
+        const { sourceDocuments: _removed, ...contextWithoutRawDocs } = mockDynamicContext;
         const expectedContext = {
-          ...mockDynamicContext,
+          ...contextWithoutRawDocs,
           context_for_documents: {
             _instructions: "You must fill in the content_to_include objects in the context_for_documents array with specific alignment values. These alignment details ensure cross-document coordination:\n\n1. Fill in each content_to_include object with shared terminology, consistent values, and coordinated decisions that will be used across all documents in this step group.\n2. Produce a header_context artifact with completed content_to_include objects containing these alignment values.\n3. Ensure all documents in the step group will use these alignment details when they are generated.\n\nThe context_for_documents array below contains empty content_to_include object models that you must fill in with specific alignment values.",
             documents: [
@@ -1934,5 +1936,469 @@ Deno.test("assemblePlannerPrompt", async (t) => {
     );
 
     teardown();
+  });
+
+  await t.step("should create dot-notation template variables from sourceDocuments with header and documentKey", async () => {
+    const mockSourceDocuments: AssemblerSourceDocument[] = [
+      {
+        id: "doc-biz-case",
+        type: "document",
+        content: "# Business Case\n\nThis proposal addresses market need X.",
+        metadata: {
+          displayName: "Thesis Business Case",
+          header: "Thesis Documents",
+          modelName: "claude-3-opus",
+          documentKey: FileType.business_case,
+        },
+      },
+    ];
+
+    const mockContextWithDocs: DynamicContextVariables = {
+      ...defaultMockContext,
+      sourceDocuments: mockSourceDocuments,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+
+    const { client, fileManager, renderFn } = setup(config, mockContextWithDocs);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-dot-notation",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+    const mockGatherFn = spy(async () => mockContextWithDocs);
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
+        gatherContext: mockGatherFn,
+        render: renderFn,
+      });
+
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const contextArg = renderCallArgs[2];
+
+      assert(isRecord(contextArg), "Context argument must be a record");
+      assert(
+        'thesis_documents.business_case' in contextArg,
+        "Context must include dot-notation key 'thesis_documents.business_case'",
+      );
+      const bizCaseValue = contextArg['thesis_documents.business_case'];
+      assert(typeof bizCaseValue === 'string', "Dot-notation variable must be a string");
+      assert(
+        bizCaseValue.includes("market need X"),
+        "Dot-notation variable must contain the document content",
+      );
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should create multiple dot-notation variables for different documentKeys under same header", async () => {
+    const mockSourceDocuments: AssemblerSourceDocument[] = [
+      {
+        id: "doc-1",
+        type: "document",
+        content: "Business case content",
+        metadata: {
+          displayName: "Thesis Business Case",
+          header: "Thesis Documents",
+          modelName: "claude-3-opus",
+          documentKey: FileType.business_case,
+        },
+      },
+      {
+        id: "doc-2",
+        type: "document",
+        content: "Feature spec content",
+        metadata: {
+          displayName: "Thesis Feature Spec",
+          header: "Thesis Documents",
+          modelName: "gemini-1.5-pro",
+          documentKey: FileType.feature_spec,
+        },
+      },
+      {
+        id: "doc-3",
+        type: "document",
+        content: "Technical approach content",
+        metadata: {
+          displayName: "Thesis Technical Approach",
+          header: "Thesis Documents",
+          modelName: "claude-3-opus",
+          documentKey: FileType.technical_approach,
+        },
+      },
+      {
+        id: "doc-4",
+        type: "document",
+        content: "Success metrics content",
+        metadata: {
+          displayName: "Thesis Success Metrics",
+          header: "Thesis Documents",
+          modelName: "gemini-1.5-pro",
+          documentKey: FileType.success_metrics,
+        },
+      },
+    ];
+
+    const mockContextWithDocs: DynamicContextVariables = {
+      ...defaultMockContext,
+      sourceDocuments: mockSourceDocuments,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+
+    const { client, fileManager, renderFn } = setup(config, mockContextWithDocs);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-multi-docs",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+    const mockGatherFn = spy(async () => mockContextWithDocs);
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
+        gatherContext: mockGatherFn,
+        render: renderFn,
+      });
+
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const contextArg = renderCallArgs[2];
+
+      assert(isRecord(contextArg), "Context argument must be a record");
+      
+      assert(
+        'thesis_documents.business_case' in contextArg,
+        "Context must include 'thesis_documents.business_case'",
+      );
+      assert(
+        'thesis_documents.feature_spec' in contextArg,
+        "Context must include 'thesis_documents.feature_spec'",
+      );
+      assert(
+        'thesis_documents.technical_approach' in contextArg,
+        "Context must include 'thesis_documents.technical_approach'",
+      );
+      assert(
+        'thesis_documents.success_metrics' in contextArg,
+        "Context must include 'thesis_documents.success_metrics'",
+      );
+
+      assertEquals(contextArg['thesis_documents.business_case'], "Business case content");
+      assertEquals(contextArg['thesis_documents.feature_spec'], "Feature spec content");
+      assertEquals(contextArg['thesis_documents.technical_approach'], "Technical approach content");
+      assertEquals(contextArg['thesis_documents.success_metrics'], "Success metrics content");
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should create section-level truthy variable when sourceDocuments exist with that header", async () => {
+    const mockSourceDocuments: AssemblerSourceDocument[] = [
+      {
+        id: "feedback-1",
+        type: "feedback",
+        content: "Feedback on the business case",
+        metadata: {
+          displayName: "Thesis Feedback",
+          header: "Thesis Feedback",
+          documentKey: FileType.business_case,
+        },
+      },
+    ];
+
+    const mockContextWithDocs: DynamicContextVariables = {
+      ...defaultMockContext,
+      sourceDocuments: mockSourceDocuments,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+
+    const { client, fileManager, renderFn } = setup(config, mockContextWithDocs);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-truthy",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+    const mockGatherFn = spy(async () => mockContextWithDocs);
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
+        gatherContext: mockGatherFn,
+        render: renderFn,
+      });
+
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const contextArg = renderCallArgs[2];
+
+      assert(isRecord(contextArg), "Context argument must be a record");
+      assert(
+        'thesis_feedback' in contextArg,
+        "Context must include section-level truthy variable 'thesis_feedback'",
+      );
+      const truthyValue = contextArg['thesis_feedback'];
+      assert(
+        truthyValue !== null && truthyValue !== undefined && truthyValue !== '',
+        "Section-level variable must be truthy to enable conditional sections",
+      );
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should throw error when documentKey is undefined", async () => {
+    const mockSourceDocuments: AssemblerSourceDocument[] = [
+      {
+        id: "doc-no-key",
+        type: "document",
+        content: "Content without a specific document key",
+        metadata: {
+          displayName: "Generic Document",
+          header: "Thesis Documents",
+          modelName: "claude-3-opus",
+          documentKey: undefined,
+        },
+      },
+    ];
+
+    const mockContextWithDocs: DynamicContextVariables = {
+      ...defaultMockContext,
+      sourceDocuments: mockSourceDocuments,
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+
+    const { client, fileManager, renderFn } = setup(config, mockContextWithDocs);
+    const mockGatherFn = spy(async () => mockContextWithDocs);
+
+    try {
+      await assertRejects(
+        async () => {
+          await assemblePlannerPrompt({
+            dbClient: client,
+            fileManager,
+            job: mockPlannerJob,
+            project: defaultProject,
+            session: defaultSession,
+            stage: defaultStage,
+            projectInitialUserPrompt: defaultProject.initial_user_prompt,
+            gatherContext: mockGatherFn,
+            render: renderFn,
+          });
+        },
+        Error,
+        "missing required metadata.documentKey",
+        "assemblePlannerPrompt must throw error when sourceDocument has header but no documentKey",
+      );
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("should not create dot-notation keys when sourceDocuments is empty", async () => {
+    const mockContextNoDocs: DynamicContextVariables = {
+      ...defaultMockContext,
+      sourceDocuments: [],
+    };
+
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        system_prompts: {
+          select: { data: [{ prompt_text: plannerPromptText, document_template_id: null }], error: null },
+        },
+        ai_providers: {
+          select: {
+            data: [
+              { id: "model-claude-3-opus", name: "Claude 3 Opus", provider: "anthropic", slug: "claude-3-opus" },
+            ],
+          }
+        }
+      },
+    };
+
+    const { client, fileManager, renderFn } = setup(config, mockContextNoDocs);
+
+    const mockFileRecord: FileRecord = {
+      id: "mock-planner-resource-id-empty",
+      project_id: defaultProject.id,
+      file_name: "claude-3-opus_1_GeneratePlan_planner_prompt.md",
+      storage_bucket: "test-bucket",
+      storage_path: "path/to/mock/planner_prompt.md",
+      mime_type: "text/markdown",
+      size_bytes: 123,
+      resource_description: "A mock planner prompt",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: defaultProject.user_id,
+      session_id: defaultSession.id,
+      stage_slug: defaultStage.slug,
+      iteration_number: 1,
+      resource_type: "planner_prompt",
+      source_contribution_id: null,
+    };
+
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+    const mockGatherFn = spy(async () => mockContextNoDocs);
+
+    try {
+      await assemblePlannerPrompt({
+        dbClient: client,
+        fileManager,
+        job: mockPlannerJob,
+        project: defaultProject,
+        session: defaultSession,
+        stage: defaultStage,
+        projectInitialUserPrompt: defaultProject.initial_user_prompt,
+        gatherContext: mockGatherFn,
+        render: renderFn,
+      });
+
+      assertSpyCalls(renderFn, 1);
+      const renderCallArgs = renderFn.calls[0].args;
+      const contextArg = renderCallArgs[2];
+
+      assert(isRecord(contextArg), "Context argument must be a record");
+      
+      // When sourceDocuments is empty, no dot-notation keys should be created
+      const keys = Object.keys(contextArg);
+      const dotNotationKeys = keys.filter(key => key.includes('.'));
+      assertEquals(
+        dotNotationKeys.length,
+        0,
+        "No dot-notation keys should exist when sourceDocuments is empty",
+      );
+
+      // Raw sourceDocuments array should not be passed to render
+      assert(
+        !('sourceDocuments' in contextArg) || !Array.isArray(contextArg['sourceDocuments']),
+        "Raw sourceDocuments array should not be passed to render",
+      );
+    } finally {
+      teardown();
+    }
   });
 });

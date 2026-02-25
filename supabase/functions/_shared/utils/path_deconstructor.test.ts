@@ -377,9 +377,11 @@ const constructDeconstructTestCases: Array<{
       sessionId: 'session-yy-ufb',
       iteration: 0,
       stageSlug: 'synthesis',
+      originalStoragePath: `yy-ufb/session_${generateShortId('session-yy-ufb')}/iteration_0/3_synthesis/documents`,
+      originalBaseName: 'doc_synthesis',
     },
     checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
-    expectedFixedFileNameInPath: 'user_feedback_synthesis.md' // constructor sanitizes stageSlug for filename
+    expectedFixedFileNameInPath: 'doc_synthesis_feedback.md',
   },
   {
     name: 'synthesis',
@@ -647,7 +649,7 @@ const deconstructReconstructTestCases: DeconstructReconstructTestCase[] = [
   },
   {
     name: 'user_feedback',
-    samplePath: 'proj_zeta/session_sess002/iteration_0/2_antithesis/user_feedback_antithesis.md',
+    samplePath: 'proj_zeta/session_sess002/iteration_0/2_antithesis/documents/doc_antithesis_feedback.md',
     expectedFileType: FileType.UserFeedback,
     expectedContextParts: {
       originalProjectId: 'proj_zeta',
@@ -743,6 +745,13 @@ deconstructReconstructTestCases.forEach((tc) => {
       reconstructionContext.originalFileName = tc.dbOriginalFileName;
     }
 
+    if (reconstructionContext.fileType === FileType.UserFeedback) {
+      reconstructionContext.originalStoragePath = dirPart
+        .replace(tc.expectedContextParts.originalProjectId!, newProjectId)
+        .replace(tc.expectedContextParts.shortSessionId!, generateShortId(newFullSessionId));
+      reconstructionContext.originalBaseName = (deconstructedInfo.parsedFileNameFromPath ?? '').replace(/_feedback\.md$/, '');
+    }
+
     const reconstructedPath = constructStoragePath(reconstructionContext);
 
     const originalFullPath = `${dirPart}/${filePart}`;
@@ -751,9 +760,7 @@ deconstructReconstructTestCases.forEach((tc) => {
     // Replace variable parts for a structural comparison
     const originalComparable = originalFullPath
         .replace(tc.expectedContextParts.originalProjectId!, 'PROJECT_ID')
-        
-    const reconstructedComparable = reconstructedFullPath
-        .replace(reconstructionContext.projectId, 'PROJECT_ID')
+    const reconstructedComparable = reconstructedFullPath.replace(reconstructionContext.projectId, 'PROJECT_ID');
 
     if (tc.expectedContextParts.shortSessionId && reconstructionContext.sessionId) {
         const originalWithSession = originalComparable.replace(tc.expectedContextParts.shortSessionId!, 'SESSION_ID');
@@ -1082,6 +1089,30 @@ Deno.test('[path_deconstructor] extracts documentKey for other JSON-only artifac
     assertEquals(info.stageDirName, mappedStageDir, `stageDirName mismatch for ${testCase.description}`);
     assertEquals(info.error, undefined, `error should be undefined for ${testCase.description}`);
   }
+});
+
+Deno.test('[path_deconstructor] direct - user_feedback alongside original document', () => {
+  const projectId = 'proj-uf-doc';
+  const sessionId = 'sess-uf-doc-uuid';
+  const shortSessionId = generateShortId(sessionId);
+  const iteration = 1;
+  const stageSlug = 'antithesis';
+  const mappedStageDir = mapStageSlugToDirName(stageSlug);
+  const storageDir = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/documents`;
+  const originalBaseName = 'doc_antithesis';
+  const filePart = `${originalBaseName}_feedback.md`;
+
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir, fileName: filePart });
+
+  assertEquals(info.originalProjectId, projectId);
+  assertEquals(info.shortSessionId, shortSessionId);
+  assertEquals(info.iteration, iteration);
+  assertEquals(info.stageDirName, mappedStageDir);
+  assertEquals(info.stageSlug, stageSlug);
+  assertEquals(info.parsedFileNameFromPath, filePart);
+  assertEquals(info.fileTypeGuess, FileType.UserFeedback);
+  assertEquals(info.documentKey, FileType.UserFeedback);
+  assertEquals(info.error, undefined);
 });
 
 

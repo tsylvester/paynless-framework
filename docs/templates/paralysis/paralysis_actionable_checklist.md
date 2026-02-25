@@ -18,15 +18,13 @@
 
 {{#section:milestone_reference}}
 ## Milestone Reference
-- ID: {milestone_reference.id}
-- Phase: {milestone_reference.phase}
-- Dependencies: {milestone_reference.dependencies}
+{milestone_reference}
 {{/section:milestone_reference}}
 
-{{#section:steps}}
+{{#section:nodes}}
 ## Steps
-{steps}
-{{/section:steps}}
+{nodes}
+{{/section:nodes}}
 
 {{#section:_extra_content}}
 # Additional Content

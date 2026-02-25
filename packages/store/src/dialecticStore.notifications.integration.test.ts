@@ -82,6 +82,7 @@ describe('Notification handling integration tests - optional fields', () => {
                 state.stageRunProgress[progressKey] = {
                     documents: {},
                     stepStatuses: {},
+                    jobProgress: {},
                 };
             });
 
@@ -394,6 +395,7 @@ describe('Notification handling integration tests - optional fields', () => {
                 state.stageRunProgress[progressKey] = {
                     documents: {},
                     stepStatuses: {},
+                    jobProgress: {},
                 };
             });
 
@@ -557,6 +559,7 @@ describe('Notification handling integration tests - optional fields', () => {
                 state.stageRunProgress[progressKey] = {
                     documents: {},
                     stepStatuses: {},
+                    jobProgress: {},
                 };
             });
 

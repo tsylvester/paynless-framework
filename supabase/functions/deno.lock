@@ -2391,6 +2391,8 @@
     "https://esm.sh/isows@1.0.7?target=denonext": "31b7306eada995ba18e29841d688a42bcc0166caf302e1b183b6d2a7c649f262",
     "https://esm.sh/js-tiktoken@1.0.10": "5a9344e24d6a976f72441a50497adbf810e11d2a4b42c25f0fb8ef6cb8b57b2d",
     "https://esm.sh/js-tiktoken@1.0.10/denonext/js-tiktoken.mjs": "c06e644642150a5a6a73c81213a92d6fbbda4f0473922444eb128834a0e19fb1",
+    "https://esm.sh/jsonc-parser@3.2.0": "e273a61c695f10c465e7ccbe6d32e76b81ad578831b80f3d0df870ec6e08f2c0",
+    "https://esm.sh/jsonc-parser@3.2.0/denonext/jsonc-parser.mjs": "9e0f6f8f99515e213b1f24abb871cd9eb2384e224438fe945d7a8e85dfceda70",
     "https://esm.sh/tr46@0.0.3/denonext/tr46.mjs": "5753ec0a99414f4055f0c1f97691100f13d88e48a8443b00aebb90a512785fa2",
     "https://esm.sh/tr46@0.0.3?target=denonext": "19cb9be0f0d418a0c3abb81f2df31f080e9540a04e43b0f699bce1149cba0cbb",
     "https://esm.sh/webidl-conversions@3.0.1/denonext/webidl-conversions.mjs": "54b5c2d50a294853c4ccebf9d5ed8988c94f4e24e463d84ec859a866ea5fafec",

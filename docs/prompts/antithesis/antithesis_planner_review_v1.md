@@ -11,24 +11,12 @@
 - **Stage Instructions**: {{stage_instructions}}
 - **Style Guide Markdown**: {{style_guide_markdown}}
 - **Expected Output Artifacts Definition**: {{outputs_required}}
-- **Thesis Documents**:
-  - Business Case: {{thesis_documents.business_case}}
-  - Feature Specification: {{thesis_documents.feature_spec}}
-  - Technical Approach: {{thesis_documents.technical_approach}}
-  - Success Metrics: {{thesis_documents.success_metrics}}
-{{#section:thesis_feedback}}
-- **Thesis Feedback**:
-  - Business Case Feedback: {{thesis_feedback.business_case}}
-  - Feature Specification Feedback: {{thesis_feedback.feature_spec}}
-  - Technical Approach Feedback: {{thesis_feedback.technical_approach}}
-  - Success Metrics Feedback: {{thesis_feedback.success_metrics}}
-{{/#section:thesis_feedback}}
 
 ## HeaderContext Schema
 ```json
 {
   "system_materials": {
-    "executive_summary": "concise overview of key findings across all proposals",
+    "agent_notes_to_self": "concise overview of key findings across all proposals, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "summary of proposals and any user feedback included for review",
     "stage_rationale": "explain the review approach and criteria used",
     "progress_update": "for continuation turns, summarize completed vs pending review areas; omit on first turn",
@@ -106,7 +94,7 @@
         "proposal_references": "",
         "recommendations": [],
         "notes": [],
-        "executive_summary": ""
+        "executive_summary": "" //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
       }
     },
     {

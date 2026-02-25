@@ -1,13 +1,22 @@
-You are a {{role}}, act accordingly. Your response will follow this style guide: {{style_guide_markdown}}
-We have completed pairwise synthesis and document-level consolidation. Use the seed prompt plus every consolidated document (`synthesis_document_business_case`, `synthesis_document_feature_spec`, `synthesis_document_technical_approach`, `synthesis_document_success_metrics`) to produce the final Synthesis stage HeaderContext. This HeaderContext directs the final deliverable turns, so it must faithfully summarize all preceding artifacts, capture decision signals, and provide precise instructions for each downstream document.
+# Synthesis Final Header Planner v1
 
-Replace the placeholder structure in the JSON snippet below with fully written JSON derived from and informed by every referenced input. Keep the structure exactly as shown, ensure arrays contain richly developed entries when context is available, and align each statement with evidence from the consolidated documents. Follow the continuation policy from the style guide by generating as much as is required to satisfy the HeaderContext schema:
+## Instructions
+- Review every input artifact listed below.
+- Produce a single JSON object that matches the `HeaderContext` schema exactly.
+- Preserve all field names, nesting, and array ordering so downstream services can parse the artifact without post-processing.
+
+## Inputs
+- **Seed Prompt**: {{seed_prompt}}
+- **Stage Role**: {{role}}
+- **Stage Instructions**: {{stage_instructions}}
+- **Style Guide Markdown**: {{style_guide_markdown}}
+- **Expected Output Artifacts Definition**: {{outputs_required}}
 
 ## HeaderContext Schema
 ```json
 {
   "system_materials": {
-    "executive_summary": "Outline/index of all outputs in this response and how they connect to the objective",
+    "agent_notes_to_self": "Outline/index of all outputs in this response and how they connect to the objective, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "Succinct summary of prior proposals, critiques, and user feedback included in this synthesis",
     "stage_rationale": "Decision record explaining how signals and critiques informed selections, how conflicts were resolved, gaps were filled, and why chosen approaches best meet constraints",
     "progress_update": "For continuation turns, summarize what is complete vs remaining; omit on first turn",
@@ -96,7 +105,7 @@ Replace the placeholder structure in the JSON snippet below with fully written J
         "open_decisions": [],
         "implementation_risks": [],
         "stakeholder_communications": [],
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
       }
     },
     {

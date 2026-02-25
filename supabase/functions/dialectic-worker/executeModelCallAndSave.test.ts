@@ -59,6 +59,17 @@ import { createMockJobContextParams } from './JobContext.mock.ts';
 import { IRagService } from '../_shared/services/rag_service.interface.ts';
 import { IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
 import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
+import { DownloadFromStorageFn, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
+import { createMockDownloadFromStorage } from '../_shared/supabase_storage_utils.mock.ts';
+
+const encoded = new TextEncoder().encode('test content');
+const buffer = new ArrayBuffer(encoded.length);
+new Uint8Array(buffer).set(encoded);
+
+const mockDownloadFromStorage: DownloadFromStorageFn = createMockDownloadFromStorage({ 
+  mode: 'success', 
+  data: buffer });
+
 // Local helpers for arranging tests
 export const buildPromptPayload = (overrides: Partial<PromptConstructionPayload> = {}): PromptConstructionPayload => ({
   systemInstruction: undefined,
@@ -90,7 +101,7 @@ export function createMockJob(payload: DialecticJobPayload, overrides: Partial<D
         throw new Error("Test payload is not valid JSON. Please check the mock payload object.");
     }
   
-    const baseJob: DialecticJobRow = {
+    const baseJob: Tables<'dialectic_generation_jobs'> = {
         id: 'job-id-123',
         session_id: 'session-id-123',
         stage_slug: 'thesis',
@@ -135,6 +146,20 @@ export const testPayload: DialecticExecuteJobPayload = {
     }
   };
   
+export const mockSessionRow: Tables<'dialectic_sessions'> = {
+    id: 'session-456',
+    project_id: 'project-abc',
+    session_description: 'A mock session',
+    user_input_reference_url: null,
+    iteration_count: 1,
+    selected_model_ids: ['model-def'],
+    status: 'in-progress',
+    associated_chat_id: 'chat-789',
+    current_stage_id: 'stage-1',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
 export const mockSessionData: DialecticSession = {
     id: 'session-456',
     project_id: 'project-abc',
@@ -147,7 +172,7 @@ export const mockSessionData: DialecticSession = {
     current_stage_id: 'stage-1',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  };
+};
   
 export const mockProviderData: SelectedAiProvider = {
       id: 'model-def',
@@ -175,7 +200,7 @@ export const mockFullProviderData: Tables<'ai_providers'> = {
     updated_at: new Date().toISOString(),
   }
   
-export const mockContribution: DialecticContributionRow = {
+export const mockContribution: Tables<'dialectic_contributions'> = {
       id: 'contrib-123',
       session_id: 'session-456',
       stage: 'thesis',
@@ -226,6 +251,7 @@ export const getMockDeps = (
         countTokens?: CountTokensFn;
         ragService?: IRagService;
         embeddingClient?: IEmbeddingClient;
+        downloadFromStorage?: DownloadFromStorageFn;
     },
 ): IExecuteJobContext => {
       // Create base mock params using the shared helper
@@ -247,6 +273,7 @@ export const getMockDeps = (
           ...(overrides?.countTokens ? { countTokens: overrides.countTokens } : {}),
           ...(overrides?.ragService ? { ragService: overrides.ragService } : {}),
           ...(overrides?.embeddingClient ? { embeddingClient: overrides.embeddingClient } : {}),
+          ...(overrides?.downloadFromStorage ? { downloadFromStorage: overrides.downloadFromStorage } : {}),
       };
       
       // Create root context using factory
@@ -576,6 +603,25 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
         config: limitedConfigObject,
     };
 
+    const mockOversizeDocument: Tables<'dialectic_project_resources'> = {
+        id: 'doc-oversize',
+        stage_slug: 'thesis',
+        project_id: 'project-abc',
+        session_id: 'session-456',
+        iteration_number: 1,
+        resource_type: 'rendered_document',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
+        file_name: 'modelA_1_rendered_document.md',
+        mime_type: 'text/markdown',
+        storage_bucket: 'test-bucket',
+        size_bytes: 2000,
+        user_id: 'user-789',
+        source_contribution_id: null,
+        resource_description: null,
+    };
+
     const { client: dbClient, clearAllStubs } = setupMockClient({
         'ai_providers': {
             select: { data: [mockLimitedProvider], error: null }
@@ -584,21 +630,7 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
         'dialectic_project_resources': {
             select: () => {
                 return Promise.resolve({
-                    data: [
-                        {
-                            id: 'doc-oversize',
-                            content: 'X'.repeat(2000),
-                            stage_slug: 'thesis',
-                            project_id: 'project-abc',
-                            session_id: 'session-456',
-                            iteration_number: 1,
-                            resource_type: 'rendered_document',
-                            created_at: new Date().toISOString(),
-                            // Provide separate directory path and file name so identity can be parsed
-                            storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
-                            file_name: 'modelA_1_rendered_document.md',
-                        }
-                    ],
+                    data: [mockOversizeDocument],
                     error: null,
                 });
             },
@@ -608,43 +640,11 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
 
     await t.step('should throw ContextWindowError if prompt exceeds token limit and cannot be compressed', async () => {
         let errorThrown = false;
+
         try {
             const largePromptConstructionPayload: PromptConstructionPayload = {
                 conversationHistory: [],
-                resourceDocuments: [{
-                    id: 'doc-1',
-                    content: "This content is intentionally very long to exceed the maximum token limit set in the mock provider config and force an error.",
-                    stage: 'thesis',
-                    // Add all required properties to satisfy the SourceDocument type
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                    user_id: 'user-789',
-                    session_id: 'session-1',
-                    iteration_number: 1,
-                    target_contribution_id: 'contribution-1',
-                    document_relationships: null,
-                    mime_type: 'text/plain',
-                    citations: [],
-                    contribution_type: 'source_document',
-                    edit_version: 1,
-                    error: null,
-                    file_name: 'test.txt',
-                    is_latest_edit: true,
-                    model_id: 'model-1',
-                    model_name: 'test-model',
-                    original_model_contribution_id: 'contribution-1',
-                    processing_time_ms: 100,
-                    prompt_template_id_used: null,
-                    raw_response_storage_path: null,
-                    seed_prompt_url: null,
-                    size_bytes: 100,
-                    storage_bucket: 'test-bucket',
-                    storage_path: 'test/path',
-                    tokens_used_input: 10,
-                    tokens_used_output: 20,
-                    is_header: false,
-                    source_prompt_resource_id: null,
-                }],
+                resourceDocuments: [],
                 currentUserPrompt: "This is a test prompt.",
             };
 
@@ -653,9 +653,15 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
                 // This content is long enough to ensure the token count remains > 10 after compression
                 mockContextResult: 'This is the compressed but still oversized content that will not fit.',
             });
-            const testDeps: IExecuteJobContext = getMockDeps({ 
+            // The gathered document must have large content so the real countTokens exceeds the 10-token limit
+            const oversizeContent = new TextEncoder().encode('A'.repeat(2000));
+            const oversizeBuffer = new ArrayBuffer(oversizeContent.byteLength);
+            new Uint8Array(oversizeBuffer).set(oversizeContent);
+            const oversizeDownload = createMockDownloadFromStorage({ mode: 'success', data: oversizeBuffer });
+            const testDeps: IExecuteJobContext = getMockDeps({
                 ragService: mockRagService,
                 countTokens: countTokens, // Use the real token counter
+                downloadFromStorage: oversizeDownload,
             });
             
             const params: ExecuteModelCallAndSaveParams = {
@@ -665,8 +671,7 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
                 job: createMockJob(testPayload),
                 projectOwnerUserId: 'user-789',
                 providerDetails: mockProviderData,
-                // Assembler docs are ignored; executor gathers via inputsRequired
-                promptConstructionPayload: { ...largePromptConstructionPayload, resourceDocuments: [] },
+                promptConstructionPayload: largePromptConstructionPayload,
                 sessionData: mockSessionData,
                 compressionStrategy: getSortedCompressionCandidates,
                 inputsRelevance: [],
@@ -692,7 +697,7 @@ Deno.test('executeModelCallAndSave - source_group validation is planner-aware: c
     // Consolidation jobs with per_model granularity strategy use source_group = null to signal creation of a new lineage root.
     // The validation should check the recipe step's granularity_strategy and allow null for per_model jobs.
 
-    const mockStage = {
+    const mockStage: Tables<'dialectic_stages'> = {
         id: 'stage-1',
         slug: 'synthesis',
         display_name: 'Synthesis',
@@ -704,7 +709,7 @@ Deno.test('executeModelCallAndSave - source_group validation is planner-aware: c
         created_at: new Date().toISOString(),
     };
 
-    const mockInstance = {
+    const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
         id: 'instance-1',
         stage_id: 'stage-1',
         template_id: 'template-1',
@@ -714,7 +719,7 @@ Deno.test('executeModelCallAndSave - source_group validation is planner-aware: c
         updated_at: new Date().toISOString(),
     };
 
-    const mockRecipeStep = {
+    const mockRecipeStep: Tables<'dialectic_recipe_template_steps'> = {
         id: 'recipe-step-1',
         template_id: 'template-1',
         step_number: 3,
@@ -942,44 +947,10 @@ Deno.test('executeModelCallAndSave - should accept PromptConstructionPayload and
     const deps = getMockDeps();
     const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
 
-    const mockResourceDocument: SourceDocument = {
-        id: 'doc-1',
-        content: 'Some document content',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        user_id: 'user-789',
-        session_id: 'session-1',
-        iteration_number: 1,
-        target_contribution_id: 'contribution-1',
-        document_relationships: null,
-        mime_type: 'text/plain',
-        citations: [],
-        contribution_type: 'source_document',
-        edit_version: 1,
-        error: null,
-        file_name: 'test.txt',
-        is_latest_edit: true,
-        model_id: 'model-1',
-        model_name: 'test-model',
-        original_model_contribution_id: 'contribution-1',
-        processing_time_ms: 100,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        storage_bucket: 'test-bucket',
-        storage_path: 'test/path',
-        tokens_used_input: 10,
-        tokens_used_output: 20,
-        stage: 'thesis',
-        is_header: false,
-        source_prompt_resource_id: null,
-    };
-
     const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
         systemInstruction: "You are a helpful assistant.",
         conversationHistory: [{ role: 'assistant', content: 'Previous message' }],
-        resourceDocuments: [mockResourceDocument],
+        resourceDocuments: [],
         currentUserPrompt: "This is the current user prompt.",
     });
 
@@ -1217,32 +1188,44 @@ Deno.test('executeModelCallAndSave - sets and forwards max_tokens_to_generate us
 });
 
 Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are forwarded unchanged (distinct from messages)', async () => {
+  const mockResourceDoc1: Tables<'dialectic_project_resources'> = {
+    id: 'doc-r1',
+    stage_slug: 'thesis',
+    project_id: 'project-abc',
+    session_id: 'session-456',
+    iteration_number: 1,
+    resource_type: 'rendered_document',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
+    file_name: 'modelA_1_rendered_document.md',
+    mime_type: 'text/markdown',
+    storage_bucket: 'test-bucket',
+    size_bytes: 100,
+    user_id: 'user-789',
+    source_contribution_id: null,
+    resource_description: null,
+  };
+
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     'dialectic_project_resources': {
       select: () => {
         return Promise.resolve({
-          data: [
-            {
-              id: 'doc-r1',
-              content: 'Doc X content',
-              stage_slug: 'thesis',
-              project_id: 'project-abc',
-              session_id: 'session-456',
-              iteration_number: 1,
-              resource_type: 'rendered_document',
-              created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
-              file_name: 'modelA_1_rendered_document.md',
-            },
-          ],
+          data: [mockResourceDoc1],
           error: null,
         });
       },
     },
   });
 
-  const deps = getMockDeps();
+  // Configure download mock to return known content for the gathered document
+  const encodedDocContent = new TextEncoder().encode('Rendered document content');
+  const docContentBuffer = new ArrayBuffer(encodedDocContent.byteLength);
+  new Uint8Array(docContentBuffer).set(encodedDocContent);
+  const mockDownloadForTest = createMockDownloadFromStorage({ mode: 'success', data: docContentBuffer });
+
+  const deps = getMockDeps({ downloadFromStorage: mockDownloadForTest });
   // Spy on adapter to inspect sent request
   const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
 
@@ -1288,41 +1271,6 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
     return msgCount + docCount + 1; // +1 base to avoid zero
   });
 
-  // One resource document; should be distinct from messages
-  const doc: SourceDocument = {
-    id: 'doc-r1',
-    content: 'Doc X content',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    user_id: 'user-789',
-    session_id: 'session-1',
-    iteration_number: 1,
-    target_contribution_id: 'contrib-1',
-    document_relationships: null,
-    mime_type: 'text/plain',
-    citations: [],
-    contribution_type: 'source_document',
-    edit_version: 1,
-    error: null,
-    file_name: 'doc.txt',
-    is_latest_edit: true,
-    model_id: 'model-1',
-    model_name: 'Mock',
-    original_model_contribution_id: null,
-    processing_time_ms: 0,
-    prompt_template_id_used: null,
-    raw_response_storage_path: null,
-    seed_prompt_url: null,
-    size_bytes: 1,
-    storage_bucket: 'b',
-    storage_path: 'p',
-    tokens_used_input: 0,
-    tokens_used_output: 0,
-    stage: 'thesis',
-    is_header: false,
-    source_prompt_resource_id: null,
-  };
-
   const promptConstructionPayload: PromptConstructionPayload = {
     systemInstruction: 'SYS',
     conversationHistory: [{ role: 'user', content: 'HIST' }],
@@ -1348,74 +1296,52 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
   const sent = callUnifiedAISpy.calls[0].args[0];
   assert(isChatApiRequest(sent), 'Adapter should receive a ChatApiRequest');
   assert(Array.isArray(sent.resourceDocuments) && sent.resourceDocuments.length === 1, 'resourceDocuments must be forwarded to adapter');
-  assertEquals(sent.resourceDocuments[0].content, 'Doc X content');
+  assertEquals(sent.resourceDocuments[0].content, 'Rendered document content');
   assert(Array.isArray(sent.messages), 'messages must be an array');
 
   countTokensStub.restore();
 });
 
 Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resourceDocuments and walletId', async () => {
+  const mockResourceDoc2: Tables<'dialectic_project_resources'> = {
+    id: 'doc-xyz',
+    stage_slug: 'thesis',
+    project_id: 'project-abc',
+    session_id: 'session-456',
+    iteration_number: 1,
+    resource_type: 'rendered_document',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
+    file_name: 'modelB_1_rendered_document.md',
+    mime_type: 'text/markdown',
+    storage_bucket: 'test-bucket',
+    size_bytes: 100,
+    user_id: 'user-789',
+    source_contribution_id: null,
+    resource_description: null,
+  };
+
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     'dialectic_project_resources': {
       select: () => {
         return Promise.resolve({
-          data: [
-            {
-              id: 'doc-xyz',
-              content: 'Doc content for sizing and send',
-              stage_slug: 'thesis',
-              project_id: 'project-abc',
-              session_id: 'session-456',
-              iteration_number: 1,
-              resource_type: 'rendered_document',
-              created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
-              file_name: 'modelB_1_rendered_document.md',
-            },
-          ],
+          data: [mockResourceDoc2],
           error: null,
         });
       },
     },
   });
 
-  const deps = getMockDeps();
-  const callUnifiedAISpy = spyCallModel(deps);
+  // Configure download mock to return known content for the gathered document
+  const encodedDoc2Content = new TextEncoder().encode('Full ChatApiRequest doc content');
+  const doc2ContentBuffer = new ArrayBuffer(encodedDoc2Content.byteLength);
+  new Uint8Array(doc2ContentBuffer).set(encodedDoc2Content);
+  const mockDownloadForDoc2 = createMockDownloadFromStorage({ mode: 'success', data: doc2ContentBuffer });
 
-  const mockResourceDocument: SourceDocument = {
-    id: 'doc-xyz',
-    content: 'Doc content for sizing and send',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    user_id: 'user-789',
-    session_id: 'session-1',
-    iteration_number: 1,
-    target_contribution_id: 'contribution-1',
-    document_relationships: null,
-    mime_type: 'text/plain',
-    citations: [],
-    contribution_type: 'source_document',
-    edit_version: 1,
-    is_header: false,
-    source_prompt_resource_id: null,
-    error: null,
-    file_name: 'doc.txt',
-    is_latest_edit: true,
-    model_id: 'model-1',
-    model_name: 'test-model',
-    original_model_contribution_id: 'contribution-1',
-    processing_time_ms: 100,
-    prompt_template_id_used: null,
-    raw_response_storage_path: null,
-    seed_prompt_url: null,
-    size_bytes: 100,
-    storage_bucket: 'test-bucket',
-    storage_path: 'test/path',
-    tokens_used_input: 10,
-    tokens_used_output: 20,
-    stage: 'thesis',
-  };
+  const deps = getMockDeps({ downloadFromStorage: mockDownloadForDoc2 });
+  const callUnifiedAISpy = spyCallModel(deps);
 
   const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
     systemInstruction: 'System goes here',
@@ -1442,10 +1368,10 @@ Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resour
   // Message and messages preserved
   assertEquals(sent.message, 'User says hello');
   assertExists(sent.messages);
-  // Resource documents should be present distinctly on the request
+  // Resource documents should be present distinctly on the request (gathered via inputsRequired + storage download)
   assertExists(sent.resourceDocuments);
   assertEquals(sent.resourceDocuments.length, 1);
-  assertEquals(sent.resourceDocuments[0].content, 'Doc content for sizing and send');
+  assertEquals(sent.resourceDocuments[0].content, 'Full ChatApiRequest doc content');
 });
 
 Deno.test('executeModelCallAndSave - identity: sized payload equals sent request (non-oversized)', async () => {
@@ -1455,44 +1381,10 @@ Deno.test('executeModelCallAndSave - identity: sized payload equals sent request
     }
   });
 
-  const mockResourceDocument: SourceDocument = {
-    id: 'doc-ident-1',
-    content: 'Doc for identity test',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    user_id: 'user-789',
-    session_id: 'session-1',
-    iteration_number: 1,
-    target_contribution_id: 'contribution-1',
-    document_relationships: null,
-    mime_type: 'text/plain',
-    citations: [],
-    contribution_type: 'source_document',
-    edit_version: 1,
-    error: null,
-    file_name: 'ident.txt',
-    is_latest_edit: true,
-    model_id: 'model-1',
-    model_name: 'test-model',
-    original_model_contribution_id: 'contribution-1',
-    processing_time_ms: 100,
-    prompt_template_id_used: null,
-    raw_response_storage_path: null,
-    seed_prompt_url: null,
-    size_bytes: 100,
-    storage_bucket: 'test-bucket',
-    storage_path: 'test/path',
-    tokens_used_input: 10,
-    tokens_used_output: 20,
-    stage: 'thesis',
-    is_header: false,
-    source_prompt_resource_id: null,
-  };
-
   const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
     systemInstruction: 'SYS: identity',
     conversationHistory: [{ role: 'assistant', content: 'Hi (history)' }],
-    resourceDocuments: [mockResourceDocument],
+    resourceDocuments: [],
     currentUserPrompt: 'User prompt for identity',
   });
 
@@ -1539,25 +1431,31 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
       output_token_cost_rate: 0.002,
     },
   };
+  const mockResourceDoc3: Tables<'dialectic_project_resources'> = {
+    id: 'doc-for-compress',
+    stage_slug: 'thesis',
+    project_id: 'project-abc',
+    session_id: 'session-456',
+    iteration_number: 1,
+    resource_type: 'rendered_document',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
+    file_name: 'modelC_1_business_case.md',
+    mime_type: 'text/markdown',
+    storage_bucket: 'test-bucket',
+    size_bytes: 100,
+    user_id: 'user-789',
+    source_contribution_id: null,
+    resource_description: null,
+  };
+
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [limitedProvider], error: null } },
     'dialectic_project_resources': {
       select: () => {
         return Promise.resolve({
-          data: [
-            {
-              id: 'doc-for-compress',
-              content: 'Some longish content to be summarized',
-              stage_slug: 'thesis',
-              project_id: 'project-abc',
-              session_id: 'session-456',
-              iteration_number: 1,
-              resource_type: 'rendered_document',
-              created_at: new Date().toISOString(),
-              storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
-              file_name: 'modelC_1_business_case.md',
-            },
-          ],
+          data: [mockResourceDoc3],
           error: null,
         });
       },
@@ -1567,11 +1465,6 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
   // Ensure RAG returns something so the loop can iterate
   const mockRag = new MockRagService();
   mockRag.setConfig({ mockContextResult: 'compressed summary' });
-  const deps: IExecuteJobContext = getMockDeps({ 
-    tokenWalletService: createMockTokenWalletService({ getBalance: () => Promise.resolve('10') }).instance,
-    ragService: mockRag,
-  });
-  const callUnifiedAISpy = spyCallModel(deps);
 
   // Craft payload with enough content/history to produce at least one candidate
   const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
@@ -1581,50 +1474,23 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
       { role: 'assistant', content: 'History B' },
       { role: 'user', content: 'Please continue.' },
     ],
-    resourceDocuments: [
-      {
-        id: 'doc-for-compress',
-        content: 'Some longish content to be summarized',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        user_id: 'user-789',
-        session_id: 'session-1',
-        iteration_number: 1,
-        target_contribution_id: 'contribution-1',
-        document_relationships: null,
-        mime_type: 'text/plain',
-        citations: [],
-        contribution_type: 'source_document',
-        edit_version: 1,
-        error: null,
-        file_name: 'doc.txt',
-        is_latest_edit: true,
-        model_id: 'model-1',
-        model_name: 'test-model',
-        original_model_contribution_id: 'contribution-1',
-        processing_time_ms: 100,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        storage_bucket: 'test-bucket',
-        storage_path: 'test/path',
-        tokens_used_input: 10,
-        tokens_used_output: 20,
-        stage: 'thesis',
-        is_header: false,
-        source_prompt_resource_id: null,
-      },
-    ],
+    resourceDocuments: [],
     currentUserPrompt: 'User for compression identity',
   });
+
+  // Inject download mock so gathered resource doc has actual content
+  const compressDocEncoded = new TextEncoder().encode('Business case document content for compression test');
+  const compressDocBuffer = new ArrayBuffer(compressDocEncoded.byteLength);
+  new Uint8Array(compressDocBuffer).set(compressDocEncoded);
+  const compressDownloadMock = createMockDownloadFromStorage({ mode: 'success', data: compressDocBuffer });
 
   // Statefully force first count oversized, second count fits
   const sizedPayloads: unknown[] = [];
   let callIdx = 0;
-  const depsWithCount: IExecuteJobContext = getMockDeps({ 
+  const depsWithCount: IExecuteJobContext = getMockDeps({
     tokenWalletService: createMockTokenWalletService({ getBalance: () => Promise.resolve('10') }).instance,
     ragService: mockRag,
+    downloadFromStorage: compressDownloadMock,
     countTokens: (depsArg: CountTokensDeps, payloadArg: CountableChatPayload) => {
       sizedPayloads.push(payloadArg);
       callIdx += 1;
@@ -1636,8 +1502,15 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
     promptConstructionPayload,
     // Ensure executor gathers this doc and compression can operate
     inputsRequired: [ { type: 'document', document_key: FileType.business_case, required: true, slug: 'thesis' } ],
-    // Provide a simple compression strategy that yields a candidate so loop runs
-    compressionStrategy: async () => [ { id: 'doc-for-compress', sourceType: 'resource', content: 'Some longish content to be summarized', score: 1 } as unknown as any ],
+    // Provide a compression strategy that yields candidates from gathered documents
+    compressionStrategy: async (_db, _deps, documents) => documents.map((d, i) => ({
+      id: d.id,
+      content: d.content,
+      sourceType: 'document',
+      originalIndex: i,
+      valueScore: 0.5,
+      effectiveScore: 0.5,
+    })),
   });
   const callUnifiedAISpyWithCount = spyCallModel(depsWithCount);
   await executeModelCallAndSave(params);
@@ -1701,13 +1574,32 @@ Deno.test('executeModelCallAndSave - should correctly pass source_prompt_resourc
 Deno.test('executeModelCallAndSave - updates source_contribution_id on originating prompt', async () => {
     const sourcePromptResourceId = 'prompt-id-123';
 
+    const mockPromptResource: Tables<'dialectic_project_resources'> = {
+        id: sourcePromptResourceId,
+        stage_slug: null,
+        project_id: 'project-abc',
+        session_id: 'session-456',
+        iteration_number: null,
+        resource_type: 'prompt',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        storage_path: 'path/to/prompt',
+        file_name: 'prompt.txt',
+        mime_type: 'text/plain',
+        storage_bucket: 'test-bucket',
+        size_bytes: 100,
+        user_id: 'user-789',
+        source_contribution_id: null,
+        resource_description: null,
+    };
+
     const { client: dbClient, spies, clearAllStubs } = setupMockClient({
         'ai_providers': {
             select: { data: [mockFullProviderData], error: null },
         },
         'dialectic_project_resources': {
             update: {
-                data: [{ id: sourcePromptResourceId }],
+                data: [mockPromptResource],
                 error: null,
                 count: 1,
                 status: 200,
@@ -1779,42 +1671,6 @@ Deno.test('executeModelCallAndSave - updates source_contribution_id on originati
     clearAllStubs?.();
 });
 
-
-Deno.test('executeModelCallAndSave - rendering hygiene: final message has no placeholders; systemInstruction is passthrough only', async () => {
-  const { client: dbClient } = setupMockClient({
-    'ai_providers': {
-      select: { data: [mockFullProviderData], error: null }
-    }
-  });
-
-  const deps = getMockDeps();
-  const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
-
-  // Provide a prompt with an unrendered placeholder; worker should not send placeholders in final message
-  const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
-    // Intentionally omit systemInstruction to assert passthrough-only (no synthesis)
-    systemInstruction: undefined,
-    conversationHistory: [ { role: 'assistant', content: 'Welcome back.' } ],
-    resourceDocuments: [],
-    currentUserPrompt: 'Hello {name}, please summarize the report.'
-  });
-
-  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { promptConstructionPayload });
-  await executeModelCallAndSave(params);
-
-  assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
-  const firstArg = callUnifiedAISpy.calls[0].args[0];
-  assert(isChatApiRequest(firstArg), 'First argument to callUnifiedAIModel should be a ChatApiRequest');
-
-  // RED: assert no placeholders remain in the final message
-  const sentMessage = firstArg.message;
-  assert(typeof sentMessage === 'string', 'Final message must be a string');
-  assert(!sentMessage.includes('{') && !sentMessage.includes('}'), 'Final message must not contain placeholder braces');
-
-  // Assert systemInstruction is passthrough-only (undefined when not provided)
-  assertEquals(firstArg.systemInstruction, undefined, 'systemInstruction should be undefined when not provided (no synthesis)');
-});
-
 Deno.test('when the model produces malformed JSON, it should trigger a retry, not a continuation', async () => {
     // Arrange
     const { client: dbClient, clearAllStubs } = setupMockClient({
@@ -1864,64 +1720,108 @@ Deno.test('executeModelCallAndSave - gathers artifacts across contributions/reso
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     'dialectic_contributions': {
       select: (_state: any) => {
-        const mk = (id: string, content: string, key: string) => ({
+        const mk = (id: string, key: string): Tables<'dialectic_contributions'> => ({
           id,
-          content,
           stage: 'thesis',
-          project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
-          type: 'document',
+          contribution_type: 'document',
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          storage_bucket: 'test-bucket',
           storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
           file_name: `model-collect_1_${key}.md`,
+          mime_type: 'text/markdown',
+          size_bytes: 100,
+          user_id: 'user-789',
+          model_id: null,
+          model_name: null,
+          is_header: false,
+          is_latest_edit: true,
+          edit_version: 1,
+          citations: null,
+          document_relationships: null,
+          error: null,
+          original_model_contribution_id: null,
+          processing_time_ms: null,
+          prompt_template_id_used: null,
+          raw_response_storage_path: null,
+          seed_prompt_url: null,
+          target_contribution_id: null,
+          tokens_used_input: null,
+          tokens_used_output: null,
+          source_prompt_resource_id: null,
         });
         const data = [
-          mk('c1', 'C1', 'business_case'),
-          mk('c2', 'C2', 'feature_spec'),
+          mk('c1', 'business_case'),
+          mk('c2', 'feature_spec'),
         ];
         return { data, error: null };
       },
     },
     'dialectic_project_resources': {
       select: (_state: any) => {
-        const mk = (id: string, content: string, key: string) => ({
+        const mk = (id: string, key: string): Tables<'dialectic_project_resources'> => ({
           id,
-          content,
           stage_slug: 'thesis',
           project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
           resource_type: 'rendered_document',
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          storage_bucket: 'test-bucket',
           storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
           file_name: `model-collect_1_${key}.md`,
+          mime_type: 'text/markdown',
+          size_bytes: 100,
+          user_id: 'user-789',
+          source_contribution_id: null,
+          resource_description: null,
         });
-        const data = [mk('r1', 'R1', 'seed_prompt'), mk('r2', 'R2', 'business_case'), mk('r3', 'R3', 'feature_spec')];
+        const data = [mk('r1', 'seed_prompt'), mk('r2', 'business_case'), mk('r3', 'feature_spec')];
         return { data, error: null };
       },
     },
     'dialectic_feedback': {
       select: (_state: any) => {
-        const mk = (id: string, content: string, key: string) => ({
+        const mk = (id: string, key: string): Tables<'dialectic_feedback'> => ({
           id,
-          content,
           stage_slug: 'thesis',
           project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
-          type: 'feedback',
+          feedback_type: 'feedback',
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          storage_bucket: 'test-bucket',
           storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
           file_name: `model-collect_1_${key}.md`,
+          mime_type: 'text/markdown',
+          size_bytes: 100,
+          user_id: 'user-789',
+          target_contribution_id: null,
+          resource_description: null,
         });
-        const data = [mk('f1', 'F1', 'business_case')];
+        const data = [mk('f1', 'business_case')];
         return { data, error: null };
       },
     },
   });
 
-  const deps: IExecuteJobContext = getMockDeps({ countTokens: () => 10 }); // non-oversized
+  // Sequential download mock returning per-document content in inputsRequired gathering order
+  // Order: business_case(resource r2), feature_spec(resource r3), seed_prompt(resource r1), business_case(feedback f1)
+  let gatherDownloadIdx = 0;
+  const gatherContentByOrder = ['R2', 'R3', 'R1', 'F1'];
+  const gatherDownloadFn: DownloadFromStorageFn = async () => {
+    const text = gatherContentByOrder[gatherDownloadIdx] ?? `doc-${gatherDownloadIdx}`;
+    gatherDownloadIdx++;
+    const enc = new TextEncoder().encode(text);
+    const buf = new ArrayBuffer(enc.length);
+    new Uint8Array(buf).set(enc);
+    return { data: buf, mimeType: 'text/markdown', error: null };
+  };
+  const deps: IExecuteJobContext = getMockDeps({ countTokens: () => 10, downloadFromStorage: gatherDownloadFn }); // non-oversized
   const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
 
   const params: ExecuteModelCallAndSaveParams = {
@@ -1978,59 +1878,90 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
     'dialectic_contributions': {
       select: (_state: any) => {
-        const mk = (id: string, content: string, key: string, stage: string) => ({
+        const mk = (id: string, key: string, stage: string): Tables<'dialectic_contributions'> => ({
           id,
-          content,
           stage,
-          project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
-          type: 'document',
+          contribution_type: 'document',
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          storage_bucket: 'test-bucket',
           storage_path: `project-abc/session_session-456/iteration_1/${stage}/documents`,
           file_name: `modelM_1_${key}.md`,
+          mime_type: 'text/markdown',
+          size_bytes: 100,
+          user_id: 'user-789',
+          model_id: null,
+          model_name: null,
+          is_header: false,
+          is_latest_edit: true,
+          edit_version: 1,
+          citations: null,
+          document_relationships: null,
+          error: null,
+          original_model_contribution_id: null,
+          processing_time_ms: null,
+          prompt_template_id_used: null,
+          raw_response_storage_path: null,
+          seed_prompt_url: null,
+          target_contribution_id: null,
+          tokens_used_input: null,
+          tokens_used_output: null,
+          source_prompt_resource_id: null,
         });
         const data = [
-          mk('c-match', 'CM', 'business_case', 'thesis'),
-          mk('c-skip', 'CS', 'risk_register', 'other-stage'),
+          mk('c-match', 'business_case', 'thesis'),
+          mk('c-skip', 'risk_register', 'other-stage'),
         ];
         return { data, error: null };
       },
     },
     'dialectic_project_resources': {
       select: (_state: any) => {
-        const mk = (id: string, content: string, key: string) => ({
+        const mk = (id: string, key: string): Tables<'dialectic_project_resources'> => ({
           id,
-          content,
           stage_slug: 'thesis',
           project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
           resource_type: 'rendered_document',
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          storage_bucket: 'test-bucket',
           storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
           file_name: `modelM_1_${key}.md`,
+          mime_type: 'text/markdown',
+          size_bytes: 100,
+          user_id: 'user-789',
+          source_contribution_id: null,
+          resource_description: null,
         });
-        const data = [mk('r-match', 'RM', 'business_case')];
+        const data = [mk('r-match', 'business_case')];
         return { data, error: null };
       },
     },
     'dialectic_feedback': {
       select: (_state: any) => {
-        const mk = (id: string, content: string, key: string) => ({
+        const mk = (id: string, key: string): Tables<'dialectic_feedback'> => ({
           id,
-          content,
           stage_slug: 'thesis',
           project_id: 'project-abc',
           session_id: 'session-456',
           iteration_number: 1,
-          type: 'feedback',
+          feedback_type: 'feedback',
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          storage_bucket: 'test-bucket',
           storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
           file_name: `modelM_1_${key}.md`,
+          mime_type: 'text/markdown',
+          size_bytes: 100,
+          user_id: 'user-789',
+          target_contribution_id: null,
           resource_description: { document_key: key },
         });
-        const data = [mk('f-match', 'FM', FileType.UserFeedback)];
+        const data = [mk('f-match', FileType.UserFeedback)];
         return { data, error: null };
       },
     },
@@ -2080,56 +2011,78 @@ Deno.test('executeModelCallAndSave - scoped selection includes only artifacts ma
 
 // On successful EXECUTE completion, insert a RENDER job with correct payload
 Deno.test('executeModelCallAndSave - schedules RENDER job after success with renderer identity payload', async () => {
-  const mockStage = {
-    id: 'stage-1',
-    slug: DialecticStageSlug.Thesis,
-    display_name: 'Test Stage',
-    description: null,
-    default_system_prompt_id: null,
-    recipe_template_id: 'template-1',
-    active_recipe_instance_id: 'instance-1',
-    expected_output_template_ids: [],
-    created_at: new Date().toISOString(),
-  };
+    const mockStage: Tables<'dialectic_stages'> = {
+        id: 'stage-1',
+        slug: DialecticStageSlug.Thesis,
+        display_name: 'Test Stage',
+        description: null,
+        default_system_prompt_id: null,
+        recipe_template_id: 'template-1',
+        active_recipe_instance_id: 'instance-1',
+        expected_output_template_ids: [],
+        created_at: new Date().toISOString(),
+    };
 
-  const mockInstance = {
-    id: 'instance-1',
-    stage_id: 'stage-1',
-    template_id: 'template-1',
-    is_cloned: false,
-    cloned_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
+    const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
+        id: 'instance-1',
+        stage_id: 'stage-1',
+        template_id: 'template-1',
+        is_cloned: false,
+        cloned_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
 
-  const mockStep = {
-    id: 'step-1',
-    template_id: 'template-1',
-    step_number: 1,
-    step_key: 'execute_business_case',
-    step_slug: 'execute-business-case',
-    step_name: 'Execute Business Case',
-    step_description: null,
-    job_type: 'EXECUTE',
-    prompt_type: 'Turn',
-    prompt_template_id: null,
-    output_type: 'business_case',
-    granularity_strategy: 'per_source_document',
-    inputs_required: [],
-    inputs_relevance: [],
-    outputs_required: {
-      files_to_generate: [
-        {
-          from_document_key: 'business_case',
-          template_filename: 'thesis_business_case.md',
+    const mockStep: Tables<'dialectic_recipe_template_steps'> = {
+        id: 'step-1',
+        template_id: 'template-1',
+        step_number: 1,
+        step_key: 'execute_business_case',
+        step_slug: 'execute-business-case',
+        step_name: 'Execute Business Case',
+        step_description: null,
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        prompt_template_id: null,
+        output_type: 'business_case',
+        granularity_strategy: 'per_source_document',
+        inputs_required: [],
+        inputs_relevance: [],
+        outputs_required: {
+          files_to_generate: [
+            {
+              from_document_key: 'business_case',
+              template_filename: 'thesis_business_case.md',
+            },
+          ],
         },
-      ],
-    },
-    parallel_group: null,
-    branch_key: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
+        parallel_group: null,
+        branch_key: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+  const mockRenderJob: Tables<'dialectic_generation_jobs'> = {
+        id: 'render-job-456', 
+        job_type: 'RENDER', 
+        status: 'pending',
+        session_id: 'session-456',
+        stage_slug: DialecticStageSlug.Thesis,
+        iteration_number: 1,
+        parent_job_id: 'job-id-123',
+        payload: {},
+        is_test_job: false,
+        user_id: 'user-789',
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        attempt_count: 0,
+        max_retries: 3,
+        prerequisite_job_id: null,
+        target_contribution_id: null,
+        error_details: null,
+    };
 
   const { client: dbClient, spies, clearAllStubs } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
@@ -2138,28 +2091,7 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
     'dialectic_recipe_template_steps': { select: { data: [mockStep], error: null } },
     'dialectic_generation_jobs': { 
         insert: { 
-            data: [{ 
-                id: 'render-job-456', 
-                job_type: 'RENDER', 
-                status: 'pending',
-                session_id: 'session-456',
-                stage_slug: DialecticStageSlug.Thesis,
-                iteration_number: 1,
-                parent_job_id: 'job-id-123',
-                payload: {},
-                is_test_job: false,
-                user_id: 'user-789',
-                created_at: new Date().toISOString(),
-                started_at: null,
-                completed_at: null,
-                results: null,
-                attempt_count: 0,
-                max_retries: 3,
-                prerequisite_job_id: null,
-                target_contribution_id: null,
-                terminal_state_notification_sent: false,
-                error_details: null,
-            }], 
+            data: [mockRenderJob], 
             error: null 
         } 
     },

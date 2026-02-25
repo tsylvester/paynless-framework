@@ -31,6 +31,8 @@ import {
   StageRecipeResponse,
   ListStageDocumentsPayload,
   ListStageDocumentsResponse,
+  GetStageDocumentFeedbackPayload,
+  GetStageDocumentFeedbackResponse,
   SubmitStageDocumentFeedbackPayload,
   GetAllStageProgressPayload,
   GetAllStageProgressResult,
@@ -77,12 +79,13 @@ import { handleUpdateSessionModels } from './updateSessionModels.ts';
 import { listStageDocuments } from './listStageDocuments.ts';
 import { submitStageDocumentFeedback, type SubmitStageDocumentFeedbackDeps } from './submitStageDocumentFeedback.ts';
 import { getAllStageProgress } from './getAllStageProgress.ts';
+import { getStageDocumentFeedback } from './getStageDocumentFeedback.ts';
 import { callUnifiedAIModel } from './callModel.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
-import type { DialecticServiceResponse, DialecticFeedbackRow, SaveContributionEditFn, SaveContributionEditContext } from './dialectic.interface.ts';
+import type { DialecticServiceResponse, DialecticFeedbackRow, SaveContributionEditFn, SaveContributionEditContext, GetStageDocumentFeedbackDeps } from './dialectic.interface.ts';
 import type { Database } from '../types_db.ts';
 
 console.log("dialectic-service function started");
@@ -186,6 +189,7 @@ export interface ActionHandlers {
   getStageRecipe: (payload: { stageSlug: string }, dbClient: SupabaseClient) => Promise<{ data?: StageRecipeResponse; error?: ServiceError; status?: number }>;
   listStageDocuments: (payload: ListStageDocumentsPayload, dbClient: SupabaseClient) => Promise<{ status: number; data?: ListStageDocumentsResponse; error?: { message: string } }>;
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload, dbClient: SupabaseClient, deps: SubmitStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<DialecticFeedbackRow>>;
+  getStageDocumentFeedback: (payload: GetStageDocumentFeedbackPayload, dbClient: SupabaseClient<Database>, deps: GetStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<GetStageDocumentFeedbackResponse>>;
   getAllStageProgress: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
 }
 
@@ -263,6 +267,7 @@ export async function handleRequest(
         'getSessionDetails',
         'listStageDocuments',
         'submitStageDocumentFeedback',
+        'getStageDocumentFeedback',
         'getAllStageProgress',
       ];
 
@@ -565,6 +570,15 @@ export async function handleRequest(
           }
           return createSuccessResponse(data, 200, req);
         }
+        case "getStageDocumentFeedback": {
+          const payload: GetStageDocumentFeedbackPayload = requestBody.payload;
+          const deps: GetStageDocumentFeedbackDeps = { logger: logger };
+          const { data, error } = await handlers.getStageDocumentFeedback(payload, adminClient as SupabaseClient<Database>, deps);
+          if (error) {
+            return createErrorResponse(error.message, error.status || 500, req, error);
+          }
+          return createSuccessResponse(data, 200, req);
+        }
         case "getAllStageProgress": {
           if (!userForJson) {
             return createErrorResponse('User not authenticated for getAllStageProgress', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
@@ -623,6 +637,7 @@ export const defaultHandlers: ActionHandlers = {
   getStageRecipe,
   listStageDocuments,
   submitStageDocumentFeedback,
+  getStageDocumentFeedback,
   getAllStageProgress,
 };
 

@@ -3,24 +3,37 @@ import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'
 import type {
   Database,
   TablesInsert,
+  TablesUpdate,
   Json,
 } from '../../types_db.ts'
 import { 
   isPostgrestError, 
   isRecord 
 } from '../utils/type_guards.ts'
-import { 
+import {
   FileManagerDependencies,
-  FileManagerResponse, 
-  FileManagerError, 
-  UploadContext, 
-  PathContext, 
-  FileType 
+  FileType,
+  CanonicalPathParams,
+  PathContext,
+  DocumentKey,
+  ResourceFileTypes,
+  ModelContributionUploadContext,
+  UserFeedbackUploadContext,
+  ResourceUploadContext,
+  UploadContext,
+  ContributionMetadata,
+  FileManagerError,
+  FileManagerResponse,
+  IFileManager,
+  DocumentRelated,
+
 } from '../types/file_manager.types.ts'
 import {
   isModelContributionContext,
   isUserFeedbackContext,
   isResourceContext,
+  isFileType,
+  isDocumentKey,
 } from '../utils/type-guards/type_guards.file_manager.ts'
 import { deconstructStoragePath } from '../utils/path_deconstructor.ts'
 import { shouldEnqueueRenderJob } from '../utils/shouldEnqueueRenderJob.ts'
@@ -37,7 +50,7 @@ const MAX_UPLOAD_ATTEMPTS = 5; // Max attempts for filename collision resolution
  * The FileManagerService provides a unified API for all file operations
  * within the Dialectic feature, ensuring consistent pathing and database registration.
  */
-export class FileManagerService {
+export class FileManagerService implements IFileManager {
   private supabase: SupabaseClient<Database>
   private storageBucket: string
   private constructStoragePath: (context: PathContext) => { storagePath: string; fileName: string; }
@@ -74,10 +87,9 @@ export class FileManagerService {
     // --- FileContent Validation ---
     if (isModelContributionContext(context)) {
       if (!context.fileContent) {
-        return {
-          record: null,
-          error: { message: 'fileContent is required for model contributions' },
-        }
+        const err: FileManagerError = { message: 'fileContent is required for model contributions' }
+        const response: FileManagerResponse = { record: null, error: err }
+        return response
       }
       const isEmpty = typeof context.fileContent === 'string'
         ? context.fileContent.length === 0
@@ -85,10 +97,9 @@ export class FileManagerService {
         ? context.fileContent.byteLength === 0
         : context.fileContent.length === 0
       if (isEmpty) {
-        return {
-          record: null,
-          error: { message: 'fileContent is required for model contributions' },
-        }
+        const err: FileManagerError = { message: 'fileContent is required for model contributions' }
+        const response: FileManagerResponse = { record: null, error: err }
+        return response
       }
     }
 
@@ -195,58 +206,53 @@ export class FileManagerService {
     if (mainUploadError) {
       // If it's already a FileManagerError, return it directly
       if (isPostgrestError(mainUploadError)) {
-        return {
-          record: null,
-          error: mainUploadError,
-        };
+        const response: FileManagerResponse = { record: null, error: mainUploadError }
+        return response
       }
       // Check if it's a StorageError (has 'error' or 'statusCode' property)
       if (isRecord(mainUploadError) && ('error' in mainUploadError || 'statusCode' in mainUploadError)) {
-        return {
-          record: null,
-          error: mainUploadError,
-        };
+        const response: FileManagerResponse = { record: null, error: mainUploadError }
+        return response
       }
       // If it's a ServiceError (record with message but not PostgrestError or StorageError), return it
       if (isRecord(mainUploadError) && 'message' in mainUploadError && !(mainUploadError instanceof Error)) {
-        return {
-          record: null,
-          error: mainUploadError,
-        };
+        const response: FileManagerResponse = { record: null, error: mainUploadError }
+        return response
       }
       // If it's a plain Error, convert to ServiceError
-      return {
-        record: null,
-        error: {
-          message: 'Main content storage upload failed',
-          details: mainUploadError.message,
-        },
-      };
+      const err: FileManagerError = {
+        message: 'Main content storage upload failed',
+        details: mainUploadError.message,
+      }
+      const response: FileManagerResponse = { record: null, error: err }
+      return response
     }
 
     try {
       if (isResourceContext(context)) {
+        const resourceContext: ResourceUploadContext = context
+        const resourcePathFileType: ResourceFileTypes = resourceContext.pathContext.fileType
         const targetTable = 'dialectic_project_resources'
         // Build resource_description: base (type, originalDescription) then merge context.resourceDescriptionForDb when provided (step 10.d.i).
         const baseDescription: Json = {
           type: pathContextForStorage.fileType,
-          ...(context.description && { originalDescription: context.description }),
+          ...(resourceContext.description && { originalDescription: resourceContext.description }),
         };
-        const resourceDescriptionForDb: Json = isRecord(context.resourceDescriptionForDb)
-          ? { ...context.resourceDescriptionForDb, type: pathContextForStorage.fileType, ...(context.description && { originalDescription: context.description }) }
+        const resourceDescriptionForDb: Json = isRecord(resourceContext.resourceDescriptionForDb)
+          ? { ...resourceContext.resourceDescriptionForDb, type: pathContextForStorage.fileType, ...(resourceContext.description && { originalDescription: resourceContext.description }) }
           : baseDescription;
 
-        const resourceType = context.resourceTypeForDb ?? pathContextForStorage.fileType
+        const resourceType = resourceContext.resourceTypeForDb ?? resourcePathFileType
         const recordData: TablesInsert<'dialectic_project_resources'> = {
           project_id: pathContextForStorage.projectId,
           session_id: pathContextForStorage.sessionId,
-          user_id: context.userId!,
+          user_id: resourceContext.userId!,
           stage_slug: pathContextForStorage.stageSlug,
           iteration_number: pathContextForStorage.iteration,
           resource_type: typeof resourceType === 'string' ? resourceType : String(resourceType),
-          file_name: finalFileName, 
-          mime_type: context.mimeType,
-          size_bytes: context.sizeBytes,
+          file_name: finalFileName,
+          mime_type: resourceContext.mimeType,
+          size_bytes: resourceContext.sizeBytes,
           storage_bucket: this.storageBucket,
           storage_path: finalMainContentFilePath,
           resource_description: resourceDescriptionForDb,
@@ -263,22 +269,26 @@ export class FileManagerService {
         if (upsertError) {
           throw upsertError;
         }
-        return { record: newRecord, error: null };
+        const successResponse: FileManagerResponse = { record: newRecord, error: null }
+        return successResponse
 
       } else if (isModelContributionContext(context)) {
+        const modelContext: ModelContributionUploadContext = context
         const targetTable = 'dialectic_contributions'
         if (
           !pathContextForStorage.sessionId ||
-          context.contributionMetadata.iterationNumber === undefined ||
+          modelContext.contributionMetadata.iterationNumber === undefined ||
           !pathContextForStorage.stageSlug
         ) {
           const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`
           if (!mainUploadError) {
             await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
           }
-          return { record: null, error: { message: 'Missing required metadata for contribution.' } }
+          const err: FileManagerError = { message: 'Missing required metadata for contribution.' }
+          const response: FileManagerResponse = { record: null, error: err }
+          return response
         }
-        const meta = context.contributionMetadata
+        const meta: ContributionMetadata = modelContext.contributionMetadata
 
         // Enforce strict lineage: continuations must provide target_contribution_id
         if (pathContextForStorage.isContinuation === true) {
@@ -288,20 +298,23 @@ export class FileManagerService {
             if (!mainUploadError) {
               await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
             }
-            return { record: null, error: { message: 'Missing target_contribution_id for continuation.' } }
+            const err: FileManagerError = { message: 'Missing target_contribution_id for continuation.' }
+            const response: FileManagerResponse = { record: null, error: err }
+            return response
           }
         }
+
         const recordData: TablesInsert<'dialectic_contributions'> = {
           session_id: pathContextForStorage.sessionId,
           model_id: meta.modelIdUsed,
           model_name: meta.modelNameDisplay,
-          user_id: context.userId,
+          user_id: modelContext.userId,
           stage: pathContextForStorage.stageSlug,
           iteration_number: meta.iterationNumber,
           storage_bucket: this.storageBucket,
           storage_path: finalMainContentFilePath,
-          mime_type: context.mimeType,
-          size_bytes: context.sizeBytes,
+          mime_type: modelContext.mimeType,
+          size_bytes: modelContext.sizeBytes,
           file_name: finalFileName,
           raw_response_storage_path: `${finalMainContentFilePath}/${finalFileName}`,
           tokens_used_input: meta.tokensUsedInput,
@@ -337,13 +350,15 @@ export class FileManagerService {
             // Non-fatal; continue returning the newly created record
           }
         }
-        return { record: newRecord, error: null };
+        const modelSuccessResponse: FileManagerResponse = { record: newRecord, error: null }
+        return modelSuccessResponse
 
       } else if (isUserFeedbackContext(context)) {
+        const feedbackContext: UserFeedbackUploadContext = context
         const targetTable = 'dialectic_feedback'
         if (
           !pathContextForStorage.projectId ||
-          !context.userId ||
+          !feedbackContext.userId ||
           !pathContextForStorage.stageSlug ||
           pathContextForStorage.iteration === undefined ||
           !pathContextForStorage.sessionId
@@ -352,57 +367,121 @@ export class FileManagerService {
           if (!mainUploadError) {
             await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
           }
-          return { record: null, error: { message: 'Missing required fields for feedback record.' } }
+          const err: FileManagerError = { message: 'Missing required fields for feedback record.' }
+          const response: FileManagerResponse = { record: null, error: err }
+          return response
         }
 
-        if (typeof context.feedbackTypeForDb !== 'string' || !context.feedbackTypeForDb) {
+        if (typeof feedbackContext.feedbackTypeForDb !== 'string' || !feedbackContext.feedbackTypeForDb) {
           const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`
           if (!mainUploadError) {
             await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
           }
-          return { record: null, error: { message: "'feedbackTypeForDb' is missing in UploadContext for user_feedback." } }
+          const err: FileManagerError = { message: "'feedbackTypeForDb' is missing in UploadContext for user_feedback." }
+          const response: FileManagerResponse = { record: null, error: err }
+          return response
+        }
+
+        if (
+          pathContextForStorage.documentKey === undefined ||
+          pathContextForStorage.modelSlug === undefined ||
+          !isFileType(pathContextForStorage.documentKey) ||
+          !isDocumentKey(pathContextForStorage.documentKey)
+        ) {
+          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`
+          if (!mainUploadError) {
+            await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
+          }
+          const err: FileManagerError = { message: 'Missing or invalid documentKey/modelSlug in pathContext for feedback upsert.' }
+          const response: FileManagerResponse = { record: null, error: err }
+          return response
+        }
+        const documentKey: DocumentKey = pathContextForStorage.documentKey
+        const modelId: string = pathContextForStorage.modelSlug
+
+        const { data: existingRow, error: lookupError } = await this.supabase
+          .from(targetTable)
+          .select('id')
+          .eq('session_id', pathContextForStorage.sessionId)
+          .eq('project_id', pathContextForStorage.projectId)
+          .eq('stage_slug', pathContextForStorage.stageSlug)
+          .eq('iteration_number', pathContextForStorage.iteration)
+          .filter('resource_description->>document_key', 'eq', documentKey)
+          .filter('resource_description->>model_id', 'eq', modelId)
+          .maybeSingle()
+
+        if (lookupError) {
+          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`
+          if (!mainUploadError) {
+            await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove])
+          }
+          const isMultipleRows: boolean = lookupError.code === 'PGRST116'
+          const err: FileManagerError = isMultipleRows
+            ? { message: 'Data integrity violation: multiple feedback rows for same logical document.', details: lookupError.message }
+            : { message: 'Feedback lookup failed.', details: lookupError.message }
+          const response: FileManagerResponse = { record: null, error: err }
+          return response
         }
 
         const recordData: TablesInsert<'dialectic_feedback'> = {
           project_id: pathContextForStorage.projectId,
           session_id: pathContextForStorage.sessionId,
-          user_id: context.userId,
+          user_id: feedbackContext.userId,
           stage_slug: pathContextForStorage.stageSlug,
           iteration_number: pathContextForStorage.iteration,
           storage_bucket: this.storageBucket,
           storage_path: finalMainContentFilePath,
           file_name: finalFileName,
-          mime_type: context.mimeType,
-          size_bytes: context.sizeBytes,
-          feedback_type: context.feedbackTypeForDb,
-          resource_description: context.resourceDescriptionForDb || null,
+          mime_type: feedbackContext.mimeType,
+          size_bytes: feedbackContext.sizeBytes,
+          feedback_type: feedbackContext.feedbackTypeForDb,
+          resource_description: feedbackContext.resourceDescriptionForDb || null,
         }
+
+        if (existingRow !== null) {
+          const updatePayload: TablesUpdate<'dialectic_feedback'> = {
+            storage_bucket: this.storageBucket,
+            storage_path: finalMainContentFilePath,
+            file_name: finalFileName,
+            mime_type: feedbackContext.mimeType,
+            size_bytes: feedbackContext.sizeBytes,
+            feedback_type: feedbackContext.feedbackTypeForDb,
+            resource_description: feedbackContext.resourceDescriptionForDb || null,
+          }
+          const { data: updatedRecord, error: updateError } = await this.supabase
+            .from(targetTable)
+            .update(updatePayload)
+            .eq('id', existingRow.id)
+            .select()
+            .single()
+          if (updateError) {
+            throw updateError
+          }
+          this.logger.info('Feedback row updated for logical document', { sessionId: pathContextForStorage.sessionId, documentKey, modelId })
+          const feedbackSuccessResponse: FileManagerResponse = { record: updatedRecord, error: null }
+          return feedbackSuccessResponse
+        }
+
         const { data: newRecord, error: insertError } = await this.supabase
           .from(targetTable)
           .insert(recordData)
           .select()
           .single();
-        
+
         if (insertError) {
           throw insertError;
         }
-        return { record: newRecord, error: null };
+        this.logger.info('Feedback row inserted for logical document', { sessionId: pathContextForStorage.sessionId, documentKey, modelId })
+        const feedbackSuccessResponse: FileManagerResponse = { record: newRecord, error: null }
+        return feedbackSuccessResponse
       } else {
         // This case should be unreachable if the discriminated union is exhaustive
         throw new Error(`Unhandled context type in uploadAndRegisterFile: ${JSON.stringify(context)}`)
       }
     } catch(e) {
       if (!mainUploadError) {
-        const { data: files, error: listError } = await this.supabase.storage
-          .from(this.storageBucket)
-          .list(finalMainContentFilePath);
-
-        if (listError) {
-          console.error(`[FileManager] Failed to list files for cleanup at path: ${finalMainContentFilePath}. Manual cleanup may be required.`, listError);
-        } else if (files && files.length > 0) {
-          const pathsToRemove = files.map(file => `${finalMainContentFilePath}/${file.name}`);
-          await this.supabase.storage.from(this.storageBucket).remove(pathsToRemove);
-        }
+        const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+        await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]);
       }
       // If upload succeeded but DB registration failed, wrap PostgrestError with descriptive message
       // Otherwise return PostgrestError directly for other cases
@@ -410,56 +489,50 @@ export class FileManagerService {
         if (!mainUploadError) {
           // Upload succeeded but DB failed - construct ServiceError from PostgrestError
           // Preserve error information: when e.details is empty, preserve e.message in details
-          let errorDetails: string;
+          let errorDetails: string
           if (e.details.length > 0) {
-            errorDetails = e.details;
+            errorDetails = e.details
           } else {
-            errorDetails = e.message;
+            errorDetails = e.message
           }
-          return {
-            record: null,
-            error: { 
-              message: "Database registration failed after successful upload.", 
-              code: e.code,
-              details: errorDetails,
-            },
-          };
+          const err: FileManagerError = {
+            message: "Database registration failed after successful upload.",
+            code: e.code,
+            details: errorDetails,
+          }
+          const response: FileManagerResponse = { record: null, error: err }
+          return response
         }
         // Upload failed or other case - return PostgrestError directly
-        return {
-          record: null,
-          error: e,
-        };
+        const response: FileManagerResponse = { record: null, error: e }
+        return response
       }
-      
+
       // For other errors, construct a ServiceError with unified shape
       if (isRecord(e)) {
-        const code = 'code' in e && typeof e.code === 'string' ? e.code : undefined;
-        const details = 'details' in e && typeof e.details === 'string' ? e.details : undefined;
-        return {
-          record: null,
-          error: {
-            message: "Database registration failed after successful upload.",
-            code: code,
-            details: details,
-          },
-        };
+        const code: string | undefined = 'code' in e && typeof e.code === 'string' ? e.code : undefined
+        const details: string | undefined = 'details' in e && typeof e.details === 'string' ? e.details : undefined
+        const err: FileManagerError = {
+          message: "Database registration failed after successful upload.",
+          code,
+          details,
+        }
+        const response: FileManagerResponse = { record: null, error: err }
+        return response
       } else if (e instanceof Error) {
-        return {
-          record: null,
-          error: {
-            message: "Database registration failed after successful upload.",
-            details: e.message,
-          },
-        };
+        const err: FileManagerError = {
+          message: "Database registration failed after successful upload.",
+          details: e.message,
+        }
+        const response: FileManagerResponse = { record: null, error: err }
+        return response
       } else {
-        return {
-          record: null,
-          error: {
-            message: "Database registration failed after successful upload.",
-            details: 'Unknown database error',
-          },
-        };
+        const err: FileManagerError = {
+          message: "Database registration failed after successful upload.",
+          details: 'Unknown database error',
+        }
+        const response: FileManagerResponse = { record: null, error: err }
+        return response
       }
     }
   }
@@ -656,15 +729,27 @@ export class FileManagerService {
         throw new Error(`Cannot construct AssembledDocumentJson path: missing required path context. ProjectId: ${pathInfo.originalProjectId}, StageSlug: ${pathInfo.stageSlug}, ModelSlug: ${pathInfo.modelSlug}, AttemptCount: ${pathInfo.attemptCount}, DocumentKey: ${pathInfo.documentKey}`);
       }
 
+      if (!isFileType(pathInfo.documentKey)) {
+        throw new Error(`Invalid documentKey: ${pathInfo.documentKey}`);
+      }
+      if (!isDocumentKey(pathInfo.documentKey)) {
+        throw new Error(`Invalid documentKey: ${pathInfo.documentKey}`);
+      }
+      const docKey: DocumentKey = pathInfo.documentKey
+      const pathParams: CanonicalPathParams = {
+        stageSlug: pathInfo.stageSlug,
+        contributionType: 'synthesis',
+      }
+      const assembledFileType: DocumentRelated = FileType.AssembledDocumentJson
       const pathContext: PathContext = {
         projectId: pathInfo.originalProjectId,
-        fileType: FileType.AssembledDocumentJson,
+        fileType: assembledFileType,
         sessionId: rootContribution.session_id,
         iteration: pathInfo.iteration ?? rootContribution.iteration_number,
-        stageSlug: pathInfo.stageSlug,
+        stageSlug: pathParams.stageSlug,
         modelSlug: pathInfo.modelSlug,
         attemptCount: pathInfo.attemptCount,
-        documentKey: pathInfo.documentKey,
+        documentKey: docKey,
       };
 
       const constructedPath = this.constructStoragePath(pathContext);

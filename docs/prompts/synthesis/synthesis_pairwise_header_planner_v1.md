@@ -11,33 +11,12 @@
 - **Stage Instructions**: {{stage_instructions}}
 - **Style Guide Markdown**: {{style_guide_markdown}}
 - **Expected Output Artifacts Definition**: {{outputs_required}}
-- **Thesis Documents (per lineage)**:
-  - Business Cases: {{thesis_documents.business_case}}
-  - Feature Specifications: {{thesis_documents.feature_spec}}
-  - Technical Approaches: {{thesis_documents.technical_approach}}
-  - Success Metrics: {{thesis_documents.success_metrics}}
-- **Antithesis Documents (per reviewer and lineage)**:
-  - Business Case Critiques: {{antithesis_documents.business_case_critique}}
-  - Technical Feasibility Assessments: {{antithesis_documents.technical_feasibility_assessment}}
-  - Non-Functional Requirements Reviews: {{antithesis_documents.non_functional_requirements}}
-  - Risk Registers: {{antithesis_documents.risk_register}}
-  - Dependency Maps: {{antithesis_documents.dependency_map}}
-  - Comparison Vectors: {{antithesis_documents.comparison_vector}}
-{{#section:antithesis_feedback}}
-- **Antithesis Feedback**:
-  - Business Case Critique Feedback: {{antithesis_feedback.business_case_critique}}
-  - Technical Feasibility Assessment Feedback: {{antithesis_feedback.technical_feasibility_assessment}}
-  - Non-Functional Requirements Feedback: {{antithesis_feedback.non_functional_requirements}}
-  - Risk Register Feedback: {{antithesis_feedback.risk_register}}
-  - Dependency Map Feedback: {{antithesis_feedback.dependency_map}}
-  - Comparison Vector Feedback: {{antithesis_feedback.comparison_vector}}
-{{/#section:antithesis_feedback}}
 
 ## HeaderContext Schema
 ```json
 {
   "system_materials": {
-    "executive_summary": "Summarize the intent of merging each Thesis document with its corresponding Antithesis critiques.",
+    "agent_notes_to_self": "Summarize the intent of merging each Thesis document with its corresponding Antithesis critiques, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "Identify the thesis and antithesis artifacts that will be combined during pairwise synthesis.",
     "stage_rationale": "Explain that this stage ensures consistent pairwise synthesis before consolidating documents across models.",
     "decision_criteria": [
@@ -75,7 +54,7 @@
         "proposal_references": [],
         "resolved_positions": [],
         "open_questions": [],
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
       }
     },
     {

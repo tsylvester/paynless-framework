@@ -11,18 +11,21 @@ import {
 } from "../_shared/supabase.mock.ts";
 import {
   type DialecticStage,
+  type DialecticStageRecipeStep,
+  type InputRule,
   type SubmitStageResponsesPayload,
   type DialecticSession,
   type SelectedModels,
   SubmitStageResponsesDependencies,
 } from "./dialectic.interface.ts";
 import { createMockFileManagerService } from "../_shared/services/file_manager.mock.ts";
-import type { Database } from "../types_db.ts";
+import type { Database, Tables, TablesUpdate } from "../types_db.ts";
 import { submitStageResponses } from "./submitStageResponses.ts";
 import { logger } from "../_shared/logger.ts";
 import {
   UploadContext,
   FileManagerResponse,
+  FileType,
 } from "../_shared/types/file_manager.types.ts";
 
 Deno.test("submitStageResponses", async (t) => {
@@ -202,8 +205,6 @@ Deno.test("submitStageResponses", async (t) => {
         stageSlug: "thesis",
         currentIterationNumber: 1,
         responses: [],
-        // The presence of this feedback should NOT trigger a file save
-        userStageFeedback: { content: "This should not be saved", feedbackType: "test" },
       };
 
       const fileManagerAllowsUpload = createMockFileManagerService();
@@ -244,6 +245,7 @@ Deno.test("submitStageResponses", async (t) => {
           error: null,
         })
       );
+      const uploadAndRegisterFileSpy = fileManagerAllowsUpload.uploadAndRegisterFile;
 
       const mockDependenciesWithStorage = {
         ...mockDependencies,
@@ -332,16 +334,25 @@ Deno.test("submitStageResponses", async (t) => {
         updateCall.args[0].status,
         `pending_${mockAntithesisStage.slug}`,
       );
+
+      // Seed prompts are created once at session initiation (thesis stage) and reused across all stages.
+      // submitStageResponses should NOT create new seed prompts during stage transitions.
+      assertEquals(
+        uploadAndRegisterFileSpy.calls.length,
+        0,
+        "submitStageResponses should NOT save seed prompts - they are created once at thesis stage",
+      );
     },
   );
 
   await t.step(
     "Failure: Does NOT transition if preconditions for next stage are not met",
     async () => {
-      const mockAntithesisWithInputs = {
-        ...mockAntithesisStage,
-        // This is a simplified representation of what the logic would check
-        inputs_required: [{ type: "document", document_key: "required_doc" }],
+      const failureInputRules: InputRule[] = [
+        { type: "document", document_key: FileType.business_case, slug: "thesis" },
+      ];
+      const failureRecipeStepRow: Pick<DialecticStageRecipeStep, "inputs_required"> = {
+        inputs_required: failureInputRules,
       };
 
       const mockPayload: SubmitStageResponsesPayload = {
@@ -366,14 +377,7 @@ Deno.test("submitStageResponses", async (t) => {
             select: { data: [createMockSession(mockThesisStage)] },
           },
           dialectic_stage_recipe_steps: {
-            select: {
-              data: [{
-                inputs_required: [{
-                  type: "document",
-                  document_key: "required_doc",
-                }],
-              }],
-            },
+            select: { data: [failureRecipeStepRow] },
           },
           dialectic_project_resources: {
             select: {
@@ -400,7 +404,7 @@ Deno.test("submitStageResponses", async (t) => {
               data: [
                 {
                   source_stage_id: testThesisStageId,
-                  target_stage: mockAntithesisWithInputs,
+                  target_stage: mockAntithesisStage,
                 },
               ],
             },
@@ -480,7 +484,7 @@ Deno.test("submitStageResponses", async (t) => {
   await t.step("Validation should use column-based predicates, not JSON descriptors",
     async () => {
       const testRecipeInstanceId = crypto.randomUUID();
-      const testRequiredDocumentKey = "required_thesis_document";
+      const testRequiredDocumentKey: FileType = FileType.feature_spec;
       const testResourceId = crypto.randomUUID();
 
       const mockAntithesisWithActiveRecipe: DialecticStage = {
@@ -488,15 +492,20 @@ Deno.test("submitStageResponses", async (t) => {
         active_recipe_instance_id: testRecipeInstanceId,
       };
 
-      const mockRecipeStep = {
-        instance_id: testRecipeInstanceId,
-        inputs_required: [{
+      const validationInputRules: InputRule[] = [
+        {
           type: "document",
           document_key: testRequiredDocumentKey,
-        }],
+          slug: "thesis",
+          required: true,
+        },
+      ];
+      const mockRecipeStep: Pick<DialecticStageRecipeStep, "instance_id" | "inputs_required"> = {
+        instance_id: testRecipeInstanceId,
+        inputs_required: validationInputRules,
       };
 
-      const mockResource = {
+      const mockResource: Tables<"dialectic_project_resources"> = {
         id: testResourceId,
         project_id: testProjectId,
         resource_type: "rendered_document",
@@ -505,14 +514,33 @@ Deno.test("submitStageResponses", async (t) => {
         iteration_number: 1,
         file_name: `${testRequiredDocumentKey}.md`,
         source_contribution_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: testUserId,
+        storage_bucket: "test-bucket",
+        storage_path: "test-path",
+        mime_type: "text/markdown",
+        size_bytes: 1,
+        resource_description: null,
       };
 
-      const mockInitialPromptResource = {
+      const mockInitialPromptResource: Tables<"dialectic_project_resources"> = {
         id: "test-resource-id",
         project_id: testProjectId,
         storage_bucket: "test-bucket",
         storage_path: "test-path",
         file_name: "test-file.txt",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: testUserId,
+        mime_type: "text/plain",
+        size_bytes: 0,
+        resource_type: "initial_user_prompt",
+        session_id: null,
+        stage_slug: null,
+        iteration_number: null,
+        source_contribution_id: null,
+        resource_description: null,
       };
 
       const mockPayload: SubmitStageResponsesPayload = {
@@ -533,27 +561,28 @@ Deno.test("submitStageResponses", async (t) => {
         ),
       };
 
+      const validationSeedPromptRecord: Tables<"dialectic_project_resources"> = {
+        id: "new-seed-prompt-resource-id",
+        project_id: testProjectId,
+        user_id: testUserId,
+        file_name: "seed_prompt.md",
+        storage_bucket: "test-bucket",
+        storage_path: "test/path/seed_prompt.md",
+        mime_type: "text/markdown",
+        size_bytes: 123,
+        resource_description: { type: "SeedPrompt" },
+        resource_type: "seed_prompt",
+        session_id: testSessionId,
+        stage_slug: "antithesis",
+        iteration_number: 1,
+        source_contribution_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
       const fileManagerAllowsUpload = createMockFileManagerService();
-      fileManagerAllowsUpload.uploadAndRegisterFile = spy((_context) =>
+      fileManagerAllowsUpload.uploadAndRegisterFile = spy((_context): Promise<FileManagerResponse> =>
         Promise.resolve({
-          record: {
-            id: "new-seed-prompt-resource-id",
-            project_id: testProjectId,
-            user_id: testUserId,
-            file_name: "seed_prompt.md",
-            storage_bucket: "test-bucket",
-            storage_path: "test/path/seed_prompt.md",
-            mime_type: "text/markdown",
-            size_bytes: 123,
-            resource_description: { type: "SeedPrompt" },
-            resource_type: "seed_prompt",
-            session_id: testSessionId,
-            stage_slug: "antithesis",
-            iteration_number: 1,
-            source_contribution_id: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
+          record: validationSeedPromptRecord,
           error: null,
         })
       );
@@ -563,16 +592,18 @@ Deno.test("submitStageResponses", async (t) => {
         fileManager: fileManagerAllowsUpload,
       };
 
+      const validationSessionUpdate: TablesUpdate<"dialectic_sessions"> = {
+        id: testSessionId,
+        status: "pending_antithesis",
+        selected_model_ids: testSelectedModelIds,
+      };
+
       const mockDbConfig: MockSupabaseDataConfig = {
         genericMockResults: {
           dialectic_sessions: {
             select: { data: [createMockSession(mockThesisStage, testUserId, 1)] },
             update: {
-              data: [{
-                id: testSessionId,
-                status: "pending_antithesis",
-                selected_model_ids: testSelectedModelIds,
-              }],
+              data: [validationSessionUpdate],
             },
           },
           dialectic_stage_recipe_steps: {
@@ -684,7 +715,7 @@ Deno.test("submitStageResponses", async (t) => {
 
       assert(
         hasFilter("stage_slug", "thesis"),
-        "Validation should filter by stage_slug column when stage context is available",
+        "Precondition must filter by stage_slug from the input rule for that document (thesis), not the current stage",
       );
 
       assert(
@@ -704,6 +735,227 @@ Deno.test("submitStageResponses", async (t) => {
       );
 
       assertEquals(status, 200, "Function should succeed when resource exists with column metadata");
+    },
+  );
+
+  await t.step(
+    "Precondition uses input rule slug when locating required document (not current stage slug)",
+    async () => {
+      const testRecipeInstanceId = crypto.randomUUID();
+      const testResourceId = crypto.randomUUID();
+      const testSynthesisStageId = crypto.randomUUID();
+
+      const mockSynthesisStage: DialecticStage = {
+        id: testSynthesisStageId,
+        slug: "synthesis",
+        display_name: "Synthesis",
+        default_system_prompt_id: "prompt-id-synthesis",
+        created_at: new Date().toISOString(),
+        description: null,
+        expected_output_template_ids: [],
+        active_recipe_instance_id: testRecipeInstanceId,
+        recipe_template_id: null,
+      };
+
+      const preconditionInputRules: InputRule[] = [
+        {
+          type: "document",
+          document_key: FileType.feature_spec,
+          slug: "thesis",
+          required: true,
+        },
+      ];
+      const mockRecipeStep: Pick<DialecticStageRecipeStep, "instance_id" | "inputs_required"> = {
+        instance_id: testRecipeInstanceId,
+        inputs_required: preconditionInputRules,
+      };
+
+      const thesisResource: Tables<"dialectic_project_resources"> = {
+        id: testResourceId,
+        project_id: testProjectId,
+        resource_type: "rendered_document",
+        session_id: testSessionId,
+        stage_slug: "thesis",
+        iteration_number: 1,
+        file_name: "feature_spec.md",
+        source_contribution_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: testUserId,
+        storage_bucket: "test-bucket",
+        storage_path: "test-path",
+        mime_type: "text/markdown",
+        size_bytes: 1,
+        resource_description: null,
+      };
+
+      const preconditionInitialPromptResource: Tables<"dialectic_project_resources"> = {
+        id: "test-resource-id",
+        project_id: testProjectId,
+        storage_bucket: "test-bucket",
+        storage_path: "test-path",
+        file_name: "test-file.txt",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: testUserId,
+        mime_type: "text/plain",
+        size_bytes: 0,
+        resource_type: "initial_user_prompt",
+        session_id: null,
+        stage_slug: null,
+        iteration_number: null,
+        source_contribution_id: null,
+        resource_description: null,
+      };
+
+      const mockPayload: SubmitStageResponsesPayload = {
+        sessionId: testSessionId,
+        projectId: testProjectId,
+        stageSlug: "antithesis",
+        currentIterationNumber: 1,
+        responses: [],
+      };
+
+      const preconditionSeedPromptRecord: Tables<"dialectic_project_resources"> = {
+        id: "new-seed-prompt-resource-id",
+        project_id: testProjectId,
+        user_id: testUserId,
+        file_name: "seed_prompt.md",
+        storage_bucket: "test-bucket",
+        storage_path: "test/path/seed_prompt.md",
+        mime_type: "text/markdown",
+        size_bytes: 123,
+        resource_description: { type: "SeedPrompt" },
+        resource_type: "seed_prompt",
+        session_id: testSessionId,
+        stage_slug: "synthesis",
+        iteration_number: 1,
+        source_contribution_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const fileManagerAllowsUpload = createMockFileManagerService();
+      fileManagerAllowsUpload.uploadAndRegisterFile = spy((_context): Promise<FileManagerResponse> =>
+        Promise.resolve({
+          record: preconditionSeedPromptRecord,
+          error: null,
+        })
+      );
+
+      const mockDependenciesWithFileManager = {
+        ...mockDependencies,
+        downloadFromStorage: spy(() =>
+          Promise.resolve({
+            data: new TextEncoder().encode("Mock file content").slice().buffer,
+            error: null,
+          })
+        ),
+        fileManager: fileManagerAllowsUpload,
+      };
+
+      const preconditionSessionUpdate: TablesUpdate<"dialectic_sessions"> = {
+        id: testSessionId,
+        status: "pending_synthesis",
+        selected_model_ids: testSelectedModelIds,
+      };
+
+      const mockDbConfig: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_sessions: {
+            select: { data: [createMockSession(mockAntithesisStage, testUserId, 1)] },
+            update: {
+              data: [preconditionSessionUpdate],
+            },
+          },
+          dialectic_stage_recipe_steps: {
+            select: { data: [mockRecipeStep] },
+          },
+          dialectic_project_resources: {
+            select: async (state: { filters: { column?: string; value?: unknown; type: string }[] }) => {
+              const idFilter = state.filters.find(
+                (f) => f.column === "id" && f.type === "eq"
+              );
+              if (idFilter && idFilter.value === "test-resource-id") {
+                return {
+                  data: [preconditionInitialPromptResource],
+                  error: null,
+                  count: 1,
+                  status: 200,
+                  statusText: "OK",
+                };
+              }
+              const resourceTypeFilter = state.filters.find(
+                (f) => f.column === "resource_type" && f.type === "eq" && f.value === "rendered_document"
+              );
+              if (!resourceTypeFilter) {
+                return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+              }
+              const stageSlugFilter = state.filters.find(
+                (f) => f.column === "stage_slug" && f.type === "eq"
+              );
+              if (stageSlugFilter && stageSlugFilter.value === "thesis") {
+                return {
+                  data: [thesisResource],
+                  error: null,
+                  count: 1,
+                  status: 200,
+                  statusText: "OK",
+                };
+              }
+              return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+            },
+          },
+          system_prompts: {
+            select: {
+              data: [{ id: "prompt-id-synthesis", prompt_text: "Test synthesis prompt" }],
+            },
+          },
+          domain_specific_prompt_overlays: {
+            select: { data: [{ overlay_values: { test: "overlay" } }] },
+          },
+          dialectic_stage_transitions: {
+            select: {
+              data: [{
+                source_stage_id: testAntithesisStageId,
+                target_stage: mockSynthesisStage,
+              }],
+            },
+          },
+        },
+      };
+
+      const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+
+      const { status } = await submitStageResponses(
+        mockPayload,
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockUser,
+        mockDependenciesWithFileManager,
+      );
+
+      const eqHistory = mockSupabase.spies.getHistoricQueryBuilderSpies(
+        "dialectic_project_resources",
+        "eq",
+      );
+      assertExists(eqHistory, "eq history should exist for dialectic_project_resources");
+      const calls = eqHistory.callsArgs;
+      const hasFilter = (column: string, value: unknown): boolean =>
+        calls.some((args) =>
+          Array.isArray(args) &&
+          typeof args[0] === "string" &&
+          args[0] === column &&
+          args[1] === value
+        );
+
+      assert(
+        hasFilter("stage_slug", "thesis"),
+        "Precondition must use the input rule slug (thesis) for the required document, not the current stage (antithesis)",
+      );
+      assert(
+        !hasFilter("stage_slug", "antithesis"),
+        "Precondition must not filter by current stage slug when locating a document from another stage",
+      );
+      assertEquals(status, 200, "Function should succeed when document exists in the stage specified by the input rule");
     },
   );
 
@@ -1001,6 +1253,495 @@ Deno.test("submitStageResponses", async (t) => {
       assert(
         updateSpy === undefined || updateSpy.calls.length === 0,
         "dialectic_sessions.update should not be called when session already past target stage",
+      );
+    },
+  );
+
+  await t.step(
+    "Precondition: locates each input_rule artifact type on the correct table and returns 412 when missing",
+    async (t) => {
+      const testRecipeInstanceId = crypto.randomUUID();
+      const testSynthesisStageId = crypto.randomUUID();
+      const mockSynthesisStage: DialecticStage = {
+        id: testSynthesisStageId,
+        slug: "synthesis",
+        display_name: "Synthesis",
+        default_system_prompt_id: "prompt-id-synthesis",
+        created_at: new Date().toISOString(),
+        description: null,
+        expected_output_template_ids: [],
+        active_recipe_instance_id: testRecipeInstanceId,
+        recipe_template_id: null,
+      };
+
+      const basePayload: SubmitStageResponsesPayload = {
+        sessionId: testSessionId,
+        projectId: testProjectId,
+        stageSlug: "antithesis",
+        currentIterationNumber: 1,
+        responses: [],
+      };
+
+      const baseMockDeps = {
+        ...mockDependencies,
+        downloadFromStorage: spy(() =>
+          Promise.resolve({
+            data: new TextEncoder().encode("Mock file content").slice().buffer,
+            error: null,
+          })
+        ),
+      };
+
+      const baseSession = createMockSession(mockAntithesisStage, testUserId, 1);
+      const baseRecipeStep = (
+        inputRules: InputRule[]
+      ): Pick<DialecticStageRecipeStep, "instance_id" | "inputs_required"> => ({
+        instance_id: testRecipeInstanceId,
+        inputs_required: inputRules,
+      });
+      const baseTransitions = {
+        select: {
+          data: [{
+            source_stage_id: testAntithesisStageId,
+            target_stage: mockSynthesisStage,
+          }],
+        },
+      };
+
+      await t.step(
+        "type document: queries dialectic_project_resources (rendered_document) and returns 412 when missing",
+        async () => {
+          const inputRules: InputRule[] = [
+            { type: "document", document_key: FileType.business_case, slug: "thesis", required: true },
+          ];
+          const mockDbConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+              dialectic_sessions: { select: { data: [baseSession] } },
+              dialectic_stage_recipe_steps: {
+                select: { data: [baseRecipeStep(inputRules)] },
+              },
+              dialectic_project_resources: {
+                select: { data: [] },
+              },
+              dialectic_stage_transitions: baseTransitions,
+            },
+          };
+          const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+          const { status } = await submitStageResponses(
+            basePayload,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockUser,
+            baseMockDeps,
+          );
+          assertEquals(status, 412);
+          const fromCalls = mockSupabase.spies.fromSpy.calls;
+          assert(
+            fromCalls.some((c) => c.args[0] === "dialectic_project_resources"),
+            "Precondition must query dialectic_project_resources for type document",
+          );
+          const builders = mockSupabase.spies.getHistoricQueryBuilderSpies(
+            "dialectic_project_resources",
+            "eq",
+          );
+          assertExists(builders);
+          assert(
+            builders.callsArgs.some(
+              (args) =>
+                Array.isArray(args) &&
+                args[0] === "resource_type" &&
+                args[1] === "rendered_document"
+            ),
+            "Precondition must filter by resource_type rendered_document for type document",
+          );
+        },
+      );
+
+      await t.step(
+        "type contribution: queries dialectic_contributions and returns 412 when missing",
+        async () => {
+          const inputRules: InputRule[] = [
+            {
+              type: "contribution",
+              document_key: FileType.business_case_critique,
+              slug: "antithesis",
+              required: true,
+            },
+          ];
+          const mockDbConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+              dialectic_sessions: { select: { data: [baseSession] } },
+              dialectic_stage_recipe_steps: {
+                select: { data: [baseRecipeStep(inputRules)] },
+              },
+              dialectic_project_resources: {
+                select: { data: [] },
+              },
+              dialectic_contributions: {
+                select: { data: [] },
+              },
+              dialectic_stage_transitions: baseTransitions,
+            },
+          };
+          const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+          const { status } = await submitStageResponses(
+            basePayload,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockUser,
+            baseMockDeps,
+          );
+          assertEquals(
+            status,
+            412,
+            "Must return 412 when required contribution is missing",
+          );
+          const fromCalls = mockSupabase.spies.fromSpy.calls;
+          assert(
+            fromCalls.some((c) => c.args[0] === "dialectic_contributions"),
+            "Precondition must query dialectic_contributions for type contribution",
+          );
+        },
+      );
+
+      await t.step(
+        "type header_context: queries dialectic_contributions with contribution_type and stage and returns 412 when missing",
+        async () => {
+          const inputRules: InputRule[] = [
+            {
+              type: "header_context",
+              document_key: FileType.header_context_pairwise,
+              slug: "synthesis",
+              required: true,
+            },
+          ];
+          const mockDbConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+              dialectic_sessions: { select: { data: [baseSession] } },
+              dialectic_stage_recipe_steps: {
+                select: { data: [baseRecipeStep(inputRules)] },
+              },
+              dialectic_project_resources: {
+                select: { data: [] },
+              },
+              dialectic_contributions: {
+                select: { data: [] },
+              },
+              dialectic_stage_transitions: baseTransitions,
+            },
+          };
+          const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+          const { status } = await submitStageResponses(
+            basePayload,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockUser,
+            baseMockDeps,
+          );
+          assertEquals(
+            status,
+            412,
+            "Must return 412 when required header_context is missing",
+          );
+          const fromCalls = mockSupabase.spies.fromSpy.calls;
+          assert(
+            fromCalls.some((c) => c.args[0] === "dialectic_contributions"),
+            "Precondition must query dialectic_contributions for type header_context",
+          );
+          const eqHistory = mockSupabase.spies.getHistoricQueryBuilderSpies(
+            "dialectic_contributions",
+            "eq",
+          );
+          assertExists(eqHistory);
+          assert(
+            eqHistory.callsArgs.some(
+              (args) =>
+                Array.isArray(args) &&
+                args[0] === "contribution_type" &&
+                args[1] === "header_context"
+            ),
+            "Precondition must filter by contribution_type header_context for type header_context",
+          );
+        },
+      );
+
+      await t.step(
+        "type feedback: queries dialectic_feedback and returns 412 when missing",
+        async () => {
+          const inputRules: InputRule[] = [
+            {
+              type: "feedback",
+              document_key: FileType.business_case_critique,
+              slug: "antithesis",
+              required: true,
+            },
+          ];
+          const mockDbConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+              dialectic_sessions: { select: { data: [baseSession] } },
+              dialectic_stage_recipe_steps: {
+                select: { data: [baseRecipeStep(inputRules)] },
+              },
+              dialectic_project_resources: {
+                select: { data: [] },
+              },
+              dialectic_feedback: {
+                select: { data: [] },
+              },
+              dialectic_stage_transitions: baseTransitions,
+            },
+          };
+          const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+          const { status } = await submitStageResponses(
+            basePayload,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockUser,
+            baseMockDeps,
+          );
+          assertEquals(
+            status,
+            412,
+            "Must return 412 when required feedback is missing",
+          );
+          const fromCalls = mockSupabase.spies.fromSpy.calls;
+          assert(
+            fromCalls.some((c) => c.args[0] === "dialectic_feedback"),
+            "Precondition must query dialectic_feedback for type feedback",
+          );
+        },
+      );
+
+      await t.step(
+        "type seed_prompt: queries dialectic_project_resources (seed_prompt) and returns 412 when missing",
+        async () => {
+          const inputRules: InputRule[] = [
+            {
+              type: "seed_prompt",
+              document_key: FileType.SeedPrompt,
+              slug: "synthesis",
+              required: true,
+            },
+          ];
+          const mockDbConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+              dialectic_sessions: { select: { data: [baseSession] } },
+              dialectic_stage_recipe_steps: {
+                select: { data: [baseRecipeStep(inputRules)] },
+              },
+              dialectic_project_resources: {
+                select: { data: [] },
+              },
+              dialectic_stage_transitions: baseTransitions,
+            },
+          };
+          const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+          const { status } = await submitStageResponses(
+            basePayload,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockUser,
+            baseMockDeps,
+          );
+          assertEquals(
+            status,
+            412,
+            "Must return 412 when required seed_prompt is missing",
+          );
+          const fromCalls = mockSupabase.spies.fromSpy.calls;
+          assert(
+            fromCalls.some((c) => c.args[0] === "dialectic_project_resources"),
+            "Precondition must query dialectic_project_resources for type seed_prompt",
+          );
+          const builders = mockSupabase.spies.getHistoricQueryBuilderSpies(
+            "dialectic_project_resources",
+            "eq",
+          );
+          assertExists(builders);
+          assert(
+            builders.callsArgs.some(
+              (args) =>
+                Array.isArray(args) &&
+                args[0] === "resource_type" &&
+                args[1] === "seed_prompt"
+            ),
+            "Precondition must filter by resource_type seed_prompt for type seed_prompt",
+          );
+        },
+      );
+
+      await t.step(
+        "Precondition: optional input (required: false) missing must not cause 412; function must respect required flag",
+        async () => {
+          const requiredAndOptionalInputRules: InputRule[] = [
+            {
+              type: "document",
+              document_key: FileType.business_case,
+              slug: "thesis",
+              required: true,
+            },
+            {
+              type: "feedback",
+              document_key: FileType.business_case_critique,
+              slug: "antithesis",
+              required: false,
+            },
+          ];
+          const thesisResourceId = crypto.randomUUID();
+          const thesisResource: Tables<"dialectic_project_resources"> = {
+            id: thesisResourceId,
+            project_id: testProjectId,
+            resource_type: "rendered_document",
+            session_id: testSessionId,
+            stage_slug: "thesis",
+            iteration_number: 1,
+            file_name: "mock-model-a_0_business_case.md",
+            source_contribution_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            user_id: testUserId,
+            storage_bucket: "test-bucket",
+            storage_path: "test-path",
+            mime_type: "text/markdown",
+            size_bytes: 1,
+            resource_description: null,
+          };
+          const preconditionInitialPromptResource: Tables<"dialectic_project_resources"> = {
+            id: "test-resource-id",
+            project_id: testProjectId,
+            storage_bucket: "test-bucket",
+            storage_path: "test-path",
+            file_name: "test-file.txt",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            user_id: testUserId,
+            mime_type: "text/plain",
+            size_bytes: 0,
+            resource_type: "initial_user_prompt",
+            session_id: null,
+            stage_slug: null,
+            iteration_number: null,
+            source_contribution_id: null,
+            resource_description: null,
+          };
+          const preconditionSeedPromptRecord: Tables<"dialectic_project_resources"> = {
+            id: "new-seed-prompt-resource-id",
+            project_id: testProjectId,
+            user_id: testUserId,
+            file_name: "seed_prompt.md",
+            storage_bucket: "test-bucket",
+            storage_path: "test/path/seed_prompt.md",
+            mime_type: "text/markdown",
+            size_bytes: 123,
+            resource_description: { type: "SeedPrompt" },
+            resource_type: "seed_prompt",
+            session_id: testSessionId,
+            stage_slug: "synthesis",
+            iteration_number: 1,
+            source_contribution_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          const fileManagerAllowsUpload = createMockFileManagerService();
+          fileManagerAllowsUpload.uploadAndRegisterFile = spy((_context: UploadContext): Promise<FileManagerResponse> =>
+            Promise.resolve({
+              record: preconditionSeedPromptRecord,
+              error: null,
+            })
+          );
+          const mockDepsWithFileManager = {
+            ...baseMockDeps,
+            fileManager: fileManagerAllowsUpload,
+          };
+          const preconditionSessionUpdate: TablesUpdate<"dialectic_sessions"> = {
+            id: testSessionId,
+            status: "pending_synthesis",
+            selected_model_ids: testSelectedModelIds,
+          };
+          const mockDbConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+              dialectic_sessions: {
+                select: { data: [baseSession] },
+                update: { data: [preconditionSessionUpdate] },
+              },
+              dialectic_stage_recipe_steps: {
+                select: {
+                  data: [{
+                    instance_id: testRecipeInstanceId,
+                    inputs_required: requiredAndOptionalInputRules,
+                  }],
+                },
+              },
+              dialectic_project_resources: {
+                select: async (state: { filters: { column?: string; value?: unknown; type: string }[] }) => {
+                  const idFilter = state.filters.find(
+                    (f) => f.column === "id" && f.type === "eq"
+                  );
+                  if (idFilter && idFilter.value === "test-resource-id") {
+                    return {
+                      data: [preconditionInitialPromptResource],
+                      error: null,
+                      count: 1,
+                      status: 200,
+                      statusText: "OK",
+                    };
+                  }
+                  const resourceTypeFilter = state.filters.find(
+                    (f) => f.column === "resource_type" && f.type === "eq" && f.value === "rendered_document"
+                  );
+                  if (!resourceTypeFilter) {
+                    const seedPromptFilter = state.filters.find(
+                      (f) => f.column === "resource_type" && f.type === "eq" && f.value === "seed_prompt"
+                    );
+                    if (seedPromptFilter) {
+                      return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                    }
+                    return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                  }
+                  const stageSlugFilter = state.filters.find(
+                    (f) => f.column === "stage_slug" && f.type === "eq"
+                  );
+                  if (stageSlugFilter && stageSlugFilter.value === "thesis") {
+                    return {
+                      data: [thesisResource],
+                      error: null,
+                      count: 1,
+                      status: 200,
+                      statusText: "OK",
+                    };
+                  }
+                  return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                },
+              },
+              dialectic_feedback: {
+                select: { data: [] },
+              },
+              system_prompts: {
+                select: {
+                  data: [{ id: "prompt-id-synthesis", prompt_text: "Test synthesis prompt" }],
+                },
+              },
+              domain_specific_prompt_overlays: {
+                select: { data: [{ overlay_values: { test: "overlay" } }] },
+              },
+              dialectic_stage_transitions: {
+                select: {
+                  data: [{
+                    source_stage_id: testAntithesisStageId,
+                    target_stage: mockSynthesisStage,
+                  }],
+                },
+              },
+            },
+          };
+          const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+          const { status } = await submitStageResponses(
+            basePayload,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockUser,
+            mockDepsWithFileManager,
+          );
+          assertEquals(
+            status,
+            200,
+            "Optional input (required: false) missing must not cause 412; function must respect inputs_required.required and allow advancement when only optional artifacts are absent.",
+          );
+        },
       );
     },
   );

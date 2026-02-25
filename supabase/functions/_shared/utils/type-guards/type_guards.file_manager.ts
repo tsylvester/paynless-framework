@@ -22,6 +22,10 @@ export function isModelContributionContext(
   return isRecord(context) && 'contributionMetadata' in context
 }
 
+/**
+ * Type guard for UserFeedbackUploadContext.
+ * pathContext may include optional originalStoragePath and originalBaseName for placing feedback alongside the original document.
+ */
 export function isUserFeedbackContext(
   context: unknown,
 ): context is UserFeedbackUploadContext {

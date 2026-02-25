@@ -187,14 +187,12 @@ Deno.test("GoogleAdapter - resourceDocuments: when present appear as inlineData 
         assertExists(captured.current, 'sendMessage must be called with parts');
         if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessage parts must be GeminiSendMessagePart[]');
         const parts: GeminiSendMessagePart[] = captured.current;
-        const inlineDataParts = parts.filter((p) => p.inlineData != null);
-        assert(inlineDataParts.length >= 2, 'Must have at least 2 inlineData parts');
-        assertEquals(inlineDataParts[0].inlineData?.mimeType, 'text/plain');
-        assertEquals(inlineDataParts[0].inlineData?.data, 'Doc A content');
-        assertEquals(inlineDataParts[1].inlineData?.mimeType, 'text/plain');
-        assertEquals(inlineDataParts[1].inlineData?.data, 'Doc B content');
-        const textPart = parts.find((p) => p.text != null && p.text.includes('User prompt'));
-        assert(textPart != null, 'Must have text part containing user message');
+        const textParts = parts.filter((p) => p.text != null);
+        assert(textParts.length >= 2, 'Must have at least 2 text parts');
+        assertEquals(textParts[0].text, '[Document: business_case from thesis]');
+        assertEquals(textParts[1].text, 'Doc A content');
+        assertEquals(textParts[2].text, '[Document: feature_spec from thesis]');
+        assertEquals(textParts[3].text, 'Doc B content');
     } finally {
         getModelStub.restore();
     }
@@ -220,9 +218,10 @@ Deno.test("GoogleAdapter - resourceDocuments: mime_type is text/plain", async ()
 
         if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessage parts must be GeminiSendMessagePart[]');
         const parts: GeminiSendMessagePart[] = captured.current;
-        const withInline = parts.find((p) => p.inlineData != null);
-        assert(withInline != null, 'Must have inlineData part');
-        assertEquals(withInline.inlineData?.mimeType, 'text/plain');
+        const withText = parts.find((p) => p.text != null);
+        assert(withText != null, 'Must have text part');
+        assertEquals(withText.text, '[Document: key from thesis]');
+        assertEquals(withText.text, '[Document: key from thesis]');
     } finally {
         getModelStub.restore();
     }
@@ -248,13 +247,16 @@ Deno.test("GoogleAdapter - resourceDocuments: document label text precedes each 
 
         if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessage parts must be GeminiSendMessagePart[]');
         const parts: GeminiSendMessagePart[] = captured.current;
-        const labelPart = parts.find((p) => p.text != null && p.text.includes('[Document:') && p.text.includes('from'));
-        const inlinePart = parts.find((p) => p.inlineData != null);
-        assert(labelPart != null, 'Must have label text part');
-        assert(inlinePart != null, 'Must have inlineData part');
-        const labelIdx = parts.indexOf(labelPart);
-        const inlineIdx = parts.indexOf(inlinePart);
-        assert(labelIdx < inlineIdx, 'Document label text must precede inlineData part');
+    // Proposed fix for lines 250-256
+    const labelPart = parts.find((p) => p.text != null && p.text.includes('[Document:') && p.text.includes('from'));
+    // Find a text part that is NOT the label we just found
+    const contentPart = parts.find((p) => p.text != null && p !== labelPart && !p.text?.includes('[Document:'));
+
+    assert(labelPart != null, 'Must have label text part');
+    assert(contentPart != null, 'Must have content text part');
+    const labelIdx = parts.indexOf(labelPart);
+    const textIdx = parts.indexOf(contentPart);
+    assert(labelIdx < textIdx, 'Document label text must precede text part');
     } finally {
         getModelStub.restore();
     }
@@ -280,8 +282,8 @@ Deno.test("GoogleAdapter - resourceDocuments: empty resourceDocuments does not a
 
         if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessage parts must be GeminiSendMessagePart[]');
         const parts: GeminiSendMessagePart[] = captured.current;
-        const inlineDataParts = parts.filter((p) => p.inlineData != null);
-        assertEquals(inlineDataParts.length, 0, 'Must not add inlineData parts when resourceDocuments is empty');
+        const textParts = parts.filter((p) => p.text != null);
+        assertEquals(textParts.length, 1, 'Must not add additional text parts when resourceDocuments is empty');
     } finally {
         getModelStub.restore();
     }

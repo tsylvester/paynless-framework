@@ -344,7 +344,6 @@ Deno.test("gatherInputsForStage", async (t) => {
                             // document_key omitted to fetch any document from that stage
                             required: true,
                             multiple: false,
-                            section_header: "Documents from some-slug stage",
                         }
                     ]),
                     active_recipe_instance_id: null,
@@ -367,7 +366,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                 // modelName is extracted from file_name (model slug), not from contributions query
                 assertEquals(doc.metadata.modelName, "gpt-4-turbo");
                 assertEquals(doc.metadata.displayName, mockStageDisplayName);
-                assertEquals(doc.metadata.header, "Documents from some-slug stage");
+                assertEquals(doc.metadata.header, "Previous Document Stage Documents");
 
                 const downloadSpy = storageSpies.downloadSpy;
                 assertEquals(downloadSpy.calls.length, 1);
@@ -391,13 +390,26 @@ Deno.test("gatherInputsForStage", async (t) => {
             const userId = "u100";
             const sessionId = "s100";
             const iteration = 2;
-
+            const feedbackSourceDocPath = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration,
+                stageSlug: feedbackStageSlug,
+                modelSlug: "model-beta",
+                attemptCount: 0,
+                documentKey: FileType.business_case,
+                fileType: FileType.business_case,
+            });
+            const feedbackOriginalStoragePath = feedbackSourceDocPath.storagePath;
+            const feedbackOriginalBaseName = "model-beta_0_business_case";
             const feedbackPathParts = constructStoragePath({
                 projectId,
                 sessionId,
-                iteration: iteration - 1, // Feedback is from previous iteration
+                iteration,
                 stageSlug: feedbackStageSlug,
                 fileType: FileType.UserFeedback,
+                originalStoragePath: feedbackOriginalStoragePath,
+                originalBaseName: feedbackOriginalBaseName,
             });
             const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
 
@@ -416,7 +428,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                         select: async (state: MockQueryBuilderState) => {
                             const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
                             const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackStageSlug);
-                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iteration - 1);
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iteration);
                             const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
                             if (sessionFilter && stageFilter && iterFilter && userFilter) {
                                 return { data: [{ id: 'fb-1', storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
@@ -507,7 +519,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(doc.type, "feedback");
                 assertEquals(doc.content, feedbackContent);
                 assertEquals(doc.metadata.displayName, mockStageDisplayName);
-                assertEquals(doc.metadata.header, undefined); // No header defined in rule
+                assertEquals(doc.metadata.header, "Previous Feedback Stage Feedback");
 
                 const downloadSpy = storageSpies.downloadSpy;
                 assertEquals(downloadSpy.calls.length, 1);
@@ -537,12 +549,24 @@ Deno.test("gatherInputsForStage", async (t) => {
             const contribStoragePath = "path/to/documents";
             const contribFileName = "gpt-4-turbo_0_feature_spec.md";
 
+            const feedbackSourceDocPathBoth = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration,
+                stageSlug: contribSlug,
+                modelSlug: "gpt-4-turbo",
+                attemptCount: 0,
+                documentKey: FileType.feature_spec,
+                fileType: FileType.feature_spec,
+            });
             const feedbackPathParts = constructStoragePath({
                 projectId,
                 sessionId,
-                iteration: iteration - 1,
+                iteration,
                 stageSlug: feedbackSlug,
-                fileType: FileType.UserFeedback
+                fileType: FileType.UserFeedback,
+                originalStoragePath: feedbackSourceDocPathBoth.storagePath,
+                originalBaseName: "gpt-4-turbo_0_feature_spec",
             });
             const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
 
@@ -608,7 +632,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                         select: async (state: MockQueryBuilderState) => {
                             const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
                             const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackSlug);
-                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iteration - 1);
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iteration);
                             const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === 'u200');
                             if (sessionFilter && stageFilter && iterFilter && userFilter) {
                                 return { data: [{ id: 'fb-both', storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
@@ -675,19 +699,17 @@ Deno.test("gatherInputsForStage", async (t) => {
                     created_at: new Date().toISOString(),
                     default_system_prompt_id: null, 
                     recipe_step: createMockRecipeStep([
-                        { 
-                            type: "document", 
+                        {
+                            type: "document",
                             slug: contribSlug,
                             required: true,
                             multiple: false,
-                            section_header: "Contributions from contrib-slug-for-both stage",
                         },
-                        { 
-                            type: "feedback", 
+                        {
+                            type: "feedback",
                             slug: feedbackSlug,
                             required: true,
                             multiple: false,
-                            section_header: "Feedback from feedback-slug-for-both stage",
                         }
                     ]),
                     active_recipe_instance_id: null,
@@ -714,7 +736,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(!!contribDoc, true, "Contribution document not found in result");
                 assertEquals(contribDoc?.id, "contrib-both");
                 assertEquals(contribDoc?.content, contribContent);
-                assertEquals(contribDoc?.metadata.header, "Contributions from contrib-slug-for-both stage");
+                assertEquals(contribDoc?.metadata.header, "Previous Contribution Stage (Both) Documents");
                 assertEquals(contribDoc?.metadata.displayName, contribDisplayName);
                 // modelName is extracted from file_name (model slug), not from contributions query
                 assertEquals(contribDoc?.metadata.modelName, "gpt-4-turbo");
@@ -722,214 +744,11 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(!!feedbackDoc, true, "Feedback document not found in result");
                 assertEquals(feedbackDoc?.id, "fb-both");
                 assertEquals(feedbackDoc?.content, feedbackContent);
-                assertEquals(feedbackDoc?.metadata.header, "Feedback from feedback-slug-for-both stage");
+                assertEquals(feedbackDoc?.metadata.header, "Previous Feedback Stage (Both) Feedback");
                 assertEquals(feedbackDoc?.metadata.displayName, feedbackDisplayName);
 
                 const downloadSpy = storageSpies.downloadSpy;
                 assertEquals(downloadSpy.calls.length, 2, "Expected two download calls");
-            } finally {
-                teardown();
-            }
-        });
-
-        await tCtx.step("should use custom section_headers when provided in rules", async () => {
-            const customContribHeader = "## Prior Art Review (AI Generated)";
-            const customFeedbackHeader = "## Human Editor Notes";
-            const contribSlug = "prev-contrib-custom-header";
-            const feedbackSlug = "prev-feedback-custom-header";
-            const modelName = "Model Custom";
-            const contribContent = "Custom header contribution.";
-            const feedbackContent = "Custom header feedback.";
-            const projectId = "p300";
-            const sessionId = "s300";
-            const iteration = 1;
-            const contribStoragePath = "path/documents";
-            const contribFileName = "ch.md";
-            const feedbackPathParts = constructStoragePath({
-                projectId,
-                sessionId,
-                iteration: 1, // Feedback is from previous iteration, which is 1
-                stageSlug: feedbackSlug,
-                fileType: FileType.UserFeedback
-            });
-            const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
-            const expectedContribPath = join(contribStoragePath, contribFileName);
-
-            const config: MockSupabaseDataConfig = {
-                genericMockResults: {
-                    'dialectic_stages': {
-                        select: async (state: MockQueryBuilderState) => {
-                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
-                            if (inFilter && Array.isArray(inFilter.value)) {
-                                const data: {slug: string, display_name: string}[] = [];
-                                if (inFilter.value.includes(contribSlug)) data.push({ slug: contribSlug, display_name: "Contrib Stage CH" });
-                                if (inFilter.value.includes(feedbackSlug)) data.push({ slug: feedbackSlug, display_name: "Feedback Stage CH" });
-                                return { data, error: null, count: data.length, status: 200, statusText: "OK" };
-                            }
-                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
-                        }
-                    },
-                    'dialectic_project_resources': {
-                        select: async (state: MockQueryBuilderState) => {
-                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'resource_type' && f.value === 'rendered_document');
-                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'session_id' && f.value === sessionId);
-                            const iterationFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'iteration_number' && f.value === iteration);
-                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'eq' && f.column === 'stage_slug' && f.value === contribSlug);
-                            if (resourceTypeFilter && sessionFilter && iterationFilter && stageFilter) {
-                                return {
-                                    data: [{
-                                        id: "contrib-ch",
-                                        project_id: projectId,
-                                        user_id: 'u1',
-                                        file_name: contribFileName,
-                                        storage_bucket: "test-bucket",
-                                        storage_path: contribStoragePath,
-                                        mime_type: 'text/markdown',
-                                        size_bytes: contribContent.length,
-                                        resource_type: 'rendered_document',
-                                        session_id: sessionId,
-                                        iteration_number: iteration,
-                                        stage_slug: contribSlug,
-                                        source_contribution_id: 'contrib-custom-id',
-                                        resource_description: null,
-                                        created_at: new Date().toISOString(),
-                                        updated_at: new Date().toISOString(),
-                                    }],
-                                    error: null,
-                                    count: 1,
-                                    status: 200,
-                                    statusText: "OK"
-                                };
-                            }
-                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
-                        }
-                    },
-                    'dialectic_contributions': {
-                        select: async () => {
-                            return { data: [{ id: 'contrib-custom-id', model_name: modelName }], error: null, count: 1, status: 200, statusText: "OK" };
-                        }
-                    },
-                    'dialectic_feedback': {
-                         select: async (state: MockQueryBuilderState) => {
-                            const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
-                            const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackSlug);
-                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === 1); // targetIteration is 1 when iteration is 1
-                            const userFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'user_id' && f.value === 'u300');
-                            if (sessionFilter && stageFilter && iterFilter && userFilter) {
-                                return { data: [{ id: "fb-ch", storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
-                            }
-                            // Debugging fallback if filters fail
-                            // console.log("Feedback mock filters failed:", { sessionFilter, stageFilter, iterFilter, userFilter, filters: state.filters });
-                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
-                        }
-                    }
-                },
-                storageMock: {
-                    downloadResult: async (bucketId: string, path: string) => {
-                        const expectedContribPathFs = expectedContribPath.replace(/\\/g, '/');
-                        const expectedFeedbackPathFs = expectedFeedbackPath.replace(/\\/g, '/');
-                        if (
-                            bucketId === "test-bucket" &&
-                            (path === expectedContribPath || path === expectedContribPathFs)
-                        ) return { data: new Blob([contribContent]), error: null };
-                        if (
-                            bucketId === "test-bucket" &&
-                            (path === expectedFeedbackPath || path === expectedFeedbackPathFs)
-                        ) return { data: new Blob([feedbackContent]), error: null };
-                        return { data: null, error: new Error(`Unexpected download path (custom header): ${path}`) };
-                    }
-                }
-            };
-            const { mockSupabaseClient, spies } = setup(config);
-
-            try {
-                const project: ProjectContext = { 
-                    id: projectId,
-                    user_id: 'u300',
-                    project_name: "Test Project P300",
-                    initial_user_prompt: "Initial prompt for P300",
-                    initial_prompt_resource_id: null,
-                    selected_domain_id: "d1-p300",
-                    dialectic_domains: { name: "Test Domain P300" },
-                    process_template_id: 'pt-p300',
-                    selected_domain_overlay_id: null,
-                    user_domain_overlay_values: null,
-                    repo_url: null,
-                    status: 'active',
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                };
-                const session: SessionContext = { 
-                    id: sessionId,
-                    project_id: projectId,
-                    selected_model_ids: ["model-custom-id"],
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                    current_stage_id: 'curr-stage-ch',
-                    iteration_count: iteration, 
-                    session_description: 'Session for custom header test',
-                    status: 'pending_thesis',
-                    associated_chat_id: null,
-                    user_input_reference_url: null
-                };
-                const iterationNumber = iteration;
-                const stage: StageContext = {
-                    id: "stage-custom-headers", 
-                    slug: "curr-stage-ch", 
-                    display_name: "Current Stage Custom Headers", 
-                    description: null,
-                    system_prompts: null, 
-                    domain_specific_prompt_overlays: [], 
-                    created_at: new Date().toISOString(),
-                    default_system_prompt_id: null, 
-                    recipe_step: createMockRecipeStep([
-                        { 
-                            type: "document", 
-                            slug: contribSlug, 
-                            section_header: customContribHeader,
-                            required: true,
-                            multiple: false,
-                        },
-                        { 
-                            type: "feedback", 
-                            slug: feedbackSlug, 
-                            section_header: customFeedbackHeader, 
-                            required: true, 
-                            multiple: false,
-                        }
-                    ]),
-                    active_recipe_instance_id: null,
-                    recipe_template_id: null,
-                    expected_output_template_ids: [],
-                };
-
-                const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
-                
-                // Initialize spies BEFORE the action
-                const storageSpies = spies.storage.from("test-bucket");
-                
-                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, downloadFn, stage, project, session, iterationNumber);
-
-                console.log("--- TEST LOG: should use custom section_headers ---");
-                console.log("ACTUAL:", JSON.stringify(result));
-                console.log("--- END TEST LOG ---");
-
-                assertEquals(result.sourceDocuments.length, 2);
-
-                const contribDoc = result.sourceDocuments.find(d => d.type === 'document');
-                const feedbackDoc = result.sourceDocuments.find(d => d.type === 'feedback');
-
-                assertEquals(!!contribDoc, true, "Custom header contribution document not found");
-                assertEquals(contribDoc?.content, contribContent);
-                assertEquals(contribDoc?.metadata.header, customContribHeader);
-
-                assertEquals(!!feedbackDoc, true, "Custom header feedback document not found");
-                assertEquals(feedbackDoc?.id, "fb-ch");
-                assertEquals(feedbackDoc?.content, feedbackContent);
-                assertEquals(feedbackDoc?.metadata.header, customFeedbackHeader);
-
-                const downloadSpy = storageSpies.downloadSpy;
-                assertEquals(downloadSpy.calls.length, 2, "Expected two download calls for custom headers test");
             } finally {
                 teardown();
             }
@@ -1236,7 +1055,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     id: "stage-ms-opt", 
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null,
                     recipe_step: createMockRecipeStep([
-                        { type: "document", slug: contribStageSlug, required: false, multiple: false, section_header: "Optional Contributions Missing Storage" }
+                        { type: "document", slug: contribStageSlug, required: false, multiple: false }
                     ]),
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
@@ -1432,7 +1251,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     id: "stage-cdl-err-opt", 
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null,
                     recipe_step: createMockRecipeStep([
-                        { type: "document", slug: contribStageSlug, required: false, multiple: false, section_header: sectionHeader }
+                        { type: "document", slug: contribStageSlug, required: false, multiple: false }
                     ]),
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
@@ -1619,7 +1438,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     id: "stage-ms-opt", 
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null,
                     recipe_step: createMockRecipeStep([
-                        { type: "document", slug: contribStageSlug, required: false, multiple: false, section_header: sectionHeader }
+                        { type: "document", slug: contribStageSlug, required: false, multiple: false }
                     ]),
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
@@ -1765,7 +1584,6 @@ Deno.test("gatherInputsForStage", async (t) => {
                             document_key: documentKey,
                             required: true,
                             multiple: false,
-                            section_header: "Documents from resource stage",
                         }
                     ]),
                     active_recipe_instance_id: null,
@@ -1977,7 +1795,6 @@ Deno.test("gatherInputsForStage", async (t) => {
                             document_key: documentKey,
                             required: true,
                             multiple: false,
-                            section_header: "Documents from both stage",
                         }
                     ]),
                     active_recipe_instance_id: null,
@@ -2089,7 +1906,6 @@ Deno.test("gatherInputsForStage", async (t) => {
                             document_key: documentKey,
                             required: true,
                             multiple: false,
-                            section_header: "Documents from missing stage",
                         }
                     ]),
                     active_recipe_instance_id: null,
@@ -2255,7 +2071,6 @@ Deno.test("gatherInputsForStage", async (t) => {
                             slug: headerContextStageSlug,
                             required: true,
                             multiple: false,
-                            section_header: "Header context from previous stage",
                         }
                     ]),
                     active_recipe_instance_id: null,
@@ -2417,7 +2232,6 @@ Deno.test("gatherInputsForStage", async (t) => {
                             document_key: documentKey,
                             required: true,
                             multiple: false,
-                            section_header: "Contribution from previous stage",
                         }
                     ]),
                     active_recipe_instance_id: null,
@@ -2439,8 +2253,861 @@ Deno.test("gatherInputsForStage", async (t) => {
                 assertEquals(doc.type, "contribution", "Expected document type to be 'contribution'");
                 assertEquals(doc.content, contribContent, "Expected content to match downloaded contribution content");
                 assertEquals(doc.metadata.displayName, mockStageDisplayName);
-                assertEquals(doc.metadata.header, "Contribution from previous stage");
+                assertEquals(doc.metadata.header, undefined);
                 
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("feedback query includes order by created_at descending for deterministic selection", async () => {
+            let capturedFeedbackState: MockQueryBuilderState | null = null;
+            const feedbackStageSlug = "stage-order-test";
+            const projectId = "p-ord";
+            const userId = "u-ord";
+            const sessionId = "s-ord";
+            const iterationNumber = 2;
+            const orderTestSourceStageSlug = "stage-order-contrib";
+            const orderTestSourceDocPath = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: orderTestSourceStageSlug,
+                modelSlug: "model-ord",
+                attemptCount: 0,
+                documentKey: FileType.business_case,
+                fileType: FileType.business_case,
+            });
+            const feedbackPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: feedbackStageSlug,
+                fileType: FileType.UserFeedback,
+                originalStoragePath: orderTestSourceDocPath.storagePath,
+                originalBaseName: "model-ord_0_business_case",
+            });
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(feedbackStageSlug)) {
+                                return { data: [{ slug: feedbackStageSlug, display_name: "Order Test Stage" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            capturedFeedbackState = state;
+                            const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackStageSlug);
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iterationNumber);
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
+                            if (sessionFilter && stageFilter && iterFilter && userFilter) {
+                                return { data: [{ id: 'fb-ord', storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async () => ({ data: new Blob(["feedback content"]), error: null }),
+                }
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path), stage, project, session, iterationNumber);
+                assert(capturedFeedbackState !== null, "dialectic_feedback select should have been called");
+                const feedbackState: MockQueryBuilderState = capturedFeedbackState;
+                assertEquals(feedbackState.orderBy?.column, "created_at", "feedback query should order by created_at");
+                assertEquals(feedbackState.orderBy?.options?.ascending, false, "feedback query should order descending (ascending: false)");
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("feedback query filters by resource_description document_key when rule.document_key is present", async () => {
+            let capturedFeedbackState: MockQueryBuilderState | null = null;
+            const feedbackStageSlug = "stage-dockey-test";
+            const documentKey = FileType.business_case;
+            const projectId = "p-dk";
+            const userId = "u-dk";
+            const sessionId = "s-dk";
+            const iterationNumber = 1;
+            const dockeySourceStageSlug = "stage-dockey-contrib";
+            const dockeySourceDocPath = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: dockeySourceStageSlug,
+                modelSlug: "model-dk",
+                attemptCount: 0,
+                documentKey,
+                fileType: documentKey,
+            });
+            const feedbackPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: feedbackStageSlug,
+                fileType: FileType.UserFeedback,
+                originalStoragePath: dockeySourceDocPath.storagePath,
+                originalBaseName: "model-dk_0_business_case",
+            });
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(feedbackStageSlug)) {
+                                return { data: [{ slug: feedbackStageSlug, display_name: "DocKey Stage" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            capturedFeedbackState = state;
+                            const docKeyFilter = state.filters.find(f => f.type === 'filter' && f.column === 'resource_description->>document_key' && f.value === documentKey);
+                            const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackStageSlug);
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iterationNumber);
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
+                            if (sessionFilter && stageFilter && iterFilter && userFilter && docKeyFilter) {
+                                return { data: [{ id: 'fb-dk', storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: { downloadResult: async () => ({ data: new Blob(["doc_a feedback"]), error: null }) },
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
+                assert(capturedFeedbackState !== null, "dialectic_feedback select should have been called");
+                const feedbackState: MockQueryBuilderState = capturedFeedbackState;
+                const docKeyFilter = feedbackState.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'filter' && f.column === 'resource_description->>document_key');
+                assert(docKeyFilter !== undefined, "feedback query should filter by resource_description->>document_key when rule.document_key is present");
+                assertEquals(docKeyFilter.value, documentKey);
+                assertEquals(result.sourceDocuments.length, 1);
+                assertEquals(result.sourceDocuments[0].content, "doc_a feedback");
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("feedback query uses iterationNumber directly not iterationNumber minus one", async () => {
+            let capturedIteration: number | null = null;
+            const feedbackStageSlug = "stage-iter-test";
+            const projectId = "p-iter";
+            const userId = "u-iter";
+            const sessionId = "s-iter";
+            const iterationNumber = 5;
+            const iterSourceStageSlug = "stage-iter-contrib";
+            const iterSourceDocPath = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: iterSourceStageSlug,
+                modelSlug: "model-iter",
+                attemptCount: 0,
+                documentKey: FileType.business_case,
+                fileType: FileType.business_case,
+            });
+            const feedbackPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: feedbackStageSlug,
+                fileType: FileType.UserFeedback,
+                originalStoragePath: iterSourceDocPath.storagePath,
+                originalBaseName: "model-iter_0_business_case",
+            });
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(feedbackStageSlug)) {
+                                return { data: [{ slug: feedbackStageSlug, display_name: "Iter Stage" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number');
+                            if (iterFilter && iterFilter.value !== undefined) capturedIteration = iterFilter.value as number;
+                            const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackStageSlug);
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
+                            if (sessionFilter && stageFilter && iterFilter && userFilter && iterFilter.value === iterationNumber) {
+                                return { data: [{ id: 'fb-iter', storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: { downloadResult: async () => ({ data: new Blob(["iter feedback"]), error: null }) },
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
+                assert(capturedIteration !== null, "dialectic_feedback select should have been called with iteration filter");
+                assertEquals(capturedIteration, iterationNumber, "feedback query must use iterationNumber directly not iterationNumber - 1");
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("no error thrown when zero feedback rows match for optional feedback rule", async () => {
+            const feedbackStageSlug = "stage-optional-empty";
+            const projectId = "p-opt";
+            const userId = "u-opt";
+            const sessionId = "s-opt";
+            const iterationNumber = 1;
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(feedbackStageSlug)) {
+                                return { data: [{ slug: feedbackStageSlug, display_name: "Optional Stage" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_feedback': {
+                        select: async () => ({ data: null, error: null, count: 0, status: 200, statusText: "OK" }),
+                    }
+                },
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, required: false, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, async () => ({ data: null, error: null }), stage, project, session, iterationNumber);
+                assertEquals(result.sourceDocuments.length, 0, "no feedback doc when zero rows for optional rule");
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("feedback is correctly selected when rule.document_key is present and multiple feedback rows exist for different documents", async () => {
+            let capturedFeedbackState: MockQueryBuilderState | null = null;
+            const feedbackStageSlug = "stage-multi-doc";
+            const documentKeyA = FileType.business_case;
+            const projectId = "p-multi";
+            const userId = "u-multi";
+            const sessionId = "s-multi";
+            const iterationNumber = 1;
+            const multiSourceStageSlug = "stage-multi-contrib";
+            const multiSourceDocPath = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: multiSourceStageSlug,
+                modelSlug: "model-multi",
+                attemptCount: 0,
+                documentKey: documentKeyA,
+                fileType: documentKeyA,
+            });
+            const pathA = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: feedbackStageSlug,
+                fileType: FileType.UserFeedback,
+                originalStoragePath: multiSourceDocPath.storagePath,
+                originalBaseName: "model-multi_0_business_case",
+            });
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(feedbackStageSlug)) {
+                                return { data: [{ slug: feedbackStageSlug, display_name: "Multi Doc Stage" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            capturedFeedbackState = state;
+                            const docKeyFilter = state.filters.find(f => f.type === 'filter' && f.column === 'resource_description->>document_key' && f.value === documentKeyA);
+                            const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackStageSlug);
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iterationNumber);
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
+                            if (sessionFilter && stageFilter && iterFilter && userFilter && docKeyFilter) {
+                                return { data: [{ id: 'fb-a', storage_bucket: 'test-bucket', storage_path: pathA.storagePath, file_name: pathA.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (_bucket: string, path: string) => {
+                        const pathNorm = path.replace(/\\/g, '/');
+                        const expectedPathA = join(pathA.storagePath, pathA.fileName).replace(/\\/g, '/');
+                        if (pathNorm === expectedPathA) return { data: new Blob(["content for doc_a only"]), error: null };
+                        return { data: null, error: new Error(`Unexpected path: ${path}`) };
+                    }
+                },
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKeyA, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
+                assert(capturedFeedbackState !== null, "dialectic_feedback select should have been called");
+                const feedbackState: MockQueryBuilderState = capturedFeedbackState;
+                const docKeyFilter = feedbackState.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'filter' && f.column === 'resource_description->>document_key');
+                assert(docKeyFilter !== undefined, "query should filter by document_key when rule.document_key is present");
+                assertEquals(docKeyFilter.value, documentKeyA);
+                assertEquals(result.sourceDocuments.length, 1);
+                assertEquals(result.sourceDocuments[0].content, "content for doc_a only", "selected feedback must be for document_key A not B");
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("when modelId is provided feedback query includes filter resource_description->>model_id eq modelId", async () => {
+            let capturedFeedbackState: MockQueryBuilderState | null = null;
+            const feedbackStageSlug = "stage-modelid-filter";
+            const documentKey = FileType.business_case;
+            const projectId = "p-mid";
+            const userId = "u-mid";
+            const sessionId = "s-mid";
+            const iterationNumber = 1;
+            const modelId = "model-m1";
+            const sourceStageSlug = "stage-mid-contrib";
+            const sourceDocPath = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: sourceStageSlug,
+                modelSlug: "m1",
+                attemptCount: 0,
+                documentKey,
+                fileType: documentKey,
+            });
+            const feedbackPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: feedbackStageSlug,
+                fileType: FileType.UserFeedback,
+                originalStoragePath: sourceDocPath.storagePath,
+                originalBaseName: "m1_0_business_case",
+            });
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(feedbackStageSlug)) {
+                                return { data: [{ slug: feedbackStageSlug, display_name: "ModelId Stage" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            capturedFeedbackState = state;
+                            const modelIdFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'filter' && f.column === 'resource_description->>model_id' && f.value === modelId);
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'stage_slug' && f.value === feedbackStageSlug);
+                            const iterFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'iteration_number' && f.value === iterationNumber);
+                            const userFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'user_id' && f.value === userId);
+                            const docKeyFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'filter' && f.column === 'resource_description->>document_key' && f.value === documentKey);
+                            if (sessionFilter && stageFilter && iterFilter && userFilter && docKeyFilter && modelIdFilter) {
+                                return { data: [{ id: 'fb-m1', storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: { downloadResult: async () => ({ data: new Blob(["feedback for model m1"]), error: null }) },
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber, modelId);
+                assert(capturedFeedbackState !== null, "dialectic_feedback select should have been called");
+                const feedbackState: MockQueryBuilderState = capturedFeedbackState;
+                const modelIdFilter = feedbackState.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'filter' && f.column === 'resource_description->>model_id');
+                assert(modelIdFilter !== undefined, "feedback query should filter by resource_description->>model_id when modelId is provided");
+                assertEquals(modelIdFilter.value, modelId);
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("when modelId is provided and two models have feedback for same document_key only specified model feedback is returned", async () => {
+            const feedbackStageSlug = "stage-two-models";
+            const documentKey = FileType.business_case;
+            const projectId = "p-two";
+            const userId = "u-two";
+            const sessionId = "s-two";
+            const iterationNumber = 1;
+            const requestedModelId = "model-requested";
+            const otherModelId = "model-other";
+            const sourceStageSlug = "stage-two-contrib";
+            const sourceDocPath = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: sourceStageSlug,
+                modelSlug: "m-req",
+                attemptCount: 0,
+                documentKey,
+                fileType: documentKey,
+            });
+            const requestedPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: feedbackStageSlug,
+                fileType: FileType.UserFeedback,
+                originalStoragePath: sourceDocPath.storagePath,
+                originalBaseName: "m-req_0_business_case",
+            });
+            const otherPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: feedbackStageSlug,
+                fileType: FileType.UserFeedback,
+                originalStoragePath: sourceDocPath.storagePath,
+                originalBaseName: "m-other_0_business_case",
+            });
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(feedbackStageSlug)) {
+                                return { data: [{ slug: feedbackStageSlug, display_name: "Two Models Stage" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const modelIdFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'filter' && f.column === 'resource_description->>model_id');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'stage_slug' && f.value === feedbackStageSlug);
+                            const iterFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'iteration_number' && f.value === iterationNumber);
+                            const userFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'user_id' && f.value === userId);
+                            const docKeyFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'filter' && f.column === 'resource_description->>document_key' && f.value === documentKey);
+                            if (sessionFilter && stageFilter && iterFilter && userFilter && docKeyFilter && modelIdFilter && modelIdFilter.value === requestedModelId) {
+                                return { data: [{ id: 'fb-requested', storage_bucket: 'test-bucket', storage_path: requestedPathParts.storagePath, file_name: requestedPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (_bucket: string, path: string) => {
+                        const pathNorm = path.replace(/\\/g, '/');
+                        const expectedRequested = (requestedPathParts.storagePath + "/" + requestedPathParts.fileName).replace(/\\/g, '/');
+                        if (pathNorm === expectedRequested) return { data: new Blob(["content for requested model only"]), error: null };
+                        return { data: null, error: new Error(`Unexpected path: ${path}`) };
+                    }
+                },
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber, requestedModelId);
+                assertEquals(result.sourceDocuments.length, 1, "only the specified model's feedback should be returned");
+                assertEquals(result.sourceDocuments[0].content, "content for requested model only");
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("when modelId is absent all feedback rows for document_key are returned and all downloaded and pushed to sourceDocuments", async () => {
+            let capturedFeedbackState: MockQueryBuilderState | null = null;
+            const feedbackStageSlug = "stage-no-modelid";
+            const documentKey = FileType.business_case;
+            const projectId = "p-nomid";
+            const userId = "u-nomid";
+            const sessionId = "s-nomid";
+            const iterationNumber = 1;
+            const sourceStageSlug = "stage-nomid-contrib";
+            const sourceDocPath = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: sourceStageSlug,
+                modelSlug: "m1",
+                attemptCount: 0,
+                documentKey,
+                fileType: documentKey,
+            });
+            const path1 = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: feedbackStageSlug,
+                fileType: FileType.UserFeedback,
+                originalStoragePath: sourceDocPath.storagePath,
+                originalBaseName: "m1_0_business_case",
+            });
+            const path2 = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: feedbackStageSlug,
+                fileType: FileType.UserFeedback,
+                originalStoragePath: sourceDocPath.storagePath,
+                originalBaseName: "m2_0_business_case",
+            });
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(feedbackStageSlug)) {
+                                return { data: [{ slug: feedbackStageSlug, display_name: "No ModelId Stage" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            capturedFeedbackState = state;
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'stage_slug' && f.value === feedbackStageSlug);
+                            const iterFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'iteration_number' && f.value === iterationNumber);
+                            const userFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'user_id' && f.value === userId);
+                            const docKeyFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'filter' && f.column === 'resource_description->>document_key' && f.value === documentKey);
+                            if (sessionFilter && stageFilter && iterFilter && userFilter && docKeyFilter) {
+                                return { data: [{ id: 'fb-1', storage_bucket: 'test-bucket', storage_path: path1.storagePath, file_name: path1.fileName }, { id: 'fb-2', storage_bucket: 'test-bucket', storage_path: path2.storagePath, file_name: path2.fileName }], error: null, count: 2, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (_bucket: string, path: string) => {
+                        const pathNorm = path.replace(/\\/g, '/');
+                        const expected1 = (path1.storagePath + "/" + path1.fileName).replace(/\\/g, '/');
+                        const expected2 = (path2.storagePath + "/" + path2.fileName).replace(/\\/g, '/');
+                        if (pathNorm === expected1) return { data: new Blob(["feedback one"]), error: null };
+                        if (pathNorm === expected2) return { data: new Blob(["feedback two"]), error: null };
+                        return { data: null, error: new Error(`Unexpected path: ${path}`) };
+                    }
+                },
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
+                assert(capturedFeedbackState !== null, "dialectic_feedback select should have been called");
+                const feedbackState: MockQueryBuilderState = capturedFeedbackState;
+                assertEquals(feedbackState.limitCount, undefined, "when modelId is absent feedback query must not use limit(1) so all rows are returned");
+                assertEquals(result.sourceDocuments.length, 2, "all feedback rows for document_key must be downloaded and pushed to sourceDocuments");
+                const contents = result.sourceDocuments.map((d: AssemblerSourceDocument) => d.content).sort();
+                assertEquals(contents, ["feedback one", "feedback two"]);
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("when InputRule type is document with document_key the resulting sourceDocument metadata must include documentKey", async () => {
+            const projectId = "p-doc-key";
+            const userId = "u-doc-key";
+            const sessionId = "s-doc-key";
+            const iterationNumber = 1;
+            const docStageSlug = "thesis";
+            const documentKey = FileType.business_case;
+            const modelSlug = "gpt4";
+            const attemptCount = 0;
+            const fileName = `${modelSlug}_${attemptCount}_${documentKey}.md`;
+            const resourceId = "res-doc-key-1";
+            const storagePathObj = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: docStageSlug,
+                modelSlug,
+                attemptCount,
+                documentKey,
+                fileType: documentKey,
+            });
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(docStageSlug)) {
+                                return { data: [{ slug: docStageSlug, display_name: "Thesis" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_project_resources': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'resource_type' && f.value === 'rendered_document');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'session_id' && f.value === sessionId);
+                            const iterFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'iteration_number' && f.value === iterationNumber);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'stage_slug' && f.value === docStageSlug);
+                            if (resourceTypeFilter && sessionFilter && iterFilter && stageFilter) {
+                                return { data: [{ id: resourceId, storage_bucket: 'test-bucket', storage_path: storagePathObj.storagePath, file_name: fileName, updated_at: new Date().toISOString() }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (_bucket: string, path: string) => {
+                        const pathNorm = path.replace(/\\/g, '/');
+                        const expected = (storagePathObj.storagePath + "/" + fileName).replace(/\\/g, '/');
+                        if (pathNorm === expected) return { data: new Blob(["document content"]), error: null };
+                        return { data: null, error: new Error(`Unexpected path: ${path}`) };
+                    }
+                },
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "document", slug: docStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
+                assertEquals(result.sourceDocuments.length, 1, "one document should be returned");
+                assertEquals(result.sourceDocuments[0].metadata.documentKey, "business_case", "metadata.documentKey must equal the document_key from InputRule");
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("when InputRule type is feedback with document_key the resulting sourceDocument metadata must include documentKey", async () => {
+            const projectId = "p-fb-key";
+            const userId = "u-fb-key";
+            const sessionId = "s-fb-key";
+            const iterationNumber = 1;
+            const feedbackStageSlug = "antithesis";
+            const documentKey = FileType.business_case;
+            const sourceStageSlug = "thesis";
+            const sourceDocPath = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: sourceStageSlug,
+                modelSlug: "m1",
+                attemptCount: 0,
+                documentKey,
+                fileType: documentKey,
+            });
+            const feedbackPath = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: feedbackStageSlug,
+                fileType: FileType.UserFeedback,
+                originalStoragePath: sourceDocPath.storagePath,
+                originalBaseName: "m1_0_business_case",
+            });
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(feedbackStageSlug)) {
+                                return { data: [{ slug: feedbackStageSlug, display_name: "Antithesis" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'stage_slug' && f.value === feedbackStageSlug);
+                            const iterFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'iteration_number' && f.value === iterationNumber);
+                            const userFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'user_id' && f.value === userId);
+                            const docKeyFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'filter' && f.column === 'resource_description->>document_key' && f.value === documentKey);
+                            if (sessionFilter && stageFilter && iterFilter && userFilter && docKeyFilter) {
+                                return { data: [{ id: 'fb-key-1', storage_bucket: 'test-bucket', storage_path: feedbackPath.storagePath, file_name: feedbackPath.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (_bucket: string, path: string) => {
+                        const pathNorm = path.replace(/\\/g, '/');
+                        const expected = (feedbackPath.storagePath + "/" + feedbackPath.fileName).replace(/\\/g, '/');
+                        if (pathNorm === expected) return { data: new Blob(["feedback content"]), error: null };
+                        return { data: null, error: new Error(`Unexpected path: ${path}`) };
+                    }
+                },
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
+                assertEquals(result.sourceDocuments.length, 1, "one feedback should be returned");
+                assertEquals(result.sourceDocuments[0].metadata.documentKey, "business_case", "metadata.documentKey must equal the document_key from InputRule");
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("when InputRule type is header_context with document_key the resulting sourceDocument metadata must include documentKey", async () => {
+            const projectId = "p-hc-key";
+            const userId = "u-hc-key";
+            const sessionId = "s-hc-key";
+            const iterationNumber = 1;
+            const hcStageSlug = "synthesis";
+            const documentKey = FileType.HeaderContext;
+            const modelName = "claude-sonnet";
+            const contributionId = "contrib-hc-1";
+            const fileName = `${modelName}_header_context.md`;
+            const storagePathObj = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: hcStageSlug,
+                modelSlug: modelName,
+                attemptCount: 0,
+                documentKey: FileType.HeaderContext,
+                fileType: FileType.HeaderContext,
+            });
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(hcStageSlug)) {
+                                return { data: [{ slug: hcStageSlug, display_name: "Synthesis" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_contributions': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'session_id' && f.value === sessionId);
+                            const iterFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'iteration_number' && f.value === iterationNumber);
+                            const latestFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'is_latest_edit' && f.value === true);
+                            const typeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'contribution_type' && f.value === 'header_context');
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'stage' && f.value === hcStageSlug);
+                            if (sessionFilter && iterFilter && latestFilter && typeFilter && stageFilter) {
+                                return { data: [{ id: contributionId, storage_bucket: 'test-bucket', storage_path: storagePathObj.storagePath, file_name: fileName, model_name: modelName, updated_at: new Date().toISOString() }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (_bucket: string, path: string) => {
+                        const pathNorm = path.replace(/\\/g, '/');
+                        const expected = (storagePathObj.storagePath + "/" + fileName).replace(/\\/g, '/');
+                        if (pathNorm === expected) return { data: new Blob(["header context content"]), error: null };
+                        return { data: null, error: new Error(`Unexpected path: ${path}`) };
+                    }
+                },
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "header_context", slug: hcStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
+                assertEquals(result.sourceDocuments.length, 1, "one header_context should be returned");
+                assertEquals(result.sourceDocuments[0].metadata.documentKey, "header_context", "metadata.documentKey must equal the document_key from InputRule");
+            } finally {
+                teardown();
+            }
+        });
+
+        await tCtx.step("when InputRule has no document_key the resulting sourceDocument metadata.documentKey must be undefined", async () => {
+            const projectId = "p-no-key";
+            const userId = "u-no-key";
+            const sessionId = "s-no-key";
+            const iterationNumber = 1;
+            const docStageSlug = "thesis";
+            const modelSlug = "gpt4";
+            const attemptCount = 0;
+            const documentKey = FileType.business_case;
+            const fileName = `${modelSlug}_${attemptCount}_${documentKey}.md`;
+            const resourceId = "res-no-key-1";
+            const storagePathObj = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iterationNumber,
+                stageSlug: docStageSlug,
+                modelSlug,
+                attemptCount,
+                documentKey,
+                fileType: documentKey,
+            });
+            const config: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    'dialectic_stages': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const inFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.type === 'in' && f.column === 'slug');
+                            if (inFilter && Array.isArray(inFilter.value) && inFilter.value.includes(docStageSlug)) {
+                                return { data: [{ slug: docStageSlug, display_name: "Thesis" }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_project_resources': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const resourceTypeFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'resource_type' && f.value === 'rendered_document');
+                            const sessionFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'session_id' && f.value === sessionId);
+                            const iterFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'iteration_number' && f.value === iterationNumber);
+                            const stageFilter = state.filters.find((f: MockQueryBuilderState['filters'][number]) => f.column === 'stage_slug' && f.value === docStageSlug);
+                            if (resourceTypeFilter && sessionFilter && iterFilter && stageFilter) {
+                                return { data: [{ id: resourceId, storage_bucket: 'test-bucket', storage_path: storagePathObj.storagePath, file_name: fileName, updated_at: new Date().toISOString() }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    }
+                },
+                storageMock: {
+                    downloadResult: async (_bucket: string, path: string) => {
+                        const pathNorm = path.replace(/\\/g, '/');
+                        const expected = (storagePathObj.storagePath + "/" + fileName).replace(/\\/g, '/');
+                        if (pathNorm === expected) return { data: new Blob(["document content"]), error: null };
+                        return { data: null, error: new Error(`Unexpected path: ${path}`) };
+                    }
+                },
+            };
+            const { mockSupabaseClient } = setup(config);
+            try {
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "document", slug: docStageSlug, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
+                assertEquals(result.sourceDocuments.length, 1, "one document should be returned");
+                assertEquals(result.sourceDocuments[0].metadata.documentKey, undefined, "metadata.documentKey must be undefined when InputRule has no document_key");
             } finally {
                 teardown();
             }

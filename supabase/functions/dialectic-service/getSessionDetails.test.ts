@@ -394,10 +394,11 @@ describe("getSessionDetails Unit Tests", () => {
                   });
                 }
 
-                // All filters satisfied but no resource found (PGRST116)
+                // All filters satisfied but no resource found
+                // With .maybeSingle(), no rows found returns data: null, error: null (not PGRST116)
                 return Promise.resolve({
                   data: null,
-                  error: { name: 'MockDBError', code: 'PGRST116', message: 'Not found' },
+                  error: null,
                   count: 0,
                   status: 200,
                   statusText: 'OK',

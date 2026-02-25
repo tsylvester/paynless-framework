@@ -6,6 +6,7 @@ import {
   describe,
   it,
 } from 'https://deno.land/std@0.208.0/testing/bdd.ts';
+import { assert } from 'https://deno.land/std@0.208.0/assert/mod.ts';
 import {
   coreCleanupTestResources,
   coreCreateAndSetupTestUser,
@@ -39,10 +40,14 @@ import { gatherInputsForStage } from '../functions/_shared/prompt-assembler/gath
 import { gatherContext } from '../functions/_shared/prompt-assembler/gatherContext.ts';
 import { render } from '../functions/_shared/prompt-assembler/render.ts';
 import { constructStoragePath } from '../functions/_shared/utils/path_constructor.ts';
+import { extractSourceGroupFragment } from '../functions/_shared/utils/path_utils.ts';
+import { planComplexStage } from '../functions/dialectic-worker/task_isolator.ts';
+import { findSourceDocuments } from '../functions/dialectic-worker/findSourceDocuments.ts';
+import { getGranularityPlanner } from '../functions/dialectic-worker/strategies/granularity.strategies.ts';
+import { isDialecticStageRecipeStep } from '../functions/_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 import {
   type DialecticJobRow,
   type DialecticProject,
-  type IDialecticJobDeps,
   type StartSessionPayload,
   type StartSessionSuccessResponse,
   type StageWithRecipeSteps,
@@ -55,7 +60,7 @@ import {
   type ContextForDocument,
   type ContentToInclude,
 } from '../functions/dialectic-service/dialectic.interface.ts';
-import { type Database, type Tables, type Json } from '../functions/types_db.ts';
+import { type Database, type Tables, type Json, type TablesInsert } from '../functions/types_db.ts';
 import { createProject } from '../functions/dialectic-service/createProject.ts';
 import { startSession } from '../functions/dialectic-service/startSession.ts';
 import { getSeedPromptForStage } from '../functions/_shared/utils/dialectic_utils.ts';
@@ -64,8 +69,9 @@ import { isRecord, isFileType, isContributionType } from '../functions/_shared/u
 import { isJson } from '../functions/_shared/utils/type-guards/type_guards.common.ts';
 import { isModelContributionFileType } from '../functions/_shared/utils/type-guards/type_guards.file_manager.ts';
 import { mapToStageWithRecipeSteps } from '../functions/_shared/utils/mappers.ts';
-import { isDatabaseRecipeSteps, isDialecticExecuteJobPayload } from '../functions/_shared/utils/type-guards/type_guards.dialectic.ts';
+import { isDatabaseRecipeSteps, isDialecticExecuteJobPayload, isDialecticPlanJobPayload } from '../functions/_shared/utils/type-guards/type_guards.dialectic.ts';
 import { IDocumentRenderer } from '../functions/_shared/services/document_renderer.interface.ts';
+import { type IJobContext, type IExecuteJobContext, IPlanJobContext } from '../functions/dialectic-worker/JobContext.interface.ts';
 import { executeModelCallAndSave } from '../functions/dialectic-worker/executeModelCallAndSave.ts';
 import { SelectedAiProvider, PromptConstructionPayload, DialecticPlanJobPayload } from '../functions/dialectic-service/dialectic.interface.ts';
 import { getStageRecipe } from '../functions/dialectic-service/getStageRecipe.ts';
@@ -84,14 +90,14 @@ describe('PromptAssembler Integration Test Suite', () => {
   let project: DialecticProject;
   let session: StartSessionSuccessResponse;
   let testUser: User;
-  let testDeps: IDialecticJobDeps;
+  let testDeps: IJobContext;
 
   beforeAll(async () => {
     initializeTestDeps();
     adminClient = initializeSupabaseAdminClient();
     setSharedAdminClient(adminClient);
 
-    fileManager = new FileManagerService(adminClient, { constructStoragePath });
+    fileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger });
     promptAssembler = new PromptAssembler(adminClient, fileManager);
 
     const mockDocumentRenderer: IDocumentRenderer = {
@@ -115,16 +121,51 @@ describe('PromptAssembler Integration Test Suite', () => {
       promptAssembler: promptAssembler,
       randomUUID: () => crypto.randomUUID(),
       getSeedPromptForStage,
-      downloadFromStorage: (bucket: string, path: string) =>
+      downloadFromStorage: (supabaseClient: SupabaseClient<Database>, bucket: string, path: string) =>
         downloadFromStorage(adminClient, bucket, path),
       deleteFromStorage: () => Promise.resolve({ error: null }),
       getExtensionFromMimeType: () => '.md',
       callUnifiedAIModel: () => Promise.resolve({ content: '' }),
-      continueJob: () => Promise.resolve({ enqueued: true }),
+      continueJob: () => Promise.resolve({ enqueued: false }),
       retryJob: () => Promise.resolve({}),
       notificationService: new NotificationService(adminClient),
       executeModelCallAndSave: () => Promise.resolve(),
       documentRenderer: mockDocumentRenderer,
+      // IModelContext
+      getAiProviderAdapter: () => null,
+      getAiProviderConfig: async () => ({
+        api_identifier: 'mock-model',
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+        tokenization_strategy: { type: 'none' },
+      }),
+      // IRagContext
+      ragService: {
+        getContextForModel: async () => ({
+          context: '',
+          tokensUsedForIndexing: 0,
+          error: undefined,
+        }),
+      },
+      indexingService: {
+        indexDocument: async () => ({ success: true, tokensUsed: 0 }),
+      },
+      embeddingClient: {
+        getEmbedding: async () => ({
+          embedding: [],
+          usage: { prompt_tokens: 0, total_tokens: 0 },
+        }),
+      },
+      countTokens,
+      // ITokenContext
+      tokenWalletService: createMockTokenWalletService().instance,
+      // IExecuteJobContext-specific
+      extractSourceGroupFragment,
+      shouldEnqueueRenderJob: async () => ({ shouldRender: false, reason: 'is_json' as const }),
+      // IPlanJobContext
+      getGranularityPlanner: () => () => [],
+      planComplexStage: async () => [],
+      findSourceDocuments: async () => [],
     };
 
     // Application functions will fetch their own recipe steps - no manual fetching needed
@@ -173,7 +214,7 @@ describe('PromptAssembler Integration Test Suite', () => {
       };
       
       const deps: GenerateContributionsDeps = {
-        downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+        downloadFromStorage: (supabase: SupabaseClient<Database>, bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
         getExtensionFromMimeType: () => '.md',
         logger: testLogger,
         randomUUID: () => crypto.randomUUID(),
@@ -497,6 +538,7 @@ describe('PromptAssembler Integration Test Suite', () => {
       ...session,
       status: session.status,
       current_stage_id: session.current_stage_id,
+      selected_model_ids: session.selected_models?.map(model => model.id),
     };
 
     for (const stageDto of stagesWithRecipes) {
@@ -627,15 +669,19 @@ describe('PromptAssembler Integration Test Suite', () => {
               const turnDeps: AssembleTurnPromptDeps = {
                 dbClient: adminClient,
                 fileManager,
-                job: mockJob,
-                project: projectContext,
-                session: sessionContext,
-                stage: stageWithRecipe,
                 gatherContext,
                 render,
+                downloadFromStorage: (supabase: SupabaseClient<Database>, bucket: string, path: string) =>
+                  downloadFromStorage(adminClient, bucket, path),
               };
               const assembledTurn = await promptAssembler.assembleTurnPrompt(
                 turnDeps,
+                {
+                  job: mockJob,
+                  project: projectContext,
+                  session: sessionContext,
+                  stage: stageWithRecipe,
+                },
               );
               console.log('\n--- [TURN PROMPT (Assembled)] ---\n');
               console.log(assembledTurn.promptContent);
@@ -703,7 +749,6 @@ describe('PromptAssembler Integration Test Suite', () => {
                 project: projectContext,
                 session: sessionContext,
                 stage: stageWithRecipe,
-                continuationContent: '{"incomplete_json":',
                 gatherContext,
               };
               const assembledContinuation = await promptAssembler
@@ -732,8 +777,8 @@ describe('PromptAssembler Integration Test Suite', () => {
       // Create header_context with flexible types (object where recipe expects string)
       const systemMaterials: SystemMaterials = {
         stage_rationale: 'Test stage rationale',
-        executive_summary: 'Test executive summary',
         input_artifacts_summary: 'Test input artifacts summary',
+        agent_notes_to_self: 'Test agent notes to self',
       };
       
       const contentToInclude: ContentToInclude = {
@@ -821,7 +866,7 @@ describe('PromptAssembler Integration Test Suite', () => {
       };
       
       const generateDeps: GenerateContributionsDeps = {
-        downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+        downloadFromStorage: (supabase: SupabaseClient<Database>, bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
         getExtensionFromMimeType: () => '.md',
         logger: testLogger,
         randomUUID: () => crypto.randomUUID(),
@@ -851,7 +896,6 @@ describe('PromptAssembler Integration Test Suite', () => {
       // Create EXECUTE job with output_type HeaderContext to test executeModelCallAndSave
       // PLAN jobs create EXECUTE child jobs with output_type: HeaderContext
       const executeJobPayload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: crypto.randomUUID(),
         output_type: FileType.HeaderContext,
         canonicalPathParams: {
@@ -923,7 +967,7 @@ describe('PromptAssembler Integration Test Suite', () => {
       }).instance;
 
       // Mock AI call to return header_context with flexible types
-      const depsWithMockedAI: IDialecticJobDeps = {
+      const depsWithMockedAI: IJobContext = {
         ...testDeps,
         callUnifiedAIModel: async () => ({
           content: JSON.stringify(headerContextWithFlexibleTypes),
@@ -963,7 +1007,11 @@ describe('PromptAssembler Integration Test Suite', () => {
 
       await executeModelCallAndSave({
         dbClient: adminClient,
-        deps: depsWithMockedAI,
+        deps: {
+          ...depsWithMockedAI,
+          extractSourceGroupFragment: () => 'testuuid',
+          shouldEnqueueRenderJob: () => Promise.resolve({ shouldRender: false, reason: 'is_json' }),
+        },
         authToken: jwt,
         job: headerContextExecuteJob,
         projectOwnerUserId: testUser.id,
@@ -1000,7 +1048,6 @@ describe('PromptAssembler Integration Test Suite', () => {
 
       // Create EXECUTE job payload with all required fields
       const executePayload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: crypto.randomUUID(),
         output_type: FileType.business_case,
         canonicalPathParams: {
@@ -1071,7 +1118,7 @@ describe('PromptAssembler Integration Test Suite', () => {
       const { processSimpleJob } = await import('../functions/dialectic-worker/processSimpleJob.ts');
       
       // USE REAL APPLICATION FUNCTION: Use real executeModelCallAndSave (can mock AI call inside it)
-      const depsWithMockedExecute: IDialecticJobDeps = {
+      const depsWithMockedExecute: IJobContext = {
         ...testDeps,
         // Use real executeModelCallAndSave - mock only the AI call
         callUnifiedAIModel: async () => ({
@@ -1080,6 +1127,17 @@ describe('PromptAssembler Integration Test Suite', () => {
           inputTokens: 100,
           outputTokens: 200,
           processingTimeMs: 500,
+          rawProviderResponse: {
+            choices: [{
+              message: {
+                content: 'Mock AI response',
+              },
+            }],
+            usage: {
+              prompt_tokens: 100,
+              completion_tokens: 200,
+            },
+          },
         }),
       };
 
@@ -1122,7 +1180,7 @@ describe('PromptAssembler Integration Test Suite', () => {
       // Create header_context with flexible types
       const systemMaterials2: SystemMaterials = {
         stage_rationale: 'Test stage rationale',
-        executive_summary: 'Test executive summary',
+        agent_notes_to_self: 'Test agent notes to self',
         input_artifacts_summary: 'Test input artifacts summary',
       };
       
@@ -1183,6 +1241,7 @@ describe('PromptAssembler Integration Test Suite', () => {
             modelSlug: testModel.api_identifier,
             attemptCount: 1,
             contributionType: 'thesis',
+            documentKey: documentKey,
           },
           mimeType: 'application/json',
           sizeBytes: JSON.stringify(headerContextWithFlexibleTypes, null, 2).length,
@@ -1250,7 +1309,6 @@ describe('PromptAssembler Integration Test Suite', () => {
 
       // Create EXECUTE job payload with all required fields
       const executePayload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         prompt_template_id: crypto.randomUUID(),
         output_type: FileType.business_case,
         canonicalPathParams: {
@@ -1318,7 +1376,7 @@ describe('PromptAssembler Integration Test Suite', () => {
       };
 
       // USE REAL APPLICATION FUNCTION: Use real executeModelCallAndSave (can mock AI call inside it)
-      const testDepsWithRealExecute: IDialecticJobDeps = {
+      const testDepsWithRealExecute: IJobContext = {
         ...testDeps,
         // Use real executeModelCallAndSave - mock only the AI call
         callUnifiedAIModel: async () => ({
@@ -1354,11 +1412,539 @@ describe('PromptAssembler Integration Test Suite', () => {
       }
 
       // Assert: processSimpleJob should succeed (or fail for non-structure reasons) - proving assembleTurnPrompt accepted flexible types
-      if (processSimpleJobError && 
-          (processSimpleJobError.message.includes('content_to_include structure') || 
+      if (processSimpleJobError &&
+          (processSimpleJobError.message.includes('content_to_include structure') ||
            processSimpleJobError.message.includes('structure doesn\'t match'))) {
         throw new Error(`processSimpleJob failed with structure validation error: ${processSimpleJobError.message}`);
       }
+    });
+
+    it('should deduplicate duplicate keys in flawed AI JSON and produce a valid rendered prompt end-to-end', async () => {
+      // END-TO-END PROOF: duplicate-key deduplication via jsonSanitizer
+      //
+      // Call stack exercised:
+      //   raw AI response (with duplicate keys)
+      //   → executeModelCallAndSave → sanitizeJsonContent (AST deduplication via jsonc-parser)
+      //   → JSON.parse (clean) → Supabase Storage
+      //   → processSimpleJob → assembleTurnPrompt → downloadFromStorage (template)
+      //   → JSON.parse (HeaderContext) → content_to_include extraction → context merge
+      //   → render → renderPrompt → rendered prompt with populated data
+      //
+      // Only I/O is mocked:
+      //   - callUnifiedAIModel in Step 2 (returns raw flawed JSON as AI response)
+      //   - executeModelCallAndSave in Step 4 (captures rendered prompt)
+      // All business logic uses ACTUAL application functions via the ACTUAL DI graph.
+
+      const stageSlug = 'parenthesis';
+
+      // --- Input artifact: read ACTUAL flawed JSON from disk ---
+      // This file contains duplicate keys (subsystems, feature_scope, guardrails, etc.)
+      // where the content-bearing value appears first and an empty placeholder appears second.
+      // JSON.parse() last-value-wins semantics would destroy the content-bearing values.
+      const rawFlawedJson = await Deno.readTextFile(
+        '../../example/google-gemini-2.5-flash_0_0742819d_header_context.json',
+      );
+
+      // --- Step 1: Negative control ---
+      // Prove the raw file genuinely exhibits JSON.parse last-value-wins data destruction
+      const naivelyParsed = JSON.parse(rawFlawedJson);
+      const naiveContextForDocs = naivelyParsed.context_for_documents || [];
+      const naiveTechReq = naiveContextForDocs.find(
+        (c: Record<string, unknown>) => c.document_key === 'technical_requirements',
+      );
+      assert(naiveTechReq, 'Negative control: should find technical_requirements in context_for_documents');
+      const naiveContent = naiveTechReq.content_to_include;
+      // These assertions prove the bug: JSON.parse kept the LAST (empty) value for each duplicate key
+      assert(
+        Array.isArray(naiveContent.subsystems) && naiveContent.subsystems.length === 0,
+        'Negative control: JSON.parse should have destroyed subsystems (empty array from last-value-wins)',
+      );
+      assert(
+        Array.isArray(naiveContent.feature_scope) && naiveContent.feature_scope.length === 0,
+        'Negative control: JSON.parse should have destroyed feature_scope (empty array from last-value-wins)',
+      );
+      assert(
+        Array.isArray(naiveContent.guardrails) && naiveContent.guardrails.length === 0,
+        'Negative control: JSON.parse should have destroyed guardrails (empty array from last-value-wins)',
+      );
+
+      // --- Step 2: Store flawed HeaderContext via actual executeModelCallAndSave ---
+
+      // Fetch test model
+      const { data: testModel, error: modelError } = await adminClient
+        .from('ai_providers')
+        .select('*')
+        .eq('api_identifier', 'openai-gpt-4o-mini')
+        .single();
+
+      if (modelError) {
+        throw new Error(`Failed to fetch test model: ${modelError.message}`);
+      }
+      if (!testModel || !testModel.id || !testModel.name || !testModel.api_identifier) {
+        throw new Error('Test model is missing required fields');
+      }
+
+      // Add model to session's selected models
+      const { error: updateSessionError } = await adminClient
+        .from('dialectic_sessions')
+        .update({ selected_model_ids: [testModel.id] })
+        .eq('id', session.id);
+
+      if (updateSessionError) {
+        throw new Error(`Failed to update session with selected models: ${updateSessionError.message}`);
+      }
+
+      const { userId, jwt } = await coreCreateAndSetupTestUser();
+
+      // Fetch wallet
+      const { data: walletData, error: walletError } = await adminClient
+        .from('token_wallets')
+        .select('wallet_id')
+        .eq('user_id', testUser.id)
+        .is('organization_id', null)
+        .single();
+
+      if (walletError) {
+        throw new Error(`Failed to fetch wallet: ${walletError.message}`);
+      }
+      if (!walletData || !walletData.wallet_id) {
+        throw new Error('Wallet record is missing wallet_id');
+      }
+
+      // Create HeaderContext EXECUTE job payload
+      const headerContextExecutePayload: DialecticExecuteJobPayload = {
+        prompt_template_id: crypto.randomUUID(),
+        output_type: FileType.HeaderContext,
+        canonicalPathParams: {
+          stageSlug: stageSlug,
+          contributionType: 'header_context',
+        },
+        inputs: {},
+        document_key: FileType.HeaderContext,
+        document_relationships: null,
+        model_id: testModel.id,
+        model_slug: testModel.api_identifier,
+        projectId: project.id,
+        sessionId: session.id,
+        iterationNumber: 1,
+        stageSlug: stageSlug,
+        walletId: walletData.wallet_id,
+        user_jwt: jwt,
+      };
+
+      if (!isDialecticExecuteJobPayload(headerContextExecutePayload)) {
+        throw new Error('HeaderContext execute job payload does not match DialecticExecuteJobPayload type');
+      }
+      if (!isJson(headerContextExecutePayload)) {
+        throw new Error('HeaderContext execute job payload is not valid JSON');
+      }
+
+      // Create HeaderContext EXECUTE job in database
+      const { data: headerContextExecuteJobData, error: headerContextExecuteJobError } = await adminClient
+        .from('dialectic_generation_jobs')
+        .insert({
+          session_id: session.id,
+          user_id: testUser.id,
+          stage_slug: stageSlug,
+          job_type: 'EXECUTE',
+          status: 'pending',
+          iteration_number: 1,
+          is_test_job: true,
+          payload: headerContextExecutePayload,
+        })
+        .select()
+        .single();
+
+      if (headerContextExecuteJobError || !headerContextExecuteJobData) {
+        throw new Error(`Failed to create HeaderContext EXECUTE job: ${headerContextExecuteJobError?.message || 'No job returned'}`);
+      }
+
+      const headerContextExecuteJob: DialecticJobRow = headerContextExecuteJobData;
+
+      const providerDetails: SelectedAiProvider = {
+        id: testModel.id,
+        provider: testModel.provider,
+        name: testModel.name,
+        api_identifier: testModel.api_identifier,
+      };
+
+      const promptConstructionPayload: PromptConstructionPayload = {
+        systemInstruction: undefined,
+        conversationHistory: [],
+        resourceDocuments: [],
+        currentUserPrompt: 'Planner prompt for parenthesis stage',
+        source_prompt_resource_id: undefined,
+      };
+
+      // Mock AI call to return the RAW FLAWED JSON — the string with duplicate keys
+      const tokenWalletService = createMockTokenWalletService({
+        getBalance: () => Promise.resolve('1000000'),
+      }).instance;
+
+      const depsWithFlawedAI: IExecuteJobContext = {
+        // --- ILoggerContext ---
+        logger: testLogger,
+        // --- IFileContext ---
+        fileManager: fileManager,
+        downloadFromStorage: (supabase: SupabaseClient<Database>, bucket: string, path: string) =>
+          downloadFromStorage(adminClient, bucket, path),
+        deleteFromStorage: () => Promise.resolve({ error: null }),
+        // --- IModelContext ---
+        callUnifiedAIModel: async () => ({
+          content: rawFlawedJson,
+          finish_reason: 'stop',
+          inputTokens: 100,
+          outputTokens: 200,
+          processingTimeMs: 500,
+          rawProviderResponse: {
+            choices: [{
+              message: {
+                content: rawFlawedJson,
+              },
+            }],
+            usage: {
+              prompt_tokens: 100,
+              completion_tokens: 200,
+            },
+          },
+        }),
+        getAiProviderAdapter: () => null,
+        getAiProviderConfig: async () => ({
+          api_identifier: 'mock-model',
+          input_token_cost_rate: 0.001,
+          output_token_cost_rate: 0.002,
+          tokenization_strategy: { type: 'none' },
+        }),
+        // --- IRagContext ---
+        ragService: {
+          getContextForModel: async () => ({
+            context: '',
+            tokensUsedForIndexing: 0,
+            error: undefined,
+          }),
+        },
+        indexingService: {
+          indexDocument: async () => ({ success: true, tokensUsed: 0 }),
+        },
+        embeddingClient: {
+          getEmbedding: async () => ({
+            embedding: [],
+            usage: { prompt_tokens: 0, total_tokens: 0 },
+          }),
+        },
+        countTokens,
+        // --- ITokenContext ---
+        tokenWalletService,
+        // --- INotificationContext ---
+        notificationService: new NotificationService(adminClient),
+        // --- IExecuteJobContext-specific ---
+        getSeedPromptForStage,
+        promptAssembler: promptAssembler,
+        getExtensionFromMimeType,
+        extractSourceGroupFragment,
+        randomUUID: () => crypto.randomUUID(),
+        shouldEnqueueRenderJob: async () => ({ shouldRender: false, reason: 'is_json' }),
+        continueJob: async () => ({ enqueued: false }),
+        retryJob: async () => ({}),
+      };
+
+      // Call ACTUAL executeModelCallAndSave — this is the entry point where
+      // sanitizeJsonContent runs, deduplicating duplicate keys via jsonc-parser AST
+      await executeModelCallAndSave({
+        dbClient: adminClient,
+        deps: depsWithFlawedAI,
+        authToken: jwt,
+        job: headerContextExecuteJob,
+        projectOwnerUserId: testUser.id,
+        providerDetails,
+        promptConstructionPayload,
+        sessionData: session,
+        compressionStrategy: async () => [],
+        inputsRelevance: undefined,
+        inputsRequired: undefined,
+      });
+
+      // --- Step 3: Fetch stored contribution ---
+      const { data: contributions, error: contributionsError } = await adminClient
+        .from('dialectic_contributions')
+        .select('*')
+        .eq('session_id', session.id)
+        .eq('stage', stageSlug)
+        .eq('iteration_number', 1)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (contributionsError) {
+        throw new Error(`Failed to fetch header_context contribution: ${contributionsError.message}`);
+      }
+      if (!contributions || contributions.length === 0) {
+        throw new Error('No header_context contribution created by executeModelCallAndSave');
+      }
+      const headerContextContribution = contributions[0];
+
+      if (!isContributionType(stageSlug)) {
+        throw new Error(`Stage slug is not a valid ContributionType: ${stageSlug}`);
+      }
+
+      // --- Step 4: Consume HeaderContext via actual processSimpleJob ---
+
+      // --- Step 4: Consume HeaderContext via actual processSimpleJob ---
+
+      // Instead of manually constructing executePayload, we use planComplexStage
+      // to generate it correctly (populating planner_metadata for step resolution).
+
+      // 1. Fetch stage to get active recipe instance
+      const { data: stageData, error: stageError } = await adminClient
+        .from('dialectic_stages')
+        .select('active_recipe_instance_id')
+        .eq('slug', stageSlug)
+        .single();
+
+      if (stageError || !stageData?.active_recipe_instance_id) {
+        throw new Error(`Failed to fetch active recipe instance for stage ${stageSlug}: ${stageError?.message}`);
+      }
+
+      // 2. Fetch recipe step for technical_requirements using instance_id
+      const { data: recipeStepData, error: recipeError } = await adminClient
+        .from('dialectic_stage_recipe_steps')
+        .select('*')
+        .eq('instance_id', stageData.active_recipe_instance_id)
+        .eq('output_type', FileType.technical_requirements)
+        .single();
+
+      if (recipeError || !recipeStepData) {
+        throw new Error(`Failed to fetch recipe step for technical_requirements: ${recipeError?.message}`);
+      }
+
+      // Use type guard to ensure type safety without casting
+      if (!isDialecticStageRecipeStep(recipeStepData)) {
+        throw new Error('Fetched recipe step is not a valid DialecticStageRecipeStep');
+      }
+      const recipeStep = recipeStepData;
+
+      // 2. Create mock parent PLAN job
+      // Note: We need a PLAN job to pass to planComplexStage.
+      // We construct one that matches the context of the session/project.
+      const planJobPayload: DialecticPlanJobPayload = {
+        model_id: testModel.id,
+        projectId: project.id,
+        sessionId: session.id,
+        stageSlug: stageSlug,
+        iterationNumber: 1,
+        walletId: walletData.wallet_id,
+        user_jwt: jwt,
+        is_test_job: true,
+        model_slug: testModel.api_identifier,
+      };
+
+      if(!isDialecticPlanJobPayload(planJobPayload)) {
+        throw new Error('Plan job payload is not a valid DialecticPlanJobPayload');
+      }
+
+      if(!isJson(planJobPayload)) {
+        throw new Error('Plan job payload is not a valid JSON');
+      }
+      const planJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        id: crypto.randomUUID(),
+        session_id: session.id,
+        user_id: testUser.id,
+        stage_slug: stageSlug,
+        job_type: 'PLAN',
+        status: 'processing',
+        iteration_number: 1,
+        created_at: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        completed_at: null,
+        results: null,
+        error_details: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        payload: planJobPayload,
+        is_test_job: true,
+        max_retries: 3,
+        attempt_count: 0,
+        parent_job_id: null,
+      };
+
+      // 3. Prepare context with REAL planner dependencies
+      // We use the real findSourceDocuments and getGranularityPlanner to ensure
+      // the planner can actually find the HeaderContext we just saved and generate
+      // the correct payload with planner_metadata.
+      const planCtx: IPlanJobContext = {
+        logger: testLogger,
+        notificationService: new NotificationService(adminClient),
+        getGranularityPlanner, // REAL
+        planComplexStage,      // REAL
+        findSourceDocuments,   // REAL
+      };
+
+      // 3.5. Mock required synthesis documents
+      // The technical_requirements step requires 'system_architecture', 'tech_stack', and 'product_requirements'
+      // from the 'synthesis' stage. We must create these artifacts so findSourceDocuments can find them.
+      const synthesisDocKeys = ['system_architecture', 'tech_stack', 'product_requirements'];
+      
+      for (const docKey of synthesisDocKeys) {
+        const { record, error } = await fileManager.uploadAndRegisterFile({
+          fileContent: `# Mock ${docKey}`,
+          mimeType: 'text/markdown',
+          sizeBytes: 10,
+          userId: testUser.id,
+          description: `Mock ${docKey} for synthesis`,
+          pathContext: {
+            fileType: FileType.RenderedDocument,
+            projectId: project.id,
+            sessionId: session.id,
+            iteration: 1,
+            stageSlug: 'synthesis',
+            documentKey: docKey,
+            modelSlug: testModel.api_identifier,
+            attemptCount: 1,
+          },
+          resourceTypeForDb: 'rendered_document',
+          resourceDescriptionForDb: { document_key: docKey }
+        });
+        
+        if (error) {
+          throw new Error(`Failed to upload mock ${docKey}: ${error.message}`);
+        }
+      }
+
+      // 4. Plan the stage to generate the child EXECUTE job payload
+      const childJobs = await planComplexStage(
+        adminClient,
+        planJob,
+        planCtx,
+        recipeStep,
+        jwt
+      );
+
+      if (childJobs.length === 0) {
+        throw new Error('planComplexStage returned no jobs. HeaderContext might not have been found or planner failed.');
+      }
+
+      if(!isDialecticExecuteJobPayload(childJobs[0].payload)) {
+        throw new Error('Child job payload is not a valid DialecticExecuteJobPayload');
+      }
+      // We expect one child job for technical_requirements
+      const techReqJobPayload: DialecticExecuteJobPayload = childJobs[0].payload;
+
+      // Verify planner added the metadata needed for step resolution
+      if (!techReqJobPayload.planner_metadata?.recipe_step_id) {
+        throw new Error('Planned payload is missing recipe_step_id in planner_metadata');
+      }
+
+      if(!isJson(techReqJobPayload)) {
+        throw new Error('Tech req job payload is not a valid JSON');
+      }
+      const techReqJobInsertPayload: TablesInsert<'dialectic_generation_jobs'> = {
+        session_id: session.id,
+        user_id: testUser.id,
+        stage_slug: stageSlug,
+        job_type: 'EXECUTE',
+        status: 'pending',
+        payload: techReqJobPayload, // Use the planned payload
+        iteration_number: 1,
+        is_test_job: true,
+        max_retries: 3,
+        attempt_count: 0,
+      };
+
+      const { data: techReqJob, error: techReqJobError } = await adminClient
+        .from('dialectic_generation_jobs')
+        .insert(techReqJobInsertPayload)
+        .select()
+        .single();
+
+      if (techReqJobError) {
+        throw new Error(`Failed to create tech req EXECUTE job: ${techReqJobError.message}`);
+      }
+      if (!techReqJob) {
+        throw new Error('Failed to create tech req EXECUTE job: No job returned');
+      }
+
+      if (!isRecord(techReqJob.payload)) {
+        throw new Error('Tech req job payload is not a record');
+      }
+      if (!isDialecticExecuteJobPayload(techReqJob.payload)) {
+        throw new Error('Tech req job payload does not match DialecticExecuteJobPayload type');
+      }
+
+      const validatedTechReqJob: Job & { payload: DialecticExecuteJobPayload } = {
+        ...techReqJob,
+        payload: techReqJob.payload,
+      };
+
+      // Override executeModelCallAndSave to CAPTURE the rendered prompt
+      // instead of calling AI — this is the interception point
+      let capturedRenderedPrompt: string | undefined;
+
+      const depsWithPromptCapture: IJobContext = {
+        ...testDeps,
+        executeModelCallAndSave: async (params) => {
+          capturedRenderedPrompt = params.promptConstructionPayload.currentUserPrompt;
+          // Do not call AI — we only need to verify the rendered prompt
+        },
+      };
+
+      // Call ACTUAL processSimpleJob — this internally calls:
+      //   ctx.promptAssembler.assemble() → assembleTurnPrompt
+      //     → retrieves stored HeaderContext from Supabase Storage
+      //     → JSON.parse (now clean, deduplication already happened in Step 2)
+      //     → extracts content_to_include for document_key === "technical_requirements"
+      //     → builds mergedContext = { ...contentToInclude, header_context: fullObject }
+      //     → downloads template from prompt-templates bucket (parenthesis_technical_requirements_turn_v1.md)
+      //     → render → renderPrompt → rendered prompt
+      const { processSimpleJob } = await import('../functions/dialectic-worker/processSimpleJob.ts');
+
+      let processError: Error | null = null;
+      try {
+        await processSimpleJob(
+          adminClient,
+          validatedTechReqJob,
+          testUser.id,
+          depsWithPromptCapture,
+          'test-jwt-token',
+        );
+      } catch (e) {
+        processError = e instanceof Error ? e : new Error(String(e));
+      }
+
+      // --- Assertions on captured rendered prompt ---
+      assert(
+        capturedRenderedPrompt !== undefined,
+        `processSimpleJob should have called executeModelCallAndSave with a rendered prompt${processError ? ` (processSimpleJob error: ${processError.message})` : ''}`,
+      );
+
+      const rendered = capturedRenderedPrompt!;
+
+      // The template's static text should be present — proves the actual template was loaded from storage
+      assert(
+        rendered.includes('In this turn you are defining the technical requirements'),
+        'Rendered prompt should contain the template static text "In this turn you are defining the technical requirements"',
+      );
+
+      // Content from the populated duplicate keys should be present in the stringified header_context
+      // "Frontend User Interface" is a known subsystem name from the content-bearing first occurrence
+      assert(
+        rendered.includes('Frontend User Interface'),
+        'Rendered prompt should contain "Frontend User Interface" — a subsystem name preserved by deduplication',
+      );
+
+      // The empty placeholder that JSON.parse alone would preserve should NOT dominate
+      // If deduplication failed, the header_context JSON would contain "subsystems":[]
+      assert(
+        !rendered.includes('"subsystems":[]'),
+        'Rendered prompt should NOT contain "subsystems":[] — deduplication should have preserved populated values',
+      );
+
+      // --- Step 5: Write output file ---
+      await Deno.writeTextFile(
+        '../../example/integration_test_rendered_technical_requirements_prompt.md',
+        rendered,
+      );
+      console.log(
+        '\n--- [DEDUPLICATION PROOF] Rendered prompt written to example/integration_test_rendered_technical_requirements_prompt.md ---\n',
+      );
     });
   });
 });

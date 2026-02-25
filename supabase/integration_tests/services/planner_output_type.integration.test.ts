@@ -273,7 +273,7 @@ describe("Planner Output Type Integration Tests", () => {
   /** Minimal valid HeaderContext per dialectic.interface: SystemMaterials (required fields only), HeaderContextArtifact, ContextForDocument[] (thesis four docs), no files_to_generate. */
   const minimalSystemMaterials: SystemMaterials = {
     stage_rationale: "",
-    executive_summary: "",
+    agent_notes_to_self: "",
     input_artifacts_summary: "",
   };
   const minimalHeaderContextArtifact: HeaderContextArtifact = {
@@ -1476,7 +1476,7 @@ describe("Planner Output Type Integration Tests", () => {
 
       const headerContextContent: HeaderContext = {
         system_materials: {
-          executive_summary: "Test executive summary for cross-document coordination",
+          agent_notes_to_self: "Test agent internal summary for cross-document coordination",
           input_artifacts_summary: "Test input artifacts summary",
           stage_rationale: "Test stage rationale",
         },
@@ -1924,7 +1924,7 @@ This is a test template for product requirements document generation.`;
 
       const headerContextContent: HeaderContext = {
         system_materials: {
-          executive_summary: "Test executive summary for PLAN → EXECUTE flow",
+          agent_notes_to_self: "Test agent internal summary for PLAN → EXECUTE flow",
           input_artifacts_summary: "Test input artifacts summary",
           stage_rationale: "Test stage rationale",
         },
@@ -2376,7 +2376,7 @@ This is a test template for product requirements document generation.`;
       // 4. Verify structure matching is validated at runtime by assembleTurnPrompt
       const headerContextContent: HeaderContext = {
         system_materials: {
-          executive_summary: "Test executive summary",
+          agent_notes_to_self: "Test agent internal summary",
           input_artifacts_summary: "Test input artifacts summary",
           stage_rationale: "Test stage rationale",
         },

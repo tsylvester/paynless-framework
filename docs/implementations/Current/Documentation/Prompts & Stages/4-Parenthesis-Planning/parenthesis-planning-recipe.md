@@ -73,7 +73,7 @@
 ```json
 {
   "system_materials": {
-    "executive_summary": "overview of formalization scope and how the Master Plan will drive iterative execution",
+    "agent_notes_to_self": "overview of formalization scope and how the Master Plan will drive iterative execution, THIS IS NOT AN EXECUTIVE SUMMARY! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED!",
     "input_artifacts_summary": "succinct recap of synthesis outputs informing this plan",
     "stage_rationale": "why the chosen milestone breakdown, ordering, and architecture structure best fit constraints and objectives",
     "progress_update": "for continuation turns, summarize Master Plan changes since last iteration; omit on first turn",
@@ -282,7 +282,25 @@
       "document_key": "master_plan",
       "template_filename": "parenthesis_master_plan.md",
       "content_to_include": {
-        "phases": [],
+        "phases": [
+          {
+            "name": "",
+            "objective": "",
+            "milestones": [
+              {
+                "id": "",
+                "title": "",
+                "status": "",
+                "objective": "",
+                "deps": [],
+                "provides": [],
+                "directionality": "",
+                "requirements": [],
+                "iteration_delta": ""
+              }
+            ]
+          }
+        ],
         "status_markers": {
           "unstarted": "[ ]",
           "in_progress": "[🚧]",
@@ -296,7 +314,7 @@
         },
         "feature_scope": [],
         "features": [],
-        "executive_summary": "",
+        "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
         "mvp_description": "",
         "market_opportunity": "",
         "competitive_analysis": "",
@@ -319,26 +337,33 @@
       "document_key": "milestone_schema",
       "template_filename": "parenthesis_milestone_schema.md",
       "content_to_include": {
-        "fields": [
-          "id",
-          "title",
-          "objective",
-          "dependencies",
-          "acceptance_criteria",
-          "status"
+        "pipeline_context": "framing paragraph explaining middle-zoom role",
+        "selection_criteria": "dependency frontier: only milestones whose deps are [✅] or in current batch",
+        "shared_infrastructure": [],
+        "milestones": [
+          {
+            "id": "",
+            "title": "",
+            "status": "",
+            "objective": "",
+            "nodes": [
+              {
+                "path": "",
+                "title": "",
+                "objective": "",
+                "role": "",
+                "module": "",
+                "deps": [],
+                "provides": [],
+                "directionality": "",
+                "requirements": []
+              }
+            ]
+          }
         ],
-        "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps will be generated in the next stage.",
-        "features": [],
-        "feasibility_insights": [],
-        "non_functional_alignment": [],
-        "success_metrics": [],
-        "architecture_summary": "",
-        "services": [],
-        "components": [],
-        "dependency_resolution": [],
-        "components": [],
-        "integration_requirements": [],
-        "migration_context": []
+        "iteration_semantics": "replace, don't extend; reference prior schema for continuity",
+        "executive_summary": "",
+        "index": []
       }
     }
   ]
@@ -408,7 +433,7 @@ When this step is executed for subsequent iterations, provide the most recent `t
         "file_type": "markdown",
         "content_to_include": {
           "index": [],
-          "executive_summary": "",
+          "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
           "subsystems": [{ "name": "", "objective": "", "implementation_notes": "" }],
           "apis": [{ "name": "", "description": "", "contracts": [] }],
           "schemas": [{ "name": "", "columns": [], "indexes": [], "rls": [] }],
@@ -530,32 +555,26 @@ Present the previously generated Master Plan and feedback during iterative runs 
         "file_type": "markdown",
         "content_to_include": {
           "index": [<list the milestone(s) included in this section>],
-          "executive_summary": "<extract from header_context>",
+          "executive_summary": "<summarize the milestones and the reason for including them>", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
           "phases": [
             {
               "name": "<extract_from_synthesis_documents>",
               "objective": "<derive_from_technical_requirements>",
               "technical_context": "<extract_from_architecture_overview>",
               "implementation_strategy": "<derive_from_tech_stack>",
-              "milestones": [
-                {
-                  "id": "<derive_from_header_context>",
-                  "title": "<extract_from_master_plan>",
-                  "status": "[<derive_from_iteration_state>]",
-                  "objective": "<extract_from_technical_requirements>",
-                  "description": "<derive_from_architecture_and_features>",
-                  "technical_complexity": "<assess_from_architecture>",
-                  "effort_estimate": "<derive_from_scope_and_complexity>",
-                  "implementation_approach": "<derive_from_tech_stack>",
-                  "test_strategy": "<derive_from_validation_requirements>",
-                  "component_labels": ["<derive_from_architecture>"],
-                  "inputs": ["<extract_from_dependencies>"],
-                  "outputs": ["<derive_from_deliverables>"],
-                  "validation": ["<extract_from_acceptance_criteria>"],
-                  "dependencies": ["<extract_from_master_plan>"],
-                  "iteration_delta": "<derive_from_change_tracking>"
-                }
-              ]
+                  "milestones": [
+                    {
+                      "id": "<derive_from_header_context>",
+                      "title": "<extract_from_master_plan>",
+                      "status": "[<derive_from_iteration_state>]",
+                      "objective": "<extract_from_technical_requirements>",
+                      "deps": ["<extract_from_dependencies>"],
+                      "provides": ["<derive_from_deliverables>"],
+                      "directionality": "<derive_from_architecture>",
+                      "requirements": ["<extract_from_acceptance_criteria>"],
+                      "iteration_delta": "<derive_from_change_tracking>"
+                    }
+                  ]
             }
           ],
           "status_summary": {
@@ -578,7 +597,7 @@ Present the previously generated Master Plan and feedback during iterative runs 
         "artifact_class": "assembled_document_json",
         "fields": [
           "index[]",
-          "executive_summary",
+          "executive_summary", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
           "phases[].name",
           "phases[].objective",
           "phases[].technical_context",
@@ -587,17 +606,10 @@ Present the previously generated Master Plan and feedback during iterative runs 
           "phases[].milestones[].title",
           "phases[].milestones[].status",
           "phases[].milestones[].objective",
-          "phases[].milestones[].description",
-          "phases[].milestones[].technical_complexity",
-          "phases[].milestones[].effort_estimate",
-          "phases[].milestones[].implementation_approach",
-          "phases[].milestones[].test_strategy",
-          "phases[].milestones[].component_labels[]",
-          "phases[].milestones[].inputs[]",
-          "phases[].milestones[].outputs[]",
-          "phases[].milestones[].validation[]",
-          "phases[].milestones[].dependencies[]",
-          "phases[].milestones[].acceptance_criteria[]",
+          "phases[].milestones[].deps[]",
+          "phases[].milestones[].provides[]",
+          "phases[].milestones[].directionality",
+          "phases[].milestones[].requirements[]",
           "phases[].milestones[].iteration_delta",
           "status_summary.completed[]",
           "status_summary.in_progress[]",
@@ -633,7 +645,7 @@ Present the previously generated Master Plan and feedback during iterative runs 
 ```
 
 ### Step 4: Generate Milestone Schema
-- **Objective:** Define reusable milestone field schema and style-guide notes so Paralysis can author detailed checklists per milestone.
+- **Objective:** Decompose dependency-frontier milestones from the master plan into architectural work nodes that define HOW each piece fits together for downstream checklist expansion.
 - **Prompt Type:** `Turn`
 - **Prompt Template Name:** `parenthesis_milestone_schema_turn_v1`
 - **Input Source References:**
@@ -659,15 +671,23 @@ Provide the previous milestone schema and related feedback on subsequent executi
   "inputs_required": [
     { "type": "header_context", "stage_slug": "parenthesis", "document_key": "header_context", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "master_plan", "required": true },
+    { "type": "document", "stage_slug": "synthesis", "document_key": "system_architecture", "required": true },
+    { "type": "document", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": true },
     { "type": "document", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "master_plan", "required": false },
+    { "type": "feedback", "stage_slug": "synthesis", "document_key": "system_architecture", "required": false },
+    { "type": "feedback", "stage_slug": "parenthesis", "document_key": "technical_requirements", "required": false },
     { "type": "feedback", "stage_slug": "parenthesis", "document_key": "milestone_schema", "required": false }
   ],
   "inputs_relevance": [
     { "document_key": "header_context", "stage_slug": "parenthesis", "relevance": 1.0 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "relevance": 0.90 },
+    { "document_key": "system_architecture", "stage_slug": "synthesis", "relevance": 0.92 },
+    { "document_key": "technical_requirements", "stage_slug": "parenthesis", "relevance": 0.88 },
     { "document_key": "milestone_schema", "stage_slug": "parenthesis", "relevance": 0.95 },
     { "document_key": "master_plan", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.80 },
+    { "document_key": "system_architecture", "stage_slug": "synthesis", "type": "feedback", "relevance": 0.70 },
+    { "document_key": "technical_requirements", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.70 },
     { "document_key": "milestone_schema", "stage_slug": "parenthesis", "type": "feedback", "relevance": 0.85 }
   ],
   "output_type": "RenderedDocument",
@@ -681,60 +701,32 @@ Provide the previous milestone schema and related feedback on subsequent executi
         "file_type": "markdown",
         "content_to_include": {
           "index": [],
-          "executive_summary": "",
-          "fields": [
+          "executive_summary": "", //THIS IS NOT AN agent_notes_to_self! YOU MUST ALSO INCLUDE AN EXECUTIVE SUMMARY! BOTH FIELDS ARE REQUIRED! DO NOT DROP THIS FIELD OR YOUR OUTPUT WILL BE WASTED! 
+          "pipeline_context": "framing paragraph explaining middle-zoom role",
+          "selection_criteria": "dependency frontier: only milestones whose deps are [✅] or in current batch",
+          "shared_infrastructure": [],
+          "milestones": [
             {
-              "name": "id",
-              "type": "string",
-              "description": "Stable milestone identifier (e.g., M1, M1.a)"
-            },
-            {
-              "name": "title",
-              "type": "string",
-              "description": "Short milestone name"
-            },
-            {
-              "name": "objective",
-              "type": "string",
-              "description": "Narrative summary of milestone goal"
-            },
-            {
-              "name": "dependencies",
-              "type": "string[]",
-              "description": "List of prerequisite milestone IDs"
-            },
-            {
-              "name": "acceptance_criteria",
-              "type": "string[]",
-              "description": "Checklist of validation outcomes"
-            },
-            {
-              "name": "inputs",
-              "type": "string[]",
-              "description": "Artifacts required before work begins"
-            },
-            {
-              "name": "outputs",
-              "type": "string[]",
-              "description": "Artifacts produced when milestone completes"
-            },
-            {
-              "name": "status",
-              "type": "enum",
-              "values": ["[ ]", "[🚧]", "[✅]"],
-              "description": "Current completion status"
+              "id": "",
+              "title": "",
+              "status": "",
+              "objective": "",
+              "nodes": [
+                {
+                  "path": "",
+                  "title": "",
+                  "objective": "",
+                  "role": "",
+                  "module": "",
+                  "deps": [],
+                  "provides": [],
+                  "directionality": "",
+                  "requirements": []
+                }
+              ]
             }
           ],
-          "style_guide_notes": "Use standardized checklist markers, component labels when relevant, and keep scope at milestone granularity; detailed steps belong to next stage.",
-          "validation_rules": [
-            "Status must be one of [ ], [🚧], [✅]",
-            "Dependencies must reference existing milestone IDs",
-            "Acceptance criteria must be non-empty for every milestone"
-          ],
-          "iteration_guidance": {
-            "reuse_policy": "Carry forward schema; append new fields under migration log if expanded",
-            "versioning": "Increment schema_version when fields change"
-          }
+          "iteration_semantics": "replace, don't extend; reference prior schema for continuity"
         }
       }
     ],
@@ -746,24 +738,21 @@ Provide the previous milestone schema and related feedback on subsequent executi
         "document_key": "milestone_schema",
         "artifact_class": "assembled_document_json",
         "fields": [
-          "fields[].name",
-          "fields[].type",
-          "fields[].description",
-          "fields[].values[]",
-          "style_guide_notes",
-          "validation_rules[]",
-          "iteration_guidance.reuse_policy",
-          "iteration_guidance.versioning",
-          "features[]",
-          "feasibility_insights[]",
-          "non_functional_alignment[]",
-          "architecture_summary",
-          "services[]",
-          "components[]",
-          "dependency_resolution[]",
-          "component_details[]",
-          "integration_requirements[]",
-          "migration_context[]"
+          "milestones[].id",
+          "milestones[].title",
+          "milestones[].status",
+          "milestones[].nodes[].path",
+          "milestones[].nodes[].title",
+          "milestones[].nodes[].objective",
+          "milestones[].nodes[].role",
+          "milestones[].nodes[].module",
+          "milestones[].nodes[].deps[]",
+          "milestones[].nodes[].provides[]",
+          "milestones[].nodes[].directionality",
+          "milestones[].nodes[].requirements[]",
+          "shared_infrastructure[]",
+          "selection_criteria",
+          "pipeline_context"
         ]
       }
     ]

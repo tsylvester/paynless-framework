@@ -30,8 +30,8 @@ import { createProject } from "../../functions/dialectic-service/createProject.t
 import { startSession } from "../../functions/dialectic-service/startSession.ts";
 import { FileManagerService } from "../../functions/_shared/services/file_manager.ts";
 import { constructStoragePath } from "../../functions/_shared/utils/path_constructor.ts";
-import { downloadFromStorage } from "../../functions/_shared/supabase_storage_utils.ts";
-import { FileType, ModelContributionUploadContext } from "../../functions/_shared/types/file_manager.types.ts";
+import { downloadFromStorage, uploadToStorage } from "../../functions/_shared/supabase_storage_utils.ts";
+import { FileType, ModelContributionUploadContext, ResourceUploadContext } from "../../functions/_shared/types/file_manager.types.ts";
 import { isDialecticContribution } from "../../functions/_shared/utils/type-guards/type_guards.dialectic.ts";
 
 describe("FileManagerService Integration Tests", () => {
@@ -56,7 +56,7 @@ describe("FileManagerService Integration Tests", () => {
     assertExists(user, "Test user could not be created");
     testUser = user;
 
-    fileManager = new FileManagerService(adminClient, { constructStoragePath });
+    fileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger });
 
     // Create test project using FormData
     const formData = new FormData();
@@ -333,6 +333,101 @@ describe("FileManagerService Integration Tests", () => {
 
     // Consumer Assertion: Verify continuation chunk file content matches original continuation JSON content
     assertEquals(continuationFileContent, continuationJsonContent, "Continuation chunk file content should match the original continuation JSON content");
+  });
+
+  it("cleanup on DB error removes only the specific uploaded file", async () => {
+    const bucket = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
+    assert(bucket, "SB_CONTENT_STORAGE_BUCKET must be set for integration tests");
+
+    const nonExistentProjectId = "00000000-0000-0000-0000-000000000001";
+    const context: ResourceUploadContext = {
+      pathContext: {
+        fileType: FileType.GeneralResource,
+        projectId: nonExistentProjectId,
+        sessionId: testSession.id,
+        stageSlug: "thesis",
+        iteration: 1,
+        originalFileName: "cleanup_integration_test.txt",
+      },
+      fileContent: "content that will be cleaned up",
+      mimeType: "text/plain",
+      sizeBytes: 32,
+      userId: testUserId,
+      description: "Integration test for cleanup on DB error",
+    };
+
+    const pathParts = constructStoragePath(context.pathContext);
+    const expectedFullPath = `${pathParts.storagePath}/${pathParts.fileName}`;
+
+    const result = await fileManager.uploadAndRegisterFile(context);
+    assert(result.error, "Expected DB insert to fail (invalid project_id FK) and return error");
+    assertEquals(result.record, null);
+
+    const downloadResult = await downloadFromStorage(adminClient, bucket, expectedFullPath);
+    assert(downloadResult.error, "Uploaded file should have been removed by cleanup; download should fail");
+  });
+
+  it("pre-existing sibling file survives cleanup after DB error", async () => {
+    const bucket = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
+    assert(bucket, "SB_CONTENT_STORAGE_BUCKET must be set for integration tests");
+
+    const nonExistentProjectId = "00000000-0000-0000-0000-000000000002";
+    const pathParts = constructStoragePath({
+      fileType: FileType.GeneralResource,
+      projectId: nonExistentProjectId,
+      sessionId: testSession.id,
+      stageSlug: "thesis",
+      iteration: 1,
+      originalFileName: "placeholder.txt",
+    });
+    const siblingPath = `${pathParts.storagePath}/seed_prompt.md`;
+    const siblingContent = "sibling file that must survive cleanup";
+
+    const uploadSiblingResult = await uploadToStorage(
+      adminClient,
+      bucket,
+      siblingPath,
+      siblingContent,
+      { contentType: "text/markdown", upsert: true }
+    );
+    assert(!uploadSiblingResult.error, `Failed to upload sibling file: ${uploadSiblingResult.error?.message}`);
+    assertExists(uploadSiblingResult.path);
+
+    const context: ResourceUploadContext = {
+      pathContext: {
+        fileType: FileType.GeneralResource,
+        projectId: nonExistentProjectId,
+        sessionId: testSession.id,
+        stageSlug: "thesis",
+        iteration: 1,
+        originalFileName: "cleanup_sibling_test.txt",
+      },
+      fileContent: "uploaded file that will be removed on DB error",
+      mimeType: "text/plain",
+      sizeBytes: 44,
+      userId: testUserId,
+      description: "Integration test for sibling preservation",
+    };
+
+    const result = await fileManager.uploadAndRegisterFile(context);
+    assert(result.error, "Expected DB insert to fail and return error");
+    assertEquals(result.record, null);
+
+    const siblingDownloadResult = await downloadFromStorage(adminClient, bucket, siblingPath);
+    if(!siblingDownloadResult.data) {
+      throw new Error("Sibling file not found in storage");
+    }
+    assert(!siblingDownloadResult.error, "Sibling file must still exist after cleanup");
+    assertExists(siblingDownloadResult.data);
+    assertEquals(
+      new TextDecoder().decode(siblingDownloadResult.data),
+      siblingContent,
+      "Sibling file content must be unchanged"
+    );
+
+    const removedFilePath = `${pathParts.storagePath}/cleanup_sibling_test.txt`;
+    const removedDownloadResult = await downloadFromStorage(adminClient, bucket, removedFilePath);
+    assert(removedDownloadResult.error, "Uploaded file should have been removed by cleanup");
   });
 });
 

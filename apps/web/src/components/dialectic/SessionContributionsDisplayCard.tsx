@@ -38,6 +38,7 @@ import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 import { Badge } from "@/components/ui/badge";
 import { GeneratedContributionCard } from "./GeneratedContributionCard";
+import { SubmitResponsesButton } from "./SubmitResponsesButton";
 
 // UI-only mapping of stage names
 const stageNameMap: Record<string, string> = {
@@ -476,6 +477,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 								View Submitted Feedback
 							</Button>
 						)}
+						<SubmitResponsesButton />
 					</div>
 				</div>
 			</div>
@@ -511,6 +513,9 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 					</Badge>
 				</div>
 			)}
+
+			{/* Submit Responses Button */}
+			<SubmitResponsesButton />
 
 			{/* Feedback Content Modal */}
 			<AlertDialog
