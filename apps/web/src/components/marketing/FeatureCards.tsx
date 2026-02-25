@@ -32,7 +32,7 @@ const features: Feature[] = [
   {
     title: '5-Stage Pipeline',
     description:
-      'A rigorous dialectic process ensures every plan is challenged, refined, and battle-tested before delivery.',
+      'FAANG style planning pipeline ensures every plan is challenged, refined, and battle-tested before delivery.',
     icon: Layers3,
     color: 'text-purple-500',
     bgColor: 'bg-purple-500/10',
@@ -64,7 +64,7 @@ const features: Feature[] = [
   {
     title: 'Export Anywhere',
     description:
-      'Download finished plans as Markdown, JSON, or structured files ready for your project management tools.',
+      'Download finished plans or integrate with your project management and software development workflows.',
     icon: Download,
     color: 'text-cyan-500',
     bgColor: 'bg-cyan-500/10',

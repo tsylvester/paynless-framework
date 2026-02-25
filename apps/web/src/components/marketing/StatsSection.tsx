@@ -10,12 +10,12 @@ const stats: Stat[] = [
   {
     value: '5',
     label: 'AI Stages',
-    description: 'Each document goes through a full dialectic pipeline',
+    description: 'Each idea goes through a FAANG style planning pipeline',
   },
   {
     value: '3+',
     label: 'AI Providers',
-    description: 'OpenAI, Anthropic, and Google models working together',
+    description: 'Choose your preferred models from OpenAI, Anthropic, and Google',
   },
   {
     value: '10x',

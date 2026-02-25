@@ -115,8 +115,7 @@ export function ProcessSteps() {
             How It Works
           </h2>
           <p className="max-w-2xl mx-auto text-lg text-textSecondary">
-            Our multi-model AI pipeline puts every idea through rigorous review,
-            so you get plans that are battle-tested before you write a single line
+            Our multi-model AI pipeline transforms your idea into production-ready plans before you write a single line
             of code.
           </p>
         </motion.div>

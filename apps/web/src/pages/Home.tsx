@@ -86,8 +86,8 @@ export function HomePage() {
                 </span>
               </h1>
               <p className="mt-8 text-lg text-textSecondary leading-relaxed max-w-xl">
-                Describe your idea and watch multiple AI models collaborate
-                through a 5-stage dialectic process to deliver production-ready
+                Describe your goals and watch multiple AI models collaborate
+                in a 5-stage process to deliver production-ready
                 requirements, specs, and implementation plans.
               </p>
               <div className="mt-10 flex flex-wrap gap-4">
