@@ -830,7 +830,152 @@ milestone nodes into the Example Checklist format from Instructions for Agent.
     *   `[✅]`   **Commit** `fix: supabase/functions/dialectic-worker processSimpleJob removes hardcoded continuationContent placeholder`
         *   `[✅]`   `processSimpleJob.test.ts`: updated test to assert no `continuationContent` in `assembleOptions`; retained `sourceContributionId` forwarding assertion
         *   `[✅]`   `processSimpleJob.ts`: removed `continuationContent` variable, assignment, and conditional pass-through
-   
+
+*   `[✅]`   [BE] supabase/functions/dialectic-worker/`findSourceDocuments` **Replace substring document_key matching with exact deconstructStoragePath comparison across all input rule cases**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Replace the substring-based `document_key` matching in `findSourceDocuments.ts` with exact matching via `deconstructStoragePath`. Currently, the DB queries use `.ilike('file_name', '%${documentKey}%')` (lines 303, 358, 397, 454) and the post-fetch filter `recordMatchesDocumentKey` delegates to `fileNameContainsDocumentKey` which uses `.includes()` (line 137). Both are substring matches. A `document_key` like `'header_context'` falsely matches files containing `'header_context_pairwise'` because `'header_context_pairwise'.includes('header_context')` is true. The fix must use `deconstructStoragePath` to extract the exact `documentKey` from each record's `storage_path`/`file_name` and compare with `===` against `rule.document_key`.
+        *   `[✅]`   Remove the `ilike` pre-filter from all four DB queries (`document` line 301-304, `header_context` line 356-359, `contribution` line 395-398, `seed_prompt/project_resource` line 452-455). The DB cannot run `deconstructStoragePath`, so document_key filtering must happen entirely in TypeScript after fetch.
+        *   `[✅]`   Replace the `fileNameContainsDocumentKey` function (lines 133-138) with a new function that calls `deconstructStoragePath({ storageDir: record.storage_path, fileName: record.file_name })` and returns `deconstructed.documentKey === documentKey` using strict equality.
+        *   `[✅]`   Update `recordMatchesDocumentKey` (lines 140-164) to call the new exact-match function instead of `fileNameContainsDocumentKey`. The existing exact checks for `DialecticProjectResourceRow.resource_description.document_key` (line 150-153) and `DialecticContributionRow.contribution_type` (line 156-160) remain unchanged — they are already exact comparisons.
+        *   `[✅]`   This is a single permanent fix that resolves substring false-positive matching for all input rule types (`document`, `header_context`, `contribution`, `seed_prompt`, `project_resource`) via the shared `recordMatchesDocumentKey` helper.
+    *   `[✅]`   `role`
+        *   `[✅]`   Infrastructure adapter — `findSourceDocuments` fetches and filters source artifacts from the database for downstream planner consumption. It is the single point where `document_key` matching occurs against DB records.
+    *   `[✅]`   `module`
+        *   `[✅]`   Bounded to the source document retrieval logic within the dialectic-worker edge function
+        *   `[✅]`   Specifically: the `recordMatchesDocumentKey` shared helper, the `fileNameContainsDocumentKey` helper it delegates to, and the four `ilike` pre-filters in the `switch` cases for `document`, `header_context`, `contribution`, and `seed_prompt/project_resource`
+    *   `[✅]`   `deps`
+        *   `[✅]`   `deconstructStoragePath` from `supabase/functions/_shared/utils/path_deconstructor.ts` — already imported at line 7. Adapter layer. Provides `DeconstructedPathInfo.documentKey` extraction from `storageDir` + `fileName`. No new import needed.
+        *   `[✅]`   `DeconstructedPathInfo` from `supabase/functions/_shared/utils/path_deconstructor.types.ts` — the return type of `deconstructStoragePath`. Its `documentKey?: string` field is the exact parsed document key. Not imported directly (inferred from function return), no import needed.
+        *   `[✅]`   `SourceRecord` type alias (line 116) — `DialecticContributionRow | DialecticProjectResourceRow | DialecticFeedbackRow`. All three have `storage_path: string | null` and `file_name: string | null`. After `ensureRecordsHaveStorage` (lines 202-210) throws on null values, these fields are guaranteed non-null at runtime, but TypeScript does not narrow them. The replacement function must guard for null before calling `deconstructStoragePath`.
+        *   `[✅]`   `InputRule` from `dialectic.interface.ts` (lines 1610-1627) — `document_key?: FileType`. Already used by `findSourceDocuments` via `rule.document_key`. No change needed.
+        *   `[✅]`   Confirm no reverse dependency is introduced — `findSourceDocuments` already imports `deconstructStoragePath`; no new imports required
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   From `deconstructStoragePath`: the function signature `(params: { storageDir: string; fileName: string }) => DeconstructedPathInfo` and specifically the `documentKey?: string` field on the return type
+        *   `[✅]`   From `SourceRecord`: the `storage_path: string | null` and `file_name: string | null` fields present on all three union members
+        *   `[✅]`   Confirm no concrete imports from higher or lateral layers — `deconstructStoragePath` is in `_shared/utils` (infrastructure), consumed by `dialectic-worker` (adapter). Dependency direction is inward.
+    *   `[✅]`   unit/`findSourceDocuments.test.ts`
+        *   `[✅]`   Test: when a `header_context` rule has `document_key: 'header_context'`, a contribution with file_name that deconstructs to `documentKey: 'header_context_pairwise'` must NOT be returned — proving the substring false positive is eliminated
+        *   `[✅]`   Test: when a `header_context` rule has `document_key: 'header_context'`, a contribution with file_name that deconstructs to `documentKey: 'header_context'` must be returned — proving exact match works
+        *   `[✅]`   Test: when a `document` rule has `document_key: 'system_architecture'`, a project resource with file_name that deconstructs to `documentKey: 'system_architecture_v2'` must NOT be returned — proving substring false positive is eliminated for the `document` case
+        *   `[✅]`   Test: when a `document` rule has `document_key: 'system_architecture'`, a project resource with file_name that deconstructs to `documentKey: 'system_architecture'` must be returned — proving exact match works for the `document` case
+    *   `[✅]`   `construction`
+        *   `[✅]`   The new exact-match function replaces `fileNameContainsDocumentKey`. It accepts `(record: SourceRecord, documentKey: string)` and returns `boolean`. It calls `deconstructStoragePath` with the record's `storage_path` and `file_name` after guarding for null on both fields (returning `false` if either is null, since a record without storage info cannot match a document_key). It compares `deconstructed.documentKey === documentKey` with strict equality.
+        *   `[✅]`   `fileNameContainsDocumentKey` is deleted entirely — it must not exist after this change
+        *   `[✅]`   No factory or constructor changes needed — `findSourceDocuments` signature and return type are unchanged
+        *   `[✅]`   Prohibited: no substring matching (`.includes()`, `ilike`, regex) on file_name for document_key purposes anywhere in this file
+    *   `[✅]`   `findSourceDocuments.ts`
+        *   `[✅]`   Delete `fileNameContainsDocumentKey` function (lines 133-138)
+        *   `[✅]`   Create replacement function (e.g., `fileNameMatchesDocumentKeyExact`) that: checks `record.storage_path` and `record.file_name` are non-null strings; calls `deconstructStoragePath({ storageDir: record.storage_path, fileName: record.file_name })`; returns `deconstructed.documentKey === documentKey`
+        *   `[✅]`   Update `recordMatchesDocumentKey` (line 145) to call the new exact-match function instead of `fileNameContainsDocumentKey`
+        *   `[✅]`   `document` case (lines 301-304): remove the `if (rule.document_key) { ... ilike ... }` block. The `filterRecordsByDocumentKey` call at line 315 handles filtering in TypeScript via the now-exact `recordMatchesDocumentKey`.
+        *   `[✅]`   `header_context` case (lines 356-359): remove the `if (rule.document_key) { ... ilike ... }` block. The `filterRecordsByDocumentKey` call at line 371 handles filtering in TypeScript via the now-exact `recordMatchesDocumentKey`.
+        *   `[✅]`   `contribution` case (lines 395-398): remove the `if (rule.document_key) { ... .or('file_name.ilike...') ... }` block. The `filterRecordsByDocumentKey` call at line 410 handles filtering in TypeScript via the now-exact `recordMatchesDocumentKey`. The `contribution_type` check remains in `recordMatchesDocumentKey` (line 156-160) — it is an existing exact comparison unaffected by this change.
+        *   `[✅]`   `seed_prompt/project_resource` case (lines 452-455): remove the `if (!isInitialUserPromptProjectResource && rule.document_key) { ... ilike ... }` block. The `filterRecordsByDocumentKey` call at line 466 handles filtering in TypeScript via the now-exact `recordMatchesDocumentKey`.
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Adapter layer (dialectic-worker)
+        *   `[✅]`   All dependencies are inward-facing: imports `deconstructStoragePath` from `_shared/utils` (infrastructure), imports types from `dialectic-service` (domain)
+        *   `[✅]`   Provides are outward-facing: `findSourceDocuments` is consumed by the planner strategy layer
+    *   `[✅]`   `requirements`
+        *   `[✅]`   `fileNameContainsDocumentKey` must be deleted — no substring `.includes()` matching on file_name for document_key purposes
+        *   `[✅]`   All four `ilike` pre-filters must be removed from DB queries — document_key filtering happens exclusively in TypeScript via `deconstructStoragePath`
+        *   `[✅]`   `recordMatchesDocumentKey` must use `deconstructStoragePath` for exact `documentKey` comparison via `===`
+        *   `[✅]`   Null guard on `record.storage_path` and `record.file_name` before calling `deconstructStoragePath` — return `false` if either is null (no fallback, no default, no substring match)
+        *   `[✅]`   Existing exact checks in `recordMatchesDocumentKey` for `DialecticProjectResourceRow.resource_description.document_key` and `DialecticContributionRow.contribution_type` remain unchanged
+        *   `[✅]`   No type casting, no defaults, no fallbacks
+        *   `[✅]`   Tests must prove that substring false positives (e.g., `'header_context'` matching `'header_context_pairwise'`) are eliminated
+
+*   `[✅]`   [BE] supabase/functions/dialectic-worker/strategies/planners/`planAllToOne` **Select header_context_id by the recipe step's defined document_key**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Fix the `header_context_id` selection in `planAllToOne.ts` (lines 305-314). Currently, the `.find()` on `sourceDocs` filters only by `contribution_type === 'header_context'` and `model_id === parentJob.payload.model_id`. It has no `document_key` filter. When multiple `header_context` source documents exist for the same model (e.g., one with `document_key: 'header_context'` and another with `document_key: 'header_context_pairwise'`), the `.find()` returns the first one arbitrarily. The recipe step's `inputs_required` defines the exact `document_key` for the `header_context` input via the `InputRule.document_key` field. The planner must extract that `document_key` and include it in the `.find()` filter.
+        *   `[✅]`   `SourceDocument.document_key` is already populated by `findSourceDocuments.ts` via `deconstructStoragePath` (line 30 of `findSourceDocuments.ts`), so no additional call to `deconstructStoragePath` is needed in the planner — direct `===` comparison on `d.document_key` is sufficient.
+    *   `[✅]`   `role`
+        *   `[✅]`   Application logic — `planAllToOne` is a granularity planner strategy that creates child job payloads from source documents and recipe steps. It is responsible for correctly wiring `header_context_id` into execute job payloads.
+    *   `[✅]`   `module`
+        *   `[✅]`   Bounded to the `planAllToOne` granularity planner strategy within `dialectic-worker/strategies/planners/`
+        *   `[✅]`   Specifically: the `header_context_id` selection block at lines 305-314
+    *   `[✅]`   `deps`
+        *   `[✅]`   `SourceDocument` from `dialectic.interface.ts` (lines 1443-1453) — its `document_key?: string` field is already populated by `findSourceDocuments`. Domain type. No change needed.
+        *   `[✅]`   `InputRule` from `dialectic.interface.ts` (lines 1610-1627) — its `document_key?: FileType` field defines the required document_key for each input. Domain type. No change needed.
+        *   `[✅]`   `GranularityPlannerFn` from `dialectic.interface.ts` (lines 1548-1553) — function signature provides `recipeStep: DialecticRecipeStep` which carries `inputs_required: InputRule[]`. No change needed.
+        *   `[✅]`   `findSourceDocuments` (Node 1) — producer that populates `SourceDocument.document_key` via `deconstructStoragePath`. Must be fixed first to ensure exact document_key values on source documents. Adapter layer. Dependency is inward.
+        *   `[✅]`   Confirm no reverse dependency is introduced — `planAllToOne` already consumes `SourceDocument` and `DialecticRecipeStep`; no new imports required
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   From `DialecticRecipeStep`: the `inputs_required: InputRule[]` field, specifically entries where `type === 'header_context'`
+        *   `[✅]`   From `InputRule`: the `document_key?: FileType` field — the exact document_key the recipe step requires for the `header_context` input
+        *   `[✅]`   From `SourceDocument`: the `document_key?: string` field — the exact document_key parsed from the file path by `findSourceDocuments`
+        *   `[✅]`   Confirm no concrete imports from higher or lateral layers — `planAllToOne` imports types from `dialectic-service` (domain). Dependency direction is inward.
+    *   `[✅]`   unit/`planAllToOne.test.ts`
+        *   `[✅]`   Test: when `inputs_required` has a `header_context` rule with `document_key: FileType.HeaderContext`, and `sourceDocs` contains two header_context documents for the same model_id — one with `document_key: FileType.HeaderContext` and one with `document_key: FileType.HeaderContextPairwise` — the planner must select the document whose `document_key` matches `FileType.HeaderContext`, not the first one in the array
+        *   `[✅]`   Test: when `inputs_required` has a `header_context` rule with `document_key: FileType.HeaderContextPairwise`, and `sourceDocs` contains two header_context documents for the same model_id — one with `document_key: FileType.HeaderContext` and one with `document_key: FileType.HeaderContextPairwise` — the planner must select the document whose `document_key` matches `FileType.HeaderContextPairwise`
+    *   `[✅]`   `construction`
+        *   `[✅]`   No new constructors or factories needed. The fix adds a local variable extraction and a filter condition to the existing `.find()` call.
+        *   `[✅]`   Extract the `header_context` `InputRule` from `recipeStep.inputs_required` using `.find((rule) => rule?.type === 'header_context')` to access `rule.document_key`
+        *   `[✅]`   Prohibited: no fallback if `document_key` is undefined on the rule — if the rule has no `document_key`, the existing behavior (match by `contribution_type` and `model_id` only) continues unchanged. This is not a default — it is the absence of an additional filter when the rule does not specify one.
+    *   `[✅]`   `planAllToOne.ts`
+        *   `[✅]`   Extract the `header_context` `InputRule`: change line 305-306 from `recipeStep.inputs_required.some((rule) => rule?.type === 'header_context')` to use `.find()` instead of `.some()` so the matched rule is available. Store the result as `headerContextRule`. Derive `requiresHeaderContext` from `headerContextRule !== undefined`. Extract `requiredDocumentKey` from `headerContextRule.document_key`.
+        *   `[✅]`   Update the `.find()` at lines 310-313 to add a `document_key` filter: `sourceDocs.find((d) => d.contribution_type === 'header_context' && d.model_id === parentJob.payload.model_id && (requiredDocumentKey ? d.document_key === requiredDocumentKey : true))`
+        *   `[✅]`   Update the error message at line 317 to include the `requiredDocumentKey` value for debuggability
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Application layer (planner strategy)
+        *   `[✅]`   All dependencies are inward-facing: imports types from `dialectic-service` (domain), consumes `SourceDocument[]` produced by `findSourceDocuments` (adapter)
+        *   `[✅]`   Provides are outward-facing: produces `DialecticExecuteJobPayload[]` consumed by the job orchestrator
+    *   `[✅]`   `requirements`
+        *   `[✅]`   The `.find()` for `header_context_id` must include a `document_key` filter derived from the recipe step's `inputs_required` rule where `type === 'header_context'`
+        *   `[✅]`   When `requiredDocumentKey` is defined, only `sourceDocs` entries with `d.document_key === requiredDocumentKey` may match
+        *   `[✅]`   When `requiredDocumentKey` is undefined (rule has no `document_key` field), the existing behavior (match by `contribution_type` and `model_id` only) is preserved — this is the absence of a filter, not a default
+        *   `[✅]`   No type casting, no defaults, no fallbacks
+        *   `[✅]`   Tests must prove that with two header_context documents for the same model_id but different document_keys, the planner selects the correct one based on the recipe step's `inputs_required` rule
+
+*   `[✅]`   [BE] supabase/functions/dialectic-worker/strategies/planners/`planPerModel` **Select header_context_id by the recipe step's defined document_key**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Fix the `header_context_id` selection in `planPerModel.ts` (lines 239-246). Same defect as `planAllToOne`: the `.find()` on `sourceDocs` filters only by `contribution_type === 'header_context'` and `model_id === modelId`. It has no `document_key` filter. When multiple `header_context` source documents exist for the same model (e.g., one with `document_key: 'header_context'` and another with `document_key: 'header_context_pairwise'`), the `.find()` returns the first one arbitrarily. The recipe step's `inputs_required` defines the exact `document_key` for the `header_context` input via the `InputRule.document_key` field. The planner must extract that `document_key` and include it in the `.find()` filter.
+        *   `[✅]`   `SourceDocument.document_key` is already populated by `findSourceDocuments.ts` via `deconstructStoragePath` (line 30 of `findSourceDocuments.ts`), so no additional call to `deconstructStoragePath` is needed in the planner — direct `===` comparison on `d.document_key` is sufficient.
+    *   `[✅]`   `role`
+        *   `[✅]`   Application logic — `planPerModel` is a granularity planner strategy that creates per-model child job payloads from source documents and recipe steps. It is responsible for correctly wiring `header_context_id` into execute job payloads.
+    *   `[✅]`   `module`
+        *   `[✅]`   Bounded to the `planPerModel` granularity planner strategy within `dialectic-worker/strategies/planners/`
+        *   `[✅]`   Specifically: the `header_context_id` selection block at lines 239-246
+    *   `[✅]`   `deps`
+        *   `[✅]`   `SourceDocument` from `dialectic.interface.ts` (lines 1443-1453) — its `document_key?: string` field is already populated by `findSourceDocuments`. Domain type. No change needed.
+        *   `[✅]`   `InputRule` from `dialectic.interface.ts` (lines 1610-1627) — its `document_key?: FileType` field defines the required document_key for each input. Domain type. No change needed.
+        *   `[✅]`   `GranularityPlannerFn` from `dialectic.interface.ts` (lines 1548-1553) — function signature provides `recipeStep: DialecticRecipeStep` which carries `inputs_required: InputRule[]`. No change needed.
+        *   `[✅]`   `findSourceDocuments` (Node 1) — producer that populates `SourceDocument.document_key` via `deconstructStoragePath`. Must be fixed first to ensure exact document_key values on source documents. Adapter layer. Dependency is inward.
+        *   `[✅]`   `planAllToOne` (Node 2) — sibling planner with identical fix pattern. No dependency, but same approach for consistency.
+        *   `[✅]`   Confirm no reverse dependency is introduced — `planPerModel` already consumes `SourceDocument` and `DialecticRecipeStep`; no new imports required
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   From `DialecticRecipeStep`: the `inputs_required: InputRule[]` field, specifically entries where `type === 'header_context'`
+        *   `[✅]`   From `InputRule`: the `document_key?: FileType` field — the exact document_key the recipe step requires for the `header_context` input
+        *   `[✅]`   From `SourceDocument`: the `document_key?: string` field — the exact document_key parsed from the file path by `findSourceDocuments`
+        *   `[✅]`   Confirm no concrete imports from higher or lateral layers — `planPerModel` imports types from `dialectic-service` (domain). Dependency direction is inward.
+    *   `[✅]`   unit/`planPerModel.test.ts`
+        *   `[✅]`   Test: when `inputs_required` has a `header_context` rule with `document_key: FileType.HeaderContext`, and `sourceDocs` contains two header_context documents for the same model_id — one with `document_key: FileType.HeaderContext` and one with `document_key: FileType.HeaderContextPairwise` — the planner must select the document whose `document_key` matches `FileType.HeaderContext`, not the first one in the array
+        *   `[✅]`   Test: when `inputs_required` has a `header_context` rule with `document_key: FileType.HeaderContextPairwise`, and `sourceDocs` contains two header_context documents for the same model_id — one with `document_key: FileType.HeaderContext` and one with `document_key: FileType.HeaderContextPairwise` — the planner must select the document whose `document_key` matches `FileType.HeaderContextPairwise`
+    *   `[✅]`   `construction`
+        *   `[✅]`   No new constructors or factories needed. The fix adds a local variable extraction and a filter condition to the existing `.find()` call.
+        *   `[✅]`   Extract the `header_context` `InputRule` from `recipeStep.inputs_required` using `.find((rule) => rule?.type === 'header_context')` to access `rule.document_key`
+        *   `[✅]`   Note: `planPerModel` uses `modelId` (local const from line 20: `const modelId = parentJob.payload.model_id`) rather than `parentJob.payload.model_id` inline — maintain this existing pattern
+        *   `[✅]`   Prohibited: no fallback if `document_key` is undefined on the rule — if the rule has no `document_key`, the existing behavior (match by `contribution_type` and `model_id` only) continues unchanged. This is not a default — it is the absence of an additional filter when the rule does not specify one.
+    *   `[✅]`   `planPerModel.ts`
+        *   `[✅]`   Extract the `header_context` `InputRule`: change lines 239-240 from `recipeStep.inputs_required.some((rule) => rule?.type === 'header_context')` to use `.find()` instead of `.some()` so the matched rule is available. Store the result as `headerContextRule`. Derive `requiresHeaderContext` from `headerContextRule !== undefined`. Extract `requiredDocumentKey` from `headerContextRule.document_key`.
+        *   `[✅]`   Update the `.find()` at lines 242-245 to add a `document_key` filter: `sourceDocs.find((d) => d.contribution_type === 'header_context' && d.model_id === modelId && (requiredDocumentKey ? d.document_key === requiredDocumentKey : true))`
+        *   `[✅]`   Update the error message at line 248 to include the `requiredDocumentKey` value for debuggability
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Application layer (planner strategy)
+        *   `[✅]`   All dependencies are inward-facing: imports types from `dialectic-service` (domain), consumes `SourceDocument[]` produced by `findSourceDocuments` (adapter)
+        *   `[✅]`   Provides are outward-facing: produces `(DialecticExecuteJobPayload | DialecticPlanJobPayload)[]` consumed by the job orchestrator
+    *   `[✅]`   `requirements`
+        *   `[✅]`   The `.find()` for `header_context_id` must include a `document_key` filter derived from the recipe step's `inputs_required` rule where `type === 'header_context'`
+        *   `[✅]`   When `requiredDocumentKey` is defined, only `sourceDocs` entries with `d.document_key === requiredDocumentKey` may match
+        *   `[✅]`   When `requiredDocumentKey` is undefined (rule has no `document_key` field), the existing behavior (match by `contribution_type` and `model_id` only) is preserved — this is the absence of a filter, not a default
+        *   `[✅]`   No type casting, no defaults, no fallbacks
+        *   `[✅]`   Tests must prove that with two header_context documents for the same model_id but different document_keys, the planner selects the correct one based on the recipe step's `inputs_required` rule
+
+*   `[✅]`   [COMMIT] `fix(dialectic-worker): exact document_key matching in findSourceDocuments and planner header_context_id selection`
+    *   `[✅]`   `findSourceDocuments.ts`: replaced substring `.includes()` and `ilike` document_key matching with exact `deconstructStoragePath`-based `===` comparison; removed `fileNameContainsDocumentKey`; removed `ilike` pre-filters from all four DB query cases (`document`, `header_context`, `contribution`, `seed_prompt/project_resource`)
+    *   `[✅]`   `planAllToOne.ts`: extract `document_key` from recipe step `inputs_required` `header_context` rule; add `document_key` filter to `header_context_id` `.find()` selection
+    *   `[✅]`   `planPerModel.ts`: same fix as `planAllToOne` — extract `document_key` from recipe step `inputs_required` `header_context` rule; add `document_key` filter to `header_context_id` `.find()` selection
+
+
 # ToDo
 
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 

@@ -749,7 +749,6 @@ describe('PromptAssembler Integration Test Suite', () => {
                 project: projectContext,
                 session: sessionContext,
                 stage: stageWithRecipe,
-                continuationContent: '{"incomplete_json":',
                 gatherContext,
               };
               const assembledContinuation = await promptAssembler

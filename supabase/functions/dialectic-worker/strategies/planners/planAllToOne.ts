@@ -114,11 +114,17 @@ export const planAllToOne: GranularityPlannerFn = (
         }
         
         const rawDocumentKey = headerContextArtifact.document_key;
+        let rawDocumentKeyDisplay: string;
+        if (typeof rawDocumentKey === 'string') {
+            rawDocumentKeyDisplay = `'${rawDocumentKey}'`;
+        } else {
+            rawDocumentKeyDisplay = String(rawDocumentKey);
+        }
         if (rawDocumentKey === null || rawDocumentKey === undefined) {
-            throw new Error(`planAllToOne requires recipeStep.outputs_required.header_context_artifact.document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+            throw new Error(`planAllToOne requires recipeStep.outputs_required.header_context_artifact.document_key to be a non-empty string, but received: ${rawDocumentKeyDisplay}`);
         }
         if (typeof rawDocumentKey !== 'string') {
-            throw new Error(`planAllToOne requires recipeStep.outputs_required.header_context_artifact.document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+            throw new Error(`planAllToOne requires recipeStep.outputs_required.header_context_artifact.document_key to be a non-empty string, but received: ${rawDocumentKeyDisplay}`);
         }
         if (rawDocumentKey.length === 0) {
             throw new Error(`planAllToOne requires recipeStep.outputs_required.header_context_artifact.document_key to be a non-empty string, but received: '${rawDocumentKey}'`);
@@ -150,7 +156,6 @@ export const planAllToOne: GranularityPlannerFn = (
         
         // Create EXECUTE job payload for PLAN recipe step (will execute Planner prompt to generate HeaderContext)
         const executePayload: DialecticExecuteJobPayload = {
-            // Inherit ALL fields from parent job payload (defensive programming)
             projectId: parentJob.payload.projectId,
             sessionId: parentJob.payload.sessionId,
             stageSlug: parentJob.payload.stageSlug,
@@ -158,16 +163,7 @@ export const planAllToOne: GranularityPlannerFn = (
             model_id: parentJob.payload.model_id,
             user_jwt: parentJob.payload.user_jwt,
             walletId: parentJob.payload.walletId,
-
-            // Optional fields - include only if present in parent
-            ...(parentJob.payload.model_slug ? { model_slug: parentJob.payload.model_slug } : {}),
-            ...(parentJob.payload.continueUntilComplete !== undefined ? { continueUntilComplete: parentJob.payload.continueUntilComplete } : {}),
-            ...(parentJob.payload.maxRetries !== undefined ? { maxRetries: parentJob.payload.maxRetries } : {}),
-            ...(parentJob.payload.continuation_count !== undefined ? { continuation_count: parentJob.payload.continuation_count } : {}),
-            ...(parentJob.payload.is_test_job !== undefined ? { is_test_job: parentJob.payload.is_test_job } : {}),
-
             sourceContributionId: anchorDocument.id,
-            // Override job-specific properties
             prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
             canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, anchorForCanonicalPathParams, stageSlug),
@@ -178,12 +174,26 @@ export const planAllToOne: GranularityPlannerFn = (
             document_key: documentKey,
             context_for_documents: contextForDocuments,
             document_relationships: { source_group: anchorDocument.id },
-            // Conditionally include target_contribution_id only if parent has a valid string value
-            ...(typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0
-                ? { target_contribution_id: parentJob.payload.target_contribution_id }
-                : {}),
         };
-        
+        if (parentJob.payload.model_slug !== undefined && parentJob.payload.model_slug !== '') {
+            executePayload.model_slug = parentJob.payload.model_slug;
+        }
+        if (parentJob.payload.continueUntilComplete !== undefined) {
+            executePayload.continueUntilComplete = parentJob.payload.continueUntilComplete;
+        }
+        if (parentJob.payload.maxRetries !== undefined) {
+            executePayload.maxRetries = parentJob.payload.maxRetries;
+        }
+        if (parentJob.payload.continuation_count !== undefined) {
+            executePayload.continuation_count = parentJob.payload.continuation_count;
+        }
+        if (parentJob.payload.is_test_job !== undefined) {
+            executePayload.is_test_job = parentJob.payload.is_test_job;
+        }
+        if (typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0) {
+            executePayload.target_contribution_id = parentJob.payload.target_contribution_id;
+        }
+
         return [executePayload];
     }
     
@@ -265,11 +275,17 @@ export const planAllToOne: GranularityPlannerFn = (
                 throw new Error('planAllToOne requires recipeStep.outputs_required.documents[0].document_key but it is missing');
             }
             const rawDocumentKey = firstDocument.document_key;
+            let firstDocumentKeyDisplay: string;
+            if (typeof rawDocumentKey === 'string') {
+                firstDocumentKeyDisplay = `'${rawDocumentKey}'`;
+            } else {
+                firstDocumentKeyDisplay = String(rawDocumentKey);
+            }
             if (rawDocumentKey === null || rawDocumentKey === undefined) {
-                throw new Error(`planAllToOne requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+                throw new Error(`planAllToOne requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${firstDocumentKeyDisplay}`);
             }
             if (typeof rawDocumentKey !== 'string') {
-                throw new Error(`planAllToOne requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${typeof rawDocumentKey === 'string' ? `'${rawDocumentKey}'` : String(rawDocumentKey)}`);
+                throw new Error(`planAllToOne requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: ${firstDocumentKeyDisplay}`);
             }
             if (rawDocumentKey.length === 0) {
                 throw new Error(`planAllToOne requires recipeStep.outputs_required.documents[0].document_key to be a non-empty string, but received: '${rawDocumentKey}'`);
@@ -302,19 +318,32 @@ export const planAllToOne: GranularityPlannerFn = (
         }
 
         // Check if this step requires a header_context input
-        const requiresHeaderContext = Array.isArray(recipeStep.inputs_required)
-            && recipeStep.inputs_required.some((rule) => rule?.type === 'header_context');
-        
-        // Find the header_context document matching the parent job's model_id
+        if (!Array.isArray(recipeStep.inputs_required)) {
+            throw new Error('planAllToOne requires recipeStep.inputs_required to be an array for EXECUTE jobs');
+        }
+        const headerContextRule = recipeStep.inputs_required.find((rule) => rule?.type === 'header_context');
+        const requiresHeaderContext = headerContextRule !== undefined;
+        const requiredDocumentKey = headerContextRule?.document_key;
+
+        // Find the header_context document matching the parent job's model_id and optional document_key
         const headerContextId = requiresHeaderContext
-            ? sourceDocs.find((d) => 
+            ? sourceDocs.find((d) =>
                 d.contribution_type === 'header_context' &&
-                d.model_id === parentJob.payload.model_id
+                d.model_id === parentJob.payload.model_id &&
+                (requiredDocumentKey === undefined || d.document_key === requiredDocumentKey)
             )?.id
             : undefined;
-        
+
         if (requiresHeaderContext && (typeof headerContextId !== 'string' || headerContextId.length === 0)) {
-            throw new Error('planAllToOne requires a sourceDoc with contribution_type \'header_context\' and matching model_id when recipeStep.inputs_required includes header_context');
+            let requiredDocumentKeyLabel: string;
+            if (requiredDocumentKey !== undefined) {
+                requiredDocumentKeyLabel = String(requiredDocumentKey);
+            } else {
+                requiredDocumentKeyLabel = 'none';
+            }
+            throw new Error(
+                `planAllToOne requires a sourceDoc with contribution_type 'header_context' and matching model_id when recipeStep.inputs_required includes header_context (requiredDocumentKey: ${requiredDocumentKeyLabel})`
+            );
         }
 
         const inputs: Record<string, string | string[]> = {
@@ -325,7 +354,6 @@ export const planAllToOne: GranularityPlannerFn = (
         }
 
         const executePayload: DialecticExecuteJobPayload = {
-            // Inherit ALL fields from parent job payload (defensive programming)
             projectId: parentJob.payload.projectId,
             sessionId: parentJob.payload.sessionId,
             stageSlug: parentJob.payload.stageSlug,
@@ -333,16 +361,7 @@ export const planAllToOne: GranularityPlannerFn = (
             model_id: parentJob.payload.model_id,
             user_jwt: parentJob.payload.user_jwt,
             walletId: parentJob.payload.walletId,
-
-            // Optional fields - include only if present in parent
-            ...(parentJob.payload.model_slug ? { model_slug: parentJob.payload.model_slug } : {}),
-            ...(parentJob.payload.continueUntilComplete !== undefined ? { continueUntilComplete: parentJob.payload.continueUntilComplete } : {}),
-            ...(parentJob.payload.maxRetries !== undefined ? { maxRetries: parentJob.payload.maxRetries } : {}),
-            ...(parentJob.payload.continuation_count !== undefined ? { continuation_count: parentJob.payload.continuation_count } : {}),
-            ...(parentJob.payload.is_test_job !== undefined ? { is_test_job: parentJob.payload.is_test_job } : {}),
-
             sourceContributionId: anchorDocument.id,
-            // Override job-specific properties
             prompt_template_id: recipeStep.prompt_template_id,
             output_type: recipeStep.output_type,
             canonicalPathParams: createCanonicalPathParams(sourceDocs, recipeStep.output_type, anchorForCanonicalPathParams, stageSlug),
@@ -350,11 +369,25 @@ export const planAllToOne: GranularityPlannerFn = (
             document_relationships: { source_group: anchorDocument.id },
             planner_metadata: { recipe_step_id: recipeStep.id },
             document_key: documentKey,
-            // Conditionally include target_contribution_id only if parent has a valid string value
-            ...(typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0
-                ? { target_contribution_id: parentJob.payload.target_contribution_id }
-                : {}),
         };
+        if (parentJob.payload.model_slug !== undefined && parentJob.payload.model_slug !== '') {
+            executePayload.model_slug = parentJob.payload.model_slug;
+        }
+        if (parentJob.payload.continueUntilComplete !== undefined) {
+            executePayload.continueUntilComplete = parentJob.payload.continueUntilComplete;
+        }
+        if (parentJob.payload.maxRetries !== undefined) {
+            executePayload.maxRetries = parentJob.payload.maxRetries;
+        }
+        if (parentJob.payload.continuation_count !== undefined) {
+            executePayload.continuation_count = parentJob.payload.continuation_count;
+        }
+        if (parentJob.payload.is_test_job !== undefined) {
+            executePayload.is_test_job = parentJob.payload.is_test_job;
+        }
+        if (typeof parentJob.payload.target_contribution_id === 'string' && parentJob.payload.target_contribution_id.length > 0) {
+            executePayload.target_contribution_id = parentJob.payload.target_contribution_id;
+        }
 
         return [executePayload];
     }

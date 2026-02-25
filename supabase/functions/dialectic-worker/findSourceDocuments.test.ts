@@ -208,9 +208,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header.json',
+            file_name: 'model-1_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
@@ -365,9 +365,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header_model_a.json',
+            file_name: 'model-A_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/1_thesis/_work/context',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
@@ -380,7 +380,7 @@ describe('findSourceDocuments', () => {
             id: 'header-context-model-B',
             model_id: 'model-B',
             model_name: 'Model B',
-            file_name: 'header_model_b.json',
+            file_name: 'model-B_0_header_context.json',
         };
 
         const mockHeaderContextModelC: DialecticContributionRow = {
@@ -388,7 +388,7 @@ describe('findSourceDocuments', () => {
             id: 'header-context-model-C',
             model_id: 'model-C',
             model_name: 'Model C',
-            file_name: 'header_model_c.json',
+            file_name: 'model-C_0_header_context.json',
         };
 
         // Set parent job to model-A
@@ -729,9 +729,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'sess-1_test-stage_header_context_v1.json',
+            file_name: 'model-3_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 2048,
             mime_type: 'application/json',
             document_relationships: null,
@@ -762,9 +762,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'sess-1_test-stage_header_context_v2.json',
+            file_name: 'model-3_1_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 2049,
             mime_type: 'application/json',
             document_relationships: null,
@@ -919,9 +919,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header-iter-1.json',
+            file_name: 'model-1_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
@@ -952,9 +952,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header-iter-2.json',
+            file_name: 'model-1_0_header_context_iter2.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_2/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_2/test-stage/_work/context',
             size_bytes: 81,
             mime_type: 'application/json',
             document_relationships: null,
@@ -1795,9 +1795,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header_context.json',
+            file_name: 'model-1_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
@@ -1937,14 +1937,23 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'comparison_vector',
-            file_name: 'comparison_vector.json',
+            file_name: 'model-1_1_comparison_vector_raw.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/raw_responses',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/raw_responses',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
             is_header: false,
             source_prompt_resource_id: null,
+        };
+
+        // A record whose file_name contains 'comparison_vector' as a substring but
+        // deconstructs to a DIFFERENT documentKey — must be excluded by exact matching.
+        const substringFalsePositive: DialecticContributionRow = {
+            ...mockContribution,
+            id: 'false-positive-id',
+            contribution_type: 'comparison_vector_detailed',
+            file_name: 'model-1_1_comparison_vector_detailed_raw.json',
         };
 
         mockSupabase = createMockSupabaseClient(undefined, {
@@ -1993,21 +2002,11 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        // Check for document_key filtering (either ilike file_name OR eq contribution_type)
-                        const hasDocumentKeyFilter = state.filters.some(
-                            (filter) =>
-                                (filter.type === 'ilike' &&
-                                filter.column === 'file_name' &&
-                                String(filter.value).includes('comparison_vector')) ||
-                                (filter.type === 'eq' &&
-                                filter.column === 'contribution_type' &&
-                                filter.value === 'comparison_vector')
-                        );
-                        
+                        // DB returns both records — document_key filtering happens in TypeScript
                         return Promise.resolve({
-                            data: [mockContribution],
+                            data: [mockContribution, substringFalsePositive],
                             error: null,
-                            count: 1,
+                            count: 2,
                             status: 200,
                             statusText: 'OK',
                         });
@@ -2022,7 +2021,7 @@ describe('findSourceDocuments', () => {
             rule,
         );
 
-        assertEquals(documents.length, 1);
+        assertEquals(documents.length, 1, 'Exact match only — substring false positive must be excluded');
         assertEquals(documents[0].id, 'contribution-id');
         assertEquals(documents[0].contribution_type, 'comparison_vector');
     });
@@ -2315,9 +2314,9 @@ describe('findSourceDocuments', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header_context.json',
+            file_name: 'model-1_0_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 80,
             mime_type: 'application/json',
             document_relationships: null,
@@ -2833,6 +2832,15 @@ describe('findSourceDocuments', () => {
             job_type: 'PLAN',
         };
 
+        // A header_context contribution whose documentKey is 'header_context' (not 'header_context_pairwise').
+        // With exact matching via deconstructStoragePath, requesting 'header_context_pairwise' must NOT
+        // return a record whose documentKey is 'header_context'.
+        const nonMatchingHeaderContext: DialecticContributionRow = {
+            ...mockHeaderContextContribution,
+            id: 'non-matching-header-context',
+            file_name: 'full-dag-test-model-b_0_0b39478c_header_context.json',
+        };
+
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 dialectic_contributions: {
@@ -2869,10 +2877,11 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
+                        // DB returns both records (no ilike pre-filter); exact matching in TypeScript
                         return Promise.resolve({
-                            data: [mockHeaderContextContribution],
+                            data: [mockHeaderContextContribution, nonMatchingHeaderContext],
                             error: null,
-                            count: 1,
+                            count: 2,
                             status: 200,
                             statusText: 'OK',
                         });
@@ -2887,8 +2896,8 @@ describe('findSourceDocuments', () => {
             rule,
         );
 
-        assertEquals(documents.length, 1, 'Should return one header_context document');
-        assertEquals(documents[0].id, '91155b5f-d710-4325-9ee3-836a385d09f9', 'Should return the correct header_context contribution');
+        assertEquals(documents.length, 1, 'Exact match only — header_context record must be excluded when rule requests header_context_pairwise');
+        assertEquals(documents[0].id, '91155b5f-d710-4325-9ee3-836a385d09f9', 'Should return the correct header_context_pairwise contribution');
         assertEquals(documents[0].model_id, '77afe5e0-a0d8-4a01-974f-f74f9f89a4ef', 'Should have correct model_id');
         assertEquals(documents[0].contribution_type, 'header_context', 'Should have correct contribution_type');
         assertEquals(documents[0].document_key, 'header_context_pairwise', 'Should have document_key extracted from filename by deconstructStoragePath');
@@ -3043,21 +3052,6 @@ describe('findSourceDocuments', () => {
                             });
                         }
 
-                        const hasFileNameIlikeFilter = state.filters.some(
-                            (filter) =>
-                                filter.type === 'ilike' &&
-                                filter.column === 'file_name',
-                        );
-                        if (hasFileNameIlikeFilter) {
-                            return Promise.resolve({
-                                data: null,
-                                error: new Error('initial_user_prompt project resource queries must NOT filter by file_name'),
-                                count: 0,
-                                status: 400,
-                                statusText: 'Unexpected file_name ilike filter',
-                            });
-                        }
-
                         return Promise.resolve({
                             data: [projectWideResource],
                             error: null,
@@ -3134,7 +3128,7 @@ describe('findSourceDocuments', () => {
         assertEquals(documents.length, 0, 'No feedback rows; query shape was asserted by mock');
     });
 
-    it('feedback query uses resource_description->>\'document_key\' eq filter instead of ilike on file_name', async () => {
+    it('feedback query uses resource_description->>\'document_key\' eq filter for document_key matching', async () => {
         const rule: InputRule[] = [
             { type: 'feedback', slug: 'test-stage', document_key: FileType.business_case },
         ];
@@ -3177,20 +3171,6 @@ describe('findSourceDocuments', () => {
                                 count: 0,
                                 status: 400,
                                 statusText: 'Missing resource_description document_key filter',
-                            });
-                        }
-                        const hasFileNombreIlike = state.filters.some(
-                            (filter) => filter.type === 'ilike' && filter.column === 'file_name',
-                        );
-                        if (hasFileNombreIlike) {
-                            return Promise.resolve({
-                                data: null,
-                                error: new Error(
-                                    'feedback queries must not use ilike on file_name for document_key; use resource_description->>\'document_key\' eq',
-                                ),
-                                count: 0,
-                                status: 400,
-                                statusText: 'Unexpected file_name ilike filter',
                             });
                         }
                         return Promise.resolve({
