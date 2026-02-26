@@ -382,6 +382,7 @@ describe('SubscriptionPage Component', () => {
       expect(subscribeButton).toBeEnabled();
       await user.click(subscribeButton);
 
+      if (!proPlan.currency) throw new Error("Pro Plan currency is missing");
       const expectedPurchaseRequest: PurchaseRequest = {
         userId: authStoreInitialState.user.id,
         itemId: proPlan.stripe_price_id ?? proPlan.id,
@@ -507,6 +508,7 @@ describe('SubscriptionPage Component', () => {
       const subscribeButton = within(basicPlanCard).getByRole('button', { name: /Subscribe/i });
       await user.click(subscribeButton);
 
+      if (!basicPlan.currency) throw new Error("Basic Plan currency is missing");
       const expectedPurchaseRequest: PurchaseRequest = {
         userId: authStoreInitialState.user.id,
         itemId: basicPlan.stripe_price_id ?? basicPlan.id,

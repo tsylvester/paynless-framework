@@ -82,20 +82,20 @@ describe('SubscriptionSuccessPage Component', () => {
     expect(mockRefreshSubscription).not.toHaveBeenCalled();
   });
 
-  it('should automatically navigate to /dashboard after 5 seconds', () => {
+  it('should automatically navigate to /subscription after 5 seconds', () => {
     renderWithRouter(<SubscriptionSuccessPage />);
-    expect(mockNavigate).not.toHaveBeenCalled(); 
+    expect(mockNavigate).not.toHaveBeenCalled();
     vi.advanceTimersByTime(5000);
     expect(mockNavigate).toHaveBeenCalledTimes(1);
-    expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
+    expect(mockNavigate).toHaveBeenCalledWith('/subscription');
   });
 
-  it('should navigate to /dashboard when "click here" button is clicked', () => {
+  it('should navigate to /subscription when "click here" button is clicked', () => {
     renderWithRouter(<SubscriptionSuccessPage />);
     const button = screen.getByRole('button', { name: /click here/i });
     fireEvent.click(button);
-    expect(mockNavigate).toHaveBeenCalledTimes(1); 
-    expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith('/subscription');
   });
   
   it('should clear the timer on unmount', () => {
