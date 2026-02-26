@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
 	useDialecticStore,
 	selectIsLoadingProjectDetail,
@@ -90,6 +90,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	);
 	const sortedStages = useDialecticStore(selectSortedStages);
 	const focusedStageDocument = useDialecticStore((state) => state.focusedStageDocument);
+	const setFocusedStageDocument = useDialecticStore((state) => state.setFocusedStageDocument);
 
 	const activeStage = useMemo(() => {
 		return processTemplate?.stages?.find((s) => s.slug === activeStageSlug) || null;
@@ -231,6 +232,62 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		() => Array.from(documentsByModel.entries()),
 		[documentsByModel],
 	);
+
+	// Auto-focus the first document when the stage has documents but none is focused
+	const autoFocusedStageRef = useRef<string | null>(null);
+	useEffect(() => {
+		if (!session || !activeStageSlug || typeof session.iteration_count !== 'number') {
+			return;
+		}
+
+		// Check if any document is already focused for this stage
+		const currentStagePrefix = `${session.id}:${activeStageSlug}:`;
+		const hasExistingFocus = focusedStageDocument && Object.entries(focusedStageDocument).some(
+			([key, entry]) => key.startsWith(currentStagePrefix) && entry?.documentKey
+		);
+		if (hasExistingFocus) {
+			return;
+		}
+
+		// Avoid re-triggering for the same stage if we already auto-focused
+		const stageKey = `${session.id}:${activeStageSlug}:${session.iteration_count}`;
+		if (autoFocusedStageRef.current === stageKey) {
+			return;
+		}
+
+		if (documentGroups.length === 0) {
+			return;
+		}
+
+		// Find the first document key from available entries
+		let firstDocKey: string | null = null;
+		let firstStepKey = '';
+		for (const [, entries] of documentGroups) {
+			if (entries.length > 0) {
+				firstDocKey = entries[0].documentKey;
+				firstStepKey = entries[0].stepKey || '';
+				break;
+			}
+		}
+
+		if (!firstDocKey) return;
+
+		autoFocusedStageRef.current = stageKey;
+
+		// Set focus for each model that has this document
+		for (const [modelId, entries] of documentGroups) {
+			if (entries.some(e => e.documentKey === firstDocKey)) {
+				setFocusedStageDocument({
+					sessionId: session.id,
+					stageSlug: activeStageSlug,
+					modelId,
+					documentKey: firstDocKey,
+					stepKey: firstStepKey,
+					iterationNumber: session.iteration_count,
+				});
+			}
+		}
+	}, [documentGroups, session, activeStageSlug, focusedStageDocument, setFocusedStageDocument]);
 
 	// Get the selected document key, filtered by the CURRENT stage
 	// focusedStageDocument is keyed by `${sessionId}:${stageSlug}:${modelId}`
