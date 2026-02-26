@@ -155,6 +155,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	contributionGenerationStatus: "idle",
 	generateContributionsError: null,
 	generatingSessions: {},
+	generatingForStageSlug: null,
 
 	isSubmittingStageResponses: false,
 	submitStageResponsesError: null,
@@ -420,8 +421,11 @@ export const useDialecticStore = create<DialecticStore>()(
 		}
 	},
 
-	fetchDialecticProjectDetails: async (projectId: string) => {
-		set({ isLoadingProjectDetail: true, projectDetailError: null });
+	fetchDialecticProjectDetails: async (projectId: string, options?: { preserveContext?: boolean }) => {
+		const preserveContext = options?.preserveContext ?? false;
+		if (!preserveContext) {
+			set({ isLoadingProjectDetail: true, projectDetailError: null });
+		}
 		logger.info(
 			`[DialecticStore] Fetching project details for project ID: ${projectId}`,
 		);
@@ -460,13 +464,15 @@ export const useDialecticStore = create<DialecticStore>()(
 					projectDetailError: null,
 				});
 
-				// Set active context and clear selected models
-				get().setActiveDialecticContext({
-					projectId: projectData ? projectData.id : null,
-					sessionId: null,
-					stage: null,
-				});
-				set({ selectedModels: [] });
+				if (!preserveContext) {
+					// Set active context and clear selected models (only on initial load, not background refresh)
+					get().setActiveDialecticContext({
+						projectId: projectData ? projectData.id : null,
+						sessionId: null,
+						stage: null,
+					});
+					set({ selectedModels: [] });
+				}
 
 				if (projectData?.process_template_id) {
 					logger.info(
@@ -1436,16 +1442,17 @@ export const useDialecticStore = create<DialecticStore>()(
     set(state => {
       // Remove the session from the generating list
       delete state.generatingSessions[data.sessionId];
-      
+
       // If no more sessions are generating, update the overall status
       if (Object.keys(state.generatingSessions).length === 0) {
         state.contributionGenerationStatus = 'idle';
+        state.generatingForStageSlug = null;
       }
     });
-    // Trigger a refetch of the project details to get the new contributions
-    get().fetchDialecticProjectDetails(data.projectId);
+    // Trigger a background refetch of the project details to get the new contributions
+    get().fetchDialecticProjectDetails(data.projectId, { preserveContext: true });
   },
-  
+
   // NEW: Internal handler for all dialectic lifecycle events from notificationStore
   _handleDialecticLifecycleEvent: (payload: DialecticLifecycleEvent) => {
     logger.info('[DialecticStore] Received lifecycle event from notificationStore:', { payload });
@@ -1682,12 +1689,13 @@ export const useDialecticStore = create<DialecticStore>()(
       
       if (wasGenerationCompleted && Object.keys(state.generatingSessions).length === 0) {
         state.contributionGenerationStatus = 'idle';
+        state.generatingForStageSlug = null;
       }
     });
 
     if (wasGenerationCompleted && projectIdForRefetch) {
       logger.info(`[DialecticStore] All jobs for session ${event.sessionId} are complete. Triggering project detail refetch.`);
-      get().fetchDialecticProjectDetails(projectIdForRefetch);
+      get().fetchDialecticProjectDetails(projectIdForRefetch, { preserveContext: true });
     }
   },
 
@@ -1761,10 +1769,12 @@ export const useDialecticStore = create<DialecticStore>()(
           delete state.generatingSessions[event.sessionId];
         }
         state.contributionGenerationStatus = 'failed';
+        state.generatingForStageSlug = null;
         state.generateContributionsError = event.error || { message: 'Generation failed for this job.', code: 'JOB_FAILED' };
       } else if (!event.job_id) {
         delete state.generatingSessions[event.sessionId];
         state.contributionGenerationStatus = 'failed';
+        state.generatingForStageSlug = null;
         state.generateContributionsError = event.error || { message: 'Generation failed without a specific error.', code: 'GENERATION_FAILED' };
       }
     });
@@ -1774,14 +1784,15 @@ export const useDialecticStore = create<DialecticStore>()(
     set(state => {
       // Remove the session from the generating list
       delete state.generatingSessions[event.sessionId];
-      
+
       // If no more sessions are generating, update the overall status
       if (Object.keys(state.generatingSessions).length === 0) {
         state.contributionGenerationStatus = 'idle';
+        state.generatingForStageSlug = null;
       }
     });
-    // Trigger a refetch of the project details to get the new contributions
-    get().fetchDialecticProjectDetails(event.projectId);
+    // Trigger a background refetch of the project details to get the new contributions
+    get().fetchDialecticProjectDetails(event.projectId, { preserveContext: true });
   },
 
   generateContributions: async (payload: GenerateContributionsPayload): Promise<ApiResponse<GenerateContributionsResponse>> => {
@@ -1810,6 +1821,7 @@ export const useDialecticStore = create<DialecticStore>()(
       if (session) {
         state.contributionGenerationStatus = 'generating';
         state.generateContributionsError = null;
+        state.generatingForStageSlug = stageSlug;
         if (!session.dialectic_contributions) {
           session.dialectic_contributions = [];
         }
@@ -1874,6 +1886,7 @@ export const useDialecticStore = create<DialecticStore>()(
         logger.error('[DialecticStore] Error generating contributions:', { errorDetails: error });
         set(state => {
           state.contributionGenerationStatus = 'failed';
+          state.generatingForStageSlug = null;
           state.generateContributionsError = error;
           // --- Mark placeholders as failed ---
           const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
@@ -1925,6 +1938,7 @@ export const useDialecticStore = create<DialecticStore>()(
       logger.error('[DialecticStore] Network error generating contributions:', { errorDetails: networkError });
       set(state => {
         state.contributionGenerationStatus = 'failed';
+        state.generatingForStageSlug = null;
         state.generateContributionsError = networkError;
         // --- Mark placeholders as failed ---
         const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);

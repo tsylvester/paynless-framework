@@ -318,6 +318,7 @@ export interface DialecticStateValues {
   contributionGenerationStatus: ContributionGenerationStatus; // New
   generateContributionsError: ApiError | null;
   generatingSessions: { [sessionId: string]: string[] };
+  generatingForStageSlug: string | null;
 
   // States for submitting stage responses (as per plan 1.5.6.4)
   isSubmittingStageResponses: boolean; 
@@ -416,7 +417,7 @@ export interface StageRenderedDocumentChecklistEntry {
 export interface StagePlannedDocumentChecklistEntry {
   descriptorType: 'planned';
   documentKey: string;
-  status: 'not_started';
+  status: 'not_started' | 'generating';
   jobId: null;
   latestRenderedResourceId: null;
   modelId: string | null;
@@ -565,6 +566,7 @@ export interface StageRunChecklistProps {
   focusedStageDocumentMap?: Record<string, FocusedStageDocumentState | null>;
   onDocumentSelect: StageDocumentSelectionHandler;
   modelId: string | null;
+  stageSlug?: string;
 }
 
 export interface ClearFocusedStageDocumentPayload {
@@ -581,7 +583,7 @@ export interface DialecticActions {
   setSelectedDomainOverlayId: (overlayId: string | null) => void;
   
   fetchDialecticProjects: () => Promise<void>;
-  fetchDialecticProjectDetails: (projectId: string) => Promise<void>;
+  fetchDialecticProjectDetails: (projectId: string, options?: { preserveContext?: boolean }) => Promise<void>;
   createDialecticProject: (payload: CreateProjectPayload) => Promise<ApiResponse<DialecticProjectRow>>;
   startDialecticSession: (payload: StartSessionPayload) => Promise<ApiResponse<StartSessionSuccessResponse>>;
   updateSessionModels: (payload: UpdateSessionModelsPayload) => Promise<ApiResponse<DialecticSession>>;

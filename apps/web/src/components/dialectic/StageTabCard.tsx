@@ -83,17 +83,16 @@ const StageCard: React.FC<StageCardProps> = ({
 	}
 
 	const hasDocuments = progress.totalDocuments > 0;
-	const shouldRenderChecklist = Boolean(isActive && checklist);
 
 	return (
 		<div className="space-y-1.5" data-testid={`stage-card-${stage.slug}`}>
 			<button
 				data-testid={`stage-tab-${stage.slug}`}
 				className={cn(
-					"group w-full text-left py-3 px-3 rounded-lg transition-all duration-200 text-sm relative",
+					"group w-full text-left py-3 px-3 rounded-lg transition-all duration-200 text-sm relative bg-surface",
 					isActive
-						? "bg-primary/5 border-l-4 border-l-primary font-medium"
-						: "text-muted-foreground hover:text-foreground hover:bg-muted/50 border-l-4 border-l-transparent",
+						? "border-l-4 border-l-primary font-medium"
+						: "text-muted-foreground hover:text-foreground border-l-4 border-l-transparent",
 				)}
 				onClick={onSelect}
 				role="tab"
@@ -130,17 +129,22 @@ const StageCard: React.FC<StageCardProps> = ({
 							{displayName}
 						</span>
 					</div>
-					{hasDocuments && progress.isComplete && !isActive && (
+					{hasDocuments && (
 						<span
 							data-testid={`stage-progress-label-${stage.slug}`}
-							className="text-xs font-medium text-emerald-600 dark:text-emerald-400"
+							className={cn(
+								"text-xs font-medium",
+								progress.isComplete
+									? "text-emerald-600 dark:text-emerald-400"
+									: "text-muted-foreground",
+							)}
 						>
-							Done
+							{progress.completedDocuments} / {progress.totalDocuments}
 						</span>
 					)}
 				</div>
 			</button>
-			{shouldRenderChecklist && (
+			{checklist && (
 				<div
 					className="w-full pl-4"
 					data-testid={`stage-checklist-wrapper-${stage.slug}`}
@@ -230,11 +234,9 @@ export const StageTabCard: React.FC = () => {
 		);
 	}
 
-	const activeStage = stages.find((stage) => stage.slug === activeStageSlug) ?? null;
 	const iterationNumber = activeSessionDetail?.iteration_count;
 	const isContextReady = Boolean(currentProjectDetail && activeSessionDetail);
 	const canRenderChecklists = Boolean(
-		activeStage &&
 		activeSessionId &&
 		typeof iterationNumber === "number",
 	);
@@ -247,8 +249,8 @@ export const StageTabCard: React.FC = () => {
 		setFocusedStageDocument(payload);
 	};
 
-	const renderChecklistForStage = (isStageActive: boolean): React.ReactNode => {
-		if (!isStageActive || !canRenderChecklists) {
+	const renderChecklistForStage = (stageSlug: string): React.ReactNode => {
+		if (!canRenderChecklists) {
 			return undefined;
 		}
 
@@ -256,8 +258,9 @@ export const StageTabCard: React.FC = () => {
 			selectedModels.length > 0 ? selectedModels[0].id : null;
 		return (
 			<StageRunChecklist
-				key="single"
+				key={stageSlug}
 				modelId={modelId}
+				stageSlug={stageSlug}
 				focusedStageDocumentMap={focusedStageDocumentMap}
 				onDocumentSelect={handleDocumentSelect}
 			/>
@@ -287,7 +290,7 @@ export const StageTabCard: React.FC = () => {
 									stagePercentage: 0,
 								}
 							}
-							checklist={renderChecklistForStage(isActiveStage)}
+							checklist={renderChecklistForStage(stage.slug)}
 						/>
 					);
 				})}
