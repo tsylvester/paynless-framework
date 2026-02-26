@@ -61,16 +61,15 @@ Deno.test('syncAllPrices', async (t) => {
     mockStripeSdk.clearStubs();
   };
 
-  await t.step('fetches all prices via stripe.prices.list() with active: true and auto-pagination', async () => {
+  await t.step('fetches active and inactive prices via stripe.prices.list() and auto-pagination', async () => {
     initContext();
     try {
-      let listCallCount = 0;
+      const activeParamsSeen: (boolean | undefined)[] = [];
       const listFn: PriceListFn = async (
         params?: Stripe.PriceListParams
       ): Promise<Stripe.Response<Stripe.ApiList<Stripe.Price>>> => {
-        listCallCount++;
         assertExists(params);
-        assertEquals(params.active, true);
+        activeParamsSeen.push(params.active);
         assertEquals(params.limit, 100);
         return Promise.resolve(emptyPriceListResponse);
       };
@@ -78,7 +77,7 @@ Deno.test('syncAllPrices', async (t) => {
 
       const result: SyncStripePlansResult = await syncAllPrices(handlerContext);
 
-      assertEquals(listCallCount, 1);
+      assertEquals(activeParamsSeen, [true, false], 'Should fetch both active and inactive prices');
       assertEquals(result.success, true);
       assertEquals(result.synced, 0);
       assertEquals(result.failed, 0);
@@ -127,10 +126,10 @@ Deno.test('syncAllPrices', async (t) => {
       });
       handlerContext.stripe.products.retrieve = productsRetrieveSpy;
 
-      const listFn: PriceListFn = async (): Promise<Stripe.Response<Stripe.ApiList<Stripe.Price>>> =>
+      const listFn: PriceListFn = async (params?: Stripe.PriceListParams): Promise<Stripe.Response<Stripe.ApiList<Stripe.Price>>> =>
         Promise.resolve({
           object: 'list',
-          data: [oneTimePrice, recurringPrice],
+          data: params?.active === true ? [oneTimePrice, recurringPrice] : [],
           has_more: false,
           url: '/v1/prices',
           lastResponse: mockLastResponseObject,
@@ -164,10 +163,10 @@ Deno.test('syncAllPrices', async (t) => {
       });
       handlerContext.stripe.products.retrieve = productsRetrieveSpy;
 
-      const listFn: PriceListFn = async (): Promise<Stripe.Response<Stripe.ApiList<Stripe.Price>>> =>
+      const listFn: PriceListFn = async (params?: Stripe.PriceListParams): Promise<Stripe.Response<Stripe.ApiList<Stripe.Price>>> =>
         Promise.resolve({
           object: 'list',
-          data: [successPrice, failPrice],
+          data: params?.active === true ? [successPrice, failPrice] : [],
           has_more: false,
           url: '/v1/prices',
           lastResponse: mockLastResponseObject,
@@ -206,10 +205,10 @@ Deno.test('syncAllPrices', async (t) => {
       });
       handlerContext.stripe.products.retrieve = productsRetrieveSpy;
 
-      const listFn: PriceListFn = async (): Promise<Stripe.Response<Stripe.ApiList<Stripe.Price>>> =>
+      const listFn: PriceListFn = async (params?: Stripe.PriceListParams): Promise<Stripe.Response<Stripe.ApiList<Stripe.Price>>> =>
         Promise.resolve({
           object: 'list',
-          data: [oneTime, recurring],
+          data: params?.active === true ? [oneTime, recurring] : [],
           has_more: false,
           url: '/v1/prices',
           lastResponse: mockLastResponseObject,
