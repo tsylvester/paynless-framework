@@ -2,16 +2,33 @@ import { createClient } from 'jsr:@supabase/supabase-js'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { resolve, join, relative, extname } from 'node:path'
 
-// This file must be run from supabase/functions in order to access the .env keys and the correct root path
+// This file must be run from supabase/functions in order to access the .env keys and the correct root path.
+//
+// To run against production, use the --production flag:
+//   pnpm dev:load-prompts:prod
+//   or: cd supabase/functions && deno run --allow-all --env=../.env ../scripts/seed_prompt_templates.ts --production
+//
+// For production, ensure SUPABASE_PROD_URL and SUPABASE_PROD_SRK are set in supabase/.env.
 
-const SUPABASE_URL = process.env.SUPABASE_URL
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+const args = (typeof Deno !== 'undefined' && Deno.args) ? Deno.args : (process?.argv?.slice(2) ?? [])
+const isProduction = args.includes('--production')
+
+const SUPABASE_URL = isProduction ? process.env.SUPABASE_PROD_URL : process.env.SUPABASE_URL
+const SERVICE_ROLE_KEY = isProduction ? process.env.SUPABASE_PROD_SRK : process.env.SUPABASE_SERVICE_ROLE_KEY
 const BUCKET = process.env.PROMPT_TEMPLATE_BUCKET ?? 'prompt-templates'
 const PROMPTS_ROOT = resolve(process.cwd(), '../../docs', 'prompts')
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.')
+  if (isProduction) {
+    console.error('Missing SUPABASE_PROD_URL or SUPABASE_PROD_SRK. Set them in supabase/.env.')
+  } else {
+    console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.')
+  }
   process.exit(1)
+}
+
+if (isProduction) {
+  console.log('Targeting production. Use without --production for local.')
 }
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
