@@ -125,7 +125,10 @@ export function SubscriptionPage() {
     }).format(amount / 100);
   };
   
-  const formatInterval = (interval: string, count: number) => {
+  const formatInterval = (interval: string | null | undefined, count: number | null | undefined) => {
+    if (interval == null || count == null) {
+      return 'one-time';
+    }
     if (count === 1) {
       return interval === 'month' ? 'monthly' : 'yearly';
     }
