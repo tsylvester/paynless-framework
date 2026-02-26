@@ -1,20 +1,23 @@
-// deno-lint-ignore-file no-explicit-any
 import {
     GenerateContributionsPayload,
     GenerateContributionsDeps,
+    JobType,
+    StageWithRecipeSteps,
   } from "./dialectic.interface.ts";
-import type { Database, Json } from "../types_db.ts";
-import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { Database, TablesInsert } from "../types_db.ts";
+import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { logger } from "../_shared/logger.ts";
-import { User } from "npm:@supabase/supabase-js@2";
-import { hasStepsRecipe } from "../_shared/utils/type_guards.ts";
+import { isDatabaseRecipeSteps } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { mapToStageWithRecipeSteps } from '../_shared/utils/mappers.ts';
+import { DialecticPlanJobPayload } from './dialectic.interface.ts';
+import { isJson } from '../_shared/utils/type-guards/type_guards.common.ts';
   
 export async function generateContributions(
     dbClient: SupabaseClient<Database>,
     payload: GenerateContributionsPayload,
     user: User,
-    _deps: GenerateContributionsDeps,
-    authToken?: string | null,
+    deps: GenerateContributionsDeps,
+    authToken: string,
 ): Promise<{ success: boolean; data?: { job_ids: string[] }; error?: { message: string; status?: number; details?: string; code?: string } }> {
 
     const { sessionId, iterationNumber = 1, stageSlug, continueUntilComplete, maxRetries = 3 } = payload;
@@ -92,7 +95,7 @@ export async function generateContributions(
         // 1. Fetch the recipe for the stage
         const { data: stageDef, error: recipeError } = await dbClient
             .from('dialectic_stages')
-            .select('*')
+            .select('*, dialectic_stage_recipe_instances!dialectic_stage_recipe_instances_stage_id_fkey!inner(*, dialectic_stage_recipe_steps!inner(*))')
             .eq('slug', stageSlug)
             .single();
 
@@ -100,47 +103,82 @@ export async function generateContributions(
             logger.error(`[generateContributions] Could not find recipe for stage ${stageSlug}.`, { error: recipeError });
             return { success: false, error: { message: `Could not find recipe for stage ${stageSlug}.`, status: 500 } };
         }
-        
-        console.log('[generateContributions] Fetched stageDef:', JSON.stringify(stageDef, null, 2));
-        console.log('[generateContributions] Result of hasStepsRecipe:', hasStepsRecipe(stageDef));
 
-        // 2. Calculate total steps from the recipe
-        const totalSteps = hasStepsRecipe(stageDef) ? stageDef.input_artifact_rules.steps.length : 1;
+        if (!isDatabaseRecipeSteps(stageDef)) {
+            const message = `Stage '${stageSlug}' has an invalid recipe structure.`;
+            logger.error(`[generateContributions] ${message}`, { stageDef });
+            return { success: false, error: { message, status: 500 } };
+        }
+
+        const stageDto: StageWithRecipeSteps = mapToStageWithRecipeSteps(stageDef);
         
+        // 2. Extract steps from the nested structure
+        const steps = stageDto.dialectic_stage_recipe_steps;
+        if (!steps || steps.length === 0) {
+            const message = `Stage '${stageSlug}' has no recipe steps defined.`;
+            logger.error(`[generateContributions] ${message}`, { stageDef });
+            return { success: false, error: { message, status: 404 } };
+        }
+
+        // 3. Calculate total steps from the recipe
         const jobIds: string[] = [];
         for (const modelId of selectedModelIds) {
-            // 3. Create a formal 'plan' payload for each job
-            const jobPayload: Json = {
+            // Fetch model name from ai_providers table
+            const { data: modelData, error: modelError } = await dbClient
+                .from("ai_providers")
+                .select("name")
+                .eq("id", modelId)
+                .single();
+
+            if (modelError || !modelData) {
+                const errorMessage = modelError?.message || "Model not found";
+                logger.error(`[generateContributions] Failed to fetch model ${modelId}: ${errorMessage}`, { error: modelError });
+                return { 
+                    success: false, 
+                    error: { 
+                        message: `Failed to fetch model ${modelId}: ${errorMessage}`, 
+                        status: 500, 
+                        details: modelError?.details,
+                        code: modelError?.code
+                    } 
+                };
+            }
+
+            // 4. Create a formal 'plan' payload for each job
+            const jobType: JobType = 'PLAN';
+            const jobPayload: DialecticPlanJobPayload = {
                 ...payload,
                 model_id: modelId,
+                model_slug: modelData.name,
                 user_jwt: authToken,
-                job_type: 'plan',
-                step_info: {
-                    current_step: 1,
-                    total_steps: totalSteps,
-                    status: 'pending',
-                }
             };
-            
-            // Explicitly preserve the is_test_job flag to prevent accidental override
-            if (payload.is_test_job) {
-                jobPayload.is_test_job = true;
-            }
-            
+
+
             console.log(`[generateContributions] Final jobPayload for model ${modelId}:`, JSON.stringify(jobPayload, null, 2));
 
+            if(!isJson(jobPayload)) {
+                logger.error(`[generateContributions] Job payload is not a valid JSON object.`, { jobPayload });
+                return { success: false, error: { message: `Job payload is not a valid JSON object.`, status: 500 } };
+            }
+            const jobToInsert: TablesInsert<'dialectic_generation_jobs'> = {
+                session_id: sessionId,
+                user_id: user.id,
+                stage_slug: stageSlug,
+                iteration_number: iterationNumber,
+                payload: jobPayload,
+                status: 'pending',
+                max_retries: maxRetries,
+                job_type: jobType, // Add the mandatory top-level job_type
+            };
+
+            if (payload.is_test_job === true) {
+                jobToInsert.is_test_job = true;
+                delete jobPayload.is_test_job;
+            }
 
             const { data: job, error: insertError } = await dbClient
                 .from('dialectic_generation_jobs')
-                .insert({
-                    session_id: sessionId,
-                    user_id: user.id,
-                    stage_slug: stageSlug,
-                    iteration_number: iterationNumber,
-                    payload: jobPayload,
-                    status: 'pending',
-                    max_retries: maxRetries,
-                })
+                .insert(jobToInsert)
                 .select('id')
                 .single();
         

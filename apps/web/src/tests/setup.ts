@@ -67,6 +67,19 @@ const mockedApiObject = {
     createCheckoutSession: vi.fn().mockResolvedValue({ data: null, error: null }),
     // ... mock billing methods
   }),
+  wallet: vi.fn(() => ({
+    getWalletInfo: vi.fn().mockResolvedValue({
+      data: { walletId: 'test-wallet', balance: '0' },
+      error: null,
+    }),
+  })),
+  dialectic: () => ({
+    getStageDocumentFeedback: vi.fn().mockResolvedValue({ data: [], error: null }),
+    submitStageDocumentFeedback: vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
+    getProjectResourceContent: vi.fn().mockResolvedValue({ data: { content: '' }, error: null }),
+    getAllStageProgress: vi.fn().mockResolvedValue({ data: [], error: null }),
+    listStageDocuments: vi.fn().mockResolvedValue({ data: [], error: null }),
+  }),
 };
 
 vi.mock('@paynless/api', () => ({
@@ -115,9 +128,13 @@ vi.mock('@paynless/utils', async (importOriginal) => {
 // Global test hooks
 beforeEach(() => {
   vi.clearAllMocks();
-  // Re-apply the mock implementation for getSupabaseClient after clearAllMocks
-  // because clearAllMocks also clears mock implementations.
   mockedApiObject.getSupabaseClient.mockImplementation(createMockSupabaseClient);
+  mockedApiObject.wallet.mockImplementation(() => ({
+    getWalletInfo: vi.fn().mockResolvedValue({
+      data: { walletId: 'test-wallet', balance: '0' },
+      error: null,
+    }),
+  }));
 });
 
 afterEach(() => {

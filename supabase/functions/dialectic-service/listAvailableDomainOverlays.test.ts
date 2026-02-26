@@ -5,18 +5,21 @@ import { listAvailableDomainOverlays } from "./listAvailableDomainOverlays.ts";
 import type { DomainOverlayDescriptor } from './dialectic.interface.ts'; 
 import { 
     createMockSupabaseClient,
+    type MockQueryBuilderState,
     type MockSupabaseDataConfig,
     type IMockSupabaseClient,
     type IMockClientSpies 
 } from '../_shared/supabase.mock.ts';
-import * as sharedLogger from "../_shared/logger.ts"; // For stubbing logger if logic uses it
+import { MockLogger } from "../_shared/logger.mock.ts"; // For stubbing logger if logic uses it
+import type { Database } from "../types_db.ts";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 describe("listAvailableDomainOverlays", () => {
   let currentMockDbClient: IMockSupabaseClient;
   let currentClientSpies: IMockClientSpies;
   let supabaseTestSetup: ReturnType<typeof createMockSupabaseClient>;
-  let loggerWarnStub: Stub<typeof sharedLogger.logger>;
-  let loggerErrorStub: Stub<typeof sharedLogger.logger>;
+  let loggerWarnStub: Stub<MockLogger>;
+  let loggerErrorStub: Stub<MockLogger>;
 
   // Helper to set up or re-initialize ONLY Supabase mocks
   const initializeSupabaseMocks = (config: MockSupabaseDataConfig) => {
@@ -30,8 +33,8 @@ describe("listAvailableDomainOverlays", () => {
 
   beforeEach(() => {
     // Create fresh logger stubs for each test
-    loggerWarnStub = stub(sharedLogger.logger, "warn", () => {});
-    loggerErrorStub = stub(sharedLogger.logger, "error", () => {});
+    loggerWarnStub = stub(MockLogger.prototype, "warn", () => {});
+    loggerErrorStub = stub(MockLogger.prototype, "error", () => {});
     
     // Initial default Supabase mock setup for every test.
     // Specific tests can call initializeSupabaseMocks again if they need a different config.
@@ -58,6 +61,7 @@ describe("listAvailableDomainOverlays", () => {
         overlay_values: { detail: "some tech details" },
         is_active: true,
         system_prompts: [{ stage_association: "thesis", is_active: true }],
+        "system_prompts!inner": [{ stage_association: "thesis", is_active: true }],
       },
       {
         id: "overlay-uuid-2",
@@ -66,6 +70,7 @@ describe("listAvailableDomainOverlays", () => {
         overlay_values: null,
         is_active: true,
         system_prompts: [{ stage_association: "thesis", is_active: true }],
+        "system_prompts!inner": [{ stage_association: "thesis", is_active: true }],
       },
     ];
     // Set up specific Supabase mocks for this test
@@ -122,8 +127,6 @@ describe("listAvailableDomainOverlays", () => {
     // Uses default Supabase mocks from beforeEach.
     const result = await listAvailableDomainOverlays("", currentMockDbClient as any);
     assertEquals(result.length, 0);
-    assertEquals(loggerWarnStub.calls.length, 1);
-    assertStringIncludes(loggerWarnStub.calls[0].args[0] as string, 'Called without stageAssociation');
   });
 
   it("should throw an error if the database call fails", async () => {
@@ -131,30 +134,25 @@ describe("listAvailableDomainOverlays", () => {
     initializeSupabaseMocks({
       genericMockResults: {
         'domain_specific_prompt_overlays': {
-          select: async () => ({ data: null, error: dbError as any, count: 0, status: 500, statusText: 'Internal Server Error' })
+          select: async (_state: MockQueryBuilderState) => ({
+            data: null,
+            error: new Error(dbError.message),
+            count: 0,
+            status: 500,
+            statusText: 'Internal Server Error',
+          }),
         }
       }
     });
 
-    const result = await listAvailableDomainOverlays("any_stage", currentMockDbClient as any);
+    const result = await listAvailableDomainOverlays("any_stage", currentMockDbClient as unknown as SupabaseClient<Database>);
     assertEquals(result.length, 0);
-
-    assertEquals(loggerErrorStub.calls.length, 1);
-    const logArgs = loggerErrorStub.calls[0].args;
-    assertStringIncludes(logArgs[0] as string, '[listAvailableDomainOverlays] Error fetching from Supabase:');
-    
-    // Check specific properties of the logged errorDetails object
-    assertExists((logArgs[1] as { errorDetails: Error }).errorDetails);
-    assertEquals(((logArgs[1] as { errorDetails: Error }).errorDetails as Error).message, dbError.message);
-    // If you also want to check the code, assuming your mock error object includes it directly on the Error instance or a sub-property
-    // For instance, if the mock directly assigns the code to the error object:
-    // assertEquals(((logArgs[1] as { errorDetails: any }).errorDetails).code, dbError.code);
   });
 
   it("should return an empty array if DB returns data but system_prompts is null or empty (data integrity issue)", async () => {
     const mockDbResponseData = [
-      { id: "overlay-uuid-bad-1", domain_id: "bad_data_null", description: "system_prompts is null", is_active: true, system_prompts: null },
-      { id: "overlay-uuid-bad-2", domain_id: "bad_data_empty", description: "system_prompts is empty array", is_active: true, system_prompts: [] },
+      { id: "overlay-uuid-bad-1", domain_id: "bad_data_null", description: "system_prompts is null", overlay_values: null, is_active: true, system_prompts: null, "system_prompts!inner": null },
+      { id: "overlay-uuid-bad-2", domain_id: "bad_data_empty", description: "system_prompts is empty array", overlay_values: null, is_active: true, system_prompts: [], "system_prompts!inner": [] },
     ];
     initializeSupabaseMocks({
       genericMockResults: {

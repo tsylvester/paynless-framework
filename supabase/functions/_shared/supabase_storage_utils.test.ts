@@ -3,7 +3,7 @@ import { describe, it, beforeAll, afterAll, beforeEach, afterEach } from "jsr:@s
 import { spy, stub, type Spy, assertSpyCall, assertSpyCalls, assertSpyCallAsync } from "jsr:@std/testing/mock";
 
 import { uploadToStorage, downloadFromStorage, deleteFromStorage, createSignedUrlForPath, getFileMetadata } from "./supabase_storage_utils.ts";
-import { createMockSupabaseClient, type IMockClientSpies, type MockSupabaseDataConfig, getStorageSpies, type MockSupabaseClientSetup, withMockEnv } from "./supabase.mock.ts";
+import { createMockSupabaseClient, type IMockClientSpies, type MockSupabaseDataConfig, type MockSupabaseClientSetup, withMockEnv } from "./supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
 
 describe("uploadToStorage", () => {
@@ -18,6 +18,7 @@ describe("uploadToStorage", () => {
       }
     };
     const { client: mockSupabaseClient, spies } = createMockSupabaseClient("test-user-id", mockConfig);
+    const storageSpies = spies.storage.from(bucketName);
 
     const result = await uploadToStorage(
       mockSupabaseClient as unknown as SupabaseClient, 
@@ -29,11 +30,9 @@ describe("uploadToStorage", () => {
 
     assertEquals(result.path, filePath);
     assertEquals(result.error, null);
-
-    const uploadSpy = spies.storage.from(bucketName).uploadSpy;
     
-    assertSpyCalls(uploadSpy, 1);
-    await assertSpyCallAsync(uploadSpy, 0, {
+    assertSpyCalls(storageSpies.uploadSpy, 1);
+    await assertSpyCallAsync(storageSpies.uploadSpy, 0, {
       args: [filePath, fileContent, { contentType: "text/plain", upsert: false }],
       returned: { data: { path: filePath }, error: null },
     });
@@ -50,6 +49,7 @@ describe("uploadToStorage", () => {
       }
     };
     const { client: mockSupabaseClient, spies } = createMockSupabaseClient("test-user-id", mockConfig);
+    const storageSpies = spies.storage.from(bucketName);
 
     const result = await uploadToStorage(
       mockSupabaseClient as unknown as SupabaseClient, 
@@ -62,9 +62,8 @@ describe("uploadToStorage", () => {
     assertEquals(result.path, filePath);
     assertEquals(result.error, null);
 
-    const uploadSpy = spies.storage.from(bucketName).uploadSpy;
-    assertSpyCalls(uploadSpy, 1);
-    await assertSpyCallAsync(uploadSpy, 0, {
+    assertSpyCalls(storageSpies.uploadSpy, 1);
+    await assertSpyCallAsync(storageSpies.uploadSpy, 0, {
       args: [filePath, fileContent, { contentType: "image/png", upsert: true }],
       returned: { data: { path: filePath }, error: null },
     });
@@ -82,6 +81,7 @@ describe("uploadToStorage", () => {
       }
     };
     const { client: mockSupabaseClient, spies } = createMockSupabaseClient("test-user-id", mockConfig);
+    const storageSpies = spies.storage.from(bucketName);
 
     const result = await uploadToStorage(
       mockSupabaseClient as unknown as SupabaseClient, 
@@ -94,9 +94,8 @@ describe("uploadToStorage", () => {
     assertEquals(result.path, null);
     assertEquals(result.error?.message, supabaseError.message);
 
-    const uploadSpy = spies.storage.from(bucketName).uploadSpy;
-    assertSpyCalls(uploadSpy, 1);
-    await assertSpyCallAsync(uploadSpy, 0, {
+    assertSpyCalls(storageSpies.uploadSpy, 1);
+    await assertSpyCallAsync(storageSpies.uploadSpy, 0, {
       args: [filePath, fileContent, { contentType: "application/json", upsert: false }],
       returned: { data: null, error: supabaseError }, 
     });
@@ -116,6 +115,7 @@ describe("uploadToStorage", () => {
       }
     };
     const { client: mockSupabaseClient, spies } = createMockSupabaseClient("test-user-id", mockConfig);
+    const storageSpies = spies.storage.from(bucketName);
     
     const result = await uploadToStorage(
       mockSupabaseClient as unknown as SupabaseClient, 
@@ -128,9 +128,8 @@ describe("uploadToStorage", () => {
     assertEquals(result.path, null);
     assertEquals(result.error?.message, exceptionError.message);
     
-    const uploadSpy = spies.storage.from(bucketName).uploadSpy;
-    assertSpyCalls(uploadSpy, 1);
-    await assertSpyCallAsync(uploadSpy, 0, {
+    assertSpyCalls(storageSpies.uploadSpy, 1);
+    await assertSpyCallAsync(storageSpies.uploadSpy, 0, {
       args: [filePath, fileContent, { contentType: "text/plain", upsert: false }],
       error: {
         Class: Error,
@@ -168,15 +167,14 @@ describe("downloadFromStorage", () => {
     const mockBlob = new Blob([mockContent], { type: "text/plain" });
     const mockArrayBuffer = await mockBlob.arrayBuffer();
 
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const { client, spies, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
       storageMock: {
         downloadResult: async (_bucket: string, _path: string) => {
           return { data: mockBlob, error: null };
         }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
+    const storageSpies = spies.storage.from(bucketName);
 
     const { data, mimeType, error } = await downloadFromStorage(client as unknown as SupabaseClient, bucketName, filePath);
 
@@ -192,15 +190,14 @@ describe("downloadFromStorage", () => {
 
   it("should return an error if Supabase storage download fails", async () => {
     const supabaseError = new Error("Supabase download failed");
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const { client, spies, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
       storageMock: {
         downloadResult: async (_bucket: string, _path: string) => {
           return { data: null, error: supabaseError };
         }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
+    const storageSpies = spies.storage.from(bucketName);
 
     const { data, mimeType, error } = await downloadFromStorage(client as unknown as SupabaseClient, bucketName, filePath);
 
@@ -212,15 +209,14 @@ describe("downloadFromStorage", () => {
   });
 
   it("should return an error if no data is returned from download (e.g., file not found)", async () => {
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const { client, spies, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
       storageMock: {
         downloadResult: async (_bucket: string, _path: string) => {
           return { data: null, error: null };
         }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
+    const storageSpies = spies.storage.from(bucketName);
     
     const { data, mimeType, error } = await downloadFromStorage(client as unknown as SupabaseClient, bucketName, filePath);
 
@@ -236,15 +232,14 @@ describe("downloadFromStorage", () => {
     const mockBlob = new Blob(["corrupted data"], { type: "application/octet-stream" });
     stub(mockBlob, "arrayBuffer", () => Promise.reject(new Error("ArrayBuffer conversion failed")));
 
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const { client, spies, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
       storageMock: {
         downloadResult: async (_bucket: string, _path: string) => {
           return { data: mockBlob, error: null };
         }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
+    const storageSpies = spies.storage.from(bucketName);
 
     const { data, mimeType, error } = await downloadFromStorage(client as unknown as SupabaseClient, bucketName, filePath);
 
@@ -253,6 +248,41 @@ describe("downloadFromStorage", () => {
     assertEquals(error?.message, "ArrayBuffer conversion failed");
     assertSpyCall(storageSpies.downloadSpy, 0, { args: [filePath] });
     if (clear) clear();
+  });
+
+  it("should consume Response body from error.originalError when error occurs to prevent resource leaks", async () => {
+    const mockResponse = new Response("Error response body", { status: 400 });
+    const supabaseError = new Error("Storage download failed");
+    Object.assign(supabaseError, { originalError: mockResponse });
+    
+    let responseBodyConsumed = false;
+    const originalText = mockResponse.text.bind(mockResponse);
+    const textStub = stub(mockResponse, "text", async () => {
+      responseBodyConsumed = true;
+      return originalText();
+    });
+
+    try {
+      const { client, spies, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+        storageMock: {
+          downloadResult: async (_bucket: string, _path: string) => {
+            return { data: null, error: supabaseError };
+          }
+        }
+      });
+      const storageSpies = spies.storage.from(bucketName);
+
+      const { data, error } = await downloadFromStorage(client as unknown as SupabaseClient, bucketName, filePath);
+
+      assertStrictEquals(data, null);
+      assertStrictEquals(error, supabaseError);
+      assertStrictEquals(responseBodyConsumed, true, "Response body from error.originalError must be consumed when error occurs to prevent Deno resource leaks");
+      
+      assertSpyCall(storageSpies.downloadSpy, 0, { args: [filePath] });
+      if (clear) clear();
+    } finally {
+      textStub.restore();
+    }
   });
 });
 
@@ -270,11 +300,12 @@ describe("deleteFromStorage", () => {
         removeResult: { data: mockFileObjects, error: null }
       }
     });
+    const storageSpies = spies.storage.from(bucketName);
 
     const result = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, pathsToDelete);
 
     assertStrictEquals(result.error, null);
-    assertSpyCall(spies.storage.from(bucketName).removeSpy, 0, { args: [pathsToDelete] });
+    assertSpyCall(storageSpies.removeSpy, 0, { args: [pathsToDelete] });
   });
 
   it("should return an error if Supabase storage delete fails", async () => {
@@ -287,12 +318,13 @@ describe("deleteFromStorage", () => {
         removeResult: { data: null, error: mockError }
       }
     });
+    const storageSpies = spies.storage.from(bucketName);
 
     const result = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, pathsToDelete);
 
     assertExists(result.error);
     assertEquals(result.error?.message, mockError.message);
-    assertSpyCall(spies.storage.from(bucketName).removeSpy, 0, { args: [pathsToDelete] });
+    assertSpyCall(storageSpies.removeSpy, 0, { args: [pathsToDelete] });
   });
 
   it("should return an error if the delete call itself throws an exception", async () => {
@@ -305,12 +337,13 @@ describe("deleteFromStorage", () => {
         removeResult: () => { throw mockError; }
       }
     });
+    const storageSpies = spies.storage.from(bucketName);
 
     const result = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, pathsToDelete);
 
     assertExists(result.error);
     assertEquals(result.error?.message, mockError.message);
-    assertSpyCall(spies.storage.from(bucketName).removeSpy, 0, { args: [pathsToDelete] });
+    assertSpyCall(storageSpies.removeSpy, 0, { args: [pathsToDelete] });
   });
 
   it("should return an error if file count mismatches", async () => {
@@ -360,15 +393,14 @@ describe("createSignedUrlForPath", () => {
 
   it("should return a signed URL on success", async () => {
     const mockSignedUrl = `https://supabase.example.com/storage/v1/object/sign/${bucketName}/${filePath}?token=mocktoken&expires_in=${expiresIn}`;
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const { client, spies, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
       storageMock: {
         createSignedUrlResult: async (_bucket: string, _path: string, _expires: number) => {
           return { data: { signedUrl: mockSignedUrl }, error: null };
         }
       }
     });
-    client.storage.from(bucketName); 
-    const storageSpies = getStorageSpies(client, bucketName);
+    const storageSpies = spies.storage.from(bucketName);
 
     const { signedUrl, error } = await createSignedUrlForPath(client as unknown as SupabaseClient, bucketName, filePath, expiresIn);
 
@@ -382,15 +414,14 @@ describe("createSignedUrlForPath", () => {
 
   it("should return an error if Supabase client fails to create signed URL", async () => {
     const supabaseError = new Error("Supabase createSignedUrl failed");
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const { client, spies, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
       storageMock: {
         createSignedUrlResult: async (_bucket: string, _path: string, _expires: number) => {
           return { data: null, error: supabaseError };
         }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
+    const storageSpies = spies.storage.from(bucketName);
 
     const { signedUrl, error } = await createSignedUrlForPath(client as unknown as SupabaseClient, bucketName, filePath, expiresIn);
 
@@ -401,15 +432,14 @@ describe("createSignedUrlForPath", () => {
   });
 
   it("should return an error if Supabase returns no URL and no error", async () => {
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const { client, spies, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
       storageMock: {
         createSignedUrlResult: async (_bucket: string, _path: string, _expires: number) => {
           return { data: null, error: null }; // No URL, no error
         }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
+    const storageSpies = spies.storage.from(bucketName);
 
     const { signedUrl, error } = await createSignedUrlForPath(client as unknown as SupabaseClient, bucketName, filePath, expiresIn);
 
@@ -422,15 +452,14 @@ describe("createSignedUrlForPath", () => {
 
   it("should return an error if the createSignedUrl call itself throws an exception", async () => {
     const exceptionError = new Error("Network issue during createSignedUrl");
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const { client, spies, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
       storageMock: {
         createSignedUrlResult: async (_bucket: string, _path: string, _expires: number) => {
           throw exceptionError;
         }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
+    const storageSpies = spies.storage.from(bucketName);
 
     const { signedUrl, error } = await createSignedUrlForPath(client as unknown as SupabaseClient, bucketName, filePath, expiresIn);
 
@@ -549,13 +578,14 @@ describe("getFileMetadata", () => {
         listResult: { data: mockFileList, error: null }
       }
     });
+    const storageSpies = spies.storage.from(bucketName);
 
     const result = await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
 
     assertStrictEquals(result.error, null);
     assertEquals(result.size, mockMetadata.size);
     assertEquals(result.mimeType, mockMetadata.mimetype);
-    assertSpyCall(spies.storage.from(bucketName).listSpy, 0, { 
+    assertSpyCall(storageSpies.listSpy, 0, { 
       args: [directoryPath, { search: fileName, limit: 1 }] 
     });
   });
@@ -641,10 +671,11 @@ describe("getFileMetadata", () => {
         listResult: { data: [], error: null }
       }
     });
+    const storageSpies = spies.storage.from(bucketName);
 
     await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
     
-    assertSpyCall(spies.storage.from(bucketName).listSpy, 0, {
+    assertSpyCall(storageSpies.listSpy, 0, {
       args: ['', { search: fullPath, limit: 1 }] // Expects directoryPath to be ''
     });
   });

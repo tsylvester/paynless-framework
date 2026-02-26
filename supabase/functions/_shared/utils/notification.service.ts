@@ -10,9 +10,9 @@ import type {
   ContributionGenerationContinuedPayload,
   ContributionGenerationCompletePayload,
   DialecticContributionReceivedPayload,
-  DialecticProgressUpdatePayload,
   ContributionGenerationFailedPayload,
   ContributionGenerationFailedInternalPayload,
+  JobNotificationEvent,
 } from '../types/notification.service.types.ts';
 
 export class NotificationService implements NotificationServiceType {
@@ -127,18 +127,6 @@ export class NotificationService implements NotificationServiceType {
     });
   }
 
-  public async sendDialecticProgressUpdateEvent(
-    payload: DialecticProgressUpdatePayload,
-    targetUserId: string,
-  ): Promise<void> {
-    await this._sendNotification({
-      target_user_id: targetUserId,
-      notification_type: 'dialectic_progress_update',
-      is_internal_event: true,
-      notification_data: payload,
-    });
-  }
-
   public async sendContributionFailedNotification(
     payload: ContributionGenerationFailedPayload,
     targetUserId: string,
@@ -161,6 +149,18 @@ export class NotificationService implements NotificationServiceType {
 
   public async sendContributionGenerationFailedEvent(
     payload: ContributionGenerationFailedInternalPayload,
+    targetUserId: string,
+  ): Promise<void> {
+    await this._sendNotification({
+      target_user_id: targetUserId, 
+      notification_type: payload.type,
+      is_internal_event: true,
+      notification_data: payload,
+    });
+  }
+
+  public async sendJobNotificationEvent(
+    payload: JobNotificationEvent,
     targetUserId: string,
   ): Promise<void> {
     await this._sendNotification({

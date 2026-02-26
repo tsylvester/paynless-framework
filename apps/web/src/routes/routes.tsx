@@ -18,14 +18,16 @@ const SubscriptionSuccessPage = lazy(() => import('../pages/SubscriptionSuccess'
 const AiChatPage = lazy(() => import('../pages/AiChat')); // Default export
 const NotificationsPage = lazy(() => import('../pages/Notifications')); // Default export
 const AcceptInvitePage = lazy(() => import('../pages/AcceptInvitePage').then(module => ({ default: module.AcceptInvitePage })));
-const OrganizationHubPage = lazy(() => import('../pages/OrganizationHubPage').then(module => ({ default: module.OrganizationHubPage })));
-const OrganizationFocusedViewPage = lazy(() => import('../pages/OrganizationFocusedViewPage').then(module => ({ default: module.OrganizationFocusedViewPage })));
+//const OrganizationHubPage = lazy(() => import('../pages/OrganizationHubPage').then(module => ({ default: module.OrganizationHubPage })));
+//const OrganizationFocusedViewPage = lazy(() => import('../pages/OrganizationFocusedViewPage').then(module => ({ default: module.OrganizationFocusedViewPage })));
 const TransactionHistoryPage = lazy(() => import('../pages/TransactionHistory').then(module => ({ default: module.TransactionHistoryPage })));
 const HomePage = lazy(() => import('../pages/Home').then(module => ({ default: module.HomePage })));
 const DialecticProjectsPage = lazy(() => import('../pages/DialecticProjectsPage').then(module => ({ default: module.DialecticProjectsPage })));
 const CreateDialecticProjectPage = lazy(() => import('../pages/CreateDialecticProjectPage').then(module => ({ default: module.CreateDialecticProjectPage })));
 const DialecticProjectDetailsPage = lazy(() => import('../pages/DialecticProjectDetailsPage').then(module => ({ default: module.DialecticProjectDetailsPage })));
 const DialecticSessionDetailsPage = lazy(() => import('../pages/DialecticSessionDetailsPage').then(module => ({ default: module.DialecticSessionDetailsPage })));
+const DocsPage = lazy(() => import('../pages/DocsPage').then(module => ({ default: module.DocsPage })));
+const DocPage = lazy(() => import('../pages/DocPage').then(module => ({ default: module.DocPage })));
 //import { ForgotPassword } from '../pages/ForgotPassword';
 //import { ResetPassword } from '../pages/ResetPassword';
 //import { VerifyEmail } from '../pages/VerifyEmail';
@@ -141,22 +143,6 @@ const routes: RouteObject[] = [
         ),
       },
       {
-        path: 'organizations',
-        element: (
-          <ProtectedRoute>  
-            <OrganizationHubPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'organizations/:orgId',
-        element: (
-          <ProtectedRoute>
-            <OrganizationFocusedViewPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
         path: 'dialectic',
         element: (
           <ProtectedRoute>
@@ -187,6 +173,18 @@ const routes: RouteObject[] = [
             <DialecticSessionDetailsPage />
           </ProtectedRoute>
         ),
+      },
+      {
+        path: 'docs',
+        element: <Navigate to="/docs/getting-started" replace />,
+      },
+      {
+        path: 'docs/:documentSlug',
+        element: <DocPage />,
+      },
+      {
+        path: 'docs-all',
+        element: <DocsPage />,
       },
       {
         path: 'admin',

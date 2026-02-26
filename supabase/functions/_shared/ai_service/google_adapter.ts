@@ -4,6 +4,7 @@ import {
     type Content,
     type ModelParams,
     type GenerateContentResult,
+    type Part,
 } from "npm:@google/generative-ai";
 import type {
     ProviderModelInfo,
@@ -96,7 +97,18 @@ export class GoogleAdapter {
             })(),
         });
 
-        const result: GenerateContentResult = await chat.sendMessage(lastMessage.parts);
+        let finalParts: Part[] = [...lastMessage.parts];
+        if (request.resourceDocuments && request.resourceDocuments.length > 0) {
+            const documentParts: Part[] = [];
+            for (const doc of request.resourceDocuments) {
+                const label = `[Document: ${doc.document_key} from ${doc.stage_slug}]`;
+                documentParts.push({ text: label });
+                documentParts.push({ text: doc.content });
+            }
+            finalParts = [...documentParts, ...lastMessage.parts];
+        }
+
+        const result: GenerateContentResult = await chat.sendMessage(finalParts);
         const response = result.response;
         const candidate = response.candidates?.[0];
 

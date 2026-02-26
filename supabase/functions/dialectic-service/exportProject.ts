@@ -4,7 +4,8 @@ import type {
     DialecticProjectResource, 
     DialecticSession, 
     DialecticContribution,
-    ExportProjectResponse
+    ExportProjectResponse,
+    SelectedModels
 } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
@@ -18,7 +19,7 @@ import {
 import { FileType, type IFileManager, type UploadContext } from "../_shared/types/file_manager.types.ts";
 import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts"; // Added import for the interface
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'; // For converting ArrayBuffer to Buffer for FileManager
-import { isContributionType, isCitationsArray } from "../_shared/utils/type_guards.ts";
+import { isContributionType, isCitationsArray, isPostgrestError, isServiceError } from "../_shared/utils/type_guards.ts";
 
 // --- START: Constants ---
 const SIGNED_URL_EXPIRES_IN = 3600; // 1 hour
@@ -143,6 +144,34 @@ export async function exportProject(
             sessions: [],
         };
 
+        const displayNameByModelId = new Map<string, string>();
+        if (sessionsData && sessionsData.length > 0) {
+            const allModelIds: string[] = [];
+            for (const session of sessionsData) {
+                const ids = session.selected_model_ids ?? [];
+                for (const id of ids) {
+                    if (!displayNameByModelId.has(id)) {
+                        allModelIds.push(id);
+                    }
+                }
+            }
+            if (allModelIds.length > 0) {
+                const { data: catalogRows, error: catalogError } = await supabaseClient
+                    .from('ai_providers')
+                    .select('id, name')
+                    .in('id', allModelIds);
+                if (catalogError) {
+                    logger.warn('Export: could not fetch model display names from ai_providers.', { projectId, details: catalogError });
+                } else if (catalogRows) {
+                    for (const row of catalogRows) {
+                        if (row.id != null && row.name != null) {
+                            displayNameByModelId.set(row.id, row.name);
+                        }
+                    }
+                }
+            }
+        }
+
         if (sessionsData) {
             for (const session of sessionsData) {
                 const { data: contributionsSql, error: contributionsError } = await supabaseClient
@@ -192,9 +221,24 @@ export async function exportProject(
                         validContributions.push(mappedContribution);
                     }
                 }
-                
+
+                const ids = session.selected_model_ids ?? [];
+                const selected_models: SelectedModels[] = ids
+                    .filter((id: string) => displayNameByModelId.has(id))
+                    .map((id: string) => ({ id, displayName: displayNameByModelId.get(id)! }));
+
                 manifest.sessions.push({
-                    ...session,
+                    id: session.id,
+                    project_id: session.project_id,
+                    session_description: session.session_description,
+                    user_input_reference_url: session.user_input_reference_url,
+                    iteration_count: session.iteration_count,
+                    selected_models,
+                    status: session.status,
+                    associated_chat_id: session.associated_chat_id,
+                    current_stage_id: session.current_stage_id,
+                    created_at: session.created_at,
+                    updated_at: session.updated_at,
                     contributions: validContributions,
                 });
             }
@@ -333,12 +377,29 @@ export async function exportProject(
 
         if (fmError || !fileRecord) {
             logger.error('FileManager failed to upload/register project export zip.', { error: fmError, projectId, fileName: exportFileName });
+            
+            let errorDetails: string;
+            if (!fmError) {
+                errorDetails = 'Unknown error occurred during file upload.';
+            } else if (isPostgrestError(fmError)) {
+                errorDetails = fmError.details;
+            } else if (isServiceError(fmError)) {
+                if (typeof fmError.details === 'string') {
+                    errorDetails = fmError.details;
+                } else {
+                    errorDetails = fmError.message;
+                }
+            } else {
+                // TypeScript knows this must be StorageError after the above checks
+                errorDetails = fmError.message;
+            }
+            
             return { 
                 error: { 
                     message: 'Failed to store project export file using FileManager.', 
                     status: 500, 
                     code: 'EXPORT_FM_UPLOAD_FAILED', 
-                    details: fmError?.details || fmError?.message 
+                    details: errorDetails 
                 } 
             };
         }

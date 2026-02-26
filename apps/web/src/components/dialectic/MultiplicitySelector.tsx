@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { MinusIcon, PlusIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface MultiplicitySelectorProps {
   value: number;
@@ -29,25 +30,40 @@ export const MultiplicitySelector: React.FC<MultiplicitySelectorProps> = ({
     onChange(newValue);
   };
 
+  const isSelected = value > 0;
+  
   return (
     <div className="flex items-center gap-1">
       <Button
         variant="outline"
         size="icon-xs"
-        className="h-6 w-6"
+        className={cn(
+          "h-6 w-6 transition-colors",
+          isSelected && "border-primary/50 hover:border-primary"
+        )}
         onClick={handleDecrement}
         disabled={disabled || value <= minValue}
         aria-label="Decrement multiplicity"
       >
         <MinusIcon className="h-3 w-3" />
       </Button>
-      <span className="text-sm font-medium w-4 text-center tabular-nums" aria-live="polite">
-        {value}
-      </span>
+      
+      <div className={cn(
+        "w-6 h-6 rounded-md flex items-center justify-center text-sm font-bold tabular-nums transition-colors",
+        isSelected 
+          ? "bg-primary text-primary-foreground"
+          : "bg-muted text-muted-foreground"
+      )}>
+        <span aria-live="polite">{value}</span>
+      </div>
+      
       <Button
         variant="outline"
         size="icon-xs"
-        className="h-6 w-6"
+        className={cn(
+          "h-6 w-6 transition-colors",
+          isSelected && "border-primary/50 hover:border-primary"
+        )}
         onClick={handleIncrement}
         disabled={disabled || (maxValue !== undefined && value >= maxValue)}
         aria-label="Increment multiplicity"

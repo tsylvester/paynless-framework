@@ -8,8 +8,8 @@ export interface NotificationServiceType {
     sendContributionFailedNotification(payload: ContributionGenerationFailedPayload, targetUserId: string): Promise<void>;
     sendContributionGenerationCompleteEvent(payload: ContributionGenerationCompletePayload, targetUserId: string): Promise<void>;
     sendContributionGenerationContinuedEvent(payload: ContributionGenerationContinuedPayload, targetUserId: string): Promise<void>;
-    sendDialecticProgressUpdateEvent(payload: DialecticProgressUpdatePayload, targetUserId: string): Promise<void>;
     sendContributionGenerationFailedEvent(payload: ContributionGenerationFailedInternalPayload, targetUserId: string): Promise<void>;
+    sendJobNotificationEvent(payload: JobNotificationEvent, targetUserId: string): Promise<void>;
 }
 
 export interface RpcNotification<T> {
@@ -107,22 +107,6 @@ export interface ContributionGenerationStartedPayload {
     job_id: string;
   }
   
-  export interface DialecticProgressUpdatePayload {
-    type: 'dialectic_progress_update';
-    sessionId: string;
-    stageSlug: string;
-    current_step: number;
-    total_steps: number;
-    message: string;
-    job_id: string;
-  }
-  
-  export interface ProgressData {
-    current_step: number;
-    total_steps: number;
-    message: string;
-  }
-  
   export type DialecticLifecycleEvent = 
   ContributionGenerationStartedPayload 
   | DialecticContributionStartedPayload 
@@ -130,5 +114,83 @@ export interface ContributionGenerationStartedPayload {
   | DialecticContributionReceivedPayload 
   | ContributionGenerationFailedPayload 
   | ContributionGenerationContinuedPayload
-  | ContributionGenerationCompletePayload
-  | DialecticProgressUpdatePayload;
+  | ContributionGenerationCompletePayload;
+
+// ------------------------------
+// Job notification type hierarchy (PLAN / EXECUTE / RENDER lifecycle, unified job_failed)
+// Base and stage-specific payloads for progress tracking
+
+export interface JobNotificationBase {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  job_id: string;
+  step_key: string;
+}
+
+// PLAN: orchestration only — no modelId, no document_key
+export interface PlannerPayload extends JobNotificationBase {}
+
+export interface PlannerStartedPayload extends PlannerPayload {
+  type: 'planner_started';
+}
+
+export interface PlannerCompletedPayload extends PlannerPayload {
+  type: 'planner_completed';
+}
+
+// EXECUTE: modelId required, document_key optional
+export interface ExecutePayload extends JobNotificationBase {
+  modelId: string;
+  document_key?: string;
+}
+
+export interface ExecuteStartedPayload extends ExecutePayload {
+  type: 'execute_started';
+}
+
+export interface ExecuteChunkCompletedPayload extends ExecutePayload {
+  type: 'execute_chunk_completed';
+}
+
+export interface ExecuteCompletedPayload extends ExecutePayload {
+  type: 'execute_completed';
+}
+
+// RENDER: modelId and document_key both required
+export interface RenderPayload extends JobNotificationBase {
+  modelId: string;
+  document_key: string;
+}
+
+export interface RenderStartedPayload extends RenderPayload {
+  type: 'render_started';
+}
+
+export interface RenderChunkCompletedPayload extends RenderPayload {
+  type: 'render_chunk_completed';
+}
+
+export interface RenderCompletedPayload extends RenderPayload {
+  type: 'render_completed';
+  latestRenderedResourceId: string;
+}
+
+// Unified failure payload: optional modelId and document_key per stage
+export interface JobFailedPayload extends JobNotificationBase {
+  type: 'job_failed';
+  error: ApiError;
+  modelId?: string;
+  document_key?: string;
+}
+
+export type JobNotificationEvent =
+  | PlannerStartedPayload
+  | PlannerCompletedPayload
+  | ExecuteStartedPayload
+  | ExecuteChunkCompletedPayload
+  | ExecuteCompletedPayload
+  | RenderStartedPayload
+  | RenderChunkCompletedPayload
+  | RenderCompletedPayload
+  | JobFailedPayload;

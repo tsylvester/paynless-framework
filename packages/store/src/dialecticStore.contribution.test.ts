@@ -5,45 +5,42 @@ import {
     beforeEach, 
     afterEach, 
     vi,
-    type Mock
 } from 'vitest';
+import { useDialecticStore } from './dialecticStore';
+import { useAuthStore } from './authStore';
 import { 
-    useDialecticStore, 
-    initialDialecticStateValues 
-} from './dialecticStore';
-import type { 
   ApiError, 
   ApiResponse, 
   DialecticProject, 
-  CreateProjectPayload,
-  ContributionContentSignedUrlResponse,
   AIModelCatalogEntry,
-  DialecticSession,
-  StartSessionPayload,
-  DomainOverlayDescriptor,
-  DomainDescriptor,
   DialecticContribution,
   SubmitStageResponsesPayload,
   SubmitStageResponsesResponse,
   SaveContributionEditPayload,
   GenerateContributionsResponse,
   GenerateContributionsPayload,
-  IterationInitialPromptData,
-  DialecticStage,
+  SubmitStageDocumentFeedbackPayload,
+  SaveContributionEditSuccessResponse,
+  EditedDocumentResource,
+  StageDocumentContentState,
+  StageDocumentCompositeKey,
+  SelectedModels,
 } from '@paynless/types';
 
 // We need to import the mock api object and helpers to use in the test
 import { 
     api,
     resetApiMock,
+    getMockDialecticClient,
+    MockDialecticApiClient,
 } from '@paynless/api/mocks';
 
-vi.mock('@paynless/api', async (importOriginal) => {
-    const original = await importOriginal() as Record<string, unknown>;
-    const { api } = await import('@paynless/api/mocks'); 
+vi.mock('@paynless/api', async () => {
+    const { api, resetApiMock, getMockDialecticClient } = await import('@paynless/api/mocks');
     return {
-        ...original,
-        api: vi.mocked(api, true), // Use deep mocking
+        api,
+        resetApiMock,
+        getMockDialecticClient,
         initializeApiClient: vi.fn(), 
     };
 });
@@ -211,6 +208,7 @@ describe('useDialecticStore', () => {
             iterationNumber: 1,
             stageSlug: 'thesis',
             continueUntilComplete: true,
+            walletId: 'wallet-123',
         };
 
         const mockProject: DialecticProject = {
@@ -227,7 +225,7 @@ describe('useDialecticStore', () => {
                 project_id: mockPayload.projectId,
                 iteration_count: 1,
                 session_description: 'A session for testing generation',
-                selected_model_ids: ['model-1', 'model-2'],
+                selected_models: [{ id: 'model-1', displayName: 'Test Model 1' }, { id: 'model-2', displayName: 'Test Model 2' }],
                 dialectic_contributions: [],
                 status: 'active',
                 user_input_reference_url: null,
@@ -255,10 +253,15 @@ describe('useDialecticStore', () => {
         const mockApiError: ApiError = { message: 'API Failed', code: 'VALIDATION_ERROR' };
         const networkError = new Error('Network Failure');
 
+        const generateContributionsSelectedModels: SelectedModels[] = [
+            { id: 'model-1', displayName: 'Test Model 1' },
+            { id: 'model-2', displayName: 'Test Model 2' },
+        ];
+
         beforeEach(() => {
             useDialecticStore.setState({
                 currentProjectDetail: JSON.parse(JSON.stringify(mockProject)),
-                selectedModelIds: ['model-1', 'model-2'],
+                selectedModels: generateContributionsSelectedModels,
                 modelCatalog: mockModelCatalog,
                 generatingSessions: {},
             });
@@ -275,7 +278,7 @@ describe('useDialecticStore', () => {
                 successfulContributions: [],
                 failedAttempts: [],
             };
-            (api.dialectic().generateContributions as Mock).mockResolvedValue({
+            api.dialectic().generateContributions.mockResolvedValue({
                 data: mockSuccessResponse,
                 status: 202,
             });
@@ -293,7 +296,7 @@ describe('useDialecticStore', () => {
         });
 
         it('should set error state and mark placeholders as failed if API returns an error', async () => {
-            (api.dialectic().generateContributions as Mock).mockResolvedValue({
+            api.dialectic().generateContributions.mockResolvedValue({
                 error: mockApiError,
                 status: 500,
             });
@@ -311,7 +314,7 @@ describe('useDialecticStore', () => {
         });
 
         it('should set network error state and mark placeholders as failed if API call throws', async () => {
-            (api.dialectic().generateContributions as Mock).mockRejectedValue(networkError);
+            api.dialectic().generateContributions.mockRejectedValue(networkError);
             
             const { generateContributions } = useDialecticStore.getState();
             await generateContributions(mockPayload);
@@ -328,13 +331,20 @@ describe('useDialecticStore', () => {
 
         it('should correctly cycle through contributionGenerationStatus states', async () => {
             const mockSuccessResponse: GenerateContributionsResponse = {
+                sessionId: mockPayload.sessionId,
+                projectId: mockPayload.projectId,
+                stage: mockPayload.stageSlug,
+                iteration: mockPayload.iterationNumber,
+                status: 'pending',
                 job_ids: ['job-id-1', 'job-id-2'],
+                successfulContributions: [],
+                failedAttempts: [],
             };
             const mockApiResponse: ApiResponse<GenerateContributionsResponse> = {
                 data: mockSuccessResponse,
                 status: 202,
             };
-            (api.dialectic().generateContributions as Mock).mockResolvedValue(mockApiResponse);
+            api.dialectic().generateContributions.mockResolvedValue(mockApiResponse);
 
             const { generateContributions } = useDialecticStore.getState();
 
@@ -361,26 +371,23 @@ describe('useDialecticStore', () => {
         const mockSessionId = 'sess-submit-456';
         const mockStageSlug = 'thesis';
         const mockIteration = 1;
+        const modelIdA = 'model-a';
+        const modelIdB = 'model-b';
+        const docKey1 = 'doc-1';
+        const docKey2 = 'doc-2';
+        const docKey3 = 'doc-3';
 
-        const mockPayloadWithoutFeedback: SubmitStageResponsesPayload = {
+        const compositeKey1 = `${mockSessionId}:${mockStageSlug}:${mockIteration}:${modelIdA}:${docKey1}`;
+        const compositeKey2 = `${mockSessionId}:${mockStageSlug}:${mockIteration}:${modelIdA}:${docKey2}`;
+        const compositeKey3 = `${mockSessionId}:${mockStageSlug}:${mockIteration}:${modelIdB}:${docKey3}`;
+
+        const mockPayload: SubmitStageResponsesPayload = {
             projectId: mockProjectId,
             sessionId: mockSessionId,
             stageSlug: mockStageSlug,
             currentIterationNumber: mockIteration,
-            responses: [{ originalContributionId: 'contrib-model-A', responseText: 'Feedback for A' }],
         };
 
-        const validUserStageFeedback: SubmitStageResponsesPayload['userStageFeedback'] = {
-            content: 'This is great feedback!',
-            feedbackType: 'file_upload',
-            resourceDescription: { fileName: 'feedback.txt', fileSize: 1024 }
-        };
-
-        const mockPayloadWithFeedback: SubmitStageResponsesPayload = {
-            ...mockPayloadWithoutFeedback,
-            userStageFeedback: validUserStageFeedback,
-        };
-        
         const mockProjectForRefetch: DialecticProject = {
             id: mockProjectId,
             project_name: 'Test Project for Submission Refetched',
@@ -401,7 +408,7 @@ describe('useDialecticStore', () => {
                 dialectic_contributions: [],
                 associated_chat_id: null,
                 user_input_reference_url: null,
-                selected_model_ids: [],
+                selected_models: [],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
             }],
@@ -419,103 +426,511 @@ describe('useDialecticStore', () => {
             saveContributionEditError: null,
         };
 
-        const mockSuccessBaseResponse: Omit<SubmitStageResponsesResponse, 'userFeedbackStoragePath'> = {
-            nextStageSeedPromptStoragePath: 'path/to/next_seed.md',
-            updatedSession: { ...(mockProjectForRefetch.dialectic_sessions && mockProjectForRefetch.dialectic_sessions[0]), current_iteration: 2 } as DialecticSession,
+        const mockSuccessResponse: SubmitStageResponsesResponse = {
+            updatedSession: { 
+                ...(mockProjectForRefetch.dialectic_sessions && mockProjectForRefetch.dialectic_sessions[0]), 
+                id: mockSessionId,
+                project_id: mockProjectId,
+                iteration_count: 2,
+                session_description: 'A session',
+                user_input_reference_url: null,
+                selected_models: [],
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                status: 'pending_antithesis',
+                associated_chat_id: null,
+                current_stage_id: 'antithesis',
+             },
             message: 'Successfully submitted and prepared next seed.',
-        };
-        
-        const mockSuccessResponseWithFeedback: SubmitStageResponsesResponse = {
-            ...mockSuccessBaseResponse,
-            userFeedbackStoragePath: 'path/to/user_feedback.json', 
-        };
-
-        const mockSuccessResponseWithoutFeedback: SubmitStageResponsesResponse = {
-            ...mockSuccessBaseResponse,
-            userFeedbackStoragePath: 'path/to/user_feedback.json', 
         };
 
         beforeEach(() => {
             mockInitialProjectState = JSON.parse(JSON.stringify(mockProjectForRefetch));
             useDialecticStore.setState({
                 currentProjectDetail: mockInitialProjectState,
-                selectedModelIds: ['model-1', 'model-2'],
+                selectedModels: [
+                    { id: 'model-1', displayName: 'Model 1' },
+                    { id: 'model-2', displayName: 'Model 2' },
+                ],
                 modelCatalog: mockModelCatalog,
                 generatingSessions: {},
+                stageDocumentContent: {}, // Ensure it's clean
             });
         });
 
-        describe('successful submission', () => {
-            it('with user feedback: should set loading state, call API, refetch project details, and show success', async () => {
-                api.dialectic().submitStageResponses.mockResolvedValueOnce({
-                    data: mockSuccessResponseWithFeedback,
-                    status: 200,
-                });
-                api.dialectic().getProjectDetails.mockResolvedValueOnce({
-                    data: mockProjectForRefetch,
-                    status: 200,
-                });
-    
-                const { submitStageResponses } = useDialecticStore.getState();
-                const result = await submitStageResponses(mockPayloadWithFeedback);
-    
-                expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
-                expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
-                expect(api.dialectic().submitStageResponses).toHaveBeenCalledWith(mockPayloadWithFeedback);
-                expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(mockProjectId);
-                expect(useDialecticStore.getState().currentProjectDetail?.id).toEqual(mockProjectForRefetch.id);
-                expect(result?.data).toEqual(mockSuccessResponseWithFeedback);
+        it('should identify unsaved drafts, save each, then advance the stage', async () => {
+            // Contributions in currentProjectDetail so saveContributionEdit can resolve composite key and clear isDirty
+            const contribDoc1: DialecticContribution = {
+                id: 'contrib-doc-1',
+                session_id: mockSessionId,
+                user_id: 'user-1',
+                stage: mockStageSlug,
+                iteration_number: mockIteration,
+                model_id: modelIdA,
+                model_name: 'Model A',
+                prompt_template_id_used: null,
+                seed_prompt_url: null,
+                edit_version: 0,
+                is_latest_edit: true,
+                original_model_contribution_id: null,
+                raw_response_storage_path: null,
+                target_contribution_id: null,
+                tokens_used_input: null,
+                tokens_used_output: null,
+                processing_time_ms: null,
+                error: null,
+                citations: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                contribution_type: null,
+                file_name: null,
+                storage_bucket: null,
+                storage_path: null,
+                size_bytes: null,
+                mime_type: null,
+            };
+            const contribDoc3: DialecticContribution = {
+                ...contribDoc1,
+                id: 'contrib-doc-3',
+                model_id: modelIdB,
+                model_name: 'Model B',
+            };
+            const projectWithContributions: DialecticProject = {
+                ...mockProjectForRefetch,
+                dialectic_sessions: mockProjectForRefetch.dialectic_sessions
+                    ? [
+                          {
+                              ...mockProjectForRefetch.dialectic_sessions[0],
+                              dialectic_contributions: [contribDoc1, contribDoc3],
+                          },
+                      ]
+                    : [],
+            };
+
+            // 1. Setup Mock State with dirty documents (typed so incomplete data is a compile error)
+            const stageContent: Record<string, StageDocumentContentState> = {
+                    [compositeKey1]: {
+                        baselineMarkdown: 'baseline 1',
+                        currentDraftMarkdown: 'draft 1',
+                        isDirty: true,
+                        isLoading: false,
+                        error: null,
+                        lastBaselineVersion: null,
+                        pendingDiff: 'diff 1',
+                        lastAppliedVersionHash: null,
+                        sourceContributionId: 'contrib-doc-1',
+                        feedbackDraftMarkdown: undefined,
+                        feedbackIsDirty: false,
+                        resourceType: 'rendered_document',
+                    },
+                    [compositeKey2]: { // This one is not dirty
+                        baselineMarkdown: 'baseline 2',
+                        currentDraftMarkdown: 'baseline 2',
+                        isDirty: false,
+                        isLoading: false,
+                        error: null,
+                        lastBaselineVersion: null,
+                        pendingDiff: null,
+                        lastAppliedVersionHash: null,
+                        sourceContributionId: null,
+                        feedbackDraftMarkdown: undefined,
+                        feedbackIsDirty: false,
+                        resourceType: null,
+                    },
+                    [compositeKey3]: {
+                        baselineMarkdown: 'baseline 3',
+                        currentDraftMarkdown: 'draft 3',
+                        isDirty: true,
+                        isLoading: false,
+                        error: null,
+                        lastBaselineVersion: null,
+                        pendingDiff: 'diff 3',
+                        lastAppliedVersionHash: null,
+                        sourceContributionId: 'contrib-doc-3',
+                        feedbackDraftMarkdown: undefined,
+                        feedbackIsDirty: false,
+                        resourceType: 'rendered_document',
+                    },
+                };
+            useDialecticStore.setState({
+                currentProjectDetail: projectWithContributions,
+                stageDocumentContent: stageContent,
             });
 
-            it('without user feedback: should set loading state, call API, refetch project details, and show success', async () => {
-                api.dialectic().submitStageResponses.mockResolvedValueOnce({
-                    data: mockSuccessResponseWithoutFeedback,
-                    status: 200,
-                });
-                api.dialectic().getProjectDetails.mockResolvedValueOnce({
-                    data: mockProjectForRefetch,
-                    status: 200,
-                });
-    
-                const { submitStageResponses } = useDialecticStore.getState();
-                const result = await submitStageResponses(mockPayloadWithoutFeedback);
-    
-                expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
-                expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
-                expect(api.dialectic().submitStageResponses).toHaveBeenCalledWith(mockPayloadWithoutFeedback);
-                expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(mockProjectId);
-                expect(useDialecticStore.getState().currentProjectDetail?.id).toEqual(mockProjectForRefetch.id);
-                expect(result?.data).toEqual(mockSuccessResponseWithoutFeedback);
+            const mockSaveEditResource1: EditedDocumentResource = {
+                id: 'resource-doc-1',
+                resource_type: 'rendered_document',
+                project_id: mockProjectId,
+                session_id: mockSessionId,
+                stage_slug: mockStageSlug,
+                iteration_number: mockIteration,
+                document_key: docKey1,
+                source_contribution_id: 'contrib-doc-1',
+                storage_bucket: 'test-bucket',
+                storage_path: '/path/to/doc-1.md',
+                file_name: 'doc-1.md',
+                mime_type: 'text/markdown',
+                size_bytes: 100,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            const mockSaveEditResource3: EditedDocumentResource = {
+                id: 'resource-doc-3',
+                resource_type: 'rendered_document',
+                project_id: mockProjectId,
+                session_id: mockSessionId,
+                stage_slug: mockStageSlug,
+                iteration_number: mockIteration,
+                document_key: docKey3,
+                source_contribution_id: 'contrib-doc-3',
+                storage_bucket: 'test-bucket',
+                storage_path: '/path/to/doc-3.md',
+                file_name: 'doc-3.md',
+                mime_type: 'text/markdown',
+                size_bytes: 100,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            api.dialectic().saveContributionEdit
+                .mockResolvedValueOnce({ data: { resource: mockSaveEditResource1, sourceContributionId: 'contrib-doc-1' }, status: 201 })
+                .mockResolvedValueOnce({ data: { resource: mockSaveEditResource3, sourceContributionId: 'contrib-doc-3' }, status: 201 });
+            const submitStageResponsesSpy = vi.spyOn(api.dialectic(), 'submitStageResponses').mockResolvedValue({ data: mockSuccessResponse, status: 200 });
+            api.dialectic().getProjectDetails.mockResolvedValueOnce({
+                data: mockProjectForRefetch,
+                status: 200,
             });
+
+            const { submitStageResponses } = useDialecticStore.getState();
+            await submitStageResponses(mockPayload);
+
+            expect(api.dialectic().saveContributionEdit).toHaveBeenCalledTimes(2);
+            expect(api.dialectic().saveContributionEdit).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    editedContentText: 'draft 1',
+                    originalContributionIdToEdit: 'contrib-doc-1',
+                    documentKey: docKey1,
+                }),
+            );
+            expect(api.dialectic().saveContributionEdit).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    editedContentText: 'draft 3',
+                    originalContributionIdToEdit: 'contrib-doc-3',
+                    documentKey: docKey3,
+                }),
+            );
+            expect(api.dialectic().submitStageDocumentFeedback).toHaveBeenCalledTimes(0);
+            expect(submitStageResponsesSpy).toHaveBeenCalledTimes(1);
+            expect(submitStageResponsesSpy).toHaveBeenCalledWith(mockPayload);
+            expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(mockProjectId);
+            const state = useDialecticStore.getState();
+            expect(state.isSubmittingStageResponses).toBe(false);
+            expect(state.submitStageResponsesError).toBeNull();
+            expect(state.stageDocumentContent[compositeKey1]?.isDirty).toBe(false);
+            expect(state.stageDocumentContent[compositeKey3]?.isDirty).toBe(false);
         });
 
-        describe('failed submission', () => {
-            it('should set error state on API error (when submitting with feedback)', async () => {
-                const apiError: ApiError = { code: 'SUBMISSION_FAILED', message: 'Failed to submit responses.' };
-                api.dialectic().submitStageResponses.mockResolvedValue({ error: apiError, status: 500 });
-            
-                const { submitStageResponses } = useDialecticStore.getState();
-                const result = await submitStageResponses(mockPayloadWithFeedback); // Using withFeedback for this test
-            
-                expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
-                expect(useDialecticStore.getState().submitStageResponsesError).toEqual(apiError);
-                expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
-                expect(result?.error).toEqual(apiError);
+        it('should advance the stage without saving feedback if no drafts are dirty', async () => {
+            const stageContent: Record<string, StageDocumentContentState> = {
+                    [compositeKey1]: {
+                        baselineMarkdown: 'baseline 1',
+                        currentDraftMarkdown: 'baseline 1',
+                        isDirty: false,
+                        isLoading: false,
+                        error: null,
+                        lastBaselineVersion: null,
+                        pendingDiff: null,
+                        lastAppliedVersionHash: null,
+                        sourceContributionId: null,
+                        feedbackDraftMarkdown: undefined,
+                        feedbackIsDirty: false,
+                        resourceType: null,
+                    },
+                };
+             useDialecticStore.setState({
+                stageDocumentContent: stageContent,
             });
+
+            const submitDocFeedbackSpy = vi.spyOn(useDialecticStore.getState(), 'submitStageDocumentFeedback');
+            const submitStageResponsesSpy = vi.spyOn(api.dialectic(), 'submitStageResponses');
             
-            it('should set network error state if API call throws (when submitting with feedback)', async () => {
-                const networkErrorMessage = 'Network connection failed for submission';
-                api.dialectic().submitStageResponses.mockRejectedValue(new Error(networkErrorMessage));
-            
-                const { submitStageResponses } = useDialecticStore.getState();
-                const result = await submitStageResponses(mockPayloadWithFeedback); // Using withFeedback for this test
-            
-                expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
-                const expectedError: ApiError = { message: networkErrorMessage, code: 'NETWORK_ERROR' };
-                expect(useDialecticStore.getState().submitStageResponsesError).toEqual(expectedError);
-                expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
-                expect(result?.error).toEqual(expectedError);
+            submitStageResponsesSpy.mockResolvedValue({ data: mockSuccessResponse, status: 200 });
+            api.dialectic().getProjectDetails.mockResolvedValueOnce({
+                data: mockProjectForRefetch,
+                status: 200,
             });
+
+            const { submitStageResponses } = useDialecticStore.getState();
+            await submitStageResponses(mockPayload);
+
+            expect(submitDocFeedbackSpy).not.toHaveBeenCalled();
+            expect(submitStageResponsesSpy).toHaveBeenCalledTimes(1);
+            expect(submitStageResponsesSpy).toHaveBeenCalledWith(mockPayload);
+        });
+
+        it('should halt and set an error if saving a document feedback fails', async () => {
+            const saveError: ApiError = { message: 'Failed to save draft', code: 'SAVE_FAILED' };
+            const stageContent: Record<string, StageDocumentContentState> = {
+                    [compositeKey1]: {
+                        baselineMarkdown: 'baseline 1',
+                        currentDraftMarkdown: 'draft 1',
+                        isDirty: true,
+                        isLoading: false,
+                        error: null,
+                        lastBaselineVersion: null,
+                        pendingDiff: 'diff 1',
+                        lastAppliedVersionHash: null,
+                        sourceContributionId: 'contrib-doc-1',
+                        feedbackDraftMarkdown: undefined,
+                        feedbackIsDirty: false,
+                        resourceType: 'rendered_document',
+                    },
+                };
+            useDialecticStore.setState({
+                stageDocumentContent: stageContent,
+            });
+            const submitStageResponsesSpy = vi.spyOn(api.dialectic(), 'submitStageResponses');
+            api.dialectic().saveContributionEdit.mockResolvedValue({ error: saveError, status: 500 });
+
+            const { submitStageResponses } = useDialecticStore.getState();
+            await submitStageResponses(mockPayload);
+
+            const state = useDialecticStore.getState();
+            expect(api.dialectic().saveContributionEdit).toHaveBeenCalledTimes(1);
+            expect(submitStageResponsesSpy).not.toHaveBeenCalled();
+            expect(state.isSubmittingStageResponses).toBe(false);
+            expect(state.submitStageResponsesError).toEqual(saveError);
+        });
+
+        it('16.c.i: when one key has both content dirty and feedback dirty, submitStageResponses calls both saveContributionEdit (with currentDraftMarkdown) and submitStageDocumentFeedback (with feedbackDraftMarkdown) for that key', async () => {
+            useAuthStore.setState({ user: { id: 'user-test-123' } });
+            const entry1: StageDocumentContentState = {
+                baselineMarkdown: 'baseline 1',
+                currentDraftMarkdown: 'content edit',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: null,
+                pendingDiff: 'content edit',
+                lastAppliedVersionHash: null,
+                sourceContributionId: 'contrib-doc-1',
+                feedbackDraftMarkdown: 'feedback text',
+                feedbackIsDirty: true,
+                resourceType: 'rendered_document',
+            };
+            const stageContent: Record<string, StageDocumentContentState> = {
+                [compositeKey1]: entry1,
+            };
+            useDialecticStore.setState({
+                stageDocumentContent: stageContent,
+            });
+
+            const mockSaveEditResource: EditedDocumentResource = {
+                id: 'resource-doc-1',
+                resource_type: 'rendered_document',
+                project_id: mockProjectId,
+                session_id: mockSessionId,
+                stage_slug: mockStageSlug,
+                iteration_number: mockIteration,
+                document_key: docKey1,
+                source_contribution_id: 'contrib-doc-1',
+                storage_bucket: 'test-bucket',
+                storage_path: '/path/to/doc-1.md',
+                file_name: 'doc-1.md',
+                mime_type: 'text/markdown',
+                size_bytes: 100,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            api.dialectic().saveContributionEdit.mockResolvedValue({
+                data: { resource: mockSaveEditResource, sourceContributionId: 'contrib-doc-1' },
+                status: 201,
+            });
+            api.dialectic().submitStageDocumentFeedback.mockResolvedValue({ data: { success: true }, status: 200 });
+            const submitStageResponsesSpy = vi.spyOn(api.dialectic(), 'submitStageResponses').mockResolvedValue({ data: mockSuccessResponse, status: 200 });
+            api.dialectic().getProjectDetails.mockResolvedValueOnce({ data: mockProjectForRefetch, status: 200 });
+
+            await useDialecticStore.getState().submitStageResponses(mockPayload);
+
+            expect(api.dialectic().saveContributionEdit).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().saveContributionEdit).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    editedContentText: 'content edit',
+                    originalContributionIdToEdit: 'contrib-doc-1',
+                    documentKey: docKey1,
+                }),
+            );
+            expect(api.dialectic().submitStageDocumentFeedback).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().submitStageDocumentFeedback).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    feedbackContent: 'feedback text',
+                    documentKey: docKey1,
+                    sessionId: mockSessionId,
+                    stageSlug: mockStageSlug,
+                    iterationNumber: mockIteration,
+                    modelId: modelIdA,
+                    userId: expect.any(String),
+                    projectId: expect.any(String),
+                    feedbackType: expect.any(String),
+                }),
+            );
+            const mockClient: MockDialecticApiClient = getMockDialecticClient();
+            const firstCallArgs: [SubmitStageDocumentFeedbackPayload] = mockClient.submitStageDocumentFeedback.mock.calls[0];
+            const feedbackPayload: SubmitStageDocumentFeedbackPayload = firstCallArgs[0];
+            expect(feedbackPayload.feedbackContent).toBe('feedback text');
+            expect(feedbackPayload.userId).toBeDefined();
+            expect(feedbackPayload.projectId).toBeDefined();
+            expect(feedbackPayload.feedbackType).toBeDefined();
+            expect(submitStageResponsesSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('16.c.ii: when multiple keys have mixed states, every dirty content edit and every dirty feedback draft is submitted exactly once; advance runs only after all succeed', async () => {
+            useAuthStore.setState({ user: { id: 'user-test-123' } });
+            const entry1: StageDocumentContentState = {
+                baselineMarkdown: 'b1',
+                currentDraftMarkdown: 'content 1',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: null,
+                pendingDiff: 'content 1',
+                lastAppliedVersionHash: null,
+                sourceContributionId: 'contrib-doc-1',
+                feedbackDraftMarkdown: undefined,
+                feedbackIsDirty: false,
+                resourceType: 'rendered_document',
+            };
+            const entry2: StageDocumentContentState = {
+                baselineMarkdown: 'b2',
+                currentDraftMarkdown: 'b2',
+                isDirty: false,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: null,
+                pendingDiff: null,
+                lastAppliedVersionHash: null,
+                sourceContributionId: null,
+                feedbackDraftMarkdown: 'feedback 2',
+                feedbackIsDirty: true,
+                resourceType: 'rendered_document',
+            };
+            const entry3: StageDocumentContentState = {
+                baselineMarkdown: 'b3',
+                currentDraftMarkdown: 'content 3',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: null,
+                pendingDiff: 'content 3',
+                lastAppliedVersionHash: null,
+                sourceContributionId: 'contrib-doc-3',
+                feedbackDraftMarkdown: 'feedback 3',
+                feedbackIsDirty: true,
+                resourceType: 'rendered_document',
+            };
+            const stageContent: Record<string, StageDocumentContentState> = {
+                [compositeKey1]: entry1,
+                [compositeKey2]: entry2,
+                [compositeKey3]: entry3,
+            };
+            useDialecticStore.setState({
+                stageDocumentContent: stageContent,
+            });
+
+            const mockSaveEditResource1: EditedDocumentResource = {
+                id: 'res-1',
+                resource_type: 'rendered_document',
+                project_id: mockProjectId,
+                session_id: mockSessionId,
+                stage_slug: mockStageSlug,
+                iteration_number: mockIteration,
+                document_key: docKey1,
+                source_contribution_id: 'contrib-doc-1',
+                storage_bucket: 'b',
+                storage_path: '/p1',
+                file_name: 'f1.md',
+                mime_type: 'text/markdown',
+                size_bytes: 1,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            const mockSaveEditResource3: EditedDocumentResource = {
+                id: 'res-3',
+                resource_type: 'rendered_document',
+                project_id: mockProjectId,
+                session_id: mockSessionId,
+                stage_slug: mockStageSlug,
+                iteration_number: mockIteration,
+                document_key: docKey3,
+                source_contribution_id: 'contrib-doc-3',
+                storage_bucket: 'b',
+                storage_path: '/p3',
+                file_name: 'f3.md',
+                mime_type: 'text/markdown',
+                size_bytes: 1,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            api.dialectic().saveContributionEdit
+                .mockResolvedValueOnce({ data: { resource: mockSaveEditResource1, sourceContributionId: 'contrib-doc-1' }, status: 201 })
+                .mockResolvedValueOnce({ data: { resource: mockSaveEditResource3, sourceContributionId: 'contrib-doc-3' }, status: 201 });
+            api.dialectic().submitStageDocumentFeedback.mockResolvedValue({ data: { success: true }, status: 200 });
+            const submitStageResponsesSpy = vi.spyOn(api.dialectic(), 'submitStageResponses').mockResolvedValue({ data: mockSuccessResponse, status: 200 });
+            api.dialectic().getProjectDetails.mockResolvedValueOnce({ data: mockProjectForRefetch, status: 200 });
+
+            await useDialecticStore.getState().submitStageResponses(mockPayload);
+
+            expect(api.dialectic().saveContributionEdit).toHaveBeenCalledTimes(2);
+            expect(api.dialectic().submitStageDocumentFeedback).toHaveBeenCalledTimes(2);
+            const mockClient: MockDialecticApiClient = getMockDialecticClient();
+            const feedbackCalls: Array<[SubmitStageDocumentFeedbackPayload]> = mockClient.submitStageDocumentFeedback.mock.calls;
+            for (const call of feedbackCalls) {
+                const payload: SubmitStageDocumentFeedbackPayload = call[0];
+                expect(payload.feedbackContent).toBeDefined();
+                expect(payload.userId).toBeDefined();
+                expect(payload.projectId).toBeDefined();
+                expect(payload.feedbackType).toBeDefined();
+            }
+            expect(submitStageResponsesSpy).toHaveBeenCalledTimes(1);
+            const state = useDialecticStore.getState();
+            expect(state.submitStageResponsesError).toBeNull();
+        });
+
+        it('16.c.iii: updateStageDocumentFeedbackDraft only updates feedback draft state', () => {
+            const key: StageDocumentCompositeKey = {
+                sessionId: mockSessionId,
+                stageSlug: mockStageSlug,
+                iterationNumber: mockIteration,
+                modelId: modelIdA,
+                documentKey: docKey1,
+            };
+            const serializedKey = compositeKey1;
+            const initialContent: StageDocumentContentState = {
+                baselineMarkdown: 'baseline',
+                currentDraftMarkdown: 'content draft',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: null,
+                pendingDiff: 'content draft',
+                lastAppliedVersionHash: null,
+                sourceContributionId: null,
+                feedbackDraftMarkdown: undefined,
+                feedbackIsDirty: false,
+                resourceType: null,
+            };
+            useDialecticStore.setState({
+                stageDocumentContent: { [serializedKey]: initialContent },
+            });
+
+            useDialecticStore.getState().updateStageDocumentFeedbackDraft(key, 'new feedback');
+
+            const state = useDialecticStore.getState();
+            const entry = state.stageDocumentContent[serializedKey];
+            expect(entry).toBeDefined();
+            expect(entry?.feedbackDraftMarkdown).toBe('new feedback');
+            expect(entry?.feedbackIsDirty).toBe(true);
+            expect(entry?.currentDraftMarkdown).toBe('content draft');
+            expect(entry?.isDirty).toBe(true);
         });
     });
 
@@ -525,68 +940,204 @@ describe('useDialecticStore', () => {
         const mockSessionId = 'sess-edit-1';
         const originalContributionId = 'contrib-edit-original';
 
-        // Correctly structured payload
+        // Correctly structured payload (documentKey and resourceType required per SaveContributionEditPayload)
         const mockPayload: SaveContributionEditPayload = {
             projectId: mockProjectId,
             sessionId: mockSessionId,
             originalContributionIdToEdit: originalContributionId,
             editedContentText: 'This is the new, edited content.',
-            originalModelContributionId: originalContributionId, // This may be redundant depending on backend, but include for type correctness
-            responseText: 'User feedback on the edit.'
+            originalModelContributionId: originalContributionId,
+            responseText: 'User feedback on the edit.',
+            documentKey: 'synthesis',
+            resourceType: 'rendered_document',
         };
 
-        const mockApiResponse: ApiResponse<DialecticContribution> = {
-            status: 200,
-            data: {
-                id: 'contrib-edit-new-version',
-                session_id: mockSessionId,
-                original_model_contribution_id: originalContributionId,
-                content: 'This is the new, edited content.',
-            } as DialecticContribution,
+        const mockEditedDocumentResource: EditedDocumentResource = {
+            id: 'resource-edit-new-123',
+            resource_type: 'rendered_document',
+            project_id: mockProjectId,
+            session_id: mockSessionId,
+            stage_slug: 'synthesis',
+            iteration_number: 1,
+            document_key: 'synthesis',
+            source_contribution_id: originalContributionId,
+            storage_bucket: 'test-bucket',
+            storage_path: 'path/to/resource-edit-new-123.md',
+            file_name: 'resource-edit-new-123.md',
+            mime_type: 'text/markdown',
+            size_bytes: 1234,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+
+        const mockSaveContributionEditResponse: SaveContributionEditSuccessResponse = {
+            resource: mockEditedDocumentResource,
+            sourceContributionId: originalContributionId,
+        };
+
+        const mockApiResponse: ApiResponse<SaveContributionEditSuccessResponse> = {
+            status: 201,
+            data: mockSaveContributionEditResponse,
         };
 
         const originalContribution: DialecticContribution = {
             id: originalContributionId,
             session_id: mockSessionId,
-            content: 'Original content',
-        } as DialecticContribution;
+            user_id: 'user-1',
+            stage: 'synthesis',
+            iteration_number: 1,
+            model_id: 'model-1',
+            job_id: 'job-1',
+            status: 'completed',
+            original_model_contribution_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            model_name: 'Test Model 1',
+            prompt_template_id_used: 'prompt-template-1',
+            seed_prompt_url: 'path/to/seed.md',
+            edit_version: 0,
+            is_latest_edit: true,
+            raw_response_storage_path: 'path/to/raw.json',
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
+            contribution_type: 'synthesis',
+            file_name: 'synthesis.md',
+            storage_bucket: 'test-bucket',
+            storage_path: 'path/to/synthesis.md',
+            size_bytes: 1234,
+            mime_type: 'text/markdown',
+        };
 
         const initialProjectState: DialecticProject = {
             id: mockProjectId,
             dialectic_sessions: [{
                 id: mockSessionId,
                 dialectic_contributions: [originalContribution],
-            } as DialecticSession],
-        } as DialecticProject;
+                iteration_count: 1,
+                project_id: mockProjectId,
+                session_description: 'A session',
+                user_input_reference_url: null,
+                selected_models: [],
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                status: 'pending_hypothesis',
+                associated_chat_id: null,
+                current_stage_id: 'thesis',
+            }],
+            user_id: 'user-1',
+            project_name: 'Test Project',
+            selected_domain_id: 'domain-1',
+            dialectic_domains: { name: 'Test Domain' },
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            status: 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            dialectic_process_templates: null,
+            process_template_id: 'pt-1',
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
+        };
         
         beforeEach(() => {
             // Reset mocks before each test
             resetApiMock();
+            // Mock setup: API client returns SaveContributionEditSuccessResponse per step 59
             api.dialectic().saveContributionEdit.mockResolvedValue(mockApiResponse);
         });
 
-        it('should update the contribution within the current project details without a refetch', async () => {
-            useDialecticStore.setState({ currentProjectDetail: initialProjectState });
+        it('should patch stageDocumentContent with EditedDocumentResource and avoid mutating dialectic_contributions', async () => {
+            useDialecticStore.setState({
+                currentProjectDetail: initialProjectState,
+                stageDocumentContent: {},
+            });
 
             const { saveContributionEdit } = useDialecticStore.getState();
             await saveContributionEdit(mockPayload);
 
             const finalState = useDialecticStore.getState();
-            const session = finalState.currentProjectDetail?.dialectic_sessions?.find(s => s.id === mockSessionId);
-            // The contribution with the *original* ID should now be gone
-            const oldContribution = session?.dialectic_contributions?.find(c => c.id === originalContributionId);
-            // The contribution with the *new* ID should be present
-            const newContribution = session?.dialectic_contributions?.find(c => c.id === mockApiResponse.data!.id);
 
-            expect(oldContribution).toBeUndefined();
-            expect(newContribution).toBeDefined();
-            expect(newContribution).toEqual(mockApiResponse.data);
+            // Composite key format: ${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}
+            const compositeKey = `${mockSessionId}:synthesis:1:model-1:synthesis`;
+            const documentEntry = finalState.stageDocumentContent[compositeKey];
+            expect(documentEntry).toBeDefined();
+            expect(documentEntry?.baselineMarkdown).toBe('This is the new, edited content.');
+            expect(documentEntry?.currentDraftMarkdown).toBe('This is the new, edited content.');
+            expect(documentEntry?.isDirty).toBe(false);
+
+            expect(documentEntry?.baselineMarkdown).toBe(mockPayload.editedContentText);
+            expect(documentEntry?.currentDraftMarkdown).toBe(mockPayload.editedContentText);
+            expect(documentEntry?.baselineMarkdown).not.toBe(originalContribution.contribution_type || '');
+
+            expect(documentEntry?.sourceContributionId).toBe(mockApiResponse.data!.resource.source_contribution_id);
+            expect(documentEntry?.resourceType).toBe(mockApiResponse.data!.resource.resource_type);
+
+            // Assert dialectic_contributions is NOT mutated (except isLatestEdit flag)
+            const session = finalState.currentProjectDetail?.dialectic_sessions?.find(s => s.id === mockSessionId);
+            const originalContributionInState = session?.dialectic_contributions?.find(c => c.id === originalContributionId);
+            expect(originalContributionInState).toBeDefined(); // Original contribution still exists
+            expect(originalContributionInState?.is_latest_edit).toBe(false); // Flag toggled to false via backend response
+            
+            // Assert no new contribution was added to the array (resource ID is not a contribution ID)
+            // saveContributionEdit must not add the EditedDocumentResource to dialectic_contributions
+            const contributionsCount = session?.dialectic_contributions?.length ?? 0;
+            expect(contributionsCount).toBe(1); // Only original contribution remains
+            const resourceAsContribution = session?.dialectic_contributions?.find(c => c.id === mockApiResponse.data!.resource.id);
+            expect(resourceAsContribution).toBeUndefined(); // Resource ID should not exist in contributions
+            
+            // Assert that saveContributionEdit does not touch contribution arrays beyond toggling isLatestEdit
+            // The implementation must leave dialectic_contributions unchanged except for the is_latest_edit flag
+            expect(session?.dialectic_contributions).toHaveLength(1);
+            expect(session?.dialectic_contributions?.[0]?.id).toBe(originalContributionId);
+            // Verify the original contribution's content remains unchanged (document cache is the source of truth)
+            const originalContributionContent = originalContributionInState?.contribution_type || originalContribution.contribution_type;
+            expect(originalContributionContent).not.toBe(mockPayload.editedContentText);
+            
             expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
         });
-        
+
+        it('saveContributionEdit success updates stageDocumentContent[key].sourceContributionId from response.data.resource.source_contribution_id', async () => {
+            useDialecticStore.setState({
+                currentProjectDetail: initialProjectState,
+                stageDocumentContent: {},
+            });
+            api.dialectic().saveContributionEdit.mockResolvedValue(mockApiResponse);
+
+            await useDialecticStore.getState().saveContributionEdit(mockPayload);
+
+            const compositeKey = `${mockSessionId}:synthesis:1:model-1:synthesis`;
+            const documentEntry = useDialecticStore.getState().stageDocumentContent[compositeKey];
+            expect(documentEntry?.sourceContributionId).toBe(mockApiResponse.data!.resource.source_contribution_id);
+        });
+
+        it('saveContributionEdit success updates stageDocumentContent[key].resourceType from response.data.resource.resource_type', async () => {
+            useDialecticStore.setState({
+                currentProjectDetail: initialProjectState,
+                stageDocumentContent: {},
+            });
+            api.dialectic().saveContributionEdit.mockResolvedValue(mockApiResponse);
+
+            await useDialecticStore.getState().saveContributionEdit(mockPayload);
+
+            const compositeKey = `${mockSessionId}:synthesis:1:model-1:synthesis`;
+            const documentEntry = useDialecticStore.getState().stageDocumentContent[compositeKey];
+            expect(documentEntry?.resourceType).toBe(mockApiResponse.data!.resource.resource_type);
+        });
+
         it('should set an error if the API call fails', async () => {
             const mockError: ApiError = { code: 'SAVE_ERROR', message: 'Could not save' };
-            api.dialectic().saveContributionEdit.mockResolvedValue({ error: mockError, status: 500 });
+            const mockDialecticClient: MockDialecticApiClient = getMockDialecticClient();
+            mockDialecticClient.saveContributionEdit.mockResolvedValue({ error: mockError, status: 500 });
 
             const { saveContributionEdit } = useDialecticStore.getState();
             const result = await saveContributionEdit(mockPayload);
@@ -598,10 +1149,3 @@ describe('useDialecticStore', () => {
         });
     });
 });
-
-// Helper to reset store state for testing (already part of DialecticActions in the actual store)
-// Ensure this matches the actual _resetForTesting if defined in the store, or remove if not used.
-// For this test file, useDialecticStore.getState()._resetForTesting?.() is preferred.
-const resetStoreForTest = () => {
-    useDialecticStore.setState(useDialecticStore.getState()._resetForTesting ? {} : {}); // A bit of a hack if _reset is not there
-};

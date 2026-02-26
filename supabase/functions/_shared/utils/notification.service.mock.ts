@@ -8,10 +8,10 @@ import type {
     ContributionGenerationStartedPayload,
     ContributionGenerationContinuedPayload,
     ContributionGenerationCompletePayload,
-    DialecticProgressUpdatePayload,
     ContributionGenerationFailedPayload,
     ContributionGenerationFailedInternalPayload,
-    ApiError
+    ApiError,
+    JobNotificationEvent
 } from '../types/notification.service.types.ts';
 
 export type MockNotificationService = {
@@ -26,9 +26,9 @@ function createMockService(): MockNotificationService {
         sendContributionReceivedEvent: spy(() => Promise.resolve()),
         sendContributionGenerationContinuedEvent: spy(() => Promise.resolve()),
         sendContributionGenerationCompleteEvent: spy(() => Promise.resolve()),
-        sendDialecticProgressUpdateEvent: spy(() => Promise.resolve()),
         sendContributionGenerationFailedEvent: spy(() => Promise.resolve()),
         sendContributionFailedNotification: spy(() => Promise.resolve()),
+        sendJobNotificationEvent: spy(() => Promise.resolve()),
     };
 }
 
@@ -86,6 +86,8 @@ export const mockContributionRow: DialecticContributionRow = {
     size_bytes: 1234,
     mime_type: 'text/markdown',
     document_relationships: null,
+    is_header: false,
+    source_prompt_resource_id: null,
     };
 
     export const mockDialecticContributionReceivedPayload: DialecticContributionReceivedPayload = {
@@ -121,16 +123,6 @@ export const mockContributionGenerationCompletePayload: ContributionGenerationCo
     job_id: 'job-uuid-123',
   };
 
-export const mockDialecticProgressUpdatePayload: DialecticProgressUpdatePayload = {
-    type: 'dialectic_progress_update',
-    sessionId: 'session-uuid-456',
-    stageSlug: 'synthesis',
-    current_step: 5,
-    total_steps: 10,
-    message: 'Synthesizing 5 of 10 items...',
-    job_id: 'job-uuid-123',
-  };
-
 export const mockContributionGenerationFailedApiError: ApiError = {
     code: 'AI_ERROR',
     message: 'The AI model failed to respond.',
@@ -150,4 +142,13 @@ export const mockContributionGenerationFailedInternalPayload: ContributionGenera
     sessionId: 'session-uuid-456',
     job_id: 'job-uuid-123',
     error: mockContributionGenerationFailedApiError,
+  };
+
+export const mockDocumentCentricNotificationPayload: JobNotificationEvent = {
+    type: 'planner_started',
+    sessionId: 'session-uuid-456',
+    stageSlug: 'thesis',
+    iterationNumber: 1,
+    job_id: 'job-uuid-123',
+    step_key: 'step-one',
   };

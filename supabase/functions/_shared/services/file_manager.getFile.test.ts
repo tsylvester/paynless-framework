@@ -1,23 +1,26 @@
 import {
   assertEquals,
   assertExists,
+  assert,
 } from 'https://deno.land/std@0.190.0/testing/asserts.ts'
-import { stub, type Stub } from 'https://deno.land/std@0.190.0/testing/mock.ts'
+import { stub } from 'https://deno.land/std@0.190.0/testing/mock.ts'
 import {
   createMockSupabaseClient,
-  type MockSupabaseClientSetup,
-  type MockSupabaseDataConfig,
+  MockSupabaseClientSetup,
+  MockSupabaseDataConfig,
 } from '../supabase.mock.ts'
 import { FileManagerService } from './file_manager.ts'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '../../types_db.ts'
+import { SupabaseClient } from '@supabase/supabase-js'
+import { Database } from '../../types_db.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
+import { MockLogger } from '../logger.mock.ts'
 
 Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
   let fileManager: FileManagerService
   let envStub: any
   let originalEnvGet: typeof Deno.env.get
+  let logger: MockLogger
 
   const beforeEach = (config: MockSupabaseDataConfig = {}) => {
     originalEnvGet = Deno.env.get.bind(Deno.env);
@@ -29,7 +32,8 @@ Deno.test('FileManagerService', async (t) => {
     })
 
     setup = createMockSupabaseClient('test-user-id', config)
-    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath })
+    logger = new MockLogger()
+    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath, logger })
   }
 
   const afterEach = () => {
@@ -100,7 +104,7 @@ Deno.test('FileManagerService', async (t) => {
       const config: MockSupabaseDataConfig = {
          genericMockResults: {
           dialectic_project_resources: { 
-            select: { data: [{ storage_path: 'mock/path.to.file' }], error: null }, 
+            select: { data: [{ storage_path: 'mock/path.to.file' }], error: null },
           },
         },
         storageMock: {
@@ -139,6 +143,10 @@ Deno.test('FileManagerService', async (t) => {
         },
       }
       beforeEach(config)
+      // Initialize spy before the call so it tracks the createSignedUrl call
+      const storageBucket = setup.spies.storage.from('test-bucket');
+      const createSignedUrlSpy = storageBucket.createSignedUrlSpy;
+      
       const { signedUrl, error } = await fileManager.getFileSignedUrl(
         'feedback-file-id-456',
         'dialectic_feedback',
@@ -157,8 +165,9 @@ Deno.test('FileManagerService', async (t) => {
       assertEquals(eqSpy.calls[0].args[0], 'id');
       assertEquals(eqSpy.calls[0].args[1], 'feedback-file-id-456');
 
-      const createSignedUrlSpy = setup.spies.storage.from('test-bucket').createSignedUrlSpy;
+      // Verify the createSignedUrl call was made (spy was initialized before the call)
       assertExists(createSignedUrlSpy, "createSignedUrl spy should exist");
+      assert(createSignedUrlSpy.calls.length > 0, "createSignedUrl should have been called");
       assertEquals(createSignedUrlSpy.calls[0].args[0], 'mock/feedback/path.txt');
 
     } finally {

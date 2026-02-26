@@ -14,6 +14,10 @@ import type { handleDialecticPath } from '../chat/handleDialecticPath.ts';
 import type { debitTokens } from '../chat/debitTokens.ts';
 import { SystemInstruction } from '../dialectic-service/dialectic.interface.ts';
 
+export type GetAiProviderAdapterFn = (
+  deps: FactoryDependencies
+) => AiProviderAdapterInstance | null;
+
 export type ChatInsert = Tables<'chats'>;
 
 // Define PaymentTransaction using the Tables helper type from types_db.ts
@@ -146,7 +150,37 @@ export interface EmailMarketingService {
 export type ResourceDocuments = {
   id?: string;
   content: string;
+  document_key?: string;
+  stage_slug?: string;
+  type?: string;
 }[];
+
+/** Shape of a single part passed to Gemini sendMessage (text or inlineData). Used by GoogleAdapter tests. */
+export interface GeminiSendMessagePart {
+  text?: string;
+  inlineData?: { mimeType: string; data?: string };
+}
+
+/** Minimal shape returned by a stubbed getGenerativeModel for GoogleAdapter tests. */
+export interface GoogleGetGenerativeModelStubReturn {
+  startChat(_opts?: unknown): GoogleStartChatStubReturn;
+}
+
+/** Minimal shape returned by startChat in stubbed getGenerativeModel. */
+export interface GoogleStartChatStubReturn {
+  sendMessage(_parts: unknown): Promise<{
+    response: {
+      candidates: unknown[];
+      usageMetadata: unknown;
+      text: () => string;
+    };
+  }>;
+}
+
+/** Shape of generationConfig captured from startChat opts in GoogleAdapter tests. */
+export interface GoogleGenerationConfigCapture {
+  maxOutputTokens?: number;
+}
 
 /**
  * Structure for sending a message via the 'chat' Edge Function.
@@ -238,6 +272,10 @@ export enum ContinueReason {
     ContentTruncated = 'content_truncated',
     Unknown = 'unknown',
     NextDocument = 'next_document',
+    ToolCalls = 'tool_calls',
+    TruncationRecovery = 'truncation_recovery',
+    Continuation = 'continuation',
+    TokenLimit = 'token_limit',
 }
 
 /**

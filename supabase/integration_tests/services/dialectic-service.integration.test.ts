@@ -598,6 +598,7 @@ describe("Edge Function: dialectic-service", () => {
         sessionId: testSessionId,
         projectId: testProjectId,
         walletId: crypto.randomUUID(),
+        user_jwt: testUserAuthToken,
       };
 
       // Using functions.invoke instead of fetch
@@ -675,6 +676,56 @@ describe("Edge Function: dialectic-service", () => {
         if (contribution.raw_response_storage_path) {
           assert(contribution.raw_response_storage_path.startsWith(`projects/${testProjectId}/sessions/${testSessionId}/`), "Raw response storage path is incorrect");
         }
+      }
+    });
+
+    it("should include user_jwt in job payload when job is created", async () => {
+      const payload: GenerateContributionsPayload = {
+        sessionId: testSessionId,
+        projectId: testProjectId,
+        walletId: crypto.randomUUID(),
+        user_jwt: testUserAuthToken,
+      };
+
+      // Create a job via generateContributions with a valid auth token
+      const { data: responseData, error: invokeError } = await testPrimaryUserClient.functions.invoke(
+        "dialectic-service",
+        {
+          body: { action: "generateContributions", payload },
+          headers: { 
+            Authorization: `Bearer ${testUserAuthToken}`,
+            "X-Client-Info": "supabase-js/0.0.0-automated-test-user-jwt-check",
+          }
+        }
+      );
+
+      assertEquals(invokeError, null, `generateContributions error: ${invokeError ? invokeError.message : 'Unknown error'}`);
+      assertExists(responseData, "generateContributions data should exist");
+
+      // Query the PLAN jobs created for this session (generateContributions creates PLAN jobs)
+      // Filter by job_type to only get jobs created by generateContributions, not EXECUTE or RENDER jobs
+      const { data: dbJobs, error: dbError } = await testAdminClient
+        .from("dialectic_generation_jobs")
+        .select("id, payload, job_type, created_at")
+        .eq("session_id", testSessionId)
+        .eq("job_type", "PLAN")
+        .order("created_at", { ascending: false });
+
+      assert(!dbError, `Error fetching jobs from DB: ${dbError?.message}`);
+      assertExists(dbJobs, "No jobs found in DB for the session");
+      assert(dbJobs.length > 0, "At least one PLAN job should have been created");
+
+      // Assert that each PLAN job's payload.user_jwt exists, is a string, and is non-empty
+      for (const job of dbJobs) {
+        assertExists(job.payload, "Job payload is missing");
+        assert(typeof job.payload === 'object' && job.payload !== null && !Array.isArray(job.payload), "Job payload should be an object");
+        
+        const payloadObj = job.payload as Record<string, unknown>;
+        assert('user_jwt' in payloadObj, `user_jwt is missing from job payload (job id: ${job.id})`);
+        const userJwt = payloadObj.user_jwt;
+        assert(typeof userJwt === 'string', `user_jwt should be a string, got ${typeof userJwt} (job id: ${job.id})`);
+        // After the type check, TypeScript knows userJwt is a string
+        assert((userJwt as string).length > 0, `user_jwt should not be empty (job id: ${job.id})`);
       }
     });
   });

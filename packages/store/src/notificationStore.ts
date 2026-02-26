@@ -72,7 +72,220 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                     let eventPayload: DialecticLifecycleEvent | null = null;
                     const { type, data } = notification;
 
-                    // This switch is for type-safe payload construction.
+                    /**
+                     * ====================================================================================
+                     * NOTIFICATION EVENT TYPE MAPPING - SYSTEMATIC PAYLOAD EXTRACTION SPECIFICATION
+                     * ====================================================================================
+                     * 
+                     * This mapping documents all DialecticLifecycleEvent types, their required/optional fields,
+                     * current extraction status, and validation requirements. This serves as the specification
+                     * for systematic payload extraction to ensure all optional fields are extracted consistently.
+                     * 
+                     * FORMAT FOR EACH EVENT TYPE:
+                     * - Type Definition Location: File path and line numbers
+                     * - Required Fields: Fields that MUST be present (no `?` in type definition)
+                     * - Optional Fields: Fields marked with `?` in type definition
+                     * - Current Extraction Status: Which fields are extracted, which are missing
+                     * - Validation Requirements: What validation checks are performed
+                     * 
+                     * BASE TYPES:
+                     * - DocumentLifecyclePayload (packages/types/src/dialectic.types.ts:757-766):
+                     *   Required: sessionId, stageSlug, iterationNumber, job_id, document_key, modelId
+                     *   Optional: step_key?: string, latestRenderedResourceId?: string | null
+                     *   NOTE: latestRenderedResourceId allows null, not just undefined
+                     * 
+                     * ====================================================================================
+                     */
+
+                    /**
+                     * 1. ContributionGenerationStartedPayload
+                     *    Type Location: packages/types/src/dialectic.types.ts:677-684
+                     *    Required Fields: type, sessionId, modelId, iterationNumber, job_id
+                     *    Optional Fields: NONE
+                     *    Current Extraction Status: ✅ All required fields extracted (line 79)
+                     *    Validation Requirements: sessionId (string), modelId (string), iterationNumber (number), job_id (string)
+                     */
+
+                    /**
+                     * 2. DialecticContributionStartedPayload
+                     *    Type Location: packages/types/src/dialectic.types.ts:686-693
+                     *    Required Fields: type, sessionId, modelId, iterationNumber, job_id
+                     *    Optional Fields: NONE
+                     *    Current Extraction Status: ✅ All required fields extracted (line 84)
+                     *    Validation Requirements: sessionId (string), modelId (string), iterationNumber (number), job_id (string)
+                     */
+
+                    /**
+                     * 3. ContributionGenerationRetryingPayload
+                     *    Type Location: packages/types/src/dialectic.types.ts:695-703
+                     *    Required Fields: type, sessionId, modelId, iterationNumber, job_id
+                     *    Optional Fields: error?: string
+                     *    Current Extraction Status: ✅ All required fields extracted, ✅ error extracted (line 89)
+                     *    Validation Requirements: sessionId (string), modelId (string), iterationNumber (number), job_id (string)
+                     */
+
+                    /**
+                     * 4. DialecticContributionReceivedPayload
+                     *    Type Location: packages/types/src/dialectic.types.ts:705-712
+                     *    Required Fields: type, sessionId, contribution, job_id, is_continuing
+                     *    Optional Fields: NONE
+                     *    Current Extraction Status: ✅ All required fields extracted (lines 94-100)
+                     *    Validation Requirements: sessionId (string), job_id (string), contribution (DialecticContribution), is_continuing (boolean)
+                     */
+
+                    /**
+                     * 5. ContributionGenerationFailedPayload
+                     *    Type Location: packages/types/src/dialectic.types.ts:714-721
+                     *    Required Fields: type, sessionId
+                     *    Optional Fields: job_id?: string, modelId?: string, error?: ApiError
+                     *    Current Extraction Status: ✅ sessionId extracted, ✅ job_id extracted, ✅ modelId extracted, ✅ error extracted (line 105)
+                     *    Validation Requirements: sessionId (string), error (ApiError)
+                     */
+
+                    /**
+                     * 6. ContributionGenerationContinuedPayload
+                     *    Type Location: packages/types/src/dialectic.types.ts:723-733
+                     *    Required Fields: type, sessionId, contribution, projectId, modelId, continuationNumber, job_id
+                     *    Optional Fields: NONE
+                     *    Current Extraction Status: ✅ All required fields extracted (line 266)
+                     *    Validation Requirements: sessionId (string), projectId (string), modelId (string), continuationNumber (number), contribution (DialecticContribution), job_id (string)
+                     */
+
+                    /**
+                     * 7. ContributionGenerationCompletePayload
+                     *    Type Location: packages/types/src/dialectic.types.ts:735-740
+                     *    Required Fields: type, sessionId, projectId
+                     *    Optional Fields: NONE
+                     *    Current Extraction Status: ✅ All required fields extracted (line 110)
+                     *    Validation Requirements: sessionId (string), projectId (string)
+                     */
+
+                    /**
+                     * 8. DialecticProgressUpdatePayload
+                     *    Type Location: packages/types/src/dialectic.types.ts:742-749
+                     *    Required Fields: type, sessionId, stageSlug, current_step, total_steps, message
+                     *    Optional Fields: NONE
+                     *    Current Extraction Status: ✅ All required fields extracted (lines 121-128)
+                     *    Validation Requirements: sessionId (string), stageSlug (string), current_step (number), total_steps (number), message (string)
+                     */
+
+                    /**
+                     * 9. PlannerStartedPayload
+                     *    Type Location: packages/types/src/dialectic.types.ts:768-770
+                     *    Base Type: DocumentLifecyclePayload (extends)
+                     *    Required Fields: type, sessionId, stageSlug, iterationNumber, job_id, document_key, modelId (from base)
+                     *    Optional Fields: step_key?: string, latestRenderedResourceId?: string | null (from base)
+                     *    Current Extraction Status: ✅ All required fields extracted, ✅ step_key extracted, ✅ latestRenderedResourceId extracted (lines 353-374)
+                     *    Validation Requirements: sessionId (string), stageSlug (string), iterationNumber (number), job_id (string), document_key (string), modelId (string)
+                     */
+
+                    /**
+                     * 10. DocumentStartedPayload
+                     *     Type Location: packages/types/src/dialectic.types.ts:772-774
+                     *     Base Type: DocumentLifecyclePayload (extends)
+                     *     Required Fields: type, sessionId, stageSlug, iterationNumber, job_id, document_key, modelId (from base)
+                     *     Optional Fields: step_key?: string, latestRenderedResourceId?: string | null (from base)
+                     *     Current Extraction Status: ✅ All required fields extracted, ✅ step_key extracted, ✅ latestRenderedResourceId extracted (lines 375-396)
+                     *     Validation Requirements: sessionId (string), stageSlug (string), iterationNumber (number), job_id (string), document_key (string), modelId (string)
+                     */
+
+                    /**
+                     * 11. DocumentChunkCompletedPayload
+                     *     Type Location: packages/types/src/dialectic.types.ts:776-780
+                     *     Base Type: DocumentLifecyclePayload (extends)
+                     *     Required Fields: type, sessionId, stageSlug, iterationNumber, job_id, document_key, modelId (from base)
+                     *     Optional Fields: step_key?: string, latestRenderedResourceId?: string | null (from base), isFinalChunk?: boolean, continuationNumber?: number (own)
+                     *     Current Extraction Status: ✅ All required fields extracted, ✅ step_key extracted, ✅ isFinalChunk extracted, ✅ continuationNumber extracted, ✅ latestRenderedResourceId extracted (lines 397-420)
+                     *     Validation Requirements: sessionId (string), stageSlug (string), iterationNumber (number), job_id (string), document_key (string), modelId (string)
+                     */
+
+                    /**
+                     * 12. DocumentCompletedPayload
+                     *     Type Location: packages/types/src/dialectic.types.ts:782-784
+                     *     Base Type: DocumentLifecyclePayload (extends)
+                     *     Required Fields: type, sessionId, stageSlug, iterationNumber, job_id, document_key, modelId (from base)
+                     *     Optional Fields: step_key?: string, latestRenderedResourceId?: string | null (from base)
+                     *     Current Extraction Status: ✅ All required fields extracted, ✅ step_key extracted, ✅ latestRenderedResourceId extracted (handles string | null | undefined) (lines 421-442)
+                     *     Validation Requirements: sessionId (string), stageSlug (string), iterationNumber (number), job_id (string), document_key (string), modelId (string)
+                     */
+
+                    /**
+                     * 13. RenderCompletedPayload
+                     *     Type Location: packages/types/src/dialectic.types.ts:786-789
+                     *     Base Type: DocumentLifecyclePayload (extends)
+                     *     Required Fields: type, sessionId, stageSlug, iterationNumber, job_id, document_key, modelId, latestRenderedResourceId (latestRenderedResourceId is REQUIRED in this type, not optional)
+                     *     Optional Fields: step_key?: string (from base)
+                     *     Current Extraction Status: ✅ All required fields extracted, ✅ step_key extracted, ✅ latestRenderedResourceId extracted (lines 434-456)
+                     *     Validation Requirements: sessionId (string), stageSlug (string), iterationNumber (number), job_id (string), document_key (string), modelId (string), latestRenderedResourceId (string - REQUIRED)
+                     */
+
+                    /**
+                     * 14. JobFailedPayload
+                     *     Type Location: packages/types/src/dialectic.types.ts:791-794
+                     *     Base Type: DocumentLifecyclePayload (extends)
+                     *     Required Fields: type, sessionId, stageSlug, iterationNumber, job_id, document_key, modelId, error (from own)
+                     *     Optional Fields: step_key?: string, latestRenderedResourceId?: string | null (from base)
+                     *     Current Extraction Status: ✅ All required fields extracted, ✅ step_key extracted, ✅ error extracted, ✅ latestRenderedResourceId extracted (lines 466-489)
+                     *     Validation Requirements: sessionId (string), stageSlug (string), iterationNumber (number), job_id (string), document_key (string), modelId (string), error (ApiError)
+                     */
+
+                    /**
+                     * ====================================================================================
+                     * BASE TYPE INCONSISTENCY ANALYSIS
+                     * ====================================================================================
+                     * 
+                     * DocumentLifecyclePayload is extended by 5 event types:
+                     * - PlannerStartedPayload
+                     * - DocumentStartedPayload
+                     * - DocumentChunkCompletedPayload
+                     * - DocumentCompletedPayload
+                     * - JobFailedPayload
+                     * 
+                     * Optional field extraction status for latestRenderedResourceId (from base type):
+                     * - PlannerStartedPayload: ✅ EXTRACTED (handles string | null | undefined)
+                     * - DocumentStartedPayload: ✅ EXTRACTED (handles string | null | undefined)
+                     * - DocumentChunkCompletedPayload: ✅ EXTRACTED (handles string | null | undefined)
+                     * - DocumentCompletedPayload: ✅ EXTRACTED (handles string | null | undefined)
+                     * - JobFailedPayload: ✅ EXTRACTED (handles string | null | undefined)
+                     * 
+                     * Optional field extraction status for step_key (from base type):
+                     * - All 5 types: ✅ EXTRACTED consistently
+                     * 
+                     * CONCLUSION: All optional fields from DocumentLifecyclePayload are now extracted consistently
+                     * across all extending types using the pattern: 
+                     * `typeof data['latestRenderedResourceId'] === 'string' ? data['latestRenderedResourceId'] : (data['latestRenderedResourceId'] === null ? null : undefined)`
+                     * 
+                     * ====================================================================================
+                     * WALLET_TRANSACTION VALIDATION
+                     * ====================================================================================
+                     * 
+                     * Event Type: WALLET_TRANSACTION (not in DialecticLifecycleEvent union)
+                     * Location: notificationStore.ts:502-515
+                     * Required Fields: walletId (string), newBalance (string)
+                     * Current Behavior: ✅ FIXED - Only calls get().addNotification(notification) when validation passes.
+                     * Invalid notifications are logged with an error and the function returns early without adding to the notification list.
+                     * 
+                     * ====================================================================================
+                     */
+
+                    /**
+                     * This switch statement constructs type-safe payloads from notification data.
+                     * 
+                     * SYSTEMATIC EXTRACTION REQUIREMENTS:
+                     * - Each case must extract ALL optional fields defined in the corresponding type definition.
+                     * - Base type optional fields (e.g., `latestRenderedResourceId` from `DocumentLifecyclePayload`)
+                     *   must be extracted consistently across all extending types.
+                     * - Validation failures must prevent invalid notifications from being added to the notification list.
+                     * 
+                     * EXTRACTION PATTERN:
+                     * For optional fields that allow `string | null | undefined`:
+                     *   fieldName: typeof data['fieldName'] === 'string' 
+                     *       ? data['fieldName'] 
+                     *       : (data['fieldName'] === null ? null : undefined)
+                     * 
+                     * For optional fields that only allow `string | undefined`:
+                     *   fieldName: typeof data['fieldName'] === 'string' ? data['fieldName'] : undefined
+                     */
                     switch (type) {
                         case 'contribution_generation_started':
                             if (typeof data['sessionId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['iterationNumber'] === 'number' && typeof data['job_id'] === 'string') {
@@ -110,21 +323,140 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                                 eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'] };
                             }
                             break;
-                        case 'dialectic_progress_update':
+                        case 'planner_started':
                             if (
                                 typeof data['sessionId'] === 'string' &&
                                 typeof data['stageSlug'] === 'string' &&
-                                typeof data['current_step'] === 'number' &&
-                                typeof data['total_steps'] === 'number' &&
-                                typeof data['message'] === 'string'
+                                typeof data['iterationNumber'] === 'number' &&
+                                typeof data['job_id'] === 'string' &&
+                                typeof data['document_key'] === 'string' &&
+                                typeof data['modelId'] === 'string'
                             ) {
                                 eventPayload = {
                                     type,
                                     sessionId: data['sessionId'],
                                     stageSlug: data['stageSlug'],
-                                    current_step: data['current_step'],
-                                    total_steps: data['total_steps'],
-                                    message: data['message'],
+                                    iterationNumber: data['iterationNumber'],
+                                    job_id: data['job_id'],
+                                    document_key: data['document_key'],
+                                    modelId: data['modelId'],
+                                    step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
+                                    latestRenderedResourceId: typeof data['latestRenderedResourceId'] === 'string' ? data['latestRenderedResourceId'] : (data['latestRenderedResourceId'] === null ? null : undefined),
+                                };
+                            }
+                            break;
+                        case 'document_started':
+                            if (
+                                typeof data['sessionId'] === 'string' &&
+                                typeof data['stageSlug'] === 'string' &&
+                                typeof data['iterationNumber'] === 'number' &&
+                                typeof data['job_id'] === 'string' &&
+                                typeof data['document_key'] === 'string' &&
+                                typeof data['modelId'] === 'string'
+                            ) {
+                                eventPayload = {
+                                    type,
+                                    sessionId: data['sessionId'],
+                                    stageSlug: data['stageSlug'],
+                                    iterationNumber: data['iterationNumber'],
+                                    job_id: data['job_id'],
+                                    document_key: data['document_key'],
+                                    modelId: data['modelId'],
+                                    step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
+                                    latestRenderedResourceId: typeof data['latestRenderedResourceId'] === 'string' ? data['latestRenderedResourceId'] : (data['latestRenderedResourceId'] === null ? null : undefined),
+                                };
+                            }
+                            break;
+                        case 'document_chunk_completed':
+                            if (
+                                typeof data['sessionId'] === 'string' &&
+                                typeof data['stageSlug'] === 'string' &&
+                                typeof data['iterationNumber'] === 'number' &&
+                                typeof data['job_id'] === 'string' &&
+                                typeof data['document_key'] === 'string' &&
+                                typeof data['modelId'] === 'string'
+                            ) {
+                                eventPayload = {
+                                    type,
+                                    sessionId: data['sessionId'],
+                                    stageSlug: data['stageSlug'],
+                                    iterationNumber: data['iterationNumber'],
+                                    job_id: data['job_id'],
+                                    document_key: data['document_key'],
+                                    modelId: data['modelId'],
+                                    step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
+                                    isFinalChunk: typeof data['isFinalChunk'] === 'boolean' ? data['isFinalChunk'] : undefined,
+                                    continuationNumber: typeof data['continuationNumber'] === 'number' ? data['continuationNumber'] : undefined,
+                                    latestRenderedResourceId: typeof data['latestRenderedResourceId'] === 'string' ? data['latestRenderedResourceId'] : (data['latestRenderedResourceId'] === null ? null : undefined),
+                                };
+                            }
+                            break;
+                        case 'document_completed':
+                            if (
+                                typeof data['sessionId'] === 'string' &&
+                                typeof data['stageSlug'] === 'string' &&
+                                typeof data['iterationNumber'] === 'number' &&
+                                typeof data['job_id'] === 'string' &&
+                                typeof data['document_key'] === 'string' &&
+                                typeof data['modelId'] === 'string'
+                            ) {
+                                eventPayload = {
+                                    type,
+                                    sessionId: data['sessionId'],
+                                    stageSlug: data['stageSlug'],
+                                    iterationNumber: data['iterationNumber'],
+                                    job_id: data['job_id'],
+                                    document_key: data['document_key'],
+                                    modelId: data['modelId'],
+                                    step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
+                                    latestRenderedResourceId: typeof data['latestRenderedResourceId'] === 'string' ? data['latestRenderedResourceId'] : (data['latestRenderedResourceId'] === null ? null : undefined),
+                                };
+                            }
+                            break;
+                        case 'render_completed':
+                            if (
+                                typeof data['sessionId'] === 'string' &&
+                                typeof data['stageSlug'] === 'string' &&
+                                typeof data['iterationNumber'] === 'number' &&
+                                typeof data['job_id'] === 'string' &&
+                                typeof data['document_key'] === 'string' &&
+                                typeof data['modelId'] === 'string' &&
+                                typeof data['latestRenderedResourceId'] === 'string'
+                            ) {
+                                eventPayload = {
+                                    type,
+                                    sessionId: data['sessionId'],
+                                    stageSlug: data['stageSlug'],
+                                    iterationNumber: data['iterationNumber'],
+                                    job_id: data['job_id'],
+                                    document_key: data['document_key'],
+                                    modelId: data['modelId'],
+                                    step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
+                                    latestRenderedResourceId: data['latestRenderedResourceId'],
+                                };
+                            }
+                            break;
+                        case 'job_failed':
+                            if (
+                                typeof data['sessionId'] === 'string' &&
+                                typeof data['stageSlug'] === 'string' &&
+                                typeof data['iterationNumber'] === 'number' &&
+                                typeof data['job_id'] === 'string' &&
+                                typeof data['document_key'] === 'string' &&
+                                typeof data['modelId'] === 'string' &&
+                                isApiError(data['error'])
+                            ) {
+                                eventPayload = {
+                                    type,
+                                    sessionId: data['sessionId'],
+                                    stageSlug: data['stageSlug'],
+                                    iterationNumber: data['iterationNumber'],
+                                    job_id: data['job_id'],
+                                    document_key: data['document_key'],
+                                    modelId: data['modelId'],
+                                    step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
+                                    error: data['error'],
+                                    latestRenderedResourceId: typeof data['latestRenderedResourceId'] === 'string' ? data['latestRenderedResourceId'] : (data['latestRenderedResourceId'] === null ? null : undefined),
                                 };
                             }
                             break;
@@ -151,15 +483,17 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
 
         if (notification.type === 'WALLET_TRANSACTION') {
             const { data } = notification;
-            if (data && typeof data === 'object' && 'walletId' in data && typeof data['walletId'] === 'string' && 'newBalance' in data && typeof data['newBalance'] === 'string') {
+            if (data && typeof data === 'object' && 'walletId' in data && typeof data['walletId'] === 'string' && 'newBalance' in data && typeof data['newBalance'] === 'number') {
                 logger.info('[NotificationStore] Handling wallet transaction event.', { data });
                 useWalletStore.getState()._handleWalletUpdateNotification({
                     walletId: data['walletId'],
-                    newBalance: data['newBalance'],
+                    newBalance: String(data['newBalance']),
                 });
+                get().addNotification(notification);
             } else {
-                logger.warn('[NotificationStore] Received WALLET_TRANSACTION event with invalid data.', { data });
+                logger.error('[NotificationStore] Received WALLET_TRANSACTION event with invalid data.', { data });
             }
+            return;
         }
         
         get().addNotification(notification);

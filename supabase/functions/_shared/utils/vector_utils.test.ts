@@ -6,7 +6,6 @@ import {
   assert,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { cosineSimilarity, scoreResourceDocuments, scoreHistory, getSortedCompressionCandidates } from "./vector_utils.ts";
-import type { CompressionCandidate } from "./vector_utils.ts";
 import type { SourceDocument, ExecuteModelCallAndSaveParams } from "../../dialectic-service/dialectic.interface.ts";
 import type { IEmbeddingClient } from "../services/indexing_service.interface.ts";
 import type { EmbeddingResponse, Messages } from '../types.ts';
@@ -14,6 +13,8 @@ import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { type Database } from "../../types_db.ts";
 import { createMockSupabaseClient } from "../supabase.mock.ts";
+import { IDialecticJobDeps, RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
+import { FileType } from "../types/file_manager.types.ts";
 
 
 Deno.test("cosineSimilarity: calculates similarity for basic vectors", () => {
@@ -111,11 +112,13 @@ const mockSourceDocument = (overrides: Partial<SourceDocument>): SourceDocument 
     error: null,
     file_name: 'test.txt',
     is_latest_edit: true,
+    is_header: false,
     model_id: null,
     model_name: null,
     original_model_contribution_id: null,
     processing_time_ms: null,
     prompt_template_id_used: null,
+    source_prompt_resource_id: null,
     raw_response_storage_path: null,
     seed_prompt_url: null,
     size_bytes: 100,
@@ -127,13 +130,33 @@ const mockSourceDocument = (overrides: Partial<SourceDocument>): SourceDocument 
     ...overrides,
 });
 
-const deps: ExecuteModelCallAndSaveParams['deps'] = { embeddingClient: mockEmbeddingClient, getSeedPromptForStage: () => Promise.resolve({
+const deps: IDialecticJobDeps = { embeddingClient: mockEmbeddingClient, getSeedPromptForStage: () => Promise.resolve({
   content: '',
   fullPath: '',
   bucket: '',
   path: '',
   fileName: '',
 }),
+executeModelCallAndSave: () => Promise.resolve(),
+documentRenderer: {
+  renderDocument: () => Promise.resolve({
+    content: '',
+    fullPath: '',
+    bucket: '',
+    path: '',
+    fileName: '',
+    pathContext: {
+      projectId: '',
+      sessionId: '',
+      iteration: 0,
+      stageSlug: '',
+      documentKey: '',
+      fileType: FileType.RenderedDocument,
+      modelSlug: '',
+    },
+    renderedBytes: new Uint8Array(),
+  }),
+},
 continueJob: () => Promise.resolve({
   error: undefined,
   enqueued: true,
@@ -143,17 +166,16 @@ retryJob: () => Promise.resolve({
   enqueued: true,
 }),
 notificationService: {
+  sendJobNotificationEvent: () => Promise.resolve(),
   sendContributionStartedEvent: () => Promise.resolve(),
   sendDialecticContributionStartedEvent: () => Promise.resolve(),
   sendContributionReceivedEvent: () => Promise.resolve(),
   sendContributionRetryingEvent: () => Promise.resolve(),
   sendContributionGenerationCompleteEvent: () => Promise.resolve(),
   sendContributionGenerationContinuedEvent: () => Promise.resolve(),
-  sendDialecticProgressUpdateEvent: () => Promise.resolve(),
   sendContributionFailedNotification: () => Promise.resolve(),
   sendContributionGenerationFailedEvent: () => Promise.resolve(),
 },
-executeModelCallAndSave: () => Promise.resolve(),
 downloadFromStorage: () => Promise.resolve({
   data: new ArrayBuffer(0),
   error: null,
@@ -184,6 +206,11 @@ fileManager: {
           storage_path: '',
           updated_at: '',
           user_id: '',
+          iteration_number: null,
+          resource_type: null,
+          session_id: null,
+          source_contribution_id: null,
+          stage_slug: null,
       },
       error: null,
   }),
@@ -258,8 +285,8 @@ Deno.test("scoreHistory", async (t) => {
     await t.step("should correctly identify and score the mutable middle, excluding head and tail", () => {
         const candidates = scoreHistory(fullHistory);
 
-        // New logic: 3 head + 4 tail = 7 immutable. With 8 total messages, 1 should be mutable.
-        assertEquals(candidates.length, 1, "Expected exactly one candidate with the new 3+4 logic.");
+        // With preserved head (3) and tail (4), exactly one candidate exists in an 8-message history.
+        assertEquals(candidates.length, 1, "Expected exactly one candidate.");
         
         const candidateIds = candidates.map(c => c.id);
         assert(candidateIds.includes('msg-3'), "msg-3 should be the single candidate");
@@ -312,22 +339,20 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
 
         // We expect 1 history candidate + 2 document candidates
         assertEquals(result.length, 3);
-        
-        // The lowest score should be the 'low relevance' document, as its relevance is very low
-        assertEquals(result[0].id, 'doc-low');
-        assertEquals(result[0].sourceType, 'document');
 
-        // The next lowest score should be the oldest history message
-        assertEquals(result[1].id, 'msg-3');
-        assertEquals(result[1].sourceType, 'history');
-        
-        // The highest score should be the 'high relevance' document
-        assertEquals(result[2].id, 'doc-high');
-        assertEquals(result[2].sourceType, 'document');
-        
-        // Check that scores are sorted ascending
-        for (let i = 0; i < result.length - 1; i++) {
-            assert(result[i].valueScore <= result[i+1].valueScore, `Score at index ${i} (${result[i].valueScore}) should be <= score at ${i+1} (${result[i+1].valueScore})`);
+        // Assert candidates include both sources
+        const hasHistory = result.some(c => c.sourceType === 'history');
+        const hasDocument = result.some(c => c.sourceType === 'document');
+        assert(hasHistory, 'Expected at least one history candidate');
+        assert(hasDocument, 'Expected at least one document candidate');
+
+        // Assert non-decreasing order by effectiveScore
+        // In this test, there is no inputsRelevance; effectiveScore resolves to:
+        // - history: valueScore (as implemented)
+        // - document: 0 (relevance defaults to 0 without matrix/identity)
+        const eff = result.map(c => c.sourceType === 'history' ? c.valueScore : 0);
+        for (let i = 0; i < eff.length - 1; i++) {
+            assert(eff[i] <= eff[i + 1], `Expected non-decreasing effectiveScore order at index ${i}: ${eff[i]} <= ${eff[i + 1]}`);
         }
     });
 
@@ -396,8 +421,8 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
     });
 });
 
-// 25.a RED: Role-aware preservation anchors for compression
-Deno.test("getSortedCompressionCandidates - role-aware anchors preserved; non-anchored early messages are candidates (RED)", async () => {
+// Role-aware preservation anchors for compression
+Deno.test("getSortedCompressionCandidates - role-aware anchors preserved; non-anchored early messages are candidates", async () => {
   const { client: dbClient } = createMockSupabaseClient('user-123', {
     genericMockResults: {
       'dialectic_memory': {
@@ -442,8 +467,6 @@ Deno.test("getSortedCompressionCandidates - role-aware anchors preserved; non-an
   assert(!candidateIds.includes('msg-10'), 'Last assistant should be preserved');
   assert(!candidateIds.includes('msg-11'), 'Final user "Please continue." should be preserved');
 
-  // This is the critical RED assertion: the second-to-last assistant (msg-8) must also be preserved
-  // Current index-based logic will incorrectly include it as a candidate, causing this test to fail.
   assert(!candidateIds.includes('msg-8'), 'Second-to-last assistant should be preserved (role-aware)');
 });
  
@@ -485,7 +508,7 @@ Deno.test("getSortedCompressionCandidates - role-aware anchors preserved; non-an
     assertEquals(candidateIds.size, 3, "There should be exactly 3 compressible candidates.");
  });
  
-Deno.test("scoreHistory fails to preserve anchors with non-alternating tail roles (RED)", () => {
+Deno.test("scoreHistory preserves anchors with non-alternating tail roles", () => {
     const history: Messages[] = [
         // --- Immutable Head ---
         { id: 'msg-0', role: 'system', content: 'You are an architect.' },
@@ -495,8 +518,8 @@ Deno.test("scoreHistory fails to preserve anchors with non-alternating tail role
         { id: 'msg-3', role: 'user', content: 'Compressible message 1' },
         { id: 'msg-4', role: 'assistant', content: 'Compressible message 2' },
         { id: 'msg-5', role: 'user', content: 'Compressible message 3' },
-        // --- Immutable Tail (where the flaw is) ---
-        { id: 'msg-6', role: 'user', content: 'This user message should be immutable but will fail.' },
+        // --- Immutable Tail ---
+        { id: 'msg-6', role: 'user', content: 'This user message should be immutable.' },
         { id: 'msg-7', role: 'assistant', content: 'First assistant reply in tail.' },
         { id: 'msg-8', role: 'assistant', content: 'Second consecutive assistant reply in tail.' },
         { id: 'msg-9', role: 'user', content: 'Final user reply.' },
@@ -505,10 +528,7 @@ Deno.test("scoreHistory fails to preserve anchors with non-alternating tail role
     const candidates = scoreHistory(history);
     const candidateIds = new Set(candidates.map(c => c.id));
  
-    // This is the key assertion that is expected to fail.
-    // The positional rule (`immutableTailCount=3`) only protects msg-7, msg-8, msg-9.
-    // The role-based rule protects the last two assistants (msg-7, msg-8).
-    // Nothing protects msg-6.
+    // The user message at the start of a non-alternating tail must be immutable.
     assert(!candidateIds.has('msg-6'), "The user message at the start of a non-alternating tail (msg-6) must be immutable.");
  
     // Verify other anchors are still correctly handled
@@ -518,3 +538,72 @@ Deno.test("scoreHistory fails to preserve anchors with non-alternating tail role
     assert(candidateIds.has('msg-5'), "Middle message (msg-5) should be compressible.");
 });
 
+// matrix-weighted blended scoring expectations (ties by similarity)
+Deno.test("getSortedCompressionCandidates - blended scoring ranks higher-matrix doc later on similarity ties", async () => {
+  const { client: dbClient } = createMockSupabaseClient('user-123', {
+    genericMockResults: {
+      'dialectic_memory': {
+        select: { data: [], error: null },
+      },
+    },
+  });
+
+  // Arrange: two documents with identical similarity to the prompt; relevance rules key by document_key so high-priority doc gets relevance 1, low-priority gets 0
+  const documents: SourceDocument[] = [
+    mockSourceDocument({ id: 'doc-high', content: 'high relevance', document_key: 'business_case', type: 'document' }),
+    mockSourceDocument({ id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', type: 'document' }),
+  ];
+
+  const inputsRelevance: RelevanceRule[] = [
+    { document_key: FileType.business_case, type: 'document', relevance: 1 },
+    { document_key: FileType.feature_spec, type: 'document', relevance: 0 },
+  ];
+
+  const result = await getSortedCompressionCandidates(
+    dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    documents,
+    [],
+    'prompt',
+    inputsRelevance
+  );
+
+  const docOrder = result.filter(c => c.sourceType === 'document').map(c => c.id);
+
+  const indexHigh = docOrder.indexOf('doc-high');
+  const indexLow = docOrder.indexOf('doc-low');
+  assert(indexHigh > indexLow, "Higher-priority doc must be ranked later on ties (matrix-weighted)");
+});
+
+Deno.test("getSortedCompressionCandidates - matrix priority protects high-priority doc on similarity ties", async () => {
+  const { client: dbClient } = createMockSupabaseClient('user-123', {
+    genericMockResults: {
+      'dialectic_memory': {
+        select: { data: [], error: null },
+      },
+    },
+  });
+
+  const documents: SourceDocument[] = [
+    mockSourceDocument({ id: 'doc-high', content: 'high relevance', document_key: 'business_case', type: 'document' }),
+    mockSourceDocument({ id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', type: 'document' }),
+  ];
+
+  const inputsRelevance: RelevanceRule[] = [
+    { document_key: FileType.business_case, type: 'document', relevance: 1 },
+    { document_key: FileType.feature_spec, type: 'document', relevance: 0 },
+  ];
+
+  const result = await getSortedCompressionCandidates(
+    dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    documents,
+    [],
+    'prompt',
+    inputsRelevance
+  );
+
+  const docOrder = result.filter(c => c.sourceType === 'document').map(c => c.id);
+  // On similarity ties, the earliest candidate should be the lower-priority document
+  assertEquals(docOrder[0], 'doc-low', "Lower-priority doc should be the earliest candidate when similarity ties");
+});

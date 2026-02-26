@@ -1,468 +1,50 @@
 
-import { assertEquals, assertExists } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
-import { spy } from 'jsr:@std/testing@0.225.1/mock';
-import type { Database } from '../types_db.ts';
+import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { Database } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { processJob } from './processJob.ts';
-import { logger } from '../_shared/logger.ts';
-import type { DialecticJobPayload, IDialecticJobDeps, SeedPromptData, IContinueJobResult, DialecticPlanJobPayload } from '../dialectic-service/dialectic.interface.ts';
-import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
-import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import type { UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
-import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { isJson, isRecord } from '../_shared/utils/type_guards.ts';
+import { 
+    DialecticJobPayload, 
+    DialecticPlanJobPayload 
+} from '../dialectic-service/dialectic.interface.ts';
+import { isJson } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
-import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-import { MockRagService } from '../_shared/services/rag_service.mock.ts';
+import { 
+    createExecuteJobContext, 
+    createJobContext, 
+    createPlanJobContext, 
+    createRenderJobContext 
+} from './createJobContext.ts';
+import { IJobContext } from './JobContext.interface.ts';
+import { createMockJobContextParams } from './JobContext.mock.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
-type PlanWithJwt = DialecticPlanJobPayload & { user_jwt: string };
-const mockDeps: IDialecticJobDeps = {
-    logger,
-    callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
-        content: 'Happy path AI content',
-        error: null,
-        finish_reason: 'stop',
-    })),
-    downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ data: new ArrayBuffer(0), error: null })),
-    fileManager: new MockFileManagerService(),
-    getExtensionFromMimeType: spy(() => '.md'),
-    randomUUID: spy(() => 'mock-uuid-happy'),
-    deleteFromStorage: spy(async () => await Promise.resolve({ error: null })),
-    getSeedPromptForStage: spy(async (): Promise<SeedPromptData> => ({
-        content: 'Happy path AI content',
-        fullPath: 'happy/path/ai/content.md',
-        bucket: 'happy-path-ai-content',
-        path: 'happy/path/ai/content.md',
-        fileName: 'happy-path-ai-content.md',
-    })),
-    continueJob: spy(async (): Promise<IContinueJobResult> => ({
-        enqueued: true,
-        error: undefined,
-    })),
-    retryJob: spy(async (): Promise<{ error?: Error }> => ({ error: undefined })),
-    notificationService: mockNotificationService,
-    executeModelCallAndSave: spy(async (): Promise<void> => { /* dummy */ }),
-    ragService: new MockRagService(),
-    countTokens: spy(() => 100),
-    getAiProviderConfig: spy(async () => await Promise.resolve({ 
-        api_identifier: 'mock-model', 
-        input_token_cost_rate: 0, 
-        output_token_cost_rate: 0, 
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'p50k_base' } })),
-    getGranularityPlanner: spy(() => () => []),
-    planComplexStage: spy(async () => await Promise.resolve([])),
-};
 
-Deno.test('processJob - routes to processSimpleJob for simple stages', async () => {
-    // 1. Setup
+// Create full IJobContext via createJobContext(mockParams)
+const mockCtx: IJobContext = createJobContext(createMockJobContextParams());
+
+// Step 6.a — Dispatch strictly by job.job_type: PLAN -> processComplexJob (ignore payload shape)
+Deno.test('processJob - dispatches by job.job_type: PLAN routes to processComplexJob', async () => {
     const { processors, spies } = createMockJobProcessors();
 
-    const mockJobId = 'job-id-simple-route';
-    const mockPayload: DialecticJobPayload = {
-        job_type: 'plan',
-        step_info: { current_step: 1, total_steps: 1 },
-        sessionId: 'session-id',
-        projectId: 'project-id',
-        stageSlug: 'thesis', // A simple stage
-        model_id: 'model-id',
-        continueUntilComplete: false,
-        walletId: 'wallet-id-simple',
-        user_jwt: 'jwt.token.here',
-    };
-    
-    if (!isJson(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid Json');
-    }
-
-    const mockJob: MockJob = {
-        id: mockJobId,
-        user_id: 'user-id',
-        session_id: 'session-id',
-        stage_slug: 'thesis',
-        payload: mockPayload,
-        iteration_number: 1,
-        status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-    };
-
-    const mockSupabase = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': {
-                select: {
-                    data: [{
-                        id: 'stage-id-thesis',
-                        slug: 'thesis',
-                        display_name: 'Thesis',
-                        input_artifact_rules: null,
-                    }]
-                }
-            },
-            'dialectic_sessions': {
-                select: {
-                    data: [{ id: 'session-id' }]
-                }
-            }
-        }
-    });
-
-    try {
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id', mockDeps, 'mock-token', processors);
-
-        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
-        assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob should not be called');
-
-    } finally {
-        spies.processSimpleJob.restore();
-        spies.processComplexJob.restore();
-        mockSupabase.clearAllStubs?.();
-    }
-});
-
-
-// plan→execute simple transform preserves dynamic stage consistency
-Deno.test('processJob - simple transform preserves dynamic stage consistency (row.stage_slug === payload.stageSlug)', async () => {
-	const { processors, spies } = createMockJobProcessors();
-
-	// Arrange a non-thesis simple stage; make DB and row agree with payload.stageSlug
-	const expectedStage = 'parenthesis';
-	const planPayload: DialecticJobPayload = {
-		job_type: 'plan',
-		step_info: { current_step: 1, total_steps: 1 },
-		sessionId: 'session-id-stage-consistency',
-		projectId: 'project-id-stage-consistency',
-		stageSlug: expectedStage,
-		model_id: 'model-id-stage-consistency',
-		walletId: 'wallet-id-stage-consistency',
-		user_jwt: 'jwt.token.here',
-	};
-	if (!isJson(planPayload)) throw new Error('Test setup failed: planPayload not Json');
-
-	const mockJob: MockJob = {
-		id: 'job-id-stage-consistency',
-		user_id: 'user-id-stage-consistency',
-		session_id: 'session-id-stage-consistency',
-		stage_slug: expectedStage,
-		payload: planPayload,
-		iteration_number: 1,
-		status: 'pending',
-		attempt_count: 0,
-		max_retries: 3,
-		created_at: new Date().toISOString(),
-		started_at: null,
-		completed_at: null,
-		results: null,
-		error_details: null,
-		parent_job_id: null,
-		target_contribution_id: null,
-		prerequisite_job_id: null,
-	};
-
-	const mockSupabase = createMockSupabaseClient(undefined, {
-		genericMockResults: {
-			'dialectic_stages': {
-				select: {
-					data: [{ id: 'stage-id-parenthesis', slug: expectedStage, display_name: 'Parenthesis', input_artifact_rules: null }],
-				},
-			},
-			'dialectic_sessions': { select: { data: [{ id: 'session-id-stage-consistency' }] } },
-		},
-	});
-
-	try {
-		await processJob(
-			mockSupabase.client as unknown as SupabaseClient<Database>,
-			{ ...mockJob, payload: planPayload },
-			'user-id-stage-consistency',
-			mockDeps,
-			'mock-token',
-			processors,
-		);
-
-		// Assert we transformed and delegated once
-		assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
-
-		// Grab the transformed job passed to processSimpleJob
-		const transformedJob = spies.processSimpleJob.calls[0].args[1];
-		const transformedPayload = transformedJob.payload;
-
-		// Assert row.stage_slug === payload.stageSlug and both equal the expected dynamic stage
-		assertEquals(transformedJob.stage_slug, expectedStage, 'row.stage_slug should equal expected stage');
-		assertEquals(
-			typeof transformedPayload.stageSlug === 'string' ? transformedPayload.stageSlug : undefined,
-			expectedStage,
-			'payload.stageSlug should equal expected stage',
-		);
-	} finally {
-		spies.processSimpleJob.restore();
-		spies.processComplexJob.restore();
-		mockSupabase.clearAllStubs?.();
-	}
-});
-
-Deno.test('processJob - routes to processComplexJob for complex stages', async () => {
-    // 1. Setup
-    const { processors, spies } = createMockJobProcessors();
-
-    const mockJobId = 'job-id-complex-route';
-    const mockPayload: DialecticJobPayload = {
-        job_type: 'plan',
-        step_info: { current_step: 1, total_steps: 1 },
-        sessionId: 'session-id-complex',
-        projectId: 'project-id-complex',
-        stageSlug: 'antithesis', // A complex stage
-        model_id: 'model-id-complex',
-        walletId: 'wallet-id-complex',
-        user_jwt: 'jwt.token.here',
-    };
-
-    if (!isJson(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid Json');
-    }
-
-    const mockJob: MockJob = {
-        id: mockJobId,
-        user_id: 'user-id-complex',
-        session_id: 'session-id-complex',
-        stage_slug: 'antithesis',
-        payload: mockPayload,
-        iteration_number: 1,
-        status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-    };
-
-    const mockSupabase = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': {
-                select: {
-                    data: [{
-                        id: 'stage-id-antithesis',
-                        slug: 'antithesis',
-                        input_artifact_rules: {
-                            processing_strategy: {
-                                type: 'task_isolation'
-                            }
-                        },
-                    }]
-                }
-            },
-            'dialectic_sessions': {
-                select: {
-                    data: [{ id: 'session-id-complex' }]
-                }
-            }
-        }
-    });
-
-    try {
-        // 2. Execute
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id-complex', mockDeps, 'mock-token', processors);
-
-        // 3. Assert
-        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob should not be called');
-        assertEquals(spies.processComplexJob.calls.length, 1, 'processComplexJob should be called once');
-
-    } finally {
-        spies.processSimpleJob.restore();
-        spies.processComplexJob.restore();
-        mockSupabase.clearAllStubs?.();
-    }
-});
-
-Deno.test('processJob - throws error when stage not found', async () => {
-    // 1. Setup
-    const { processors, spies } = createMockJobProcessors();
-
-    const mockJobId = 'job-id-stage-not-found';
-    const mockPayload: DialecticJobPayload = {
-        job_type: 'plan',
-        step_info: { current_step: 1, total_steps: 1 },
-        sessionId: 'session-id',
-        projectId: 'project-id',
-        stageSlug: 'nonexistent-stage',
-        model_id: 'model-id',
-        walletId: 'wallet-id',
-        user_jwt: 'jwt.token.here',
-    };
-    
-    if (!isJson(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid Json');
-    }
-
-    const mockJob: MockJob = {
-        id: mockJobId,
-        user_id: 'user-id',
-        session_id: 'session-id',
-        stage_slug: 'nonexistent-stage',
-        payload: mockPayload,
-        iteration_number: 1,
-        status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-    };
-
-    const mockSupabase = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': {
-                select: {
-                    data: null, // No stage found
-                    error: { message: 'No rows found', name: 'PostgrestError' }
-                }
-            }
-        }
-    });
-
-    try {
-        // 2. Execute & Assert
-        let threwError = false;
-        let errorMessage = '';
-        try {
-            await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id', mockDeps, 'mock-token', processors);
-        } catch (error) {
-            threwError = true;
-            errorMessage = error instanceof Error ? error.message : String(error);
-        }
-
-        assertEquals(threwError, true, 'Should throw an error when stage is not found');
-        assertEquals(errorMessage, "Stage with slug 'nonexistent-stage' not found.");
-        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob should not be called');
-        assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob should not be called');
-
-    } finally {
-        spies.processSimpleJob.restore();
-        spies.processComplexJob.restore();
-        mockSupabase.clearAllStubs?.();
-    }
-});
-
-Deno.test('processJob - routes to simple processor for unsupported processing strategy', async () => {
-    // 1. Setup
-    const { processors, spies } = createMockJobProcessors();
-
-    const mockJobId = 'job-id-unsupported-strategy';
-    const mockPayload: DialecticJobPayload = {
-        job_type: 'plan',
-        step_info: { current_step: 1, total_steps: 1 },
-        sessionId: 'session-id',
-        projectId: 'project-id',
-        stageSlug: 'thesis', // Use a valid slug
-        model_id: 'model-id',
-        walletId: 'wallet-id',
-        user_jwt: 'jwt.token.here',
-    };
-    
-    if (!isJson(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid Json');
-    }
-
-    const mockJob: MockJob = {
-        id: mockJobId,
-        user_id: 'user-id',
-        session_id: 'session-id',
-        stage_slug: 'thesis',
-        payload: mockPayload,
-        iteration_number: 1,
-        status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-    };
-
-    const mockSupabase = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': {
-                select: {
-                    data: [{
-                        id: 'stage-id-custom',
-                        slug: 'thesis',
-                        display_name: 'Thesis',
-                        input_artifact_rules: {
-                            processing_strategy: {
-                                type: 'unsupported_strategy' // Not 'task_isolation'
-                            }
-                        },
-                    }]
-                }
-            }
-        }
-    });
-
-    try {
-        // 2. Execute
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id', mockDeps, 'mock-token', processors);
-        
-        // 3. Assert
-        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called for unsupported strategy');
-        assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob should not be called');
-
-    } finally {
-        spies.processSimpleJob.restore();
-        spies.processComplexJob.restore();
-        mockSupabase.clearAllStubs?.();
-    }
-});
-
-Deno.test('processJob - verifies correct parameters passed to processSimpleJob', async () => {
-    // 1. Setup
-    const { processors, spies } = createMockJobProcessors();
-
-    const mockJobId = 'job-id-verify-params';
-    const mockPayload: DialecticJobPayload = {
-        job_type: 'plan',
-        step_info: { current_step: 1, total_steps: 1 },
-        sessionId: 'session-id-params',
-        projectId: 'project-id-params',
+    // Payload intentionally shaped like EXECUTE while row says PLAN to prove payload is ignored
+    const executeShapedPayload: DialecticJobPayload = {
+        sessionId: 'session-id-plan-dispatch',
+        projectId: 'project-id-plan-dispatch',
         stageSlug: 'thesis',
-        model_id: 'model-id-1',
-        iterationNumber: 1,
-        continueUntilComplete: true,
-        walletId: 'wallet-id',
+        model_id: 'model-id',
+        walletId: 'wallet-id-plan-dispatch',
         user_jwt: 'jwt.token.here',
     };
-    
-    if (!isJson(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid Json');
-    }
+    if (!isJson(executeShapedPayload)) throw new Error('Test setup failed: executeShapedPayload not Json');
 
     const mockJob: MockJob = {
-        id: mockJobId,
-        user_id: 'user-id-params',
-        session_id: 'session-id-params',
+        id: 'job-id-plan-dispatch',
+        user_id: 'user-id',
+        session_id: 'session-id-plan-dispatch',
         stage_slug: 'thesis',
-        payload: mockPayload,
+        payload: executeShapedPayload,
         iteration_number: 1,
         status: 'pending',
         attempt_count: 0,
@@ -475,61 +57,24 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
         parent_job_id: null,
         target_contribution_id: null,
         prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
     };
 
-    const mockSupabase = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': {
-                select: {
-                    data: [{
-                        id: 'stage-id-thesis',
-                        slug: 'thesis',
-                        display_name: 'Thesis',
-                        input_artifact_rules: null, // Simple stage
-                    }]
-                }
-            }
-        }
-    });
+    const mockSupabase = createMockSupabaseClient();
 
     try {
-        // 2. Execute
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id-params', mockDeps, 'mock-token-params', processors);
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: executeShapedPayload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
 
-        // 3. Assert
-        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
-        
-        const call = spies.processSimpleJob.calls[0];
-        assertEquals(call.args.length, 5, 'processSimpleJob should be called with 5 arguments');
-        
-        // Verify the parameters passed to processSimpleJob
-        const transformedPayload = {
-            job_type: 'execute',
-            model_id: mockPayload.model_id,
-            sessionId: mockPayload.sessionId,
-            projectId: mockPayload.projectId,
-            stageSlug: mockPayload.stageSlug,
-            iterationNumber: mockPayload.iterationNumber,
-            walletId: mockPayload.walletId,
-            continueUntilComplete: mockPayload.continueUntilComplete,
-            maxRetries: undefined,
-            continuation_count: undefined,
-            target_contribution_id: undefined,
-            step_info: mockPayload.step_info,
-            output_type: 'thesis',
-            inputs: {},
-            canonicalPathParams: {
-                contributionType: 'thesis',
-            },
-            user_jwt: 'jwt.token.here',
-        };
-        const expectedJob = { ...mockJob, payload: transformedPayload };
-
-        assertEquals(call.args[1], expectedJob, 'Second argument should be the transformed job object');
-        assertEquals(call.args[2], 'user-id-params', 'Third argument should be projectOwnerUserId');
-        assertEquals(call.args[3], mockDeps, 'Fourth argument should be deps');
-        assertEquals(call.args[4], 'mock-token-params', 'Fifth argument should be authToken');
-
+        assertEquals(spies.processComplexJob.calls.length, 1, 'PLAN must dispatch to processComplexJob');
+        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob must not be called for PLAN');
     } finally {
         spies.processSimpleJob.restore();
         spies.processComplexJob.restore();
@@ -537,120 +82,27 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
     }
 });
 
-Deno.test('processJob - verifies correct parameters passed to processComplexJob', async () => {
-    // 1. Setup
+// Step 6.a — Dispatch strictly by job.job_type: EXECUTE -> processSimpleJob (ignore payload shape)
+Deno.test('processJob - dispatches by job.job_type: EXECUTE routes to processSimpleJob', async () => {
     const { processors, spies } = createMockJobProcessors();
 
-    const mockJobId = 'job-id-verify-complex-params';
-    const mockPayload: DialecticPlanJobPayload = {
-        job_type: 'plan',
-        step_info: { current_step: 1, total_steps: 1 },
-        sessionId: 'session-id-complex-params',
-        projectId: 'project-id-complex-params',
+    // Payload intentionally shaped like PLAN while row says EXECUTE to prove payload is ignored
+    const planShapedPayload: DialecticPlanJobPayload = {
+        sessionId: 'session-id-exec-dispatch',
+        projectId: 'project-id-exec-dispatch',
         stageSlug: 'antithesis',
-        model_id: 'model-id-complex',
-        walletId: 'wallet-id-complex',
-    };
-    
-    if (!isJson(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid Json');
-    }
-
-    const mockJob: MockJob = {
-        id: mockJobId,
-        user_id: 'user-id-complex-params',
-        session_id: 'session-id-complex-params',
-        stage_slug: 'antithesis',
-        payload: mockPayload,
-        iteration_number: 1,
-        status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-    };
-
-    const mockSupabase = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': {
-                select: {
-                    data: [{
-                        id: 'stage-id-antithesis',
-                        slug: 'antithesis',
-                        input_artifact_rules: {
-                            processing_strategy: {
-                                type: 'task_isolation'
-                            }
-                        },
-                    }]
-                }
-            }
-        }
-    });
-
-    try {
-        // 2. Execute
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id-complex-params', mockDeps, 'mock-token-complex', processors);
-
-        // 3. Assert
-        assertEquals(spies.processComplexJob.calls.length, 1, 'processComplexJob should be called once');
-        
-        const call = spies.processComplexJob.calls[0];
-        assertEquals(call.args.length, 5, 'processComplexJob should be called with 5 arguments');
-        
-        // Verify the parameters passed to processComplexJob
-        assertEquals(call.args[1], { ...mockJob, payload: mockPayload }, 'Second argument should be the job object and its payload');
-        assertEquals(call.args[2], 'user-id-complex-params', 'Third argument should be projectOwnerUserId');
-        assertEquals(call.args[3], mockDeps, 'Fourth argument should be the unified deps object');
-        
-        // Verify that complexDeps contains the expected properties
-        const passedDeps = call.args[3];
-        assertExists(passedDeps.logger, 'deps should have logger');
-        assertExists(passedDeps.planComplexStage, 'deps should have planComplexStage');
-        assertExists(passedDeps.ragService, 'deps should have ragService');
-        assertExists(passedDeps.fileManager, 'deps should have fileManager');
-
-    } finally {
-        spies.processSimpleJob.restore();
-        spies.processComplexJob.restore();
-        mockSupabase.clearAllStubs?.();
-    }
-});
-
-Deno.test('processJob - simple plan→execute should NOT set prompt_template_name', async () => {
-    // 1. Setup
-    const { processors, spies } = createMockJobProcessors();
-
-    const mockJobId = 'job-id-no-prompt-template-name';
-    const simplePlanPayload: DialecticJobPayload = {
-        job_type: 'plan',
-        step_info: { current_step: 1, total_steps: 1 },
-        sessionId: 'session-id-simple',
-        projectId: 'project-id-simple',
-        stageSlug: 'thesis',
-        model_id: 'model-id-simple',
-        iterationNumber: 1,
-        continueUntilComplete: false,
-        walletId: 'wallet-id-simple',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
     };
-
-    if (!isJson(simplePlanPayload)) {
-        throw new Error('Test setup failed: simplePlanPayload is not a valid Json');
-    }
+    if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
 
     const mockJob: MockJob = {
-        id: mockJobId,
-        user_id: 'user-id-simple',
-        session_id: 'session-id-simple',
-        stage_slug: 'thesis',
-        payload: simplePlanPayload,
+        id: 'job-id-exec-dispatch',
+        user_id: 'user-id',
+        session_id: 'session-id-exec-dispatch',
+        stage_slug: 'antithesis',
+        payload: planShapedPayload,
         iteration_number: 1,
         status: 'pending',
         attempt_count: 0,
@@ -663,46 +115,29 @@ Deno.test('processJob - simple plan→execute should NOT set prompt_template_nam
         parent_job_id: null,
         target_contribution_id: null,
         prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'EXECUTE',
     };
 
+    // Provide a stage stub that would have driven legacy logic to complex, ensuring RED against new expectation
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
-            'dialectic_stages': {
-                select: {
-                    data: [{
-                        id: 'stage-id-thesis',
-                        slug: 'thesis',
-                        display_name: 'Thesis',
-                        input_artifact_rules: null, // Simple stage
-                    }]
-                }
-            }
-        }
+            'dialectic_stages': { select: { data: [{ id: 'stage-id-antithesis', slug: 'antithesis' }] } },
+        },
     });
 
     try {
         await processJob(
             mockSupabase.client as unknown as SupabaseClient<Database>,
-            { ...mockJob, payload: simplePlanPayload },
-            'user-id-simple',
-            mockDeps,
-            'mock-token-simple',
+            { ...mockJob, payload: planShapedPayload },
+            'user-id',
             processors,
+            mockCtx,
+            'mock-token',
         );
 
-        // Ensure simple processor was called
-        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once for simple stage');
-
-        // Inspect transformed execute payload
-        const transformedPayload = spies.processSimpleJob.calls[0].args[1].payload as Record<string, unknown>;
-
-        // RED assertions: field should be absent/undefined and must not be 'default_seed_prompt'
-        assertEquals('prompt_template_name' in transformedPayload, false, "prompt_template_name should not be present for simple plan→execute");
-        // If present due to bug, ensure it's not 'default_seed_prompt'
-        if ('prompt_template_name' in transformedPayload) {
-            assertEquals(transformedPayload.prompt_template_name, undefined, "prompt_template_name should be undefined for simple plan→execute");
-        }
-
+        assertEquals(spies.processSimpleJob.calls.length, 1, 'EXECUTE must dispatch to processSimpleJob');
+        assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob must not be called for EXECUTE');
     } finally {
         spies.processSimpleJob.restore();
         spies.processComplexJob.restore();
@@ -710,107 +145,24 @@ Deno.test('processJob - simple plan→execute should NOT set prompt_template_nam
     }
 });
 
-Deno.test('should clear target_contribution_id when transforming a simple plan job', async () => {
-    // 1. Setup
+// Step 6.a — Ignore processing_strategy; PLAN must still route to processComplexJob
+Deno.test('processJob - ignores processing_strategy; PLAN always routes to processComplexJob', async () => {
     const { processors, spies } = createMockJobProcessors();
 
-    const mockJobId = 'job-id-simple-transform-clear';
-    const mockPayload: DialecticJobPayload = {
-        job_type: 'plan',
-        step_info: { current_step: 1, total_steps: 1 },
-        sessionId: 'session-id-simple-transform',
-        projectId: 'project-id-simple-transform',
-        stageSlug: 'parenthesis', // A simple stage that follows a complex one
-        model_id: 'model-id-1',
-        iterationNumber: 1,
-        // THIS IS THE CRITICAL PART: the plan job has a target from the previous stage
-        target_contribution_id: 'synthesis-doc-uuid', 
-        walletId: 'wallet-id-simple-transform',
-        user_jwt: 'jwt.token.here',
-        };
-
-    if (!isJson(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid Json');
-    }
-
-    const mockJob: MockJob = {
-        id: mockJobId,
-        user_id: 'user-id-transform',
-        session_id: 'session-id-simple-transform',
-        stage_slug: 'parenthesis',
-        payload: mockPayload,
-        iteration_number: 1,
-        status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: 'synthesis-doc-uuid', // Also on the job row
-        prerequisite_job_id: null,
-    };
-
-    const mockSupabase = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': {
-                select: {
-                    data: [{
-                        id: 'stage-id-parenthesis',
-                        slug: 'parenthesis',
-                        display_name: 'Parenthesis',
-                        input_artifact_rules: null, // Simple stage
-                    }]
-                }
-            }
-        }
-    });
-
-    try {
-        // 2. Execute
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id-transform', mockDeps, 'mock-token', processors);
-
-        // 3. Assert
-        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
-        
-        const call = spies.processSimpleJob.calls[0];
-        const transformedJobPayload = call.args[1].payload;
-
-        // The core assertion: the target_contribution_id should be cleared for the new 'execute' job.
-        assertEquals(transformedJobPayload.target_contribution_id, undefined, 'target_contribution_id should be cleared for the transformed execute job');
-
-    } finally {
-        spies.processSimpleJob.restore();
-        spies.processComplexJob.restore();
-        mockSupabase.clearAllStubs?.();
-    }
-});
-
-
-// =============================================================
-// processJob (plan → execute transform)
-// =============================================================
-Deno.test('processJob - plan→execute transform preserves payload.user_jwt', async () => {
-    const { processors, spies } = createMockJobProcessors();
-
-    const planPayload: DialecticJobPayload = {
-        job_type: 'plan',
-        step_info: { current_step: 1, total_steps: 1 },
-        sessionId: 'session-id-preserve',
-        projectId: 'project-id-preserve',
+    const planPayload: DialecticPlanJobPayload = {
+        sessionId: 'session-id-ignore-strategy',
+        projectId: 'project-id-ignore-strategy',
         stageSlug: 'thesis',
-        model_id: 'model-id-preserve',
-        walletId: 'wallet-id-preserve',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
     };
     if (!isJson(planPayload)) throw new Error('Test setup failed: planPayload not Json');
 
     const mockJob: MockJob = {
-        id: 'job-id-preserve',
-        user_id: 'user-id-preserve',
-        session_id: 'session-id-preserve',
+        id: 'job-id-ignore-strategy',
+        user_id: 'user-id',
+        session_id: 'session-id-ignore-strategy',
         stage_slug: 'thesis',
         payload: planPayload,
         iteration_number: 1,
@@ -825,36 +177,31 @@ Deno.test('processJob - plan→execute transform preserves payload.user_jwt', as
         parent_job_id: null,
         target_contribution_id: null,
         prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
     };
 
+    // Legacy code would look at input_artifact_rules.processing_strategy and route simple if unsupported
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
-            'dialectic_stages': { select: { data: [{ id: 'stage-id-thesis', slug: 'thesis', display_name: 'Thesis', input_artifact_rules: null }] } },
-            'dialectic_sessions': { select: { data: [{ id: 'session-id-preserve' }] } },
-        }
+            'dialectic_stages': {
+                select: { data: [{ id: 'stage-id-thesis', slug: 'thesis', input_artifact_rules: { processing_strategy: { type: 'unsupported' } } }] },
+            },
+        },
     });
 
     try {
         await processJob(
             mockSupabase.client as unknown as SupabaseClient<Database>,
             { ...mockJob, payload: planPayload },
-            'user-id-preserve',
-            mockDeps,
-            'mock-token',
+            'user-id',
             processors,
+            mockCtx,
+            'mock-token',
         );
 
-        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
-        const transformed = spies.processSimpleJob.calls[0].args[1];
-        const p = transformed && transformed.payload;
-        let preserved = false;
-        let value = '';
-        if (isRecord(p) && 'user_jwt' in p) {
-            const v = p['user_jwt'];
-            if (typeof v === 'string' && v.length > 0) { preserved = true; value = v; }
-        }
-        assertEquals(preserved, true);
-        assertEquals(value, 'jwt.token.here');
+        assertEquals(spies.processComplexJob.calls.length, 1, 'PLAN must dispatch to processComplexJob even with unsupported processing_strategy');
+        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob must not be called for PLAN');
     } finally {
         spies.processSimpleJob.restore();
         spies.processComplexJob.restore();
@@ -862,25 +209,24 @@ Deno.test('processJob - plan→execute transform preserves payload.user_jwt', as
     }
 });
 
-Deno.test('processJob - missing payload.user_jwt in plan job fails before transform', async () => {
+// Additional coverage: PLAN passes job and args through unchanged
+Deno.test('processJob - PLAN passes job unchanged and propagates args', async () => {
     const { processors, spies } = createMockJobProcessors();
 
     const planPayload: DialecticPlanJobPayload = {
-        job_type: 'plan',
-        step_info: { current_step: 1, total_steps: 1 },
-        sessionId: 'session-id-missing',
-        projectId: 'project-id-missing',
+        sessionId: 'session-id-propagation-plan',
+        projectId: 'project-id-propagation-plan',
         stageSlug: 'thesis',
-        model_id: 'model-id-missing',
-        walletId: 'wallet-id-missing',
-        // user_jwt intentionally omitted
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
     };
     if (!isJson(planPayload)) throw new Error('Test setup failed: planPayload not Json');
 
-    const mockJob: MockJob = {
-        id: 'job-id-missing',
-        user_id: 'user-id-missing',
-        session_id: 'session-id-missing',
+    const rowJob: MockJob = {
+        id: 'job-id-propagation-plan',
+        user_id: 'user-id-plan',
+        session_id: 'session-id-propagation-plan',
         stage_slug: 'thesis',
         payload: planPayload,
         iteration_number: 1,
@@ -895,33 +241,740 @@ Deno.test('processJob - missing payload.user_jwt in plan job fails before transf
         parent_job_id: null,
         target_contribution_id: null,
         prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
     };
 
-    const mockSupabase = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': { select: { data: [{ id: 'stage-id-thesis', slug: 'thesis', display_name: 'Thesis', input_artifact_rules: null }] } },
-            'dialectic_sessions': { select: { data: [{ id: 'session-id-missing' }] } },
-        }
-    });
+    const mockSupabase = createMockSupabaseClient();
+    const authToken = 'propagation-token-plan';
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload: planPayload },
+            'user-id-plan',
+            processors,
+            mockCtx,
+            authToken,
+        );
+
+        const call = spies.processComplexJob.calls[0];
+        assertEquals(call.args[0], mockSupabase.client, 'dbClient should be passed through unchanged');
+        assertEquals(call.args[1], { ...rowJob, payload: planPayload }, 'job row should be passed through unchanged');
+        assertEquals(call.args[2], 'user-id-plan', 'projectOwnerUserId should be passed through unchanged');
+        assertEquals(call.args[4], authToken, 'authToken should be passed through unchanged');
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Additional coverage: EXECUTE passes job and args through unchanged
+Deno.test('processJob - EXECUTE passes job unchanged and propagates args', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    // PLAN-shaped payload even though row is EXECUTE, to prove payload is ignored
+    const planShaped: DialecticPlanJobPayload = {
+        sessionId: 'session-id-propagation-exec',
+        projectId: 'project-id-propagation-exec',
+        stageSlug: 'antithesis',
+        model_id: 'model-id-exec',
+        walletId: 'wallet-id-exec',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(planShaped)) throw new Error('Test setup failed: planShaped not Json');
+
+    const rowJob: MockJob = {
+        id: 'job-id-propagation-exec',
+        user_id: 'user-id-exec',
+        session_id: 'session-id-propagation-exec',
+        stage_slug: 'antithesis',
+        payload: planShaped,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'EXECUTE',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+    const authToken = 'propagation-token-exec';
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload: planShaped },
+            'user-id-exec',
+            processors,
+            mockCtx,
+            authToken,
+        );
+
+        const call = spies.processSimpleJob.calls[0];
+        assertEquals(call.args[0], mockSupabase.client, 'dbClient should be passed through unchanged');
+        assertEquals(call.args[1], { ...rowJob, payload: planShaped }, 'job row should be passed through unchanged');
+        assertEquals(call.args[2], 'user-id-exec', 'projectOwnerUserId should be passed through unchanged');
+        assertEquals(call.args[4], authToken, 'authToken should be passed through unchanged');
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Additional coverage: No stage query at router (PLAN)
+Deno.test('processJob - PLAN does not query dialectic_stages in router', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload: DialecticPlanJobPayload = {
+        sessionId: 'session-id-no-stage-plan',
+        projectId: 'project-id-no-stage-plan',
+        stageSlug: 'thesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const rowJob: MockJob = {
+        id: 'job-id-no-stage-plan',
+        user_id: 'user-id-no-stage-plan',
+        session_id: 'session-id-no-stage-plan',
+        stage_slug: 'thesis',
+        payload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload },
+            'user-id-no-stage-plan',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+
+        const stageFromCalls = mockSupabase.spies.fromSpy.calls.filter((call) => call.args && call.args[0] === 'dialectic_stages');
+        assertEquals(stageFromCalls.length, 0, 'router must not query dialectic_stages for PLAN dispatch');
+        assertEquals(spies.processComplexJob.calls.length, 1);
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Additional coverage: No stage query at router (EXECUTE)
+Deno.test('processJob - EXECUTE does not query dialectic_stages in router', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload: DialecticPlanJobPayload = {
+        sessionId: 'session-id-no-stage-exec',
+        projectId: 'project-id-no-stage-exec',
+        stageSlug: 'antithesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const rowJob: MockJob = {
+        id: 'job-id-no-stage-exec',
+        user_id: 'user-id-no-stage-exec',
+        session_id: 'session-id-no-stage-exec',
+        stage_slug: 'antithesis',
+        payload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'EXECUTE',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload },
+            'user-id-no-stage-exec',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+
+        const stageFromCalls = mockSupabase.spies.fromSpy.calls.filter((call) => call.args && call.args[0] === 'dialectic_stages');
+        assertEquals(stageFromCalls.length, 0, 'router must not query dialectic_stages for EXECUTE dispatch');
+        assertEquals(spies.processSimpleJob.calls.length, 1);
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Error handling: null job_type should throw and not call processors
+Deno.test('processJob - null job_type should throw and not dispatch', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload: DialecticJobPayload = {
+        sessionId: 'session-id-null-type',
+        projectId: 'project-id-null-type',
+        stageSlug: 'thesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const rowJob: MockJob = {
+        id: 'job-id-null-type',
+        user_id: 'user-id-null-type',
+        session_id: 'session-id-null-type',
+        stage_slug: 'thesis',
+        payload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: null,
+    };
+
+    const mockSupabase = createMockSupabaseClient();
 
     let threw = false;
     try {
         await processJob(
             mockSupabase.client as unknown as SupabaseClient<Database>,
-            { ...mockJob, payload: planPayload },
-            'user-id-missing',
-            mockDeps,
-            'mock-token',
+            { ...rowJob, payload },
+            'user-id-null-type',
             processors,
+            mockCtx,
+            'mock-token',
         );
     } catch (_e) {
         threw = true;
     } finally {
-        // Assert transform not called
-        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob must not be called when jwt is missing');
-        assertEquals(threw, true);
+        assertEquals(threw, true, 'router should throw on null job_type');
+        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob must not be called');
+        assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob must not be called');
         spies.processSimpleJob.restore();
         spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Error bubbling: downstream processor errors should surface unchanged
+Deno.test('processJob - bubbles errors from downstream processor', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    // Force EXECUTE path
+    const payload: DialecticPlanJobPayload = {
+        sessionId: 'session-id-bubble',
+        projectId: 'project-id-bubble',
+        stageSlug: 'thesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const rowJob: MockJob = {
+        id: 'job-id-bubble',
+        user_id: 'user-id-bubble',
+        session_id: 'session-id-bubble',
+        stage_slug: 'thesis',
+        payload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'EXECUTE',
+    };
+
+    // Make the EXECUTE processor throw
+    const err = new Error('processor failed');
+    const original = processors.processSimpleJob;
+    processors.processSimpleJob = async () => { throw err; };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    let threw = false;
+    let message = '';
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload },
+            'user-id-bubble',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+    } catch (e) {
+        threw = true;
+        message = e instanceof Error ? e.message : String(e);
+    } finally {
+        processors.processSimpleJob = original;
+        assertEquals(threw, true, 'router should bubble downstream errors');
+        assertEquals(message, 'processor failed');
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Step 9.f — Dispatch strictly by job.job_type: RENDER -> processRenderJob (ignore payload shape)
+Deno.test('processJob - dispatches by job.job_type: RENDER routes to processRenderJob', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    // Payload intentionally shaped like PLAN to prove payload is ignored
+    const planShapedPayload: DialecticPlanJobPayload = {
+        sessionId: 'session-id-render-dispatch',
+        projectId: 'project-id-render-dispatch',
+        stageSlug: 'synthesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id-render-dispatch',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
+
+    const mockJob: MockJob = {
+        id: 'job-id-render-dispatch',
+        user_id: 'user-id',
+        session_id: 'session-id-render-dispatch',
+        stage_slug: 'synthesis',
+        payload: planShapedPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'RENDER',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: planShapedPayload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+
+        assertEquals(spies.processRenderJob.calls.length, 1, 'RENDER must dispatch to processRenderJob');
+        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob must not be called for RENDER');
+        assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob must not be called for RENDER');
+    } finally {
+        spies.processRenderJob.restore();
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Step 9.f — Propagation: RENDER passes job and args through unchanged
+Deno.test('processJob - RENDER passes job unchanged and propagates args', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const planShapedPayload: DialecticPlanJobPayload = {
+        sessionId: 'session-id-render-propagation',
+        projectId: 'project-id-render-propagation',
+        stageSlug: 'parenthesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
+
+    const rowJob: MockJob = {
+        id: 'job-id-render-propagation',
+        user_id: 'user-id-render',
+        session_id: 'session-id-render-propagation',
+        stage_slug: 'parenthesis',
+        payload: planShapedPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'RENDER',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+    const authToken = 'propagation-token-render';
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload: planShapedPayload },
+            'user-id-render',
+            processors,
+            mockCtx,
+            authToken,
+        );
+
+        const call = spies.processRenderJob.calls[0];
+        assertEquals(call.args[0], mockSupabase.client, 'dbClient should be passed through unchanged');
+        assertEquals(call.args[1], { ...rowJob, payload: planShapedPayload }, 'job row should be passed through unchanged');
+        assertEquals(call.args[2], 'user-id-render', 'projectOwnerUserId should be passed through unchanged');
+        assertEquals(call.args[4], authToken, 'authToken should be passed through unchanged');
+    } finally {
+        spies.processRenderJob.restore();
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Step 9.f — No stage queries in the router for RENDER
+Deno.test('processJob - RENDER does not query dialectic_stages in router', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const planShapedPayload: DialecticPlanJobPayload = {
+        sessionId: 'session-id-no-stage-render',
+        projectId: 'project-id-no-stage-render',
+        stageSlug: 'paralysis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
+
+    const rowJob: MockJob = {
+        id: 'job-id-no-stage-render',
+        user_id: 'user-id-no-stage-render',
+        session_id: 'session-id-no-stage-render',
+        stage_slug: 'paralysis',
+        payload: planShapedPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'RENDER',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload: planShapedPayload },
+            'user-id-no-stage-render',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+
+        const stageFromCalls = mockSupabase.spies.fromSpy.calls.filter((call) => call.args && call.args[0] === 'dialectic_stages');
+        assertEquals(stageFromCalls.length, 0, 'router must not query dialectic_stages for RENDER dispatch');
+        assertEquals(spies.processRenderJob.calls.length, 1);
+    } finally {
+        spies.processRenderJob.restore();
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Step 51.b.iv — Context slicing: EXECUTE jobs receive IExecuteJobContext
+Deno.test('processJob - slices to IExecuteJobContext for EXECUTE jobs', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload: DialecticJobPayload = {
+        sessionId: 'session-id-slice-execute',
+        projectId: 'project-id-slice-execute',
+        stageSlug: 'thesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const mockJob: MockJob = {
+        id: 'job-id-slice-execute',
+        user_id: 'user-id',
+        session_id: 'session-id-slice-execute',
+        stage_slug: 'thesis',
+        payload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'EXECUTE',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+
+        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called');
+        const call = spies.processSimpleJob.calls[0];
+        const receivedCtx = call.args[3];
+        const expectedCtx = createExecuteJobContext(mockCtx);
+        assertEquals(receivedCtx, expectedCtx, 'EXECUTE job should receive createExecuteJobContext(ctx) result');
+
+        if (typeof receivedCtx !== 'object' || receivedCtx === null) {
+            throw new Error('Expected EXECUTE job processor to receive an object context');
+        }
+
+        // Verify EXECUTE-only fields are present
+        assertEquals(Reflect.has(receivedCtx, 'ragService'), true, 'IExecuteJobContext should have ragService');
+        assertEquals(Reflect.has(receivedCtx, 'promptAssembler'), true, 'IExecuteJobContext should have promptAssembler');
+        assertEquals(typeof Reflect.get(receivedCtx, 'getSeedPromptForStage'), 'function', 'IExecuteJobContext should have getSeedPromptForStage');
+
+        // Verify PLAN-only fields are absent
+        assertEquals(Reflect.has(receivedCtx, 'planComplexStage'), false, 'IExecuteJobContext should NOT have planComplexStage');
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.processRenderJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Step 51.b.v — Context slicing: PLAN jobs receive IPlanJobContext
+Deno.test('processJob - slices to IPlanJobContext for PLAN jobs', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload: DialecticPlanJobPayload = {
+        sessionId: 'session-id-slice-plan',
+        projectId: 'project-id-slice-plan',
+        stageSlug: 'antithesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const mockJob: MockJob = {
+        id: 'job-id-slice-plan',
+        user_id: 'user-id',
+        session_id: 'session-id-slice-plan',
+        stage_slug: 'antithesis',
+        payload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'PLAN',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+
+        assertEquals(spies.processComplexJob.calls.length, 1, 'processComplexJob should be called');
+        const call = spies.processComplexJob.calls[0];
+        const receivedCtx = call.args[3];
+        const expectedCtx = createPlanJobContext(mockCtx);
+        assertEquals(receivedCtx, expectedCtx, 'PLAN job should receive createPlanJobContext(ctx) result');
+
+        if (typeof receivedCtx !== 'object' || receivedCtx === null) {
+            throw new Error('Expected PLAN job processor to receive an object context');
+        }
+
+        // Verify PLAN-only fields are present (minimal plan context)
+        assertEquals(Reflect.has(receivedCtx, 'logger'), true, 'IPlanJobContext should have logger');
+        assertEquals(typeof Reflect.get(receivedCtx, 'planComplexStage'), 'function', 'IPlanJobContext should have planComplexStage');
+        assertEquals(typeof Reflect.get(receivedCtx, 'getGranularityPlanner'), 'function', 'IPlanJobContext should have getGranularityPlanner');
+
+        // Verify EXECUTE-only fields are absent
+        assertEquals(Reflect.has(receivedCtx, 'ragService'), false, 'IPlanJobContext should NOT have ragService');
+        assertEquals(Reflect.has(receivedCtx, 'promptAssembler'), false, 'IPlanJobContext should NOT have promptAssembler');
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.processRenderJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Step 51.b.vi — Context slicing: RENDER jobs receive IRenderJobContext
+Deno.test('processJob - slices to IRenderJobContext for RENDER jobs', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload: DialecticJobPayload = {
+        sessionId: 'session-id-slice-render',
+        projectId: 'project-id-slice-render',
+        stageSlug: 'synthesis',
+        model_id: 'model-id',
+        walletId: 'wallet-id',
+        user_jwt: 'jwt.token.here',
+    };
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const mockJob: MockJob = {
+        id: 'job-id-slice-render',
+        user_id: 'user-id',
+        session_id: 'session-id-slice-render',
+        stage_slug: 'synthesis',
+        payload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+        is_test_job: false,
+        job_type: 'RENDER',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+
+        assertEquals(spies.processRenderJob.calls.length, 1, 'processRenderJob should be called');
+        const call = spies.processRenderJob.calls[0];
+        const receivedCtx = call.args[3];
+        const expectedCtx = createRenderJobContext(mockCtx);
+        assertEquals(receivedCtx, expectedCtx, 'RENDER job should receive createRenderJobContext(ctx) result');
+
+        if (typeof receivedCtx !== 'object' || receivedCtx === null) {
+            throw new Error('Expected RENDER job processor to receive an object context');
+        }
+
+        // Verify RENDER-only fields are present
+        assertEquals(Reflect.has(receivedCtx, 'logger'), true, 'IRenderJobContext should have logger');
+        assertEquals(Reflect.has(receivedCtx, 'documentRenderer'), true, 'IRenderJobContext should have documentRenderer');
+        assertEquals(Reflect.has(receivedCtx, 'fileManager'), true, 'IRenderJobContext should have fileManager');
+        assertEquals(Reflect.has(receivedCtx, 'notificationService'), true, 'IRenderJobContext should have notificationService');
+
+        // Verify EXECUTE/PLAN-only fields are absent
+        assertEquals(Reflect.has(receivedCtx, 'ragService'), false, 'IRenderJobContext should NOT have ragService');
+        assertEquals(Reflect.has(receivedCtx, 'planComplexStage'), false, 'IRenderJobContext should NOT have planComplexStage');
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.processRenderJob.restore();
         mockSupabase.clearAllStubs?.();
     }
 });

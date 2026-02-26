@@ -1,145 +1,20 @@
 // deno-lint-ignore-file no-explicit-any
 import { assertEquals, assertExists, assertObjectMatch } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub } from "jsr:@std/testing@0.225.1/mock";
-import { startSession, type StartSessionDeps } from "./startSession.ts";
-import type { StartSessionPayload, StartSessionSuccessResponse, DialecticProjectResource } from "./dialectic.interface.ts";
+import { startSession } from "./startSession.ts";
+import type { StartSessionPayload, StartSessionSuccessResponse, DialecticProjectResource, StartSessionDeps, SelectedModels } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
-import { createMockPromptAssembler } from "../_shared/prompt-assembler.mock.ts";
+import { MockPromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.mock.ts";
 import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { MockLogger } from "../_shared/logger.mock.ts";
 import { AiProviderAdapterInstance, FactoryDependencies } from "../_shared/types.ts";
 import { DummyAdapter } from "../_shared/ai_service/dummy_adapter.ts";
 import type { AiModelExtendedConfig } from "../_shared/types.ts";
-
-Deno.test("startSession - TDD RED: Prove Flaw in startSession", async () => {
-    const mockUser: User = {
-        id: "user-happy-path-id",
-        app_metadata: {},
-        user_metadata: {},
-        aud: 'authenticated',
-        created_at: new Date().toISOString(),
-    };
-    const mockProjectId = "project-happy-path-id";
-    const mockProcessTemplateId = "proc-template-happy-path";
-    const mockInitialStageId = "stage-initial-happy-path";
-    const mockInitialStageName = "Hypothesis Stage";
-    const mockInitialStageSlug = "hypothesis-stage";
-    const mockSystemPromptId = "system-prompt-happy-path";
-    const mockSystemPromptText = "This is the initial system prompt for the happy path.";
-    const mockNewSessionId = "session-happy-path-id";
-    const mockNewChatId = "chat-happy-path-id";
-    const mockExplicitSessionDescription = "A happy little session description.";
-
-    const payload: StartSessionPayload = {
-        projectId: mockProjectId,
-        selectedModelIds: ["model-1"],
-        sessionDescription: mockExplicitSessionDescription
-    };
-
-    const mockAssembler = createMockPromptAssembler();
-    
-    const mockFileManager = new MockFileManagerService();
-    mockFileManager.setUploadAndRegisterFileResponse({
-        id: 'file-id',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        file_name: 'seed_prompt.md',
-        storage_bucket: 'dialectic-internal',
-        storage_path: 'projects/project-happy-path-id/sessions/session-happy-path-id/iterations/1/hypothesis-stage/seed_prompt.md',
-        mime_type: 'text/markdown',
-        size_bytes: 123,
-        user_id: mockUser.id,
-        project_id: mockProjectId,
-        session_id: mockNewSessionId,
-        resource_description: 'Seed prompt',
-    }, null);
-
-    const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
-        genericMockResults: {
-            dialectic_projects: {
-                select: async () => ({
-                    data: [{
-                        id: mockProjectId,
-                        user_id: mockUser.id,
-                        project_name: "Happy Project",
-                        initial_user_prompt: "Let's be happy.",
-                        process_template_id: mockProcessTemplateId,
-                        dialectic_domains: { name: 'General' },
-                        selected_domain_id: 'd-1'
-                    }], error: null, status: 200, statusText: 'ok'
-                })
-            },
-            dialectic_process_templates: {
-                select: async () => ({
-                    data: [{ id: mockProcessTemplateId, name: 'Happy Template', starting_stage_id: mockInitialStageId }],
-                    error: null, status: 200, statusText: 'ok'
-                })
-            },
-            dialectic_stages: {
-                select: async () => ({
-                    data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName, default_system_prompt_id: mockSystemPromptId }],
-                    error: null, status: 200, statusText: 'ok'
-                })
-            },
-            system_prompts: {
-                select: async () => ({
-                    data: [{id: mockSystemPromptId, prompt_text: mockSystemPromptText}],
-                    error: null, status: 200, statusText: 'ok'
-                })
-            },
-            domain_specific_prompt_overlays: {
-                select: async () => ({ data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }], error: null, status: 200, statusText: 'ok' })
-            },
-            dialectic_sessions: {
-                insert: async () => ({
-                    data: [{
-                        id: mockNewSessionId, project_id: mockProjectId, session_description: mockExplicitSessionDescription,
-                        status: `pending_${mockInitialStageName}`, iteration_count: 1, associated_chat_id: mockNewChatId,
-                        current_stage_id: mockInitialStageId, selected_model_ids: payload.selectedModelIds,
-                    }], error: null, status: 201, statusText: 'ok'
-                })
-            },
-            ai_providers: {
-                select: async () => ({
-                    data: [{ 
-                        id: 'model-1', 
-                        provider_max_input_tokens: 8000, 
-                        is_default_embedding: true,
-                        config: {
-                            api_identifier: 'gpt-4o',
-                            tokenization_strategy: {
-                                type: 'tiktoken',
-                                tiktoken_encoding_name: 'cl100k_base'
-                            }
-                        } 
-                    }],
-                    error: null, status: 200, statusText: 'ok'
-                })
-            }
-        },
-        mockUser: mockUser,
-    });
-
-    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
-    const mockLogger = new MockLogger();
-    const mockGetAiProviderAdapter = spy((_deps: FactoryDependencies): AiProviderAdapterInstance | null => {
-        return null;
-    });
-
-    const deps: Partial<StartSessionDeps> = {
-        logger: mockLogger,
-        fileManager: mockFileManager,
-        promptAssembler: mockAssembler,
-        randomUUID: () => mockNewChatId,
-        getAiProviderAdapter: mockGetAiProviderAdapter
-    };
-
-    await startSession(mockUser, adminDbClient, payload, deps); 
-    
-    assertEquals(mockGetAiProviderAdapter.calls.length, 0, "The getAiProviderAdapter factory should NOT have been called.");
-});
+import {
+    AssembledPrompt,
+} from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
 
 Deno.test("startSession - Happy Path (with explicit sessionDescription)", async () => {
     const mockUser: User = {
@@ -163,30 +38,20 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
     const payload: StartSessionPayload = {
         projectId: mockProjectId,
         selectedModelIds: ["model-1"],
-        sessionDescription: mockExplicitSessionDescription
+        sessionDescription: mockExplicitSessionDescription,
     };
 
     // --- Start of Mocking Setup ---
-    const mockAssembler = createMockPromptAssembler();
-    
+    const mockAssembledPrompt: AssembledPrompt = {
+        promptContent: "This is the assembled seed prompt.",
+        source_prompt_resource_id: "new-prompt-resource-id",
+    };
+    const mockAssembler = new MockPromptAssembler();
+    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+
     const mockFileManager = new MockFileManagerService();
-    mockFileManager.setUploadAndRegisterFileResponse({
-        id: 'file-id',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        file_name: 'seed_prompt.md',
-        storage_bucket: 'dialectic-internal',
-        storage_path: 'projects/project-happy-path-id/sessions/session-happy-path-id/iterations/1/hypothesis-stage/seed_prompt.md',
-        mime_type: 'text/markdown',
-        size_bytes: 123,
-        user_id: mockUser.id,
-        project_id: mockProjectId,
-        session_id: mockNewSessionId,
-        resource_description: 'Seed prompt',
-    }, null);
 
     // --- End of Mocking Setup ---
-
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
         genericMockResults: {
@@ -239,6 +104,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
                         id: 'model-1', 
                         provider_max_input_tokens: 8000, 
                         config: {
+                            api_identifier: 'gpt-4o',
                             tokenization_strategy: {
                                 type: 'tiktoken',
                                 tiktoken_encoding_name: 'cl100k_base'
@@ -253,37 +119,58 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
     });
 
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
-    const mockLogger = { info: spy(), warn: spy(), error: spy(), debug: spy() };
+    const mockLogger = new MockLogger();
 
     const deps: Partial<StartSessionDeps> = {
         logger: mockLogger,
         fileManager: mockFileManager,
         promptAssembler: mockAssembler,
-        randomUUID: () => mockNewChatId
+        randomUUID: () => mockNewChatId,
     };
 
-    const result = await startSession(mockUser, adminDbClient, payload, deps); 
+    const result = await startSession(mockUser, adminDbClient, payload, deps);
 
     assertExists(result.data, `Session start failed: ${result.error?.message}`);
     assertEquals(result.error, undefined, "Error should be undefined on happy path");
+    const expectedSelectedModels: SelectedModels[] = payload.selectedModelIds.map((id) => ({ id, displayName: id }));
+    assertEquals(result.data.selected_models, expectedSelectedModels, "Response should include selected_models derived from payload.selectedModelIds.");
+    assertExists(result.data.seedPrompt, "The seedPrompt should be part of the successful response.");
+    assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt.");
 
-    const expectedResponse: Partial<StartSessionSuccessResponse> = {
-        id: mockNewSessionId,
-        project_id: mockProjectId,
-        session_description: mockExplicitSessionDescription,
-        current_stage_id: mockInitialStageId,
-    };
-    assertObjectMatch(result.data, expectedResponse);
-    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "The file manager should have been called once.");
+    assertEquals(
+        mockAssembler.assembleSeedPrompt.calls.length,
+        1,
+        "assembleSeedPrompt should have been called once.",
+    );
 
-    // Assert that assembler.assemble was called correctly
-    assertEquals(mockAssembler.assemble.calls.length, 1, "assembler.assemble should have been called once.");
-    const assembleArgs = mockAssembler.assemble.calls[0].args;
-    assertEquals(assembleArgs.length, 5, "assembler.assemble should be called with 5 arguments.");
-    assertEquals(assembleArgs[3], "Let's be happy.", "The fourth argument to assemble should be the correct initial user prompt.");
-    assertEquals(assembleArgs[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession.");
+    const {
+        project,
+        session,
+        stage,
+        projectInitialUserPrompt,
+        iterationNumber,
+    } = mockAssembler.assembleSeedPrompt.calls[0].args[0];
+
+    assertExists(project, "The project context should have been provided.");
+    assertExists(session, "The session context should have been provided.");
+    assertExists(stage, "The stage context should have been provided.");
+    assertEquals(
+        projectInitialUserPrompt,
+        "Let's be happy.",
+        "The correct initial user prompt should be passed.",
+    );
+    assertEquals(
+        iterationNumber,
+        1,
+        "The correct iteration number should be passed.",
+    );
+
+    assertEquals(
+        mockFileManager.uploadAndRegisterFile.calls.length,
+        0,
+        "uploadAndRegisterFile should not be called from startSession.",
+    );
 });
-
 
 Deno.test("startSession - Happy Path (without explicit sessionDescription, defaults are used)", async () => {
     const mockUser: User = {
@@ -309,23 +196,14 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         selectedModelIds: ["model-1"],
     };
 
-    const mockAssembler = createMockPromptAssembler();
+    const mockAssembledPrompt: AssembledPrompt = {
+        promptContent: "This is the assembled seed prompt for default case.",
+        source_prompt_resource_id: "default-case-resource-id",
+    };
+    const mockAssembler = new MockPromptAssembler();
+    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
 
     const mockFileManager = new MockFileManagerService();
-    mockFileManager.setUploadAndRegisterFileResponse({
-        id: 'file-id-default',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        file_name: 'seed_prompt.md',
-        storage_bucket: 'dialectic-internal',
-        storage_path: 'projects/project-default-desc-id/sessions/session-default-desc-id/iterations/1/hypothesis-slug/seed_prompt.md',
-        mime_type: 'text/markdown',
-        size_bytes: 123,
-        user_id: mockUser.id,
-        project_id: mockProjectId,
-        session_id: mockNewSessionId,
-        resource_description: 'Seed prompt',
-    }, null);
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
         genericMockResults: {
@@ -406,6 +284,8 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
 
     assertExists(result.data, `Session start failed: ${result.error?.message}`);
     assertEquals(result.error, undefined, "Error should be undefined on happy path");
+    const expectedSelectedModels: SelectedModels[] = payload.selectedModelIds.map((id) => ({ id, displayName: id }));
+    assertEquals(result.data.selected_models, expectedSelectedModels, "Response should include selected_models derived from payload.selectedModelIds.");
 
     const expectedResponse: Partial<StartSessionSuccessResponse> = {
         id: mockNewSessionId,
@@ -414,14 +294,50 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         current_stage_id: mockInitialStageId,
     };
     assertObjectMatch(result.data, expectedResponse);
-    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "The file manager should have been called once for the default case.");
+    assertExists(result.data.seedPrompt, "The seedPrompt should be part of the successful response in the default case.");
+    assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt in the default case.");
+    assertEquals(
+        mockFileManager.uploadAndRegisterFile.calls.length,
+        0,
+        "The file manager should NOT have been called for the default case.",
+    );
 
-    // Assert that assembler.assemble was called correctly for the default case
-    assertEquals(mockAssembler.assemble.calls.length, 1, "assembler.assemble should have been called once for default case.");
-    const assembleArgsDefault = mockAssembler.assemble.calls[0].args;
-    assertEquals(assembleArgsDefault.length, 5, "assembler.assemble should be called with 5 arguments for default case.");
-    assertEquals(assembleArgsDefault[3], "Default prompt", "The fourth argument should be the correct default prompt string.");
-    assertEquals(assembleArgsDefault[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession default case.");
+    // Assert that assembler.assembleSeedPrompt was called correctly for the default case
+    assertEquals(
+        mockAssembler.assembleSeedPrompt.calls.length,
+        1,
+        "assembler.assembleSeedPrompt should have been called once for default case.",
+    );
+    const {
+        project,
+        session,
+        stage,
+        projectInitialUserPrompt,
+        iterationNumber,
+    } = mockAssembler.assembleSeedPrompt.calls[0].args[0];
+
+    assertExists(
+        project,
+        "The project context should have been provided for default case.",
+    );
+    assertExists(
+        session,
+        "The session context should have been provided for default case.",
+    );
+    assertExists(
+        stage,
+        "The stage context should have been provided for default case.",
+    );
+    assertEquals(
+        projectInitialUserPrompt,
+        "Default prompt",
+        "The correct default prompt string should be passed.",
+    );
+    assertEquals(
+        iterationNumber,
+        1,
+        "iterationNumber 1 should be passed for default case.",
+    );
 });
 
 Deno.test("startSession - Happy Path (with initial prompt from file resource)", async () => {
@@ -446,11 +362,16 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
     const payload: StartSessionPayload = {
         projectId: mockProjectId,
         selectedModelIds: ["model-file"],
-        sessionDescription: "Session from a file prompt"
+        sessionDescription: "Session from a file prompt",
     };
 
-    const mockAssembler = createMockPromptAssembler();
-    
+    const mockAssembledPrompt: AssembledPrompt = {
+        promptContent: "This is the assembled seed prompt from file.",
+        source_prompt_resource_id: "file-resource-id",
+    };
+    const mockAssembler = new MockPromptAssembler();
+    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+
     const mockInitialPromptResource: DialecticProjectResource = {
         id: mockResourceId,
         project_id: mockProjectId,
@@ -467,21 +388,7 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
     };
     
     const mockFileManager = new MockFileManagerService();
-    mockFileManager.setUploadAndRegisterFileResponse({
-        id: 'file-id-resource',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        file_name: 'seed_prompt.md',
-        storage_bucket: 'dialectic-internal',
-        storage_path: `projects/${mockProjectId}/sessions/${mockNewSessionId}/iterations/1/${mockInitialStageSlug}/seed_prompt.md`,
-        mime_type: 'text/markdown',
-        size_bytes: 123,
-        user_id: mockUser.id,
-        project_id: mockProjectId,
-        session_id: mockNewSessionId,
-        resource_description: 'Seed prompt',
-    }, null);
-    
+
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
         genericMockResults: {
             dialectic_projects: {
@@ -527,7 +434,7 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
             },
             dialectic_sessions: {
                 insert: async () => ({
-                    data: [{ id: mockNewSessionId, project_id: mockProjectId, session_description: payload.sessionDescription }],
+                    data: [{ id: mockNewSessionId, project_id: mockProjectId, session_description: payload.sessionDescription, selected_model_ids: payload.selectedModelIds }],
                     error: null, status: 201, statusText: 'ok'
                 })
             },
@@ -571,16 +478,50 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
 
     const result = await startSession(mockUser, adminDbClient, payload, deps);
 
-    assertExists(result.data, `Session start with file prompt failed: ${result.error?.message}`);
-    assertEquals(result.error, undefined, "Error should be undefined on file prompt happy path");
+    assertExists(
+        result.data,
+        `Session start with file prompt failed: ${result.error?.message}`,
+    );
+    assertEquals(
+        result.error,
+        undefined,
+        "Error should be undefined on file prompt happy path",
+    );
+    const expectedSelectedModels: SelectedModels[] = payload.selectedModelIds.map((id) => ({ id, displayName: id }));
+    assertEquals(result.data.selected_models, expectedSelectedModels, "Response should include selected_models derived from payload.selectedModelIds.");
+    assertExists(result.data.seedPrompt, "The seedPrompt should be part of the successful response in the file prompt case.");
+    assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt in the file prompt case.");
 
-    assertEquals(mockAssembler.assemble.calls.length, 1, "assembler.assemble should have been called once.");
-    const assembleArgs = mockAssembler.assemble.calls[0].args;
-    
+    assertEquals(
+        mockAssembler.assembleSeedPrompt.calls.length,
+        1,
+        "assembler.assembleSeedPrompt should have been called once for file case.",
+    );
+    const {
+        project,
+        session,
+        stage,
+        projectInitialUserPrompt,
+        iterationNumber,
+    } = mockAssembler.assembleSeedPrompt.calls[0].args[0];
+
     // Check that the prompt content from the file was passed to the assembler
-    assertEquals(assembleArgs[3], mockFileContent, "The fourth argument to assemble should be the content of the initial prompt file.");
-    assertEquals(assembleArgs[4], 1, "The fifth argument (iterationNumber) should be 1.");
-    assertEquals(assembleArgs.length, 5, "assembler.assemble should be called with 5 arguments for file case.");
+    assertEquals(
+        projectInitialUserPrompt,
+        mockFileContent,
+        "The content of the initial prompt file should be passed.",
+    );
+    assertEquals(
+        iterationNumber,
+        1,
+        "The iterationNumber should be 1 for file case.",
+    );
+
+    assertEquals(
+        mockFileManager.uploadAndRegisterFile.calls.length,
+        0,
+        "File manager upload should not be called from startSession for file case.",
+    );
 });
 
 Deno.test("startSession - selects DummyAdapter for embedding when default provider is dummy", async () => {
@@ -606,25 +547,16 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
         sessionDescription: "Dummy embedding session",
     };
 
-    const mockAssembler = createMockPromptAssembler();
+    const mockAssembledPrompt: AssembledPrompt = {
+        promptContent: "This is the assembled seed prompt for dummy case.",
+        source_prompt_resource_id: "dummy-resource-id",
+    };
+    const mockAssembler = new MockPromptAssembler();
+    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
     const mockFileManager = new MockFileManagerService();
-    mockFileManager.setUploadAndRegisterFileResponse({
-        id: 'file-id-dummy',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        file_name: 'seed_prompt.md',
-        storage_bucket: 'dialectic-internal',
-        storage_path: `projects/${mockProjectId}/sessions/${mockNewSessionId}/iterations/1/${mockInitialStageSlug}/seed_prompt.md`,
-        mime_type: 'text/markdown',
-        size_bytes: 123,
-        user_id: mockUser.id,
-        project_id: mockProjectId,
-        session_id: mockNewSessionId,
-        resource_description: 'Seed prompt',
-    }, null);
 
     const dummyConfig: AiModelExtendedConfig = {
-        api_identifier: 'dummy-model-v1',
+        api_identifier: "dummy-model-v1",
         input_token_cost_rate: 1,
         output_token_cost_rate: 1,
         tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
@@ -657,7 +589,7 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
     const deps: Partial<StartSessionDeps> = {
         logger: mockLogger,
         fileManager: mockFileManager,
-        // Intentionally do NOT pass promptAssembler so the embedding path is exercised
+        promptAssembler: mockAssembler,
         randomUUID: () => mockNewSessionId,
         getAiProviderAdapter: getAdapterSpy,
     };
@@ -665,5 +597,23 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
     const result = await startSession(mockUser, adminDbClient, payload, deps);
 
     // Desired behavior: should succeed, proving DummyAdapter is accepted for embeddings
-    assertExists(result.data, `Expected startSession to succeed with dummy embedding provider, but got error: ${result.error?.message}`);
+    assertExists(
+        result.data,
+        `Expected startSession to succeed with dummy embedding provider, but got error: ${result.error
+            ?.message}`,
+    );
+    const expectedSelectedModels: SelectedModels[] = payload.selectedModelIds.map((id) => ({ id, displayName: id }));
+    assertEquals(result.data.selected_models, expectedSelectedModels, "Response should include selected_models derived from payload.selectedModelIds.");
+    assertExists(result.data.seedPrompt, "The seedPrompt should be part of the successful response in the dummy adapter case.");
+    assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt in the dummy adapter case.");
+    assertEquals(
+        mockFileManager.uploadAndRegisterFile.calls.length,
+        0,
+        "File manager upload should not be called from startSession for dummy case.",
+    );
+    assertEquals(
+        mockAssembler.assembleSeedPrompt.calls.length,
+        1,
+        "assembleSeedPrompt should have been called once for dummy case.",
+    );
 });

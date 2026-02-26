@@ -28,6 +28,17 @@ export interface PlatformCapabilities {
   // Example: readonly notifications: NotificationCapabilities | CapabilityUnavailable;
 }
 
+/**
+ * Key-value storage adapter for cross-platform persistence (e.g. web localStorage, Tauri).
+ * Used for feedback draft persistence and other client-side key-value needs.
+ * Implementations must guard against missing storage (e.g. no localStorage in SSR).
+ */
+export interface IKeyValueStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
 // *** Added CapabilitiesContextValue interface ***
 export interface CapabilitiesContextValue {
   capabilities: PlatformCapabilities | null; // Can be null initially or on error

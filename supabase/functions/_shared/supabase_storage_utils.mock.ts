@@ -1,4 +1,5 @@
-import type { DownloadStorageResult } from './supabase_storage_utils.ts';
+import type { DownloadStorageResult, DownloadFromStorageFn } from './supabase_storage_utils.ts';
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
 /**
  * Configuration for the mock download function's behavior.
@@ -22,16 +23,17 @@ export type MockDownloadConfig =
     };
 
 /**
- * Creates a mock implementation of a 2-argument download function suitable for
- * direct injection into consumers like PromptAssembler.
+ * Creates a mock implementation of DownloadFromStorageFn suitable for
+ * direct injection into consumers like JobContext.
  *
  * @param config - A configuration object that defines how the mock should behave.
  * @returns A mock function that simulates downloading from storage according to the config.
  */
 export function createMockDownloadFromStorage(
   config: MockDownloadConfig
-): (bucket: string, path: string) => Promise<DownloadStorageResult> {
+): DownloadFromStorageFn {
   const mockDownloadFn = async (
+    _supabase: SupabaseClient,
     _bucket: string,
     _path: string,
   ): Promise<DownloadStorageResult> => {

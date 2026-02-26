@@ -14,15 +14,15 @@ import {
     PromptConstructionPayload,
     SourceDocument
 } from '../dialectic-service/dialectic.interface.ts';
-import { Messages } from '../_shared/types.ts';
-import type { AiModelExtendedConfig } from '../_shared/types.ts';
-import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { ICompressionStrategy, getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
+import { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
+import { createMockDownloadFromStorage } from '../_shared/supabase_storage_utils.mock.ts';
 
-import { 
+import {
     createMockJob, 
     testPayload, 
     mockSessionData, 
@@ -47,11 +47,13 @@ Deno.test('compression path throws when wallet service missing', async () => {
         }
     });
 
-    const deps = getMockDeps();
-    // Ensure other services exist, but remove wallet to trigger error
-    deps.ragService = new MockRagService();
-    // deno-lint-ignore no-explicit-any
-    deps.tokenWalletService = undefined;
+    const mockRag = new MockRagService();
+    const baseDeps = getMockDeps({
+        ragService: mockRag,
+    });
+    // Remove wallet service to trigger error - create modified deps object for error-handling test
+    const deps = { ...baseDeps } as unknown as typeof baseDeps;
+    delete (deps as unknown as Record<string, unknown>)['tokenWalletService'];
     const initialTokenCount = 200; // > max
     const countStub = stub(deps, 'countTokens', () => initialTokenCount);
 
@@ -90,14 +92,14 @@ Deno.test('should throw if walletId is missing (preflight, non-oversized) before
         }
     });
 
-    const deps = getMockDeps();
     let providerCalled = 0;
-    deps.callUnifiedAIModel = async () => {
+    const deps = getMockDeps({
+        countTokens: () => 10, // Under limit to ensure non-oversized path
+    });
+    const callUnifiedStub = stub(deps, 'callUnifiedAIModel', async () => {
         providerCalled++;
-        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
-    };
-    // Under limit to ensure non-oversized path
-    deps.countTokens = () => 10;
+        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
+    });
 
     const job = createMockJob({ ...testPayload });
     // Intentionally set walletId to undefined for test
@@ -127,6 +129,7 @@ Deno.test('should throw if walletId is missing (preflight, non-oversized) before
     }
     assert(threw, 'Expected error when walletId is missing.');
     assertEquals(providerCalled, 0, 'Provider must not be called without wallet preflight.');
+    callUnifiedStub.restore();
 });
 
 // Non-oversized - missing tokenWalletService should fail before provider call
@@ -137,17 +140,17 @@ Deno.test('preflight (non-oversized) fails when tokenWalletService is missing be
     }
   });
 
-  const deps = getMockDeps();
-  // Remove wallet service to simulate missing dependency
-  // deno-lint-ignore no-explicit-any
-  (deps as any).tokenWalletService = undefined;
   let providerCalled = 0;
-  deps.callUnifiedAIModel = async () => {
+  const baseDeps = getMockDeps({
+    countTokens: () => 10, // Ensure non-oversized
+  });
+  // Remove wallet service to simulate missing dependency - create modified deps object for error-handling test
+  const deps = { ...baseDeps } as unknown as typeof baseDeps;
+  delete (deps as unknown as Record<string, unknown>)['tokenWalletService'];
+  const callUnifiedStub = stub(deps, 'callUnifiedAIModel', async () => {
     providerCalled++;
-    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
-  };
-  // Ensure non-oversized
-  deps.countTokens = () => 10;
+    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
+  });
 
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -170,6 +173,7 @@ Deno.test('preflight (non-oversized) fails when tokenWalletService is missing be
   // expected failure: should error and not call provider
   assert(threw, 'Expected preflight failure when tokenWalletService is missing.');
   assertEquals(providerCalled, 0, 'Provider must not be called when wallet service is missing in preflight.');
+  callUnifiedStub.restore();
 });
 
 // Non-oversized - invalid model cost rates produce preflight error
@@ -192,13 +196,15 @@ Deno.test('preflight (non-oversized) fails when model cost rates are invalid', a
     getBalance: () => Promise.resolve('100'),
   });
 
-  const deps = getMockDeps(mockTokenWalletService);
   let providerCalled = 0;
-  deps.callUnifiedAIModel = async () => {
+  const deps = getMockDeps({
+    tokenWalletService: mockTokenWalletService,
+    countTokens: () => 10, // non-oversized
+  });
+  const callUnifiedStub = stub(deps, 'callUnifiedAIModel', async () => {
     providerCalled++;
-    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
-  };
-  deps.countTokens = () => 10; // non-oversized
+    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
+  });
 
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -220,6 +226,7 @@ Deno.test('preflight (non-oversized) fails when model cost rates are invalid', a
   }
   assert(threw, 'Expected preflight failure for invalid model cost rates.');
   assertEquals(providerCalled, 0, 'Provider must not be called when model cost rates are invalid.');
+  callUnifiedStub.restore();
 });
 
 // Non-oversized - NSF preflight should fail before provider call
@@ -241,13 +248,15 @@ Deno.test('preflight (non-oversized) fails for NSF when total estimated cost exc
     getBalance: () => Promise.resolve('5'),
   });
 
-  const deps = getMockDeps(mockTokenWalletService);
   let providerCalled = 0;
-  deps.callUnifiedAIModel = async () => {
+  const deps = getMockDeps({
+    tokenWalletService: mockTokenWalletService,
+    countTokens: () => 10, // input cost = 10 > balance alone
+  });
+  const callUnifiedStub = stub(deps, 'callUnifiedAIModel', async () => {
     providerCalled++;
-    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
-  };
-  deps.countTokens = () => 10; // input cost = 10 > balance alone
+    return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
+  });
 
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -259,6 +268,7 @@ Deno.test('preflight (non-oversized) fails for NSF when total estimated cost exc
     promptConstructionPayload: { systemInstruction: '', conversationHistory: [], resourceDocuments: [], currentUserPrompt: 'hello' },
     sessionData: mockSessionData,
     compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
   };
 
   let threw = false;
@@ -270,6 +280,7 @@ Deno.test('preflight (non-oversized) fails for NSF when total estimated cost exc
   assert(threw, 'Expected preflight NSF failure before provider call.');
   assertEquals(providerCalled, 0, 'Provider must not be called when NSF is detected in preflight.');
   assertEquals(stubs.recordTransaction.calls.length, 0, 'No debit should occur during preflight failures.');
+  callUnifiedStub.restore();
 });
 
 Deno.test('should orchestrate RAG and debit tokens for un-indexed history chunks', async () => {
@@ -312,21 +323,23 @@ Deno.test('should orchestrate RAG and debit tokens for un-indexed history chunks
     });
 
     // Deps with injected wallet and deterministic RAG
-    const deps = getMockDeps(mockTokenWalletService);
     const mockRag = new MockRagService();
     mockRag.setConfig({ mockContextResult: 'summary', mockTokensUsed: 10 });
-    deps.ragService = mockRag;
 
     // Deterministic two-step counter: oversized then fits
     let tokenCalls = 0;
-    deps.countTokens = () => {
-        tokenCalls++;
-        return tokenCalls === 1 ? 200 : 50;
-    };
+    const deps = getMockDeps({
+        tokenWalletService: mockTokenWalletService,
+        ragService: mockRag,
+        countTokens: () => {
+            tokenCalls++;
+            return tokenCalls === 1 ? 200 : 50;
+        },
+    });
 
     // Single candidate in the mutable middle ensures exactly one RAG call
     const oneCandidateStrategy: ICompressionStrategy = async () => ([
-        { id: 'history-msg-3', content: 'long content', sourceType: 'history', originalIndex: 3, valueScore: 0.5 },
+        { id: 'history-msg-3', content: 'long content', sourceType: 'history', originalIndex: 3, valueScore: 0.5, effectiveScore: 0.5 },
     ]);
 
     // History with a mutable middle item (id matches strategy)
@@ -354,6 +367,7 @@ Deno.test('should orchestrate RAG and debit tokens for un-indexed history chunks
         promptConstructionPayload: prompt,
         sessionData: mockSessionData,
         compressionStrategy: oneCandidateStrategy,
+        inputsRelevance: [],
     };
 
     // Act
@@ -391,19 +405,21 @@ Deno.test('does not debit when compression tokensUsedForIndexing is zero', async
 
     const { instance: mockTokenWalletService, stubs: tokenWalletStubs } = createMockTokenWalletService();
 
-    const deps = getMockDeps(mockTokenWalletService);
     const mockRag = new MockRagService();
     mockRag.setConfig({ mockContextResult: 'summary', mockTokensUsed: 0 });
-    deps.ragService = mockRag;
 
     let tokenCalls = 0;
-    deps.countTokens = () => {
-        tokenCalls++;
-        return tokenCalls === 1 ? 200 : 50;
-    };
+    const deps = getMockDeps({
+        tokenWalletService: mockTokenWalletService,
+        ragService: mockRag,
+        countTokens: () => {
+            tokenCalls++;
+            return tokenCalls === 1 ? 200 : 50;
+        },
+    });
 
     const oneCandidateStrategy: ICompressionStrategy = async () => ([
-        { id: 'history-msg-3', content: 'long content', sourceType: 'history', originalIndex: 3, valueScore: 0.5 },
+        { id: 'history-msg-3', content: 'long content', sourceType: 'history', originalIndex: 3, valueScore: 0.5, effectiveScore: 0.5 },
     ]);
 
     const prompt: PromptConstructionPayload = {
@@ -428,6 +444,7 @@ Deno.test('does not debit when compression tokensUsedForIndexing is zero', async
         promptConstructionPayload: prompt,
         sessionData: mockSessionData,
         compressionStrategy: oneCandidateStrategy,
+        inputsRelevance: [],
     };
 
     // Act
@@ -444,18 +461,19 @@ Deno.test('should throw an error if the estimated cost exceeds the 80% rationali
     
     const mockBalance = 1000; // Balance such that cost can exceed 80% threshold when oversized.
     
-    // This is the correct pattern: get default deps, then create and overwrite the specific mock.
-    const deps = getMockDeps();
-    let providerCalled = 0;
-    deps.callUnifiedAIModel = async () => {
-        providerCalled++;
-        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
-    };
     const { instance: mockTokenWalletService } = createMockTokenWalletService({
         getBalance: () => Promise.resolve(mockBalance.toString()),
     });
-    deps.ragService = mockRagService;
-    deps.tokenWalletService = mockTokenWalletService;
+    
+    let providerCalled = 0;
+    const deps = getMockDeps({
+        tokenWalletService: mockTokenWalletService,
+        ragService: mockRagService,
+    });
+    const callUnifiedStub = stub(deps, 'callUnifiedAIModel', async () => {
+        providerCalled++;
+        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
+    });
 
     if (!isRecord(mockFullProviderData.config)) {
         throw new Error('Test setup error: mockFullProviderData.config is not an object');
@@ -491,6 +509,7 @@ Deno.test('should throw an error if the estimated cost exceeds the 80% rationali
         promptConstructionPayload: { systemInstruction: '', conversationHistory: [], resourceDocuments: [], currentUserPrompt: '' }, // content doesn't matter, we mock countTokens
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
     };
     
     // 2. Act & 3. Assert
@@ -510,6 +529,7 @@ Deno.test('should throw an error if the estimated cost exceeds the 80% rationali
     assertEquals(ragSpy.calls.length, 0, "RAG service should not be called if rationality check fails.");
     assertEquals(providerCalled, 0, "Provider should not be called if rationality check fails.");
     countTokensStub.restore();
+    callUnifiedStub.restore();
 });
 
 Deno.test('should throw an error if the estimated cost exceeds the absolute balance', async () => {
@@ -522,14 +542,15 @@ Deno.test('should throw an error if the estimated cost exceeds the absolute bala
         getBalance: () => Promise.resolve(mockBalance.toString()),
     });
     
-    const deps = getMockDeps();
     let providerCalled = 0;
-    deps.callUnifiedAIModel = async () => {
+    const deps = getMockDeps({
+        tokenWalletService: mockTokenWalletService,
+        ragService: mockRagService,
+    });
+    const callUnifiedStub = stub(deps, 'callUnifiedAIModel', async () => {
         providerCalled++;
-        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1 };
-    };
-    deps.ragService = mockRagService;
-    deps.tokenWalletService = mockTokenWalletService;
+        return { content: 'AI', contentType: 'text/plain', inputTokens: 1, outputTokens: 1, processingTimeMs: 1, rawProviderResponse: { mock: 'response' } };
+    });
 
     if (!isRecord(mockFullProviderData.config)) {
         throw new Error('Test setup error: mockFullProviderData.config is not an object');
@@ -558,6 +579,7 @@ Deno.test('should throw an error if the estimated cost exceeds the absolute bala
         promptConstructionPayload: { systemInstruction: '', conversationHistory: [], resourceDocuments: [], currentUserPrompt: '' },
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
     };
     
     // 2. Act & 3. Assert
@@ -577,6 +599,7 @@ Deno.test('should throw an error if the estimated cost exceeds the absolute bala
     assertEquals(ragSpy.calls.length, 0, "RAG service should not be called if affordability check fails.");
     assertEquals(providerCalled, 0, "Provider should not be called if affordability check fails.");
     countTokensStub.restore();
+    callUnifiedStub.restore();
 });
 
 Deno.test('should perform affordable compression, checking balance once', async () => {
@@ -588,9 +611,11 @@ Deno.test('should perform affordable compression, checking balance once', async 
         getBalance: () => Promise.resolve('1000000'), // Huge balance
     });
 
-    const deps = getMockDeps(mockTokenWalletService);
-    deps.ragService = mockRagService;
-    deps.countTokens = countTokens; // Use real token counter
+    const deps = getMockDeps({
+        tokenWalletService: mockTokenWalletService,
+        ragService: mockRagService,
+        countTokens: countTokens, // Use real token counter
+    });
     
     // Configure the RAG service to return a result that is small enough to pass the test.
     mockRagService.setConfig({
@@ -644,6 +669,7 @@ Deno.test('should perform affordable compression, checking balance once', async 
         },
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
     };
 
     // 2. Act
@@ -673,48 +699,42 @@ Deno.test('should use source documents for token estimation before prompt assemb
     const { client: dbClient, clearAllStubs } = setupMockClient({
         'ai_providers': {
             select: { data: [{ ...mockFullProviderData, config: limitedConfig }], error: null }
-        }
+        },
+        // Executor now gathers its own documents; seed a large matching rendered document in resources
+        'dialectic_project_resources': {
+            select: () => {
+                return Promise.resolve({
+                    data: [
+                        {
+                            id: 'doc-oversize',
+                            content: 'X'.repeat(2000),
+                            stage_slug: 'test-stage',
+                            project_id: 'project-abc',
+                            session_id: 'session-456',
+                            iteration_number: 1,
+                            resource_type: 'rendered_document',
+                            created_at: new Date().toISOString(),
+                            // Use document-centric path so the parser can extract stage + documentKey
+                            storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                            file_name: 'modelA_1_business_case.md',
+                            storage_bucket: 'test-bucket',
+                        }
+                    ],
+                    error: null
+                });
+            }
+        },
+        'dialectic_feedback': { select: { data: [], error: null } },
     });
 
-    const deps = getMockDeps();
-    deps.ragService = mockRagService;
-    deps.countTokens = countTokens;
-
-    const largeSourceDoc = {
-        id: 'doc-1',
-        content: 'This is a very long source document that is clearly over one hundred tokens all by itself, which should force the RAG service to be called for compression to avoid a context window error downstream. To ensure this, I am adding a lot of extra text to this string. This additional text will push the character count well over the four hundred character threshold needed to exceed the one hundred token limit when using the rough character count estimation strategy, which divides the total number of characters by four. This is the only way to properly test the RAG service invocation logic.',
-        metadata: {},
-        created_at: new Date().toISOString(),
-        iteration_number: 1,
-        session_id: 'session-1',
-        target_contribution_id: 'contribution-1',
-        user_id: 'user-789',
-        document_relationships: null,
-        updated_at: new Date().toISOString(),
-        mime_type: 'text/plain',
-        citations: [],
-        contribution_type: 'source_document',
-        edit_version: 1,
-        error: null,
-        file_name: 'test.txt',
-        is_latest_edit: true,
-        model_id: 'model-1',
-        model_name: 'test-model',
-        original_model_contribution_id: 'contribution-1',
-        processing_time_ms: 100,
-        is_active: true,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        status: 'completed',
-        is_default_embedding: false,
-        stage: 'test-stage',
-        storage_bucket: 'test-bucket',
-        storage_path: 'test/path',
-        tokens_used_input: 10,
-        tokens_used_output: 20,
-    };
+    const oversizeContent = new TextEncoder().encode('X'.repeat(2000));
+    const oversizeBuffer = new ArrayBuffer(oversizeContent.byteLength);
+    new Uint8Array(oversizeBuffer).set(oversizeContent);
+    const deps = getMockDeps({
+        ragService: mockRagService,
+        countTokens: countTokens,
+        downloadFromStorage: createMockDownloadFromStorage({ mode: 'success', data: oversizeBuffer }),
+    });
 
     const params: ExecuteModelCallAndSaveParams = {
         dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -726,11 +746,17 @@ Deno.test('should use source documents for token estimation before prompt assemb
         promptConstructionPayload: {
             systemInstruction: 'System instruction',
             conversationHistory: [],
-            resourceDocuments: [largeSourceDoc],
+            resourceDocuments: [], // assembler no longer provides docs to executor sizing
             currentUserPrompt: 'User prompt',
         },
+        // New executor behavior: provide inputsRequired so it gathers matching docs
+        inputsRequired: [
+            // document_key must match the parsed key (without extension)
+            { type: 'document', slug: 'test-stage', document_key: FileType.business_case },
+        ],
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
     };
 
     await executeModelCallAndSave(params);

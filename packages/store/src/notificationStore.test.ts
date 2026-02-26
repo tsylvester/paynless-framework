@@ -3,19 +3,23 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vite
 import { act } from '@testing-library/react';
 // --- Update import: NotificationState might not be exported, adjust if needed ---
 import { useNotificationStore /* NotificationState */ } from './notificationStore';
-import { api } from '@paynless/api';
 // --- Remove StreamCallbacks, StreamDisconnectFunction if no longer used ---
-import type { Notification, ApiError /* StreamCallbacks, StreamDisconnectFunction */ } from '@paynless/types';
-import { logger } from '@paynless/utils';
+import type { Notification, ApiError, ApiResponse /* StreamCallbacks, StreamDisconnectFunction */ } from '@paynless/types';
+import { mockLogger, resetMockLogger } from '../../api/src/mocks/logger.mock';
 // --- Add Supabase types if needed for mocks ---
 import type { RealtimeChannel } from '@supabase/supabase-js';
-// Import the actual NotificationApiClient class (needed for constructor type)
-import { NotificationApiClient } from '@paynless/api'; 
-// Import the shared mock factory and reset function
 import { createMockNotificationApiClient, resetMockNotificationApiClient } from '@paynless/api/mocks/notifications.api.mock';
-import { useDialecticStore } from './dialecticStore';
-import { useWalletStore } from './walletStore';
-import type { DialecticLifecycleEvent, NotificationData } from '@paynless/types';
+
+vi.mock('@paynless/utils', async (importOriginal) => {
+    const actualUtils = await importOriginal<typeof import('@paynless/utils')>();
+    const { mockLogger: loggerMock, resetMockLogger: resetLoggerMock } = await import('../../api/src/mocks/logger.mock');
+
+    return {
+        ...actualUtils,
+        logger: loggerMock,
+        resetMockLogger: resetLoggerMock,
+    };
+});
 
 // --- Mock the dialecticStore to spy on its internal methods ---
 const mockHandleDialecticLifecycleEvent = vi.fn();
@@ -37,26 +41,11 @@ vi.mock('./walletStore', () => ({
     },
 }));
 
-// Mock Logger (Keep as is)
-vi.mock('@paynless/utils', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@paynless/utils')>();
-    return {
-        ...actual, // Keep original exports
-        logger: { // Mock only logger
-            info: vi.fn(),
-            warn: vi.fn(),
-            error: vi.fn(),
-            debug: vi.fn(),
-            fatal: vi.fn(),
-        },
-    };
-});
-
 // --- Create an instance of the shared mock ---
 const mockNotificationApi = createMockNotificationApiClient();
 
 // --- Mock the Realtime Channel used by subscribe ---
-const mockRealtimeChannel = {
+const mockRealtimeChannel: RealtimeChannel = {
     subscribe: vi.fn(),
     unsubscribe: vi.fn(),
 } as unknown as RealtimeChannel;
@@ -124,19 +113,110 @@ const mockNotification3: Notification = {
     message: 'Test Message 3',
     link_path: null,
 };
-const mockInternalEventNotification: Notification = {
-    id: 'uuid-internal-1',
+const baseDocumentEvent = {
     user_id: 'user-abc',
-    type: 'dialectic_contribution_started',
-    data: { sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1, job_id: 'job-internal-1' },
-    read: true, // Internal events are often implicitly 'read'
+    read: true,
     created_at: new Date().toISOString(),
-    is_internal_event: true, // This is an internal lifecycle event
+    is_internal_event: true,
     title: null,
     message: null,
     link_path: null,
 };
 
+const plannerStartedNotification: Notification = {
+    ...baseDocumentEvent,
+    id: 'uuid-planner-started',
+    type: 'planner_started',
+    data: {
+        sessionId: 'sid-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        job_id: 'job-planner',
+        document_key: 'global_header',
+        modelId: 'model-planner',
+        step_key: 'planner-step-1',
+    },
+};
+
+const documentStartedNotification: Notification = {
+    ...baseDocumentEvent,
+    id: 'uuid-document-started',
+    type: 'document_started',
+    data: {
+        sessionId: 'sid-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        job_id: 'job-doc',
+        document_key: 'business_case',
+        modelId: 'model-doc',
+        step_key: 'execute-step-1',
+    },
+};
+
+const chunkCompletedNotification: Notification = {
+    ...baseDocumentEvent,
+    id: 'uuid-chunk-completed',
+    type: 'document_chunk_completed',
+    data: {
+        sessionId: 'sid-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        job_id: 'job-doc',
+        document_key: 'business_case',
+        modelId: 'model-doc',
+        step_key: 'execute-step-1',
+        isFinalChunk: false,
+        continuationNumber: 2,
+    },
+};
+
+const renderCompletedNotification: Notification = {
+    ...baseDocumentEvent,
+    id: 'uuid-render-completed',
+    type: 'render_completed',
+    data: {
+        sessionId: 'sid-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        job_id: 'job-render',
+        document_key: 'business_case',
+        modelId: 'model-render',
+        step_key: 'render-step-1',
+        latestRenderedResourceId: 'resource-123',
+    },
+};
+
+const jobFailedNotification: Notification = {
+    ...baseDocumentEvent,
+    id: 'uuid-job-failed',
+    type: 'job_failed',
+    data: {
+        sessionId: 'sid-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        job_id: 'job-doc',
+        document_key: 'business_case',
+        modelId: 'model-doc',
+        step_key: 'execute-step-1',
+        error: { code: 'MODEL_FAILURE', message: 'LLM aborted early' },
+    },
+};
+
+const documentCompletedNotification: Notification = {
+    ...baseDocumentEvent,
+    id: 'uuid-document-completed',
+    type: 'document_completed',
+    data: {
+        sessionId: 'sid-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        job_id: 'job-doc',
+        document_key: 'business_case',
+        modelId: 'model-doc',
+        step_key: 'execute-step-1',
+        latestRenderedResourceId: 'resource-456',
+    },
+};
 
 // --- Test Suite ---
 describe('notificationStore', () => {
@@ -153,7 +233,7 @@ describe('notificationStore', () => {
         mockHandleWalletUpdate.mockClear();
         
         // Reset Realtime specific mocks
-        (mockRealtimeChannel.unsubscribe as Mock).mockReset();
+        mockRealtimeChannel.unsubscribe = vi.fn();
         capturedNotificationCallback = null; // Clear captured callback
 
         // --- Mocks for the API methods are now part of mockNotificationApi ---
@@ -177,10 +257,7 @@ describe('notificationStore', () => {
         });
         
         // Reset logger mocks
-        (logger.info as Mock).mockClear();
-        (logger.warn as Mock).mockClear();
-        (logger.error as Mock).mockClear();
-        (logger.debug as Mock).mockClear();
+        resetMockLogger();
     });
 
     afterEach(() => {
@@ -212,7 +289,7 @@ describe('notificationStore', () => {
             
             it('should handle null data on successful fetch', async () => {
                  // Use the mock API instance
-                vi.mocked(mockNotificationApi.fetchNotifications).mockResolvedValue({ data: null as any, status: 200 });
+                vi.mocked(mockNotificationApi.fetchNotifications).mockResolvedValue({ data: undefined, status: 200 });
                 await act(async () => { await useNotificationStore.getState().fetchNotifications(); });
                 const state = useNotificationStore.getState();
                 expect(state.isLoading).toBe(false);
@@ -224,9 +301,9 @@ describe('notificationStore', () => {
 
             it('should set loading state during fetch', async () => {
                 const mockNotifications = [mockNotification1];
-                const fetchPromise = new Promise((resolve) => setTimeout(() => resolve({ data: mockNotifications, status: 200 }), 20));
+                const fetchPromise = new Promise<ApiResponse<Notification[]>>((resolve) => setTimeout(() => resolve({ data: mockNotifications, status: 200, error: undefined }), 20));
                 // Use the mock API instance
-                vi.mocked(mockNotificationApi.fetchNotifications).mockReturnValue(fetchPromise as any);
+                vi.mocked(mockNotificationApi.fetchNotifications).mockReturnValue(fetchPromise);
 
                 await act(async () => {
                     const storePromise = useNotificationStore.getState().fetchNotifications();
@@ -248,7 +325,7 @@ describe('notificationStore', () => {
                  expect(state.notifications).toEqual([]);
                  expect(state.unreadCount).toBe(0);
                  expect(mockNotificationApi.fetchNotifications).toHaveBeenCalledTimes(1);
-                 expect(logger.error).toHaveBeenCalledWith('[notificationStore] Failed to fetch notifications', { error: mockError });
+                 expect(mockLogger.error).toHaveBeenCalledWith('[notificationStore] Failed to fetch notifications', { error: mockError });
             });
         });
 
@@ -262,7 +339,7 @@ describe('notificationStore', () => {
                  const state = useNotificationStore.getState();
                  expect(state.notifications).toEqual([mockNotification2, mockNotification1]);
                  expect(state.unreadCount).toBe(2);
-                 expect(logger.debug).toHaveBeenCalledWith('[notificationStore] Added notification', { notificationId: mockNotification2.id });
+                 expect(mockLogger.debug).toHaveBeenCalledWith('[notificationStore] Added notification', { notificationId: mockNotification2.id });
             });
             
             it('should prepend a new notification but not increment count if already read', () => {
@@ -271,7 +348,7 @@ describe('notificationStore', () => {
                  const state = useNotificationStore.getState();
                  expect(state.notifications).toEqual([mockNotification1, mockNotification3]);
                  expect(state.unreadCount).toBe(1); 
-                 expect(logger.debug).toHaveBeenCalledWith('[notificationStore] Added notification', { notificationId: mockNotification3.id });
+                 expect(mockLogger.debug).toHaveBeenCalledWith('[notificationStore] Added notification', { notificationId: mockNotification3.id });
             });
              
             it('should not add a duplicate notification based on ID', () => {
@@ -280,7 +357,7 @@ describe('notificationStore', () => {
                  const state = useNotificationStore.getState();
                  expect(state.notifications.length).toBe(1);
                  expect(state.unreadCount).toBe(1);
-                 expect(logger.warn).toHaveBeenCalledWith('[notificationStore] Attempted to add duplicate notification', { id: mockNotification1.id });
+                 expect(mockLogger.warn).toHaveBeenCalledWith('[notificationStore] Attempted to add duplicate notification', { id: mockNotification1.id });
             });
         });
 
@@ -295,27 +372,143 @@ describe('notificationStore', () => {
                 addNotificationSpy.mockRestore();
             });
 
-            it('should route internal events to the dialecticStore without creating a visible notification', () => {
+            it('should route planner_started events to the dialectic store without creating a visible notification', () => {
                 const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
-                
+
                 act(() => {
-                    useNotificationStore.getState().handleIncomingNotification(mockInternalEventNotification);
+                    useNotificationStore.getState().handleIncomingNotification(plannerStartedNotification);
                 });
 
-                // Should be routed to the specific store handler
                 expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
-                    type: 'dialectic_contribution_started',
+                    type: 'planner_started',
                     sessionId: 'sid-123',
-                    modelId: 'm-1',
+                    stageSlug: 'thesis',
                     iterationNumber: 1,
-                    job_id: 'job-internal-1',
+                    job_id: 'job-planner',
+                    document_key: 'global_header',
+                    modelId: 'model-planner',
+                    step_key: 'planner-step-1',
                 });
 
-                // Should NOT create a visible notification for the user
                 expect(addNotificationSpy).not.toHaveBeenCalled();
-                
                 addNotificationSpy.mockRestore();
             });
+
+            it('should route document_started events to the dialectic store without creating a visible notification', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(documentStartedNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'document_started',
+                    sessionId: 'sid-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-doc',
+                    document_key: 'business_case',
+                    modelId: 'model-doc',
+                    step_key: 'execute-step-1',
+                });
+
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
+            it('should route document_chunk_completed events to the dialectic store without creating a visible notification', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(chunkCompletedNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'document_chunk_completed',
+                    sessionId: 'sid-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-doc',
+                    document_key: 'business_case',
+                    modelId: 'model-doc',
+                    step_key: 'execute-step-1',
+                    isFinalChunk: false,
+                    continuationNumber: 2,
+                });
+
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
+            it('should route render_completed events to the dialectic store without creating a visible notification', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(renderCompletedNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'render_completed',
+                    sessionId: 'sid-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-render',
+                    document_key: 'business_case',
+                    modelId: 'model-render',
+                    step_key: 'render-step-1',
+                    latestRenderedResourceId: 'resource-123',
+                });
+
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
+            it('should route job_failed events to the dialectic store without creating a visible notification', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(jobFailedNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'job_failed',
+                    sessionId: 'sid-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-doc',
+                    document_key: 'business_case',
+                    modelId: 'model-doc',
+                    step_key: 'execute-step-1',
+                    error: { code: 'MODEL_FAILURE', message: 'LLM aborted early' },
+                });
+
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
+            it('should route document_completed events to dialectic store', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(documentCompletedNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'document_completed',
+                    sessionId: 'sid-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-doc',
+                    document_key: 'business_case',
+                    modelId: 'model-doc',
+                    step_key: 'execute-step-1',
+                    latestRenderedResourceId: 'resource-456',
+                });
+
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
             
             it('should not process wallet notifications as internal events', () => {
                 const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
@@ -323,7 +516,7 @@ describe('notificationStore', () => {
                     ...mockNotification1,
                     id: 'wallet-noti-1',
                     type: 'WALLET_TRANSACTION',
-                    data: { walletId: 'wallet-xyz', newBalance: '1000' },
+                    data: { walletId: 'wallet-xyz', newBalance: 1000 }, // NUMBER - matching actual backend behavior
                     is_internal_event: false, // Wallet notifications are user-facing
                 };
 
@@ -331,8 +524,11 @@ describe('notificationStore', () => {
                     useNotificationStore.getState().handleIncomingNotification(walletNotification);
                 });
 
-                // Should call the special wallet handler
-                expect(mockHandleWalletUpdate).toHaveBeenCalledWith(walletNotification.data);
+                // Should call the special wallet handler with newBalance converted to string
+                expect(mockHandleWalletUpdate).toHaveBeenCalledWith({
+                    walletId: 'wallet-xyz',
+                    newBalance: '1000', // Converted from number to string
+                });
                 // Should ALSO still add it to the general notification list
                 expect(addNotificationSpy).toHaveBeenCalledWith(walletNotification);
                 // Should NOT be routed to the dialectic handler
@@ -438,7 +634,7 @@ describe('notificationStore', () => {
                  // Use the mock API instance for assertion
                  expect(mockNotificationApi.markNotificationRead).toHaveBeenCalledTimes(1);
                  expect(mockNotificationApi.markNotificationRead).toHaveBeenCalledWith(mockNotification1.id);
-                 expect(logger.info).toHaveBeenCalledWith('[notificationStore] Marked notification as read', { notificationId: mockNotification1.id });
+                 expect(mockLogger.info).toHaveBeenCalledWith('[notificationStore] Marked notification as read', { notificationId: mockNotification1.id });
              });
 
              it('should NOT change state if notification is already read', async () => {
@@ -475,7 +671,7 @@ describe('notificationStore', () => {
                  expect(revertedNotification?.read).toBe(false); // Should revert
                  expect(mockNotificationApi.markNotificationRead).toHaveBeenCalledTimes(1);
                  expect(mockNotificationApi.markNotificationRead).toHaveBeenCalledWith(mockNotification1.id);
-                 expect(logger.error).toHaveBeenCalledWith(
+                 expect(mockLogger.error).toHaveBeenCalledWith(
                    '[notificationStore] Failed to mark notification as read',
                    expect.objectContaining({
                      notificationId: 'uuid-1',
@@ -510,7 +706,7 @@ describe('notificationStore', () => {
                 expect(state.notifications.every(n => n.read)).toBe(true);
                 // Use the mock API instance for assertion
                 expect(mockNotificationApi.markAllNotificationsAsRead).toHaveBeenCalledTimes(1);
-                expect(logger.info).toHaveBeenCalledWith('[notificationStore] Marked all notifications as read');
+                expect(mockLogger.info).toHaveBeenCalledWith('[notificationStore] Marked all notifications as read');
             });
 
             it('should NOT call API if unread count is already 0', async () => {
@@ -539,7 +735,7 @@ describe('notificationStore', () => {
                  expect(state.notifications[1].read).toBe(false); // mock1
                  expect(state.notifications[2].read).toBe(true); // mock3 was already read
                  expect(mockNotificationApi.markAllNotificationsAsRead).toHaveBeenCalledTimes(1);
-                 expect(logger.error).toHaveBeenCalledWith(
+                 expect(mockLogger.error).toHaveBeenCalledWith(
                    '[notificationStore] Failed to mark all notifications as read',
                    expect.objectContaining({
                      error: mockError
@@ -571,7 +767,7 @@ describe('notificationStore', () => {
 
                 expect(mockNotificationApi.subscribeToNotifications).toHaveBeenCalledWith(userId, expect.any(Function));
                 expect(useNotificationStore.getState().subscribedUserId).toBe(userId);
-                expect(logger.info).toHaveBeenCalledWith('[NotificationStore] Successfully subscribed to notification channel for user:', { userId });
+                expect(mockLogger.info).toHaveBeenCalledWith('[NotificationStore] Successfully subscribed to notification channel for user:', { userId });
             });
 
             it('should not subscribe with an empty user ID', () => {
@@ -581,7 +777,7 @@ describe('notificationStore', () => {
 
                 expect(mockNotificationApi.subscribeToNotifications).not.toHaveBeenCalled();
                 expect(useNotificationStore.getState().subscribedUserId).toBeNull();
-                expect(logger.error).toHaveBeenCalledWith('User ID is required to subscribe to notifications.');
+                expect(mockLogger.error).toHaveBeenCalledWith('User ID is required to subscribe to notifications.');
             });
 
             it('should warn if already subscribed to the same user', () => {
@@ -594,7 +790,7 @@ describe('notificationStore', () => {
                 });
 
                 expect(mockNotificationApi.subscribeToNotifications).not.toHaveBeenCalled();
-                expect(logger.warn).toHaveBeenCalledWith('[NotificationStore] Already subscribed to notifications for user:', { userId });
+                expect(mockLogger.warn).toHaveBeenCalledWith('[NotificationStore] Already subscribed to notifications for user:', { userId });
             });
 
             it('should switch subscriptions if called with a new user ID', () => {
@@ -611,7 +807,7 @@ describe('notificationStore', () => {
                 expect(mockNotificationApi.unsubscribeFromNotifications).toHaveBeenCalledTimes(1);
                 expect(mockNotificationApi.subscribeToNotifications).toHaveBeenCalledWith(userId, expect.any(Function));
                 expect(useNotificationStore.getState().subscribedUserId).toBe(userId);
-                expect(logger.info).toHaveBeenCalledWith(`[NotificationStore] Switching subscription from user ${oldUserId} to ${userId}`);
+                expect(mockLogger.info).toHaveBeenCalledWith(`[NotificationStore] Switching subscription from user ${oldUserId} to ${userId}`);
             });
 
             it('should unsubscribe and clear state', () => {
@@ -625,7 +821,7 @@ describe('notificationStore', () => {
 
                 expect(mockNotificationApi.unsubscribeFromNotifications).toHaveBeenCalledTimes(1);
                 expect(useNotificationStore.getState().subscribedUserId).toBeNull();
-                expect(logger.info).toHaveBeenCalledWith('Successfully unsubscribed from notifications for user:', { userId: userId });
+                expect(mockLogger.info).toHaveBeenCalledWith('Successfully unsubscribed from notifications for user:', { userId: userId });
             });
 
             it('should handle incoming notifications after subscribing', () => {
@@ -647,6 +843,804 @@ describe('notificationStore', () => {
                 handleIncomingNotificationSpy.mockRestore();
             });
         });
+
+        describe('Optional field extraction for all event types', () => {
+            describe('Extract all optional fields when present in notification data', () => {
+                it('extracts latestRenderedResourceId for document_started when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-started-with-resource',
+                        type: 'document_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            step_key: 'execute-step-1',
+                            latestRenderedResourceId: 'resource-123',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'document_started',
+                            latestRenderedResourceId: 'resource-123',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for planner_started when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-planner-with-resource',
+                        type: 'planner_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-planner',
+                            document_key: 'global_header',
+                            modelId: 'model-planner',
+                            step_key: 'planner-step-1',
+                            latestRenderedResourceId: 'resource-456',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'planner_started',
+                            latestRenderedResourceId: 'resource-456',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for document_chunk_completed when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-chunk-with-resource',
+                        type: 'document_chunk_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            step_key: 'execute-step-1',
+                            isFinalChunk: false,
+                            continuationNumber: 2,
+                            latestRenderedResourceId: 'resource-789',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'document_chunk_completed',
+                            latestRenderedResourceId: 'resource-789',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for job_failed when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-job-failed-with-resource',
+                        type: 'job_failed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            step_key: 'execute-step-1',
+                            error: { code: 'MODEL_FAILURE', message: 'LLM aborted early' },
+                            latestRenderedResourceId: 'resource-999',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'job_failed',
+                            latestRenderedResourceId: 'resource-999',
+                        })
+                    );
+                });
+
+                it('extracts error for contribution_generation_retrying when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-retrying-with-error',
+                        type: 'contribution_generation_retrying',
+                        data: {
+                            sessionId: 'sid-123',
+                            modelId: 'model-1',
+                            iterationNumber: 1,
+                            job_id: 'job-retry',
+                            error: 'Connection timeout',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'contribution_generation_retrying',
+                            error: 'Connection timeout',
+                        })
+                    );
+                });
+
+                it('extracts job_id and modelId for contribution_generation_failed when present', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-failed-with-optional',
+                        type: 'contribution_generation_failed',
+                        data: {
+                            sessionId: 'sid-123',
+                            job_id: 'job-failed',
+                            modelId: 'model-failed',
+                            error: { code: 'MODEL_ERROR', message: 'Model unavailable' },
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'contribution_generation_failed',
+                            job_id: 'job-failed',
+                            modelId: 'model-failed',
+                        })
+                    );
+                });
+            });
+
+            describe('Validation failures prevent invalid notifications from being added', () => {
+                it('does not add WALLET_TRANSACTION notification when walletId is missing', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-invalid-1',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            newBalance: '1000',
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('does not add WALLET_TRANSACTION notification when newBalance is missing', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-invalid-2',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('does not add WALLET_TRANSACTION notification when walletId has invalid type', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-invalid-3',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 123,
+                            newBalance: '1000',
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('accepts WALLET_TRANSACTION notification when newBalance is a NUMBER (backend sends number, validation now accepts it)', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const walletNotificationWithNumber: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-number-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: 1000, // NUMBER - matching actual backend behavior from tokenWalletService.ts line 317
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(walletNotificationWithNumber);
+                    });
+
+                    // This test now PASSES because the validation accepts NUMBER (what backend sends).
+                    // The handler should be called with newBalance converted to string.
+                    expect(mockHandleWalletUpdate).toHaveBeenCalledWith({
+                        walletId: 'wallet-xyz',
+                        newBalance: '1000', // Converted from number to string
+                    });
+                    expect(addNotificationSpy).toHaveBeenCalledWith(walletNotificationWithNumber);
+                    expect(mockLogger.error).not.toHaveBeenCalled();
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is null', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-null-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: null,
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - null is invalid
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is undefined', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-undefined-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: undefined,
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - undefined is invalid
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is a non-numeric value (object)', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-object-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: { value: 1000 } as unknown as string,
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - object is invalid
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is a non-numeric value (array)', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-array-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: [1000] as unknown as string,
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - array is invalid
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is a non-numeric value (boolean)', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-boolean-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: true as unknown as string,
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - boolean is invalid
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+
+                it('rejects WALLET_TRANSACTION notification when newBalance is a string (non-numeric string should be rejected after fix)', () => {
+                    const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                    const invalidWalletNotification: Notification = {
+                        ...mockNotification1,
+                        id: 'wallet-string-balance',
+                        type: 'WALLET_TRANSACTION',
+                        data: {
+                            walletId: 'wallet-xyz',
+                            newBalance: 'not-a-number',
+                        },
+                        is_internal_event: false,
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(invalidWalletNotification);
+                    });
+
+                    // This test should pass initially and must continue to pass - non-numeric string is invalid
+                    // After the fix, validation will accept number and convert to string, but non-numeric strings should still be rejected
+                    expect(mockHandleWalletUpdate).not.toHaveBeenCalled();
+                    expect(addNotificationSpy).not.toHaveBeenCalled();
+                    expect(mockLogger.error).toHaveBeenCalledWith(
+                        expect.stringContaining('WALLET_TRANSACTION'),
+                        expect.any(Object)
+                    );
+                    addNotificationSpy.mockRestore();
+                });
+            });
+
+            describe('Optional fields extracted when present and undefined when missing', () => {
+                it('extracts latestRenderedResourceId when present for document_started', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-started-with-resource',
+                        type: 'document_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            latestRenderedResourceId: 'resource-present',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            latestRenderedResourceId: 'resource-present',
+                        })
+                    );
+                });
+
+                it('sets latestRenderedResourceId to undefined when missing for document_started', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-started-no-resource',
+                        type: 'document_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    const callArgs = mockHandleDialecticLifecycleEvent.mock.calls[0][0];
+                    expect(callArgs.latestRenderedResourceId).toBeUndefined();
+                });
+
+                it('handles latestRenderedResourceId as null when type allows null for document_completed', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-completed-null-resource',
+                        type: 'document_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            latestRenderedResourceId: null,
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            latestRenderedResourceId: null,
+                        })
+                    );
+                });
+
+                it('extracts step_key when present for planner_started', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-planner-with-step-key',
+                        type: 'planner_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-planner',
+                            document_key: 'global_header',
+                            modelId: 'model-planner',
+                            step_key: 'planner-step-1',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            step_key: 'planner-step-1',
+                        })
+                    );
+                });
+
+                it('sets step_key to undefined when missing for planner_started', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-planner-no-step-key',
+                        type: 'planner_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-planner',
+                            document_key: 'global_header',
+                            modelId: 'model-planner',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    const callArgs = mockHandleDialecticLifecycleEvent.mock.calls[0][0];
+                    expect(callArgs.step_key).toBeUndefined();
+                });
+
+                it('extracts isFinalChunk and continuationNumber when present for document_chunk_completed', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-chunk-with-optional',
+                        type: 'document_chunk_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            isFinalChunk: true,
+                            continuationNumber: 5,
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            isFinalChunk: true,
+                            continuationNumber: 5,
+                        })
+                    );
+                });
+
+                it('sets isFinalChunk and continuationNumber to undefined when missing for document_chunk_completed', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-chunk-no-optional',
+                        type: 'document_chunk_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    const callArgs = mockHandleDialecticLifecycleEvent.mock.calls[0][0];
+                    expect(callArgs.isFinalChunk).toBeUndefined();
+                    expect(callArgs.continuationNumber).toBeUndefined();
+                });
+            });
+
+            describe('Base type optional fields extracted consistently across extending types', () => {
+                it('extracts latestRenderedResourceId for document_started extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-started-base-field',
+                        type: 'document_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            latestRenderedResourceId: 'resource-consistent-1',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'document_started',
+                            latestRenderedResourceId: 'resource-consistent-1',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for document_completed extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-doc-completed-base-field',
+                        type: 'document_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            latestRenderedResourceId: 'resource-consistent-2',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'document_completed',
+                            latestRenderedResourceId: 'resource-consistent-2',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for document_chunk_completed extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-chunk-completed-base-field',
+                        type: 'document_chunk_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            latestRenderedResourceId: 'resource-consistent-3',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'document_chunk_completed',
+                            latestRenderedResourceId: 'resource-consistent-3',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for render_completed extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-render-completed-base-field',
+                        type: 'render_completed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-render',
+                            document_key: 'business_case',
+                            modelId: 'model-render',
+                            latestRenderedResourceId: 'resource-consistent-4',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'render_completed',
+                            latestRenderedResourceId: 'resource-consistent-4',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for planner_started extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-planner-started-base-field',
+                        type: 'planner_started',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-planner',
+                            document_key: 'global_header',
+                            modelId: 'model-planner',
+                            latestRenderedResourceId: 'resource-consistent-5',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'planner_started',
+                            latestRenderedResourceId: 'resource-consistent-5',
+                        })
+                    );
+                });
+
+                it('extracts latestRenderedResourceId for job_failed extending DocumentLifecyclePayload', () => {
+                    const notification: Notification = {
+                        ...baseDocumentEvent,
+                        id: 'uuid-job-failed-base-field',
+                        type: 'job_failed',
+                        data: {
+                            sessionId: 'sid-123',
+                            stageSlug: 'thesis',
+                            iterationNumber: 1,
+                            job_id: 'job-doc',
+                            document_key: 'business_case',
+                            modelId: 'model-doc',
+                            error: { code: 'MODEL_FAILURE', message: 'LLM aborted early' },
+                            latestRenderedResourceId: 'resource-consistent-6',
+                        },
+                    };
+
+                    act(() => {
+                        useNotificationStore.getState().handleIncomingNotification(notification);
+                    });
+
+                    expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            type: 'job_failed',
+                            latestRenderedResourceId: 'resource-consistent-6',
+                        })
+                    );
+                });
+            });
+        });
         // ------------------------------------
     });
 }); 
+

@@ -8,7 +8,7 @@ import type { IFileManager, FileRecord, UploadContext } from "../_shared/types/f
 import { createMockFileManagerService, MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
 import { configure, ZipReader, BlobReader, TextWriter } from "jsr:@zip-js/zip-js";
-import type { DialecticProject, DialecticProjectResource, DialecticSession, DialecticContribution } from "./dialectic.interface.ts";
+import type { DialecticProject, DialecticProjectResource, DialecticSession, DialecticContribution, SelectedModels } from "./dialectic.interface.ts";
 import type { DownloadStorageResult } from "../_shared/supabase_storage_utils.ts";
 import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts";
 import { Buffer } from "https://deno.land/std@0.177.0/node/buffer.ts";
@@ -79,9 +79,14 @@ describe("exportProject", () => {
             size_bytes: 100,
             storage_bucket: mockExportBucket,
             storage_path: `${mockProjectId}/general_resource`,
-            resource_description: JSON.stringify({type: "general_resource"}),
+            resource_description: {type: "general_resource"},
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: null,
+            session_id: mockProjectId,
+            source_contribution_id: null,
+            stage_slug: 'thesis',
         };
         resource1ContentBuffer = await new Blob(["Resource 1 content"]).arrayBuffer();
         session1Data = {
@@ -126,6 +131,8 @@ describe("exportProject", () => {
             updated_at: new Date().toISOString(),
             seed_prompt_url: null,
             document_relationships: null,
+            is_header: false,
+            source_prompt_resource_id: null,
         };
         contribution1ContentBuffer = await new Blob(["Contribution 1 main content"]).arrayBuffer();
         contribution1RawJsonContentBuffer = await new Blob([JSON.stringify({ raw: "response" })]).arrayBuffer();
@@ -136,8 +143,9 @@ describe("exportProject", () => {
             display_name: "Hypothesis (Export Test)",
             description: "Mock stage for export testing",
             default_system_prompt_id: "dsp-1",
-            expected_output_artifacts: { artifacts: [] },
-            input_artifact_rules: { rules: [] },
+            expected_output_template_ids: [],
+            active_recipe_instance_id: null,
+            recipe_template_id: null,
             created_at: new Date().toISOString(),
         };
 
@@ -150,9 +158,17 @@ describe("exportProject", () => {
             size_bytes: 12345,
             storage_bucket: mockExportBucket,
             storage_path: `${mockProjectId}`,
-            resource_description: JSON.stringify({type: "project_export_zip"}),
+            resource_description: {type: "project_export_zip"},
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            is_header: false,
+            source_prompt_resource_id: null,
+            target_contribution_id: null,
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            resource_type: null,
+            source_contribution_id: null,
+            session_id: mockProjectId,
         };
 
         mockSupabaseSetup = createMockSupabaseClient(mockUser.id, {
@@ -185,6 +201,16 @@ describe("exportProject", () => {
                     select: (state: MockQueryBuilderState) => {
                         if (state.filters.some(f => f.column === 'session_id' && f.value === session1Data.id)) {
                             return Promise.resolve({ data: [{ ...contribution1Data, parent_contribution_id: contribution1Data.target_contribution_id, dialectic_stages: mockStage1Data }], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                    }
+                },
+                'ai_providers': {
+                    select: (state: MockQueryBuilderState) => {
+                        const inFilter = state.filters.find(f => f.column === 'id' && f.type === 'in');
+                        const ids = inFilter && Array.isArray(inFilter.value) ? inFilter.value as string[] : [];
+                        if (ids.includes('mc-1')) {
+                            return Promise.resolve({ data: [{ id: 'mc-1', name: 'Test Model' }], error: null, count: 1, status: 200, statusText: "OK" });
                         }
                         return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
                     }
@@ -294,6 +320,8 @@ describe("exportProject", () => {
             assertEquals(manifest.resources[0].id, resource1Data.id);
             assertEquals(manifest.sessions.length, 1);
             assertEquals(manifest.sessions[0].id, session1Data.id);
+            const expectedSelectedModels: SelectedModels[] = [{ id: "mc-1", displayName: "Test Model" }];
+            assertEquals(manifest.sessions[0].selected_models, expectedSelectedModels);
             assertEquals(manifest.sessions[0].contributions.length, 1);
             assertEquals(manifest.sessions[0].contributions[0].id, contribution1Data.id);
         }
@@ -447,9 +475,14 @@ describe("exportProject", () => {
             size_bytes: 50,
             storage_bucket: mockExportBucket,
             storage_path: `${mockProjectId}/general_resource`,
-            resource_description: JSON.stringify({type: "another_resource"}),
+            resource_description: {type: "another_resource"},
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            resource_type: null,
+            session_id: mockProjectId,
+            source_contribution_id: null,
         };
 
         const localMockSupabaseSetup = createMockSupabaseClient(mockUser.id, {
@@ -700,12 +733,17 @@ describe("exportProject", () => {
             id: "res-zip",
             project_id: mockProjectId,
             user_id: mockUser.id,
+            iteration_number: 1,
+            resource_type: null,
+            session_id: mockProjectId,
+            source_contribution_id: null,
+            stage_slug: 'thesis',
             file_name: "archive.zip",
             mime_type: "application/zip",
             size_bytes: 5000,
             storage_bucket: mockExportBucket,
             storage_path: `${mockProjectId}/general_resource`,
-            resource_description: JSON.stringify({type: "archive"}),
+            resource_description: {type: "archive"},
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         };
@@ -752,6 +790,94 @@ describe("exportProject", () => {
         }
 
         await zipReader.close();
+        localMockSupabaseSetup.clearAllStubs?.();
+    });
+
+    it("exports source_contribution_id metadata for every resource", async () => {
+        const resourceWithSource: Tables<'dialectic_project_resources'> = {
+            ...resource1Data,
+            id: "res-with-source",
+            file_name: "resource_with_source.txt",
+            storage_path: `${mockProjectId}/general_resource_with_source`,
+            source_contribution_id: "origin-contrib-123",
+        };
+        const resourceWithoutSource: Tables<'dialectic_project_resources'> = {
+            ...resource1Data,
+            id: "res-without-source",
+            file_name: "resource_without_source.txt",
+            storage_path: `${mockProjectId}/general_resource_without_source`,
+            source_contribution_id: null,
+        };
+
+        const resourceWithSourceBuffer = await new Blob(["Resource content with a linked contribution"]).arrayBuffer();
+        const resourceWithoutSourceBuffer = await new Blob(["Resource content without linkage"]).arrayBuffer();
+
+        const localMockSupabaseSetup = createMockSupabaseClient(mockUser.id, {
+            genericMockResults: {
+                'dialectic_projects': { select: () => Promise.resolve({ data: [projectData], error: null }) },
+                'dialectic_project_resources': { select: () => Promise.resolve({ data: [resourceWithSource, resourceWithoutSource], error: null }) },
+                'dialectic_sessions': { select: () => Promise.resolve({ data: [], error: null }) },
+            }
+        });
+
+        const downloadImpl = async (
+            _client: SupabaseClient,
+            bucket: string,
+            path: string,
+        ): Promise<DownloadStorageResult> => {
+            if (bucket !== mockExportBucket) {
+                return { data: null, error: new Error(`Unexpected bucket ${bucket}`) };
+            }
+            if (path === `${resourceWithSource.storage_path}/${resourceWithSource.file_name}`) {
+                return { data: resourceWithSourceBuffer, error: null };
+            }
+            if (path === `${resourceWithoutSource.storage_path}/${resourceWithoutSource.file_name}`) {
+                return { data: resourceWithoutSourceBuffer, error: null };
+            }
+            return { data: null, error: new Error(`Unexpected download path ${path}`) };
+        };
+        const localStorageUtils: IStorageUtils = {
+            downloadFromStorage: downloadImpl,
+            createSignedUrlForPath: mockStorageUtils.createSignedUrlForPath,
+        };
+        const localDownloadSpy = stub(localStorageUtils, "downloadFromStorage", downloadImpl);
+
+        mockFileManager.setUploadAndRegisterFileResponse(mockFileRecordForZip, null);
+
+        await exportProject(
+            localMockSupabaseSetup.client as any,
+            mockFileManager,
+            localStorageUtils,
+            mockProjectId,
+            mockUser.id,
+        );
+
+        assertEquals(localDownloadSpy.calls.length, 2, "Both resources should be downloaded.");
+
+        const uploadArgs: UploadContext = mockFileManager.uploadAndRegisterFile.calls[mockFileManager.uploadAndRegisterFile.calls.length - 1].args[0];
+        const zipReader = new ZipReader(new BlobReader(new Blob([uploadArgs.fileContent])));
+        const entries = await zipReader.getEntries();
+        const manifestEntry = entries.find((entry) => entry.filename === "project_manifest.json");
+        assertExists(manifestEntry, "project_manifest.json not found in zip");
+        if (!manifestEntry?.getData) {
+            throw new Error("Unable to read manifest entry data");
+        }
+        const manifestText = await manifestEntry.getData(new TextWriter());
+        const manifest = JSON.parse(manifestText);
+            
+        assertEquals(manifest.resources.length, 2, "Both resources should be serialized in the manifest.");
+        const serializedWithSource = manifest.resources.find((resource: DialecticProjectResource) => resource.id === resourceWithSource.id);
+        const serializedWithoutSource = manifest.resources.find((resource: DialecticProjectResource) => resource.id === resourceWithoutSource.id);
+        assertExists(serializedWithSource, "Resource with source metadata missing from manifest.");
+        assertExists(serializedWithoutSource, "Resource without source metadata missing from manifest.");
+
+        assertEquals(Object.prototype.hasOwnProperty.call(serializedWithSource, "source_contribution_id"), true);
+        assertEquals(serializedWithSource?.source_contribution_id, resourceWithSource.source_contribution_id);
+        assertEquals(Object.prototype.hasOwnProperty.call(serializedWithoutSource, "source_contribution_id"), true);
+        assertEquals(serializedWithoutSource?.source_contribution_id, resourceWithoutSource.source_contribution_id);
+
+        await zipReader.close();
+        localDownloadSpy.restore();
         localMockSupabaseSetup.clearAllStubs?.();
     });
 

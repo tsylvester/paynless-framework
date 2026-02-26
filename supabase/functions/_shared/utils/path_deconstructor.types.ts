@@ -9,12 +9,29 @@ export interface DeconstructedPathInfo {
   stageSlug?: string;            // Stage slug derived from stageDirName (e.g., "hypothesis")
   contributionType?: string;   // Contribution type, if parsable from the filename
   modelSlug?: string;            // Model slug, if parsable from path or filename
+  sourceModelSlugs?: string[];   // For works that depend on multiple source models (e.g., RAG summaries)
   sourceModelSlug?: string;      // Source model slug for derivative works (e.g., antithesis)
   sourceContributionType?: string; // Source contribution type for derivative works
   sourceAttemptCount?: number;   // Source attempt count for derivative works
+  sourceAnchorType?: string;     // Anchor type for synthesis (e.g., 'thesis', 'outline')
+  sourceAnchorModelSlug?: string; // Anchor model slug for synthesis
+  pairedModelSlug?: string;      // Paired model slug for pairwise synthesis
   attemptCount?: number;         // Attempt count, if parsable from path or filename
   parsedFileNameFromPath?: string; // The filename segment as extracted from the end of the path
   error?: string;                // Optional error message if deconstruction fails or is ambiguous
   isContinuation?: boolean;      // Whether this is a continuation chunk
   turnIndex?: number;            // The turn index of this chunk
-} 
+  documentKey?: string;          // The document key for document-centric artifacts
+  stepName?: string;             // The step name for planner prompts
+  sourceGroupFragment?: string;  // First 8 characters of source_group UUID (sanitized) extracted from filename for disambiguation
+}
+
+export interface DeconstructStoragePathParams {
+  storageDir: string;
+  fileName: string;
+  dbOriginalFileName?: string;
+}
+
+export type DeconstructStoragePathFn = (
+  params: DeconstructStoragePathParams,
+) => DeconstructedPathInfo;

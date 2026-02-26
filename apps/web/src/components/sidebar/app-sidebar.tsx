@@ -1,19 +1,15 @@
-import * as React from "react";
 import { useEffect } from "react";
 import { BookOpen, File, User, SquareTerminal } from "lucide-react";
 import { NavMain } from "@/components/sidebar/nav-main";
-import { NavProjects } from "@/components/sidebar/nav-projects";
 import { NavUser } from "@/components/sidebar/nav-user";
 
 import {
 	Sidebar,
 	SidebarContent,
 	SidebarFooter,
-	SidebarHeader,
 	SidebarMenuButton,
 } from "@/components/ui/sidebar";
 import { useDialecticStore, useAiStore, useAuthStore } from "@paynless/store";
-import { OrganizationSwitcher } from "../organizations/OrganizationSwitcher";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -21,7 +17,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	const navigate = useNavigate();
 	const storeLoadChatHistory = useAiStore.getState().loadChatHistory;
 
-	const { user, isLoading } = useAuthStore((state) => ({ user: state.user }));
+	const { user, isLoading } = useAuthStore((state) => ({ 
+		user: state.user,
+		isLoading: state.isLoading,
+	}));
 
 	const { projects, fetchDialecticProjects } = useDialecticStore((state) => ({
 		projects: state.projects,
@@ -54,9 +53,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	useQuery({
 		queryKey: ["projects"],
 		queryFn: async () => {
-			const result = await fetchDialecticProjects();
-			return result || [];
+			if (!user) {
+				return [];
+			}
+			await fetchDialecticProjects();
+			return [];
 		},
+		enabled: !!user,
 	});
 
 	const state = isLoading ? "LOADING" : !user ? "NO_AUTH" : "AUTHENTICATED";
@@ -76,7 +79,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				isActive: true,
 			},
 			{
-				title: "Dialectic",
+				title: "Planner",
 				url: "/dialectic",
 				icon: BookOpen,
 				isActive: true,
@@ -112,21 +115,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				icon: File,
 				items: [
 					{
-						title: "How it works",
-						url: "/docs/how-it-works",
+						title: "Getting started",
+						url: "/docs/getting-started",
 					},
-					{
-						title: "Pricing",
-						url: "/docs/pricing",
-					},
-					{
-						title: "Tutorials",
-						url: "/docs/tutorials",
-					},
-					{
-						title: "Changelog",
-						url: "/docs/changelog",
-					},
+					// {
+					// 	title: "Pricing",
+					// 	url: "/docs/pricing",
+					// },
+					// {
+					// 	title: "Tutorials",
+					// 	url: "/docs/tutorials",
+					// },
+					// {
+					// 	title: "Changelog",
+					// 	url: "/docs/changelog",
+					// },
 				],
 			},
 		],
@@ -161,15 +164,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				</>
 			) : (
 				<>
-					<SidebarHeader>
-						<OrganizationSwitcher />
-					</SidebarHeader>
 					<SidebarContent>
 						<NavMain items={data.navMain} />
 						<NavMain items={data.navSecondary} subtitle="History" hideLogo />
 					</SidebarContent>
 					<SidebarFooter>
-						<NavUser user={user} />
+						{user && user.email && (
+							<NavUser
+								user={{
+									email: user.email,
+								}}
+							/>
+						)}
 					</SidebarFooter>
 				</>
 			)}

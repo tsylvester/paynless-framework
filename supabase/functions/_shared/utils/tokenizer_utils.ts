@@ -1,5 +1,5 @@
 import type { AiModelExtendedConfig, TiktokenModelForRules } from "../types.ts";
-import type { CountableChatPayload, CountTokensDeps } from "../types/tokenizer.types.ts";
+import type { CountableChatPayload, CountTokensDeps, CountTokensFn } from "../types/tokenizer.types.ts";
 
 
 
@@ -15,11 +15,11 @@ import type { CountableChatPayload, CountTokensDeps } from "../types/tokenizer.t
  * @returns The total number of tokens.
  * @throws Error if token counting cannot be performed for the given strategy or configuration.
  */
-export function countTokens(
+export const countTokens: CountTokensFn = (
   deps: CountTokensDeps,
   payload: CountableChatPayload,
   modelConfig: AiModelExtendedConfig
-): number {
+): number => {
   // Note: Avoid verbose logging and unused vars to satisfy lint rules.
   const { tokenization_strategy, api_identifier } = modelConfig;
 

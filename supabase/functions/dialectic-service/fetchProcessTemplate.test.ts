@@ -58,9 +58,9 @@ describe("fetchProcessTemplate", () => {
       { id: "t-2", process_template_id: templateId, source_stage_id: 'stage-b', target_stage_id: 'stage-c', condition_description: null, created_at: '' },
     ];
     const mockStagesData: DialecticStage[] = [
-      { id: 'stage-a', display_name: 'Stage A', slug: 'stage-a', description: null, default_system_prompt_id: null, input_artifact_rules: null, expected_output_artifacts: null, created_at: '' },
-      { id: 'stage-b', display_name: 'Stage B', slug: 'stage-b', description: null, default_system_prompt_id: null, input_artifact_rules: null, expected_output_artifacts: null, created_at: '' },
-      { id: 'stage-c', display_name: 'Stage C', slug: 'stage-c', description: null, default_system_prompt_id: null, input_artifact_rules: null, expected_output_artifacts: null, created_at: '' },
+      { id: 'stage-a', display_name: 'Stage A', slug: 'stage-a', description: null, default_system_prompt_id: null, expected_output_template_ids: [], active_recipe_instance_id: null, recipe_template_id: null, created_at: '' },
+      { id: 'stage-b', display_name: 'Stage B', slug: 'stage-b', description: null, default_system_prompt_id: null, expected_output_template_ids: [], active_recipe_instance_id: null, recipe_template_id: null, created_at: '' },
+      { id: 'stage-c', display_name: 'Stage C', slug: 'stage-c', description: null, default_system_prompt_id: null, expected_output_template_ids: [], active_recipe_instance_id: null, recipe_template_id: null, created_at: '' },
     ];
     
     setup({
@@ -92,7 +92,7 @@ describe("fetchProcessTemplate", () => {
     const payload: FetchProcessTemplatePayload = { templateId };
 
     const mockTemplateData: DialecticProcessTemplate = { id: templateId, name: 'Single Stage Template', starting_stage_id: 'stage-start', created_at: '', description: null };
-    const mockStageData: DialecticStage[] = [{ id: 'stage-start', display_name: 'Start', slug: 'start', description: null, default_system_prompt_id: null, input_artifact_rules: null, expected_output_artifacts: null, created_at: '' }];
+    const mockStageData: DialecticStage[] = [{ id: 'stage-start', display_name: 'Start', slug: 'start', description: null, default_system_prompt_id: null, expected_output_template_ids: [], active_recipe_instance_id: null, recipe_template_id: null, created_at: '' }];
 
     setup({
         genericMockResults: {

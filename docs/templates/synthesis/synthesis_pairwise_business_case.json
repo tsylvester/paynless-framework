@@ -1,0 +1,26 @@
+{
+  "thesis_document": "business_case",
+  "critique_document": "business_case_critique",
+  "comparison_signal": "comparison_vector",
+  "executive_summary": "",
+  "user_problem_validation": "",
+  "market_opportunity": "",
+  "competitive_analysis": "",
+  "differentiation_&_value_proposition": "",
+  "risks_&_mitigation": "",
+  "strengths": [],
+  "weaknesses": [],
+  "opportunities": [],
+  "threats": [],
+  "critique_alignment": "",
+  "resolved_positions": [],
+  "open_questions": [],
+  "next_steps": "",
+  "proposal_references": [],
+  "thesis_summary": "",
+  "lineage_key": "<derived from thesis artifact>",
+  "source_model_slug": "<derived from thesis artifact>",
+  "match_keys": [
+    "<derived from antithesis reviewer or reviewer combination>"
+  ]
+}

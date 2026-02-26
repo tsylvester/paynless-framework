@@ -1,13 +1,15 @@
-import { 
+import {
     ChatContextPreferences,
     UserRole,
-    AiProvidersApiResponse, // Correctly from @paynless/types
-    SystemPromptsApiResponse, // Correctly from @paynless/types
+    AiProvidersApiResponse,
+    SystemPromptsApiResponse,
     DialecticContribution,
     ApiError,
     ChatRole,
     WalletDecisionOutcome,
     DialecticNotificationTypes,
+    AssembledPrompt,
+    StageRenderedDocumentChecklistEntry,
 } from '@paynless/types';
 
 export function isUserRole(role: unknown): role is UserRole {
@@ -59,6 +61,17 @@ export function isApiError(obj: unknown): obj is ApiError {
     );
 }
 
+// Type guard for AssembledPrompt
+export function isAssembledPrompt(obj: unknown): obj is AssembledPrompt {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+    return (
+        'promptContent' in obj && typeof obj['promptContent'] === 'string' &&
+        'source_prompt_resource_id' in obj && typeof obj['source_prompt_resource_id'] === 'string'
+    );
+}
+
 export function isAiProvidersApiResponse(obj: unknown): obj is AiProvidersApiResponse {
     return (
         typeof obj === 'object' &&
@@ -106,12 +119,46 @@ export function isOrgWalletUnavailableByPolicy(x: unknown): x is Extract<WalletD
   return typeof x === 'object' && x !== null && 'outcome' in x && x.outcome === 'org_wallet_not_available_policy_org' && hasOrgId(x);
 }
 
+export function isStageRenderedDocumentChecklistEntry(
+    doc: unknown,
+): doc is StageRenderedDocumentChecklistEntry {
+    if (typeof doc !== 'object' || doc === null) {
+        return false;
+    }
+    if (!('documentKey' in doc) || typeof doc.documentKey !== 'string' || doc.documentKey.length === 0) return false;
+    if (!('modelId' in doc) || typeof doc.modelId !== 'string' || doc.modelId.length === 0) return false;
+    if (!('jobId' in doc) || typeof doc.jobId !== 'string' || doc.jobId.length === 0) return false;
+    if (!('latestRenderedResourceId' in doc) || typeof doc.latestRenderedResourceId !== 'string' || doc.latestRenderedResourceId.length === 0) return false;
+    if (!('status' in doc) || typeof doc.status !== 'string') return false;
+    const validStatus =
+        doc.status === 'idle' ||
+        doc.status === 'generating' ||
+        doc.status === 'retrying' ||
+        doc.status === 'failed' ||
+        doc.status === 'completed' ||
+        doc.status === 'continuing' ||
+        doc.status === 'not_started';
+    if (!validStatus) return false;
+    return true;
+}
+
 // Dialectic lifecycle event type guard
 // Note: we intentionally avoid enumerating all values to keep this future-proof.
 
 export function isDialecticLifecycleEventType(x: unknown): x is DialecticNotificationTypes {
   if (typeof x !== 'string' || x.length === 0) return false;
   if (x === 'dialectic_progress_update') return true;
+
+  if (
+    x === 'planner_started'
+    || x === 'document_started'
+    || x === 'document_chunk_completed'
+    || x === 'document_completed'
+    || x === 'render_completed'
+    || x === 'job_failed'
+  ) {
+    return true;
+  }
 
   const cgPrefix = 'contribution_generation_';
   if (x.startsWith(cgPrefix)) {

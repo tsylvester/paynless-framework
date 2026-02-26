@@ -1,36 +1,29 @@
-// deno-lint-ignore-file no-explicit-any
 import {
+    SelectedModels,
     StartSessionPayload,
     StartSessionSuccessResponse,
 } from "./dialectic.interface.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
-import type { Database, Json } from "../types_db.ts";
+import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import type { ILogger } from "../_shared/types.ts";
-import { PromptAssembler } from "../_shared/prompt-assembler.ts";
-import { ProjectContext, StageContext, SessionContext, IPromptAssembler } from "../_shared/prompt-assembler.interface.ts";
+import { PromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.ts";
+import {
+    ProjectContext,
+    StageContext,
+    SessionContext,
+    IPromptAssembler,
+} from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
 import { FileManagerService } from "../_shared/services/file_manager.ts";
-import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
-import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
 import { IFileManager } from '../_shared/types/file_manager.types.ts';
-import { FileType } from "../_shared/types/file_manager.types.ts";
-import { FactoryDependencies, AiProviderAdapterInstance, AiProviderAdapter } from '../_shared/types.ts';
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
-
-export interface StartSessionDeps {
-    logger: ILogger;
-    fileManager: IFileManager;
-    promptAssembler: IPromptAssembler;
-    randomUUID: () => string;
-    getAiProviderAdapter: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
-    providerMap?: Record<string, AiProviderAdapter>;
-    embeddingApiKey?: string;
-}
-
+import { StartSessionDeps, SeedPromptRecipeStep } from './dialectic.interface.ts';
+import { gatherInputsForStage } from "../_shared/prompt-assembler/gatherInputsForStage.ts";
+import { renderPrompt } from "../_shared/prompt-renderer.ts";
 
 export async function startSession(
   user: User,
@@ -39,7 +32,7 @@ export async function startSession(
   partialDeps?: Partial<StartSessionDeps>
 ): Promise<{ data?: StartSessionSuccessResponse; error?: { message: string; status?: number; details?: string, code?: string } }> {
     const log: ILogger = partialDeps?.logger || logger;
-    const fileManager: IFileManager = partialDeps?.fileManager || new FileManagerService(dbClient, { constructStoragePath });
+    const fileManager: IFileManager = partialDeps?.fileManager || new FileManagerService(dbClient, { constructStoragePath, logger });
     const randomUUID = partialDeps?.randomUUID || (() => crypto.randomUUID());
     const getAiProviderAdapterDep = partialDeps?.getAiProviderAdapter || getAiProviderAdapter;
 
@@ -69,7 +62,7 @@ export async function startSession(
     // If a stageSlug is provided, use it. Otherwise, find the template's entry point.
     let initialStageId: string | undefined;
     let initialStageName: string | undefined;
-    let defaultSystemPrompt: { id: string, prompt_text: string } | undefined;
+    let defaultSystemPrompt: { id: string, prompt_text: string | null } | undefined;
 
     if (payload.stageSlug) {
         log.info(`[startSession] Attempting to find initial stage using provided slug: '${payload.stageSlug}'`);
@@ -189,7 +182,7 @@ export async function startSession(
     // Now that we have the stage ID, fetch the full stage object and overlays separately
     const { data: fullStageData, error: fullStageError } = await dbClient
         .from('dialectic_stages')
-        .select('*')
+        .select('*, recipe_template_id')
         .eq('id', initialStageId)
         .single();
     
@@ -221,8 +214,15 @@ export async function startSession(
         dialectic_domains: dialectic_domains ? { name: dialectic_domains.name } : { name: 'General' },
     };
 
+    const recipe_step: SeedPromptRecipeStep = {
+        prompt_type: 'Seed',
+        step_number: 1,
+        step_name: 'Assemble Seed Prompt',
+    };
+
     const stageContext: StageContext = {
         ...fullStageData,
+        recipe_step: recipe_step,
         system_prompts: { prompt_text: defaultSystemPrompt.prompt_text },
         domain_specific_prompt_overlays: overlays.map(o => ({ overlay_values: o.overlay_values })),
     };
@@ -269,7 +269,7 @@ export async function startSession(
         }
 
 
-        return new PromptAssembler(dbClient, (bucket, path) => downloadFromStorage(dbClient, bucket, path));
+        return new PromptAssembler(dbClient, fileManager);
     })();
 
 
@@ -303,67 +303,47 @@ export async function startSession(
         ...newSessionRecord, 
     };
 
-    const assembledSeedPrompt = await assembler.assemble(
-        projectContext, 
-        sessionContextForAssembler, 
-        stageContext, 
-        initialPrompt.content,
-        1
-    );
+    try {
+        const assembledSeedPrompt = await assembler.assembleSeedPrompt({
+            dbClient,
+            fileManager,
+            project: projectContext,
+            session: sessionContextForAssembler,
+            stage: stageContext,
+            projectInitialUserPrompt: initialPrompt.content,
+            iterationNumber: 1,
+            downloadFromStorageFn: (bucket: string, path: string) => downloadFromStorage(dbClient, bucket, path),
+            gatherInputsForStageFn: gatherInputsForStage,
+            renderPromptFn: renderPrompt
+        });
 
-    if (!assembledSeedPrompt) {
-        log.error(`[startSession] PromptAssembler failed to assemble seed prompt for project ${project.id}, stage ${stageContext.slug}`);
-        // Attempt to cleanup session if assembler fails after session creation
+        if (!assembledSeedPrompt) {
+            log.error(`[startSession] PromptAssembler failed to assemble seed prompt for project ${project.id}, stage ${stageContext.slug}`);
+            // Attempt to cleanup session if assembler fails after session creation
+            await dbClient.from('dialectic_sessions').delete().eq('id', newSessionRecord.id);
+            log.info(`[startSession] Cleaned up session ${newSessionRecord.id} due to prompt assembly failure.`);
+            return { error: { message: "Failed to assemble initial seed prompt for the session.", status: 500 } };
+        }
+        
+        // Construct the success response by combining the session record and the assembled prompt.
+        const ids: string[] = newSessionRecord.selected_model_ids ?? [];
+        const selected_models: SelectedModels[] = ids.map((id) => ({ id, displayName: id }));
+        const { selected_model_ids: _dropped, ...sessionFields } = newSessionRecord;
+        const successResponse: StartSessionSuccessResponse = {
+            ...sessionFields,
+            selected_models,
+            seedPrompt: assembledSeedPrompt,
+        };
+
+        log.info(`[startSession] Session ${newSessionRecord.id} successfully set up with all resources created.`);
+        return { data: successResponse };
+
+    } catch (e) {
+        log.error(`[startSession] Exception during seed prompt assembly for project ${project.id}`, { error: (e as Error).message });
         await dbClient.from('dialectic_sessions').delete().eq('id', newSessionRecord.id);
-        log.info(`[startSession] Cleaned up session ${newSessionRecord.id} due to prompt assembly failure.`);
-        return { error: { message: "Failed to assemble initial seed prompt for the session.", status: 500 } };
+        log.info(`[startSession] Cleaned up session ${newSessionRecord.id} due to exception during prompt assembly.`);
+        throw e; // Re-throw the original error
     }
     
-    // 3. Save the Assembled Seed Prompt (the actual prompt sent to the first model)
-    // This is distinct from the initial user prompt and system settings.
-    const seedPromptBuffer = Buffer.from(assembledSeedPrompt, 'utf-8');
-    const seedPromptUploadResult = await fileManager.uploadAndRegisterFile({
-        pathContext: {
-            projectId: project.id,
-            fileType: FileType.SeedPrompt, 
-            sessionId: newSessionRecord.id,
-            iteration: 1,
-            stageSlug: stageContext.slug,
-            originalFileName: `seed_prompt.md`,
-        },
-        fileContent: seedPromptBuffer,
-        mimeType: 'text/markdown',
-        sizeBytes: seedPromptBuffer.byteLength,
-        userId: userId,
-        description: formatResourceDescription({
-            type: 'seed_prompt',
-            session_id: newSessionRecord.id,
-            stage_slug: stageContext.slug,
-            iteration: 1, // Corresponds to pathContext.iteration for initial seed
-            original_file_name: `seed_prompt.md`,
-            project_id: project.id, // Added project_id for completeness
-        }),
-    });
 
-    if (seedPromptUploadResult.error || !seedPromptUploadResult.record) {
-        log.error('[startSession] Failed to save assembled seed prompt using FileManagerService.', { error: seedPromptUploadResult.error });
-        // Attempt to clean up session, user prompt, and system settings files
-        log.info(`[startSession] Attempting to clean up session ${newSessionRecord.id} and files due to seed prompt save failure.`);
-        await dbClient.from('dialectic_sessions').delete().eq('id', newSessionRecord.id);
-        // Potentially delete userPromptResourceId and systemSettingsResourceId from storage
-        return { error: { message: seedPromptUploadResult.error?.message || 'Failed to save assembled seed prompt for the session.', status: 500 } };
-    }
-    const seedPromptResourceId = seedPromptUploadResult.record.id;
-    log.info(`[startSession] Assembled seed prompt saved with resource ID: ${seedPromptResourceId}`);
-
-
-    // No longer updating dialectic_sessions with user_input_reference_url here as per user feedback.
-    // The relevant resources can be found via dialectic_project_resources table using projectId/sessionId.
-
-    log.info(`[startSession] Session ${newSessionRecord.id} successfully set up with all resources created.`);
-
-    // Construct the success response - which is the DialecticSession record itself
-    const successResponse: StartSessionSuccessResponse = newSessionRecord;
-
-    return { data: successResponse };
 }

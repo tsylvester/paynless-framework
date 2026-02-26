@@ -4,16 +4,13 @@ import {
     it,
     beforeEach,
 } from 'https://deno.land/std@0.190.0/testing/bdd.ts';
-import { stub, spy } from 'https://deno.land/std@0.190.0/testing/mock.ts';
-import type { Spy } from 'https://deno.land/std@0.190.0/testing/mock.ts';
 import {
     assert,
     assertEquals,
     assertRejects,
-    assertExists,
 } from 'jsr:@std/assert@0.225.3';
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database, Tables } from '../types_db.ts';
+import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { Database } from '../types_db.ts';
 import {
     DialecticJobRow,
     DialecticPlanJobPayload,
@@ -21,117 +18,30 @@ import {
     DialecticContributionRow,
     DialecticExecuteJobPayload,
     GranularityPlannerFn,
-    IDialecticJobDeps,
-    ContributionType,
-    SourceDocument, // Import the real SourceDocument
+    SourceDocument,
+    DialecticProjectResourceRow,
+    InputRule,
+    DocumentRelationships,
 } from '../dialectic-service/dialectic.interface.ts';
+import type { IPlanJobContext } from './JobContext.interface.ts';
 import { ILogger } from '../_shared/types.ts';
 import { planComplexStage } from './task_isolator.ts';
-import {
-    isDialecticPlanJobPayload,
-    isDialecticExecuteJobPayload,
-} from '../_shared/utils/type_guards.ts';
-import { PromptAssembler } from '../_shared/prompt-assembler.ts';
-import { createMockSupabaseClient, MockQueryBuilderState } from '../_shared/supabase.mock.ts';
-import { AiModelExtendedConfig } from '../_shared/types.ts';
-import { MockRagService } from '../_shared/services/rag_service.mock.ts';
-import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
-import { IRagContextResult, IRagServiceDependencies } from '../_shared/services/rag_service.interface.ts';
+import { findSourceDocuments } from './findSourceDocuments.ts';
+import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
+import { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
+import { isDialecticExecuteJobPayload } from '../_shared/utils/type_guards.ts';
+import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 
-describe('planComplexStage', () => {
+describe('planComplexStage - Source Document Filtering', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
     let mockLogger: ILogger;
-    let mockDeps: IDialecticJobDeps;
+    let mockCtx: IPlanJobContext;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockRecipeStep: DialecticRecipeStep;
 
-    const mockContributions: DialecticContributionRow[] = [
-        {
-            id: 'doc-1-thesis',
-            session_id: 'sess-1',
-            user_id: 'user-123',
-            stage: 'test-stage',
-            iteration_number: 1,
-            model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            contribution_type: 'thesis',
-            file_name: 'doc1.txt',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage',
-            size_bytes: 123,
-            mime_type: 'text/plain',
-            document_relationships: null,
-        },
-        {
-            id: 'doc-2-antithesis',
-            session_id: 'sess-1',
-            user_id: 'user-123',
-            stage: 'test-stage',
-            iteration_number: 1,
-            model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            contribution_type: 'antithesis',
-            file_name: 'doc2.txt',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage',
-            size_bytes: 123,
-            mime_type: 'text/plain',
-            document_relationships: null,
-        },
-    ];
-
     beforeEach(() => {
-        mockSupabase = createMockSupabaseClient(undefined, {
-            genericMockResults: {
-                dialectic_contributions: {
-                    select: (state: MockQueryBuilderState) => {
-                        const stageFilter = state.filters.find(f => f.column === 'stage')?.value;
-                        if (stageFilter) {
-                            const filteredData = mockContributions.filter(c => c.stage === stageFilter);
-                            return Promise.resolve({ data: filteredData, error: null, count: filteredData.length, status: 200, statusText: 'OK' });
-                        }
-
-                        const typeFilter = state.filters.find(f => f.column === 'contribution_type')?.value;
-                        if (typeFilter) {
-                            const filteredData = mockContributions.filter(c => c.contribution_type === typeFilter);
-                            return Promise.resolve({ data: filteredData, error: null, count: filteredData.length, status: 200, statusText: 'OK' });
-                        }
-                        
-                        return Promise.resolve({ data: mockContributions, error: null, count: mockContributions.length, status: 200, statusText: 'OK' });
-                    },
-                },
-            },
-        });
-
         mockLogger = {
             info: () => {},
             warn: () => {},
@@ -139,738 +49,727 @@ describe('planComplexStage', () => {
             debug: () => {},
         };
 
+        mockSupabase = createMockSupabaseClient();
+
         mockParentJob = {
             id: 'parent-job-123',
-            status: 'pending',
+            parent_job_id: null,
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            iteration_number: 1,
+            status: 'processing',
+            max_retries: 3,
+            attempt_count: 0,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: null,
+            results: null,
+            error_details: null,
+            prerequisite_job_id: null,
+            target_contribution_id: null,
+            is_test_job: false,
+            job_type: 'PLAN',
+            stage_slug: 'test-stage',
             payload: {
-                job_type: 'plan',
-                step_info: { current_step: 1, total_steps: 2 },
-                model_id: 'model-1',
                 projectId: 'proj-1',
                 sessionId: 'sess-1',
                 stageSlug: 'test-stage',
                 iterationNumber: 1,
                 walletId: 'wallet-1',
-                continueUntilComplete: false,
-                maxRetries: 3,
-                continuation_count: 0,
+                user_jwt: 'user-jwt-123',
+                model_id: 'model-1',
             },
-            created_at: new Date().toISOString(),
-            user_id: 'user-123',
-            attempt_count: 0,
-            max_retries: 3,
-            completed_at: null,
-            error_details: null,
-            iteration_number: 1,
-            parent_job_id: null,
-            prerequisite_job_id: null,
-            results: null,
-            session_id: 'sess-1',
-            started_at: null,
-            stage_slug: 'test-stage',
-            target_contribution_id: null
         };
 
         mockRecipeStep = {
-            step: 1,
-            name: 'Test Step',
-            prompt_template_name: 'test-prompt',
-            inputs_required: [{ type: 'thesis' }],
+            id: 'step-uuid-123',
+            instance_id: 'instance-uuid-456',
+            template_step_id: 'template-step-uuid-789',
+            step_key: 'test_step_1',
+            step_slug: 'test-step-1',
+            step_name: 'Test Step',
+            step_description: 'A test step description',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            prompt_template_id: 'test-prompt-uuid',
+            output_type: FileType.business_case,
             granularity_strategy: 'per_source_document',
-            output_type: 'thesis',
+            inputs_required: [{ type: 'document', slug: 'any', multiple: true }],
+            inputs_relevance: [],
+            outputs_required: { documents: [] },
+            config_override: {},
+            object_filter: {},
+            output_overrides: {},
+            is_skipped: false,
+            execution_order: 1,
+            parallel_group: null,
+            branch_key: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
         };
 
-        const mockRagDeps: IRagServiceDependencies = {
-            dbClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-            logger: mockLogger,
-            indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
-            embeddingClient: { getEmbedding: () => Promise.resolve({ embedding: [], usage: { input_tokens: 0, output_tokens: 0, prompt_tokens: 0, total_tokens: 0 } }) },
-        };
-
-
-        mockDeps = {
-            logger: mockLogger,
-            planComplexStage: () => Promise.resolve([]),
-            downloadFromStorage: (bucket, path) => {
-                const doc = mockContributions.find(c => `${c.storage_path}/${c.file_name}` === path);
-                const contentBuffer = doc ? new TextEncoder().encode(`content for ${doc.id}`).buffer : new ArrayBuffer(0);
-                // Ensure it's a concrete ArrayBuffer
-                const data = contentBuffer instanceof ArrayBuffer ? contentBuffer : new ArrayBuffer(0);
-                return Promise.resolve({ data, error: null });
-            },
-            getGranularityPlanner: () => undefined, // Default to undefined
-            ragService: new MockRagService(),
-            fileManager: new MockFileManagerService(),
-            countTokens: () => 0,
-            getAiProviderConfig: () => Promise.resolve({
-                api_identifier: 'mock-api-identifier',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
-                    is_chatml_model: false,
-                    api_identifier_for_tokenization: 'mock-api-identifier',
+        const mockPlanner: GranularityPlannerFn = (sourceDocs: SourceDocument[]) => {
+            return sourceDocs.map((doc): DialecticExecuteJobPayload => ({
+                projectId: 'proj-1',
+                sessionId: 'sess-1',
+                stageSlug: 'test-stage',
+                iterationNumber: 1,
+                walletId: 'wallet-1',
+                user_jwt: 'user-jwt-123',
+                model_id: 'model-1',
+                prompt_template_id: 'test-prompt-uuid',
+                output_type: FileType.business_case,
+                canonicalPathParams: {
+                    contributionType: 'thesis',
+                    stageSlug: 'test-stage',
                 },
-            }),
-            getSeedPromptForStage: () => Promise.resolve({ content: '', fullPath: '', bucket: '', path: '', fileName: '' }),
-            continueJob: () => Promise.resolve({ enqueued: false }),
-            retryJob: () => Promise.resolve({ error: undefined }),
+                inputs: {},
+                document_relationships: doc.document_relationships ?? null,
+            }));
+        };
+
+        mockCtx = {
+            logger: mockLogger,
             notificationService: mockNotificationService,
-            executeModelCallAndSave: () => Promise.resolve(),
-            callUnifiedAIModel: () => Promise.resolve({ content: '', finish_reason: 'stop' }),
-            getExtensionFromMimeType: () => '.txt',
-            randomUUID: () => 'random-uuid',
-            deleteFromStorage: () => Promise.resolve({ data: null, error: null }),
+            getGranularityPlanner: () => mockPlanner,
+            planComplexStage: async () => [],
+            findSourceDocuments: findSourceDocuments,
         };
-
-        // Default: parent payload carries a valid user_jwt under new contract
-        Object.defineProperty(mockParentJob.payload, 'user_jwt', {
-            value: 'parent-jwt-default', configurable: true, enumerable: true, writable: true,
-        });
-    });
-    
-    it('should throw an error if no planner is found for the strategy', async () => {
-        // This test relies on the default mock for getGranularityPlanner returning undefined.
-        await assertRejects(
-            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
-            Error,
-            `No planner found for granularity strategy: ${mockRecipeStep.granularity_strategy}`,
-        );
     });
 
-    it('should correctly create child jobs for an "execute" planner creating an intermediate artifact', async () => {
-        const mockExecutePayload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 2 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'pairwise_synthesis_chunk',
-            inputs: { documentId: 'doc-1-thesis' },
-            isIntermediate: true,
-            model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
-            continueUntilComplete: false,
-            maxRetries: 3,
-            continuation_count: 0,
-            canonicalPathParams: {
-                contributionType: 'pairwise_synthesis_chunk',
-                sourceModelSlugs: ['Test Model'],
-                sourceAnchorType: 'thesis',
-                sourceAnchorModelSlug: 'Test Model',
+    // 45.c.i: Filtering with completed IDs - doc1 and doc3 excluded, only doc2 passed
+    it('should filter out completed source documents when completedSourceDocumentIds is provided', async () => {
+        const mockProjectResources: DialecticProjectResourceRow[] = [
+            {
+                id: 'doc-1',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'doc1.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 123,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'doc1',
+                    document_relationships: { source_group: 'doc-1-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
             },
-        };
-        const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
-        mockDeps.getGranularityPlanner = () => plannerFn;
+            {
+                id: 'doc-2',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'doc2.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 123,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'doc2',
+                    document_relationships: { source_group: 'doc-2-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+            {
+                id: 'doc-3',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'doc3.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 123,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'doc3',
+                    document_relationships: { source_group: 'doc-3-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+        ];
 
-        const childJobs = await planComplexStage(
-            mockSupabase.client as unknown as SupabaseClient<Database>,
-            mockParentJob,
-            mockDeps,
-            mockRecipeStep,
-            'user-jwt-123'
-        );
-
-        assertEquals(childJobs.length, 1);
-        const childJob = childJobs[0];
-        assertEquals(childJob.parent_job_id, mockParentJob.id);
-        
-        assert(isDialecticExecuteJobPayload(childJob.payload));
-        const payload = childJob.payload;
-
-        assertEquals(payload.job_type, 'execute');
-        assertEquals(payload.output_type, 'pairwise_synthesis_chunk');
-        assertEquals(payload.isIntermediate, true);
-        
-        // Assert the full canonical path params are passed through correctly
-        assertExists(payload.canonicalPathParams);
-        const params = payload.canonicalPathParams;
-        assertEquals(params.contributionType, 'pairwise_synthesis_chunk');
-        assertEquals(params.sourceModelSlugs, ['Test Model']);
-        assertEquals(params.sourceAnchorType, 'thesis');
-        assertEquals(params.sourceAnchorModelSlug, 'Test Model');
-    });
-
-    it('should throw an error if fetching source contributions fails', async () => {
-        mockRecipeStep.inputs_required = [{ type: 'thesis' }];
-        
-        if (mockSupabase.genericMockResults?.dialectic_contributions) {
-            mockSupabase.genericMockResults.dialectic_contributions.select = () => {
-                return Promise.resolve({ data: null, error: new Error('DB Read Error'), count: 0, status: 500, statusText: 'Internal Server Error' });
-            };
-        }
-
-        await assertRejects(
-            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
-            Error,
-            "Failed to fetch source contributions for type 'thesis': DB Read Error",
-        );
-    });
-
-    it('should throw an error if downloading a document fails', async () => {
-        mockDeps.downloadFromStorage = () => Promise.resolve({
-            data: null,
-            error: new Error('Storage Download Error'),
+        const mockSupabaseWithData = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: mockProjectResources, error: null, count: mockProjectResources.length, status: 200, statusText: 'OK' }),
+                },
+            },
         });
-        
-        const plannerFn: GranularityPlannerFn = () => [];
-        mockDeps.getGranularityPlanner = () => plannerFn;
 
-        await assertRejects(
-            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
-            Error,
-            'Failed to download content for contribution doc-1-thesis from projects/proj-1/sessions/sess-1/iteration_1/test-stage/doc1.txt: Storage Download Error',
-        );
-    });
-    
-    it('should skip contributions that are missing a file_name', async () => {
-        const localMockContributions = [
-            ...mockContributions,
-            { ...mockContributions[0], id: 'doc-3', file_name: null }
-        ];
+        const completedSourceDocumentIds = new Set<string>(['doc-1-id', 'doc-3-id']);
 
-        if (mockSupabase.genericMockResults?.dialectic_contributions) {
-            mockSupabase.genericMockResults.dialectic_contributions.select = (state: MockQueryBuilderState) => {
-                const typeFilter = state.filters.find(f => f.column === 'contribution_type');
-                if (typeFilter?.value === 'thesis') {
-                    const data = localMockContributions.filter(c => c.contribution_type === 'thesis');
-                    return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
-                }
-                return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
-            };
-        }
-        
-        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
-            assertEquals(sourceDocs.length, 1);
-            assert(!sourceDocs.some(doc => doc.id === 'doc-3'));
-            return [];
-        };
-        mockDeps.getGranularityPlanner = () => plannerFn;
-        
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
-    });
-
-    it('should not call the planner if no source documents are found', async () => {
-        mockRecipeStep.inputs_required = [{ type: 'non_existent_type' }];
-        
-        let plannerCalled = false;
-        const plannerFn: GranularityPlannerFn = () => {
-            plannerCalled = true;
-            return [];
-        };
-        mockDeps.getGranularityPlanner = () => plannerFn;
-
-        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
-
-        assertEquals(childJobs.length, 0);
-        assertEquals(plannerCalled, false);
-    });
-
-    it('should return an empty array if the planner returns no payloads', async () => {
-        const plannerFn: GranularityPlannerFn = () => [];
-        mockDeps.getGranularityPlanner = () => plannerFn;
-        
-        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
-
-        assertEquals(childJobs.length, 0);
-    });
-
-    it('should skip contributions that are missing storage_bucket or storage_path', async () => {
-        const localMockContributions = [
-            ...mockContributions,
-            { ...mockContributions[0], id: 'doc-3', storage_bucket: null },
-            { ...mockContributions[0], id: 'doc-4', storage_path: null },
-        ];
-
-        if (mockSupabase.genericMockResults?.dialectic_contributions) {
-            mockSupabase.genericMockResults.dialectic_contributions.select = (state: MockQueryBuilderState) => {
-                const typeFilter = state.filters.find(f => f.column === 'contribution_type');
-                 if (typeFilter?.value === 'thesis') {
-                    const data = localMockContributions.filter(c => c.contribution_type === 'thesis');
-                    return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
-                }
-                return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
-            };
-        }
-        
-        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
-            assertEquals(sourceDocs.length, 1);
-            assert(!sourceDocs.some(doc => doc.id === 'doc-3' || doc.id === 'doc-4'));
-            return [];
-        };
-        mockDeps.getGranularityPlanner = () => plannerFn;
-        
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
-    });
-
-    it('should handle downloaded files that are empty', async () => {
-        mockDeps.downloadFromStorage = () => Promise.resolve({ data: new ArrayBuffer(0), error: null });
-
-        let receivedDocs: SourceDocument[] = [];
-        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
-            receivedDocs = sourceDocs;
-            return [];
-        };
-        mockDeps.getGranularityPlanner = () => plannerFn;
-
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
-
-        assertEquals(receivedDocs.length, 1);
-        assertEquals(receivedDocs[0].content, '');
-    });
-
-    it('should gracefully skip malformed payloads from the planner', async () => {
-        const mockExecutePayload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 2 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'thesis',
-            inputs: { documentId: 'doc-1-thesis' },
-            isIntermediate: true, // ADDED FOR TEST
-            model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
-            continueUntilComplete: false,
-            maxRetries: 3,
-            continuation_count: 0,
-            canonicalPathParams: { contributionType: 'thesis' },
-        };
-        const malformedPayload = { an_invalid: 'payload' };
-
-        // We are explicitly violating the type here for testing purposes
-        const plannerFn: GranularityPlannerFn = () => [mockExecutePayload, malformedPayload as any];
-        mockDeps.getGranularityPlanner = () => plannerFn;
-
-        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
-
-        assertEquals(childJobs.length, 1);
-        assert(isDialecticExecuteJobPayload(childJobs[0].payload));
-    });
-
-    it('should query by stage_slug when present in the rule', async () => {
-        mockRecipeStep.inputs_required = [{ type: 'some_generic_type', stage_slug: 'thesis' }];
-        
-        // Custom mock for this test case
-        if (mockSupabase.genericMockResults?.dialectic_contributions) {
-            mockSupabase.genericMockResults.dialectic_contributions.select = (state: MockQueryBuilderState) => {
-                const stageFilter = state.filters.find(f => f.column === 'stage' && f.value === 'thesis');
-                if (stageFilter) {
-                    const data = mockContributions.filter(c => c.contribution_type === 'thesis'); // The mock data uses this as the distinguisher
-                    return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
-                }
-                return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
-            };
-        }
-        
-        let receivedDocs: SourceDocument[] = [];
-        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
-            receivedDocs = sourceDocs;
-            return [];
-        };
-        mockDeps.getGranularityPlanner = () => plannerFn;
-
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
-
-        assertEquals(receivedDocs.length, 1);
-        assertEquals(receivedDocs[0].contribution_type, 'thesis');
-        assertEquals(receivedDocs[0].id, 'doc-1-thesis');
-    });
-
-    it('should query by type when stage_slug is not present in the rule', async () => {
-        mockRecipeStep.inputs_required = [{ type: 'antithesis' }];
-        
-        let receivedDocs: SourceDocument[] = [];
-        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
-            receivedDocs = sourceDocs;
-            return [];
-        };
-        mockDeps.getGranularityPlanner = () => plannerFn;
-
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
-
-        assertEquals(receivedDocs.length, 1);
-        assertEquals(receivedDocs[0].contribution_type, 'antithesis');
-        assertEquals(receivedDocs[0].id, 'doc-2-antithesis');
-    });
-
-    it('should invoke RAG service when token count exceeds the limit', async () => {
-        const mockRagService = new MockRagService({ mockContextResult: 'Mocked RAG context' });
-        const getContextForModelSpy = spy(mockRagService, 'getContextForModel');
-        mockDeps.ragService = mockRagService;
-        mockDeps.countTokens = () => 9000; // Exceeds the mock limit of 8192
-
-        const mockFileRecord: Tables<'dialectic_project_resources'> = {
-            id: 'mock-file-record-id',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            project_id: 'proj-1',
-            file_name: 'rag_summary_for_job_parent-job-123.txt',
-            mime_type: 'text/plain',
-            size_bytes: 123,
-            storage_bucket: 'test-bucket',
-            storage_path: '/path/to',
-            user_id: 'user-123',
-            resource_description: { description: 'RAG summary' }
-        };
-        mockDeps.fileManager.uploadAndRegisterFile = () => Promise.resolve({ record: mockFileRecord, error: null });
-        
-        const uploadSpy = spy(mockDeps.fileManager, 'uploadAndRegisterFile');
-
-        // Act
-        const childJobs = await planComplexStage(
-            mockSupabase.client as unknown as SupabaseClient<Database>,
+        const result = await planComplexStage(
+            mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
             mockParentJob,
-            mockDeps,
+            mockCtx,
             mockRecipeStep,
-            'user-jwt-123'
+            'user-jwt-123',
+            completedSourceDocumentIds,
         );
 
-        // Assert
-        // 1. RAG service was called
-        assertEquals(getContextForModelSpy.calls.length, 1);
-        
-        // 2. File manager was called to save the RAG context
-        assertEquals(uploadSpy.calls.length, 1);
-        const uploadContext = uploadSpy.calls[0].args[0];
-
-        assertExists(uploadContext);
-        assertEquals(uploadContext.resourceTypeForDb, 'rag_context_summary');
-        assertEquals(uploadContext.fileContent, 'Mocked RAG context');
-        assertEquals(uploadContext.pathContext.fileType, 'rag_context_summary');
-
-        // 3. A single child job was created
-        assertEquals(childJobs.length, 1);
-        const childJob = childJobs[0];
-        assert(isDialecticExecuteJobPayload(childJob.payload));
-        
-        // 4. The child job has the correct inputs pointing to the RAG artifact
-        assertEquals(childJob.payload.inputs.rag_summary_id, 'mock-file-record-id');
-        assertEquals(childJob.payload.job_type, 'execute');
-
-        // 5. Assert the canonical path params are correct for a RAG-generated job
-        assertExists(childJob.payload.canonicalPathParams);
-        const params = childJob.payload.canonicalPathParams;
-        assertEquals(params.contributionType, mockRecipeStep.output_type);
-        assertEquals(params.sourceModelSlugs, [ "Test Model" ]);
-        assertEquals(params.sourceAnchorType, 'thesis');
-        assertEquals(params.sourceAnchorModelSlug, 'Test Model');
-    });
-
-    it('should create correct canonicalPathParams in RAG workflow for complex types', async () => {
-        // This test proves the fix for the RAG workflow, ensuring it creates
-        // the full canonical path context required for complex output types.
-        mockRecipeStep.output_type = 'pairwise_synthesis_chunk';
-        mockDeps.countTokens = () => 9000; // Force RAG path
-
-        // Provide a custom mock for this specific test to ensure we have two documents
-        // with distinct model names.
-        if (mockSupabase.genericMockResults?.dialectic_contributions) {
-            mockSupabase.genericMockResults.dialectic_contributions.select = () => {
-                const data = [
-                    { ...mockContributions[0], id: 'rag-thesis', model_name: 'Test Model', contribution_type: 'thesis' },
-                    { ...mockContributions[1], id: 'rag-antithesis', model_name: 'paired-model', contribution_type: 'antithesis' }
-                ];
-                return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
-            };
-        }
-
-        const mockFileRecord: Tables<'dialectic_project_resources'> = {
-            id: 'mock-file-record-id',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            project_id: 'proj-1',
-            file_name: 'rag_summary.txt',
-            mime_type: 'text/plain',
-            size_bytes: 123,
-            storage_bucket: 'test-bucket',
-            storage_path: '/path/to',
-            user_id: 'user-123',
-            resource_description: { description: 'RAG summary' }
-        };
-        mockDeps.fileManager.uploadAndRegisterFile = () => Promise.resolve({ record: mockFileRecord, error: null });
-
-        // Act
-        const childJobs = await planComplexStage(
-            mockSupabase.client as unknown as SupabaseClient<Database>,
-            mockParentJob,
-            mockDeps,
-            mockRecipeStep,
-            'user-jwt-123'
-        );
-
-        // Assert
-        assertEquals(childJobs.length, 1);
-        const childJob = childJobs[0];
-        assert(isDialecticExecuteJobPayload(childJob.payload));
-
-        const params = childJob.payload.canonicalPathParams;
-        assertExists(params);
-        assertEquals(params.contributionType, 'pairwise_synthesis_chunk');
-        assertExists(params.sourceAnchorType);
-        assertExists(params.sourceAnchorModelSlug);
-        assertExists(params.pairedModelSlug);
-        assertEquals(params.sourceModelSlugs, ['Test Model', 'paired-model']);
-        assertEquals(params.sourceAnchorModelSlug, 'Test Model');
-        // Because both mock docs have the same model name, the paired slug will also be 'Test Model'.
-        // The key is that the logic correctly found a non-anchor document.
-        assertEquals(params.pairedModelSlug, 'paired-model');
-    });
-
-    it('should correctly inherit user_jwt from parent payload into child job payloads', async () => {
-        // 1. Setup: Define a mock JWT
-        const MOCK_AUTH_TOKEN = 'mock-user-jwt-for-test';
-
-        // 2. Setup: Define a simple planner that returns a basic payload
-        const mockExecutePayload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
-            inputs: { documentId: 'doc-1-thesis' },
-            model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
-            continueUntilComplete: false,
-            maxRetries: 3,
-            continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
-        };
-        const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
-        mockDeps.getGranularityPlanner = () => plannerFn;
-
-        // 3. Act: Call the function under test
-        const childJobs = await planComplexStage(
-            mockSupabase.client as unknown as SupabaseClient<Database>,
-            mockParentJob,
-            mockDeps,
-            mockRecipeStep,
-            MOCK_AUTH_TOKEN
-        );
-
-        // 4. Assert: Check that the payload of the created child job contains the parent payload JWT
-        assertEquals(childJobs.length, 1);
-        const childPayload = childJobs[0].payload;
-        assert(isDialecticExecuteJobPayload(childPayload), 'Payload should be a valid execute job payload');
-        assertEquals(childPayload.user_jwt, 'parent-jwt-default', "The user_jwt was not correctly inherited from the parent payload.");
-    });
-
-    // =============================================================
-    // user_jwt must be inherited from parent payload (not param)
-    // =============================================================
-    it('planComplexStage should construct child payload with user_jwt inherited from parent payload (ignoring authToken param)', async () => {
-        // Arrange
-        const PARENT_JWT = 'parent-payload-jwt';
-        const PARAM_JWT = 'param-auth-jwt-should-be-ignored';
-
-        // Inject user_jwt into the parent plan payload at runtime without casting
-        Object.defineProperty(mockParentJob.payload, 'user_jwt', { value: PARENT_JWT, configurable: true, enumerable: true, writable: true });
-
-        const mockExecutePayload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
-            inputs: { documentId: 'doc-1-thesis' },
-            model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
-            continueUntilComplete: false,
-            maxRetries: 3,
-            continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
-        };
-        const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
-        mockDeps.getGranularityPlanner = () => plannerFn;
-
-        // Act
-        const childJobs = await planComplexStage(
-            mockSupabase.client as unknown as SupabaseClient<Database>,
-            mockParentJob,
-            mockDeps,
-            mockRecipeStep,
-            PARAM_JWT
-        );
-
-        // Assert
-        assertEquals(childJobs.length, 1);
-        const payload = childJobs[0].payload;
+        assertEquals(result.length, 1);
+        const payload = result[0].payload;
         assert(isDialecticExecuteJobPayload(payload));
-        // RED expectation: implementation should inherit from parent (PARENT_JWT), not PARAM_JWT
-        assertEquals(payload.user_jwt, PARENT_JWT);
-    });
-
-    // =============================================================
-    // hard-fail when parent payload.user_jwt is missing/empty
-    // =============================================================
-    it('planComplexStage should throw when parent payload.user_jwt is missing', async () => {
-        // Ensure parent payload has no user_jwt at all
-        // If it exists from prior tests, remove it without casting
-        if (Object.prototype.hasOwnProperty.call(mockParentJob.payload, 'user_jwt')) {
-            // Redefine to undefined and then delete to simulate truly missing
-            Object.defineProperty(mockParentJob.payload, 'user_jwt', { value: undefined, configurable: true, enumerable: true, writable: true });
-            // Delete property so it is absent
-            // deno-lint-ignore no-explicit-any
-            delete (mockParentJob.payload as any).user_jwt; // delete is the only way; the delete needs any to satisfy TS here in test
+        assert(payload.document_relationships !== null);
+        if (payload.document_relationships) {
+            assertEquals(payload.document_relationships.source_group, 'doc-2-id');
         }
-
-        const plannerFn: GranularityPlannerFn = () => [{
-            job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
-            inputs: { documentId: 'doc-1-thesis' },
-            model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
-            continueUntilComplete: false,
-            maxRetries: 3,
-            continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
-        } as DialecticExecuteJobPayload];
-        mockDeps.getGranularityPlanner = () => plannerFn;
-
-        await assertRejects(
-            () => planComplexStage(
-                mockSupabase.client as unknown as SupabaseClient<Database>,
-                mockParentJob,
-                mockDeps,
-                mockRecipeStep,
-                'param-jwt-irrelevant'
-            ),
-            Error,
-            'parent payload.user_jwt is required'
-        );
     });
 
-    it('planComplexStage should throw when parent payload.user_jwt is empty', async () => {
-        // Inject empty user_jwt without casting
-        Object.defineProperty(mockParentJob.payload, 'user_jwt', { value: '', configurable: true, enumerable: true, writable: true });
+    // 45.c.ii: Empty Set - all documents passed
+    it('should pass all source documents to planner when completedSourceDocumentIds is empty', async () => {
+        const mockProjectResources: DialecticProjectResourceRow[] = [
+            {
+                id: 'doc-1',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'doc1.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 123,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'doc1',
+                    document_relationships: { source_group: 'doc-1-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+            {
+                id: 'doc-2',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'doc2.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 123,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'doc2',
+                    document_relationships: { source_group: 'doc-2-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+        ];
 
-        const plannerFn: GranularityPlannerFn = () => [{
-            job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
-            inputs: { documentId: 'doc-1-thesis' },
-            model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
-            continueUntilComplete: false,
-            maxRetries: 3,
-            continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
-        } as DialecticExecuteJobPayload];
-        mockDeps.getGranularityPlanner = () => plannerFn;
+        const mockSupabaseWithData = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: mockProjectResources, error: null, count: mockProjectResources.length, status: 200, statusText: 'OK' }),
+                },
+            },
+        });
 
-        await assertRejects(
-            () => planComplexStage(
-                mockSupabase.client as unknown as SupabaseClient<Database>,
-                mockParentJob,
-                mockDeps,
-                mockRecipeStep,
-                'param-jwt-irrelevant'
-            ),
-            Error,
-            'parent payload.user_jwt is required'
-        );
-    });
+        const completedSourceDocumentIds = new Set<string>();
 
-    // =============================================================
-    // dynamic stage slug identification  
-    // =============================================================
-    it('constructs execute child rows with consistent dynamic stage markers (row.stage_slug === payload.stageSlug)', async () => {
-        const plannerFn: GranularityPlannerFn = () => [{
-            job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
-            inputs: { documentId: 'doc-1-thesis' },
-            model_id: mockParentJob.payload.model_id,
-            projectId: mockParentJob.payload.projectId,
-            sessionId: mockParentJob.payload.sessionId,
-            stageSlug: mockParentJob.payload.stageSlug,
-            iterationNumber: mockParentJob.payload.iterationNumber,
-            walletId: mockParentJob.payload.walletId,
-            continueUntilComplete: false,
-            maxRetries: 3,
-            continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
-        }];
-        mockDeps.getGranularityPlanner = () => plannerFn;
-
-        const childJobs = await planComplexStage(
-            mockSupabase.client as unknown as SupabaseClient<Database>,
+        const result = await planComplexStage(
+            mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
             mockParentJob,
-            mockDeps,
+            mockCtx,
             mockRecipeStep,
-            'user-jwt-123'
+            'user-jwt-123',
+            completedSourceDocumentIds,
         );
 
-        assertEquals(childJobs.length, 1);
-        const child = childJobs[0];
-        assert(isDialecticExecuteJobPayload(child.payload));
-
-        const expectedStage = mockParentJob.payload.stageSlug;
-        assertEquals(child.stage_slug, expectedStage);
-        assertEquals(child.payload.stageSlug, expectedStage);
+        assertEquals(result.length, 2);
     });
 
-    it('throws when parent payload.stageSlug is missing (no healing, no defaults)', async () => {
-        // Remove stageSlug from parent payload without casting
-        if (Object.prototype.hasOwnProperty.call(mockParentJob.payload, 'stageSlug')) {
-            // deno-lint-ignore no-explicit-any
-            delete (mockParentJob.payload as any).stageSlug;
-        }
+    // 45.c.iii: Undefined parameter - all documents passed (backward compatibility)
+    it('should pass all source documents to planner when completedSourceDocumentIds is undefined', async () => {
+        const mockProjectResources: DialecticProjectResourceRow[] = [
+            {
+                id: 'doc-1',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'doc1.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 123,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'doc1',
+                    document_relationships: { source_group: 'doc-1-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+            {
+                id: 'doc-2',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'doc2.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 123,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'doc2',
+                    document_relationships: { source_group: 'doc-2-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+        ];
 
-        const plannerFn: GranularityPlannerFn = () => [{
-            job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 1 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'synthesis',
-            inputs: { documentId: 'doc-1-thesis' },
-            model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'should-not-be-used-when-parent-missing',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
-            continueUntilComplete: false,
-            maxRetries: 3,
-            continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis' },
-        } as DialecticExecuteJobPayload];
-        mockDeps.getGranularityPlanner = () => plannerFn;
+        const mockSupabaseWithData = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: mockProjectResources, error: null, count: mockProjectResources.length, status: 200, statusText: 'OK' }),
+                },
+            },
+        });
+
+        const result = await planComplexStage(
+            mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockCtx,
+            mockRecipeStep,
+            'user-jwt-123',
+        );
+
+        assertEquals(result.length, 2);
+    });
+
+    // 45.c.iv: Missing/invalid source_group throws error
+    it('should throw an error for source documents without valid source_group', async () => {
+        const mockProjectResources: DialecticProjectResourceRow[] = [
+            {
+                id: 'doc-1',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'doc1.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 123,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'doc1',
+                    document_relationships: null,
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+        ];
+
+        const mockSupabaseWithData = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: mockProjectResources, error: null, count: mockProjectResources.length, status: 200, statusText: 'OK' }),
+                },
+            },
+        });
+
+        const completedSourceDocumentIds = new Set<string>(['some-id']);
 
         await assertRejects(
             () => planComplexStage(
-                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
                 mockParentJob,
-                mockDeps,
+                mockCtx,
                 mockRecipeStep,
-                'user-jwt-123'
+                'user-jwt-123',
+                completedSourceDocumentIds,
             ),
             Error,
-            'parent payload.stageSlug is required'
+            'extractSourceDocumentIdentifier requires document_relationships',
         );
     });
-}); 
+
+    // 45.c.v: Non-matching identifiers - all documents passed
+    it('should pass all source documents when completedSourceDocumentIds contains non-matching identifiers', async () => {
+        const mockProjectResources: DialecticProjectResourceRow[] = [
+            {
+                id: 'doc-1',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'doc1.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 123,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'doc1',
+                    document_relationships: { source_group: 'doc-1-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+            {
+                id: 'doc-2',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'doc2.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 123,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'doc2',
+                    document_relationships: { source_group: 'doc-2-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+        ];
+
+        const mockSupabaseWithData = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: mockProjectResources, error: null, count: mockProjectResources.length, status: 200, statusText: 'OK' }),
+                },
+            },
+        });
+
+        const completedSourceDocumentIds = new Set<string>(['non-matching-id-1', 'non-matching-id-2']);
+
+        const result = await planComplexStage(
+            mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockCtx,
+            mockRecipeStep,
+            'user-jwt-123',
+            completedSourceDocumentIds,
+        );
+
+        assertEquals(result.length, 2);
+    });
+
+    // 45.c.vi: Resources can be filtered (document-type inputs now only use resources)
+    it('should filter source documents from project_resources', async () => {
+        const mockProjectResources: DialecticProjectResourceRow[] = [
+            {
+                id: 'resource-1',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'resource1.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 456,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'resource1',
+                    document_relationships: { source_group: 'resource-1-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+            {
+                id: 'resource-2',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'resource2.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 456,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'resource2',
+                    document_relationships: { source_group: 'resource-2-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+        ];
+
+        const mockSupabaseWithData = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: mockProjectResources, error: null, count: mockProjectResources.length, status: 200, statusText: 'OK' }),
+                },
+            },
+        });
+
+        const completedSourceDocumentIds = new Set<string>(['resource-1-id']);
+
+        const result = await planComplexStage(
+            mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockCtx,
+            mockRecipeStep,
+            'user-jwt-123',
+            completedSourceDocumentIds,
+        );
+
+        assertEquals(result.length, 1);
+        const payload = result[0].payload;
+        assert(isDialecticExecuteJobPayload(payload));
+        assert(payload.document_relationships !== null);
+        if (payload.document_relationships) {
+            assertEquals(payload.document_relationships.source_group, 'resource-2-id');
+        }
+    });
+
+    // 45.c.vii: mapResourceToSourceDocument preserves document_relationships
+    it('should preserve document_relationships when mapping DialecticProjectResourceRow to SourceDocument', async () => {
+        // VERIFY: This test explicitly verifies that document_relationships is extracted
+        // from the NESTED location: row.resource_description.document_relationships
+        const mockProjectResource: DialecticProjectResourceRow = {
+            id: 'resource-1',
+            project_id: 'proj-1',
+            user_id: 'user-123',
+            file_name: 'resource1.txt',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/resources',
+            mime_type: 'text/plain',
+            size_bytes: 456,
+            resource_description: {
+                document_relationships: { source_group: 'test-id' },
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            iteration_number: 1,
+            resource_type: 'rendered_document',
+            session_id: 'sess-1',
+            source_contribution_id: null,
+            stage_slug: 'test-stage',
+        };
+
+        const mockSupabaseWithData = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: [mockProjectResource], error: null, count: 1, status: 200, statusText: 'OK' }),
+                },
+            },
+        });
+
+        const sourceDocuments = await findSourceDocuments(
+            mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            [{ type: 'document', slug: 'any' }],
+        );
+
+        assertEquals(sourceDocuments.length, 1);
+        const sourceDoc = sourceDocuments[0];
+        assert(sourceDoc.document_relationships !== null);
+        if (sourceDoc.document_relationships) {
+            // VERIFY: The source_group was extracted from resource_description.document_relationships
+            assertEquals(sourceDoc.document_relationships.source_group, 'test-id');
+            // VERIFY: The value matches the nested location in the source row
+            const resourceDesc = mockProjectResource.resource_description;
+            if (resourceDesc && typeof resourceDesc === 'object' && 'document_relationships' in resourceDesc) {
+                const nestedDocRels = resourceDesc.document_relationships;
+                if (nestedDocRels && typeof nestedDocRels === 'object' && 'source_group' in nestedDocRels) {
+                    assertEquals(
+                        sourceDoc.document_relationships.source_group,
+                        nestedDocRels.source_group,
+                    );
+                }
+            }
+        }
+    });
+
+    // 45.c.viii: mapContributionToSourceDocument preserves document_relationships
+    it('should preserve document_relationships when mapping DialecticContributionRow to SourceDocument', async () => {
+        // VERIFY: This test explicitly verifies that document_relationships is extracted
+        // from the DIRECT column: row.document_relationships (not nested)
+        // NOTE: This test uses header_context type since document-type inputs now only use resources
+        const mockContribution: DialecticContributionRow = {
+            id: 'contribution-1',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'test-stage',
+            iteration_number: 1,
+            model_id: 'model-1',
+            model_name: 'Test Model',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'header_context',
+            file_name: 'header_context.json',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            size_bytes: 123,
+            mime_type: 'application/json',
+            document_relationships: { source_group: 'test-id' }, // Direct column, not nested
+            is_header: true,
+            source_prompt_resource_id: null,
+        };
+
+        const mockSupabaseWithData = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: () => Promise.resolve({ data: [mockContribution], error: null, count: 1, status: 200, statusText: 'OK' }),
+                },
+            },
+        });
+
+        const sourceDocuments = await findSourceDocuments(
+            mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            [{ type: 'header_context', slug: 'test-stage' }],
+        );
+
+        assertEquals(sourceDocuments.length, 1);
+        const sourceDoc = sourceDocuments[0];
+        assert(sourceDoc.document_relationships !== null);
+        if (sourceDoc.document_relationships) {
+            // VERIFY: The source_group was extracted from the direct document_relationships column
+            assertEquals(sourceDoc.document_relationships.source_group, 'test-id');
+            // VERIFY: The value matches the direct column in the source row
+            if (mockContribution.document_relationships && typeof mockContribution.document_relationships === 'object' && 'source_group' in mockContribution.document_relationships) {
+                assertEquals(
+                    sourceDoc.document_relationships.source_group,
+                    mockContribution.document_relationships.source_group,
+                );
+            }
+        }
+    });
+
+    // 45.c.ix: Multiple resources filtering works correctly
+    it('should filter multiple source documents correctly based on their source_group values', async () => {
+        const mockProjectResources: DialecticProjectResourceRow[] = [
+            {
+                id: 'resource-1',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'resource1.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 456,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'resource1',
+                    document_relationships: { source_group: 'resource-1-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+            {
+                id: 'resource-2',
+                project_id: 'proj-1',
+                user_id: 'user-123',
+                file_name: 'resource2.txt',
+                storage_bucket: 'test-bucket',
+                storage_path: 'projects/proj-1/resources',
+                mime_type: 'text/plain',
+                size_bytes: 456,
+                resource_description: {
+                    type: 'document',
+                    document_key: 'resource2',
+                    document_relationships: { source_group: 'resource-2-id' },
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                iteration_number: 1,
+                resource_type: 'rendered_document',
+                session_id: 'sess-1',
+                source_contribution_id: null,
+                stage_slug: 'test-stage',
+            },
+        ];
+
+        const mockSupabaseWithData = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: mockProjectResources, error: null, count: mockProjectResources.length, status: 200, statusText: 'OK' }),
+                },
+            },
+        });
+
+        const completedSourceDocumentIds = new Set<string>(['resource-1-id', 'resource-2-id']);
+
+        const result = await planComplexStage(
+            mockSupabaseWithData.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockCtx,
+            mockRecipeStep,
+            'user-jwt-123',
+            completedSourceDocumentIds,
+        );
+
+        assertEquals(result.length, 0);
+    });
+});
+

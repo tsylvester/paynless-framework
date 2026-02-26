@@ -82,16 +82,16 @@ export const OrganizationListCard: React.FC = () => {
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="flex-row flex justify-between items-center space-x-4">
-        <CardTitle role="heading">Organizations</CardTitle>
+      <CardHeader className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
+        <CardTitle role="heading" className="text-lg">Organizations</CardTitle>
         <Button 
           onClick={handleCreateNewClick} 
           variant="outline"
-          size="sm" // Make button slightly smaller
-          className="shrink-0" // Prevent button from shrinking weirdly
+          size="sm"
+          className="shrink-0 w-full sm:w-auto"
         >
           <PlusCircle className="mr-2 h-4 w-4" />
-          Create New
+          <span className="sm:inline">Create New</span>
         </Button>
       </CardHeader>
       <Separator />

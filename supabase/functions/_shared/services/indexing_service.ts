@@ -1,6 +1,6 @@
 // supabase/functions/_shared/services/indexing_service.ts
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { RecursiveCharacterTextSplitter } from 'npm:langchain/text_splitter';
+import { RecursiveCharacterTextSplitter } from 'npm:@langchain/textsplitters';
 import { type Database, type TablesInsert } from '../../../functions/types_db.ts';
 import { ILogger, AiProviderAdapterInstance, EmbeddingResponse } from '../types.ts';
 import type { ITokenWalletService } from '../types/tokenWallet.types.ts';

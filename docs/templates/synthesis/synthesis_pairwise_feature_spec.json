@@ -1,0 +1,31 @@
+{
+  "thesis_document": "feature_spec",
+  "feasibility_document": "technical_feasibility_assessment",
+  "nfr_document": "non_functional_requirements",
+  "comparison_signal": "comparison_vector",
+  "features": [
+    {
+      "feature_name": "",
+      "feature_objective": "",
+      "user_stories": [],
+      "acceptance_criteria": [],
+      "dependencies": [],
+      "success_metrics": [],
+      "risk_mitigation": "",
+      "open_questions": "",
+      "feasibility_insights": [],
+      "non_functional_alignment": [],
+      "score_adjustments": []
+    }
+  ],
+  "feature_scope": [],
+  "tradeoffs": [],
+  "feasibility_insights": [],
+  "non_functional_alignment": [],
+  "score_adjustments": [],
+  "lineage_key": "<derived from thesis artifact>",
+  "source_model_slug": "<derived from thesis artifact>",
+  "match_keys": [
+    "<derived from antithesis reviewer or reviewer combination>"
+  ]
+}

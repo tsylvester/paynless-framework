@@ -1,16 +1,16 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database } from '../types_db.ts';
+import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { Database } from '../types_db.ts';
 import {
-  type IDialecticJobDeps,
-  type DialecticJobPayload,
-  type ExecuteModelCallAndSaveParams,
+  DialecticJobPayload,
+  ExecuteModelCallAndSaveParams,
+  IJobProcessors,
 } from '../dialectic-service/dialectic.interface.ts';
 import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
-import { processJob, type IJobProcessors } from './processJob.ts';
+import { processJob } from './processJob.ts';
 import { logger } from '../_shared/logger.ts';
 import { processSimpleJob } from './processSimpleJob.ts';
-import { getAiProviderConfig, processComplexJob } from './processComplexJob.ts';
+import { processComplexJob } from './processComplexJob.ts';
 import { planComplexStage } from './task_isolator.ts';
 import { getSeedPromptForStage } from '../_shared/utils/dialectic_utils.ts';
 import { continueJob } from './continueJob.ts';
@@ -21,11 +21,12 @@ import {
   deleteFromStorage,
 } from '../_shared/supabase_storage_utils.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
+import { extractSourceGroupFragment } from '../_shared/utils/path_utils.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { createSupabaseAdminClient, } from '../_shared/auth.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
-import { PromptAssembler } from '../_shared/prompt-assembler.ts';
+import { PromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.ts';
 import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
 import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
 import { RagService } from '../_shared/services/rag_service.ts';
@@ -35,19 +36,20 @@ import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
 import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
+import { processRenderJob } from './processRenderJob.ts';
+import { isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
+import { renderDocument } from '../_shared/services/document_renderer.ts';
+import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
+import { IJobContext } from './JobContext.interface.ts';
+import { createJobContext } from './createJobContext.ts';
+import { findSourceDocuments } from './findSourceDocuments.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
-
-const processors: IJobProcessors = {
-  processSimpleJob,
-  processComplexJob,
-  planComplexStage,
-};
 
 // Factory to create fully-wired worker dependencies
 export async function createDialecticWorkerDeps(
   adminClient: SupabaseClient<Database>,
-): Promise<IDialecticJobDeps> {
+): Promise<IJobContext> {
   const notificationService = new NotificationService(adminClient);
 
   // Fetch the model provider for default embedding
@@ -66,7 +68,7 @@ export async function createDialecticWorkerDeps(
     throw new Error('OPENAI_API_KEY is not set');
   }
 
-  const fileManager = new FileManagerService(adminClient, { constructStoragePath });
+  const fileManager = new FileManagerService(adminClient, { constructStoragePath, logger });
 
   const embeddingAdapter = getAiProviderAdapter({
     provider: modelProvider,
@@ -83,39 +85,54 @@ export async function createDialecticWorkerDeps(
   const tokenWalletService = new TokenWalletService(adminClient, adminClient);
   const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient, tokenWalletService);
   const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService });
-  const promptAssembler = new PromptAssembler(adminClient);
+  const promptAssembler = new PromptAssembler(adminClient, fileManager);
+  const documentRenderer = { renderDocument };
 
-  const deps: IDialecticJobDeps = {
+  return createJobContext({
     logger,
+    fileManager,
+    downloadFromStorage,
+    deleteFromStorage,
+    callUnifiedAIModel,
+    getAiProviderAdapter,
+    getAiProviderConfig: async (dbClient: SupabaseClient<Database>, modelId: string) => {
+      const { data, error } = await dbClient
+        .from('ai_providers')
+        .select('*')
+        .eq('id', modelId)
+        .single();
+      if (error || !data) {
+        throw new Error('Failed to fetch AI provider config');
+      }
+      if (!isAiModelExtendedConfig(data.config)) {
+        throw new Error('Failed to fetch AI provider config');
+      }
+      return data.config;
+    },
+    ragService,
+    indexingService,
+    embeddingClient,
+    countTokens,
+    tokenWalletService,
+    notificationService,
     getSeedPromptForStage,
+    promptAssembler,
+    getExtensionFromMimeType,
+    extractSourceGroupFragment,
+    randomUUID: crypto.randomUUID.bind(crypto),
+    shouldEnqueueRenderJob,
+    getGranularityPlanner,
+    planComplexStage,
+    findSourceDocuments,
+    documentRenderer,
     continueJob,
     retryJob,
-    callUnifiedAIModel,
-    downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
-    getExtensionFromMimeType,
-    randomUUID: crypto.randomUUID.bind(crypto),
-    fileManager: fileManager,
-    deleteFromStorage: (bucket: string, paths: string[]) => deleteFromStorage(adminClient, bucket, paths),
-    notificationService,
     executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) =>
       executeModelCallAndSave({
         ...params,
         compressionStrategy: getSortedCompressionCandidates,
       }),
-    ragService,
-    countTokens: countTokens,
-    getAiProviderConfig: (dbClient: SupabaseClient<Database>, modelId: string) => getAiProviderConfig(dbClient, modelId),
-    getGranularityPlanner,
-    planComplexStage,
-    indexingService,
-    embeddingClient,
-    promptAssembler,
-    getAiProviderAdapter,
-    // Use admin client for both contexts in worker environment
-    tokenWalletService,
-  };
-
-  return deps;
+  });
 }
 
 serve(async (req: Request) => {
@@ -163,11 +180,25 @@ serve(async (req: Request) => {
 export async function handleJob(
   adminClient: SupabaseClient<Database>,
   job: Job,
-  deps: IDialecticJobDeps,
+  deps: IJobContext,
   authToken: string,
   testProcessors?: IJobProcessors
 ): Promise<void> {
-  const effectiveProcessors = testProcessors || processors;
+  const defaultProcessors: IJobProcessors = {
+    processSimpleJob: async (dbClient, executeJob, projectOwnerUserId, _executeCtx, token) => {
+      await processSimpleJob(dbClient, executeJob, projectOwnerUserId, deps, token);
+    },
+    processComplexJob: async (dbClient, planJob, projectOwnerUserId, planCtx, token) => {
+      await processComplexJob(dbClient, planJob, projectOwnerUserId, planCtx, token);
+    },
+    planComplexStage: async (dbClient, parentJob, planCtx, recipeStep, token, completedSourceDocumentIds) => {
+      return await planComplexStage(dbClient, parentJob, planCtx, recipeStep, token, completedSourceDocumentIds);
+    },
+    processRenderJob: async (dbClient, renderJob, projectOwnerUserId, renderCtx, token) => {
+      await processRenderJob(dbClient, renderJob, projectOwnerUserId, renderCtx, token);
+    },
+  };
+  const effectiveProcessors = testProcessors || defaultProcessors;
   //console.log('[handleJob] Entered function for job:', job.id);
   const { id: jobId, user_id: projectOwnerUserId } = job;
   const isTestRunner = job.payload && typeof job.payload === 'object' && 'is_test_runner_context' in job.payload 
@@ -247,23 +278,32 @@ export async function handleJob(
   //console.log(`[handleJob] payload check PASSED for job: ${jobId}`);
   // --- End of Validation Block ---
 
-  // consider wrapping the entire try block in a transaction so that nothing else can touch the job while it is being processed
-
   try {
-    // check that the job is not processing before sending it processing
-    const { data: jobData, error: jobError } = await adminClient.from('dialectic_generation_jobs').select('*').eq('id', jobId).single();
-    if (jobError || !jobData || jobData.status === 'processing') {
-      throw new Error(`Job ${jobId} is already processing.`);
-    }
-
-    // console.log(`[handleJob] Validation passed. Entering TRY block for job: ${jobId}`);
-    // Update job status to 'processing'
-    //console.log(`[handleJob] Updating job ${jobId} status to 'processing'...`);
-    await adminClient.from('dialectic_generation_jobs').update({
+    // Atomic check-and-update: only update if status is NOT 'processing'
+    // This prevents race conditions where multiple concurrent calls could both pass the check
+    const { data: updatedJob, error: updateError } = await adminClient
+      .from('dialectic_generation_jobs')
+      .update({
         status: 'processing',
         started_at: new Date().toISOString(),
-    }).eq('id', jobId);
-    //console.log(`[handleJob] Job ${jobId} status successfully updated to 'processing'.`);
+      })
+      .eq('id', jobId)
+      .neq('status', 'processing')
+      .neq('status', 'waiting_for_prerequisite')
+      .select()
+      .single();
+
+    if (updateError || !updatedJob) {
+      // Claim failure is expected for duplicate invocations, race conditions, and
+      // non-actionable statuses (e.g. waiting_for_prerequisite). Return silently
+      // instead of throwing — the catch block would unconditionally mark the job
+      // as 'failed', destroying prerequisite chains for skeleton PLAN jobs.
+      deps.logger.info(
+        `[dialectic-worker] [handleJob] Job ${jobId} could not be claimed ` +
+        `(status: ${job.status}). Skipping gracefully.`
+      );
+      return;
+    }
 
     // Notify user that the job has started
     if (projectOwnerUserId) {
@@ -285,7 +325,7 @@ export async function handleJob(
 
     // Call the internal processing function with validated, typed payload
     //console.log(`[handleJob] Calling processJob for job ${jobId}...`);
-    await processJob(adminClient, validatedJob, projectOwnerUserId, deps, authToken, effectiveProcessors);
+    await processJob(adminClient, validatedJob, projectOwnerUserId, effectiveProcessors, deps, authToken);
     //console.log(`[handleJob] processJob completed for job ${jobId}.`);
   } catch (e) {
       console.error(`[handleJob] CATCH block entered for job ${jobId}. Error:`, e);

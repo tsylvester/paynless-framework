@@ -15,28 +15,80 @@ Using `FileManagerService` for all file-related tasks is **mandatory** to mainta
 
 ### `FileType`
 
-A string literal union that defines the type of file being handled. This type dictates the storage path construction and the target database table for metadata. Key types include:
+An enum that defines the type of file being handled. This type dictates the storage path construction and the target database table for metadata.
 
 ```typescript
 export enum FileType {
-  ProjectReadme = 'project_readme', // The main README for a dialectic project.
-  MasterPlan = 'master_plan',
+  // General Project Files
+  ProjectReadme = 'project_readme',
+  InitialUserPrompt = 'initial_user_prompt',
+  ProjectSettingsFile = 'project_settings_file',
+  GeneralResource = 'general_resource',
+  ProjectExportZip = 'project_export_zip',
+
+  // User-Managed Workflow Files
   PendingFile = 'pending_file',
   CurrentFile = 'current_file',
   CompleteFile = 'complete_file',
-  InitialUserPrompt = 'initial_user_prompt', // The initial user-provided prompt file for a project.
-  UserFeedback = 'user_feedback', // User's consolidated feedback on a stage.
-  ModelContributionMain = 'model_contribution_main', // For the primary content (e.g., Markdown) of an AI model's output for a stage.
-  ModelContributionRawJson = 'model_contribution_raw_json', // For the raw JSON response from the AI provider for a stage.
-  ContributionDocument = 'contribution_document', // A refined/derived document (e.g., PRD, checklist) within a stage's 'documents' folder.
-  ProjectSettingsFile = 'project_settings_file',
-  GeneralResource = 'general_resource', // A general file resource uploaded by a user for an iteration (in 0_seed_inputs/general_resource).
-  SeedPrompt = 'seed_prompt', // The fully constructed prompt sent to a model for a specific stage.
-  // Intermediate artifacts for multi-step stages
+  UserFeedback = 'user_feedback',
+
+  // Core Generation Artifacts
+  ModelContributionMain = 'model_contribution_main',
+  ModelContributionRawJson = 'model_contribution_raw_json',
+  ContributionDocument = 'contribution_document',
+  SeedPrompt = 'seed_prompt',
+  
+  // Document-Centric Generation Artifacts
+  PlannerPrompt = 'planner_prompt',
+  TurnPrompt = 'turn_prompt',
+  HeaderContext = 'header_context',
+  AssembledDocumentJson = 'assembled_document_json',
+  RenderedDocument = 'rendered_document',
+  
+  // Intermediate Synthesis Artifacts
   PairwiseSynthesisChunk = 'pairwise_synthesis_chunk',
   ReducedSynthesis = 'reduced_synthesis',
   Synthesis = 'synthesis',
   RagContextSummary = 'rag_context_summary',
+
+  // Thesis Document Keys
+  business_case = 'business_case',
+  feature_spec = 'feature_spec',
+  technical_approach = 'technical_approach',
+  success_metrics = 'success_metrics',
+
+  // Antithesis Document Keys
+  business_case_critique = 'business_case_critique',
+  technical_feasibility_assessment = 'technical_feasibility_assessment',
+  risk_register = 'risk_register',
+  non_functional_requirements = 'non_functional_requirements',
+  dependency_map = 'dependency_map',
+  comparison_vector = 'comparison_vector',
+
+  // Synthesis Document Keys
+  header_context_pairwise = 'header_context_pairwise',
+  synthesis_pairwise_business_case = 'synthesis_pairwise_business_case',
+  synthesis_pairwise_feature_spec = 'synthesis_pairwise_feature_spec',
+  synthesis_pairwise_technical_approach = 'synthesis_pairwise_technical_approach',
+  synthesis_pairwise_success_metrics = 'synthesis_pairwise_success_metrics',
+  synthesis_document_business_case = 'synthesis_document_business_case',
+  synthesis_document_feature_spec = 'synthesis_document_feature_spec',
+  synthesis_document_technical_approach = 'synthesis_document_technical_approach',
+  synthesis_document_success_metrics = 'synthesis_document_success_metrics',
+  SynthesisHeaderContext = 'synthesis_header_context',
+  product_requirements = 'product_requirements',
+  system_architecture = 'system_architecture',
+  tech_stack = 'tech_stack',
+
+  // Parenthesis Document Keys
+  technical_requirements = 'technical_requirements',
+  master_plan = 'master_plan',
+  milestone_schema = 'milestone_schema',
+
+  // Paralysis Document Keys
+  updated_master_plan = 'updated_master_plan',
+  actionable_checklist = 'actionable_checklist',
+  advisor_recommendations = 'advisor_recommendations',
 }
 ```
 
@@ -46,15 +98,17 @@ An object providing the necessary context to construct a unique and correct stor
 
 ```typescript
 export interface PathContext {
+  branchKey?: string | null;
+  parallelGroup?: number | null;
   projectId: string;
   fileType: FileType;
   sessionId?: string;
   iteration?: number;
   stageSlug?: string;
-  contributionType?: ContributionType | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
+  contributionType?: ContributionType | null;
   modelSlug?: string;
   attemptCount?: number;
-  originalFileName?: string; // Made optional, validation per fileType
+  originalFileName?: string;
   sourceModelSlugs?: string[];
   sourceAnchorType?: string;
   sourceAnchorModelSlug?: string;
@@ -62,8 +116,21 @@ export interface PathContext {
   pairedModelSlug?: string;
   isContinuation?: boolean;
   turnIndex?: number;
+  documentKey?: string;
+  stepName?: string;
+  sourceGroupFragment?: string; // Optional fragment extracted from `document_relationships.source_group` UUID (first 8 characters, sanitized) to disambiguate filenames when the same model processes multiple source groups in parallel.
 }
 ```
+
+**Fragment Usage for Filename Disambiguation**
+
+The `sourceGroupFragment` field is used to ensure unique filenames when multiple instances of the same AI model process different source document groups (lineages) in parallel. The fragment is extracted from the `document_relationships.source_group` UUID by taking the first 8 characters after removing hyphens, converting to lowercase, and sanitizing for filesystem use. This prevents duplicate resource errors when parallel jobs generate files with otherwise identical naming patterns.
+
+Fragment positions in filenames follow standardized patterns:
+- **Simple patterns** (non-antithesis): Fragment appears after `documentKey` (or after `attemptCount` for HeaderContext)
+- **Antithesis patterns**: Fragment appears between `sourceAnchorModelSlug` and `attemptCount`
+
+The fragment is optional and only appears in filenames when `source_group` exists in `document_relationships`.
 
 ### `UploadContext`
 
@@ -75,16 +142,12 @@ export interface UploadContext {
   fileContent: Buffer | ArrayBuffer | string;
   mimeType: string;
   sizeBytes: number;
-  userId: string | null; // Allow null for system-generated contributions
+  userId: string | null;
   description: string;
-  resourceTypeForDb?: string; // To directly populate dialectic_project_resources.resource_type
-
-  // Specific for 'model_contribution_main' fileType
+  resourceTypeForDb?: string;
   contributionMetadata?: ContributionMetadata;
-
-  // Specific for 'user_feedback' fileType
-  feedbackTypeForDb?: string; // To directly populate dialectic_feedback.feedback_type
-  resourceDescriptionForDb?: Json | null; // To directly populate dialectic_feedback.resource_description (jsonb)
+  feedbackTypeForDb?: string;
+  resourceDescriptionForDb?: Json | null;
 }
 
 export interface ContributionMetadata {
@@ -93,14 +156,14 @@ export interface ContributionMetadata {
   modelNameDisplay: string; // For dialectic_contributions.model_name
   stageSlug: string;
   iterationNumber: number;
-  rawJsonResponseContent: string; // The actual JSON string content for the raw AI response.
+  rawJsonResponseContent: Json; // The actual JSON string content for the raw AI response.
   target_contribution_id?: string;
   document_relationships?: Json | null;
   isIntermediate?: boolean;
   tokensUsedInput?: number;
   tokensUsedOutput?: number;
   processingTimeMs?: number;
-  seedPromptStoragePath: string; // Path to the seed prompt that generated this contribution
+  source_prompt_resource_id?: string; // Path to the prompt that generated this contribution
   citations?: Json | null;
   contributionType?: ContributionType | null;
   errorDetails?: string | null;
@@ -113,9 +176,12 @@ export interface ContributionMetadata {
 }
 ```
 
-### File Tree Generated by File Manager
+### File Tree Generated by File Manager (Document-Centric)
 
-{repo_root}/  (Root of the user's GitHub repository)
+The following structure represents the target state for the document-centric architecture.
+
+```
+{repo_root}/
 └── {project_name_slug}/
     ├── project_readme.md      (Optional high-level project description, goals, defined by user or initial setup, *Generated at project finish, not start, not yet implemented*)
     ├── {user_prompt}.md (the initial prompt submitted by the user to begin the project generated by createProject, whether provided as a file or text string, *Generated at project start, implemented*)
@@ -138,73 +204,37 @@ export interface ContributionMetadata {
     └── session_{session_id_short}/  (Each distinct run of the dialectic process)
         └── iteration_{N}/        (N being the iteration number, e.g., "iteration_1")
             ├── 1_thesis/
-            │   ├── raw_responses
-            │   │   ├── {model_slug}_{n}_thesis_raw.json
-            |   |   └── {model_slug}_{n}_{stage_slug}_continuation_{n}_raw.json
-            │   ├── _work/                              (Storage for intermediate, machine-generated artifacts that are not final outputs)
-            │   │   ├── {model_slug}_{n}_{stage_slug}_continuation_{n}.md
-            │   │   └── ... (other continuations for the same model and other models)
-            │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-            │   ├── {model_slug}_{n}_thesis.md (Contains YAML frontmatter + AI response, appends a count so a single model can provide multiple contributions)
-            │   ├── ... (other models' hypothesis outputs)
-            │   ├── user_feedback_hypothesis.md   (User's feedback on this stage)
-            │   └── documents/                      (Optional refined documents, e.g., PRDs from each model)
-            │       └── (generated from .json object located at Database['dialectic_stages']['row']['expected_output_artifacts'])
-            ├── 2_antithesis/
-            │   ├── raw_responses
-            │   |   ├── {model_slug}_critiquing_{source_model_slug}_{n}_antithesis_raw.json
-            |   |   └── {model_slug}_{n}_{stage_slug}_continuation_{n}_raw.json
-            │   ├── _work/                              (Storage for intermediate, machine-generated artifacts that are not final outputs)
-            │   │   ├── {model_slug}_{n}_{stage_slug}_continuation_{n}.md
-            │   │   └── ... (other continuations for the same model and other models)
-            │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-            │   ├── {model_slug}_critiquing_{source_model_slug}_{n}_antithesis.md
-            │   ├── ...
-            │   ├── user_feedback_antithesis.md
-            │   └── documents/                    (Optional refined documents, e.g., PRDs from each model)
-            │       └── (generated from .json object located at Database['dialectic_stages']['row']['expected_output_artifacts'])                
-            ├── 3_synthesis/
+            │   ├── _work/
+            │   │   ├── prompts/
+            │   │   │   ├── {model_slug}_{n}_planner_prompt.md
+            │   │   │   └── {model_slug}_{n}_{document_key}[_{fragment}][_continuation_{c}]_prompt.md
+            │   │   ├── context/
+            │   │   │   └── {model_slug}_{n}[_{fragment}]_header_context.json
+            │   │   └── assembled_json/
+            │   │       └── {model_slug}_{n}_{document_key}[_{fragment}]_assembled.json
             │   ├── raw_responses/
-            │   │   ├── {model_slug}_from_{source_model_slugs}_{n}_pairwise_synthesis_chunk_raw.json
-            │   │   ├── {model_slug}_reducing_{source_contribution_id_short}_{n}_reduced_synthesis_raw.json
-            │   │   ├── {model_slug}_{n}_final_synthesis_raw.json
-            |   |   └── {model_slug}_{n}_{stage_slug}_continuation_{n}_raw.json
-            │   ├── _work/                              (Storage for intermediate, machine-generated artifacts that are not final outputs)
-            │   │   ├── {model_slug}_from_{source_model_slugs}_{n}_pairwise_synthesis_chunk.md
-            │   │   ├── {model_slug}_reducing_{source_contribution_id_short}_{n}_reduced_synthesis.md
-            │   │   ├── {model_slug}_{n}_{stage_slug}_continuation_{n}.md
-            │   │   └── ... (other continuations for the same model and other models)
-            │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-            │   ├── {model_slug}_{n}_final_synthesis.md
-            │   ├── ...
-            │   ├── user_feedback_synthesis.md
-            │   └── documents/                      (Optional refined documents, e.g., PRDs from each model)
-            │        └── (generated from .json object located at Database['dialectic_stages']['row']['expected_output_artifacts'])
-            ├── 4_parenthesis/
-            │   ├── raw_responses
-            │   │   ├── {model_slug}_{n}_{stage_slug}_raw.json
-            |   |   └──{model_slug}_{n}_{stage_slug}_continuation_{n}_raw.json
-            │   ├── _work/                              (Storage for intermediate, machine-generated artifacts that are not final outputs)
-            │   │   ├── {model_slug}_{n}_{stage_slug}_continuation_{n}.md
-            │   │   └── ... (other continuations for the same model and other models)
-            │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-            │   ├── {model_slug}_{n}_{stage_slug}.md
-            │   ├── ...
-            │   ├── user_feedback_parenthesis.md
-            │   └── documents/                      (Optional refined documents, e.g., PRDs from each model)
-            │       └── (generated from .json object located at Database['dialectic_stages']['row']['expected_output_artifacts'])
-            └── 5_paralysis/
-                ├── raw_responses
-                │   ├──{model_slug}_{n}_{stage_slug}_raw.json
-                |   └──{model_slug}_{n}_{stage_slug}_continuation_{n}_raw.json
-                ├── _work/                              (Storage for intermediate, machine-generated artifacts that are not final outputs)
-                │   ├── {model_slug}_{n}_{stage_slug}_continuation_{n}.md
-                │   └── ... (other continuations for the same model and other models)
-                ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-                ├── {model_slug}_{n}_{stage_slug}.md
-                ├── ...
-                └── documents/                      (Optional refined documents, e.g., PRDs from each model)
-                    └── (generated from .json object located at Database['dialectic_stages']['row']['expected_output_artifacts'])
+            │   │   ├── {model_slug}_{n}_planner_raw.json
+            │   │   └── {model_slug}_{n}_{document_key}[_{fragment}][_continuation_{c}]_raw.json
+            │   ├── documents/
+            │   │   └── {model_slug}_{n}_{document_key}[_{fragment}].md
+            │   ├── seed_prompt.md
+            │   └── user_feedback_thesis.md
+            ├── 2_antithesis/
+            │   ├── _work/
+            │   │   ├── prompts/
+            │   │   │   └── {model_slug}_critiquing_{source_model_slug}[_{fragment}]_{n}_{document_key}[_continuation_{c}]_prompt.md
+            │   │   ├── context/
+            │   │   │   └── {model_slug}_critiquing_{source_model_slug}[_{fragment}]_{n}_header_context.json
+            │   │   └── assembled_json/
+            │   │       └── {model_slug}_critiquing_{source_model_slug}[_{fragment}]_{n}_{document_key}_assembled.json
+            │   ├── raw_responses/
+            │   │   └── {model_slug}_critiquing_{source_model_slug}[_{fragment}]_{n}_{document_key}[_continuation_{c}]_raw.json
+            │   ├── documents/
+            │   │   └── {model_slug}_critiquing_{source_model_slug}[_{fragment}]_{n}_{document_key}.md
+            │   ├── seed_prompt.md
+            │   └── user_feedback_antithesis.md
+            └── ... (Structure repeats for 3_synthesis, 4_parenthesis, 5_paralysis)
+```
 
 ## Public Methods
 
@@ -350,51 +380,43 @@ if (promptFile) {
 
 ### 2. Session Start (`startSession.ts`)
 
-When a new Dialectic session is initiated, the fully assembled seed prompt is saved using the `FileManagerService`.
+When a new Dialectic session is initiated, the fully assembled seed prompt is saved using the `FileManagerService` via the `PromptAssembler` service.
 
 ```typescript
-// In supabase/functions/dialectic-service/startSession.ts
+// In supabase/functions/dialectic-service/startSession.ts (Conceptual)
 
-// ... (after assembling the seed prompt into `assembledSeedPrompt`)
-const seedPromptBuffer = Buffer.from(assembledSeedPrompt, 'utf-8');
-const seedPromptUploadResult = await fileManager.uploadAndRegisterFile({
-    pathContext: {
-        projectId: project.id,
-        fileType: FileType.SeedPrompt, 
-        sessionId: newSessionRecord.id,
-        iteration: 1,
-        stageSlug: stageContext.slug,
-        originalFileName: `seed_prompt.md`,
-    },
-    fileContent: seedPromptBuffer,
-    mimeType: 'text/markdown',
-    sizeBytes: seedPromptBuffer.byteLength,
-    userId: userId,
-    description: formatResourceDescription({
-        type: 'seed_prompt',
-        session_id: newSessionRecord.id,
-        stage_slug: stageContext.slug,
-        iteration: 1,
-        original_file_name: `seed_prompt.md`,
-        project_id: project.id,
-    }),
-});
+// The PromptAssembler is now responsible for handling prompt construction and persistence.
+const promptAssembler = new PromptAssembler(dbClient, { fileManager });
 
-if (seedPromptUploadResult.error || !seedPromptUploadResult.record) {
+// It is called to create and save the seed prompt artifact.
+const assembledPrompt = await promptAssembler.assembleSeedPrompt(
+    project,
+    newSessionRecord,
+    stageContext,
+    initialUserPrompt,
+    1 // iteration number
+);
+
+if (assembledPrompt.error) {
     // Handle error
 }
-// ...
+
+// The resulting `source_prompt_resource_id` is then passed along to the next
+// step in the process, which will eventually use it in `executeModelCallAndSave`.
+const sourcePromptResourceId = assembledPrompt.source_prompt_resource_id;
+
+// ... proceed to call the dialectic-worker with the job payload ...
 ```
 
-### 3. Saving AI Model Contributions (`generateContributions.ts`)
+### 3. Saving AI Model Contributions (`executeModelCallAndSave.ts`)
 
-When an AI model generates content for a stage (e.g., Thesis, Synthesis):
+When an AI model generates content for a stage, `executeModelCallAndSave` in the `dialectic-worker` uses the `FileManagerService` to save the output.
 
 ```typescript
-// In supabase/functions/dialectic-service/generateContributions.ts (simplified)
+// In supabase/functions/dialectic-worker/executeModelCallAndSave.ts (simplified)
 
 // ... (after receiving aiResponse from callUnifiedAIModel)
-const fileManager = new FileManagerService(dbClient);
+const fileManager = new FileManagerService(dbClient, { constructStoragePath });
 
 const contributionUpload = await fileManager.uploadAndRegisterFile({
   pathContext: {
@@ -403,25 +425,26 @@ const contributionUpload = await fileManager.uploadAndRegisterFile({
     iteration: currentIterationNumber,
     stageSlug: stage.slug,
     modelSlug: sanitizeForPath(providerDetails.api_identifier || providerDetails.name),
-    originalFileName: `${sanitizeForPath(providerDetails.api_identifier || providerDetails.name)}_${stage.slug}.md`,
     fileType: 'model_contribution_main',
+    // ... other path properties like documentKey
   },
   fileContent: aiResponse.content, // The main Markdown/text output
   mimeType: aiResponse.contentType || 'text/markdown',
   sizeBytes: new TextEncoder().encode(aiResponse.content).length,
-  userId: null, // AI contributions are system-generated in this context
+  userId: null, // AI contributions are system-generated
   description: `Contribution for stage ${stage.slug} from model ${providerDetails.name}`,
   contributionMetadata: {
     sessionId: sessionDetails.id,
-    rawJsonResponseContent: JSON.stringify(aiResponse.rawProviderResponse || {}), // The raw JSON
-    modelIdUsed: modelIdForCall, // Actual ID of the AI provider/model config
+    rawJsonResponseContent: aiResponse.rawProviderResponse,
+    modelIdUsed: modelIdForCall,
     modelNameDisplay: providerDetails.name,
     stageSlug: stage.slug,
     iterationNumber: currentIterationNumber,
     tokensUsedInput: aiResponse.inputTokens,
     tokensUsedOutput: aiResponse.outputTokens,
     processingTimeMs: aiResponse.processingTimeMs,
-    seedPromptStoragePath: seedPromptResource?.storage_path, // Path of the seed prompt file used
+    // The link to the prompt resource is now passed directly.
+    source_prompt_resource_id: promptConstructionPayload.source_prompt_resource_id,
     // ... other metadata like citations, contributionType, etc.
   }
 });
@@ -429,52 +452,49 @@ const contributionUpload = await fileManager.uploadAndRegisterFile({
 if (contributionUpload.error || !contributionUpload.record) {
   // Handle failed contribution saving
 } else {
-  // `contributionUpload.record` is the new dialectic_contributions row
-  // Note: The raw JSON is uploaded by FileManagerService itself if rawJsonResponseContent is provided.
-  // The path to the raw JSON is stored in `contributionUpload.record.raw_response_storage_path`.
+  // `contributionUpload.record` is the new dialectic_contributions row.
+  // The raw JSON is uploaded by FileManagerService itself if rawJsonResponseContent is provided.
 }
 // ...
 ```
 
 ### 4. Cloning a Project (Conceptual) (`cloneProject.ts`)
 
-When cloning a project, `FileManagerService` would be used to duplicate each file from the source project into the new project's structure, creating new database records for each.
+When cloning a project, `FileManagerService` would be used to duplicate each file from the source project into the new project's structure, creating new database records for each. The logic for handling contributions must be updated to copy the prompt relationship.
 
 ```typescript
 // In supabase/functions/dialectic-service/cloneProject.ts (conceptual)
 
 // ... (create new project record for `newProjectId`)
-const fileManager = new FileManagerService(dbClient);
+const fileManager = new FileManagerService(dbClient, { constructStoragePath });
 
-// 1. Fetch all `dialectic_project_resources` for `sourceProjectId`
-for (const resource of sourceProjectResources) {
-  // 2. Download/read content of `resource.storage_path`
-  const { data: fileBlob, error: downloadError } = await dbClient.storage
-    .from(resource.storage_bucket)
-    .download(resource.storage_path);
-  
-  if (downloadError || !fileBlob) continue; // Skip if cannot download
-  const fileContent = await fileBlob.arrayBuffer();
+// ... (Loop for cloning dialectic_project_resources remains the same)
 
-  // 3. Upload and register for the new project
-  await fileManager.uploadAndRegisterFile({
-    pathContext: {
-      projectId: newProjectId, // New project ID
-      fileType: resource.file_type, // Assuming file_type is stored or can be derived
-      originalFileName: resource.file_name,
-      // NOTE: `fileType` might need adjustment if it implies unique roles like 'initial_user_prompt'
-      // It might be better to classify cloned files as 'general_resource' or similar in the new project.
-    },
-    fileContent: Buffer.from(fileContent),
-    mimeType: resource.mime_type,
-    sizeBytes: resource.size_bytes,
-    userId: newProjectOwnerId,
-    description: resource.resource_description, // Copy description
-  });
+// 4. Repeat for `dialectic_contributions`
+for (const originalContrib of sourceContributions) {
+    // ... (download original contribution content)
+
+    // When re-uploading, the contribution metadata must be updated.
+    const newContributionMetadata: ContributionMetadata = {
+        // ... (copy metadata like modelIdUsed, stageSlug, etc.)
+        
+        // Instead of rebuilding a seed_prompt_url, we now copy the foreign key
+        // to the *newly cloned* prompt resource. This requires mapping old resource IDs to new ones.
+        source_prompt_resource_id: idMap.get(originalContrib.source_prompt_resource_id),
+
+        // ... (other metadata)
+    };
+
+    await fileManager.uploadAndRegisterFile({
+      pathContext: {
+        projectId: newProjectId,
+        sessionId: newSessionId, // A new session ID for the cloned project
+        // ... other new path context
+      },
+      // ... file content and other properties
+      contributionMetadata: newContributionMetadata,
+    });
 }
-
-// 4. Repeat for `dialectic_contributions` across all sessions of the source project,
-//    adjusting `sessionId`, `iteration`, etc., for the new project structure.
 // ...
 ```
 

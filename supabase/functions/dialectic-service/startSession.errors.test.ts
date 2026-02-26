@@ -1,15 +1,21 @@
 // deno-lint-ignore-file no-explicit-any
-import { assertEquals, assertExists, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
+import {
+    assertEquals,
+    assertExists,
+    assert,
+    assertRejects,
+} from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
-import { startSession, type StartSessionDeps } from "./startSession.ts";
+import { startSession } from "./startSession.ts";
 import { testProviderMap } from "../_shared/ai_service/factory.ts";
-import type { StartSessionPayload } from "./dialectic.interface.ts";
+import type { StartSessionPayload, StartSessionDeps } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
-import { createMockPromptAssembler } from "../_shared/prompt-assembler.mock.ts";
+import { MockPromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.mock.ts";
 import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { MockLogger } from "../_shared/logger.mock.ts";
+import { AssembledPrompt } from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
 
 const MOCK_FILE_MANAGER = new MockFileManagerService();
 
@@ -198,23 +204,30 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
         mockUser: MOCK_USER,
     });
     const mockLogger = new MockLogger();
+    const mockAssembler = new MockPromptAssembler();
     const result = await startSession(
         MOCK_USER,
         mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
         payload,
-        { logger: mockLogger, fileManager: MOCK_FILE_MANAGER, providerMap: testProviderMap, embeddingApiKey: 'test-key' }
+        { logger: mockLogger, fileManager: MOCK_FILE_MANAGER, promptAssembler: mockAssembler, providerMap: testProviderMap, embeddingApiKey: 'test-key' }
     );
     assertExists(result.error);
     assertEquals(result.error?.message, "Failed to create new session.");
     assertEquals(result.error?.status, 500);
 });
 
-Deno.test("startSession - Error: Fails to upload user prompt and cleans up session", async () => {
-    const mockProjectId = "project-upload-fail";
-    const mockNewSessionId = "session-to-be-deleted";
+Deno.test("startSession - Error: Fails to assemble seed prompt and cleans up session", async () => {
+    const mockProjectId = "project-assembly-fail";
+    const mockNewSessionId = "session-to-be-deleted-on-assembly-failure";
     const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
     
-    const mockAssembler = createMockPromptAssembler();
+    const mockAssembler = new MockPromptAssembler();
+    
+    // For this test, we are going to throw an error when assemble is called
+    mockAssembler.assembleSeedPrompt = spy(() => {
+        throw new Error("Assembly failed!");
+    });
+
     const spiedSessionDeleteFn = spy(async () => ({ data: null, error: null, status: 204, statusText: 'no content' }));
 
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
@@ -254,33 +267,36 @@ Deno.test("startSession - Error: Fails to upload user prompt and cleans up sessi
     });
     
     const mockLogger = new MockLogger();
-    MOCK_FILE_MANAGER.setUploadAndRegisterFileResponse(null, { message: 'Upload failed for seed prompt' });
-
-    const result = await startSession(
-        MOCK_USER, 
-        mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, 
-        payload, 
-        { 
-            logger: mockLogger,
-            fileManager: MOCK_FILE_MANAGER,
-            promptAssembler: mockAssembler,
-            randomUUID: () => mockNewSessionId // Ensure consistent session ID for predictability
-        }
+    
+    await assertRejects(
+        async () => {
+            await startSession(
+                MOCK_USER, 
+                mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, 
+                payload, 
+                { 
+                    logger: mockLogger,
+                    fileManager: MOCK_FILE_MANAGER,
+                    promptAssembler: mockAssembler,
+                    randomUUID: () => mockNewSessionId 
+                }
+            );
+        },
+        Error,
+        "Assembly failed!"
     );
     
-    assertExists(result.error);
-    assertEquals(result.error?.message, "Upload failed for seed prompt");
-    assertEquals(result.error?.status, 500);
-
     assertEquals(spiedSessionDeleteFn.calls.length, 1, "Session delete should have been called once for cleanup.");
-    assertEquals(MOCK_FILE_MANAGER.uploadAndRegisterFile.calls.length, 1, "The file manager's uploadAndRegisterFile should have been called once (for the failing seed_prompt).");
-
-    // Assert that assembler.assemble was called correctly even in this error path leading to cleanup
-    assertEquals(mockAssembler.assemble.calls.length, 1, "assembler.assemble should have been called once in error case.");
-    const assembleArgs = mockAssembler.assemble.calls[0].args;
-    assertEquals(assembleArgs.length, 5, "assembler.assemble should be called with 5 arguments in error case.");
-    assert(typeof assembleArgs[3] === 'string', "Forth argument (projectInitialUserPrompt) should be a string in error case."); 
-    assertEquals(assembleArgs[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession in error case.");
+    
+    assertEquals(mockAssembler.assembleSeedPrompt.calls.length, 1, "assembler.assembleSeedPrompt should have been called once in error case.");
+    const assembleArgs = mockAssembler.assembleSeedPrompt.calls[0].args[0];
+    assertExists(assembleArgs.dbClient, "The options object should have a dbClient in error case.");
+    assertExists(assembleArgs.fileManager, "The options object should have a fileManager in error case.");
+    assertExists(assembleArgs.project, "The options object should have a project in error case.");
+    assertExists(assembleArgs.session, "The options object should have a session in error case.");
+    assertExists(assembleArgs.stage, "The options object should have a stage in error case.");
+    assertExists(assembleArgs.projectInitialUserPrompt, "The options object should have a projectInitialUserPrompt in error case.");
+    assertExists(assembleArgs.iterationNumber, "The options object should have a iterationNumber in error case.");
 });
 
 Deno.test("startSession - Error: Missing overlays should fail fast", async () => {
@@ -302,7 +318,7 @@ Deno.test("startSession - Error: Missing overlays should fail fast", async () =>
     });
 
     const mockLogger = new MockLogger();
-    const assembler = createMockPromptAssembler();
+    const assembler = new MockPromptAssembler();
 
     const result = await startSession(
         MOCK_USER,
