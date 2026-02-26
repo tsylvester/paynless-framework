@@ -2,22 +2,30 @@ import Stripe from "npm:stripe";
 import { PaymentConfirmation } from "../../../types/payment.types.ts";
 import { parseProductDescription } from '../../../utils/productDescriptionParser.ts';
 import type { ProductPriceHandlerContext } from '../../../stripe.mock.ts';
-import { TablesInsert, Json } from "../../../../types_db.ts";
+import { Json, TablesInsert } from "../../../../types_db.ts";
 
 export async function handlePriceCreated(
   context: ProductPriceHandlerContext,
   event: Stripe.Event
 ): Promise<PaymentConfirmation> {
   const { supabaseClient, logger, stripe } = context;
-  const price = event.data.object as Stripe.Price;
+
+  if (event.type !== 'price.created') {
+    return {
+      success: false,
+      transactionId: event.id,
+      error: 'Invalid event type for handlePriceCreated',
+    };
+  }
+  const price: Stripe.Price = event.data.object;
   const functionName = 'handlePriceCreated';
 
   logger.info(
-    `[${functionName}] Handling ${event.type} for price ${price.id}. Product ID: ${typeof price.product === 'string' ? price.product : price.product?.id}, Active: ${price.active}`,
+    `[${functionName}] Handling ${event.type} for price ${price.id}. Product ID: ${price.product}, Active: ${price.active}`,
     {
       eventId: event.id,
       priceId: price.id,
-      productId: typeof price.product === 'string' ? price.product : price.product?.id,
+      productId: price.product,
       active: price.active,
       metadata: price.metadata,
       livemode: event.livemode
@@ -77,11 +85,49 @@ export async function handlePriceCreated(
         error: `Product ${price.product} is deleted and cannot be synced.`,
       };
     }
-    const stripeProduct = productResponse as Stripe.Product;
+    const stripeProduct: Stripe.Product = productResponse;
 
     const parsedDescription = parseProductDescription(stripeProduct.name, stripeProduct.description);
+    const descriptionJson: Json = {
+      subtitle: parsedDescription.subtitle,
+      features: parsedDescription.features,
+    };
 
-    let tokensAwarded: number | undefined = undefined;
+    let planType: 'subscription' | 'one_time_purchase';
+    let interval: string | null;
+    let intervalCount: number | null;
+    if (price.type === 'recurring') {
+      planType = 'subscription';
+      if (price.recurring == null) {
+        logger.error(
+          `[${functionName}] Price ${price.id} is recurring but price.recurring is missing. Cannot sync.`,
+          { priceId: price.id }
+        );
+        return {
+          success: false,
+          transactionId: event.id,
+          error: `Price ${price.id} is recurring but recurring data is missing. Cannot sync.`,
+        };
+      }
+      interval = price.recurring.interval;
+      intervalCount = price.recurring.interval_count;
+    } else if (price.type === 'one_time') {
+      planType = 'one_time_purchase';
+      interval = null;
+      intervalCount = null;
+    } else {
+      logger.error(
+        `[${functionName}] Price ${price.id} has unknown type "${price.type}". Cannot sync.`,
+        { priceId: price.id, priceType: price.type }
+      );
+      return {
+        success: false,
+        transactionId: event.id,
+        error: `Price ${price.id} has unknown type. Cannot sync.`,
+      };
+    }
+
+    let tokensAwarded: number | undefined;
     if (stripeProduct.metadata?.tokens_to_award) {
       const parsedTokens = parseInt(stripeProduct.metadata.tokens_to_award, 10);
       if (isNaN(parsedTokens)) {
@@ -93,20 +139,20 @@ export async function handlePriceCreated(
       }
     }
 
-    const planDataToUpsert = {
+    const planDataToUpsert: TablesInsert<'subscription_plans'> = {
       stripe_price_id: price.id,
       stripe_product_id: stripeProduct.id,
       name: stripeProduct.name,
-      description: parsedDescription,
+      description: descriptionJson,
       amount: price.unit_amount,
       currency: price.currency,
-      interval: price.recurring?.interval || 'day',
-      interval_count: price.recurring?.interval_count || 1,
+      interval,
+      interval_count: intervalCount,
       active: price.active,
-      metadata: price.metadata || {},
+      metadata: price.metadata,
       tokens_to_award: tokensAwarded,
       item_id_internal: price.id,
-      plan_type: price.type === 'recurring' ? 'subscription' : 'one_time_purchase',
+      plan_type: planType,
     };
 
     logger.info(
@@ -140,14 +186,16 @@ export async function handlePriceCreated(
     };
 
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (!(err instanceof Error)) {
+      throw err;
+    }
     logger.error(
-      `[${functionName}] Unexpected error processing ${event.type} for price ${price.id}: ${errorMessage}`,
+      `[${functionName}] Unexpected error processing ${event.type} for price ${price.id}: ${err.message}`,
       { error: err, eventId: event.id, priceId: price.id }
     );
     return {
       success: false,
-      error: `Unexpected error processing ${event.type} for price ${price.id}: ${errorMessage}`,
+      error: `Unexpected error processing ${event.type} for price ${price.id}: ${err.message}`,
       transactionId: event.id,
       status: 500,
     };

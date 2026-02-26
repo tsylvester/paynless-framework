@@ -7,7 +7,7 @@ interface CurrentSubscriptionCardProps {
   handleManageSubscription: () => void;
   handleCancelSubscription: () => void;
   formatAmount: (amount: number, currency: string) => string;
-  formatInterval: (interval: string, count: number) => string;
+  formatInterval: (interval: string | null | undefined, count: number | null | undefined) => string;
 }
 
 export function CurrentSubscriptionCard({
@@ -18,6 +18,21 @@ export function CurrentSubscriptionCard({
   formatAmount,
   formatInterval
 }: CurrentSubscriptionCardProps) {
+
+  const subscriptionPlan = userSubscription.plan;
+  if (!subscriptionPlan) {
+    return null;
+  }
+
+  const subscriptionAmount = subscriptionPlan.amount;
+  if (!subscriptionAmount) {
+    throw new Error("Subscription amount is missing");
+  }
+
+  const subscriptionCurrency = subscriptionPlan.currency;
+  if (!subscriptionCurrency) {
+    throw new Error("Subscription currency is missing");
+  }
   return (
     <div className="mt-8 mx-auto max-w-2xl bg-primary/10 border border-primary/20 rounded-lg p-6">
       <div className="flex items-start gap-4">
@@ -33,7 +48,7 @@ export function CurrentSubscriptionCard({
             <div>
               <span className="text-sm text-textSecondary">Price: </span>
               <span className="font-medium">
-                {formatAmount(userSubscription.plan.amount, userSubscription.plan.currency)}
+                {formatAmount(subscriptionAmount, subscriptionCurrency)}
                 {' '}{formatInterval(userSubscription.plan.interval, userSubscription.plan.interval_count)}
               </span>
             </div>

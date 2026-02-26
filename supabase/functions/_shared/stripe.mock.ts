@@ -46,6 +46,11 @@ export interface MockStripe {
       [id: string, options?: Stripe.RequestOptions],
       Promise<Stripe.Response<Stripe.Price>>
     >;
+    pricesList: Stub<
+      Stripe.PricesResource,
+      Parameters<Stripe.PricesResource['list']>,
+      ReturnType<Stripe.PricesResource['list']>
+    >;
   };
   clearStubs: () => void;
 }
@@ -202,6 +207,21 @@ const getMockStripeInstance = (): Stripe => ({
           statusCode: 200,
         },
       } as Stripe.Response<Stripe.Price>),
+    list: (
+      params?: Stripe.PriceListParams,
+      options?: Stripe.RequestOptions
+    ): Promise<Stripe.Response<Stripe.ApiList<Stripe.Price>>> =>
+      Promise.resolve({
+        object: 'list',
+        data: [],
+        has_more: false,
+        url: '/v1/prices',
+        lastResponse: {
+          headers: {},
+          requestId: 'req_default_price_list',
+          statusCode: 200,
+        },
+      }),
   } as Stripe.PricesResource,
 }) as Stripe;
 
@@ -215,6 +235,7 @@ export function createMockStripe(): MockStripe {
     subscriptionsRetrieve: stub(mockInstance.subscriptions, "retrieve"),
     productsRetrieve: stub(mockInstance.products, "retrieve"),
     pricesRetrieve: stub(mockInstance.prices, "retrieve"),
+    pricesList: stub(mockInstance.prices, "list"),
   };
 
   const clearStubs = () => {
@@ -232,6 +253,12 @@ export function createMockStripe(): MockStripe {
     }
     if (stubs.productsRetrieve?.restore) {
       stubs.productsRetrieve.restore();
+    }
+    if (stubs.pricesRetrieve?.restore) {
+      stubs.pricesRetrieve.restore();
+    }
+    if (stubs.pricesList?.restore) {
+      stubs.pricesList.restore();
     }
   };
 
