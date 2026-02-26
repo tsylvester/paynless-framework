@@ -18,7 +18,8 @@
     "test": "pnpm -r test",
     "test:integration": "vitest run --config ./vitest.config.ts",
     "sync:types": "supabase gen types typescript --local > supabase/functions/types_db.ts && node supabase/scripts/sync-supabase-shared-types.mjs",
-    "dev:load-prompts": "cd supabase/functions && deno --allow-all --env=../.env ../scripts/seed_prompt_templates.ts"
+    "dev:load-prompts": "cd supabase/functions && deno --allow-all --env=../.env ../scripts/seed_prompt_templates.ts",
+    "dev:load-prompts:prod": "cd supabase/functions && deno --allow-all --env=../.env ../scripts/seed_prompt_templates.ts --production"
   },
   "keywords": [
     "supabase",
