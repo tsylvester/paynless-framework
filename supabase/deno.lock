@@ -21,7 +21,8 @@
     "npm:@types/chai@4.3.1": "4.3.1",
     "npm:@types/node@*": "22.12.0",
     "npm:chai@4.3.7": "4.3.7",
-    "npm:openai@*": "6.16.0_zod@4.3.5"
+    "npm:openai@*": "6.16.0_zod@4.3.5",
+    "npm:stripe@*": "20.3.0_@types+node@22.12.0"
   },
   "jsr": {
     "@std/assert@0.225.3": {
@@ -353,6 +354,15 @@
     },
     "simple-wcswidth@1.1.2": {
       "integrity": "sha512-j7piyCjAeTDSjzTSQ7DokZtMNwNlEAyxqSZeCS+CXH7fJ4jx3FuJ/mTW3mE+6JLs4VJBbcll0Kjn+KXI5t21Iw=="
+    },
+    "stripe@20.3.0_@types+node@22.12.0": {
+      "integrity": "sha512-DYzcmV1MfYhycr1GwjCjeQVYk9Gu8dpxyTlu7qeDCsuguug7oUTxPsUQuZeSf/OPzK7pofqobvOKVqAwlpgf/Q==",
+      "dependencies": [
+        "@types/node"
+      ],
+      "optionalPeers": [
+        "@types/node"
+      ]
     },
     "supports-color@7.2.0": {
       "integrity": "sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==",

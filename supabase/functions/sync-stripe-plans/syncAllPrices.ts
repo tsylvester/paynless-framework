@@ -18,16 +18,17 @@ function buildPriceCreatedEvent(price: Stripe.Price): Stripe.Event {
   };
 }
 
-export async function syncAllPrices(
-  context: ProductPriceHandlerContext
-): Promise<SyncStripePlansResult> {
+async function fetchPricesForActive(
+  context: ProductPriceHandlerContext,
+  active: boolean
+): Promise<Stripe.Price[]> {
   const prices: Stripe.Price[] = [];
   let hasMore = true;
   let startingAfter: string | undefined;
 
   while (hasMore) {
     const params: Stripe.PriceListParams = {
-      active: true,
+      active,
       limit: 100,
     };
     if (startingAfter) {
@@ -45,6 +46,18 @@ export async function syncAllPrices(
       startingAfter = lastPrice.id;
     }
   }
+
+  return prices;
+}
+
+export async function syncAllPrices(
+  context: ProductPriceHandlerContext
+): Promise<SyncStripePlansResult> {
+  const [activePrices, inactivePrices] = await Promise.all([
+    fetchPricesForActive(context, true),
+    fetchPricesForActive(context, false),
+  ]);
+  const prices: Stripe.Price[] = [...activePrices, ...inactivePrices];
 
   let synced = 0;
   let failed = 0;
