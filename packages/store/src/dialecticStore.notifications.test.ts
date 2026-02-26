@@ -860,8 +860,8 @@ describe('Dialectic Store Notification Handlers', () => {
       // Verify session is no longer tracked as generating
       expect(useDialecticStore.getState().generatingSessions['session-1']).toBeUndefined();
       
-      // Verify that the store attempts to refetch the project details
-      expect(fetchDetailsSpy).toHaveBeenCalledWith('proj-1');
+      // Verify that the store attempts to refetch the project details (with preserveContext to avoid UI flash)
+      expect(fetchDetailsSpy).toHaveBeenCalledWith('proj-1', { preserveContext: true });
       
       fetchDetailsSpy.mockRestore();
   });

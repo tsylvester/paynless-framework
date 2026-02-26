@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import type {
   DialecticStateValues,
   SetFocusedStageDocumentPayload,
@@ -19,43 +19,8 @@ import {
 } from '@paynless/store';
 
 import { isDocumentHighlighted } from '@paynless/utils';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight, XCircle, CheckCircle2, Loader2 } from 'lucide-react';
-
-const formatStatusLabel = (value: string): string => {
-  const mapping: Record<string, string> = {
-    completed: 'Completed',
-    in_progress: 'In Progress',
-    not_started: 'Not Started',
-    waiting_for_children: 'Waiting for Children',
-    failed: 'Failed',
-    generating: 'Generating',
-    continuing: 'Continuing',
-    retrying: 'Retrying',
-    idle: 'Idle',
-  };
-
-  if (mapping[value]) {
-    return mapping[value];
-  }
-
-  return value
-    .split('_')
-    .map((segment) =>
-      segment.length > 0
-        ? `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`
-        : segment
-    )
-    .join(' ');
-};
+import { Loader2 } from 'lucide-react';
 
 type MarkdownDocumentDescriptor = {
   documentKey: string;
@@ -210,6 +175,9 @@ function computeStageRunChecklistData(
       ? sortedStages.findIndex((s) => s.slug === activeStageSlug)
       : -1;
 
+  // The store tracks which stage slug is actively generating via generatingForStageSlug.
+  const generatingStageSlug: string | null = state.generatingForStageSlug ?? null;
+
   const stageDataList: StageChecklistData[] = sortedStages.map((stage) => {
     const stageIndex = sortedStages.indexOf(stage);
     const isReady = activeStageIndex >= 0 && stageIndex <= activeStageIndex;
@@ -320,6 +288,8 @@ function computeStageRunChecklistData(
       }
 
       const totalModels = documentModelIds.length;
+      // If no per-model progress yet but the stage is actively generating, treat as generating
+      const isStageGenerating = generatingStageSlug === stage.slug;
       const consolidatedLabel =
         hasFailed
           ? 'Failed'
@@ -327,9 +297,11 @@ function computeStageRunChecklistData(
             ? 'Continuing'
             : completedCount === totalModels && totalModels > 0
               ? 'Completed'
-              : completedCount === 0
-                ? 'Not Started'
-                : `${completedCount}/${totalModels} complete`;
+              : completedCount === 0 && isStageGenerating
+                ? 'Generating'
+                : completedCount === 0
+                  ? 'Not Started'
+                  : `${completedCount}/${totalModels} complete`;
 
       const derivedStatus: StageDocumentEntry['status'] = hasFailed
         ? 'failed'
@@ -337,7 +309,9 @@ function computeStageRunChecklistData(
           ? 'continuing'
           : completedCount === totalModels && totalModels > 0
             ? 'completed'
-            : 'not_started';
+            : completedCount === 0 && isStageGenerating
+              ? 'generating'
+              : 'not_started';
 
       const entry: StageDocumentEntry =
         derivedStatus !== 'not_started' && firstRenderedEntry != null && 'jobId' in firstRenderedEntry
@@ -353,7 +327,7 @@ function computeStageRunChecklistData(
           : {
               descriptorType: 'planned',
               documentKey,
-              status: 'not_started',
+              status: derivedStatus === 'generating' ? 'generating' : 'not_started',
               jobId: null,
               latestRenderedResourceId: null,
               modelId: null,
@@ -392,16 +366,17 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
   focusedStageDocumentMap,
   onDocumentSelect,
   modelId,
+  stageSlug: stageSlugProp,
 }) => {
   const activeSessionId = useDialecticStore(selectActiveContextSessionId);
   const activeSessionDetail = useDialecticStore((state) => state.activeSessionDetail);
   const iterationNumber = activeSessionDetail?.iteration_count;
-  const activeStageSlug = useDialecticStore((state) => state.activeStageSlug);
+  const storeActiveStageSlug = useDialecticStore((state) => state.activeStageSlug);
+  const setActiveStage = useDialecticStore((state) => state.setActiveStage);
+  const effectiveStageSlug = stageSlugProp ?? storeActiveStageSlug;
   const checklistData = useDialecticStore((state) =>
     computeStageRunChecklistData(state, modelId),
   );
-  const [expandedRowKeys, setExpandedRowKeys] = useState<Record<string, boolean>>({});
-
   const effectiveFocusedStageDocumentMap = focusedStageDocumentMap ?? {};
 
   const handleDocumentSelectForStage = useCallback(
@@ -412,6 +387,11 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
         modelIds.length === 0
       ) {
         return;
+      }
+
+      // Switch to the document's stage if it differs from the current active stage
+      if (stageSlug !== storeActiveStageSlug) {
+        setActiveStage(stageSlug);
       }
 
       modelIds.forEach((mid) => {
@@ -430,6 +410,8 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
       activeSessionId,
       iterationNumber,
       onDocumentSelect,
+      storeActiveStageSlug,
+      setActiveStage,
     ],
   );
 
@@ -452,225 +434,133 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
   const shouldShowGuard = checklistData.sortedStages.length === 0;
 
   if (shouldShowGuard) {
-    return (
-      <Card className="w-full max-w-full p-4" data-testid="stage-run-checklist-guard">
-        <p className="text-sm text-muted-foreground">No stages available.</p>
-      </Card>
-    );
+    return null;
   }
 
-  if (!activeStageSlug) {
-    return (
-      <Card className="w-full max-w-full p-4" data-testid="stage-run-checklist-guard">
-        <p className="text-sm text-muted-foreground">No active stage selected.</p>
-      </Card>
-    );
+  if (!effectiveStageSlug) {
+    return null;
   }
 
-  const activeStageData =
-    activeStageSlug
-      ? checklistData.stageDataList.find((candidate) => candidate.stage.slug === activeStageSlug)
-      : undefined;
+  const stageData = checklistData.stageDataList.find(
+    (candidate) => candidate.stage.slug === effectiveStageSlug,
+  );
 
-  if (!activeStageData) {
-    return (
-      <Card className="w-full max-w-full p-4" data-testid="stage-run-checklist-guard">
-        <p className="text-sm text-muted-foreground">Active stage not found in process template.</p>
-      </Card>
-    );
+  if (!stageData || stageData.documentRows.length === 0) {
+    return null;
   }
-
-  const defaultValue = 'documents';
 
   return (
-    <Card
-      className="w-full max-w-full max-h-96 overflow-hidden border-none p-0"
+    <div
+      className="w-full flex flex-col gap-0 px-0"
       data-testid="stage-run-checklist-card"
     >
-      <Accordion
-        type="single"
-        collapsible
-        defaultValue={defaultValue}
-        className="w-full"
-        data-testid="stage-run-checklist-accordion"
+      <ul
+        className="flex flex-col gap-1 pr-1"
+        data-testid="stage-run-checklist-documents"
       >
-        <AccordionItem value="documents" className="border-none">
-          <AccordionTrigger
-            className="px-0 py-2 text-sm font-medium hover:no-underline"
-            data-testid="stage-run-checklist-documents-trigger"
-          >
-                    <p className="px-0 pb-2 text-sm text-muted-foreground">
-                      {activeStageData.documentRows.filter((r) => r.consolidatedLabel === 'Completed').length} / {activeStageData.documentRows.length} Documents
-                    </p>          
-          </AccordionTrigger>
-          <AccordionContent
-            data-testid="stage-run-checklist-documents-content"
-            className="flex w-full flex-col gap-0 overflow-hidden px-0"
-          >
-            {activeStageData.documentRows.length > 0 ? (
-                  <>
-                    <ul
-                      className="flex max-h-80 flex-col gap-1 overflow-y-auto pr-1"
-                      data-testid="stage-run-checklist-documents"
-                    >
-                      {activeStageData.documentRows.map(({ entry, stepKey, consolidatedLabel, perModelLabels }) => {
-                        const rowKey = `${activeStageData.stage.slug}:${entry.documentKey}`;
-                        const isExpanded = expandedRowKeys[rowKey] === true;
-                        const focusedModelIdsForStage: string[] =
-                          activeSessionId != null
-                            ? Object.keys(effectiveFocusedStageDocumentMap)
-                                .filter((key) =>
-                                  key.startsWith(`${activeSessionId}:${activeStageData.stage.slug}:`),
-                                )
-                                .map((key) => key.split(':').slice(2).join(':'))
-                            : [];
+        {stageData.documentRows.map(({ entry, stepKey, perModelLabels }) => {
+          const focusedModelIdsForStage: string[] =
+            activeSessionId != null
+              ? Object.keys(effectiveFocusedStageDocumentMap)
+                  .filter((key) =>
+                    key.startsWith(`${activeSessionId}:${stageData.stage.slug}:`),
+                  )
+                  .map((key) => key.split(':').slice(2).join(':'))
+              : [];
 
-                        const focusModelIds: string[] = perModelLabels.map((label) => label.modelId);
+          const focusModelIds: string[] = perModelLabels.map((label) => label.modelId);
 
-                        const canFocusRow =
-                          activeSessionId != null &&
-                          typeof iterationNumber === 'number' &&
-                          focusModelIds.length > 0;
+          const canFocusRow =
+            activeSessionId != null &&
+            typeof iterationNumber === 'number' &&
+            focusModelIds.length > 0;
 
-                        const highlightModelIds: string[] = Array.from(
-                          new Set([...focusModelIds, ...focusedModelIdsForStage]),
-                        );
-                        const isActive =
-                          activeSessionId != null &&
-                          highlightModelIds.some((mid) =>
-                            isDocumentHighlighted(
-                              activeSessionId,
-                              activeStageData.stage.slug,
-                              mid,
-                              entry.documentKey,
-                              effectiveFocusedStageDocumentMap,
-                            ),
-                          );
+          const highlightModelIds: string[] = Array.from(
+            new Set([...focusModelIds, ...focusedModelIdsForStage]),
+          );
+          const isActive =
+            activeSessionId != null &&
+            highlightModelIds.some((mid) =>
+              isDocumentHighlighted(
+                activeSessionId,
+                stageData.stage.slug,
+                mid,
+                entry.documentKey,
+                effectiveFocusedStageDocumentMap,
+              ),
+            );
 
-                        const handleRowClick = () => {
-                          if (!canFocusRow) return;
-                          setExpandedRowKeys((prev) => ({ ...prev, [rowKey]: true }));
-                          handleDocumentSelectForStage(
-                            entry.documentKey,
-                            stepKey,
-                            activeStageData.stage.slug,
-                            focusModelIds,
-                          );
-                        };
+          const handleRowClick = () => {
+            if (!canFocusRow) return;
+            handleDocumentSelectForStage(
+              entry.documentKey,
+              stepKey,
+              stageData.stage.slug,
+              focusModelIds,
+            );
+          };
 
-                        const handleTogglePerModel = (e: React.MouseEvent) => {
-                          e.stopPropagation();
-                          setExpandedRowKeys((prev) => ({ ...prev, [rowKey]: !prev[rowKey] }));
-                        };
-
-                        const statusBadgeLabel = formatStatusLabel(consolidatedLabel);
-
-                        return (
-                          <li
-                            key={entry.documentKey}
-                            data-testid={`document-${entry.documentKey}`}
-                            className={cn(
-                              'flex flex-col gap-1 rounded-md border border-border px-2 py-1 text-sm transition-colors',
-                              canFocusRow
-                                ? 'cursor-pointer hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40'
-                                : 'cursor-default',
-                              isActive && 'border-primary ring-2 ring-primary/40',
-                            )}
-                            tabIndex={canFocusRow ? 0 : undefined}
-                            aria-pressed={
-                              canFocusRow ? (isActive || undefined) : undefined
-                            }
-                            data-active={isActive ? 'true' : undefined}
-                            onClick={handleRowClick}
-                            onKeyDown={(e) =>
-                              canFocusRow &&
-                              handleDocumentKeyDownForStage(
-                                e,
-                                entry.documentKey,
-                                stepKey,
-                                activeStageData.stage.slug,
-                                focusModelIds,
-                              )
-                            }
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex min-w-0 items-center gap-2">
-                                {entry.status === 'completed' ? (
-                                  <CheckCircle2
-                                    aria-label="Document completed"
-                                    className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                                    data-testid="document-completed-icon"
-                                  />
-                                ) : entry.status === 'failed' ? (
-                                  <XCircle
-                                    aria-label="Document failed"
-                                    className="h-4 w-4 shrink-0 text-destructive"
-                                    data-testid="document-failed-icon"
-                                  />
-                                ) : entry.status === 'generating' || entry.status === 'continuing' ? (
-                                  <Loader2
-                                    aria-label="Document generating"
-                                    className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400 animate-spin"
-                                    data-testid="document-generating-icon"
-                                  />
-                                ) : null}
-                                <span className="font-mono text-xs sm:text-sm truncate">
-                                  {entry.documentKey}
-                                </span>
-                              </div>
-                              <div className="flex shrink-0 items-center gap-1">
-                                <button
-                                  type="button"
-                                  data-testid="stage-run-checklist-row-toggle-per-model"
-                                  className="rounded p-0.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                                  aria-expanded={isExpanded}
-                                  aria-label={isExpanded ? 'Collapse per-model status' : 'Expand per-model status'}
-                                  onClick={handleTogglePerModel}
-                                >
-                                  {isExpanded ? (
-                                    <ChevronDown className="h-4 w-4" />
-                                  ) : (
-                                    <ChevronRight className="h-4 w-4" />
-                                  )}
-                                </button>
-                                <Badge variant="outline" className="text-xs px-1.5 py-0">
-                                  {statusBadgeLabel}
-                                </Badge>
-                              </div>
-                            </div>
-                            {isExpanded && perModelLabels.length > 0 ? (
-                              <div
-                                data-testid="stage-run-checklist-row-per-model-status"
-                                className="flex flex-col gap-0.5 pl-6 text-xs text-muted-foreground"
-                              >
-                                {perModelLabels.map(({ modelId: mid, displayName, statusLabel }) => (
-                                  <span key={mid}>
-                                    {displayName}: {statusLabel}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </>
-                ) : activeStageData ? (
-                  <>
-                    <p className="px-0 pb-2 text-sm text-muted-foreground">0 / 0 Documents</p>
-                    <p className="px-3 py-2 text-sm text-muted-foreground">
-                      No documents generated yet.
-                    </p>
-                  </>
-                ) : (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">
-                    No active stage selected.
-                  </p>
-                )}
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
-    </Card>
+          return (
+            <li
+              key={entry.documentKey}
+              data-testid={`document-${entry.documentKey}`}
+              className={cn(
+                'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+                canFocusRow
+                  ? 'cursor-pointer hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40'
+                  : 'cursor-default',
+                isActive && 'bg-surface',
+              )}
+              tabIndex={canFocusRow ? 0 : undefined}
+              aria-pressed={
+                canFocusRow ? (isActive || undefined) : undefined
+              }
+              data-active={isActive ? 'true' : undefined}
+              onClick={handleRowClick}
+              onKeyDown={(e) =>
+                canFocusRow &&
+                handleDocumentKeyDownForStage(
+                  e,
+                  entry.documentKey,
+                  stepKey,
+                  stageData.stage.slug,
+                  focusModelIds,
+                )
+              }
+            >
+              {entry.status === 'generating' || entry.status === 'continuing' ? (
+                <Loader2
+                  aria-label="Document generating"
+                  className="h-3 w-3 shrink-0 text-blue-500 animate-spin"
+                  data-testid="document-generating-icon"
+                />
+              ) : entry.status === 'completed' ? (
+                <span
+                  aria-label="Document completed"
+                  className="block h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500"
+                  data-testid="document-completed-icon"
+                />
+              ) : entry.status === 'failed' ? (
+                <span
+                  aria-label="Document failed"
+                  className="block h-2.5 w-2.5 shrink-0 rounded-full bg-destructive"
+                  data-testid="document-failed-icon"
+                />
+              ) : (
+                <span
+                  aria-label="Not started"
+                  className="block h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400"
+                  data-testid="document-not-started-icon"
+                />
+              )}
+              <span className="font-mono text-xs truncate">
+                {entry.documentKey}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 };
 

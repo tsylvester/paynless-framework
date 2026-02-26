@@ -8,11 +8,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-	DialecticSession,
-	DialecticProject,
-	ApiError,
-} from "@paynless/types";
+import { DialecticSession, DialecticProject, ApiError } from "@paynless/types";
 
 // New Component Imports
 import { SessionInfoCard } from "../components/dialectic/SessionInfoCard";
@@ -175,9 +171,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 								</div>
 							) : (
 								<div className="py-16 text-center">
-									{!activeStageSlug &&
-									sortedStages.length > 0 &&
-									!isLoading ? (
+									{!activeStageSlug && sortedStages.length > 0 && !isLoading ? (
 										<div className="space-y-3">
 											<div className="w-14 h-14 mx-auto rounded-full bg-muted/50 flex items-center justify-center">
 												<span className="text-xl">🎯</span>
