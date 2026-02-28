@@ -514,6 +514,63 @@ type GetAllStageProgressAction = {
 	payload: GetAllStageProgressPayload;
 };
 
+// DAG progress computation — step ordering (topologicalSortSteps)
+export interface ProgressRecipeStep {
+	id: string;
+	step_key: string;
+	job_type: JobType;
+	granularity_strategy: GranularityStrategy;
+}
+
+export interface ProgressRecipeEdge {
+	from_step_id: string;
+	to_step_id: string;
+}
+
+export interface TopologicalSortStepsDeps {}
+
+export interface TopologicalSortStepsParams {
+	steps: ProgressRecipeStep[];
+	edges: ProgressRecipeEdge[];
+}
+
+// DAG progress computation — expected count derivation (computeExpectedCounts)
+export interface PriorStageContext {
+	lineageCount: number;
+	reviewerCount: number;
+}
+
+export interface ExpectedCountsResult {
+	expected: Map<string, number>;
+	cardinality: Map<string, number>;
+}
+
+export interface ComputeExpectedCountsDeps {
+	topologicalSortSteps: (
+		deps: TopologicalSortStepsDeps,
+		params: TopologicalSortStepsParams,
+	) => ProgressRecipeStep[];
+}
+
+export interface ComputeExpectedCountsParams {
+	steps: ProgressRecipeStep[];
+	edges: ProgressRecipeEdge[];
+	n: number;
+	priorStageContext?: PriorStageContext;
+}
+
+// DAG progress computation — step status derivation (deriveStepStatuses)
+export interface DeriveStepStatusesDeps {}
+
+export interface DeriveStepStatusesParams {
+	steps: ProgressRecipeStep[];
+	edges: ProgressRecipeEdge[];
+	jobs: DialecticJobRow[];
+	stepIdToStepKey: Map<string, string>;
+}
+
+export type DeriveStepStatusesResult = Map<string, UnifiedStageStatus>;
+
 export interface GetStageDocumentFeedbackPayload {
 	sessionId: string;
 	stageSlug: DialecticStage["slug"];
@@ -618,35 +675,49 @@ export type UnifiedStageStatus =
 	| "completed"
 	| "failed";
 
-export type JobProgressStatus =
-	| "pending"
-	| "in_progress"
-	| "completed"
-	| "failed";
-
-export interface JobProgressEntry {
-	totalJobs: number;
-	completedJobs: number;
-	inProgressJobs: number;
-	failedJobs: number;
-	modelJobStatuses?: Record<string, JobProgressStatus>;
+export interface DagProgressDto {
+	completedStages: number;
+	totalStages: number;
 }
 
-export type StepJobProgress = Record<string, JobProgressEntry>;
+export interface StepProgressDto {
+	stepKey: string;
+	status: UnifiedStageStatus;
+}
 
 export interface StageProgressEntry {
 	stageSlug: string;
+	status: UnifiedStageStatus;
+	modelCount: number | null;
+	progress: { completedSteps: number; totalSteps: number; failedSteps: number };
+	steps: StepProgressDto[];
 	documents: StageDocumentDescriptorDto[];
-	stepStatuses: Record<string, string>;
-	stageStatus: UnifiedStageStatus;
-	jobProgress: StepJobProgress;
 }
 
-export type GetAllStageProgressResponse = StageProgressEntry[];
+export interface GetAllStageProgressResponse {
+	dagProgress: DagProgressDto;
+	stages: StageProgressEntry[];
+}
 
 export interface GetAllStageProgressDeps {
 	dbClient: SupabaseClient<Database>;
 	user: User;
+	topologicalSortSteps: (
+		deps: TopologicalSortStepsDeps,
+		params: TopologicalSortStepsParams,
+	) => ProgressRecipeStep[];
+	deriveStepStatuses: (
+		deps: DeriveStepStatusesDeps,
+		params: DeriveStepStatusesParams,
+	) => DeriveStepStatusesResult;
+	computeExpectedCounts: (
+		deps: ComputeExpectedCountsDeps,
+		params: ComputeExpectedCountsParams,
+	) => ExpectedCountsResult;
+	buildDocumentDescriptors: (
+		deps: BuildDocumentDescriptorsDeps,
+		params: BuildDocumentDescriptorsParams,
+	) => Map<string, StageDocumentDescriptorDto[]>;
 }
 
 export interface GetAllStageProgressParams {
@@ -660,10 +731,18 @@ export interface GetAllStageProgressResult {
 }
 
 export type GetAllStageProgressFn = (
-	payload: GetAllStageProgressPayload,
-	dbClient: SupabaseClient<Database>,
-	user: User,
+	deps: GetAllStageProgressDeps,
+	params: GetAllStageProgressParams,
 ) => Promise<GetAllStageProgressResult>;
+
+export interface BuildDocumentDescriptorsDeps {}
+
+export interface BuildDocumentDescriptorsParams {
+	jobs: DialecticJobRow[];
+	resourceIdBySourceContributionId: Map<string, string>;
+	stepIdToStepKey: Map<string, string>;
+	jobIdToJob: Map<string, DialecticJobRow>;
+}
 
 // --- END: DTOs and types for getAllStageProgress ---
 

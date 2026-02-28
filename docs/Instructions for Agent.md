@@ -84,6 +84,11 @@
 * Never rename functions or variables without explicit instruction.
 
 ## 7. Dependency Injection & Architecture
+* All functions have defined: 
+  - Signatures
+  - Deps
+  - Params
+  - Returns
 * Use explicit dependency injection at the application boundary—construct dependencies and provide them to the top-level operation.
 * **RequestContext / ExecutionContext allowed and recommended:** a single, strictly typed, immutable context object may be created at the operation boundary and passed down the call chain to avoid deep prop-drilling. Context must be:
   * Fully typed (no optional fields) and constructed by a typed factory.
