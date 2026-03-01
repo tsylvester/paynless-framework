@@ -220,6 +220,7 @@ export interface StageRecipeResponse {
 	stageSlug: string;
 	instanceId: string;
 	steps: StageRecipeStepDto[];
+	edges: ProgressRecipeEdge[];
 }
 
 // Reserved for future template responses (CoW DAG support without refactor)

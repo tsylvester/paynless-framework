@@ -228,6 +228,10 @@
 *   "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make those all separate nodes." NO! WRONG! 
 *   "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make that all one node." NO! WRONG! 
 *   "I have a few interfaces and type guards to change. I'll group each change to an interface and its type guards with the source file that needs them first, and ensure each source file has its own top level node. I won't orphan any interfaces or type guards. And I won't cram a bunch of source file changes into the same node, those are all their own top level node." YES! MY GOD! THAT'S WHAT THE INSTRUCTIONS TELL YOU TO DO! 
+*   "I'll include a commit step at the end of every node." No, the user should not commit incomplete work. Only include the commit step when a defined set of work has been completed and the entire relevant call stack is updated. 
+*   "I won't include any commit steps, the user can decide." No, tell the user when it's time to commit. Include the commit step when a defined set of work has been completed and the entire relevant call stack is updated. 
+*   "After working on a set of nodes, the entire scope of work is completed. I'll create a separate node that includes a commit step." No, the commit step is included in the last node of the set of work.
+* "After working on a set of nodes, the entire scope of work is completed. I'll include a commit step as the last step in the last node in the set of work." Yes, this is correct. Include a commit set in the last node of the scoped set of work. 
 
 ## Example Checklist
 *   `[ ]`   [path]/[function] **Descriptive explanatory title**

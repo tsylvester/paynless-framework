@@ -79,13 +79,17 @@ import { handleUpdateSessionModels } from './updateSessionModels.ts';
 import { listStageDocuments } from './listStageDocuments.ts';
 import { submitStageDocumentFeedback, type SubmitStageDocumentFeedbackDeps } from './submitStageDocumentFeedback.ts';
 import { getAllStageProgress } from './getAllStageProgress.ts';
+import { topologicalSortSteps } from './topologicalSortSteps.ts';
+import { deriveStepStatuses } from './deriveStepStatuses.ts';
+import { computeExpectedCounts } from './computeExpectedCounts.ts';
+import { buildDocumentDescriptors } from './buildDocumentDescriptors.ts';
 import { getStageDocumentFeedback } from './getStageDocumentFeedback.ts';
 import { callUnifiedAIModel } from './callModel.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
-import type { DialecticServiceResponse, DialecticFeedbackRow, SaveContributionEditFn, SaveContributionEditContext, GetStageDocumentFeedbackDeps } from './dialectic.interface.ts';
+import type { DialecticServiceResponse, DialecticFeedbackRow, SaveContributionEditFn, SaveContributionEditContext, GetStageDocumentFeedbackDeps, GetAllStageProgressDeps } from './dialectic.interface.ts';
 import type { Database } from '../types_db.ts';
 
 console.log("dialectic-service function started");
@@ -614,6 +618,22 @@ export async function handleRequest(
   }
 }
 
+async function handleGetAllStageProgress(
+  payload: GetAllStageProgressPayload,
+  dbClient: SupabaseClient<Database>,
+  user: User
+): Promise<GetAllStageProgressResult> {
+  const deps: GetAllStageProgressDeps = {
+    dbClient,
+    user,
+    topologicalSortSteps,
+    deriveStepStatuses,
+    computeExpectedCounts,
+    buildDocumentDescriptors,
+  };
+  return getAllStageProgress(deps, { payload });
+}
+
 export const defaultHandlers: ActionHandlers = {
   createProject,
   listAvailableDomains,
@@ -638,7 +658,7 @@ export const defaultHandlers: ActionHandlers = {
   listStageDocuments,
   submitStageDocumentFeedback,
   getStageDocumentFeedback,
-  getAllStageProgress,
+  getAllStageProgress: handleGetAllStageProgress,
 };
 
 export function createDialecticServiceHandler(

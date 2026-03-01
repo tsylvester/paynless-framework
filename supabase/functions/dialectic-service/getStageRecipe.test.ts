@@ -153,6 +153,8 @@ Deno.test("getStageRecipe - Happy Path: returns sorted steps and preserves group
   assertEquals(payload.steps[2].output_type, 'business_case');
   assertEquals(payload.steps[2].parallel_group, 2);
   assertEquals(payload.steps[2].branch_key, BranchKey.business_case);
+  assertExists(payload.edges);
+  assertEquals(Array.isArray(payload.edges), true);
 });
 
 Deno.test("getStageRecipe - Error: missing stage returns 404", async () => {
@@ -604,4 +606,243 @@ Deno.test("getStageRecipe - filters out EXECUTE step with backend-only 'assemble
   assertEquals(result.data.steps.length, 1);
   assertEquals(result.data.steps[0].step_key, "synthesis_render_product_requirements");
   assertEquals(result.data.steps[0].output_type, "product_requirements");
+});
+
+Deno.test("getStageRecipe - successful response includes edges array with correct from_step_id and to_step_id", async () => {
+  const stageSlug = "synthesis";
+  const instanceId = "instance-with-edges";
+  const stepIdA = "step-a-id";
+  const stepIdB = "step-b-id";
+  const rawSteps = [
+    {
+      id: stepIdA,
+      instance_id: instanceId,
+      step_key: "plan_header",
+      step_slug: "plan-header",
+      step_name: "Plan Header",
+      execution_order: 0,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "PLAN",
+      prompt_type: "Planner",
+      prompt_template_id: "pt-planner",
+      output_type: "header_context",
+      granularity_strategy: "all_to_one",
+      inputs_required: [{ type: "seed_prompt", document_key: "seed_prompt", required: true }],
+      inputs_relevance: [],
+      outputs_required: {
+        header_context_artifact: {
+          type: "header_context",
+          document_key: "header_context",
+          artifact_class: "header_context",
+          file_type: "json",
+        },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: "",
+    },
+    {
+      id: stepIdB,
+      instance_id: instanceId,
+      step_key: "a_key",
+      step_slug: "a-slug",
+      step_name: "A",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: "pt-a",
+      output_type: "feature_spec",
+      granularity_strategy: "all_to_one",
+      inputs_required: [{ type: "document", stage_slug: "thesis", document_key: "business_case", required: true }],
+      inputs_relevance: [{ document_key: "business_case", type: "document", relevance: 1.0, stage_slug: "thesis" }],
+      outputs_required: {
+        documents: [
+          {
+            document_key: "feature_spec",
+            template_filename: "synthesis_feature_spec.md",
+            artifact_class: "rendered_document",
+            file_type: "markdown",
+          },
+        ],
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: "",
+    },
+  ];
+  const rawEdges = [
+    { from_step_id: stepIdA, to_step_id: stepIdB },
+  ];
+  const mockSupabase = createMockSupabaseClient(undefined, {
+    genericMockResults: {
+      dialectic_stages: {
+        select: {
+          data: [{ id: "stage-id", slug: stageSlug, active_recipe_instance_id: instanceId }],
+          error: null,
+        },
+      },
+      dialectic_stage_recipe_steps: {
+        select: { data: rawSteps, error: null },
+      },
+      dialectic_stage_recipe_edges: {
+        select: { data: rawEdges, error: null },
+      },
+    },
+  });
+  const result = await getStageRecipe({ stageSlug }, mockSupabase.client as unknown as SupabaseClient<Database>);
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  assertExists(result.data.edges);
+  assertEquals(result.data.edges.length, 1);
+  assertEquals(result.data.edges[0].from_step_id, stepIdA);
+  assertEquals(result.data.edges[0].to_step_id, stepIdB);
+});
+
+Deno.test("getStageRecipe - when no edges exist for the instance edges is empty array", async () => {
+  const stageSlug = "thesis";
+  const instanceId = "instance-no-edges";
+  const rawSteps = [
+    {
+      id: "step-only",
+      instance_id: instanceId,
+      step_key: "thesis_generate_business_case",
+      step_slug: "generate-business-case",
+      step_name: "Generate Business Case",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: "pt-business-case",
+      output_type: "business_case",
+      granularity_strategy: "per_source_document",
+      inputs_required: [{ type: "header_context", slug: "thesis", document_key: "header_context", required: true }],
+      inputs_relevance: [{ document_key: "header_context", relevance: 1.0 }],
+      outputs_required: {
+        documents: [
+          {
+            document_key: "business_case",
+            template_filename: "thesis_business_case.md",
+            artifact_class: "rendered_document",
+            file_type: "markdown",
+          },
+        ],
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: "",
+    },
+  ];
+  const mockSupabase = createMockSupabaseClient(undefined, {
+    genericMockResults: {
+      dialectic_stages: {
+        select: {
+          data: [{ id: "stage-id", slug: stageSlug, active_recipe_instance_id: instanceId }],
+          error: null,
+        },
+      },
+      dialectic_stage_recipe_steps: {
+        select: { data: rawSteps, error: null },
+      },
+      dialectic_stage_recipe_edges: {
+        select: { data: [], error: null },
+      },
+    },
+  });
+  const result = await getStageRecipe({ stageSlug }, mockSupabase.client as unknown as SupabaseClient<Database>);
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  assertExists(result.data.edges);
+  assertEquals(Array.isArray(result.data.edges), true);
+  assertEquals(result.data.edges.length, 0);
+});
+
+Deno.test("getStageRecipe - edge rows with missing or invalid from_step_id or to_step_id are filtered out", async () => {
+  const stageSlug = "synthesis";
+  const instanceId = "instance-filter-edges";
+  const stepIdValid = "step-valid-id";
+  const rawSteps = [
+    {
+      id: stepIdValid,
+      instance_id: instanceId,
+      step_key: "plan_header",
+      step_slug: "plan-header",
+      step_name: "Plan Header",
+      execution_order: 0,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "PLAN",
+      prompt_type: "Planner",
+      prompt_template_id: "pt-planner",
+      output_type: "header_context",
+      granularity_strategy: "all_to_one",
+      inputs_required: [{ type: "seed_prompt", document_key: "seed_prompt", required: true }],
+      inputs_relevance: [],
+      outputs_required: {
+        header_context_artifact: {
+          type: "header_context",
+          document_key: "header_context",
+          artifact_class: "header_context",
+          file_type: "json",
+        },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: "",
+    },
+  ];
+  const rawEdges = [
+    { from_step_id: stepIdValid, to_step_id: "step-other-valid" },
+    { from_step_id: "", to_step_id: "step-other" },
+    { from_step_id: "step-from", to_step_id: "" },
+  ];
+  const mockSupabase = createMockSupabaseClient(undefined, {
+    genericMockResults: {
+      dialectic_stages: {
+        select: {
+          data: [{ id: "stage-id", slug: stageSlug, active_recipe_instance_id: instanceId }],
+          error: null,
+        },
+      },
+      dialectic_stage_recipe_steps: {
+        select: { data: rawSteps, error: null },
+      },
+      dialectic_stage_recipe_edges: {
+        select: { data: rawEdges, error: null },
+      },
+    },
+  });
+  const result = await getStageRecipe({ stageSlug }, mockSupabase.client as unknown as SupabaseClient<Database>);
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  assertExists(result.data.edges);
+  const validEdges = result.data.edges.filter(
+    (e) => typeof e.from_step_id === "string" && e.from_step_id.trim() !== "" && typeof e.to_step_id === "string" && e.to_step_id.trim() !== ""
+  );
+  assertEquals(validEdges.length, 1);
+  assertEquals(validEdges[0].from_step_id, stepIdValid);
+  assertEquals(validEdges[0].to_step_id, "step-other-valid");
 });
