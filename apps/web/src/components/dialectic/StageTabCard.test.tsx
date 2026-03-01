@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { StageTabCard } from './StageTabCard';
+import type { UnifiedProjectStatus } from '@paynless/types';
 import {
   DialecticProject,
   DialecticSession,
@@ -32,8 +33,8 @@ vi.mock('@/components/dialectic/AIModelSelector', () => ({
 const mockStages: DialecticStage[] = [
   {
     id: 'stage-1',
-    slug: 'hypothesis',
-    display_name: 'Hypothesis',
+    slug: 'thesis',
+    display_name: 'Proposal',
     description: 'Formulate a hypothesis.',
     created_at: new Date().toISOString(),
     default_system_prompt_id: 'd-1',
@@ -43,8 +44,8 @@ const mockStages: DialecticStage[] = [
   },
   {
     id: 'stage-2',
-    slug: 'analysis',
-    display_name: 'Analysis',
+    slug: 'antithesis',
+    display_name: 'Review',
     description: 'Analyze the results.',
     created_at: new Date().toISOString(),
     default_system_prompt_id: 'd-2',
@@ -72,7 +73,7 @@ const mockSession: DialecticSession = {
   session_description: 'Test session',
   iteration_count: 1,
   current_stage_id: 'stage-1',
-  status: 'pending_hypothesis',
+  status: 'pending_thesis',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   selected_models: defaultSelectedModels,
@@ -115,6 +116,7 @@ const createStageRunProgressEntry = (
   modelIdForDocuments = 'model-1'
 ): StageRunProgressEntry => {
   const documents: StageRunProgressEntry['documents'] = {};
+  const builtStepStatuses: StageRunProgressEntry['stepStatuses'] = { ...stepStatuses };
   const nowIso = new Date().toISOString();
   for (const [documentKey, status] of Object.entries(documentStatuses)) {
     const descriptor: StageRunDocumentDescriptor = {
@@ -127,10 +129,15 @@ const createStageRunProgressEntry = (
       lastRenderAtIso: nowIso,
     };
     documents[documentKey] = descriptor;
+    const stepStatus: UnifiedProjectStatus =
+      status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'generating' ? 'in_progress' : 'not_started';
+    builtStepStatuses[`generate_${documentKey}`] = stepStatus;
   }
   return {
     documents,
-    stepStatuses,
+    stepStatuses: builtStepStatuses,
+    jobProgress: {},
+    progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
   };
 };
 
@@ -169,6 +176,7 @@ const createRecipeWithMarkdownDocuments = (
     stageSlug,
     instanceId,
     steps,
+    edges: [],
   };
 };
 
@@ -249,8 +257,8 @@ describe('StageTabCard', () => {
     setupStore();
     renderComponent();
     const stageList = screen.getByTestId('stage-tab-list');
-    expect(within(stageList).getByText('Hypothesis')).toBeInTheDocument();
-    expect(within(stageList).getByText('Analysis')).toBeInTheDocument();
+    expect(within(stageList).getByText('Proposal')).toBeInTheDocument();
+    expect(within(stageList).getByText('Review')).toBeInTheDocument();
   });
 
   it('renders message when no stages are available', () => {
@@ -262,11 +270,11 @@ describe('StageTabCard', () => {
   });
   
   it('highlights the active stage', () => {
-    setupStore({ activeStageSlug: 'analysis' });
+    setupStore({ activeStageSlug: 'antithesis' });
     renderComponent();
     
-    const activeCard = screen.getByTestId('stage-tab-analysis');
-    const inactiveCard = screen.getByTestId('stage-tab-hypothesis');
+    const activeCard = screen.getByTestId('stage-tab-antithesis');
+    const inactiveCard = screen.getByTestId('stage-tab-thesis');
     
     expect(activeCard).toHaveAttribute('aria-selected', 'true');
     expect(inactiveCard).toHaveAttribute('aria-selected', 'false');
@@ -276,17 +284,17 @@ describe('StageTabCard', () => {
     const storeActions = setupStore();
     renderComponent();
     
-    const analysisCard = screen.getByTestId('stage-tab-analysis');
-    fireEvent.click(analysisCard);
+    const antithesisCard = screen.getByTestId('stage-tab-antithesis');
+    fireEvent.click(antithesisCard);
     
-    expect(storeActions.setActiveStage).toHaveBeenCalledWith('analysis');
+    expect(storeActions.setActiveStage).toHaveBeenCalledWith('antithesis');
   });
 
   it('shows Done label when stage is fully complete and not active', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
-      activeStageSlug: 'analysis',
+      activeStageSlug: 'antithesis',
       recipesByStageSlug: {
         [mockStages[0].slug]: recipe,
       },
@@ -300,12 +308,11 @@ describe('StageTabCard', () => {
 
     renderComponent();
 
-    const hypothesisCard = screen.getByTestId('stage-card-hypothesis');
-    expect(within(hypothesisCard).getByTestId('stage-progress-label-hypothesis')).toHaveTextContent('Done');
-    expect(within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis')).toBeNull();
+    const thesisCard = screen.getByTestId('stage-card-thesis');
+    expect(within(thesisCard).getByTestId('stage-progress-label-thesis')).toHaveTextContent('2 / 2 Done');
   });
 
-  it('omits Done label when any document is still generating', () => {
+  it('shows progress count without Done when any document is still generating', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
@@ -322,12 +329,11 @@ describe('StageTabCard', () => {
 
     renderComponent();
 
-    const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
-    expect(within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
-    expect(within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis')).toBeNull();
+    const thesisCard = screen.getByTestId('stage-tab-thesis');
+    expect(within(thesisCard).getByTestId('stage-progress-label-thesis')).toHaveTextContent('1 / 2');
   });
 
-  it('omits Done label when any document has failed', () => {
+  it('shows Failed when any document has failed', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
@@ -344,12 +350,11 @@ describe('StageTabCard', () => {
 
     renderComponent();
 
-    const hypothesisCard = screen.getByTestId('stage-tab-hypothesis');
-    expect(within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
-    expect(within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis')).toBeNull();
+    const thesisCard = screen.getByTestId('stage-tab-thesis');
+    expect(within(thesisCard).getByTestId('stage-progress-label-thesis')).toHaveTextContent('1 / 2 Failed');
   });
 
-  it('does not show Done label when stage has failed documents', () => {
+  it('shows Failed when stage has failed documents', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
@@ -366,8 +371,8 @@ describe('StageTabCard', () => {
 
     renderComponent();
 
-    const hypothesisCard = screen.getByTestId('stage-card-hypothesis');
-    expect(within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
+    const thesisCard = screen.getByTestId('stage-card-thesis');
+    expect(within(thesisCard).getByTestId('stage-progress-label-thesis')).toHaveTextContent('1 / 2 Failed');
   });
 
   it('renders active stage tab when stage is in progress', () => {
@@ -387,13 +392,13 @@ describe('StageTabCard', () => {
 
     renderComponent();
 
-    const hypothesisTab = screen.getByTestId('stage-tab-hypothesis');
-    expect(hypothesisTab).toBeInTheDocument();
-    expect(hypothesisTab).toHaveAttribute('aria-selected', 'true');
-    expect(within(hypothesisTab).queryByTestId('stage-progress-label-hypothesis')).toBeNull();
+    const thesisTab = screen.getByTestId('stage-tab-thesis');
+    expect(thesisTab).toBeInTheDocument();
+    expect(thesisTab).toHaveAttribute('aria-selected', 'true');
+    expect(within(thesisTab).getByTestId('stage-progress-label-thesis')).toHaveTextContent('1 / 2');
   });
 
-  it('renders future stage tab without Done label', () => {
+  it('renders future stage tab without Done label when that stage has no documents', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one'], mockStages[0].slug);
     setupStore({
@@ -409,9 +414,9 @@ describe('StageTabCard', () => {
 
     renderComponent();
 
-    const analysisCard = screen.getByTestId('stage-card-analysis');
-    expect(analysisCard).toBeInTheDocument();
-    expect(within(analysisCard).queryByTestId('stage-progress-label-analysis')).toBeNull();
+    const antithesisCard = screen.getByTestId('stage-card-antithesis');
+    expect(antithesisCard).toBeInTheDocument();
+    expect(within(antithesisCard).queryByTestId('stage-progress-label-antithesis')).toBeNull();
   });
 
   it('renders one StageRunChecklist (not one per model) and forwards checklist selections', () => {
@@ -436,17 +441,17 @@ describe('StageTabCard', () => {
 
     renderComponent();
 
-    expect(stageRunChecklistRenderMock).toHaveBeenCalledTimes(1);
-    expect(recordedStageRunChecklistProps).toHaveLength(1);
+    expect(stageRunChecklistRenderMock).toHaveBeenCalledTimes(2);
+    expect(recordedStageRunChecklistProps).toHaveLength(2);
     expect(recordedStageRunChecklistProps[0].modelId).toBe('model-1');
 
-    const stageCard = screen.getByTestId('stage-card-hypothesis');
-    const checklistWrapper = within(stageCard).getByTestId('stage-checklist-wrapper-hypothesis');
+    const stageCard = screen.getByTestId('stage-card-thesis');
+    const checklistWrapper = within(stageCard).getByTestId('stage-checklist-wrapper-thesis');
 
     expect(within(checklistWrapper).getByTestId('mock-stage-run-checklist-model-1')).toBeInTheDocument();
     expect(within(checklistWrapper).queryByTestId('mock-stage-run-checklist-model-2')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('mock-stage-run-checklist-model-1'));
+    fireEvent.click(within(checklistWrapper).getByTestId('mock-stage-run-checklist-model-1'));
 
     expect(storeActions.setFocusedStageDocument).toHaveBeenCalledWith({
       sessionId: multiModelSession.id,
@@ -473,7 +478,7 @@ describe('StageTabCard', () => {
     });
 
     const { container } = renderComponent();
-    const stageCard = screen.getByTestId('stage-card-hypothesis');
+    const stageCard = screen.getByTestId('stage-card-thesis');
 
     // 12.e.iii: Verify the stage column exports spacing classes for independent height
     const rootElement = container.firstChild;
@@ -486,7 +491,7 @@ describe('StageTabCard', () => {
 
 
     // 12.e.i: Assert the inner checklist wrapper matches outer card width and has hooks
-    const checklistWrapper = within(stageCard).getByTestId('stage-checklist-wrapper-hypothesis');
+    const checklistWrapper = within(stageCard).getByTestId('stage-checklist-wrapper-thesis');
     expect(checklistWrapper).toBeInTheDocument();
     expect(checklistWrapper.classList.contains('w-full')).toBe(true);
 
@@ -504,7 +509,7 @@ describe('StageTabCard', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
-      activeStageSlug: 'analysis',
+      activeStageSlug: 'antithesis',
       recipesByStageSlug: {
         [mockStages[0].slug]: recipe,
       },
@@ -518,17 +523,14 @@ describe('StageTabCard', () => {
 
     renderComponent();
 
-    const hypothesisCard = screen.getByTestId('stage-card-hypothesis');
-    const countElement = within(hypothesisCard).queryByTestId('stage-progress-count-hypothesis');
-    const labelElement = within(hypothesisCard).queryByTestId('stage-progress-label-hypothesis');
+    const thesisCard = screen.getByTestId('stage-card-thesis');
+    const labelElement = within(thesisCard).getByTestId('stage-progress-label-thesis');
 
-    expect(countElement).toBeNull();
-    expect(labelElement).toBeInTheDocument();
-    expect(labelElement?.textContent).toBe('Done');
+    expect(labelElement).toHaveTextContent('2 / 2 Done');
   });
 
   it('does not call setActiveStage from useEffect when activeStageSlug is already set', () => {
-    const storeActions = setupStore({ activeStageSlug: 'analysis' });
+    const storeActions = setupStore({ activeStageSlug: 'antithesis' });
     renderComponent();
     expect(storeActions.setActiveStage).not.toHaveBeenCalled();
   });
@@ -540,7 +542,7 @@ describe('StageTabCard', () => {
     });
     renderComponent();
     expect(storeActions.setActiveStage).toHaveBeenCalledTimes(1);
-    expect(storeActions.setActiveStage).toHaveBeenCalledWith('hypothesis');
+    expect(storeActions.setActiveStage).toHaveBeenCalledWith('thesis');
 
     const sessionNewReference: DialecticSession = {
       ...mockSession,
@@ -565,6 +567,6 @@ describe('StageTabCard', () => {
       currentProcessTemplate: mockProcessTemplate,
     });
     renderComponent();
-    expect(storeActions.setActiveStage).toHaveBeenCalledWith('hypothesis');
+    expect(storeActions.setActiveStage).toHaveBeenCalledWith('thesis');
   });
 });

@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	useDialecticStore,
@@ -14,6 +14,7 @@ import { useAiStore } from "@paynless/store";
 import { toast } from "sonner";
 import { Loader2, RefreshCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StageDAGProgressDialog } from "./StageDAGProgressDialog";
 
 interface GenerateContributionButtonProps {
 	className?: string;
@@ -55,6 +56,8 @@ export const GenerateContributionButton: React.FC<
 				: null,
 		[store, activeContextSessionId],
 	);
+
+	const [dagDialogOpen, setDagDialogOpen] = useState(false);
 
 	const isStageReady = useDialecticStore((state) =>
 		currentProjectDetail && activeSession && activeStage
@@ -110,6 +113,8 @@ export const GenerateContributionButton: React.FC<
 			description: "The AI is working. We will notify you when it is complete.",
 		});
 
+		setDagDialogOpen(true);
+
 		try {
 			const payload: GenerateContributionsPayload = {
 				sessionId: activeContextSessionId,
@@ -156,14 +161,27 @@ export const GenerateContributionButton: React.FC<
 	};
 
 	return (
-		<Button
-			onClick={handleClick}
-			disabled={isDisabled}
-			variant="outline"
-			className={cn(className)}
-			data-testid={`generate-${activeStage?.slug || "unknown"}-button`}
-		>
-			<RefreshCcw /> {getButtonText()}
-		</Button>
+		<>
+			<Button
+				onClick={handleClick}
+				disabled={isDisabled}
+				variant="outline"
+				className={cn(className)}
+				data-testid={`generate-${activeStage?.slug || "unknown"}-button`}
+			>
+				<RefreshCcw /> {getButtonText()}
+			</Button>
+			{activeStage &&
+				activeSession &&
+				activeContextSessionId && (
+					<StageDAGProgressDialog
+						open={dagDialogOpen}
+						onOpenChange={setDagDialogOpen}
+						stageSlug={activeStage.slug}
+						sessionId={activeContextSessionId}
+						iterationNumber={activeSession.iteration_count}
+					/>
+				)}
+		</>
 	);
 };

@@ -4,18 +4,19 @@ import '@testing-library/jest-dom'; // Still useful for DOM assertions
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { toast } from 'sonner'; // Import the mocked toast
 import { GenerateContributionButton } from './GenerateContributionButton';
-import type { 
-  DialecticStage, 
-  DialecticContribution, 
-  DialecticProject, 
+import type {
+  DialecticStage,
+  DialecticContribution,
+  DialecticProject,
   DialecticSession,
-  GenerateContributionsPayload, // For explicit mock typing
-  GenerateContributionsResponse, // For explicit mock typing
-  ApiResponse, // For explicit mock typing
+  GenerateContributionsPayload,
+  GenerateContributionsResponse,
+  ApiResponse,
   DialecticStateValues,
   DialecticProcessTemplate,
-  SelectedModels
-} from '@paynless/types'; // Corrected DialecticProjectDetail to DialecticProject
+  SelectedModels,
+  StageDAGProgressDialogProps,
+} from '@paynless/types';
 
 // Import utilities from the actual mock file
 import { 
@@ -70,10 +71,25 @@ vi.mock('@paynless/store', async () => {
 
 vi.mock('sonner', () => ({
   toast: {
-    success: vi.fn(), // Define mocks directly here
-    error: vi.fn(),   // Define mocks directly here
+    success: vi.fn(),
+    error: vi.fn(),
   },
 }));
+
+vi.mock('./StageDAGProgressDialog', async () => {
+  const React = await import('react');
+  const mockImpl = vi.fn((props: StageDAGProgressDialogProps) =>
+    props.open
+      ? React.createElement('div', {
+          'data-testid': 'stage-dag-progress-dialog',
+          'data-stage-slug': props.stageSlug,
+          'data-session-id': props.sessionId,
+          'data-iteration-number': String(props.iterationNumber),
+        })
+      : null,
+  );
+  return { StageDAGProgressDialog: mockImpl };
+});
 
 const mockThesisStage: DialecticStage = {
   id: 'stage-1',
@@ -586,6 +602,7 @@ describe('GenerateContributionButton', () => {
 
     // Selector returns ok only when ctx === 'personal'; otherwise loading
     vi.mocked(selectActiveChatWalletInfo).mockImplementation((state, ctx) => {
+      void state;
       if (ctx === 'personal') {
         return {
           status: 'ok',
@@ -610,5 +627,91 @@ describe('GenerateContributionButton', () => {
     render(<GenerateContributionButton />);
     // Desired behavior: with personal context, button should be enabled and say Generate
     expect(screen.getByRole('button', { name: /Generate Thesis/i })).not.toBeDisabled();
+  });
+
+  it('opens DAG progress dialog when generate button is clicked', async () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    vi.mocked(storeActions.generateContributions).mockResolvedValue({
+      data: {
+        job_ids: ['job-123'],
+        sessionId: 'test-session-id',
+        projectId: 'test-project-id',
+        stage: 'thesis',
+        iteration: 1,
+        status: 'generating',
+        successfulContributions: [],
+        failedAttempts: [],
+      },
+      status: 202,
+    });
+    const user = userEvent.setup();
+    render(<GenerateContributionButton />);
+    expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
+    const button = screen.getByRole('button', { name: /Generate Thesis/i });
+    await user.click(button);
+    await waitFor(() => {
+      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
+    });
+  });
+
+  it('passes correct stageSlug, sessionId, and iterationNumber to DAG progress dialog', async () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    vi.mocked(storeActions.generateContributions).mockResolvedValue({
+      data: {
+        job_ids: ['job-123'],
+        sessionId: 'test-session-id',
+        projectId: 'test-project-id',
+        stage: 'thesis',
+        iteration: 1,
+        status: 'generating',
+        successfulContributions: [],
+        failedAttempts: [],
+      },
+      status: 202,
+    });
+    const user = userEvent.setup();
+    render(<GenerateContributionButton />);
+    await user.click(screen.getByRole('button', { name: /Generate Thesis/i }));
+    await waitFor(() => {
+      const dialog = screen.getByTestId('stage-dag-progress-dialog');
+      expect(dialog).toHaveAttribute('data-stage-slug', 'thesis');
+      expect(dialog).toHaveAttribute('data-session-id', 'test-session-id');
+      expect(dialog).toHaveAttribute('data-iteration-number', '1');
+    });
+  });
+
+  it('closes DAG progress dialog when onOpenChange(false) is called', async () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    vi.mocked(storeActions.generateContributions).mockResolvedValue({
+      data: {
+        job_ids: ['job-123'],
+        sessionId: 'test-session-id',
+        projectId: 'test-project-id',
+        stage: 'thesis',
+        iteration: 1,
+        status: 'generating',
+        successfulContributions: [],
+        failedAttempts: [],
+      },
+      status: 202,
+    });
+    const user = userEvent.setup();
+    render(<GenerateContributionButton />);
+    await user.click(screen.getByRole('button', { name: /Generate Thesis/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
+    });
+    const dialog = screen.getByTestId('stage-dag-progress-dialog');
+    expect(dialog).toBeInTheDocument();
+    const { StageDAGProgressDialog } = await import('./StageDAGProgressDialog');
+    const mockDialog = vi.mocked(StageDAGProgressDialog);
+    const closeCall = mockDialog.mock.calls[mockDialog.mock.calls.length - 1];
+    const onOpenChange = closeCall[0].onOpenChange;
+    act(() => {
+      onOpenChange(false);
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
+    });
   });
 }); 

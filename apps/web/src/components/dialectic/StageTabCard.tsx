@@ -5,6 +5,7 @@ import type {
 	SetFocusedStageDocumentPayload,
 	UnifiedProjectStatus,
 } from "@paynless/types";
+import { getDisplayName } from "@paynless/types";
 import { cn } from "@/lib/utils";
 import {
 	useDialecticStore,
@@ -37,19 +38,6 @@ interface StageCardProps {
 	checklist?: React.ReactNode;
 }
 
-// UI-only mapping of stage names
-const stageNameMap: Record<string, string> = {
-	thesis: "Proposal",
-	antithesis: "Review",
-	synthesis: "Refinement",
-	parenthesis: "Planning",
-	paralysis: "Implementation",
-};
-
-const getDisplayName = (stage: DialecticStage): string => {
-	return stageNameMap[stage.slug] || stage.display_name;
-};
-
 const StageCard: React.FC<StageCardProps> = ({
 	stage,
 	index,
@@ -59,7 +47,7 @@ const StageCard: React.FC<StageCardProps> = ({
 	progress,
 	checklist,
 }) => {
-	const displayName = getDisplayName(stage);
+	const displayName = getDisplayName(stage.slug);
 
 	if (!isContextReady) {
 		return (
@@ -134,12 +122,19 @@ const StageCard: React.FC<StageCardProps> = ({
 							data-testid={`stage-progress-label-${stage.slug}`}
 							className={cn(
 								"text-xs font-medium",
-								progress.isComplete
-									? "text-emerald-600 dark:text-emerald-400"
-									: "text-muted-foreground",
+								progress.stageStatus === "failed"
+									? "text-destructive"
+									: progress.isComplete
+										? "text-emerald-600 dark:text-emerald-400"
+										: "text-muted-foreground",
 							)}
 						>
 							{progress.completedDocuments} / {progress.totalDocuments}
+							{progress.stageStatus === "failed"
+								? " Failed"
+								: progress.isComplete
+									? " Done"
+									: ""}
 						</span>
 					)}
 				</div>
@@ -179,17 +174,15 @@ export const StageTabCard: React.FC = () => {
 
 		const summaries: Record<string, StageProgressSnapshotSummary> = {};
 		for (const stage of sortedStages) {
-			const detail = unified?.stageDetails?.find((d) => d.stageSlug === stage.slug) ?? null;
-			const totalDocuments = detail ? (detail.totalSteps > 0 ? detail.totalSteps : 1) : 0;
-			const completedDocuments = detail?.completedSteps ?? 0;
-			const stageStatus = detail?.stageStatus ?? "not_started";
-			const stagePercentage = detail?.stagePercentage ?? 0;
+			if (!unified) throw new Error("Unified progress required");
+			const detail = unified.stageDetails.find((d) => d.stageSlug === stage.slug);
+			if (!detail) throw new Error(`Missing stage detail for ${stage.slug}`);
 			summaries[stage.slug] = {
-				totalDocuments,
-				completedDocuments,
-				isComplete: stageStatus === "completed",
-				stageStatus,
-				stagePercentage,
+				totalDocuments: detail.totalSteps,
+				completedDocuments: detail.completedSteps,
+				isComplete: detail.stageStatus === "completed",
+				stageStatus: detail.stageStatus,
+				stagePercentage: detail.stagePercentage,
 			};
 		}
 

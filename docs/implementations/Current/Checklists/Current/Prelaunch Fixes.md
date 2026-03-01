@@ -743,210 +743,220 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
         *   `[✅]`   Modified: `packages/store/src/dialecticStore.recipes.test.ts` — tests for edge storage
         *   `[✅]`   Modified: `packages/store/src/dialecticStore.test.ts` — tests for snapshot init with `progress`
 
-*   `[ ]`   `[UI]` apps/web/src/components/dialectic/dagLayout **Compute layered node positions from recipe steps and edges**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Accept recipe steps and edges; compute (x, y) positions for each step node arranged in topological layers
-        *   `[ ]`   Steps at the same topological depth occupy the same column (left-to-right flow) or row (top-to-bottom flow)
-        *   `[ ]`   Return node positions and edge connection coordinates suitable for SVG rendering
-        *   `[ ]`   Pure computation — no React, no DOM, no side effects
-    *   `[ ]`   `role`
-        *   `[ ]`   Domain utility — pure layout computation for DAG visualization
-    *   `[ ]`   `module`
-        *   `[ ]`   DAG progress popup — layout engine
-        *   `[ ]`   Bounded to recipe step arrays and edge arrays; no awareness of store, DOM, or React
-    *   `[ ]`   `deps`
-        *   `[ ]`   `DialecticStageRecipeStep` type from `@paynless/types` — domain — inward
-        *   `[ ]`   `DialecticRecipeEdge` type from `@paynless/types` — domain — inward
-        *   `[ ]`   Confirm no reverse dependency is introduced
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   Injection shape: `(params: DAGLayoutParams): DAGLayoutResult` — pure function, no Deps object needed (no external services)
-        *   `[ ]`   Params: `{ steps: DialecticStageRecipeStep[]; edges: DialecticRecipeEdge[] }`
-        *   `[ ]`   Confirm no concrete imports from store or UI layers
-    *   `[ ]`   apps/web/src/components/dialectic/`dagLayout.types.ts`
-        *   `[ ]`   `DAGLayoutParams`: `{ steps: DialecticStageRecipeStep[]; edges: DialecticRecipeEdge[] }`
-        *   `[ ]`   `DAGNodePosition`: `{ stepKey: string; stepName: string; jobType: string; x: number; y: number; layer: number }`
-        *   `[ ]`   `DAGEdgePosition`: `{ fromStepKey: string; toStepKey: string; fromX: number; fromY: number; toX: number; toY: number }`
-        *   `[ ]`   `DAGLayoutResult`: `{ nodes: DAGNodePosition[]; edges: DAGEdgePosition[]; width: number; height: number }`
-    *   `[ ]`   apps/web/src/components/dialectic/`dagLayout.test.ts`
-        *   `[ ]`   Single node, no edges → one node at origin, no edge positions, width/height equal to single node dimensions
-        *   `[ ]`   Linear chain A→B→C → three nodes in successive layers, two edges connecting them
-        *   `[ ]`   Fan-out PLAN→(EXEC1, EXEC2, EXEC3) → PLAN in layer 0, three EXECs in layer 1 stacked vertically
-        *   `[ ]`   Diamond A→B, A→C, B→D, C→D → A layer 0, B/C layer 1, D layer 2
-        *   `[ ]`   All node positions have non-negative x and y
-        *   `[ ]`   Nodes in the same layer share the same x coordinate
-        *   `[ ]`   No two nodes overlap (distinct y within same layer)
-        *   `[ ]`   Edge `fromX`/`fromY` and `toX`/`toY` match their respective node positions
-        *   `[ ]`   Empty steps array → empty nodes, empty edges, zero width/height
-    *   `[ ]`   `construction`
-        *   `[ ]`   Signature: `computeDAGLayout(params: DAGLayoutParams): DAGLayoutResult`
-        *   `[ ]`   Pure function — no state, no side effects, no DOM access
-        *   `[ ]`   Prohibited: construction inside a React component render — call in `useMemo` only
-    *   `[ ]`   apps/web/src/components/dialectic/`dagLayout.ts`
-        *   `[ ]`   Build adjacency list and in-degree map from `params.edges`
-        *   `[ ]`   Assign each step to a topological layer (longest-path-from-root depth assignment)
-        *   `[ ]`   Within each layer, assign vertical positions (evenly spaced)
-        *   `[ ]`   Compute (x, y) for each node: x = layer * horizontalSpacing, y = indexInLayer * verticalSpacing
-        *   `[ ]`   Compute edge connection points from source node right edge to target node left edge
-        *   `[ ]`   Compute overall width and height from max layer and max nodes-in-layer
-        *   `[ ]`   Return `{ nodes, edges, width, height }`
-    *   `[ ]`   `provides`
-        *   `[ ]`   Exported symbol: `computeDAGLayout` function
-        *   `[ ]`   Exported types: `DAGLayoutParams`, `DAGNodePosition`, `DAGEdgePosition`, `DAGLayoutResult`
-        *   `[ ]`   Semantic guarantee: nodes in topological order, no overlaps, edges connect correct nodes
-        *   `[ ]`   Stability guarantee: deterministic for identical inputs
-    *   `[ ]`   apps/web/src/components/dialectic/`dagLayout.mock.ts`
-        *   `[ ]`   Not required — pure function, cheap to call directly in consumer tests
-    *   `[ ]`   apps/web/src/components/dialectic/`dagLayout.integration.test.ts`
-        *   `[ ]`   Not required — no I/O or external dependencies
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: domain (pure computation)
-        *   `[ ]`   Dependencies inward-facing: `@paynless/types` (type definitions only)
-        *   `[ ]`   Provides outward to: `StageDAGProgressDialog` component
-    *   `[ ]`   `requirements`
-        *   `[ ]`   Handles all existing recipe topologies (thesis 5-step fan-out, synthesis 13-step complex DAG, parenthesis 4-step linear)
-        *   `[ ]`   Layout fits within reasonable SVG viewport (scrollable if necessary)
-        *   `[ ]`   No external graph library dependency
+*   `[✅]`   `[UI]` apps/web/src/components/dialectic/dagLayout **Compute layered node positions from recipe steps and edges**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Accept recipe steps and edges; compute (x, y) positions for each step node arranged in topological layers
+        *   `[✅]`   Steps at the same topological depth occupy the same column (left-to-right flow) or row (top-to-bottom flow)
+        *   `[✅]`   Return node positions and edge connection coordinates suitable for SVG rendering
+        *   `[✅]`   Pure computation — no React, no DOM, no side effects
+        *   `[✅]`   Layout reacts to window size; when optional viewport is provided, scale layout to fit the user's viewport and prefer the largest dimension (wide screens → horizontal layout, tall screens → vertical layout)
+    *   `[✅]`   `role`
+        *   `[✅]`   Domain utility — pure layout computation for DAG visualization
+    *   `[✅]`   `module`
+        *   `[✅]`   DAG progress popup — layout engine
+        *   `[✅]`   Bounded to recipe step arrays and edge arrays; no awareness of store, DOM, or React
+    *   `[✅]`   `deps`
+        *   `[✅]`   `DialecticStageRecipeStep` type from `@paynless/types` — domain — inward
+        *   `[✅]`   `DialecticRecipeEdge` type from `@paynless/types` — domain — inward
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   Injection shape: `(params: DAGLayoutParams): DAGLayoutResult` — pure function, no Deps object needed (no external services)
+        *   `[✅]`   Params: `{ steps: DialecticStageRecipeStep[]; edges: DialecticRecipeEdge[] }`; optional `viewport?: DAGViewport` for viewport-driven orientation and scale-to-fit
+        *   `[✅]`   Confirm no concrete imports from store or UI layers
+    *   `[✅]`   packages/types/src/`dialectic.types.ts` (DAG layout types live in types workspace)
+        *   `[✅]`   `DAGLayoutParams`: `{ steps: DialecticStageRecipeStep[]; edges: DialecticRecipeEdge[]; viewport?: DAGViewport }`
+        *   `[✅]`   `DAGViewport`: `{ width: number; height: number }` — for viewport-driven layout
+        *   `[✅]`   `DAGLayoutOrientation`: `'horizontal' | 'vertical'` — for result orientation
+        *   `[✅]`   `DAGNodePosition`: `{ stepKey: string; stepName: string; jobType: RecipeJobType; x: number; y: number; layer: number }`
+        *   `[✅]`   `DAGEdgePosition`: `{ fromStepKey: string; toStepKey: string; fromX: number; fromY: number; toX: number; toY: number }`
+        *   `[✅]`   `DAGLayoutResult`: `{ nodes: DAGNodePosition[]; edges: DAGEdgePosition[]; width: number; height: number; orientation?: DAGLayoutOrientation }` —  `orientation` set when viewport provided
+    *   `[✅]`   apps/web/src/components/dialectic/`dagLayout.test.ts`
+        *   `[✅]`   Single node, no edges → one node at origin, no edge positions, width/height equal to single node dimensions
+        *   `[✅]`   Linear chain A→B→C → three nodes in successive layers, two edges connecting them
+        *   `[✅]`   Fan-out PLAN→(EXEC1, EXEC2, EXEC3) → PLAN in layer 0, three EXECs in layer 1 stacked vertically
+        *   `[✅]`   Diamond A→B, A→C, B→D, C→D → A layer 0, B/C layer 1, D layer 2
+        *   `[✅]`   All node positions have non-negative x and y
+        *   `[✅]`   Nodes in the same layer share the same x coordinate
+        *   `[✅]`   No two nodes overlap (distinct y within same layer)
+        *   `[✅]`   Edge `fromX`/`fromY` and `toX`/`toY` match their respective node positions
+        *   `[✅]`   Empty steps array → empty nodes, empty edges, zero width/height
+        *   `[✅]`   **Added (viewport):** Wide viewport (width > height) → `orientation === 'horizontal'`, layers vary along x
+        *   `[✅]`   **Added (viewport):** Tall viewport (height > width) → `orientation === 'vertical'`, layers vary along y
+        *   `[✅]`   **Added (viewport):** With viewport provided, result scales to fit (result width/height and all node/edge coords within viewport)
+        *   `[✅]`   **Added (viewport):** Same graph with wide vs tall viewport yields different orientation (layout reacts to window size)
+    *   `[✅]`   `construction`
+        *   `[✅]`   Signature: `computeDAGLayout(params: DAGLayoutParams): DAGLayoutResult`; params may include optional `viewport`
+        *   `[✅]`   Pure function — no state, no side effects, no DOM access
+        *   `[✅]`   Prohibited: construction inside a React component render — call in `useMemo` only
+    *   `[✅]`   apps/web/src/components/dialectic/`dagLayout.ts`
+        *   `[✅]`   Build adjacency list and in-degree map from `params.edges`
+        *   `[✅]`   Assign each step to a topological layer (longest-path-from-root depth assignment)
+        *   `[✅]`   Within each layer, assign vertical positions (evenly spaced)
+        *   `[✅]`   Compute (x, y) for each node: x = layer * horizontalSpacing, y = indexInLayer * verticalSpacing (horizontal mode); when viewport present and vertical, use y for layer and x for index-in-layer
+        *   `[✅]`   Compute edge connection points from source node right edge to target node left edge
+        *   `[✅]`   Compute overall width and height from max layer and max nodes-in-layer
+        *   `[✅]`   Return `{ nodes, edges, width, height }`; when `params.viewport` provided, also set `orientation` and scale positions to fit viewport
+        *   `[✅]`   **Added (viewport):** When `params.viewport` present: set `orientation` to `'horizontal'` if viewport.width >= viewport.height, else `'vertical'`; scale layout so result fits within viewport (result.width <= viewport.width, result.height <= viewport.height; all node and edge coordinates within bounds)
+    *   `[✅]`   `provides`
+        *   `[✅]`   Exported symbol: `computeDAGLayout` function
+        *   `[✅]`   Exported types (from `@paynless/types`): `DAGLayoutParams`, `DAGViewport`, `DAGLayoutOrientation`, `DAGNodePosition`, `DAGEdgePosition`, `DAGLayoutResult`
+        *   `[✅]`   Semantic guarantee: nodes in topological order, no overlaps, edges connect correct nodes
+        *   `[✅]`   **Added:** When viewport provided: layout scales to fit viewport; orientation prefers largest dimension (wide → horizontal, tall → vertical)
+        *   `[✅]`   Stability guarantee: deterministic for identical inputs
+    *   `[✅]`   apps/web/src/components/dialectic/`dagLayout.mock.ts`
+        *   `[✅]`   Not required — pure function, cheap to call directly in consumer tests
+    *   `[✅]`   apps/web/src/components/dialectic/`dagLayout.integration.test.ts`
+        *   `[✅]`   Not required — no I/O or external dependencies
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: domain (pure computation)
+        *   `[✅]`   Dependencies inward-facing: `@paynless/types` (type definitions only)
+        *   `[✅]`   Provides outward to: `StageDAGProgressDialog` component
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Handles all existing recipe topologies (thesis 5-step fan-out, synthesis 13-step complex DAG, parenthesis 4-step linear)
+        *   `[✅]`   Layout fits within reasonable SVG viewport (scrollable if necessary)
+        *   `[✅]`   **Added:** Layout reacts to window size; scales to fit user viewport when viewport provided; wide screens get horizontal layout, tall screens get vertical layout (prefer largest dimension)
+        *   `[✅]`   No external graph library dependency
 
-*   `[ ]`   `[UI]` apps/web/src/components/dialectic/StageDAGProgressDialog **DAG progress popup with live node status overlay**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Render a Dialog (shadcn) containing an SVG visualization of the active stage's recipe DAG
-        *   `[ ]`   Each DAG node represents a recipe step, colored by status: grey (`not_started`), amber-pulse (`in_progress`), green (`completed`), red (`failed`)
-        *   `[ ]`   Edges rendered as lines/arrows between connected nodes
-        *   `[ ]`   Node colors update reactively as notifications flow through the store and `stageRunProgress` updates
-        *   `[ ]`   Dialog auto-closes when the first rendered document arrives for this stage (first `StageRunDocumentDescriptor` with `descriptorType === 'rendered'` and `status === 'completed'`)
-        *   `[ ]`   Dialog can be manually dismissed at any time
-        *   `[ ]`   Each node displays `step_name` label — no per-step job count badge (progress is step-based, not job-based)
-    *   `[ ]`   `role`
-        *   `[ ]`   UI component — presentation and reactivity
-    *   `[ ]`   `module`
-        *   `[ ]`   DAG progress popup — dialog with SVG DAG rendering
-        *   `[ ]`   Bounded to reading store state and rendering; no API calls, no store mutations
-    *   `[ ]`   `deps`
-        *   `[ ]`   `computeDAGLayout` from `apps/web/src/components/dialectic/dagLayout.ts` — domain — inward — layout computation
-        *   `[ ]`   `useDialecticStore` from `@paynless/store` — store — inward — reactive state access
-        *   `[ ]`   `selectUnifiedProjectProgress` from `@paynless/store` (at `packages/store/src/dialecticStore.selectors.ts` line 805) — store — inward — per-step status (now step-based, no job counts)
-        *   `[ ]`   `selectStageRunProgress` from `@paynless/store` (at `packages/store/src/dialecticStore.selectors.ts` line 634) — store — inward — document descriptors for auto-close
-        *   `[ ]`   `recipesByStageSlug` store state — store — inward — recipe steps and edges
-        *   `[ ]`   shadcn `Dialog` component from `@/components/ui/dialog` — UI library — inward
-        *   `[ ]`   Confirm no reverse dependency is introduced
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   From store: `state.recipesByStageSlug[stageSlug]` → `{ steps: DialecticStageRecipeStep[], edges: DialecticRecipeEdge[] }`
-        *   `[ ]`   From store: `selectUnifiedProjectProgress(state, sessionId)` → `stageDetails[].stepsDetail[]` — each `StepProgressDetail` has `{ stepKey, stepName, status }` (no job counts after prior selector refactor)
-        *   `[ ]`   From store: `selectStageRunProgress(state, sessionId, stageSlug, iterationNumber)` → `StageRunProgressSnapshot.documents`
-        *   `[ ]`   Props: `open: boolean; onOpenChange: (open: boolean) => void; stageSlug: string; sessionId: string; iterationNumber: number`
-        *   `[ ]`   Confirm no concrete imports from backend layers
-    *   `[ ]`   apps/web/src/components/dialectic/`StageDAGProgressDialog.types.ts`
-        *   `[ ]`   `StageDAGProgressDialogProps`: `{ open: boolean; onOpenChange: (open: boolean) => void; stageSlug: string; sessionId: string; iterationNumber: number }`
-    *   `[ ]`   apps/web/src/components/dialectic/`StageDAGProgressDialog.test.tsx`
-        *   `[ ]`   Renders Dialog when `open` is true; does not render content when `open` is false
-        *   `[ ]`   Renders an SVG element containing node rects for each step in the recipe
-        *   `[ ]`   Renders edge lines between connected nodes
-        *   `[ ]`   Node for a `not_started` step has grey fill
-        *   `[ ]`   Node for a `completed` step has green fill
-        *   `[ ]`   Node for a `failed` step has red fill
-        *   `[ ]`   Node for an `in_progress` step has amber fill with pulse animation class
-        *   `[ ]`   Each node displays `step_name` text label
-        *   `[ ]`   Auto-close: when `stageRunProgress` documents include a `rendered` + `completed` descriptor, `onOpenChange(false)` is called
-        *   `[ ]`   Manual dismiss: clicking close button calls `onOpenChange(false)`
-        *   `[ ]`   Empty recipe (no steps) → Dialog body shows "No recipe data available"
-    *   `[ ]`   `construction`
-        *   `[ ]`   Signature: `StageDAGProgressDialog: React.FC<StageDAGProgressDialogProps>`
-        *   `[ ]`   Layout computed via `useMemo(() => computeDAGLayout({ steps, edges }), [steps, edges])`
-        *   `[ ]`   Status derived via `useDialecticStore(state => selectUnifiedProjectProgress(state, sessionId))` — find matching `stageDetails` entry by `stageSlug`, then map `stepsDetail[].stepKey → stepsDetail[].status`
-        *   `[ ]`   Auto-close via `useEffect` watching `selectStageRunProgress(state, sessionId, stageSlug, iterationNumber).documents`
-        *   `[ ]`   Prohibited: direct API calls, store mutations, or layout computation outside `useMemo`
-    *   `[ ]`   apps/web/src/components/dialectic/`StageDAGProgressDialog.tsx`
-        *   `[ ]`   Read recipe from `useDialecticStore(state => state.recipesByStageSlug[stageSlug])`
-        *   `[ ]`   Compute layout: `const layout = useMemo(() => computeDAGLayout({ steps: recipe.steps, edges: recipe.edges }), [recipe])`
-        *   `[ ]`   Read step progress: subscribe to `selectUnifiedProjectProgress` and find matching `stageDetails` entry by `stageSlug`
-        *   `[ ]`   Build status map: `Map<stepKey, UnifiedProjectStatus>` from `stepsDetail[].stepKey → stepsDetail[].status` — status only, no job counts
-        *   `[ ]`   Render `<Dialog open={open} onOpenChange={onOpenChange}>` with `<DialogContent>`
-        *   `[ ]`   Render `<svg viewBox="..." width={layout.width} height={layout.height}>`
-        *   `[ ]`   For each `layout.edges`: render `<line>` or `<path>` with arrow marker
-        *   `[ ]`   For each `layout.nodes`: render `<rect>` with fill color from status map, `<text>` for step_name
-        *   `[ ]`   Color mapping: `not_started` → `#9ca3af` (grey), `in_progress` → `#f59e0b` (amber), `completed` → `#10b981` (green), `failed` → `#ef4444` (red)
-        *   `[ ]`   Auto-close `useEffect`: watch `selectStageRunProgress(state, sessionId, stageSlug, iterationNumber).documents`; when any entry has `descriptorType === 'rendered'` and `status === 'completed'`, call `onOpenChange(false)`
-    *   `[ ]`   `provides`
-        *   `[ ]`   Exported symbol: `StageDAGProgressDialog` component
-        *   `[ ]`   Semantic guarantee: node colors reflect real-time store state
-        *   `[ ]`   Semantic guarantee: auto-closes on first rendered document arrival
-    *   `[ ]`   apps/web/src/components/dialectic/`StageDAGProgressDialog.mock.tsx`
-        *   `[ ]`   Mock renders `data-testid="stage-dag-progress-dialog"` div with `open` prop for consumer tests
-    *   `[ ]`   apps/web/src/components/dialectic/`StageDAGProgressDialog.integration.test.tsx`
-        *   `[ ]`   Store seeded with recipe (steps + edges) and `stageRunProgress` → Dialog renders correct node count and colors
-        *   `[ ]`   Store `stageRunProgress` updated mid-render → node color transitions from grey to green
-        *   `[ ]`   Store `stageRunProgress.documents` gains a `rendered`+`completed` entry → Dialog auto-closes
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: UI (presentation)
-        *   `[ ]`   Dependencies inward-facing: `computeDAGLayout` (domain), `useDialecticStore` (store), shadcn `Dialog` (UI library)
-        *   `[ ]`   Provides outward to: `GenerateContributionButton` (consumer)
-    *   `[ ]`   `requirements`
-        *   `[ ]`   DAG visualization is readable for recipes from 4 steps (parenthesis) to 13 steps (synthesis)
-        *   `[ ]`   Node status updates are reactive — no polling, no manual refresh
-        *   `[ ]`   Auto-close fires on first rendered document, not on first completed job
-        *   `[ ]`   Manual dismiss available at all times
-        *   `[ ]`   No external graph visualization library
+*   `[✅]`   `[UI]` apps/web/src/components/dialectic/StageDAGProgressDialog **DAG progress popup with live node status overlay**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Render a Dialog (shadcn) containing an SVG visualization of the active stage's recipe DAG
+        *   `[✅]`   Each DAG node represents a recipe step, colored by status: grey (`not_started`), amber-pulse (`in_progress`), green (`completed`), red (`failed`)
+        *   `[✅]`   Edges rendered as lines/arrows between connected nodes
+        *   `[✅]`   Node colors update reactively as notifications flow through the store and `stageRunProgress` updates
+        *   `[✅]`   Dialog auto-closes when the first rendered document arrives for this stage (first `StageRunDocumentDescriptor` with `descriptorType === 'rendered'` and `status === 'completed'`)
+        *   `[✅]`   Dialog can be manually dismissed at any time
+        *   `[✅]`   Each node displays `step_name` label — no per-step job count badge (progress is step-based, not job-based)
+    *   `[✅]`   `role`
+        *   `[✅]`   UI component — presentation and reactivity
+    *   `[✅]`   `module`
+        *   `[✅]`   DAG progress popup — dialog with SVG DAG rendering
+        *   `[✅]`   Bounded to reading store state and rendering; no API calls, no store mutations
+    *   `[✅]`   `deps`
+        *   `[✅]`   `computeDAGLayout` from `apps/web/src/components/dialectic/dagLayout.ts` — domain — inward — layout computation
+        *   `[✅]`   `useDialecticStore` from `@paynless/store` — store — inward — reactive state access
+        *   `[✅]`   `selectUnifiedProjectProgress` from `@paynless/store` (at `packages/store/src/dialecticStore.selectors.ts` line 805) — store — inward — per-step status (now step-based, no job counts)
+        *   `[✅]`   `selectStageRunProgress` from `@paynless/store` (at `packages/store/src/dialecticStore.selectors.ts` line 634) — store — inward — document descriptors for auto-close
+        *   `[✅]`   `recipesByStageSlug` store state — store — inward — recipe steps and edges
+        *   `[✅]`   shadcn `Dialog` component from `@/components/ui/dialog` — UI library — inward
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   From store: `state.recipesByStageSlug[stageSlug]` → `{ steps: DialecticStageRecipeStep[], edges: DialecticRecipeEdge[] }`
+        *   `[✅]`   From store: `selectUnifiedProjectProgress(state, sessionId)` → `stageDetails[].stepsDetail[]` — each `StepProgressDetail` has `{ stepKey, stepName, status }` (no job counts after prior selector refactor)
+        *   `[✅]`   From store: `selectStageRunProgress(state, sessionId, stageSlug, iterationNumber)` → `StageRunProgressSnapshot.documents`
+        *   `[✅]`   Props: `open: boolean; onOpenChange: (open: boolean) => void; stageSlug: string; sessionId: string; iterationNumber: number`
+        *   `[✅]`   Confirm no concrete imports from backend layers
+    *   `[✅]`   apps/web/src/components/dialectic/`StageDAGProgressDialog.types.ts`
+        *   `[✅]`   `StageDAGProgressDialogProps`: `{ open: boolean; onOpenChange: (open: boolean) => void; stageSlug: string; sessionId: string; iterationNumber: number }`
+    *   `[✅]`   apps/web/src/components/dialectic/`StageDAGProgressDialog.test.tsx`
+        *   `[✅]`   Renders Dialog when `open` is true; does not render content when `open` is false
+        *   `[✅]`   Renders an SVG element containing node rects for each step in the recipe
+        *   `[✅]`   Renders edge lines between connected nodes
+        *   `[✅]`   Node for a `not_started` step has grey fill
+        *   `[✅]`   Node for a `completed` step has green fill
+        *   `[✅]`   Node for a `failed` step has red fill
+        *   `[✅]`   Node for an `in_progress` step has amber fill with pulse animation class
+        *   `[✅]`   Each node displays `step_name` text label
+        *   `[✅]`   Auto-close: when `stageRunProgress` documents include a `rendered` + `completed` descriptor, `onOpenChange(false)` is called
+        *   `[✅]`   Manual dismiss: clicking close button calls `onOpenChange(false)`
+        *   `[✅]`   Empty recipe (no steps) → Dialog body shows "No recipe data available"
+    *   `[✅]`   `construction`
+        *   `[✅]`   Signature: `StageDAGProgressDialog: React.FC<StageDAGProgressDialogProps>`
+        *   `[✅]`   Layout computed via `useMemo(() => computeDAGLayout({ steps, edges }), [steps, edges])`
+        *   `[✅]`   Status derived via `useDialecticStore(state => selectUnifiedProjectProgress(state, sessionId))` — find matching `stageDetails` entry by `stageSlug`, then map `stepsDetail[].stepKey → stepsDetail[].status`
+        *   `[✅]`   Auto-close via `useEffect` watching `selectStageRunProgress(state, sessionId, stageSlug, iterationNumber).documents`
+        *   `[✅]`   Prohibited: direct API calls, store mutations, or layout computation outside `useMemo`
+    *   `[✅]`   apps/web/src/components/dialectic/`StageDAGProgressDialog.tsx`
+        *   `[✅]`   Read recipe from `useDialecticStore(state => state.recipesByStageSlug[stageSlug])`
+        *   `[✅]`   Compute layout: `const layout = useMemo(() => computeDAGLayout({ steps: recipe.steps, edges: recipe.edges }), [recipe])`
+        *   `[✅]`   Read step progress: subscribe to `selectUnifiedProjectProgress` and find matching `stageDetails` entry by `stageSlug`
+        *   `[✅]`   Build status map: `Map<stepKey, UnifiedProjectStatus>` from `stepsDetail[].stepKey → stepsDetail[].status` — status only, no job counts
+        *   `[✅]`   Render `<Dialog open={open} onOpenChange={onOpenChange}>` with `<DialogContent>`
+        *   `[✅]`   Render `<svg viewBox="..." width={layout.width} height={layout.height}>`
+        *   `[✅]`   For each `layout.edges`: render `<line>` or `<path>` with arrow marker
+        *   `[✅]`   For each `layout.nodes`: render `<rect>` with fill color from status map, `<text>` for step_name
+        *   `[✅]`   Color mapping: `not_started` → `#9ca3af` (grey), `in_progress` → `#f59e0b` (amber), `completed` → `#10b981` (green), `failed` → `#ef4444` (red)
+        *   `[✅]`   Auto-close `useEffect`: watch `selectStageRunProgress(state, sessionId, stageSlug, iterationNumber).documents`; when any entry has `descriptorType === 'rendered'` and `status === 'completed'`, call `onOpenChange(false)`
+    *   `[✅]`   `provides`
+        *   `[✅]`   Exported symbol: `StageDAGProgressDialog` component
+        *   `[✅]`   Semantic guarantee: node colors reflect real-time store state
+        *   `[✅]`   Semantic guarantee: auto-closes on first rendered document arrival
+    *   `[✅]`   apps/web/src/components/dialectic/`StageDAGProgressDialog.mock.tsx`
+        *   `[✅]`   Mock renders `data-testid="stage-dag-progress-dialog"` div with `open` prop for consumer tests
+    *   `[✅]`   apps/web/src/components/dialectic/`StageDAGProgressDialog.integration.test.tsx`
+        *   `[✅]`   Store seeded with recipe (steps + edges) and `stageRunProgress` → Dialog renders correct node count and colors
+        *   `[✅]`   Store `stageRunProgress` updated mid-render → node color transitions from grey to green
+        *   `[✅]`   Store `stageRunProgress.documents` gains a `rendered`+`completed` entry → Dialog auto-closes
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: UI (presentation)
+        *   `[✅]`   Dependencies inward-facing: `computeDAGLayout` (domain), `useDialecticStore` (store), shadcn `Dialog` (UI library)
+        *   `[✅]`   Provides outward to: `GenerateContributionButton` (consumer)
+    *   `[✅]`   `requirements`
+        *   `[✅]`   DAG visualization is readable for recipes from 4 steps (parenthesis) to 13 steps (synthesis)
+        *   `[✅]`   Node status updates are reactive — no polling, no manual refresh
+        *   `[✅]`   Auto-close fires on first rendered document, not on first completed job
+        *   `[✅]`   Manual dismiss available at all times
+        *   `[✅]`   No external graph visualization library
 
-*   `[ ]`   `[UI]` apps/web/src/components/dialectic/GenerateContributionButton **Integrate DAG progress popup on generate action**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Open the `StageDAGProgressDialog` when the user clicks "Generate {Stage}"
-        *   `[ ]`   Dialog opens immediately alongside the `generateContributions` call
-        *   `[ ]`   Dialog closes automatically when first rendered document arrives (handled by `StageDAGProgressDialog` auto-close)
-        *   `[ ]`   No change to existing generation logic or button disabled states
-    *   `[ ]`   `role`
-        *   `[ ]`   UI component — wiring existing button to new dialog
-    *   `[ ]`   `module`
-        *   `[ ]`   Dialectic generation UI — button and dialog coordination
-        *   `[ ]`   Bounded to local state management (dialog open/close) and existing store interactions
-    *   `[ ]`   `deps`
-        *   `[ ]`   `StageDAGProgressDialog` from `apps/web/src/components/dialectic/StageDAGProgressDialog.tsx` — UI — same layer — imported component
-        *   `[ ]`   Existing `useDialecticStore` from `@paynless/store` — store — inward
-        *   `[ ]`   Confirm no reverse dependency is introduced
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   From store: `activeContextSessionId`, via `selectActiveStage(store)` → `activeStage.slug`, via `selectSessionById(store, activeContextSessionId)` → `activeSession.iteration_count`
-        *   `[ ]`   Local state: `useState<boolean>` for dialog open/close
-        *   `[ ]`   Confirm no new concrete imports from backend layers
-    *   `[ ]`   apps/web/src/components/dialectic/`GenerateContributionButton.test.tsx` (existing file at `apps/web/src/components/dialectic/GenerateContributionButton.test.tsx`, 614 lines, new tests appended)
-        *   `[ ]`   Clicking generate button opens DAG progress dialog (`data-testid="stage-dag-progress-dialog"` appears)
-        *   `[ ]`   Dialog receives correct `stageSlug`, `sessionId`, `iterationNumber` props
-        *   `[ ]`   Dialog `onOpenChange(false)` closes the dialog (no longer visible in DOM)
-        *   `[ ]`   Existing 18 button behavior tests unaffected (disabled states, text labels, generation call, wallet checks)
-    *   `[ ]`   `construction`
-        *   `[ ]`   Local state: `const [dagDialogOpen, setDagDialogOpen] = useState(false)`
-        *   `[ ]`   In existing `handleClick` function (line 100): add `setDagDialogOpen(true)` after the toast (line 112), before `generateContributions` call (line 115)
-        *   `[ ]`   Render `<StageDAGProgressDialog>` as sibling to `<Button>` in return JSX (line 152-168), passing local state props
-    *   `[ ]`   apps/web/src/components/dialectic/`GenerateContributionButton.tsx` (existing file, 169 lines)
-        *   `[ ]`   Add import: `import { StageDAGProgressDialog } from './StageDAGProgressDialog';`
-        *   `[ ]`   Add `useState` import (already imported from React via line 1)
-        *   `[ ]`   Add state: `const [dagDialogOpen, setDagDialogOpen] = useState(false)` inside component body
-        *   `[ ]`   In `handleClick` (line 100): add `setDagDialogOpen(true)` after toast.success (line 112), before the try/catch block (line 114)
-        *   `[ ]`   In return JSX: render `<StageDAGProgressDialog open={dagDialogOpen} onOpenChange={setDagDialogOpen} stageSlug={activeStage.slug} sessionId={activeContextSessionId} iterationNumber={activeSession.iteration_count} />` as sibling to `<Button>`, wrapped in a fragment `<>...</>` if needed
-    *   `[ ]`   `provides`
-        *   `[ ]`   Updated `GenerateContributionButton` component — now opens DAG popup on generate
-        *   `[ ]`   Semantic guarantee: popup visible from button click until first document arrives
-    *   `[ ]`   apps/web/src/components/dialectic/`GenerateContributionButton.mock.tsx`
-        *   `[ ]`   Not required — no mock exists currently; dialog is internal concern
-    *   `[ ]`   apps/web/src/components/dialectic/`GenerateContributionButton.integration.test.tsx`
-        *   `[ ]`   Click generate → dialog opens → store gets `stageRunProgress` update with rendered document → dialog auto-closes
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: UI (presentation)
-        *   `[ ]`   Dependencies inward-facing: `StageDAGProgressDialog` (same layer), `useDialecticStore` (store)
-        *   `[ ]`   Provides outward to: user interaction (top-level page via `SessionInfoCard` which imports this component)
-    *   `[ ]`   `requirements`
-        *   `[ ]`   No regression in existing generate button behavior (18 existing tests pass)
-        *   `[ ]`   Dialog opens synchronously with generation start
-        *   `[ ]`   Dialog auto-closes on first rendered document (delegated to `StageDAGProgressDialog`)
-        *   `[ ]`   Dialog manually dismissable at any time
-    *   `[ ]`   **Commit** `feat(ui) apps/web DAG progress popup on stage generation`
-        *   `[ ]`   New file: `apps/web/src/components/dialectic/dagLayout.types.ts` — layout types
-        *   `[ ]`   New file: `apps/web/src/components/dialectic/dagLayout.ts` — pure DAG layout computation
-        *   `[ ]`   New file: `apps/web/src/components/dialectic/dagLayout.test.ts` — layout tests
-        *   `[ ]`   New file: `apps/web/src/components/dialectic/StageDAGProgressDialog.types.ts` — dialog props type
-        *   `[ ]`   New file: `apps/web/src/components/dialectic/StageDAGProgressDialog.tsx` — dialog with SVG DAG and live status
-        *   `[ ]`   New file: `apps/web/src/components/dialectic/StageDAGProgressDialog.test.tsx` — dialog unit tests
-        *   `[ ]`   New file: `apps/web/src/components/dialectic/StageDAGProgressDialog.mock.tsx` — mock for consumer tests
-        *   `[ ]`   Modified: `apps/web/src/components/dialectic/GenerateContributionButton.tsx` — wired dialog to generate action
-        *   `[ ]`   Modified: `apps/web/src/components/dialectic/GenerateContributionButton.test.tsx` — tests for dialog integration
+*   `[✅]`   `[UI]` apps/web/src/components/dialectic/GenerateContributionButton **Integrate DAG progress popup on generate action**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Open the `StageDAGProgressDialog` when the user clicks "Generate {Stage}"
+        *   `[✅]`   Dialog opens immediately alongside the `generateContributions` call
+        *   `[✅]`   Dialog closes automatically when first rendered document arrives (handled by `StageDAGProgressDialog` auto-close)
+        *   `[✅]`   No change to existing generation logic or button disabled states
+    *   `[✅]`   `role`
+        *   `[✅]`   UI component — wiring existing button to new dialog
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic generation UI — button and dialog coordination
+        *   `[✅]`   Bounded to local state management (dialog open/close) and existing store interactions
+    *   `[✅]`   `deps`
+        *   `[✅]`   `StageDAGProgressDialog` from `apps/web/src/components/dialectic/StageDAGProgressDialog.tsx` — UI — same layer — imported component
+        *   `[✅]`   Existing `useDialecticStore` from `@paynless/store` — store — inward
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   From store: `activeContextSessionId`, via `selectActiveStage(store)` → `activeStage.slug`, via `selectSessionById(store, activeContextSessionId)` → `activeSession.iteration_count`
+        *   `[✅]`   Local state: `useState<boolean>` for dialog open/close
+        *   `[✅]`   Confirm no new concrete imports from backend layers
+    *   `[✅]`   apps/web/src/components/dialectic/`GenerateContributionButton.test.tsx` (existing file at `apps/web/src/components/dialectic/GenerateContributionButton.test.tsx`, 614 lines, new tests appended)
+        *   `[✅]`   Clicking generate button opens DAG progress dialog (`data-testid="stage-dag-progress-dialog"` appears)
+        *   `[✅]`   Dialog receives correct `stageSlug`, `sessionId`, `iterationNumber` props
+        *   `[✅]`   Dialog `onOpenChange(false)` closes the dialog (no longer visible in DOM)
+        *   `[✅]`   Existing 18 button behavior tests unaffected (disabled states, text labels, generation call, wallet checks)
+    *   `[✅]`   `construction`
+        *   `[✅]`   Local state: `const [dagDialogOpen, setDagDialogOpen] = useState(false)`
+        *   `[✅]`   In existing `handleClick` function (line 100): add `setDagDialogOpen(true)` after the toast (line 112), before `generateContributions` call (line 115)
+        *   `[✅]`   Render `<StageDAGProgressDialog>` as sibling to `<Button>` in return JSX (line 152-168), passing local state props
+    *   `[✅]`   apps/web/src/components/dialectic/`GenerateContributionButton.tsx` (existing file, 169 lines)
+        *   `[✅]`   Add import: `import { StageDAGProgressDialog } from './StageDAGProgressDialog';`
+        *   `[✅]`   Add `useState` import (already imported from React via line 1)
+        *   `[✅]`   Add state: `const [dagDialogOpen, setDagDialogOpen] = useState(false)` inside component body
+        *   `[✅]`   In `handleClick` (line 100): add `setDagDialogOpen(true)` after toast.success (line 112), before the try/catch block (line 114)
+        *   `[✅]`   In return JSX: render `<StageDAGProgressDialog open={dagDialogOpen} onOpenChange={setDagDialogOpen} stageSlug={activeStage.slug} sessionId={activeContextSessionId} iterationNumber={activeSession.iteration_count} />` as sibling to `<Button>`, wrapped in a fragment `<>...</>` if needed
+    *   `[✅]`   `provides`
+        *   `[✅]`   Updated `GenerateContributionButton` component — now opens DAG popup on generate
+        *   `[✅]`   Semantic guarantee: popup visible from button click until first document arrives
+    *   `[✅]`   apps/web/src/components/dialectic/`GenerateContributionButton.mock.tsx`
+        *   `[✅]`   Not required — no mock exists currently; dialog is internal concern
+    *   `[✅]`   apps/web/src/components/dialectic/`GenerateContributionButton.integration.test.tsx`
+        *   `[✅]`   Click generate → dialog opens → store gets `stageRunProgress` update with rendered document → dialog auto-closes
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: UI (presentation)
+        *   `[✅]`   Dependencies inward-facing: `StageDAGProgressDialog` (same layer), `useDialecticStore` (store)
+        *   `[✅]`   Provides outward to: user interaction (top-level page via `SessionInfoCard` which imports this component)
+    *   `[✅]`   `requirements`
+        *   `[✅]`   No regression in existing generate button behavior (18 existing tests pass)
+        *   `[✅]`   Dialog opens synchronously with generation start
+        *   `[✅]`   Dialog auto-closes on first rendered document (delegated to `StageDAGProgressDialog`)
+        *   `[✅]`   Dialog manually dismissable at any time
+    *   `[✅]`   **Commit** `feat(ui) apps/web DAG progress popup on stage generation`
+        *   `[✅]`   New file: `apps/web/src/components/dialectic/dagLayout.types.ts` — layout types
+        *   `[✅]`   New file: `apps/web/src/components/dialectic/dagLayout.ts` — pure DAG layout computation
+        *   `[✅]`   New file: `apps/web/src/components/dialectic/dagLayout.test.ts` — layout tests
+        *   `[✅]`   New file: `apps/web/src/components/dialectic/StageDAGProgressDialog.types.ts` — dialog props type
+        *   `[✅]`   New file: `apps/web/src/components/dialectic/StageDAGProgressDialog.tsx` — dialog with SVG DAG and live status
+        *   `[✅]`   New file: `apps/web/src/components/dialectic/StageDAGProgressDialog.test.tsx` — dialog unit tests
+        *   `[✅]`   New file: `apps/web/src/components/dialectic/StageDAGProgressDialog.mock.tsx` — mock for consumer tests
+        *   `[✅]`   Modified: `apps/web/src/components/dialectic/GenerateContributionButton.tsx` — wired dialog to generate action
+        *   `[✅]`   Modified: `apps/web/src/components/dialectic/GenerateContributionButton.test.tsx` — tests for dialog integration
 
 # ToDo
 

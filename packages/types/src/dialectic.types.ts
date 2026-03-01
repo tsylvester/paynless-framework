@@ -10,6 +10,31 @@ export interface UpdateProjectDomainPayload {
 
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
+export enum DialecticStages {
+  thesis = 'Proposal',
+  antithesis = 'Review',
+  synthesis = 'Refinement',
+  parenthesis = 'Planning',
+  paralysis = 'Implementation',
+}
+
+export function isDialecticStageSlug(slug: string): slug is keyof typeof DialecticStages {
+  return (
+    slug === 'thesis' ||
+    slug === 'antithesis' ||
+    slug === 'synthesis' ||
+    slug === 'parenthesis' ||
+    slug === 'paralysis'
+  );
+}
+
+export function getDisplayName(slug: string): string {
+  if (!isDialecticStageSlug(slug)) {
+    throw new Error(`Unknown stage slug: ${slug}`);
+  }
+  return DialecticStages[slug];
+}
+
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
 
 export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'] & {
@@ -243,6 +268,45 @@ export interface DialecticStageRecipe {
   instanceId: string;
   steps: DialecticStageRecipeStep[];
   edges: DialecticRecipeEdge[];
+}
+
+export interface DAGViewport {
+  width: number;
+  height: number;
+}
+
+export type DAGLayoutOrientation = 'horizontal' | 'vertical';
+
+export interface DAGLayoutParams {
+  steps: DialecticStageRecipeStep[];
+  edges: DialecticRecipeEdge[];
+  viewport?: DAGViewport;
+}
+
+export interface DAGNodePosition {
+  stepKey: string;
+  stepName: string;
+  jobType: RecipeJobType;
+  x: number;
+  y: number;
+  layer: number;
+}
+
+export interface DAGEdgePosition {
+  fromStepKey: string;
+  toStepKey: string;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+}
+
+export interface DAGLayoutResult {
+  nodes: DAGNodePosition[];
+  edges: DAGEdgePosition[];
+  width: number;
+  height: number;
+  orientation?: DAGLayoutOrientation;
 }
 
 export interface DomainDescriptor {
@@ -570,6 +634,14 @@ export interface StageRunChecklistProps {
   onDocumentSelect: StageDocumentSelectionHandler;
   modelId: string | null;
   stageSlug?: string;
+}
+
+export interface StageDAGProgressDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  stageSlug: string;
+  sessionId: string;
+  iterationNumber: number;
 }
 
 export interface ClearFocusedStageDocumentPayload {
