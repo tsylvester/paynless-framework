@@ -491,6 +491,7 @@ export interface StageRunProgressSnapshot {
   /** Keyed by StageRunDocumentKey (documentKey:modelId). One document key can have N descriptors. */
   documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
   jobProgress: StepJobProgress;
+  progress: { completedSteps: number; totalSteps: number; failedSteps: number };
 }
 
 export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
@@ -498,11 +499,6 @@ export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' |
 export interface StepProgressDetail {
   stepKey: string;
   stepName: string;
-  totalJobs: number;
-  completedJobs: number;
-  inProgressJobs: number;
-  failedJobs: number;
-  stepPercentage: number;
   status: UnifiedProjectStatus;
 }
 
@@ -510,6 +506,7 @@ export interface StageProgressDetail {
   stageSlug: string;
   totalSteps: number;
   completedSteps: number;
+  failedSteps: number;
   stagePercentage: number;
   stepsDetail: StepProgressDetail[];
   stageStatus: UnifiedProjectStatus;
@@ -1033,15 +1030,29 @@ export interface GetAllStageProgressPayload {
   projectId: string;
 }
 
-export interface StageProgressEntry {
-  stageSlug: string;
-  documents: StageDocumentChecklistEntry[];
-  stepStatuses: Record<string, string>;
-  stageStatus: UnifiedProjectStatus;
-  jobProgress: StepJobProgress;
+export interface DagProgressDto {
+  completedStages: number;
+  totalStages: number;
 }
 
-export type GetAllStageProgressResponse = StageProgressEntry[];
+export interface StepProgressDto {
+  stepKey: string;
+  status: UnifiedProjectStatus;
+}
+
+export interface StageProgressEntry {
+  stageSlug: string;
+  status: UnifiedProjectStatus;
+  modelCount: number | null;
+  progress: { completedSteps: number; totalSteps: number; failedSteps: number };
+  steps: StepProgressDto[];
+  documents: StageDocumentChecklistEntry[];
+}
+
+export interface GetAllStageProgressResponse {
+  dagProgress: DagProgressDto;
+  stages: StageProgressEntry[];
+}
 
 export interface ContributionContentSignedUrlResponse {
     signedUrl: string;

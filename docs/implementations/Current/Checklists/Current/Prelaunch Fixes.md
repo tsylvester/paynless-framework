@@ -519,163 +519,163 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
         *   `[✅]`   Modified: `supabase/functions/dialectic-service/getStageRecipe.ts` — queries `dialectic_stage_recipe_edges`, includes edges in response
         *   `[✅]`   Modified: `supabase/functions/dialectic-service/getStageRecipe.test.ts` — tests for edge inclusion
 
-*   `[ ]`   `[STORE]` packages/store/src/dialecticStore.documents **Consume new `getAllStageProgress` response envelope**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Update `hydrateAllStageProgressLogic` to destructure `{ dagProgress, stages }` from the backend response instead of treating it as a flat array
-        *   `[ ]`   Map the new per-stage `progress: { completedSteps, totalSteps, failedSteps }` and `steps: StepProgressDto[]` into `StageRunProgressSnapshot`
-        *   `[ ]`   Add `progress` field to `StageRunProgressSnapshot` for step-based progress alongside existing `jobProgress` (which notification handlers still write to)
-        *   `[ ]`   Update `hydrateStageProgressLogic` snapshot initialization to include `progress` field
-        *   `[ ]`   Preserve existing document descriptor mapping unchanged
-    *   `[ ]`   `role`
-        *   `[ ]`   State management — store logic processing API response into UI-consumable state
-    *   `[ ]`   `module`
-        *   `[ ]`   Dialectic store — progress hydration logic
-        *   `[ ]`   Bounded to response parsing and state mapping; API calls are in `@paynless/api`
-    *   `[ ]`   `deps`
-        *   `[ ]`   `getAllStageProgress` backend — API response producer — outward — returns `{ dagProgress: DagProgressDto; stages: StageProgressEntry[] }`
-        *   `[ ]`   `@paynless/api` dialectic adapter — adapter — inward — `dialecticApi.getAllStageProgress(payload)` call signature
-        *   `[ ]`   `isStageRenderedDocumentChecklistEntry` from `@paynless/utils` (line 122 of `packages/utils/src/type_guards.ts`) — utility — inward — document validation
-        *   `[ ]`   Confirm no reverse dependency is introduced
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   From API: `response.data` typed as `GetAllStageProgressResponse` — now `{ dagProgress: DagProgressDto; stages: StageProgressEntry[] }`
-        *   `[ ]`   From existing: `isStepStatus` local guard (line 79 of `dialecticStore.documents.ts`)
-        *   `[ ]`   Confirm no concrete imports from backend `supabase/functions/`
-    *   `[ ]`   packages/types/src/`dialectic.types.ts`
-        *   `[ ]`   Add `DagProgressDto`: `{ completedStages: number; totalStages: number }` — frontend equivalent of backend `DagProgressDto` (backend `dialectic.interface.ts` line 678)
-        *   `[ ]`   Add `StepProgressDto`: `{ stepKey: string; status: UnifiedProjectStatus }` — frontend equivalent using `UnifiedProjectStatus` (not backend `UnifiedStageStatus`; values are identical: `'not_started' | 'in_progress' | 'completed' | 'failed'`)
-        *   `[ ]`   Replace `StageProgressEntry` (currently at line 1036: `{ stageSlug, documents: StageDocumentChecklistEntry[], stepStatuses: Record<string, string>, stageStatus: UnifiedProjectStatus, jobProgress: StepJobProgress }`) with new shape: `{ stageSlug: string; status: UnifiedProjectStatus; modelCount: number | null; progress: { completedSteps: number; totalSteps: number; failedSteps: number }; steps: StepProgressDto[]; documents: StageDocumentChecklistEntry[] }`
-        *   `[ ]`   Replace `GetAllStageProgressResponse` (currently at line 1044: `StageProgressEntry[]`) with: `{ dagProgress: DagProgressDto; stages: StageProgressEntry[] }`
-        *   `[ ]`   Add `progress: { completedSteps: number; totalSteps: number; failedSteps: number }` to `StageRunProgressSnapshot` (currently at line 489: `{ stepStatuses, documents, jobProgress }`) — keep `jobProgress: StepJobProgress` for backward compatibility with notification handlers (`handlePlannerStartedLogic`, `handleExecuteStartedLogic`, etc. in same file)
-        *   `[ ]`   Keep `JobProgressEntry` and `StepJobProgress` types — still used by `StageRunProgressSnapshot.jobProgress` and notification handlers
-    *   `[ ]`   packages/utils/src/`type_guards.test.ts`
-        *   `[ ]`   Contract: `DagProgressDto` requires `completedStages` and `totalStages` as numbers
-        *   `[ ]`   Contract: `StepProgressDto` requires `stepKey` as non-empty string and `status` as valid `UnifiedProjectStatus`
-        *   `[ ]`   Contract: new `StageProgressEntry` requires `stageSlug`, `status`, `modelCount`, `progress`, `steps`, `documents`
-        *   `[ ]`   Contract: `GetAllStageProgressResponse` requires `dagProgress` object and `stages` array
-    *   `[ ]`   packages/utils/src/`type_guards.ts`
-        *   `[ ]`   Guard `isDagProgressDto`: validates `completedStages` and `totalStages` are numbers
-        *   `[ ]`   Guard `isStepProgressDto`: validates `stepKey` is non-empty string and `status` is valid `UnifiedProjectStatus`
-        *   `[ ]`   Guard `isGetAllStageProgressResponse`: validates object has `dagProgress` (passes `isDagProgressDto`) and `stages` (is array)
-        *   `[ ]`   Existing `isStageRenderedDocumentChecklistEntry` (line 122) unchanged
-    *   `[ ]`   packages/store/src/`dialecticStore.documents.test.ts`
-        *   `[ ]`   Update `hydrateAllStageProgressLogic` tests (describe block at line 166) to provide new response shape: `{ dagProgress: { completedStages, totalStages }, stages: [{ stageSlug, status, modelCount, progress: { completedSteps, totalSteps, failedSteps }, steps: [{ stepKey, status }], documents: [...] }] }`
-        *   `[ ]`   Test: `stepStatuses` populated by mapping `entry.steps[].stepKey → entry.steps[].status`
-        *   `[ ]`   Test: `progress` field stored from `entry.progress` — `{ completedSteps, totalSteps, failedSteps }`
-        *   `[ ]`   Test: documents still validated with `isStageRenderedDocumentChecklistEntry` and mapped to `StageRunDocumentDescriptor`
-        *   `[ ]`   Test: `jobProgress` initialized as `{}` (not populated from response — notification handlers populate it separately)
-        *   `[ ]`   Test: empty `stages` array → early return, no state mutation
-        *   `[ ]`   Test: snapshot initialization includes `progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 }`
-        *   `[ ]`   Update `hydrateStageProgressLogic` tests to verify snapshot initialization includes `progress` field
-        *   `[ ]`   Existing notification handler tests (`handlePlannerStartedLogic` at line 3738, `handleExecuteStartedLogic` at line 3803, etc.) that construct snapshots with `jobProgress` must also include `progress` field in their setup
-    *   `[ ]`   `construction`
-        *   `[ ]`   Signature unchanged: `hydrateAllStageProgressLogic(set, payload: GetAllStageProgressPayload): Promise<void>`
-        *   `[ ]`   Destructure response: `const { dagProgress, stages } = response.data` (replaces `const entries = response.data`)
-        *   `[ ]`   Guard check: replace `response.data.length === 0` (line 1708) with `stages.length === 0`
-        *   `[ ]`   Iterate `stages` instead of `entries`
-    *   `[ ]`   packages/store/src/`dialecticStore.documents.ts`
-        *   `[ ]`   In `hydrateAllStageProgressLogic` (line 1687): destructure `{ dagProgress, stages }` from `response.data`; replace `response.data.length === 0` with `stages.length === 0`; replace `const entries = response.data` with iteration over `stages`
-        *   `[ ]`   Replace `entry.jobProgress` mapping (lines 1745-1748) with: map `entry.steps` array to `progress.stepStatuses` as `{ [step.stepKey]: step.status }` for each `StepProgressDto` in `entry.steps`
-        *   `[ ]`   Replace `entry.stepStatuses` mapping (lines 1750-1754) — no longer needed as a separate field; step statuses now come from `entry.steps` mapped above
-        *   `[ ]`   Add: store `entry.progress` as `progress.progress = { completedSteps: entry.progress.completedSteps, totalSteps: entry.progress.totalSteps, failedSteps: entry.progress.failedSteps }`
-        *   `[ ]`   Keep document mapping (lines 1756-1775) unchanged — `entry.documents` is still `StageDocumentChecklistEntry[]` validated with `isStageRenderedDocumentChecklistEntry`
-        *   `[ ]`   Update snapshot initialization (line 1740-1744) from `{ documents: {}, stepStatuses: {}, jobProgress: {} }` to `{ documents: {}, stepStatuses: {}, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } }`
-        *   `[ ]`   In `hydrateStageProgressLogic` (line 1637): update snapshot initialization from `{ documents: {}, stepStatuses: {}, jobProgress: {} }` to `{ documents: {}, stepStatuses: {}, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } }`
-    *   `[ ]`   `provides`
-        *   `[ ]`   Store action: `hydrateAllStageProgress` — consumes new response envelope
-        *   `[ ]`   Store state: `stageRunProgress[key].progress` — `{ completedSteps, totalSteps, failedSteps }`
-        *   `[ ]`   Store state: `stageRunProgress[key].stepStatuses` — populated from `StepProgressDto[]`
-        *   `[ ]`   Store state: `stageRunProgress[key].documents` — unchanged
-        *   `[ ]`   Store state: `stageRunProgress[key].jobProgress` — preserved for notification handler compatibility, initialized empty
-        *   `[ ]`   Semantic guarantee: UI components see stable, non-regressing step-based progress values
-    *   `[ ]`   apps/web/src/mocks/`dialecticStore.mock.ts`
-        *   `[ ]`   Update any snapshot construction in mock initial state to include `progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 }`
-        *   `[ ]`   Mock delegates to `hydrateAllStageProgressLogic` directly (existing pattern) — behavior updates automatically
-    *   `[ ]`   packages/store/src/`dialecticStore.documents.integration.test.ts`
-        *   `[ ]`   Existing integration tests updated to provide new response shape if they call `hydrateAllStageProgress`
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: application (store)
-        *   `[ ]`   Dependencies inward-facing: `@paynless/api` (adapter), `@paynless/types` (domain types), `@paynless/utils` (guards)
-        *   `[ ]`   Provides outward to: `selectUnifiedProjectProgress` selector, UI components via store state
-    *   `[ ]`   `requirements`
-        *   `[ ]`   `hydrateAllStageProgressLogic` correctly destructures `{ dagProgress, stages }` envelope
-        *   `[ ]`   `stageRunProgress[key].progress` reflects backend-computed step counts
-        *   `[ ]`   `stageRunProgress[key].stepStatuses` populated from `StepProgressDto[]` step status values
-        *   `[ ]`   Document descriptor mapping unchanged — no regression
-        *   `[ ]`   Notification handlers (`handlePlannerStartedLogic`, `handleExecuteStartedLogic`, etc.) continue to write to `jobProgress` without error
-        *   `[ ]`   `useStageRunProgressHydration` hook (at `apps/web/src/hooks/useStageRunProgressHydration.ts`) continues to function — calls `hydrateAllStageProgress` with same payload shape
+*   `[✅]`   `[STORE]` packages/store/src/dialecticStore.documents **Consume new `getAllStageProgress` response envelope**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Update `hydrateAllStageProgressLogic` to destructure `{ dagProgress, stages }` from the backend response instead of treating it as a flat array
+        *   `[✅]`   Map the new per-stage `progress: { completedSteps, totalSteps, failedSteps }` and `steps: StepProgressDto[]` into `StageRunProgressSnapshot`
+        *   `[✅]`   Add `progress` field to `StageRunProgressSnapshot` for step-based progress alongside existing `jobProgress` (which notification handlers still write to)
+        *   `[✅]`   Update `hydrateStageProgressLogic` snapshot initialization to include `progress` field
+        *   `[✅]`   Preserve existing document descriptor mapping unchanged
+    *   `[✅]`   `role`
+        *   `[✅]`   State management — store logic processing API response into UI-consumable state
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic store — progress hydration logic
+        *   `[✅]`   Bounded to response parsing and state mapping; API calls are in `@paynless/api`
+    *   `[✅]`   `deps`
+        *   `[✅]`   `getAllStageProgress` backend — API response producer — outward — returns `{ dagProgress: DagProgressDto; stages: StageProgressEntry[] }`
+        *   `[✅]`   `@paynless/api` dialectic adapter — adapter — inward — `dialecticApi.getAllStageProgress(payload)` call signature
+        *   `[✅]`   `isStageRenderedDocumentChecklistEntry` from `@paynless/utils` (line 122 of `packages/utils/src/type_guards.ts`) — utility — inward — document validation
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   From API: `response.data` typed as `GetAllStageProgressResponse` — now `{ dagProgress: DagProgressDto; stages: StageProgressEntry[] }`
+        *   `[✅]`   From existing: `isStepStatus` local guard (line 79 of `dialecticStore.documents.ts`)
+        *   `[✅]`   Confirm no concrete imports from backend `supabase/functions/`
+    *   `[✅]`   packages/types/src/`dialectic.types.ts`
+        *   `[✅]`   Add `DagProgressDto`: `{ completedStages: number; totalStages: number }` — frontend equivalent of backend `DagProgressDto` (backend `dialectic.interface.ts` line 678)
+        *   `[✅]`   Add `StepProgressDto`: `{ stepKey: string; status: UnifiedProjectStatus }` — frontend equivalent using `UnifiedProjectStatus` (not backend `UnifiedStageStatus`; values are identical: `'not_started' | 'in_progress' | 'completed' | 'failed'`)
+        *   `[✅]`   Replace `StageProgressEntry` (currently at line 1036: `{ stageSlug, documents: StageDocumentChecklistEntry[], stepStatuses: Record<string, string>, stageStatus: UnifiedProjectStatus, jobProgress: StepJobProgress }`) with new shape: `{ stageSlug: string; status: UnifiedProjectStatus; modelCount: number | null; progress: { completedSteps: number; totalSteps: number; failedSteps: number }; steps: StepProgressDto[]; documents: StageDocumentChecklistEntry[] }`
+        *   `[✅]`   Replace `GetAllStageProgressResponse` (currently at line 1044: `StageProgressEntry[]`) with: `{ dagProgress: DagProgressDto; stages: StageProgressEntry[] }`
+        *   `[✅]`   Add `progress: { completedSteps: number; totalSteps: number; failedSteps: number }` to `StageRunProgressSnapshot` (currently at line 489: `{ stepStatuses, documents, jobProgress }`) — keep `jobProgress: StepJobProgress` for backward compatibility with notification handlers (`handlePlannerStartedLogic`, `handleExecuteStartedLogic`, etc. in same file)
+        *   `[✅]`   Keep `JobProgressEntry` and `StepJobProgress` types — still used by `StageRunProgressSnapshot.jobProgress` and notification handlers
+    *   `[✅]`   packages/utils/src/`type_guards.test.ts`
+        *   `[✅]`   Contract: `DagProgressDto` requires `completedStages` and `totalStages` as numbers
+        *   `[✅]`   Contract: `StepProgressDto` requires `stepKey` as non-empty string and `status` as valid `UnifiedProjectStatus`
+        *   `[✅]`   Contract: new `StageProgressEntry` requires `stageSlug`, `status`, `modelCount`, `progress`, `steps`, `documents`
+        *   `[✅]`   Contract: `GetAllStageProgressResponse` requires `dagProgress` object and `stages` array
+    *   `[✅]`   packages/utils/src/`type_guards.ts`
+        *   `[✅]`   Guard `isDagProgressDto`: validates `completedStages` and `totalStages` are numbers
+        *   `[✅]`   Guard `isStepProgressDto`: validates `stepKey` is non-empty string and `status` is valid `UnifiedProjectStatus`
+        *   `[✅]`   Guard `isGetAllStageProgressResponse`: validates object has `dagProgress` (passes `isDagProgressDto`) and `stages` (is array)
+        *   `[✅]`   Existing `isStageRenderedDocumentChecklistEntry` (line 122) unchanged
+    *   `[✅]`   packages/store/src/`dialecticStore.documents.test.ts`
+        *   `[✅]`   Update `hydrateAllStageProgressLogic` tests (describe block at line 166) to provide new response shape: `{ dagProgress: { completedStages, totalStages }, stages: [{ stageSlug, status, modelCount, progress: { completedSteps, totalSteps, failedSteps }, steps: [{ stepKey, status }], documents: [...] }] }`
+        *   `[✅]`   Test: `stepStatuses` populated by mapping `entry.steps[].stepKey → entry.steps[].status`
+        *   `[✅]`   Test: `progress` field stored from `entry.progress` — `{ completedSteps, totalSteps, failedSteps }`
+        *   `[✅]`   Test: documents still validated with `isStageRenderedDocumentChecklistEntry` and mapped to `StageRunDocumentDescriptor`
+        *   `[✅]`   Test: `jobProgress` initialized as `{}` (not populated from response — notification handlers populate it separately)
+        *   `[✅]`   Test: empty `stages` array → early return, no state mutation
+        *   `[✅]`   Test: snapshot initialization includes `progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 }`
+        *   `[✅]`   Update `hydrateStageProgressLogic` tests to verify snapshot initialization includes `progress` field
+        *   `[✅]`   Existing notification handler tests (`handlePlannerStartedLogic` at line 3738, `handleExecuteStartedLogic` at line 3803, etc.) that construct snapshots with `jobProgress` must also include `progress` field in their setup
+    *   `[✅]`   `construction`
+        *   `[✅]`   Signature unchanged: `hydrateAllStageProgressLogic(set, payload: GetAllStageProgressPayload): Promise<void>`
+        *   `[✅]`   Destructure response: `const { dagProgress, stages } = response.data` (replaces `const entries = response.data`)
+        *   `[✅]`   Guard check: replace `response.data.length === 0` (line 1708) with `stages.length === 0`
+        *   `[✅]`   Iterate `stages` instead of `entries`
+    *   `[✅]`   packages/store/src/`dialecticStore.documents.ts`
+        *   `[✅]`   In `hydrateAllStageProgressLogic` (line 1687): destructure `{ dagProgress, stages }` from `response.data`; replace `response.data.length === 0` with `stages.length === 0`; replace `const entries = response.data` with iteration over `stages`
+        *   `[✅]`   Replace `entry.jobProgress` mapping (lines 1745-1748) with: map `entry.steps` array to `progress.stepStatuses` as `{ [step.stepKey]: step.status }` for each `StepProgressDto` in `entry.steps`
+        *   `[✅]`   Replace `entry.stepStatuses` mapping (lines 1750-1754) — no longer needed as a separate field; step statuses now come from `entry.steps` mapped above
+        *   `[✅]`   Add: store `entry.progress` as `progress.progress = { completedSteps: entry.progress.completedSteps, totalSteps: entry.progress.totalSteps, failedSteps: entry.progress.failedSteps }`
+        *   `[✅]`   Keep document mapping (lines 1756-1775) unchanged — `entry.documents` is still `StageDocumentChecklistEntry[]` validated with `isStageRenderedDocumentChecklistEntry`
+        *   `[✅]`   Update snapshot initialization (line 1740-1744) from `{ documents: {}, stepStatuses: {}, jobProgress: {} }` to `{ documents: {}, stepStatuses: {}, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } }`
+        *   `[✅]`   In `hydrateStageProgressLogic` (line 1637): update snapshot initialization from `{ documents: {}, stepStatuses: {}, jobProgress: {} }` to `{ documents: {}, stepStatuses: {}, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } }`
+    *   `[✅]`   `provides`
+        *   `[✅]`   Store action: `hydrateAllStageProgress` — consumes new response envelope
+        *   `[✅]`   Store state: `stageRunProgress[key].progress` — `{ completedSteps, totalSteps, failedSteps }`
+        *   `[✅]`   Store state: `stageRunProgress[key].stepStatuses` — populated from `StepProgressDto[]`
+        *   `[✅]`   Store state: `stageRunProgress[key].documents` — unchanged
+        *   `[✅]`   Store state: `stageRunProgress[key].jobProgress` — preserved for notification handler compatibility, initialized empty
+        *   `[✅]`   Semantic guarantee: UI components see stable, non-regressing step-based progress values
+    *   `[✅]`   apps/web/src/mocks/`dialecticStore.mock.ts`
+        *   `[✅]`   Update any snapshot construction in mock initial state to include `progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 }`
+        *   `[✅]`   Mock delegates to `hydrateAllStageProgressLogic` directly (existing pattern) — behavior updates automatically
+    *   `[✅]`   packages/store/src/`dialecticStore.documents.integration.test.ts`
+        *   `[✅]`   Existing integration tests updated to provide new response shape if they call `hydrateAllStageProgress`
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: application (store)
+        *   `[✅]`   Dependencies inward-facing: `@paynless/api` (adapter), `@paynless/types` (domain types), `@paynless/utils` (guards)
+        *   `[✅]`   Provides outward to: `selectUnifiedProjectProgress` selector, UI components via store state
+    *   `[✅]`   `requirements`
+        *   `[✅]`   `hydrateAllStageProgressLogic` correctly destructures `{ dagProgress, stages }` envelope
+        *   `[✅]`   `stageRunProgress[key].progress` reflects backend-computed step counts
+        *   `[✅]`   `stageRunProgress[key].stepStatuses` populated from `StepProgressDto[]` step status values
+        *   `[✅]`   Document descriptor mapping unchanged — no regression
+        *   `[✅]`   Notification handlers (`handlePlannerStartedLogic`, `handleExecuteStartedLogic`, etc.) continue to write to `jobProgress` without error
+        *   `[✅]`   `useStageRunProgressHydration` hook (at `apps/web/src/hooks/useStageRunProgressHydration.ts`) continues to function — calls `hydrateAllStageProgress` with same payload shape
 
-*   `[ ]`   `[STORE]` packages/store/src/dialecticStore.selectors **Step-based progress computation in `selectUnifiedProjectProgress`**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Refactor `selectUnifiedProjectProgress` to derive progress from `stepStatuses` (step-based) instead of `jobProgress` (job-based)
-        *   `[ ]`   Simplify `StepProgressDetail` to contain only `stepKey`, `stepName`, `status` — remove job count fields (`totalJobs`, `completedJobs`, `inProgressJobs`, `failedJobs`, `stepPercentage`)
-        *   `[ ]`   Compute `stagePercentage` as `(completedSteps / totalSteps) * 100` derived from counting step statuses, not averaging job percentages
-    *   `[ ]`   `role`
-        *   `[ ]`   State management — selector computing derived progress view from store state
-    *   `[ ]`   `module`
-        *   `[ ]`   Dialectic store — selectors
-        *   `[ ]`   Bounded to reading `DialecticStateValues` and returning computed views; no mutations
-    *   `[ ]`   `deps`
-        *   `[ ]`   `StageRunProgressSnapshot` from `@paynless/types` — domain — inward — now includes `progress` and `stepStatuses`
-        *   `[ ]`   `selectStageRunProgress` selector (line 634 of same file) — same module — inward — returns snapshot
-        *   `[ ]`   `recipesByStageSlug` store state — same module — inward — recipe steps for step names
-        *   `[ ]`   Confirm no reverse dependency is introduced
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   From store state: `state.recipesByStageSlug[stageSlug].steps` — step metadata (step_key, step_name)
-        *   `[ ]`   From store state: `selectStageRunProgress(state, sessionId, stageSlug, iterationNumber)` — returns `StageRunProgressSnapshot` with `stepStatuses` and `progress`
-        *   `[ ]`   Confirm no concrete imports from backend
-    *   `[ ]`   packages/types/src/`dialectic.types.ts`
-        *   `[ ]`   Update `StepProgressDetail` (currently at line 498: `{ stepKey, stepName, totalJobs, completedJobs, inProgressJobs, failedJobs, stepPercentage, status }`) to: `{ stepKey: string; stepName: string; status: UnifiedProjectStatus }` — remove all job count fields and `stepPercentage`
-        *   `[ ]`   Update `StageProgressDetail` (currently at line 509: `{ stageSlug, totalSteps, completedSteps, stagePercentage, stepsDetail, stageStatus }`) to add `failedSteps: number` — becomes `{ stageSlug: string; totalSteps: number; completedSteps: number; failedSteps: number; stagePercentage: number; stepsDetail: StepProgressDetail[]; stageStatus: UnifiedProjectStatus }`
-    *   `[ ]`   packages/store/src/`dialecticStore.selectors.test.ts`
-        *   `[ ]`   Update `selectUnifiedProjectProgress` tests to construct `StageRunProgressSnapshot` with `stepStatuses` and `progress` instead of `jobProgress`
-        *   `[ ]`   Test: per-step status read from `stepStatuses[stepKey]` — not computed from job counts
-        *   `[ ]`   Test: `completedSteps` = count of steps with `status === 'completed'` in `stepStatuses`
-        *   `[ ]`   Test: `failedSteps` = count of steps with `status === 'failed'` in `stepStatuses`
-        *   `[ ]`   Test: `totalSteps` = number of recipe steps for that stage
-        *   `[ ]`   Test: `stagePercentage` = `(completedSteps / totalSteps) * 100`
-        *   `[ ]`   Test: `stageStatus` derived from step statuses: any `failed` → `failed`, any `in_progress` → `in_progress`, all `completed` → `completed`, else `not_started`
-        *   `[ ]`   Test: `StepProgressDetail` contains only `{ stepKey, stepName, status }` — no job count fields
-        *   `[ ]`   Test: `StageProgressDetail` contains `failedSteps`
-    *   `[ ]`   `construction`
-        *   `[ ]`   Signature unchanged: `selectUnifiedProjectProgress(state: DialecticStateValues, sessionId: string): UnifiedProjectProgress`
-        *   `[ ]`   Replace `jobEntry = progress?.jobProgress?.[stepKey]` lookup (line 853) with `stepStatus = progress?.stepStatuses?.[stepKey] ?? 'not_started'`
-        *   `[ ]`   Remove all job count computation (lines 869-877) and job-based status derivation (lines 879-888)
-        *   `[ ]`   Step status read directly from `stepStatuses`; percentage is binary (100 if completed, 0 otherwise) or use stored `progress` counts
-    *   `[ ]`   packages/store/src/`dialecticStore.selectors.ts`
-        *   `[ ]`   In `selectUnifiedProjectProgress` (line 805): replace the per-step loop body (lines 851-904) — instead of reading `jobProgress[stepKey]` and computing from job counts, read `progress?.stepStatuses?.[stepKey]` directly for status
-        *   `[ ]`   Build `StepProgressDetail` as `{ stepKey, stepName: step.step_name, status: stepStatus }` — no job counts
-        *   `[ ]`   Compute stage-level `completedSteps` by counting steps with `status === 'completed'`
-        *   `[ ]`   Compute stage-level `failedSteps` by counting steps with `status === 'failed'`
-        *   `[ ]`   Compute `stagePercentage` as `totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0`
-        *   `[ ]`   Derive `stageStatus`: any step `failed` → `failed`, any step `in_progress` → `in_progress`, all steps `completed` → `completed`, else `not_started`
-        *   `[ ]`   Build `StageProgressDetail` with `{ stageSlug, totalSteps, completedSteps, failedSteps, stagePercentage, stepsDetail, stageStatus }`
-        *   `[ ]`   `completedStagesCount`, `overallPercentage`, `projectStatus` aggregation logic (lines 921-934) unchanged in structure, just uses new stage-level values
-    *   `[ ]`   `provides`
-        *   `[ ]`   `selectUnifiedProjectProgress` — returns step-based `UnifiedProjectProgress`
-        *   `[ ]`   Semantic guarantee: progress values are structural (step-count-based), not model-dependent (job-count-based)
-        *   `[ ]`   Semantic guarantee: `StepProgressDetail` no longer exposes job internals to UI
-    *   `[ ]`   packages/store/src/`dialecticStore.selectors.mock.ts`
-        *   `[ ]`   Not a separate file — selector mocked via `vi.fn()` in `apps/web/src/mocks/dialecticStore.mock.ts`; callers set return values per-test; no change needed
-    *   `[ ]`   packages/store/src/`dialecticStore.selectors.integration.test.ts`
-        *   `[ ]`   Not required — selector is pure function tested via unit tests
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: application (store selector)
-        *   `[ ]`   Dependencies inward-facing: `@paynless/types` (domain types), `dialecticStore.selectors.ts` same-module selectors
-        *   `[ ]`   Provides outward to: `StageDAGProgressDialog`, `StageTabCard`, `DynamicProgressBar`, and other UI components consuming `UnifiedProjectProgress`
-    *   `[ ]`   `requirements`
-        *   `[ ]`   `selectUnifiedProjectProgress` returns step-count-based progress — no job count fields in output
-        *   `[ ]`   `StepProgressDetail` contains only `{ stepKey, stepName, status }` — existing UI consumers that read job counts must be identified and updated (discovery if needed)
-        *   `[ ]`   `stagePercentage` computed from step completion ratio, not job completion ratio
-        *   `[ ]`   No regression in `overallPercentage` or `projectStatus` aggregation logic
-    *   `[ ]`   **Commit** `feat(store) packages/store + packages/types adapt frontend to step-based DAG progress`
-        *   `[ ]`   Modified: `packages/types/src/dialectic.types.ts` — added `DagProgressDto`, `StepProgressDto`; replaced `StageProgressEntry`, `GetAllStageProgressResponse`; added `progress` to `StageRunProgressSnapshot`; updated `StepProgressDetail`, `StageProgressDetail`
-        *   `[ ]`   Modified: `packages/utils/src/type_guards.ts` — added `isDagProgressDto`, `isStepProgressDto`, `isGetAllStageProgressResponse`
-        *   `[ ]`   Modified: `packages/utils/src/type_guards.test.ts` — guard contract tests
-        *   `[ ]`   Modified: `packages/store/src/dialecticStore.documents.ts` — `hydrateAllStageProgressLogic` consumes `{ dagProgress, stages }` envelope; `hydrateStageProgressLogic` snapshot init includes `progress`
-        *   `[ ]`   Modified: `packages/store/src/dialecticStore.documents.test.ts` — tests for new response shape
-        *   `[ ]`   Modified: `packages/store/src/dialecticStore.selectors.ts` — `selectUnifiedProjectProgress` uses `stepStatuses` not `jobProgress`
-        *   `[ ]`   Modified: `packages/store/src/dialecticStore.selectors.test.ts` — tests for step-based progress
-        *   `[ ]`   Modified: `apps/web/src/mocks/dialecticStore.mock.ts` — snapshot init includes `progress`
+*   `[✅]`   `[STORE]` packages/store/src/dialecticStore.selectors **Step-based progress computation in `selectUnifiedProjectProgress`**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Refactor `selectUnifiedProjectProgress` to derive progress from `stepStatuses` (step-based) instead of `jobProgress` (job-based)
+        *   `[✅]`   Simplify `StepProgressDetail` to contain only `stepKey`, `stepName`, `status` — remove job count fields (`totalJobs`, `completedJobs`, `inProgressJobs`, `failedJobs`, `stepPercentage`)
+        *   `[✅]`   Compute `stagePercentage` as `(completedSteps / totalSteps) * 100` derived from counting step statuses, not averaging job percentages
+    *   `[✅]`   `role`
+        *   `[✅]`   State management — selector computing derived progress view from store state
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic store — selectors
+        *   `[✅]`   Bounded to reading `DialecticStateValues` and returning computed views; no mutations
+    *   `[✅]`   `deps`
+        *   `[✅]`   `StageRunProgressSnapshot` from `@paynless/types` — domain — inward — now includes `progress` and `stepStatuses`
+        *   `[✅]`   `selectStageRunProgress` selector (line 634 of same file) — same module — inward — returns snapshot
+        *   `[✅]`   `recipesByStageSlug` store state — same module — inward — recipe steps for step names
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   From store state: `state.recipesByStageSlug[stageSlug].steps` — step metadata (step_key, step_name)
+        *   `[✅]`   From store state: `selectStageRunProgress(state, sessionId, stageSlug, iterationNumber)` — returns `StageRunProgressSnapshot` with `stepStatuses` and `progress`
+        *   `[✅]`   Confirm no concrete imports from backend
+    *   `[✅]`   packages/types/src/`dialectic.types.ts`
+        *   `[✅]`   Update `StepProgressDetail` (currently at line 498: `{ stepKey, stepName, totalJobs, completedJobs, inProgressJobs, failedJobs, stepPercentage, status }`) to: `{ stepKey: string; stepName: string; status: UnifiedProjectStatus }` — remove all job count fields and `stepPercentage`
+        *   `[✅]`   Update `StageProgressDetail` (currently at line 509: `{ stageSlug, totalSteps, completedSteps, stagePercentage, stepsDetail, stageStatus }`) to add `failedSteps: number` — becomes `{ stageSlug: string; totalSteps: number; completedSteps: number; failedSteps: number; stagePercentage: number; stepsDetail: StepProgressDetail[]; stageStatus: UnifiedProjectStatus }`
+    *   `[✅]`   packages/store/src/`dialecticStore.selectors.test.ts`
+        *   `[✅]`   Update `selectUnifiedProjectProgress` tests to construct `StageRunProgressSnapshot` with `stepStatuses` and `progress` instead of `jobProgress`
+        *   `[✅]`   Test: per-step status read from `stepStatuses[stepKey]` — not computed from job counts
+        *   `[✅]`   Test: `completedSteps` = count of steps with `status === 'completed'` in `stepStatuses`
+        *   `[✅]`   Test: `failedSteps` = count of steps with `status === 'failed'` in `stepStatuses`
+        *   `[✅]`   Test: `totalSteps` = number of recipe steps for that stage
+        *   `[✅]`   Test: `stagePercentage` = `(completedSteps / totalSteps) * 100`
+        *   `[✅]`   Test: `stageStatus` derived from step statuses: any `failed` → `failed`, any `in_progress` → `in_progress`, all `completed` → `completed`, else `not_started`
+        *   `[✅]`   Test: `StepProgressDetail` contains only `{ stepKey, stepName, status }` — no job count fields
+        *   `[✅]`   Test: `StageProgressDetail` contains `failedSteps`
+    *   `[✅]`   `construction`
+        *   `[✅]`   Signature unchanged: `selectUnifiedProjectProgress(state: DialecticStateValues, sessionId: string): UnifiedProjectProgress`
+        *   `[✅]`   Replace `jobEntry = progress?.jobProgress?.[stepKey]` lookup (line 853) with `stepStatus = progress?.stepStatuses?.[stepKey] ?? 'not_started'`
+        *   `[✅]`   Remove all job count computation (lines 869-877) and job-based status derivation (lines 879-888)
+        *   `[✅]`   Step status read directly from `stepStatuses`; percentage is binary (100 if completed, 0 otherwise) or use stored `progress` counts
+    *   `[✅]`   packages/store/src/`dialecticStore.selectors.ts`
+        *   `[✅]`   In `selectUnifiedProjectProgress` (line 805): replace the per-step loop body (lines 851-904) — instead of reading `jobProgress[stepKey]` and computing from job counts, read `progress?.stepStatuses?.[stepKey]` directly for status
+        *   `[✅]`   Build `StepProgressDetail` as `{ stepKey, stepName: step.step_name, status: stepStatus }` — no job counts
+        *   `[✅]`   Compute stage-level `completedSteps` by counting steps with `status === 'completed'`
+        *   `[✅]`   Compute stage-level `failedSteps` by counting steps with `status === 'failed'`
+        *   `[✅]`   Compute `stagePercentage` as `totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0`
+        *   `[✅]`   Derive `stageStatus`: any step `failed` → `failed`, any step `in_progress` → `in_progress`, all steps `completed` → `completed`, else `not_started`
+        *   `[✅]`   Build `StageProgressDetail` with `{ stageSlug, totalSteps, completedSteps, failedSteps, stagePercentage, stepsDetail, stageStatus }`
+        *   `[✅]`   `completedStagesCount`, `overallPercentage`, `projectStatus` aggregation logic (lines 921-934) unchanged in structure, just uses new stage-level values
+    *   `[✅]`   `provides`
+        *   `[✅]`   `selectUnifiedProjectProgress` — returns step-based `UnifiedProjectProgress`
+        *   `[✅]`   Semantic guarantee: progress values are structural (step-count-based), not model-dependent (job-count-based)
+        *   `[✅]`   Semantic guarantee: `StepProgressDetail` no longer exposes job internals to UI
+    *   `[✅]`   packages/store/src/`dialecticStore.selectors.mock.ts`
+        *   `[✅]`   Not a separate file — selector mocked via `vi.fn()` in `apps/web/src/mocks/dialecticStore.mock.ts`; callers set return values per-test; no change needed
+    *   `[✅]`   packages/store/src/`dialecticStore.selectors.integration.test.ts`
+        *   `[✅]`   Not required — selector is pure function tested via unit tests
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: application (store selector)
+        *   `[✅]`   Dependencies inward-facing: `@paynless/types` (domain types), `dialecticStore.selectors.ts` same-module selectors
+        *   `[✅]`   Provides outward to: `StageDAGProgressDialog`, `StageTabCard`, `DynamicProgressBar`, and other UI components consuming `UnifiedProjectProgress`
+    *   `[✅]`   `requirements`
+        *   `[✅]`   `selectUnifiedProjectProgress` returns step-count-based progress — no job count fields in output
+        *   `[✅]`   `StepProgressDetail` contains only `{ stepKey, stepName, status }` — existing UI consumers that read job counts must be identified and updated (discovery if needed)
+        *   `[✅]`   `stagePercentage` computed from step completion ratio, not job completion ratio
+        *   `[✅]`   No regression in `overallPercentage` or `projectStatus` aggregation logic
+    *   `[✅]`   **Commit** `feat(store) packages/store + packages/types adapt frontend to step-based DAG progress`
+        *   `[✅]`   Modified: `packages/types/src/dialectic.types.ts` — added `DagProgressDto`, `StepProgressDto`; replaced `StageProgressEntry`, `GetAllStageProgressResponse`; added `progress` to `StageRunProgressSnapshot`; updated `StepProgressDetail`, `StageProgressDetail`
+        *   `[✅]`   Modified: `packages/utils/src/type_guards.ts` — added `isDagProgressDto`, `isStepProgressDto`, `isGetAllStageProgressResponse`
+        *   `[✅]`   Modified: `packages/utils/src/type_guards.test.ts` — guard contract tests
+        *   `[✅]`   Modified: `packages/store/src/dialecticStore.documents.ts` — `hydrateAllStageProgressLogic` consumes `{ dagProgress, stages }` envelope; `hydrateStageProgressLogic` snapshot init includes `progress`
+        *   `[✅]`   Modified: `packages/store/src/dialecticStore.documents.test.ts` — tests for new response shape
+        *   `[✅]`   Modified: `packages/store/src/dialecticStore.selectors.ts` — `selectUnifiedProjectProgress` uses `stepStatuses` not `jobProgress`
+        *   `[✅]`   Modified: `packages/store/src/dialecticStore.selectors.test.ts` — tests for step-based progress
+        *   `[✅]`   Modified: `apps/web/src/mocks/dialecticStore.mock.ts` — snapshot init includes `progress`
 
 *   `[ ]`   `[STORE]` packages/store/src/dialecticStore **Store recipe edges from `fetchStageRecipe` and initialize `progress` in `ensureRecipeForActiveStage`**
     *   `[ ]`   `objective`

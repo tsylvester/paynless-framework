@@ -21,6 +21,7 @@ import type {
   SetFocusedStageDocumentPayload,
   ClearFocusedStageDocumentPayload,
   StageRunProgressEntry,
+  StageRunProgressSnapshot,
   RenderCompletedPayload,
   DocumentCompletedPayload,
   StageDocumentChecklistEntry,
@@ -328,6 +329,14 @@ const mockSession: DialecticSession = {
   updated_at: new Date().toISOString(),
   dialectic_contributions: [],
   dialectic_session_models: [],
+};
+
+/** Empty stage run progress snapshot including step-based progress (for tests and overrides). */
+export const emptyStageRunProgressSnapshot: StageRunProgressSnapshot = {
+  documents: {},
+  stepStatuses: {},
+  jobProgress: {},
+  progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
 };
 
 // 1. Define initial state values

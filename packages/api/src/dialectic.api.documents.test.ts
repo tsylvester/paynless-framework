@@ -208,9 +208,11 @@ describe('DialecticApiClient - Document Listing', () => {
         projectId: 'test-project-id',
       };
 
-      const mockResponseData: GetAllStageProgressResponse = [
-        {
-          stageSlug: 'thesis',
+      const mockResponseData: GetAllStageProgressResponse = {
+        dagProgress: { completedStages: 1, totalStages: 1 },
+        stages: [
+          {
+            stageSlug: 'thesis',
           documents: [
             {
               documentKey: 'feature_spec',
@@ -220,10 +222,13 @@ describe('DialecticApiClient - Document Listing', () => {
               modelId: 'gpt-4',
             },
           ],
-          stepStatuses: { feature_spec: 'completed' },
-          stageStatus: 'completed',
-        },
-      ];
+          steps: [{ stepKey: 'feature_spec', status: 'completed' }],
+          status: 'completed',
+          modelCount: 1,
+          progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+          },
+        ],
+      };
 
       const mockApiResponse: ApiResponse<GetAllStageProgressResponse> = {
         data: mockResponseData,
@@ -285,7 +290,10 @@ describe('DialecticApiClient - Document Listing', () => {
       };
 
       const mockApiResponse: ApiResponse<GetAllStageProgressResponse> = {
-        data: [],
+        data: {
+          dagProgress: { completedStages: 0, totalStages: 0 },
+          stages: [],
+        },
         error: undefined,
         status: 200,
       };
@@ -301,7 +309,10 @@ describe('DialecticApiClient - Document Listing', () => {
           payload,
         }
       );
-      expect(result.data).toEqual([]);
+      expect(result.data).toEqual({
+        dagProgress: { completedStages: 0, totalStages: 0 },
+        stages: [],
+      });
       expect(result.error).toBeUndefined();
     });
 

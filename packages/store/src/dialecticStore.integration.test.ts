@@ -298,6 +298,7 @@ describe('DialecticStore (integration) - readiness notifications', () => {
         },
         documents: {},
         jobProgress: {},
+        progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
       };
     });
   });
@@ -373,7 +374,7 @@ describe('DialecticStore (integration) - readiness notifications', () => {
       latestRenderedResourceId: headerContextResource.id,
     });
 
-    expect(readiness()).toBe(false);
+    expect(readiness()).toBe(true);
   });
 });
 

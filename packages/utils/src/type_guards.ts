@@ -10,6 +10,9 @@ import {
     DialecticNotificationTypes,
     AssembledPrompt,
     StageRenderedDocumentChecklistEntry,
+    DagProgressDto,
+    StepProgressDto,
+    GetAllStageProgressResponse,
 } from '@paynless/types';
 
 export function isUserRole(role: unknown): role is UserRole {
@@ -140,6 +143,34 @@ export function isStageRenderedDocumentChecklistEntry(
         doc.status === 'not_started';
     if (!validStatus) return false;
     return true;
+}
+
+export function isDagProgressDto(obj: unknown): obj is DagProgressDto {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+    const o: Record<string, unknown> = Object.fromEntries(Object.entries(obj));
+    return typeof o['completedStages'] === 'number' && typeof o['totalStages'] === 'number';
+}
+
+const UNIFIED_PROJECT_STATUS_VALUES: readonly string[] = ['not_started', 'in_progress', 'completed', 'failed'];
+
+export function isStepProgressDto(obj: unknown): obj is StepProgressDto {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+    const o: Record<string, unknown> = Object.fromEntries(Object.entries(obj));
+    const stepKey = o['stepKey'];
+    const status = o['status'];
+    return typeof stepKey === 'string' && stepKey.length > 0 && typeof status === 'string' && UNIFIED_PROJECT_STATUS_VALUES.includes(status);
+}
+
+export function isGetAllStageProgressResponse(obj: unknown): obj is GetAllStageProgressResponse {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+    const o: Record<string, unknown> = Object.fromEntries(Object.entries(obj));
+    return isDagProgressDto(o['dagProgress']) && Array.isArray(o['stages']);
 }
 
 // Dialectic lifecycle event type guard

@@ -16,6 +16,9 @@ import {
     isOrgWalletUnavailableByPolicy,
     isAssembledPrompt,
     isStageRenderedDocumentChecklistEntry,
+    isDagProgressDto,
+    isStepProgressDto,
+    isGetAllStageProgressResponse,
 } from './type_guards';
 
 describe('isUserRole', () => {
@@ -335,5 +338,94 @@ describe('isStageRenderedDocumentChecklistEntry', () => {
         expect(isStageRenderedDocumentChecklistEntry('string')).toBe(false);
         expect(isStageRenderedDocumentChecklistEntry(123)).toBe(false);
         expect(isStageRenderedDocumentChecklistEntry([])).toBe(false);
+    });
+});
+
+describe('isDagProgressDto', () => {
+    it('returns true when completedStages and totalStages are numbers', () => {
+        expect(isDagProgressDto({ completedStages: 0, totalStages: 3 })).toBe(true);
+        expect(isDagProgressDto({ completedStages: 2, totalStages: 5 })).toBe(true);
+    });
+
+    it('returns false when completedStages is missing', () => {
+        expect(isDagProgressDto({ totalStages: 3 })).toBe(false);
+    });
+
+    it('returns false when totalStages is missing', () => {
+        expect(isDagProgressDto({ completedStages: 1 })).toBe(false);
+    });
+
+    it('returns false when completedStages is not a number', () => {
+        expect(isDagProgressDto({ completedStages: '1', totalStages: 3 })).toBe(false);
+    });
+
+    it('returns false when totalStages is not a number', () => {
+        expect(isDagProgressDto({ completedStages: 1, totalStages: '3' })).toBe(false);
+    });
+
+    it('returns false for non-object inputs', () => {
+        expect(isDagProgressDto(null)).toBe(false);
+        expect(isDagProgressDto(undefined)).toBe(false);
+        expect(isDagProgressDto([])).toBe(false);
+    });
+});
+
+describe('isStepProgressDto', () => {
+    const validStep: { stepKey: string; status: 'completed' } = { stepKey: 'plan_step', status: 'completed' };
+
+    it('returns true for object with non-empty stepKey and valid UnifiedProjectStatus', () => {
+        expect(isStepProgressDto(validStep)).toBe(true);
+        expect(isStepProgressDto({ stepKey: 'execute_step', status: 'in_progress' })).toBe(true);
+        expect(isStepProgressDto({ stepKey: 'x', status: 'not_started' })).toBe(true);
+        expect(isStepProgressDto({ stepKey: 'y', status: 'failed' })).toBe(true);
+    });
+
+    it('returns false when stepKey is missing', () => {
+        expect(isStepProgressDto({ status: 'completed' })).toBe(false);
+    });
+
+    it('returns false when stepKey is empty string', () => {
+        expect(isStepProgressDto({ stepKey: '', status: 'completed' })).toBe(false);
+    });
+
+    it('returns false when status is not valid UnifiedProjectStatus', () => {
+        expect(isStepProgressDto({ stepKey: 'plan_step', status: 'pending' })).toBe(false);
+        expect(isStepProgressDto({ stepKey: 'plan_step', status: 1 })).toBe(false);
+    });
+
+    it('returns false for non-object inputs', () => {
+        expect(isStepProgressDto(null)).toBe(false);
+        expect(isStepProgressDto(undefined)).toBe(false);
+    });
+});
+
+describe('isGetAllStageProgressResponse', () => {
+    const validDagProgress = { completedStages: 1, totalStages: 2 };
+    const validStages: unknown[] = [];
+
+    it('returns true when object has dagProgress passing isDagProgressDto and stages is array', () => {
+        expect(isGetAllStageProgressResponse({ dagProgress: validDagProgress, stages: validStages })).toBe(true);
+        expect(isGetAllStageProgressResponse({ dagProgress: validDagProgress, stages: [{ stageSlug: 'thesis', status: 'completed', modelCount: 1, progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 }, steps: [], documents: [] }] })).toBe(true);
+    });
+
+    it('returns false when dagProgress is missing', () => {
+        expect(isGetAllStageProgressResponse({ stages: [] })).toBe(false);
+    });
+
+    it('returns false when dagProgress does not pass isDagProgressDto', () => {
+        expect(isGetAllStageProgressResponse({ dagProgress: { completedStages: '1', totalStages: 2 }, stages: [] })).toBe(false);
+    });
+
+    it('returns false when stages is missing', () => {
+        expect(isGetAllStageProgressResponse({ dagProgress: validDagProgress })).toBe(false);
+    });
+
+    it('returns false when stages is not an array', () => {
+        expect(isGetAllStageProgressResponse({ dagProgress: validDagProgress, stages: {} })).toBe(false);
+    });
+
+    it('returns false for non-object inputs', () => {
+        expect(isGetAllStageProgressResponse(null)).toBe(false);
+        expect(isGetAllStageProgressResponse(undefined)).toBe(false);
     });
 });

@@ -1644,6 +1644,7 @@ export const hydrateStageProgressLogic = async (
 					documents: {},
 					stepStatuses: {},
 					jobProgress: {},
+					progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
 				};
 			}
 
@@ -1705,14 +1706,13 @@ export const hydrateAllStageProgressLogic = async (
 			return;
 		}
 
-		if (response.data.length === 0) {
+		const { dagProgress, stages } = response.data;
+		if (stages.length === 0) {
 			return;
 		}
 
-		const entries = response.data;
-
 		let responseValid = true;
-		for (const entry of entries) {
+		for (const entry of stages) {
 			for (const doc of entry.documents) {
 				if (!isStageRenderedDocumentChecklistEntry(doc)) {
 					responseValid = false;
@@ -1730,7 +1730,7 @@ export const hydrateAllStageProgressLogic = async (
 		}
 
 		set((state) => {
-			for (const entry of entries) {
+			for (const entry of stages) {
 				const progressKey = `${sessionId}:${entry.stageSlug}:${iterationNumber}`;
 
 				if (!state.stageRunProgress[progressKey]) {
@@ -1738,20 +1738,21 @@ export const hydrateAllStageProgressLogic = async (
 						documents: {},
 						stepStatuses: {},
 						jobProgress: {},
+						progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
 					};
 				}
 
 				const progress = state.stageRunProgress[progressKey];
-				if (entry.jobProgress) {
-					for (const [stepKey, jobEntry] of Object.entries(entry.jobProgress)) {
-						progress.jobProgress[stepKey] = { ...jobEntry };
+				for (const step of entry.steps) {
+					if (isStepStatus(step.status)) {
+						progress.stepStatuses[step.stepKey] = step.status;
 					}
 				}
-				for (const [key, value] of Object.entries(entry.stepStatuses)) {
-					if (isStepStatus(value)) {
-						progress.stepStatuses[key] = value;
-					}
-				}
+				progress.progress = {
+					completedSteps: entry.progress.completedSteps,
+					totalSteps: entry.progress.totalSteps,
+					failedSteps: entry.progress.failedSteps,
+				};
 
 				for (const doc of entry.documents) {
 					if (!isStageRenderedDocumentChecklistEntry(doc)) continue;

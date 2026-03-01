@@ -800,8 +800,6 @@ function getSortedStagesFromTemplate(template: DialecticProcessTemplate | null):
     });
 }
 
-const isExecuteStep = (step: DialecticStageRecipeStep): boolean => step.job_type === 'EXECUTE';
-
 export const selectUnifiedProjectProgress = (
     state: DialecticStateValues,
     sessionId: string
@@ -846,73 +844,39 @@ export const selectUnifiedProjectProgress = (
 
         const stepsDetail: StepProgressDetail[] = [];
         let stageStatus: UnifiedProjectStatus = 'not_started';
-        let stepSum = 0;
 
         for (const step of sortedSteps) {
             const stepKey = step.step_key;
-            const jobEntry = progress?.jobProgress?.[stepKey];
+            const raw = progress?.stepStatuses?.[stepKey];
+            const stepStatus: UnifiedProjectStatus =
+                raw === 'failed' ? 'failed'
+                    : raw === 'completed' ? 'completed'
+                    : raw === 'in_progress' || raw === 'waiting_for_children' ? 'in_progress'
+                    : 'not_started';
 
-            if (!jobEntry) {
-                stepsDetail.push({
-                    stepKey,
-                    stepName: step.step_name,
-                    totalJobs: 0,
-                    completedJobs: 0,
-                    inProgressJobs: 0,
-                    failedJobs: 0,
-                    stepPercentage: 0,
-                    status: 'not_started',
-                });
-                continue;
-            }
-
-            const totalJobs: number = jobEntry.totalJobs;
-            const completedJobs: number = jobEntry.completedJobs;
-            const inProgressJobs: number = jobEntry.inProgressJobs;
-            const failedJobs: number = jobEntry.failedJobs;
-
-            const isExecute = isExecuteStep(step);
-            const stepPercentage: number = isExecute
-                ? (totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0)
-                : (completedJobs > 0 ? 100 : 0);
-
-            let stepStatus: UnifiedProjectStatus;
-            if (failedJobs > 0) {
-                stepStatus = 'failed';
-            } else if (inProgressJobs > 0) {
-                stepStatus = 'in_progress';
-            } else if (completedJobs === totalJobs && totalJobs > 0) {
-                stepStatus = 'completed';
-            } else {
-                stepStatus = 'not_started';
-            }
-
-            stepSum += stepPercentage;
             if (stepStatus === 'failed') stageStatus = 'failed';
             else if (stepStatus === 'in_progress' && stageStatus !== 'failed') stageStatus = 'in_progress';
-            else if (stepStatus === 'completed' && stageStatus === 'not_started') stageStatus = 'completed';
 
             stepsDetail.push({
                 stepKey,
                 stepName: step.step_name,
-                totalJobs,
-                completedJobs,
-                inProgressJobs,
-                failedJobs,
-                stepPercentage,
                 status: stepStatus,
             });
         }
 
         const totalStepsForStage = sortedSteps.length;
-        const stagePercentage = totalStepsForStage > 0 ? stepSum / totalStepsForStage : 0;
         const completedStepsForStage = stepsDetail.filter((s: StepProgressDetail) => s.status === 'completed').length;
+        const failedStepsForStage = stepsDetail.filter((s: StepProgressDetail) => s.status === 'failed').length;
         if (totalStepsForStage > 0 && stageStatus === 'not_started' && completedStepsForStage === totalStepsForStage) stageStatus = 'completed';
+
+        const stagePercentage =
+            totalStepsForStage > 0 ? (completedStepsForStage / totalStepsForStage) * 100 : 0;
 
         stageDetails.push({
             stageSlug,
             totalSteps: totalStepsForStage,
             completedSteps: completedStepsForStage,
+            failedSteps: failedStepsForStage,
             stagePercentage,
             stepsDetail,
             stageStatus,
