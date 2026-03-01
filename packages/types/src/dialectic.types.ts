@@ -233,10 +233,16 @@ export interface DialecticStageRecipeStep {
   outputs_required?: OutputRequirement[];
 }
 
+export interface DialecticRecipeEdge {
+  from_step_id: string;
+  to_step_id: string;
+}
+
 export interface DialecticStageRecipe {
   stageSlug: string;
   instanceId: string;
   steps: DialecticStageRecipeStep[];
+  edges: DialecticRecipeEdge[];
 }
 
 export interface DomainDescriptor {

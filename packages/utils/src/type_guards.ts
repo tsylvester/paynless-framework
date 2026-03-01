@@ -13,6 +13,7 @@ import {
     DagProgressDto,
     StepProgressDto,
     GetAllStageProgressResponse,
+    DialecticRecipeEdge,
 } from '@paynless/types';
 
 export function isUserRole(role: unknown): role is UserRole {
@@ -171,6 +172,16 @@ export function isGetAllStageProgressResponse(obj: unknown): obj is GetAllStageP
     }
     const o: Record<string, unknown> = Object.fromEntries(Object.entries(obj));
     return isDagProgressDto(o['dagProgress']) && Array.isArray(o['stages']);
+}
+
+export function isDialecticRecipeEdge(obj: unknown): obj is DialecticRecipeEdge {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+    const o: Record<string, unknown> = Object.fromEntries(Object.entries(obj));
+    const fromStepId = o['from_step_id'];
+    const toStepId = o['to_step_id'];
+    return typeof fromStepId === 'string' && fromStepId.trim() !== '' && typeof toStepId === 'string' && toStepId.trim() !== '';
 }
 
 // Dialectic lifecycle event type guard

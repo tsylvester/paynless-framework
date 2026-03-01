@@ -677,71 +677,71 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
         *   `[✅]`   Modified: `packages/store/src/dialecticStore.selectors.test.ts` — tests for step-based progress
         *   `[✅]`   Modified: `apps/web/src/mocks/dialecticStore.mock.ts` — snapshot init includes `progress`
 
-*   `[ ]`   `[STORE]` packages/store/src/dialecticStore **Store recipe edges from `fetchStageRecipe` and initialize `progress` in `ensureRecipeForActiveStage`**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Update `DialecticStageRecipe` type to include `edges` so that recipe data stored from `fetchStageRecipe` includes edge information from the backend (added in prior BE node)
-        *   `[ ]`   Update `ensureRecipeForActiveStage` (line 2631) to initialize snapshots with the `progress` field added to `StageRunProgressSnapshot` in the prior node
-        *   `[ ]`   No code change needed in `fetchStageRecipe` action itself — it already does `state.recipesByStageSlug[stageSlug] = response.data!` (line 2623) which stores the full response including edges
-    *   `[ ]`   `role`
-        *   `[ ]`   State management — recipe hydration and snapshot initialization
-    *   `[ ]`   `module`
-        *   `[ ]`   Dialectic store — recipe storage and progress snapshot creation
-        *   `[ ]`   Bounded to storing API response data and initializing snapshot state
-    *   `[ ]`   `deps`
-        *   `[ ]`   `getStageRecipe` backend endpoint (updated in prior BE node) — API response producer — outward — now returns `{ stageSlug, instanceId, steps, edges }`
-        *   `[ ]`   `@paynless/api` dialectic adapter — adapter — inward — `dialecticApi.fetchStageRecipe(stageSlug)` returns `ApiResponse<DialecticStageRecipe>`; type change flows through automatically
-        *   `[ ]`   `DialecticStageRecipe` from `@paynless/types` — domain — inward
-        *   `[ ]`   `StageRunProgressSnapshot` from `@paynless/types` — domain — inward — now requires `progress`
-        *   `[ ]`   Confirm no reverse dependency is introduced
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   From API: `response.data` typed as `DialecticStageRecipe` — now includes `edges: DialecticRecipeEdge[]`
-        *   `[ ]`   From store: `state.recipesByStageSlug`, `state.stageRunProgress`
-        *   `[ ]`   Confirm no concrete imports from backend
-    *   `[ ]`   packages/types/src/`dialectic.types.ts`
-        *   `[ ]`   Add `DialecticRecipeEdge`: `{ from_step_id: string; to_step_id: string }` — frontend equivalent of backend `ProgressRecipeEdge` (backend `dialectic.interface.ts` line 525)
-        *   `[ ]`   Update `DialecticStageRecipe` (currently at line 236: `{ stageSlug, instanceId, steps }`) to add `edges: DialecticRecipeEdge[]` — becomes `{ stageSlug: string; instanceId: string; steps: DialecticStageRecipeStep[]; edges: DialecticRecipeEdge[] }`
-    *   `[ ]`   packages/utils/src/`type_guards.test.ts`
-        *   `[ ]`   Contract: `DialecticRecipeEdge` requires `from_step_id` and `to_step_id` as non-empty strings
-    *   `[ ]`   packages/utils/src/`type_guards.ts`
-        *   `[ ]`   Guard `isDialecticRecipeEdge`: validates `from_step_id` and `to_step_id` are non-empty strings
-    *   `[ ]`   packages/store/src/`dialecticStore.recipes.test.ts`
-        *   `[ ]`   Update `fetchStageRecipe` tests (describe block at line 83) to include `edges` in mock response data
-        *   `[ ]`   Test: `recipesByStageSlug[stageSlug].edges` populated with edge array from response
-        *   `[ ]`   Test: existing step storage unchanged
-    *   `[ ]`   packages/store/src/`dialecticStore.test.ts`
-        *   `[ ]`   Update `ensureRecipeForActiveStage` tests to verify new snapshot includes `progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 }`
-        *   `[ ]`   Existing `ensureRecipeForActiveStage` tests that construct snapshots with `{ documents: {}, stepStatuses: {...}, jobProgress: {} }` must add `progress` field
-    *   `[ ]`   `construction`
-        *   `[ ]`   `fetchStageRecipe` (line 2618): no code change — `state.recipesByStageSlug[stageSlug] = response.data!` already stores full response; type change makes `edges` available automatically
-        *   `[ ]`   `ensureRecipeForActiveStage` (line 2631): update snapshot initialization (line 2644-2648) from `{ documents: {}, stepStatuses, jobProgress: {} }` to `{ documents: {}, stepStatuses, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } }`
-    *   `[ ]`   packages/store/src/`dialecticStore.ts`
-        *   `[ ]`   In `ensureRecipeForActiveStage` (line 2644): update snapshot initialization to include `progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 }`
-        *   `[ ]`   `fetchStageRecipe` (line 2618): no code change needed — verify type propagation
-    *   `[ ]`   `provides`
-        *   `[ ]`   Store state: `recipesByStageSlug[slug].edges` — `DialecticRecipeEdge[]` — available for DAG layout computation
-        *   `[ ]`   Store state: `stageRunProgress[key]` snapshots initialized with `progress` field
-        *   `[ ]`   Semantic guarantee: edges match backend recipe structure; snapshot initialization consistent with updated `StageRunProgressSnapshot`
-    *   `[ ]`   apps/web/src/mocks/`dialecticStore.mock.ts`
-        *   `[ ]`   Update any mock recipe data construction to include `edges: []` default
-        *   `[ ]`   Verify mock `ensureRecipeForActiveStage` snapshot initialization includes `progress`
-    *   `[ ]`   packages/store/src/`dialecticStore.integration.test.ts`
-        *   `[ ]`   Verify `fetchStageRecipe` → `recipesByStageSlug[slug].edges` populated in integration context
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: application (store)
-        *   `[ ]`   Dependencies inward-facing: `@paynless/api` (adapter), `@paynless/types` (domain types)
-        *   `[ ]`   Provides outward to: `computeDAGLayout` (domain utility), `StageDAGProgressDialog` (UI component)
-    *   `[ ]`   `requirements`
-        *   `[ ]`   `recipesByStageSlug[slug].edges` available for any hydrated stage
-        *   `[ ]`   `ensureRecipeForActiveStage` creates snapshots compatible with updated `StageRunProgressSnapshot`
-        *   `[ ]`   No regression in existing recipe step storage or snapshot initialization
-        *   `[ ]`   `useStageRunProgressHydration` hook continues to function — calls `fetchStageRecipe` and `ensureRecipeForActiveStage` with same signatures
-    *   `[ ]`   **Commit** `feat(store) packages/store + packages/types add recipe edges and progress snapshot init`
-        *   `[ ]`   Modified: `packages/types/src/dialectic.types.ts` — added `DialecticRecipeEdge`, updated `DialecticStageRecipe` with `edges`
-        *   `[ ]`   Modified: `packages/utils/src/type_guards.ts` — added `isDialecticRecipeEdge`
-        *   `[ ]`   Modified: `packages/utils/src/type_guards.test.ts` — guard contract test
-        *   `[ ]`   Modified: `packages/store/src/dialecticStore.ts` — `ensureRecipeForActiveStage` snapshot init includes `progress`
-        *   `[ ]`   Modified: `packages/store/src/dialecticStore.recipes.test.ts` — tests for edge storage
-        *   `[ ]`   Modified: `packages/store/src/dialecticStore.test.ts` — tests for snapshot init with `progress`
+*   `[✅]`   `[STORE]` packages/store/src/dialecticStore **Store recipe edges from `fetchStageRecipe` and initialize `progress` in `ensureRecipeForActiveStage`**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Update `DialecticStageRecipe` type to include `edges` so that recipe data stored from `fetchStageRecipe` includes edge information from the backend (added in prior BE node)
+        *   `[✅]`   Update `ensureRecipeForActiveStage` (line 2631) to initialize snapshots with the `progress` field added to `StageRunProgressSnapshot` in the prior node
+        *   `[✅]`   No code change needed in `fetchStageRecipe` action itself — it already does `state.recipesByStageSlug[stageSlug] = response.data!` (line 2623) which stores the full response including edges
+    *   `[✅]`   `role`
+        *   `[✅]`   State management — recipe hydration and snapshot initialization
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic store — recipe storage and progress snapshot creation
+        *   `[✅]`   Bounded to storing API response data and initializing snapshot state
+    *   `[✅]`   `deps`
+        *   `[✅]`   `getStageRecipe` backend endpoint (updated in prior BE node) — API response producer — outward — now returns `{ stageSlug, instanceId, steps, edges }`
+        *   `[✅]`   `@paynless/api` dialectic adapter — adapter — inward — `dialecticApi.fetchStageRecipe(stageSlug)` returns `ApiResponse<DialecticStageRecipe>`; type change flows through automatically
+        *   `[✅]`   `DialecticStageRecipe` from `@paynless/types` — domain — inward
+        *   `[✅]`   `StageRunProgressSnapshot` from `@paynless/types` — domain — inward — now requires `progress`
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   From API: `response.data` typed as `DialecticStageRecipe` — now includes `edges: DialecticRecipeEdge[]`
+        *   `[✅]`   From store: `state.recipesByStageSlug`, `state.stageRunProgress`
+        *   `[✅]`   Confirm no concrete imports from backend
+    *   `[✅]`   packages/types/src/`dialectic.types.ts`
+        *   `[✅]`   Add `DialecticRecipeEdge`: `{ from_step_id: string; to_step_id: string }` — frontend equivalent of backend `ProgressRecipeEdge` (backend `dialectic.interface.ts` line 525)
+        *   `[✅]`   Update `DialecticStageRecipe` (currently at line 236: `{ stageSlug, instanceId, steps }`) to add `edges: DialecticRecipeEdge[]` — becomes `{ stageSlug: string; instanceId: string; steps: DialecticStageRecipeStep[]; edges: DialecticRecipeEdge[] }`
+    *   `[✅]`   packages/utils/src/`type_guards.test.ts`
+        *   `[✅]`   Contract: `DialecticRecipeEdge` requires `from_step_id` and `to_step_id` as non-empty strings
+    *   `[✅]`   packages/utils/src/`type_guards.ts`
+        *   `[✅]`   Guard `isDialecticRecipeEdge`: validates `from_step_id` and `to_step_id` are non-empty strings
+    *   `[✅]`   packages/store/src/`dialecticStore.recipes.test.ts`
+        *   `[✅]`   Update `fetchStageRecipe` tests (describe block at line 83) to include `edges` in mock response data
+        *   `[✅]`   Test: `recipesByStageSlug[stageSlug].edges` populated with edge array from response
+        *   `[✅]`   Test: existing step storage unchanged
+    *   `[✅]`   packages/store/src/`dialecticStore.test.ts`
+        *   `[✅]`   Update `ensureRecipeForActiveStage` tests to verify new snapshot includes `progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 }`
+        *   `[✅]`   Existing `ensureRecipeForActiveStage` tests that construct snapshots with `{ documents: {}, stepStatuses: {...}, jobProgress: {} }` must add `progress` field
+    *   `[✅]`   `construction`
+        *   `[✅]`   `fetchStageRecipe` (line 2618): no code change — `state.recipesByStageSlug[stageSlug] = response.data!` already stores full response; type change makes `edges` available automatically
+        *   `[✅]`   `ensureRecipeForActiveStage` (line 2631): update snapshot initialization (line 2644-2648) from `{ documents: {}, stepStatuses, jobProgress: {} }` to `{ documents: {}, stepStatuses, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } }`
+    *   `[✅]`   packages/store/src/`dialecticStore.ts`
+        *   `[✅]`   In `ensureRecipeForActiveStage` (line 2644): update snapshot initialization to include `progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 }`
+        *   `[✅]`   `fetchStageRecipe` (line 2618): no code change needed — verify type propagation
+    *   `[✅]`   `provides`
+        *   `[✅]`   Store state: `recipesByStageSlug[slug].edges` — `DialecticRecipeEdge[]` — available for DAG layout computation
+        *   `[✅]`   Store state: `stageRunProgress[key]` snapshots initialized with `progress` field
+        *   `[✅]`   Semantic guarantee: edges match backend recipe structure; snapshot initialization consistent with updated `StageRunProgressSnapshot`
+    *   `[✅]`   apps/web/src/mocks/`dialecticStore.mock.ts`
+        *   `[✅]`   Update any mock recipe data construction to include `edges: []` default
+        *   `[✅]`   Verify mock `ensureRecipeForActiveStage` snapshot initialization includes `progress`
+    *   `[✅]`   packages/store/src/`dialecticStore.integration.test.ts`
+        *   `[✅]`   Verify `fetchStageRecipe` → `recipesByStageSlug[slug].edges` populated in integration context
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: application (store)
+        *   `[✅]`   Dependencies inward-facing: `@paynless/api` (adapter), `@paynless/types` (domain types)
+        *   `[✅]`   Provides outward to: `computeDAGLayout` (domain utility), `StageDAGProgressDialog` (UI component)
+    *   `[✅]`   `requirements`
+        *   `[✅]`   `recipesByStageSlug[slug].edges` available for any hydrated stage
+        *   `[✅]`   `ensureRecipeForActiveStage` creates snapshots compatible with updated `StageRunProgressSnapshot`
+        *   `[✅]`   No regression in existing recipe step storage or snapshot initialization
+        *   `[✅]`   `useStageRunProgressHydration` hook continues to function — calls `fetchStageRecipe` and `ensureRecipeForActiveStage` with same signatures
+    *   `[✅]`   **Commit** `feat(store) packages/store + packages/types add recipe edges and progress snapshot init`
+        *   `[✅]`   Modified: `packages/types/src/dialectic.types.ts` — added `DialecticRecipeEdge`, updated `DialecticStageRecipe` with `edges`
+        *   `[✅]`   Modified: `packages/utils/src/type_guards.ts` — added `isDialecticRecipeEdge`
+        *   `[✅]`   Modified: `packages/utils/src/type_guards.test.ts` — guard contract test
+        *   `[✅]`   Modified: `packages/store/src/dialecticStore.ts` — `ensureRecipeForActiveStage` snapshot init includes `progress`
+        *   `[✅]`   Modified: `packages/store/src/dialecticStore.recipes.test.ts` — tests for edge storage
+        *   `[✅]`   Modified: `packages/store/src/dialecticStore.test.ts` — tests for snapshot init with `progress`
 
 *   `[ ]`   `[UI]` apps/web/src/components/dialectic/dagLayout **Compute layered node positions from recipe steps and edges**
     *   `[ ]`   `objective`

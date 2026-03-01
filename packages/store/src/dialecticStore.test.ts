@@ -926,7 +926,7 @@ describe('useDialecticStore', () => {
                 projectId: 'project-1',
             };
             getMockDialecticClient().getAllStageProgress.mockResolvedValue({
-                data: [],
+                data: { dagProgress: { completedStages: 0, totalStages: 0 }, stages: [] },
                 status: 200,
             });
 
@@ -1349,6 +1349,7 @@ describe('useDialecticStore', () => {
                         },
                         stepStatuses: {},
                         jobProgress: {},
+                        progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
                     },
                 },
             });

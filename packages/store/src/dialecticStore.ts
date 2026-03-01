@@ -2645,6 +2645,7 @@ export const useDialecticStore = create<DialecticStore>()(
           documents: {},
           stepStatuses,
           jobProgress: {},
+          progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
         };
         return;
       }

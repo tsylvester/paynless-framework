@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     StageRunDocumentStatus,
     StagePlannedDocumentChecklistEntry,
+    DialecticRecipeEdge,
 } from '@paynless/types';
 import {
     isUserRole,
@@ -19,6 +20,7 @@ import {
     isDagProgressDto,
     isStepProgressDto,
     isGetAllStageProgressResponse,
+    isDialecticRecipeEdge,
 } from './type_guards';
 
 describe('isUserRole', () => {
@@ -427,5 +429,44 @@ describe('isGetAllStageProgressResponse', () => {
     it('returns false for non-object inputs', () => {
         expect(isGetAllStageProgressResponse(null)).toBe(false);
         expect(isGetAllStageProgressResponse(undefined)).toBe(false);
+    });
+});
+
+describe('isDialecticRecipeEdge', () => {
+    const validEdge: DialecticRecipeEdge = { from_step_id: 'step-a', to_step_id: 'step-b' };
+
+    it('returns true when from_step_id and to_step_id are non-empty strings', () => {
+        expect(isDialecticRecipeEdge(validEdge)).toBe(true);
+        expect(isDialecticRecipeEdge({ from_step_id: 'p1', to_step_id: 'e1' })).toBe(true);
+    });
+
+    it('returns false when from_step_id is missing', () => {
+        expect(isDialecticRecipeEdge({ to_step_id: 'step-b' })).toBe(false);
+    });
+
+    it('returns false when to_step_id is missing', () => {
+        expect(isDialecticRecipeEdge({ from_step_id: 'step-a' })).toBe(false);
+    });
+
+    it('returns false when from_step_id is empty string', () => {
+        expect(isDialecticRecipeEdge({ from_step_id: '', to_step_id: 'step-b' })).toBe(false);
+    });
+
+    it('returns false when to_step_id is empty string', () => {
+        expect(isDialecticRecipeEdge({ from_step_id: 'step-a', to_step_id: '' })).toBe(false);
+    });
+
+    it('returns false when from_step_id is not a string', () => {
+        expect(isDialecticRecipeEdge({ from_step_id: 1, to_step_id: 'step-b' })).toBe(false);
+    });
+
+    it('returns false when to_step_id is not a string', () => {
+        expect(isDialecticRecipeEdge({ from_step_id: 'step-a', to_step_id: null })).toBe(false);
+    });
+
+    it('returns false for non-object inputs', () => {
+        expect(isDialecticRecipeEdge(null)).toBe(false);
+        expect(isDialecticRecipeEdge(undefined)).toBe(false);
+        expect(isDialecticRecipeEdge([])).toBe(false);
     });
 });

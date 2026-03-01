@@ -331,12 +331,20 @@ const mockSession: DialecticSession = {
   dialectic_session_models: [],
 };
 
-/** Empty stage run progress snapshot including step-based progress (for tests and overrides). */
+/** Empty stage run progress snapshot including step-based progress (for tests and overrides). Matches shape used by ensureRecipeForActiveStage. */
 export const emptyStageRunProgressSnapshot: StageRunProgressSnapshot = {
   documents: {},
   stepStatuses: {},
   jobProgress: {},
   progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+};
+
+/** Minimal recipe for mock/tests; includes edges: [] per DialecticStageRecipe. */
+export const emptyDialecticStageRecipe: DialecticStageRecipe = {
+  stageSlug: '',
+  instanceId: '',
+  steps: [],
+  edges: [],
 };
 
 // 1. Define initial state values
@@ -385,6 +393,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   activeSessionDetailError: null,
   contributionGenerationStatus: 'idle',
   generateContributionsError: null,
+  generatingForStageSlug: null,
   generatingSessions: {},
   isSubmittingStageResponses: false,
   submitStageResponsesError: null,
