@@ -124,12 +124,30 @@ export async function continueJob(
     : (typeof job.stage_slug === 'string' ? job.stage_slug : '');
   basePayload.canonicalPathParams = canonical;
 
-  // Document relationships: keep original if valid; otherwise use saved contribution relationships
-  if (
-    !('document_relationships' in job.payload && isDocumentRelationships(job.payload.document_relationships)) &&
-    isDocumentRelationships(savedContribution.document_relationships)
-  ) {
-    basePayload.document_relationships = savedContribution.document_relationships;
+  // Document relationships: start from trigger's (already copied into basePayload above).
+  // When trigger has valid relationships but lacks document_relationships[stageSlug],
+  // merge stageSlug from saved contribution (root-init sets it on the contribution row).
+  const triggerRels = basePayload.document_relationships;
+  const savedRels = savedContribution.document_relationships;
+  const triggerHasRels = isDocumentRelationships(triggerRels);
+  const savedHasRels = isDocumentRelationships(savedRels);
+
+  if (!triggerHasRels && savedHasRels) {
+    // No valid trigger relationships — use saved contribution's entirely
+    basePayload.document_relationships = savedRels;
+  } else if (triggerHasRels && savedHasRels) {
+    // Both have valid relationships — check if stageSlug needs merging from saved
+    const slug = typeof job.stage_slug === 'string' ? job.stage_slug
+      : ('stageSlug' in job.payload && typeof job.payload.stageSlug === 'string' ? job.payload.stageSlug : undefined);
+    if (slug) {
+      const triggerEntry = Object.entries(triggerRels).find(([key]) => key === slug);
+      const savedEntry = Object.entries(savedRels).find(([key]) => key === slug);
+      if ((!triggerEntry || typeof triggerEntry[1] !== 'string' || !triggerEntry[1].trim()) &&
+          savedEntry && typeof savedEntry[1] === 'string' && savedEntry[1].trim()) {
+        // Trigger lacks the stageSlug key but saved has it — merge it in
+        basePayload.document_relationships = { ...triggerRels, [slug]: savedEntry[1] };
+      }
+    }
   }
 
   // Validate payloadObject shape after overlays
