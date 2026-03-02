@@ -451,7 +451,10 @@ export const useDialecticStore = create<DialecticStore>()(
 				});
 
 				const projectData = response.data;
-				if (projectData && projectData.dialectic_sessions) {
+				if (!projectData) {
+					throw new Error(`[DialecticStore] fetchDialecticProjectDetails received success response with no data for project ${projectId}`);
+				}
+				if (projectData.dialectic_sessions) {
 					projectData.dialectic_sessions = projectData.dialectic_sessions.map(
 						(session) => ({
 							...session,
@@ -470,7 +473,7 @@ export const useDialecticStore = create<DialecticStore>()(
 				if (!preserveContext) {
 					// Set active context and clear selected models (only on initial load, not background refresh)
 					get().setActiveDialecticContext({
-						projectId: projectData ? projectData.id : null,
+						projectId: projectData.id,
 						sessionId: null,
 						stage: null,
 					});
@@ -2173,7 +2176,7 @@ export const useDialecticStore = create<DialecticStore>()(
 				logger.info(
 					`[DialecticStore] Stage advanced for project ${payload.projectId}. Refetching project details.`,
 				);
-				await get().fetchDialecticProjectDetails(payload.projectId);
+				await get().fetchDialecticProjectDetails(payload.projectId, { preserveContext: true });
 			}
 			return response;
 		} catch (error: unknown) {
