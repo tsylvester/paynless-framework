@@ -157,6 +157,9 @@ describe('isDialecticLifecycleEventType', () => {
         expect(isDialecticLifecycleEventType('document_completed')).toBe(true);
         expect(isDialecticLifecycleEventType('render_completed')).toBe(true);
         expect(isDialecticLifecycleEventType('job_failed')).toBe(true);
+        expect(isDialecticLifecycleEventType('execute_started')).toBe(true);
+        expect(isDialecticLifecycleEventType('execute_chunk_completed')).toBe(true);
+        expect(isDialecticLifecycleEventType('execute_completed')).toBe(true);
     });
 
     it('should return false for invalid event types', () => {

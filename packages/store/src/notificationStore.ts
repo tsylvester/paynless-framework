@@ -328,9 +328,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                                 typeof data['sessionId'] === 'string' &&
                                 typeof data['stageSlug'] === 'string' &&
                                 typeof data['iterationNumber'] === 'number' &&
-                                typeof data['job_id'] === 'string' &&
-                                typeof data['document_key'] === 'string' &&
-                                typeof data['modelId'] === 'string'
+                                typeof data['job_id'] === 'string'
                             ) {
                                 eventPayload = {
                                     type,
@@ -338,8 +336,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                                     stageSlug: data['stageSlug'],
                                     iterationNumber: data['iterationNumber'],
                                     job_id: data['job_id'],
-                                    document_key: data['document_key'],
-                                    modelId: data['modelId'],
+                                    document_key: typeof data['document_key'] === 'string' ? data['document_key'] : undefined,
+                                    modelId: typeof data['modelId'] === 'string' ? data['modelId'] : undefined,
                                     step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
                                     latestRenderedResourceId: typeof data['latestRenderedResourceId'] === 'string' ? data['latestRenderedResourceId'] : (data['latestRenderedResourceId'] === null ? null : undefined),
                                 };
@@ -456,6 +454,69 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                                     modelId: data['modelId'],
                                     step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
                                     error: data['error'],
+                                    latestRenderedResourceId: typeof data['latestRenderedResourceId'] === 'string' ? data['latestRenderedResourceId'] : (data['latestRenderedResourceId'] === null ? null : undefined),
+                                };
+                            }
+                            break;
+                        case 'execute_started':
+                            if (
+                                typeof data['sessionId'] === 'string' &&
+                                typeof data['stageSlug'] === 'string' &&
+                                typeof data['iterationNumber'] === 'number' &&
+                                typeof data['job_id'] === 'string' &&
+                                typeof data['modelId'] === 'string'
+                            ) {
+                                eventPayload = {
+                                    type,
+                                    sessionId: data['sessionId'],
+                                    stageSlug: data['stageSlug'],
+                                    iterationNumber: data['iterationNumber'],
+                                    job_id: data['job_id'],
+                                    modelId: data['modelId'],
+                                    document_key: typeof data['document_key'] === 'string' ? data['document_key'] : undefined,
+                                    step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
+                                };
+                            }
+                            break;
+                        case 'execute_chunk_completed':
+                            if (
+                                typeof data['sessionId'] === 'string' &&
+                                typeof data['stageSlug'] === 'string' &&
+                                typeof data['iterationNumber'] === 'number' &&
+                                typeof data['job_id'] === 'string' &&
+                                typeof data['modelId'] === 'string'
+                            ) {
+                                eventPayload = {
+                                    type,
+                                    sessionId: data['sessionId'],
+                                    stageSlug: data['stageSlug'],
+                                    iterationNumber: data['iterationNumber'],
+                                    job_id: data['job_id'],
+                                    modelId: data['modelId'],
+                                    document_key: typeof data['document_key'] === 'string' ? data['document_key'] : undefined,
+                                    step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
+                                    isFinalChunk: typeof data['isFinalChunk'] === 'boolean' ? data['isFinalChunk'] : undefined,
+                                    continuationNumber: typeof data['continuationNumber'] === 'number' ? data['continuationNumber'] : undefined,
+                                };
+                            }
+                            break;
+                        case 'execute_completed':
+                            if (
+                                typeof data['sessionId'] === 'string' &&
+                                typeof data['stageSlug'] === 'string' &&
+                                typeof data['iterationNumber'] === 'number' &&
+                                typeof data['job_id'] === 'string' &&
+                                typeof data['modelId'] === 'string'
+                            ) {
+                                eventPayload = {
+                                    type,
+                                    sessionId: data['sessionId'],
+                                    stageSlug: data['stageSlug'],
+                                    iterationNumber: data['iterationNumber'],
+                                    job_id: data['job_id'],
+                                    modelId: data['modelId'],
+                                    document_key: typeof data['document_key'] === 'string' ? data['document_key'] : undefined,
+                                    step_key: typeof data['step_key'] === 'string' ? data['step_key'] : undefined,
                                     latestRenderedResourceId: typeof data['latestRenderedResourceId'] === 'string' ? data['latestRenderedResourceId'] : (data['latestRenderedResourceId'] === null ? null : undefined),
                                 };
                             }

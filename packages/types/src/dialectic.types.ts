@@ -930,8 +930,11 @@ export interface JobNotificationBase {
   step_key: string;
 }
 
-export interface PlannerStartedPayload extends DocumentLifecyclePayload {
+/** PLAN jobs may omit document_key and modelId; override base so they are optional. */
+export interface PlannerStartedPayload extends Omit<DocumentLifecyclePayload, 'document_key' | 'modelId'> {
   type: 'planner_started';
+  document_key?: string;
+  modelId?: string;
 }
 
 export interface PlannerCompletedPayload extends JobNotificationBase {
@@ -952,10 +955,11 @@ export interface DocumentCompletedPayload extends DocumentLifecyclePayload {
   type: 'document_completed';
 }
 
-/** EXECUTE job payload: modelId required, document_key optional. */
-export interface ExecutePayload extends JobNotificationBase {
+/** EXECUTE job payload: modelId required, document_key and step_key optional. */
+export interface ExecutePayload extends Omit<JobNotificationBase, 'step_key'> {
   modelId: string;
   document_key?: string;
+  step_key?: string;
 }
 
 export interface ExecuteStartedPayload extends ExecutePayload {

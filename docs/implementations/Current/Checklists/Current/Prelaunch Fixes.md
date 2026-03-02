@@ -1249,6 +1249,201 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
         *   `[✅]`   Node 3: `dialecticStore.selectors.ts` + `dialectic.types.ts` — selector uses backend progress counts, reports `hydrationReady`
         *   `[✅]`   Node 4: `useStageRunProgressHydration.ts` — ref guards replaced with store status, execution ordering guaranteed, retry supported
 
+*   `[✅]`   `[STORE]` packages/store/notificationStore **Handle execute lifecycle events and relax planner_started validation**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Add `case` branches for `execute_started`, `execute_chunk_completed`, `execute_completed` so these events reach `_handleDialecticLifecycleEvent`
+        *   `[✅]`   Relax `planner_started` validation to make `document_key` and `modelId` optional, matching backend payload (PLAN jobs intentionally omit these)
+        *   `[✅]`   Preserve all existing case branches and their validation logic
+    *   `[✅]`   `role`
+        *   `[✅]`   Application — notification ingestion and routing to dialectic store
+    *   `[✅]`   `module`
+        *   `[✅]`   Notification store — internal event dispatch
+        *   `[✅]`   Bounded to the `handleIncomingNotification` switch statement
+    *   `[✅]`   `deps`
+        *   `[✅]`   `isDialecticLifecycleEventType` from `@paynless/utils` — domain utility — inward dependency
+        *   `[✅]`   `ExecuteStartedPayload`, `ExecuteChunkCompletedPayload`, `ExecuteCompletedPayload`, `PlannerStartedPayload` from `@paynless/types` — domain types — inward dependency
+        *   `[✅]`   `_handleDialecticLifecycleEvent` from `useDialecticStore` — application — lateral dependency (existing, unchanged)
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   Injection via Zustand store — no changes to store shape
+        *   `[✅]`   Confirm no concrete imports from higher or lateral layers
+    *   `[✅]`   interface/`dialectic.types.ts`
+        *   `[✅]`   `PlannerStartedPayload` — override `document_key` and `modelId` as optional (do not change base `DocumentLifecyclePayload` — other consumers need them required)
+        *   `[✅]`   `ExecuteStartedPayload`, `ExecuteChunkCompletedPayload`, `ExecuteCompletedPayload` — verify already defined, no changes needed
+    *   `[✅]`   interface/tests/`type_guards.dialectic.test.ts`
+        *   `[✅]`   Contract: `isDialecticLifecycleEventType('execute_started')` returns `true`
+        *   `[✅]`   Contract: `isDialecticLifecycleEventType('execute_chunk_completed')` returns `true`
+        *   `[✅]`   Contract: `isDialecticLifecycleEventType('execute_completed')` returns `true`
+        *   `[✅]`   Confirm existing contracts for `planner_started`, `document_*`, `render_completed`, `job_failed`, `contribution_*`, `dialectic_contribution_*` unchanged
+    *   `[✅]`   interface/guards/`type_guards.ts`
+        *   `[✅]`   Add `execute_started`, `execute_chunk_completed`, `execute_completed` to the string comparison block in `isDialecticLifecycleEventType`
+    *   `[✅]`   unit/`notificationStore.test.ts`
+        *   `[✅]`   Test: `execute_started` notification with valid data dispatches to `_handleDialecticLifecycleEvent`
+        *   `[✅]`   Test: `execute_chunk_completed` notification with valid data dispatches to `_handleDialecticLifecycleEvent`
+        *   `[✅]`   Test: `execute_completed` notification with valid data (including optional `latestRenderedResourceId`) dispatches to `_handleDialecticLifecycleEvent`
+        *   `[✅]`   Test: `planner_started` notification **without** `document_key` and `modelId` dispatches successfully
+        *   `[✅]`   Test: `planner_started` notification **with** `document_key` and `modelId` still dispatches successfully
+        *   `[✅]`   Confirm all existing notification tests unchanged
+    *   `[✅]`   `construction`
+        *   `[✅]`   No new functions — additions are `case` branches within existing `handleIncomingNotification`
+        *   `[✅]`   Validation pattern: match existing case style (check required fields with `typeof`, assign optional fields conditionally)
+    *   `[✅]`   `notificationStore.ts`
+        *   `[✅]`   Add `case 'execute_started'` — validate `sessionId`, `stageSlug`, `iterationNumber`, `job_id`, `modelId` required; `document_key`, `step_key` optional
+        *   `[✅]`   Add `case 'execute_chunk_completed'` — same as `execute_started` plus optional `isFinalChunk`, `continuationNumber`
+        *   `[✅]`   Add `case 'execute_completed'` — same as `execute_started` plus optional `latestRenderedResourceId`
+        *   `[✅]`   Modify `case 'planner_started'` — make `document_key` and `modelId` optional (conditional `typeof` assignment like `step_key` already does)
+    *   `[✅]`   provides/`notificationStore.provides.ts`
+        *   `[✅]`   Not applicable — `useNotificationStore` is the existing Zustand export, unchanged
+    *   `[✅]`   `notificationStore.mock.ts`
+        *   `[✅]`   Not required — no new exported surface; existing mock (if any) unchanged
+    *   `[✅]`   integration/`notificationStore.integration.test.ts`
+        *   `[✅]`   Not required — changes are internal routing logic, covered by unit tests
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: application
+        *   `[✅]`   All dependencies inward-facing (types, utils)
+        *   `[✅]`   Provides outward to: UI components via Zustand subscription
+    *   `[✅]`   `requirements`
+        *   `[✅]`   `execute_started`, `execute_chunk_completed`, `execute_completed` events reach `_handleDialecticLifecycleEvent`
+        *   `[✅]`   `planner_started` events from backend (without `document_key`/`modelId`) no longer produce the "data payload did not match" warning
+        *   `[✅]`   All existing event types continue to work unchanged
+        *   `[✅]`   DAG popup receives progress updates for both plan and execute phases
+    *   `[✅]`   **Commit** `fix(store) packages/utils + packages/store add execute lifecycle event handling and relax planner_started validation to match backend payloads`
+        *   `[✅]`   `dialectic.types.ts` — updated `PlannerStartedPayload` to allow optional `document_key`/`modelId`
+        *   `[✅]`   `type_guards.ts` — added execute event types to `isDialecticLifecycleEventType`
+        *   `[✅]`   `type_guards.dialectic.test.ts` — added contracts for execute event types
+        *   `[✅]`   `notificationStore.ts` — added execute case branches, relaxed planner_started validation
+        *   `[✅]`   `notificationStore.test.ts` — added tests for execute events and planner_started without document_key/modelId
+
+*   `[ ]` supabase/functions/dialectic-worker/`executeModelCallAndSave` **[BE] Gate RENDER job enqueue behind continuation completion**
+    *   `[ ]` `objective`
+        *   `[ ]` Prevent RENDER jobs from being enqueued for intermediate continuation chunks that contain incomplete JSON fragments
+        *   `[ ]` RENDER jobs must only be enqueued when `needsContinuation` is false (i.e., the current chunk is the final chunk in the continuation chain, or the response completed without needing continuation)
+        *   `[ ]` Preserve existing behavior for non-continuation responses (single-chunk responses that complete with `finish_reason: 'stop'` must still enqueue RENDER jobs immediately)
+    *   `[ ]` `role`
+        *   `[ ]` Infrastructure — orchestrator function that coordinates AI model calls, response storage, continuation dispatch, and downstream job enqueue
+    *   `[ ]` `module`
+        *   `[ ]` Dialectic worker pipeline: the RENDER job enqueue section (lines ~1504–1751) currently runs unconditionally after every chunk save
+        *   `[ ]` The fix wraps the RENDER job enqueue block in a `!needsContinuation` guard so it only fires on the terminal chunk
+    *   `[ ]` `deps`
+        *   `[ ]` `needsContinuation` (local boolean, already computed at line 1789) — must be moved or duplicated earlier in the function, before the RENDER enqueue block at line 1504
+        *   `[ ]` `shouldContinue` (local boolean, line 1102) — already available at the RENDER enqueue site
+        *   `[ ]` `job.payload.continueUntilComplete` (payload field) — already available
+        *   `[ ]` No new external dependencies introduced
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` Requires `shouldContinue` and `job.payload.continueUntilComplete` to compute `needsContinuation` earlier in the function
+        *   `[ ]` No new injection shape needed — uses existing local variables
+        *   `[ ]` Confirm no concrete imports from higher or lateral layers
+    *   `[ ]` unit/`executeModelCallAndSave.render.test.ts`
+        *   `[ ]` Test: when `shouldContinue` is true and `continueUntilComplete` is true (`needsContinuation` = true), no RENDER job is inserted into `dialectic_generation_jobs`
+        *   `[ ]` Test: when `shouldContinue` is false (final chunk, `finish_reason: 'stop'`), RENDER job IS enqueued as before
+        *   `[ ]` Test: when `continueUntilComplete` is false (no continuation opted in), RENDER job IS enqueued as before even if `shouldContinue` would be true
+        *   `[ ]` Test: single-chunk non-continuation response still enqueues RENDER job (regression guard)
+    *   `[ ]` `construction`
+        *   `[ ]` Move computation of `needsContinuation` (currently at line 1789: `job.payload.continueUntilComplete && shouldContinue`) to immediately after the sanitize/parse decision block (after line 1178), so it is available before the RENDER enqueue section
+        *   `[ ]` Keep the existing `needsContinuation` reference at line 1789 working (use the same variable)
+        *   `[ ]` No new objects or factories required
+    *   `[ ]` `executeModelCallAndSave.ts`
+        *   `[ ]` Move `const needsContinuation = job.payload.continueUntilComplete && shouldContinue;` from line 1789 to after line 1178 (after the sanitize/parse/content-level-continuation-flag block completes)
+        *   `[ ]` Wrap the RENDER job enqueue block (lines ~1504–1751, starting at `const { shouldRender, reason, details } = ...`) inside `if (!needsContinuation) { ... }`
+        *   `[ ]` Remove the duplicate `needsContinuation` declaration at the old location (line 1789) and reference the earlier variable
+        *   `[ ]` Preserve all existing RENDER enqueue logic, error handling, and logging unchanged inside the guard
+    *   `[ ]` `requirements`
+        *   `[ ]` Intermediate continuation chunks (chunks 1..N-1) must NOT trigger a RENDER job
+        *   `[ ]` The final chunk (or a single non-continuation chunk) MUST trigger a RENDER job for markdown outputs, exactly as before
+        *   `[ ]` `assembleAndSaveFinalDocument` path (line 1861, gated by `isFinalChunk && !shouldRender`) must remain unaffected
+        *   `[ ]` Continuation dispatch (`continueJob` call at line 1806) must remain unaffected
+        *   `[ ]` All existing tests in `executeModelCallAndSave.render.test.ts` and `executeModelCallAndSave.continue.test.ts` must continue to pass
+
+*   `[ ]` supabase/functions/_shared/services/`renderDocument` **[BE] Concatenate continuation chunks before JSON.parse in renderDocument**
+    *   `[ ]` `objective`
+        *   `[ ]` Change `renderDocument` to concatenate all ordered chunk text content first, then parse the assembled string as JSON once, instead of parsing each chunk individually
+        *   `[ ]` This is a defensive-depth fix: even if a RENDER job somehow runs against incomplete chunks, the parse strategy must handle fragment-based continuations where individual chunks are not valid JSON
+    *   `[ ]` `role`
+        *   `[ ]` Infrastructure — document rendering service that assembles raw model contributions into rendered markdown documents using templates
+    *   `[ ]` `module`
+        *   `[ ]` The chunk iteration loop in `renderDocument` (lines ~308–374 in `document_renderer.ts`) currently downloads each chunk, checks if it starts with `{`, and calls `JSON.parse(text)` on each chunk individually
+        *   `[ ]` The fix changes this to: download all chunks, concatenate their text in order, then parse the concatenated result once
+    *   `[ ]` `deps`
+        *   `[ ]` `downloadText` (internal helper, already used at line 314) — no change
+        *   `[ ]` `JSON.parse` — called once on concatenated string instead of N times on individual chunks
+        *   `[ ]` `isRecord` (type guard, already imported) — no change
+        *   `[ ]` No new external dependencies introduced
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` Requires the ordered chunk list (`uniqueChunks`) and `downloadText` function — both already in scope
+        *   `[ ]` No new injection shape needed
+        *   `[ ]` Confirm no concrete imports from higher or lateral layers
+    *   `[ ]` unit/`document_renderer.test.ts`
+        *   `[ ]` Test: two chunks whose individual text are JSON fragments (e.g., `{"content": "hello ` and `world"}`) are concatenated and parsed successfully into a single merged object
+        *   `[ ]` Test: single chunk with complete JSON still works (regression guard)
+        *   `[ ]` Test: multiple chunks that are each complete JSON objects still work via concatenation (the concatenated result `{...}{...}` would fail parse — decide whether to fall back to per-chunk parse or require assembled JSON; document the decision)
+        *   `[ ]` Test: non-JSON chunks (plain text not starting with `{` or `[`) are still handled by the existing plain-text path
+    *   `[ ]` `construction`
+        *   `[ ]` No new objects or factories required
+        *   `[ ]` The concatenation buffer is a local `string` variable initialized to `""`
+    *   `[ ]` `document_renderer.ts`
+        *   `[ ]` Replace the per-chunk download-and-parse loop (lines ~308–374) with a two-phase approach:
+            *   `[ ]` Phase 1: iterate over `uniqueChunks`, download each chunk's text via `downloadText`, and accumulate into an ordered array of `{ chunkId, text }` tuples
+            *   `[ ]` Phase 2: if ALL texts start with `{` or `[` (JSON-like), concatenate them in order and `JSON.parse` the concatenated result once; extract structured data from the parsed object as before
+            *   `[ ]` Phase 2 fallback: if concatenated parse fails, attempt per-chunk parse as the current code does (graceful degradation for cases where chunks are independently valid JSON)
+            *   `[ ]` Non-JSON chunks (plain text) continue through the existing `_extra_content` path unchanged
+        *   `[ ]` Preserve all existing structured data extraction logic (`content` envelope unwrap, `continuation_needed`/`stop_reason` stripping, key merging)
+        *   `[ ]` Preserve all existing logging
+    *   `[ ]` `requirements`
+        *   `[ ]` Continuation chunks that are individual JSON fragments must be parseable when concatenated in chain order
+        *   `[ ]` Single-chunk documents must render identically to current behavior
+        *   `[ ]` Non-JSON content (plain markdown text) must continue through the plain-text rendering path
+        *   `[ ]` All existing tests in `document_renderer.test.ts` and `document_renderer.examples.test.ts` must continue to pass
+        *   `[ ]` Error messages must remain actionable and include chunk IDs and storage paths
+
+*   `[ ]` supabase/functions/_shared/services/`assembleAndSaveFinalDocument` **[BE] Concatenate continuation chunks before JSON.parse in assembleAndSaveFinalDocument**
+    *   `[ ]` `objective`
+        *   `[ ]` Change `assembleAndSaveFinalDocument` to concatenate all ordered chunk text content first, then parse the assembled string as JSON once, instead of parsing each chunk individually
+        *   `[ ]` This is a defensive-depth fix for the JSON assembly path (non-rendered JSON-only artifacts): individual continuation chunks are fragments of a single JSON object and are not independently parseable
+    *   `[ ]` `role`
+        *   `[ ]` Infrastructure — file management service method that assembles continuation chain chunks into a single final JSON document for storage
+    *   `[ ]` `module`
+        *   `[ ]` The chunk download-and-parse loop in `assembleAndSaveFinalDocument` (lines ~620–651 in `file_manager.ts`) currently downloads each chunk, calls `JSON.parse(textContent)` on each chunk individually, validates each is a record, then deep-merges them
+        *   `[ ]` The fix changes this to: download all chunks, concatenate their text in order, parse the concatenated result once, then proceed with the existing merge/upload logic
+    *   `[ ]` `deps`
+        *   `[ ]` `this.supabase.storage.from().download()` — already used, no change
+        *   `[ ]` `JSON.parse` — called once on concatenated string instead of N times
+        *   `[ ]` `isRecord` (type guard, already imported) — called once on the final parsed result
+        *   `[ ]` No new external dependencies introduced
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` Requires the ordered chunk list (`orderedChunks`) and Supabase storage client — both already in scope
+        *   `[ ]` No new injection shape needed
+        *   `[ ]` Confirm no concrete imports from higher or lateral layers
+    *   `[ ]` unit/`file_manager.assemble.test.ts`
+        *   `[ ]` Test: two chunks whose individual text are JSON fragments (e.g., `{"key": "val` and `ue", "key2": "v2"}`) are concatenated and parsed successfully
+        *   `[ ]` Test: single-chunk assembly still works (regression guard — concatenation of one string is the same string)
+        *   `[ ]` Test: error message when concatenated JSON still fails to parse includes all chunk IDs and the parse error detail
+        *   `[ ]` Test: the parsed result must be validated as a record via `isRecord` (existing behavior preserved)
+    *   `[ ]` `construction`
+        *   `[ ]` No new objects or factories required
+        *   `[ ]` The concatenation buffer is a local `string` variable
+    *   `[ ]` `file_manager.ts` / `assembleAndSaveFinalDocument`
+        *   `[ ]` Replace the per-chunk download-parse-validate loop (lines ~620–651) with a two-phase approach:
+            *   `[ ]` Phase 1: iterate over `orderedChunks`, download each chunk's content via storage, decode to text, and accumulate text strings in order
+            *   `[ ]` Phase 2: concatenate all text strings in order, `JSON.parse` the concatenated result once
+            *   `[ ]` Validate the parsed result is a record via `isRecord`
+        *   `[ ]` Remove the per-chunk `parsedChunks` array and the per-chunk deep-merge loop (lines ~660–695) — since the concatenated result is already a single complete JSON object, no merging is needed; the parsed object IS the final document
+        *   `[ ]` Preserve all existing error handling: if concatenation parse fails, throw with chunk IDs and storage paths for diagnostics
+        *   `[ ]` Preserve the existing upload-to-assembled-path logic and `is_latest_edit` flag management unchanged
+    *   `[ ]` `requirements`
+        *   `[ ]` Continuation chunks that are individual JSON fragments must be parseable when concatenated in chain order
+        *   `[ ]` Single-chunk assembly must produce identical output to current behavior
+        *   `[ ]` Parse errors must include diagnostic information (chunk IDs, storage paths, parse error message)
+        *   `[ ]` All existing tests in `file_manager.assemble.test.ts` must continue to pass
+        *   `[ ]` The `shouldRender` guard (lines 708–724) that prevents this method from being called on rendered documents must remain unchanged
+    *   `[ ]` **Commit** `fix(be) supabase/functions gate RENDER enqueue behind continuation completion and concatenate continuation chunks before JSON.parse in renderDocument and assembleAndSaveFinalDocument`
+        *   `[ ]` `executeModelCallAndSave.ts`: moved `needsContinuation` computation earlier; wrapped RENDER enqueue block in `!needsContinuation` guard
+        *   `[ ]` `document_renderer.ts`: replaced per-chunk JSON.parse with concatenate-then-parse strategy for continuation chunk support
+        *   `[ ]` `file_manager.ts` / `assembleAndSaveFinalDocument`: replaced per-chunk JSON.parse with concatenate-then-parse strategy for continuation chunk support
+        *   `[ ]` Updated tests in `executeModelCallAndSave.render.test.ts`, `document_renderer.test.ts`, and `file_manager.assemble.test.ts`
+
 # ToDo
 
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
@@ -1325,8 +1520,6 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
    --- Conservative / base / aggressive
    --- IS, BS, CF 
    -- A "generate next set of work" for the implementation stage 
-
-   x Change "Generate {stage}" button to use semantic names 
 
    - DynamicProgressBar uses formal names instead of friendly names
    - SessionContributionsDisplayCard uses formal names instead of friendly names 

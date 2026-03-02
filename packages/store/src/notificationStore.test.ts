@@ -218,6 +218,67 @@ const documentCompletedNotification: Notification = {
     },
 };
 
+const executeStartedNotification: Notification = {
+    ...baseDocumentEvent,
+    id: 'uuid-execute-started',
+    type: 'execute_started',
+    data: {
+        sessionId: 'sid-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        job_id: 'job-exec',
+        modelId: 'model-exec',
+        step_key: 'execute-step-1',
+        document_key: 'business_case',
+    },
+};
+
+const executeChunkCompletedNotification: Notification = {
+    ...baseDocumentEvent,
+    id: 'uuid-execute-chunk-completed',
+    type: 'execute_chunk_completed',
+    data: {
+        sessionId: 'sid-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        job_id: 'job-exec',
+        modelId: 'model-exec',
+        step_key: 'execute-step-1',
+        document_key: 'business_case',
+        isFinalChunk: false,
+        continuationNumber: 2,
+    },
+};
+
+const executeCompletedNotification: Notification = {
+    ...baseDocumentEvent,
+    id: 'uuid-execute-completed',
+    type: 'execute_completed',
+    data: {
+        sessionId: 'sid-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        job_id: 'job-exec',
+        modelId: 'model-exec',
+        step_key: 'execute-step-1',
+        document_key: 'business_case',
+        latestRenderedResourceId: 'resource-789',
+    },
+};
+
+const plannerStartedWithoutDocKeyModelIdNotification: Notification = {
+    ...baseDocumentEvent,
+    id: 'uuid-planner-started-plan-only',
+    type: 'planner_started',
+    data: {
+        sessionId: 'sid-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        job_id: 'job-planner',
+        step_key: 'planner-step-1',
+    },
+};
+
 // --- Test Suite ---
 describe('notificationStore', () => {
     // Reset store state and mocks before each test
@@ -509,7 +570,95 @@ describe('notificationStore', () => {
                 addNotificationSpy.mockRestore();
             });
 
-            
+            it('should route execute_started events to the dialectic store without creating a visible notification', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(executeStartedNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'execute_started',
+                    sessionId: 'sid-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-exec',
+                    modelId: 'model-exec',
+                    step_key: 'execute-step-1',
+                    document_key: 'business_case',
+                });
+
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
+            it('should route execute_chunk_completed events to the dialectic store without creating a visible notification', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(executeChunkCompletedNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'execute_chunk_completed',
+                    sessionId: 'sid-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-exec',
+                    modelId: 'model-exec',
+                    step_key: 'execute-step-1',
+                    document_key: 'business_case',
+                    isFinalChunk: false,
+                    continuationNumber: 2,
+                });
+
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
+            it('should route execute_completed events to the dialectic store with optional latestRenderedResourceId', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(executeCompletedNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'execute_completed',
+                    sessionId: 'sid-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-exec',
+                    modelId: 'model-exec',
+                    step_key: 'execute-step-1',
+                    document_key: 'business_case',
+                    latestRenderedResourceId: 'resource-789',
+                });
+
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
+            it('should route planner_started events without document_key and modelId to the dialectic store', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(plannerStartedWithoutDocKeyModelIdNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'planner_started',
+                    sessionId: 'sid-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-planner',
+                    step_key: 'planner-step-1',
+                });
+
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
             it('should not process wallet notifications as internal events', () => {
                 const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
                 const walletNotification: Notification = {
