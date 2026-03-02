@@ -1605,55 +1605,150 @@ export const initializeFeedbackDraftLogic = async (
 export const hydrateStageProgressLogic = async (
 	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
 	payload: ListStageDocumentsPayload,
-) => {
+): Promise<void> => {
 	const { sessionId, stageSlug, iterationNumber } = payload;
 	const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
 
-	try {
-		const response = await api.dialectic().listStageDocuments(payload);
+	const response = await api.dialectic().listStageDocuments(payload);
 
-		if (response.error || !response.data) {
-			const error = response.error || {
-				message: 'No documents found for this stage.',
-				code: 'NOT_FOUND',
+	if (response.error || !response.data) {
+		throw new Error(
+			`[hydrateStageProgress] API error or null data; sessionId=${sessionId}, stageSlug=${stageSlug}, iterationNumber=${iterationNumber}`,
+		);
+	}
+
+	const data = response.data;
+	if (!data) {
+		throw new Error(
+			`[hydrateStageProgress] response data is null or undefined; sessionId=${sessionId}, stageSlug=${stageSlug}, iterationNumber=${iterationNumber}`,
+		);
+	}
+
+	const allValid = data.every(isStageRenderedDocumentChecklistEntry);
+	if (!allValid) {
+		throw new Error(
+			`[hydrateStageProgress] document validation failed: every document must have documentKey, modelId, jobId, latestRenderedResourceId as non-empty strings; sessionId=${sessionId}, stageSlug=${stageSlug}, iterationNumber=${iterationNumber}`,
+		);
+	}
+
+	set((state) => {
+		if (!state.stageRunProgress[progressKey]) {
+			state.stageRunProgress[progressKey] = {
+				documents: {},
+				stepStatuses: {},
+				jobProgress: {},
+				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
 			};
-			logger.error('[hydrateStageProgress] Failed to list stage documents', {
-				error,
-				...payload,
-			});
-			// Optionally set an error state here if the store is designed to track it
-			return;
 		}
 
-		const data = response.data;
-		if (!data) return;
+		const progress = state.stageRunProgress[progressKey];
+		data.forEach((doc) => {
+			if (!isStageRenderedDocumentChecklistEntry(doc)) return;
 
-		const allValid = data.every(isStageRenderedDocumentChecklistEntry);
-		if (!allValid) {
-			logger.error('[hydrateStageProgress] Invalid response: every document must have documentKey, modelId, jobId, and latestRenderedResourceId as non-empty strings', {
-				sessionId,
-				stageSlug,
-				iterationNumber,
+			const versionInfo = createVersionInfo(doc.latestRenderedResourceId);
+			const descriptorStatus: StageRunDocumentStatus = doc.status;
+			const documentsKey = getStageRunDocumentKey(doc.documentKey, doc.modelId);
+			const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
+				status: descriptorStatus,
+				jobId: doc.jobId,
+				latestRenderedResourceId: doc.latestRenderedResourceId,
+				modelId: doc.modelId,
+				versionInfo,
+				stepKey: doc.stepKey,
 			});
-			return;
-		}
+			descriptor.status = descriptorStatus;
+			descriptor.job_id = doc.jobId;
+			descriptor.latestRenderedResourceId = doc.latestRenderedResourceId;
+			descriptor.modelId = doc.modelId;
+			descriptor.versionHash = versionInfo.versionHash;
+			descriptor.lastRenderedResourceId = doc.latestRenderedResourceId;
+			descriptor.lastRenderAtIso = versionInfo.updatedAt;
+			if (doc.stepKey !== undefined) {
+				descriptor.stepKey = doc.stepKey;
+			}
+		});
+	});
+};
 
-		set((state) => {
+export const hydrateAllStageProgressLogic = async (
+	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
+	payload: GetAllStageProgressPayload,
+): Promise<void> => {
+	const { sessionId, iterationNumber } = payload;
+
+	const response = await api.dialectic().getAllStageProgress(payload);
+
+	if (response.error || response.data === undefined) {
+		throw new Error(
+			`[hydrateAllStageProgress] API error or undefined data; sessionId=${sessionId}, iterationNumber=${iterationNumber}`,
+		);
+	}
+
+	const { dagProgress, stages } = response.data;
+	if (stages.length === 0) {
+		throw new Error(
+			`[hydrateAllStageProgress] stages array is empty; sessionId=${sessionId}, iterationNumber=${iterationNumber}`,
+		);
+	}
+
+	for (const entry of stages) {
+		if (!Array.isArray(entry.steps)) {
+			throw new Error(
+				`[hydrateAllStageProgress] step data absent for stage ${entry.stageSlug}; sessionId=${sessionId}, iterationNumber=${iterationNumber}`,
+			);
+		}
+	}
+
+	let responseValid = true;
+	for (const entry of stages) {
+		for (const doc of entry.documents) {
+			if (!isStageRenderedDocumentChecklistEntry(doc)) {
+				responseValid = false;
+				break;
+			}
+		}
+		if (!responseValid) break;
+	}
+	if (!responseValid) {
+		throw new Error(
+			`[hydrateAllStageProgress] document validation failed: every document must have documentKey, modelId, jobId, latestRenderedResourceId as non-empty strings; sessionId=${sessionId}, iterationNumber=${iterationNumber}`,
+		);
+	}
+
+	const runKey = `${sessionId}:${iterationNumber}`;
+
+	set((state) => {
+		state.dagProgressByRun[runKey] = dagProgress;
+		for (const entry of stages) {
+			const progressKey = `${sessionId}:${entry.stageSlug}:${iterationNumber}`;
+
 			if (!state.stageRunProgress[progressKey]) {
 				state.stageRunProgress[progressKey] = {
 					documents: {},
 					stepStatuses: {},
 					jobProgress: {},
+					progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
 				};
 			}
 
 			const progress = state.stageRunProgress[progressKey];
-			data.forEach((doc) => {
-				if (!isStageRenderedDocumentChecklistEntry(doc)) return;
+			for (const step of entry.steps) {
+				if (isStepStatus(step.status)) {
+					progress.stepStatuses[step.stepKey] = step.status;
+				}
+			}
+			progress.progress = {
+				completedSteps: entry.progress.completedSteps,
+				totalSteps: entry.progress.totalSteps,
+				failedSteps: entry.progress.failedSteps,
+			};
 
-				const versionInfo = createVersionInfo(doc.latestRenderedResourceId);
+			for (const doc of entry.documents) {
+				if (!isStageRenderedDocumentChecklistEntry(doc)) continue;
+
 				const descriptorStatus: StageRunDocumentStatus = doc.status;
 				const documentsKey = getStageRunDocumentKey(doc.documentKey, doc.modelId);
+				const versionInfo = createVersionInfo(doc.latestRenderedResourceId);
 				const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
 					status: descriptorStatus,
 					jobId: doc.jobId,
@@ -1672,121 +1767,8 @@ export const hydrateStageProgressLogic = async (
 				if (doc.stepKey !== undefined) {
 					descriptor.stepKey = doc.stepKey;
 				}
-			});
-		});
-	} catch (err: unknown) {
-		const error: ApiError = {
-			message:
-				err instanceof Error ? err.message : 'An unknown network error occurred.',
-			code: 'NETWORK_ERROR',
-		};
-		logger.error('[hydrateStageProgress] Network error', { error, ...payload });
-	}
-};
-
-export const hydrateAllStageProgressLogic = async (
-	set: (fn: (draft: Draft<DialecticStateValues>) => void) => void,
-	payload: GetAllStageProgressPayload,
-): Promise<void> => {
-	const { sessionId, iterationNumber } = payload;
-
-	try {
-		const response = await api.dialectic().getAllStageProgress(payload);
-
-		if (response.error || response.data === undefined) {
-			const error = response.error || {
-				message: 'Failed to get all stage progress.',
-				code: 'NOT_FOUND',
-			};
-			logger.error('[hydrateAllStageProgress] Failed to get all stage progress', {
-				error,
-				...payload,
-			});
-			return;
-		}
-
-		if (response.data.length === 0) {
-			return;
-		}
-
-		const entries = response.data;
-
-		let responseValid = true;
-		for (const entry of entries) {
-			for (const doc of entry.documents) {
-				if (!isStageRenderedDocumentChecklistEntry(doc)) {
-					responseValid = false;
-					break;
-				}
 			}
-			if (!responseValid) break;
 		}
-		if (!responseValid) {
-			logger.error('[hydrateAllStageProgress] Invalid response: every document must have documentKey, modelId, jobId, and latestRenderedResourceId as non-empty strings', {
-				sessionId,
-				iterationNumber,
-			});
-			return;
-		}
-
-		set((state) => {
-			for (const entry of entries) {
-				const progressKey = `${sessionId}:${entry.stageSlug}:${iterationNumber}`;
-
-				if (!state.stageRunProgress[progressKey]) {
-					state.stageRunProgress[progressKey] = {
-						documents: {},
-						stepStatuses: {},
-						jobProgress: {},
-					};
-				}
-
-				const progress = state.stageRunProgress[progressKey];
-				if (entry.jobProgress) {
-					for (const [stepKey, jobEntry] of Object.entries(entry.jobProgress)) {
-						progress.jobProgress[stepKey] = { ...jobEntry };
-					}
-				}
-				for (const [key, value] of Object.entries(entry.stepStatuses)) {
-					if (isStepStatus(value)) {
-						progress.stepStatuses[key] = value;
-					}
-				}
-
-				for (const doc of entry.documents) {
-					if (!isStageRenderedDocumentChecklistEntry(doc)) continue;
-
-					const descriptorStatus: StageRunDocumentStatus = doc.status;
-					const documentsKey = getStageRunDocumentKey(doc.documentKey, doc.modelId);
-					const versionInfo = createVersionInfo(doc.latestRenderedResourceId);
-					const descriptor = ensureRenderedDocumentDescriptor(progress, documentsKey, {
-						status: descriptorStatus,
-						jobId: doc.jobId,
-						latestRenderedResourceId: doc.latestRenderedResourceId,
-						modelId: doc.modelId,
-						versionInfo,
-						stepKey: doc.stepKey,
-					});
-					descriptor.status = descriptorStatus;
-					descriptor.job_id = doc.jobId;
-					descriptor.latestRenderedResourceId = doc.latestRenderedResourceId;
-					descriptor.modelId = doc.modelId;
-					descriptor.versionHash = versionInfo.versionHash;
-					descriptor.lastRenderedResourceId = doc.latestRenderedResourceId;
-					descriptor.lastRenderAtIso = versionInfo.updatedAt;
-					if (doc.stepKey !== undefined) {
-						descriptor.stepKey = doc.stepKey;
-					}
-				}
-			}
-		});
-	} catch (err: unknown) {
-		const error: ApiError = {
-			message:
-				err instanceof Error ? err.message : 'An unknown network error occurred.',
-			code: 'NETWORK_ERROR',
-		};
-		logger.error('[hydrateAllStageProgress] Network error', { error, ...payload });
-	}
+	});
 };
 

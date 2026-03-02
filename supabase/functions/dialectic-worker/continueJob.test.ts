@@ -882,7 +882,7 @@ const baseSavedContribution: DialecticContributionRow = {
             },
         });
 
-        const relationships = { parenthesis: 'root-abc', thread: 'xyz-123' };
+        const relationships = { parenthesis: 'root-abc', thread: 'xyz-123', 'test-stage': 'some-contrib-id' };
         const payload: DialecticJobPayload = {
             ...basePayload,
             continueUntilComplete: true,
@@ -1013,6 +1013,64 @@ const baseSavedContribution: DialecticContributionRow = {
 
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         assertEquals(insertSpy?.callCount ?? 0, 0, 'Should not enqueue when relationships are missing');
+    });
+
+    await t.step('DOCUMENT_RELATIONSHIPS: continuation payload must include document_relationships[stageSlug] from saved when trigger has only source_group', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': {
+                    insert: { data: [{ id: 'new-job-id' }] },
+                },
+            },
+        });
+
+        const rootContribId = 'root-contrib-antithesis-123';
+        const sourceGroupId = 'group-uuid-456';
+        const savedWithStageKey: DialecticContributionRow = {
+            ...baseSavedContribution,
+            id: 'first-chunk-contrib-id',
+            document_relationships: {
+                antithesis: rootContribId,
+                source_group: sourceGroupId,
+            },
+        };
+
+        const payloadWithSourceGroupOnly: DialecticJobPayload = {
+            ...basePayload,
+            stageSlug: 'antithesis',
+            continueUntilComplete: true,
+            continuation_count: 0,
+            document_relationships: { source_group: sourceGroupId },
+        };
+
+        const testJob = createMockJob(payloadWithSourceGroupOnly, { stage_slug: 'antithesis' });
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+        const result = await continueJob(
+            deps,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            testJob,
+            aiResponse,
+            savedWithStageKey,
+            'user-1',
+        );
+
+        assertEquals(result.enqueued, true, 'Should enqueue continuation when saved contribution has document_relationships[stageSlug]');
+
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        const newJobData = insertSpy!.callsArgs[0][0];
+        assert(isJobInsert(newJobData));
+        assert(isDialecticJobPayload(newJobData.payload));
+
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
+            const newPayload = newJobData.payload;
+            assertExists(newPayload.document_relationships, 'continuation payload must have document_relationships');
+            const rels = newPayload.document_relationships as Record<string, string | null>;
+            assertExists(rels.antithesis, 'document_relationships[stageSlug] (antithesis) is required for continuation so executeModelCallAndSave can persist and validate it');
+            assertEquals(rels.antithesis, rootContribId, 'document_relationships.antithesis must be the root contribution id from saved contribution (planner only sets source_group for root jobs)');
+        } else {
+            assert(false, 'Payload is not a valid DialecticExecuteJobPayload');
+        }
     });
 
     await t.step('PAYLOAD_CONSTRUCTION: should increment continuation_count from existing value', async () => {

@@ -10,6 +10,31 @@ export interface UpdateProjectDomainPayload {
 
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
+export enum DialecticStages {
+  thesis = 'Proposal',
+  antithesis = 'Review',
+  synthesis = 'Refinement',
+  parenthesis = 'Planning',
+  paralysis = 'Implementation',
+}
+
+export function isDialecticStageSlug(slug: string): slug is keyof typeof DialecticStages {
+  return (
+    slug === 'thesis' ||
+    slug === 'antithesis' ||
+    slug === 'synthesis' ||
+    slug === 'parenthesis' ||
+    slug === 'paralysis'
+  );
+}
+
+export function getDisplayName(slug: string): string {
+  if (!isDialecticStageSlug(slug)) {
+    throw new Error(`Unknown stage slug: ${slug}`);
+  }
+  return DialecticStages[slug];
+}
+
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
 
 export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'] & {
@@ -233,10 +258,57 @@ export interface DialecticStageRecipeStep {
   outputs_required?: OutputRequirement[];
 }
 
+export interface DialecticRecipeEdge {
+  from_step_id: string;
+  to_step_id: string;
+}
+
 export interface DialecticStageRecipe {
   stageSlug: string;
   instanceId: string;
   steps: DialecticStageRecipeStep[];
+  edges: DialecticRecipeEdge[];
+}
+
+export interface DAGViewport {
+  width: number;
+  height: number;
+}
+
+export type DAGLayoutOrientation = 'horizontal' | 'vertical';
+
+export interface DAGLayoutParams {
+  steps: DialecticStageRecipeStep[];
+  edges: DialecticRecipeEdge[];
+  nodeWidth: number;
+  nodeHeight: number;
+  viewport?: DAGViewport;
+}
+
+export interface DAGNodePosition {
+  stepKey: string;
+  stepName: string;
+  jobType: RecipeJobType;
+  x: number;
+  y: number;
+  layer: number;
+}
+
+export interface DAGEdgePosition {
+  fromStepKey: string;
+  toStepKey: string;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+}
+
+export interface DAGLayoutResult {
+  nodes: DAGNodePosition[];
+  edges: DAGEdgePosition[];
+  width: number;
+  height: number;
+  orientation?: DAGLayoutOrientation;
 }
 
 export interface DomainDescriptor {
@@ -352,7 +424,13 @@ export interface DialecticStateValues {
 
   // Recipe hydration and per-stage-run progress
   recipesByStageSlug: Record<string, DialecticStageRecipe>;
+  /** DAG-level progress per run; key `${sessionId}:${iterationNumber}`. */
+  dagProgressByRun: Record<string, DagProgressDto>;
   stageRunProgress: Record<string, StageRunProgressSnapshot>;
+  /** Hydration status per run/progress key; key `${sessionId}:${iterationNumber}` or `${sessionId}:${stageSlug}:${iterationNumber}`. */
+  progressHydrationStatus: Record<string, 'idle' | 'pending' | 'success' | 'failed'>;
+  /** Error message when status is `failed`; key same as progressHydrationStatus. */
+  progressHydrationError: Record<string, string>;
   focusedStageDocument: Record<string, FocusedStageDocumentState | null>;
   stageDocumentContent: Record<string, StageDocumentContentState>;
   stageDocumentVersions: Record<string, StageDocumentVersionInfo>;
@@ -491,6 +569,7 @@ export interface StageRunProgressSnapshot {
   /** Keyed by StageRunDocumentKey (documentKey:modelId). One document key can have N descriptors. */
   documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
   jobProgress: StepJobProgress;
+  progress: { completedSteps: number; totalSteps: number; failedSteps: number };
 }
 
 export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
@@ -498,11 +577,6 @@ export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' |
 export interface StepProgressDetail {
   stepKey: string;
   stepName: string;
-  totalJobs: number;
-  completedJobs: number;
-  inProgressJobs: number;
-  failedJobs: number;
-  stepPercentage: number;
   status: UnifiedProjectStatus;
 }
 
@@ -510,6 +584,9 @@ export interface StageProgressDetail {
   stageSlug: string;
   totalSteps: number;
   completedSteps: number;
+  totalDocuments: number;
+  completedDocuments: number;
+  failedSteps: number;
   stagePercentage: number;
   stepsDetail: StepProgressDetail[];
   stageStatus: UnifiedProjectStatus;
@@ -522,6 +599,8 @@ export interface UnifiedProjectProgress {
   overallPercentage: number;
   currentStage: DialecticStage | null;
   projectStatus: UnifiedProjectStatus;
+  /** False when process template or progress snapshots are missing; UI must not render fake zeros. */
+  hydrationReady: boolean;
   stageDetails: StageProgressDetail[];
 }
 
@@ -567,6 +646,14 @@ export interface StageRunChecklistProps {
   onDocumentSelect: StageDocumentSelectionHandler;
   modelId: string | null;
   stageSlug?: string;
+}
+
+export interface StageDAGProgressDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  stageSlug: string;
+  sessionId: string;
+  iterationNumber: number;
 }
 
 export interface ClearFocusedStageDocumentPayload {
@@ -688,6 +775,7 @@ export interface DialecticActions {
   // Recipe hydration and per-stage-run progress
   fetchStageRecipe: (stageSlug: string) => Promise<void>;
   ensureRecipeForActiveStage: (sessionId: string, stageSlug: string, iterationNumber: number) => Promise<void>;
+  resetProgressHydrationStatus: (runKey: string) => void;
 }
 
 export type DialecticStore = DialecticStateValues & DialecticActions;
@@ -1033,15 +1121,29 @@ export interface GetAllStageProgressPayload {
   projectId: string;
 }
 
-export interface StageProgressEntry {
-  stageSlug: string;
-  documents: StageDocumentChecklistEntry[];
-  stepStatuses: Record<string, string>;
-  stageStatus: UnifiedProjectStatus;
-  jobProgress: StepJobProgress;
+export interface DagProgressDto {
+  completedStages: number;
+  totalStages: number;
 }
 
-export type GetAllStageProgressResponse = StageProgressEntry[];
+export interface StepProgressDto {
+  stepKey: string;
+  status: UnifiedProjectStatus;
+}
+
+export interface StageProgressEntry {
+  stageSlug: string;
+  status: UnifiedProjectStatus;
+  modelCount: number | null;
+  progress: { completedSteps: number; totalSteps: number; failedSteps: number };
+  steps: StepProgressDto[];
+  documents: StageDocumentChecklistEntry[];
+}
+
+export interface GetAllStageProgressResponse {
+  dagProgress: DagProgressDto;
+  stages: StageProgressEntry[];
+}
 
 export interface ContributionContentSignedUrlResponse {
     signedUrl: string;

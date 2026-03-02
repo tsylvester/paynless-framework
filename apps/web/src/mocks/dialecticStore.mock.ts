@@ -21,6 +21,7 @@ import type {
   SetFocusedStageDocumentPayload,
   ClearFocusedStageDocumentPayload,
   StageRunProgressEntry,
+  StageRunProgressSnapshot,
   RenderCompletedPayload,
   DocumentCompletedPayload,
   StageDocumentChecklistEntry,
@@ -241,7 +242,7 @@ export const selectStageDocumentChecklist = (
         documentKey,
         status: descriptor.status,
         jobId: descriptor.job_id,
-        latestRenderedResourceId: descriptor.latestRenderedResourceId ?? null,
+        latestRenderedResourceId: descriptor.latestRenderedResourceId,
         modelId: descriptor.modelId,
         stepKey: descriptor.stepKey,
       });
@@ -276,7 +277,7 @@ export const selectStageProgressSummary = (
   const documentKeys = Object.keys(progress.documents).filter((key) => {
     if (!modelId) return true;
     const documentDescriptor = progress.documents[key];
-    return documentDescriptor?.modelId === modelId;
+    return documentDescriptor && documentDescriptor.modelId === modelId;
   });
 
   let completedDocuments = 0;
@@ -330,6 +331,22 @@ const mockSession: DialecticSession = {
   dialectic_session_models: [],
 };
 
+/** Empty stage run progress snapshot including step-based progress (for tests and overrides). Matches shape used by ensureRecipeForActiveStage. */
+export const emptyStageRunProgressSnapshot: StageRunProgressSnapshot = {
+  documents: {},
+  stepStatuses: {},
+  jobProgress: {},
+  progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+};
+
+/** Minimal recipe for mock/tests; includes edges: [] per DialecticStageRecipe. */
+export const emptyDialecticStageRecipe: DialecticStageRecipe = {
+  stageSlug: '',
+  instanceId: '',
+  steps: [],
+  edges: [],
+};
+
 // 1. Define initial state values
 export const initialDialecticStateValues: DialecticStateValues = {
   domains: [],
@@ -376,6 +393,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   activeSessionDetailError: null,
   contributionGenerationStatus: 'idle',
   generateContributionsError: null,
+  generatingForStageSlug: null,
   generatingSessions: {},
   isSubmittingStageResponses: false,
   submitStageResponsesError: null,
@@ -389,7 +407,10 @@ export const initialDialecticStateValues: DialecticStateValues = {
   activeDialecticWalletId: null,
   activeStageSlug: 'thesis',
   recipesByStageSlug: {},
+  dagProgressByRun: {},
   stageRunProgress: {},
+  progressHydrationStatus: {},
+  progressHydrationError: {},
   focusedStageDocument: {},
   stageDocumentContent: {},
   stageDocumentVersions: {},
@@ -708,6 +729,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       hydrateAllStageProgress: vi.fn().mockImplementation((payload: GetAllStageProgressPayload) => {
         hydrateAllStageProgressLogic(set, payload);
       }),
+      resetProgressHydrationStatus: vi.fn(),
       initializeFeedbackDraft: vi.fn().mockImplementation(
         async (key: StageDocumentCompositeKey) => {
           const userId = internalMockAuthStoreGetState().user?.id ?? null;

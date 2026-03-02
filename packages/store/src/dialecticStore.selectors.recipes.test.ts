@@ -160,6 +160,8 @@ describe('Selectors - Recipes', () => {
               lastRenderAtIso: '2025-01-01T00:00:00.000Z',
             },
           },
+          jobProgress: {},
+          progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
         },
       },
     });
@@ -216,6 +218,8 @@ describe('Selectors - Recipes', () => {
               [`doc_a${sep}model-1`]: { status: 'completed', job_id: 'job-1', latestRenderedResourceId: 'res-1', modelId: 'model-1', versionHash: 'hash-1', lastRenderedResourceId: 'res-1', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
               [`doc_b${sep}model-2`]: { status: 'completed', job_id: 'job-2', latestRenderedResourceId: 'res-2', modelId: 'model-2', versionHash: 'hash-2', lastRenderedResourceId: 'res-2', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
             },
+            jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
         },
       });
@@ -275,6 +279,8 @@ describe('Selectors - Recipes', () => {
                 lastRenderAtIso: '2025-01-01T00:00:00.000Z',
               },
             },
+            jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
         },
       });
@@ -359,6 +365,8 @@ describe('Selectors - Recipes', () => {
                 lastRenderAtIso: '2025-01-01T00:00:00.000Z',
               },
             },
+            jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
         },
       });
@@ -411,6 +419,8 @@ describe('Selectors - Recipes', () => {
               [`doc_b${sep}model-b`]: { status: 'generating', job_id: 'job-2', latestRenderedResourceId: 'res-2', modelId: 'model-b', versionHash: 'hash-2', lastRenderedResourceId: 'res-2', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
               [`doc_c${sep}model-a`]: { status: 'completed', job_id: 'job-3', latestRenderedResourceId: 'res-3', modelId: 'model-a', versionHash: 'hash-3', lastRenderedResourceId: 'res-3', lastRenderAtIso: '2025-01-01T00:00:00.000Z' },
             },
+            jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
         },
       });
@@ -656,7 +666,7 @@ describe('Selectors - Recipes', () => {
         session_description: 'Test Session',
         user_input_reference_url: null,
         iteration_count: iterationNumber,
-        selected_model_ids: [],
+        selected_models: [],
         status: 'active',
         associated_chat_id: null,
         current_stage_id: processTemplate.starting_stage_id,
@@ -706,6 +716,8 @@ describe('Selectors - Recipes', () => {
           [progressKey]: {
             stepStatuses,
             documents: {},
+            jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
         },
       };
@@ -757,7 +769,7 @@ describe('Selectors - Recipes', () => {
       ).toBe(true);
     });
 
-    it('returns false after planner completion if the header context output is missing', () => {
+    it('returns true when planner is complete even if header context resource is missing (in-stage outputs not gated)', () => {
       const state = buildState({
         resources: [seedPromptResource],
         stepStatuses: { [plannerStepKey]: 'completed' },
@@ -770,7 +782,7 @@ describe('Selectors - Recipes', () => {
           stageSlugUnderTest,
           iterationNumber,
         ),
-      ).toBe(false);
+      ).toBe(true);
     });
 
     it('returns false when the header context exists but the producing planner step is not completed', () => {
@@ -789,7 +801,7 @@ describe('Selectors - Recipes', () => {
       ).toBe(false);
     });
 
-    it('returns false when planner output is ready but downstream document and feedback inputs are missing', () => {
+    it('returns true when planner is complete even if downstream document and feedback inputs are missing (in-stage inputs not gated)', () => {
       const state = buildState({
         resources: [seedPromptResource, headerContextResource],
         stepStatuses: { [plannerStepKey]: 'completed' },
@@ -802,7 +814,7 @@ describe('Selectors - Recipes', () => {
           stageSlugUnderTest,
           iterationNumber,
         ),
-      ).toBe(false);
+      ).toBe(true);
     });
 
     it('returns true when planner output, document, and feedback inputs are all satisfied', () => {

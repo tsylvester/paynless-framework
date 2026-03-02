@@ -602,10 +602,10 @@ function extractLogicalDocumentKeyFromComposite(compositeKey: string): string {
 const selectRecipeSteps = (
     state: DialecticStateValues,
     stageSlug: string
-): DialecticStageRecipeStep[] => {
+): DialecticStageRecipeStep[] | undefined => {
     const recipe = state.recipesByStageSlug[stageSlug];
     if (!recipe) {
-        return [];
+        return undefined;
     }
     return recipe.steps;
 };
@@ -618,8 +618,8 @@ export const selectStageRecipe = (
 export const selectStepList = createSelector(
     [selectRecipeSteps],
     (steps): DialecticStageRecipeStep[] => {
-        if (steps.length === 0) {
-            return steps;
+        if (!steps || steps.length === 0) {
+            return [];
         }
         const sortedSteps = [...steps].sort((a, b) => {
             if (a.execution_order === b.execution_order) {
@@ -800,119 +800,120 @@ function getSortedStagesFromTemplate(template: DialecticProcessTemplate | null):
     });
 }
 
-const isExecuteStep = (step: DialecticStageRecipeStep): boolean => step.job_type === 'EXECUTE';
-
 export const selectUnifiedProjectProgress = (
     state: DialecticStateValues,
     sessionId: string
 ): UnifiedProjectProgress => {
-    const template = state.currentProcessTemplate ?? null;
-    const stages = template ? getSortedStagesFromTemplate(template) : [];
+    const template = state.currentProcessTemplate;
+    const stages = getSortedStagesFromTemplate(template);
     const totalStages = stages.length;
     const session = selectSessionById(state, sessionId);
-    const iterationNumber = session?.iteration_count ?? 0;
 
-    const currentStageId = session?.current_stage_id ?? null;
-    const currentStage: DialecticStage | null = currentStageId
-        ? (stages.find((s: DialecticStage) => s.id === currentStageId) ?? null)
-        : null;
-    const currentStageSlug: string | null = currentStage?.slug ?? null;
+    const hasProgressForSession = Object.keys(state.stageRunProgress).some((k) => k.startsWith(`${sessionId}:`));
+    const hydrationReady = Boolean(template && hasProgressForSession);
 
     if (totalStages === 0) {
         return {
             totalStages: 0,
             completedStages: 0,
-            currentStageSlug,
+            currentStageSlug: null,
             overallPercentage: 0,
-            currentStage,
+            currentStage: null,
             projectStatus: 'not_started',
+            hydrationReady,
             stageDetails: [],
         };
     }
+
+    if (!session) {
+        throw new Error('[selectUnifiedProjectProgress] Session is required when stages exist');
+    }
+    const currentStageId = session.current_stage_id;
+    if (currentStageId == null) {
+        throw new Error('[selectUnifiedProjectProgress] Session current_stage_id is required when stages exist');
+    }
+    const foundStage = stages.find((s: DialecticStage) => s.id === currentStageId);
+    if (!foundStage) {
+        throw new Error(`[selectUnifiedProjectProgress] Stage not found for current_stage_id: ${currentStageId}`);
+    }
+    const currentStage: DialecticStage = foundStage;
+    const currentStageSlug: string = currentStage.slug;
 
     const stageDetails: StageProgressDetail[] = [];
     let projectStatus: UnifiedProjectStatus = 'not_started';
     let completedStagesCount = 0;
 
+    const iterationNumberVal = session.iteration_count;
+    if (iterationNumberVal == null || typeof iterationNumberVal !== 'number') {
+        throw new Error('[selectUnifiedProjectProgress] Session iteration_count is required');
+    }
     for (const stage of stages) {
         const stageSlug = stage.slug;
         const recipe = state.recipesByStageSlug[stageSlug];
-        const progress = selectStageRunProgress(state, sessionId, stageSlug, iterationNumber);
-        const steps = recipe?.steps ?? [];
-        const sortedSteps = [...steps].sort((a, b) => {
-            if (a.execution_order !== b.execution_order) return a.execution_order - b.execution_order;
-            return a.step_key.localeCompare(b.step_key);
-        });
+        if (!recipe) {
+            throw new Error(`[selectUnifiedProjectProgress] Recipe required for stage: ${stageSlug}`);
+        }
+        const progress = selectStageRunProgress(state, sessionId, stageSlug, iterationNumberVal);
+        if (!progress) {
+            throw new Error(`[selectUnifiedProjectProgress] Progress required for stage: ${stageSlug}`);
+        }
+        const stepStatuses = progress.stepStatuses;
 
         const stepsDetail: StepProgressDetail[] = [];
         let stageStatus: UnifiedProjectStatus = 'not_started';
-        let stepSum = 0;
 
-        for (const step of sortedSteps) {
-            const stepKey = step.step_key;
-            const jobEntry = progress?.jobProgress?.[stepKey];
+        // Iterate recipe steps — the recipe is the structural source of truth.
+        // Progress data may contain extra keys from execution; those are not steps.
+        for (const recipeStep of recipe.steps) {
+            const stepKey = recipeStep.step_key;
+            const raw = stepStatuses[stepKey];
+            const stepStatus: UnifiedProjectStatus =
+                raw === 'failed' ? 'failed'
+                    : raw === 'completed' ? 'completed'
+                    : raw === 'in_progress' || raw === 'waiting_for_children' ? 'in_progress'
+                    : 'not_started';
 
-            if (!jobEntry) {
-                stepsDetail.push({
-                    stepKey,
-                    stepName: step.step_name,
-                    totalJobs: 0,
-                    completedJobs: 0,
-                    inProgressJobs: 0,
-                    failedJobs: 0,
-                    stepPercentage: 0,
-                    status: 'not_started',
-                });
-                continue;
-            }
-
-            const totalJobs: number = jobEntry.totalJobs;
-            const completedJobs: number = jobEntry.completedJobs;
-            const inProgressJobs: number = jobEntry.inProgressJobs;
-            const failedJobs: number = jobEntry.failedJobs;
-
-            const isExecute = isExecuteStep(step);
-            const stepPercentage: number = isExecute
-                ? (totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0)
-                : (completedJobs > 0 ? 100 : 0);
-
-            let stepStatus: UnifiedProjectStatus;
-            if (failedJobs > 0) {
-                stepStatus = 'failed';
-            } else if (inProgressJobs > 0) {
-                stepStatus = 'in_progress';
-            } else if (completedJobs === totalJobs && totalJobs > 0) {
-                stepStatus = 'completed';
-            } else {
-                stepStatus = 'not_started';
-            }
-
-            stepSum += stepPercentage;
             if (stepStatus === 'failed') stageStatus = 'failed';
             else if (stepStatus === 'in_progress' && stageStatus !== 'failed') stageStatus = 'in_progress';
-            else if (stepStatus === 'completed' && stageStatus === 'not_started') stageStatus = 'completed';
+
+            const stepName = recipeStep.step_name;
 
             stepsDetail.push({
                 stepKey,
-                stepName: step.step_name,
-                totalJobs,
-                completedJobs,
-                inProgressJobs,
-                failedJobs,
-                stepPercentage,
+                stepName,
                 status: stepStatus,
             });
         }
 
-        const totalStepsForStage = sortedSteps.length;
-        const stagePercentage = totalStepsForStage > 0 ? stepSum / totalStepsForStage : 0;
-        const completedStepsForStage = stepsDetail.filter((s: StepProgressDetail) => s.status === 'completed').length;
+        const totalStepsForStage = progress.progress.totalSteps;
+        const completedStepsForStage = progress.progress.completedSteps;
+        const failedStepsForStage = progress.progress.failedSteps;
         if (totalStepsForStage > 0 && stageStatus === 'not_started' && completedStepsForStage === totalStepsForStage) stageStatus = 'completed';
+
+        const stagePercentage =
+            totalStepsForStage > 0 ? (completedStepsForStage / totalStepsForStage) * 100 : 0;
+
+        const validMarkdownKeys = selectValidMarkdownDocumentKeys(state, stageSlug);
+        const documentEntries = progress.documents;
+        const totalDocumentsForStage = validMarkdownKeys.size;
+        let completedDocumentsForStage = 0;
+        for (const compositeKey of Object.keys(documentEntries)) {
+            if (!validMarkdownKeys.has(extractLogicalDocumentKeyFromComposite(compositeKey))) {
+                continue;
+            }
+            const documentDescriptor = documentEntries[compositeKey];
+            if (documentDescriptor && documentDescriptor.status === 'completed') {
+                completedDocumentsForStage += 1;
+            }
+        }
 
         stageDetails.push({
             stageSlug,
             totalSteps: totalStepsForStage,
             completedSteps: completedStepsForStage,
+            totalDocuments: totalDocumentsForStage,
+            completedDocuments: completedDocumentsForStage,
+            failedSteps: failedStepsForStage,
             stagePercentage,
             stepsDetail,
             stageStatus,
@@ -940,6 +941,7 @@ export const selectUnifiedProjectProgress = (
         overallPercentage: Math.min(100, Math.round(overallPercentage * 100) / 100),
         currentStage,
         projectStatus,
+        hydrationReady,
         stageDetails,
     };
 };
@@ -1223,9 +1225,12 @@ export const selectValidMarkdownDocumentKeys = createSelector(
     [selectRecipeSteps],
     (steps): Set<string> => {
         const documentKeys = new Set<string>();
+        if (!steps) {
+            return documentKeys;
+        }
 
         steps.forEach((step) => {
-            if (!step.outputs_required) {
+            if (!step.outputs_required || step.output_type === 'header_context') {
                 return;
             }
 

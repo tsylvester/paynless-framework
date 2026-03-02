@@ -4,6 +4,7 @@ import type {
   ApiResponse,
   DialecticProcessTemplate,
   DialecticStage,
+  DialecticStageRecipe,
   DialecticProject,
   DialecticSession,
 } from '@paynless/types';
@@ -61,7 +62,7 @@ const sessionWithThesisStage: DialecticSession = {
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   current_stage_id: 'stage-1',
-  selected_model_ids: [],
+  selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
   dialectic_contributions: [],
   feedback: [],
   session_description: null,
@@ -98,11 +99,40 @@ const currentProjectDetailWithSession: DialecticProject = {
   saveContributionEditError: null,
 };
 
+function mockRecipeForStage(stageSlug: string): DialecticStageRecipe {
+  return {
+    stageSlug,
+    instanceId: `inst-${stageSlug}`,
+    steps: [
+      {
+        id: `step-1-${stageSlug}`,
+        step_key: 'step_1',
+        step_slug: 'step-1',
+        step_name: 'Step 1',
+        execution_order: 1,
+        parallel_group: 1,
+        branch_key: 'b1',
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        output_type: 'assembled_document_json',
+        granularity_strategy: 'per_source_document',
+        inputs_required: [],
+        inputs_relevance: [],
+        outputs_required: [{ document_key: 'doc_1', artifact_class: 'rendered_document', file_type: 'markdown' }],
+      },
+    ],
+    edges: [],
+  };
+}
+
 describe('fetchProcessTemplate stage guard', () => {
   beforeEach(() => {
     resetApiMock();
     useDialecticStore.getState()._resetForTesting?.();
     vi.clearAllMocks();
+    getMockDialecticClient().fetchStageRecipe.mockImplementation((stageSlug: string) =>
+      Promise.resolve({ data: mockRecipeForStage(stageSlug), status: 200 })
+    );
   });
 
   it('sets activeContextStage on initial load when activeStageSlug is null', async () => {

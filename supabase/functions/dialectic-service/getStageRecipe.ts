@@ -3,12 +3,13 @@ import { Database } from "../types_db.ts";
 import {
   StageRecipeResponse,
   StageRecipeStepDto,
+  ProgressRecipeEdge,
   InputRule,
   RelevanceRule,
   OutputRule,
   BranchKey,
-  JobType, 
-  PromptType, 
+  JobType,
+  PromptType,
   GranularityStrategy,
 } from "./dialectic.interface.ts";
 import { isInputRule, isRelevanceRule, isOutputRule } from "../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
@@ -53,6 +54,29 @@ export async function getStageRecipe(
 
   if (stepsErr || !rawSteps) {
     return { status: 500, error: { message: "Failed to load stage recipe steps" } };
+  }
+
+  // 2b) Load instance edges for DAG visualization
+  const { data: rawEdges, error: edgesErr } = await dbClient
+    .from("dialectic_stage_recipe_edges")
+    .select("from_step_id, to_step_id")
+    .eq("instance_id", instanceId);
+
+  if (edgesErr) {
+    return { status: 500, error: { message: `Failed to load stage recipe edges: ${edgesErr.message}` } };
+  }
+
+  const edgesData: { from_step_id: string; to_step_id: string }[] = rawEdges ?? [];
+  const edges: ProgressRecipeEdge[] = [];
+  for (const row of edgesData) {
+    if (
+      typeof row.from_step_id === "string" &&
+      row.from_step_id.trim() !== "" &&
+      typeof row.to_step_id === "string" &&
+      row.to_step_id.trim() !== ""
+    ) {
+      edges.push({ from_step_id: row.from_step_id, to_step_id: row.to_step_id });
+    }
   }
 
   // 3) Normalize and validate, then sort DTOs (avoid pre-sort on unknown objects)
@@ -211,6 +235,7 @@ export async function getStageRecipe(
     stageSlug,
     instanceId,
     steps: normalized,
+    edges,
   };
 
   return { status: 200, data: response };
