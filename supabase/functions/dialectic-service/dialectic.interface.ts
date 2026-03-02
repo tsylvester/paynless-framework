@@ -674,7 +674,8 @@ export type UnifiedStageStatus =
 	| "not_started"
 	| "in_progress"
 	| "completed"
-	| "failed";
+	| "failed"
+	| "paused_nsf";
 
 export interface DagProgressDto {
 	completedStages: number;

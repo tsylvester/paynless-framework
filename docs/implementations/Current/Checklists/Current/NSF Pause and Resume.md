@@ -228,50 +228,50 @@ A user cannot begin a set of work when they have NSF. If a user reaches NSF whil
     *   `[✅]`   Modified: `index.ts` catch block — NSF detection branch routing to `pauseJobsForNsf`
 
 ### Node 5
-*   `[ ]`   [BE] supabase/functions/dialectic-service/`deriveStepStatuses` **Map `paused_nsf` job status to `paused_nsf` step status in progress derivation**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Extend `UnifiedStageStatus` in `dialectic.interface.ts` to include `'paused_nsf'` so the progress tracking type system can represent paused jobs
-    *   `[ ]`   Add a `PAUSED_NSF_STATUSES` set (containing `'paused_nsf'`) to `deriveStepStatuses.ts` and add a check after `ACTIVE_STATUSES` so that steps with paused jobs are reported as `'paused_nsf'` instead of falling through to `'not_started'`
-    *   `[ ]`   Priority order for step status derivation: `hasActive` → `in_progress` > `hasPausedNsf` → `paused_nsf` > `hasFailed` → `failed` > `hasCompleted` → `completed` > `not_started`
-  *   `[ ]`   `role`
-    *   `[ ]`   Infrastructure — progress derivation layer within the dialectic-service edge function
-  *   `[ ]`   `module`
-    *   `[ ]`   Progress tracking — step status derivation from raw job statuses
-    *   `[ ]`   Boundary: receives raw job rows, returns `Map<string, UnifiedStageStatus>` — the first backend consumer of `paused_nsf` job status for progress reporting
-  *   `[ ]`   `deps`
-    *   `[ ]`   Node 1 (migration) — `paused_nsf` must be a valid job status in the database before jobs can have this status
-    *   `[ ]`   `ACTIVE_STATUSES` set (line 9) — must NOT include `paused_nsf`; paused jobs are not active
-    *   `[ ]`   `FAILED_STATUSES` set (line 17) — must NOT include `paused_nsf`; paused jobs are not failed
-    *   `[ ]`   No reverse dependency introduced — this is consumed by `getAllStageProgress` (Node 6)
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `deriveStepStatuses` function (line 28): iterates `jobs`, classifies by status set membership, derives per-step status
-    *   `[ ]`   `UnifiedStageStatus` type (dialectic.interface.ts line 673): the return value type for step statuses
-    *   `[ ]`   No injected dependencies — pure function
-  *   `[ ]`   interface/`dialectic.interface.ts`
-    *   `[ ]`   Add `'paused_nsf'` to the `UnifiedStageStatus` union (line 673): `| "not_started" | "in_progress" | "completed" | "failed" | "paused_nsf"`
-  *   `[ ]`   unit/`deriveStepStatuses.test.ts`
-    *   `[ ]`   Test: when all jobs for a step have status `paused_nsf`, step status is `paused_nsf`
-    *   `[ ]`   Test: when a step has both `paused_nsf` and `completed` jobs, step status is `paused_nsf` (paused takes priority over completed)
-    *   `[ ]`   Test: when a step has both `paused_nsf` and active jobs (e.g. `pending`), step status is `in_progress` (active takes priority over paused)
-    *   `[ ]`   Test: when a step has both `paused_nsf` and `failed` jobs, step status is `paused_nsf` (paused takes priority over failed — the pause is recoverable, failure is secondary)
-    *   `[ ]`   Test: existing tests for `in_progress`, `completed`, `failed`, `not_started` continue to pass unchanged
-  *   `[ ]`   `construction`
-    *   `[ ]`   No new functions — modification to existing `deriveStepStatuses`
-  *   `[ ]`   `deriveStepStatuses.ts`
-    *   `[ ]`   Add `const PAUSED_NSF_STATUSES: Set<string> = new Set(["paused_nsf"]);` after `FAILED_STATUSES` (line 17)
-    *   `[ ]`   Add `stepKeyToHasPausedNsf` map alongside existing `stepKeyToHasActive`, `stepKeyToHasCompleted`, `stepKeyToHasFailed` (line 44)
-    *   `[ ]`   In the job iteration loop (line 46), add a check: `else if (PAUSED_NSF_STATUSES.has(job.status)) { stepKeyToHasPausedNsf.set(stepKey, true); }` — after the `ACTIVE_STATUSES` check and before the `completed` check
-    *   `[ ]`   In the step status derivation (line 80), insert `hasPausedNsf` check after `hasActive` and before `hasFailed`: `if (hasActive) { result.set(sk, "in_progress"); } else if (hasPausedNsf) { result.set(sk, "paused_nsf"); } else if (hasFailed) { result.set(sk, "failed"); } else { result.set(sk, "completed"); }`
-    *   `[ ]`   Add `for (const stepKey of stepKeyToHasPausedNsf.keys()) stepsWithJobs.add(stepKey);` to the `stepsWithJobs` population (line 63)
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: infrastructure (progress derivation)
-    *   `[ ]`   Dependencies face inward: depends on job data (infra) and `UnifiedStageStatus` type (domain)
-    *   `[ ]`   Provides face outward: consumed by `getAllStageProgress` (Node 6) which passes step statuses to the frontend
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `paused_nsf` job status must map to `paused_nsf` step status — not `in_progress`, not `failed`, not `not_started`
-    *   `[ ]`   Active statuses must still take priority over `paused_nsf` (in the unlikely case both exist for a step)
-    *   `[ ]`   `paused_nsf` must take priority over `failed` — the pause is recoverable and should be presented as such
-    *   `[ ]`   All existing step status derivation behavior must be preserved
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`deriveStepStatuses` **Map `paused_nsf` job status to `paused_nsf` step status in progress derivation**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Extend `UnifiedStageStatus` in `dialectic.interface.ts` to include `'paused_nsf'` so the progress tracking type system can represent paused jobs
+    *   `[✅]`   Add a `PAUSED_NSF_STATUSES` set (containing `'paused_nsf'`) to `deriveStepStatuses.ts` and add a check after `ACTIVE_STATUSES` so that steps with paused jobs are reported as `'paused_nsf'` instead of falling through to `'not_started'`
+    *   `[✅]`   Priority order for step status derivation: `hasActive` → `in_progress` > `hasPausedNsf` → `paused_nsf` > `hasFailed` → `failed` > `hasCompleted` → `completed` > `not_started`
+  *   `[✅]`   `role`
+    *   `[✅]`   Infrastructure — progress derivation layer within the dialectic-service edge function
+  *   `[✅]`   `module`
+    *   `[✅]`   Progress tracking — step status derivation from raw job statuses
+    *   `[✅]`   Boundary: receives raw job rows, returns `Map<string, UnifiedStageStatus>` — the first backend consumer of `paused_nsf` job status for progress reporting
+  *   `[✅]`   `deps`
+    *   `[✅]`   Node 1 (migration) — `paused_nsf` must be a valid job status in the database before jobs can have this status
+    *   `[✅]`   `ACTIVE_STATUSES` set (line 9) — must NOT include `paused_nsf`; paused jobs are not active
+    *   `[✅]`   `FAILED_STATUSES` set (line 17) — must NOT include `paused_nsf`; paused jobs are not failed
+    *   `[✅]`   No reverse dependency introduced — this is consumed by `getAllStageProgress` (Node 6)
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `deriveStepStatuses` function (line 28): iterates `jobs`, classifies by status set membership, derives per-step status
+    *   `[✅]`   `UnifiedStageStatus` type (dialectic.interface.ts line 673): the return value type for step statuses
+    *   `[✅]`   No injected dependencies — pure function
+  *   `[✅]`   interface/`dialectic.interface.ts`
+    *   `[✅]`   Add `'paused_nsf'` to the `UnifiedStageStatus` union (line 673): `| "not_started" | "in_progress" | "completed" | "failed" | "paused_nsf"`
+  *   `[✅]`   unit/`deriveStepStatuses.test.ts`
+    *   `[✅]`   Test: when all jobs for a step have status `paused_nsf`, step status is `paused_nsf`
+    *   `[✅]`   Test: when a step has both `paused_nsf` and `completed` jobs, step status is `paused_nsf` (paused takes priority over completed)
+    *   `[✅]`   Test: when a step has both `paused_nsf` and active jobs (e.g. `pending`), step status is `in_progress` (active takes priority over paused)
+    *   `[✅]`   Test: when a step has both `paused_nsf` and `failed` jobs, step status is `paused_nsf` (paused takes priority over failed — the pause is recoverable, failure is secondary)
+    *   `[✅]`   Test: existing tests for `in_progress`, `completed`, `failed`, `not_started` continue to pass unchanged
+  *   `[✅]`   `construction`
+    *   `[✅]`   No new functions — modification to existing `deriveStepStatuses`
+  *   `[✅]`   `deriveStepStatuses.ts`
+    *   `[✅]`   Add `const PAUSED_NSF_STATUSES: Set<string> = new Set(["paused_nsf"]);` after `FAILED_STATUSES` (line 17)
+    *   `[✅]`   Add `stepKeyToHasPausedNsf` map alongside existing `stepKeyToHasActive`, `stepKeyToHasCompleted`, `stepKeyToHasFailed` (line 44)
+    *   `[✅]`   In the job iteration loop (line 46), add a check: `else if (PAUSED_NSF_STATUSES.has(job.status)) { stepKeyToHasPausedNsf.set(stepKey, true); }` — after the `ACTIVE_STATUSES` check and before the `completed` check
+    *   `[✅]`   In the step status derivation (line 80), insert `hasPausedNsf` check after `hasActive` and before `hasFailed`: `if (hasActive) { result.set(sk, "in_progress"); } else if (hasPausedNsf) { result.set(sk, "paused_nsf"); } else if (hasFailed) { result.set(sk, "failed"); } else { result.set(sk, "completed"); }`
+    *   `[✅]`   Add `for (const stepKey of stepKeyToHasPausedNsf.keys()) stepsWithJobs.add(stepKey);` to the `stepsWithJobs` population (line 63)
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: infrastructure (progress derivation)
+    *   `[✅]`   Dependencies face inward: depends on job data (infra) and `UnifiedStageStatus` type (domain)
+    *   `[✅]`   Provides face outward: consumed by `getAllStageProgress` (Node 6) which passes step statuses to the frontend
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `paused_nsf` job status must map to `paused_nsf` step status — not `in_progress`, not `failed`, not `not_started`
+    *   `[✅]`   Active statuses must still take priority over `paused_nsf` (in the unlikely case both exist for a step)
+    *   `[✅]`   `paused_nsf` must take priority over `failed` — the pause is recoverable and should be presented as such
+    *   `[✅]`   All existing step status derivation behavior must be preserved
 
 ### Node 6
 *   `[ ]`   [BE] supabase/functions/dialectic-service/`getAllStageProgress` **Handle `paused_nsf` step status in stage progress computation**

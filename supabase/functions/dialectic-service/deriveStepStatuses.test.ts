@@ -353,4 +353,51 @@ Deno.test("deriveStepStatuses", async (t) => {
 		assertEquals(resultPerModel.get("step_per_model"), "completed");
 		assertEquals(resultAllToOne.get("step_all_to_one"), "completed");
 	});
+
+	await t.step("step with all jobs paused_nsf → status paused_nsf", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_paused", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_paused"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_nsf", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_paused"), "paused_nsf");
+	});
+
+	await t.step("step with paused_nsf and completed jobs → status paused_nsf (paused takes priority over completed)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_mixed", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_mixed"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_nsf", execPayload("e1"), null),
+			job("j2", "EXECUTE", "completed", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_mixed"), "paused_nsf");
+	});
+
+	await t.step("step with paused_nsf and active jobs (pending) → status in_progress (active takes priority over paused)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_mixed_active", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_mixed_active"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_nsf", execPayload("e1"), null),
+			job("j2", "EXECUTE", "pending", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_mixed_active"), "in_progress");
+	});
+
+	await t.step("step with paused_nsf and failed jobs → status paused_nsf (paused takes priority over failed)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_mixed_fail", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_mixed_fail"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_nsf", execPayload("e1"), null),
+			job("j2", "EXECUTE", "failed", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_mixed_fail"), "paused_nsf");
+	});
 });
