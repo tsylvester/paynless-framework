@@ -8,12 +8,16 @@ import type {
   RenderDocumentParams,
   RenderDocumentResult,
   DocumentRendererDeps,
+  DownloadedChunkText,
 } from "./document_renderer.interface.ts";
 import type { ResourceUploadContext } from "../types/file_manager.types.ts";
 import type { DownloadFromStorageFn } from "../supabase_storage_utils.ts";
 import type { DialecticContributionRow } from "../../dialectic-service/dialectic.interface.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
 import { isRecord } from "../utils/type_guards.ts";
+import { sanitizeJsonContent } from "../utils/jsonSanitizer.ts";
+import { isJsonSanitizationResult } from "../utils/type-guards/type_guards.jsonSanitizer.ts";
+import type { JsonSanitizationResult } from "../types/jsonSanitizer.interface.ts";
  
 function titleFromDocumentKey(documentKey: string): string {
   const withSpaces = documentKey.replace(/_/g, " ");
@@ -300,11 +304,12 @@ export async function renderDocument(
   }
   const template = new TextDecoder().decode(templateData);
 
-  // Collect structured data from all chunks
-  // The agent returns JSON where content field is a JSON string containing structured data
+  // Collect structured data from all chunks (Phase 1: download; Phase 2: concatenated sanitize/parse; Phase 3: per-chunk fallback)
   const mergedStructuredData: Record<string, unknown> = {};
   const contentBucket = base.storage_bucket;
-  
+
+  // Phase 1: download all chunks into ordered array
+  const downloadedChunks: DownloadedChunkText[] = [];
   for (const chunk of uniqueChunks) {
     const fileName = chunk.file_name;
     if (!fileName || typeof fileName !== 'string') {
@@ -312,76 +317,139 @@ export async function renderDocument(
     }
     const rawJsonPath = `${chunk.storage_path}/${fileName}`;
     const text = await downloadText(dbClient, deps.downloadFromStorage, contentBucket, rawJsonPath);
-    const trimmedText = text.trim();
-    
-    deps.logger?.info?.('[renderDocument] DEBUG: Raw text length', { 
-      chunkId: chunk.id, 
-      rawJsonPath, 
+    const entry: DownloadedChunkText = { chunkId: chunk.id, text, rawJsonPath };
+    downloadedChunks.push(entry);
+    deps.logger?.info?.('[renderDocument] DEBUG: Raw text length', {
+      chunkId: chunk.id,
+      rawJsonPath,
       textLength: text.length,
-      trimmedTextLength: trimmedText.length,
+      trimmedTextLength: text.trim().length,
       textFirst100: text.substring(0, 100),
       textLast100: text.substring(Math.max(0, text.length - 100)),
-      trimmedTextFirst100: trimmedText.substring(0, 100),
-      trimmedTextLast100: trimmedText.substring(Math.max(0, trimmedText.length - 100)),
     });
-    
-    if (trimmedText.startsWith('{') || trimmedText.startsWith('[')) {
-      try {
-        deps.logger?.info?.('[renderDocument] DEBUG: Attempting JSON.parse', { 
-          chunkId: chunk.id, 
-          rawJsonPath,
-          usingTrimmed: false,
-          textLength: text.length,
-        });
-        const parsed = JSON.parse(text);
-        if (typeof parsed !== 'object' || parsed === null) {
-          throw new Error(`Parsed JSON is not an object for contribution ${chunk.id}`);
+  }
+
+  function mergeParsedIntoMerged(merged: Record<string, unknown>, parsed: unknown): void {
+    if (!isRecord(parsed)) return;
+    const structuredData: Record<string, unknown> = isRecord(parsed.content) ? parsed.content : parsed;
+    delete structuredData.continuation_needed;
+    delete structuredData.stop_reason;
+    for (const key in structuredData) {
+      if (Object.prototype.hasOwnProperty.call(structuredData, key)) {
+        const value = structuredData[key];
+        if (typeof value === 'string' && key in merged && typeof merged[key] === 'string') {
+          merged[key] = (merged[key]) + '\n\n' + value;
+        } else {
+          merged[key] = value;
         }
-        // Unwrap optional "content" envelope if present; otherwise use top-level object directly.
-        // AI models may return { "content": { ... } } or { "field1": ..., "field2": ... } at the top level.
-        const structuredData: Record<string, unknown> = isRecord(parsed.content)
-          ? parsed.content
-          : parsed;
+      }
+    }
+  }
 
-        // Strip known AI metadata keys that are not template placeholders
-        delete structuredData.continuation_needed;
-        delete structuredData.stop_reason;
+  const allJsonLike = downloadedChunks.every(
+    (d) => d.text.trim().startsWith('{') || d.text.trim().startsWith('[')
+  );
+  const firstChunkJsonLike =
+    downloadedChunks.length > 0 &&
+    (downloadedChunks[0].text.trim().startsWith('{') || downloadedChunks[0].text.trim().startsWith('['));
+  const tryConcatenatedParse =
+    downloadedChunks.length > 0 && (allJsonLike || (downloadedChunks.length > 1 && firstChunkJsonLike));
+  let phase2Success = false;
 
-        // Merge structured data from this chunk into the merged data
-        // For string values, concatenate them to preserve order from multiple chunks
-        for (const key in structuredData) {
-          if (Object.prototype.hasOwnProperty.call(structuredData, key)) {
-            const value = structuredData[key];
-            if (typeof value === 'string' && key in mergedStructuredData && typeof mergedStructuredData[key] === 'string') {
-              // Concatenate string values to preserve order
-              mergedStructuredData[key] = (mergedStructuredData[key]) + '\n\n' + value;
-            } else {
-              // New keys are added
-              mergedStructuredData[key] = value;
-            }
+  // Phase 2: concatenated sanitize/parse (normal path for continuation fragments)
+  if (tryConcatenatedParse) {
+    const concatenated = downloadedChunks.map((d) => d.text).join('');
+    const sanitizationResult: JsonSanitizationResult = sanitizeJsonContent(concatenated);
+    if (isJsonSanitizationResult(sanitizationResult)) {
+      try {
+        const parsed: unknown = JSON.parse(sanitizationResult.sanitized);
+        if (typeof parsed === 'object' && parsed !== null) {
+          mergeParsedIntoMerged(mergedStructuredData, parsed);
+          phase2Success = true;
+          if (sanitizationResult.wasSanitized) {
+            deps.logger?.info?.('[renderDocument] JSON content sanitized (concatenated)', {
+              originalLength: sanitizationResult.originalLength,
+              sanitizedLength: sanitizationResult.sanitized.length,
+              wasStructurallyFixed: sanitizationResult.wasStructurallyFixed,
+              hasDuplicateKeys: sanitizationResult.hasDuplicateKeys,
+            });
           }
+          deps.logger?.info?.('[renderDocument] Extracted structured data from content object', {
+            chunkIds: downloadedChunks.map((d) => d.chunkId),
+            dataKeys: Object.keys(mergedStructuredData),
+          });
+        }
+      } catch (_) {
+        // Fall through to Phase 3
+      }
+    }
+  }
+
+  // Phase 3: per-chunk sanitize/parse (normal path for independently-complete chunks) or plain-text
+  if (!phase2Success) {
+    for (const d of downloadedChunks) {
+      const trimmedText = d.text.trim();
+      if (trimmedText.startsWith('{') || trimmedText.startsWith('[')) {
+        const sanitizationResult: JsonSanitizationResult = sanitizeJsonContent(d.text);
+        if (!isJsonSanitizationResult(sanitizationResult)) {
+          const chunkIds = downloadedChunks.map((c) => c.chunkId).join(', ');
+          const paths = downloadedChunks.map((c) => c.rawJsonPath).join('; ');
+          throw new Error(
+            `Failed to parse JSON content: invalid sanitization result (chunk IDs: ${chunkIds}; paths: ${paths})`
+          );
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(sanitizationResult.sanitized);
+        } catch (e) {
+          const chunkIds = downloadedChunks.map((c) => c.chunkId).join(', ');
+          const paths = downloadedChunks.map((c) => c.rawJsonPath).join('; ');
+          const parseMsg = e instanceof Error ? e.message : String(e);
+          throw new Error(
+            `Failed to parse JSON content from contribution ${d.chunkId} (path: ${d.rawJsonPath}): ${parseMsg}. Chunk IDs: ${chunkIds}; paths: ${paths}`
+          );
+        }
+        if (typeof parsed !== 'object' || parsed === null) {
+          throw new Error(`Parsed JSON is not an object for contribution ${d.chunkId}`);
+        }
+        mergeParsedIntoMerged(mergedStructuredData, parsed);
+        if (sanitizationResult.wasSanitized) {
+          deps.logger?.info?.('[renderDocument] JSON content sanitized (per-chunk)', {
+            chunkId: d.chunkId,
+            rawJsonPath: d.rawJsonPath,
+            originalLength: sanitizationResult.originalLength,
+            sanitizedLength: sanitizationResult.sanitized.length,
+            wasStructurallyFixed: sanitizationResult.wasStructurallyFixed,
+            hasDuplicateKeys: sanitizationResult.hasDuplicateKeys,
+          });
         }
         deps.logger?.info?.('[renderDocument] Extracted structured data from content object', {
-          chunkId: chunk.id,
-          rawJsonPath,
-          dataKeys: Object.keys(structuredData),
+          chunkId: d.chunkId,
+          rawJsonPath: d.rawJsonPath,
+          dataKeys: Object.keys(mergedStructuredData),
         });
-      } catch (e) {
-        if (e instanceof Error && e.message.includes('contribution')) {
-          throw e;
+      } else {
+        const extraContentKey = '_extra_content';
+        const current: unknown = mergedStructuredData[extraContentKey];
+        if (current === undefined || current === null) {
+          mergedStructuredData[extraContentKey] = [d.text];
+        } else if (Array.isArray(current)) {
+          const contentArray: string[] = [];
+          for (const item of current) {
+            contentArray.push(typeof item === 'string' ? item : JSON.stringify(item));
+          }
+          contentArray.push(d.text);
+          mergedStructuredData[extraContentKey] = contentArray;
+        } else {
+          // Agent included _extra_content with a non-array type; normalize so we keep the data and append this chunk
+          const serialized = typeof current === 'object' && current !== null ? JSON.stringify(current) : String(current);
+          mergedStructuredData[extraContentKey] = [serialized, d.text];
+          deps.logger?.warn?.('[renderDocument] _extra_content was not a string array (agent-supplied); normalized for chunk', {
+            chunkId: d.chunkId,
+            rawJsonPath: d.rawJsonPath,
+          });
         }
-        throw new Error(`Failed to parse JSON content from contribution ${chunk.id} (path: ${rawJsonPath}): ${e instanceof Error ? e.message : String(e)}`);
       }
-    } else {
-      // Non-JSON content: treat as plain text
-      // Append to _extra_content section if it exists in template
-      const extraContentKey = '_extra_content';
-      if (!mergedStructuredData[extraContentKey]) {
-        mergedStructuredData[extraContentKey] = [];
-      }
-      const contentArray = Array.isArray(mergedStructuredData[extraContentKey]) ? mergedStructuredData[extraContentKey] : [];
-      contentArray.push(text);
-      mergedStructuredData[extraContentKey] = contentArray;
     }
   }
 

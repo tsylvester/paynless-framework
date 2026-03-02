@@ -10,12 +10,16 @@ import {
   isPostgrestError, 
   isRecord 
 } from '../utils/type_guards.ts'
+import { sanitizeJsonContent } from '../utils/jsonSanitizer.ts'
+import { isJsonSanitizationResult } from '../utils/type-guards/type_guards.jsonSanitizer.ts'
+import type { JsonSanitizationResult } from '../types/jsonSanitizer.interface.ts'
 import {
   FileManagerDependencies,
   FileType,
   CanonicalPathParams,
   PathContext,
   DocumentKey,
+  ModelContributionFileTypes,
   ResourceFileTypes,
   ModelContributionUploadContext,
   UserFeedbackUploadContext,
@@ -30,6 +34,7 @@ import {
 } from '../types/file_manager.types.ts'
 import {
   isModelContributionContext,
+  isModelContributionFileType,
   isUserFeedbackContext,
   isResourceContext,
   isFileType,
@@ -617,10 +622,9 @@ export class FileManagerService implements IFileManager {
         currentId = nextChunk ? nextChunk.id : null;
       }
 
-      // 3. Download and parse JSON content from storage_path/file_name (canonical access method).
-      const parsedChunks: Record<string, unknown>[] = [];
+      // 3. Phase 1: Download all chunks into ordered array (chunkId, text, fullPath).
+      const downloadedChunks: { chunkId: string; text: string; fullPath: string }[] = [];
       for (const chunk of orderedChunks) {
-        // Validate storage_path and file_name exist (canonical access method)
         if (!chunk.storage_path || typeof chunk.storage_path !== 'string') {
           throw new Error(`Chunk ${chunk.id} is missing storage_path. Storage path is required for JSON assembly.`);
         }
@@ -637,27 +641,11 @@ export class FileManagerService implements IFileManager {
           throw new Error(`Failed to download chunk ${chunk.id} from ${fullPath}: ${error?.message || 'No data returned'}`);
         }
 
-        try {
-          const textContent = await data.text();
-          const parsedJson = JSON.parse(textContent);
-          // Validate that parsed JSON is a record (object, not array, not primitive)
-          if (!isRecord(parsedJson)) {
-            throw new Error(`Chunk ${chunk.id} contains invalid JSON: expected object, got ${Array.isArray(parsedJson) ? 'array' : typeof parsedJson}`);
-          }
-          parsedChunks.push(parsedJson);
-        } catch (parseError) {
-          throw new Error(`Failed to parse JSON from chunk ${chunk.id} at ${fullPath}: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`);
-        }
+        const textContent = await data.text();
+        downloadedChunks.push({ chunkId: chunk.id, text: textContent, fullPath });
       }
 
-      // 4. Merge parsed chunks into a single ordered JSON object.
-      // Merging strategy:
-      // - Start with root chunk object
-      // - For each continuation chunk: merge properties
-      //   - For 'content' key: concatenate string values directly (continuation content already includes separators if needed)
-      //   - For object values: deep merge recursively
-      //   - For other values: use continuation's value (override or add)
-      if (parsedChunks.length === 0) {
+      if (downloadedChunks.length === 0) {
         throw new Error('No chunks to assemble');
       }
 
@@ -668,19 +656,11 @@ export class FileManagerService implements IFileManager {
             const sourceValue = source[key];
             const targetValue = merged[key];
 
-            // Special handling for 'content' key: concatenate strings
             if (key === 'content' && typeof targetValue === 'string' && typeof sourceValue === 'string') {
               merged[key] = targetValue + sourceValue;
-            }
-            // Deep merge objects (but not arrays)
-            else if (
-              isRecord(targetValue) &&
-              isRecord(sourceValue)
-            ) {
+            } else if (isRecord(targetValue) && isRecord(sourceValue)) {
               merged[key] = mergeObjects(targetValue, sourceValue);
-            }
-            // For all other cases: use source value (override or add)
-            else {
+            } else {
               merged[key] = sourceValue;
             }
           }
@@ -688,9 +668,79 @@ export class FileManagerService implements IFileManager {
         return merged;
       };
 
-      let mergedObject = parsedChunks[0];
-      for (let i = 1; i < parsedChunks.length; i++) {
-        mergedObject = mergeObjects(mergedObject, parsedChunks[i]);
+      const chunkIdsForError = downloadedChunks.map((c) => c.chunkId).join(', ');
+      const pathsForError = downloadedChunks.map((c) => c.fullPath).join('; ');
+
+      // Phase 2: Concatenated sanitize/parse (handles continuation fragments and backtick-wrapped content).
+      let mergedObject: Record<string, unknown> | null = null;
+
+      {
+        const concatenated = downloadedChunks.map((d) => d.text).join('');
+        const sanitizationResult: JsonSanitizationResult = sanitizeJsonContent(concatenated);
+        if (isJsonSanitizationResult(sanitizationResult)) {
+          try {
+            const parsed: unknown = JSON.parse(sanitizationResult.sanitized);
+            if (isRecord(parsed)) {
+              mergedObject = parsed;
+              if (sanitizationResult.wasSanitized) {
+                this.logger.info('[FileManagerService] assembleAndSaveFinalDocument JSON content sanitized (concatenated)', {
+                  wasSanitized: true,
+                  wasStructurallyFixed: sanitizationResult.wasStructurallyFixed,
+                  hasDuplicateKeys: sanitizationResult.hasDuplicateKeys,
+                });
+              }
+            }
+          } catch (_) {
+            // Fall through to Phase 3
+          }
+        }
+      }
+
+      // Phase 3: Per-chunk sanitize/parse (normal path for independently-complete chunks).
+      if (mergedObject === null) {
+        const parsedChunks: Record<string, unknown>[] = [];
+        for (const d of downloadedChunks) {
+          const sanitizationResult: JsonSanitizationResult = sanitizeJsonContent(d.text);
+          if (!isJsonSanitizationResult(sanitizationResult)) {
+            throw new Error(
+              `Failed to parse JSON from chunks: invalid sanitization result for chunk ${d.chunkId}. Chunk IDs: ${chunkIdsForError}; paths: ${pathsForError}`
+            );
+          }
+          try {
+            const parsed: unknown = JSON.parse(sanitizationResult.sanitized);
+            if (!isRecord(parsed)) {
+              throw new Error(
+                `Failed to parse JSON from chunks: chunk ${d.chunkId} parsed value is not a record. Chunk IDs: ${chunkIdsForError}; paths: ${pathsForError}`
+              );
+            }
+            parsedChunks.push(parsed);
+            if (sanitizationResult.wasSanitized) {
+              this.logger.info('[FileManagerService] assembleAndSaveFinalDocument JSON content sanitized (per-chunk)', {
+                chunkId: d.chunkId,
+                wasStructurallyFixed: sanitizationResult.wasStructurallyFixed,
+                hasDuplicateKeys: sanitizationResult.hasDuplicateKeys,
+              });
+            }
+          } catch (parseErr: unknown) {
+            const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+            throw new Error(
+              `Failed to parse JSON from chunk ${d.chunkId} at ${d.fullPath}: ${parseMsg}. Chunk IDs: ${chunkIdsForError}; paths: ${pathsForError}`
+            );
+          }
+        }
+
+        if (parsedChunks.length === 0) {
+          throw new Error(`No chunks to assemble. Chunk IDs: ${chunkIdsForError}; paths: ${pathsForError}`);
+        }
+
+        mergedObject = parsedChunks[0];
+        for (let i = 1; i < parsedChunks.length; i++) {
+          mergedObject = mergeObjects(mergedObject, parsedChunks[i]);
+        }
+      }
+
+      if (mergedObject === null) {
+        throw new Error(`No chunks to assemble. Chunk IDs: ${chunkIdsForError}; paths: ${pathsForError}`);
       }
 
       const finalContent = JSON.stringify(mergedObject);
@@ -729,13 +779,10 @@ export class FileManagerService implements IFileManager {
         throw new Error(`Cannot construct AssembledDocumentJson path: missing required path context. ProjectId: ${pathInfo.originalProjectId}, StageSlug: ${pathInfo.stageSlug}, ModelSlug: ${pathInfo.modelSlug}, AttemptCount: ${pathInfo.attemptCount}, DocumentKey: ${pathInfo.documentKey}`);
       }
 
-      if (!isFileType(pathInfo.documentKey)) {
-        throw new Error(`Invalid documentKey: ${pathInfo.documentKey}`);
+      if (!isModelContributionFileType(pathInfo.documentKey)) {
+        throw new Error(`Invalid model contribution file type: ${pathInfo.documentKey}`);
       }
-      if (!isDocumentKey(pathInfo.documentKey)) {
-        throw new Error(`Invalid documentKey: ${pathInfo.documentKey}`);
-      }
-      const docKey: DocumentKey = pathInfo.documentKey
+      const artifactType: ModelContributionFileTypes = pathInfo.documentKey;
       const pathParams: CanonicalPathParams = {
         stageSlug: pathInfo.stageSlug,
         contributionType: 'synthesis',
@@ -749,7 +796,7 @@ export class FileManagerService implements IFileManager {
         stageSlug: pathParams.stageSlug,
         modelSlug: pathInfo.modelSlug,
         attemptCount: pathInfo.attemptCount,
-        documentKey: docKey,
+        documentKey: artifactType,
       };
 
       const constructedPath = this.constructStoragePath(pathContext);

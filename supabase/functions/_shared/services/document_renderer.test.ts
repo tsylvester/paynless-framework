@@ -5368,3 +5368,437 @@ Deno.test("DocumentRenderer - array content handling", async (t) => {
   });
 });
 
+Deno.test("DocumentRenderer - concatenate then sanitize/parse pipeline", async (t) => {
+  const setup = (config: MockSupabaseDataConfig = {}) => {
+    const { client, clearAllStubs } = createMockSupabaseClient(undefined, config);
+    return { dbClient: client as unknown as SupabaseClient<Database>, clearAllStubs };
+  };
+
+  const defaultTemplateSelect = {
+    data: [
+      {
+        id: "template-1",
+        created_at: "2025-01-01T00:00:00Z",
+        description: null,
+        domain_id: "domain-1",
+        file_name: "thesis_business_case.md",
+        is_active: true,
+        name: "thesis_business_case",
+        storage_bucket: "prompt-templates",
+        storage_path: "templates/thesis",
+        updated_at: "2025-01-01T00:00:00Z",
+      },
+    ],
+    error: null,
+    count: null,
+    status: 200,
+    statusText: "OK",
+  };
+
+  const baseContributionRow: Database["public"]["Tables"]["dialectic_contributions"]["Row"] = {
+    id: "root-concat-1",
+    session_id: "session_concat",
+    stage: "THESIS",
+    iteration_number: 1,
+    model_id: "model-uuid-test",
+    model_name: "Test Model",
+    storage_bucket: "content",
+    storage_path: "proj_x/session_s/iteration_1/thesis/documents",
+    file_name: "gpt-4o-mini_0_business_case_raw.json",
+    raw_response_storage_path: "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json",
+    mime_type: "text/markdown",
+    document_relationships: { thesis: "root-concat-1" },
+    created_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+    target_contribution_id: null,
+    edit_version: 1,
+    is_latest_edit: true,
+    updated_at: new Date(2025, 0, 1, 12, 0, 0).toISOString(),
+    contribution_type: null,
+    citations: null,
+    error: null,
+    is_header: false,
+    original_model_contribution_id: null,
+    processing_time_ms: null,
+    prompt_template_id_used: null,
+    seed_prompt_url: null,
+    size_bytes: null,
+    source_prompt_resource_id: null,
+    tokens_used_input: null,
+    tokens_used_output: null,
+    user_id: "user_123",
+  };
+
+  await t.step("two chunks as JSON fragments are concatenated, sanitized, and parsed into a single merged object", async () => {
+    const fragment1 = `{"content": {"executive_summary": "hello `;
+    const fragment2 = `world"}}`;
+    const path1 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
+    const path2 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json";
+
+    const contributions: Array<Database["public"]["Tables"]["dialectic_contributions"]["Row"]> = [
+      { ...baseContributionRow, id: "root-frag", document_relationships: { thesis: "root-frag" }, file_name: "gpt-4o-mini_0_business_case_raw.json", raw_response_storage_path: path1 },
+      {
+        ...baseContributionRow,
+        id: "cont-frag",
+        file_name: "gpt-4o-mini_1_business_case_raw.json",
+        raw_response_storage_path: path2,
+        target_contribution_id: "root-frag",
+        edit_version: 2,
+        created_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
+        updated_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
+        document_relationships: { thesis: "root-frag" },
+      },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient<Database>,
+      _bucket: string,
+      path: string,
+    ): Promise<{ data: ArrayBuffer; error: null }> => {
+      if (path === path1) return { data: (await new Blob([fragment1]).arrayBuffer()), error: null };
+      if (path === path2) return { data: (await new Blob([fragment2]).arrayBuffer()), error: null };
+      return { data: (await new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE]).arrayBuffer()), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: { select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_projects: { select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_document_templates: { select: defaultTemplateSelect },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId: "session_concat",
+      iterationNumber: 1,
+      stageSlug: "thesis",
+      documentIdentity: "root-frag",
+      documentKey: FileType.business_case,
+      sourceContributionId: "root-frag",
+      template_filename: "thesis_business_case.md",
+    };
+
+    const result: RenderDocumentResult = await renderDocument(dbClient, {
+      downloadFromStorage: mockDownloadFromStorage,
+      fileManager: (() => {
+        const fm = new MockFileManagerService();
+        fm.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+        return fm;
+      })(),
+      notificationService: mockNotificationService,
+      notifyUserId: "user_123",
+      logger: logger,
+    }, params);
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+    assert(rendered.includes("hello world"), "concatenated fragment content must appear in rendered output");
+    clearAllStubs?.();
+  });
+
+  await t.step("single chunk with complete JSON still works (regression guard)", async () => {
+    const path1 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
+    const structuredData = { executive_summary: "Single chunk summary.", market_opportunity: "Single chunk market." };
+    const jsonContent = JSON.stringify({ content: structuredData });
+
+    const contributions: Array<Database["public"]["Tables"]["dialectic_contributions"]["Row"]> = [
+      { ...baseContributionRow, raw_response_storage_path: path1 },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient<Database>,
+      _bucket: string,
+      path: string,
+    ): Promise<{ data: ArrayBuffer; error: null }> => {
+      if (path === path1) return { data: (await new Blob([jsonContent]).arrayBuffer()), error: null };
+      return { data: (await new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE]).arrayBuffer()), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: { select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_projects: { select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_document_templates: { select: defaultTemplateSelect },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId: "session_concat",
+      iterationNumber: 1,
+      stageSlug: "thesis",
+      documentIdentity: baseContributionRow.id,
+      documentKey: FileType.business_case,
+      sourceContributionId: baseContributionRow.id,
+      template_filename: "thesis_business_case.md",
+    };
+
+    const result: RenderDocumentResult = await renderDocument(dbClient, {
+      downloadFromStorage: mockDownloadFromStorage,
+      fileManager: (() => {
+        const fm = new MockFileManagerService();
+        fm.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+        return fm;
+      })(),
+      notificationService: mockNotificationService,
+      notifyUserId: "user_123",
+      logger: logger,
+    }, params);
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+    assert(rendered.includes("Single chunk summary."), "single-chunk extracted content must appear");
+    assert(rendered.includes("Single chunk market."), "single-chunk market content must appear");
+    clearAllStubs?.();
+  });
+
+  await t.step("concatenated result with backtick wrappers is sanitized correctly before parse", async () => {
+    const path1 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
+    const wrappedContent = "```json\n" + JSON.stringify({ content: { executive_summary: "From backticks.", market_opportunity: "Market from backticks." } }) + "\n```";
+
+    const contributions: Array<Database["public"]["Tables"]["dialectic_contributions"]["Row"]> = [
+      { ...baseContributionRow, raw_response_storage_path: path1 },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient<Database>,
+      _bucket: string,
+      path: string,
+    ): Promise<{ data: ArrayBuffer; error: null }> => {
+      if (path === path1) return { data: (await new Blob([wrappedContent]).arrayBuffer()), error: null };
+      return { data: (await new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE]).arrayBuffer()), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: { select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_projects: { select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_document_templates: { select: defaultTemplateSelect },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId: "session_concat",
+      iterationNumber: 1,
+      stageSlug: "thesis",
+      documentIdentity: baseContributionRow.id,
+      documentKey: FileType.business_case,
+      sourceContributionId: baseContributionRow.id,
+      template_filename: "thesis_business_case.md",
+    };
+
+    const result: RenderDocumentResult = await renderDocument(dbClient, {
+      downloadFromStorage: mockDownloadFromStorage,
+      fileManager: (() => {
+        const fm = new MockFileManagerService();
+        fm.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+        return fm;
+      })(),
+      notificationService: mockNotificationService,
+      notifyUserId: "user_123",
+      logger: logger,
+    }, params);
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+    assert(rendered.includes("From backticks."), "content inside backtick wrappers must be extracted");
+    assert(rendered.includes("Market from backticks."), "market content inside backticks must appear");
+    clearAllStubs?.();
+  });
+
+  await t.step("multiple chunks each complete JSON objects use fallback per-chunk sanitize/parse and merge", async () => {
+    const path1 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
+    const path2 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json";
+    const json1 = JSON.stringify({ content: { executive_summary: "First chunk only." } });
+    const json2 = JSON.stringify({ content: { market_opportunity: "Second chunk only." } });
+
+    const contributions: Array<Database["public"]["Tables"]["dialectic_contributions"]["Row"]> = [
+      { ...baseContributionRow, id: "root-full", document_relationships: { thesis: "root-full" }, raw_response_storage_path: path1 },
+      {
+        ...baseContributionRow,
+        id: "cont-full",
+        file_name: "gpt-4o-mini_1_business_case_raw.json",
+        raw_response_storage_path: path2,
+        target_contribution_id: "root-full",
+        edit_version: 2,
+        created_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
+        updated_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
+        document_relationships: { thesis: "root-full" },
+      },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient<Database>,
+      _bucket: string,
+      path: string,
+    ): Promise<{ data: ArrayBuffer; error: null }> => {
+      if (path === path1) return { data: (await new Blob([json1]).arrayBuffer()), error: null };
+      if (path === path2) return { data: (await new Blob([json2]).arrayBuffer()), error: null };
+      return { data: (await new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE]).arrayBuffer()), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: { select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_projects: { select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_document_templates: { select: defaultTemplateSelect },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId: "session_concat",
+      iterationNumber: 1,
+      stageSlug: "thesis",
+      documentIdentity: "root-full",
+      documentKey: FileType.business_case,
+      sourceContributionId: "root-full",
+      template_filename: "thesis_business_case.md",
+    };
+
+    const result: RenderDocumentResult = await renderDocument(dbClient, {
+      downloadFromStorage: mockDownloadFromStorage,
+      fileManager: (() => {
+        const fm = new MockFileManagerService();
+        fm.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+        return fm;
+      })(),
+      notificationService: mockNotificationService,
+      notifyUserId: "user_123",
+      logger: logger,
+    }, params);
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+    assert(rendered.includes("First chunk only."), "first complete-JSON chunk content must appear");
+    assert(rendered.includes("Second chunk only."), "second complete-JSON chunk content must appear");
+    clearAllStubs?.();
+  });
+
+  await t.step("non-JSON chunks (plain text not starting with { or [) are handled by plain-text path", async () => {
+    const path1 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
+    const plainText = "Plain markdown without JSON.\n\nNo curly braces at start.";
+
+    const contributions: Array<Database["public"]["Tables"]["dialectic_contributions"]["Row"]> = [
+      { ...baseContributionRow, raw_response_storage_path: path1 },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient<Database>,
+      _bucket: string,
+      path: string,
+    ): Promise<{ data: ArrayBuffer; error: null }> => {
+      if (path === path1) return { data: (await new Blob([plainText]).arrayBuffer()), error: null };
+      return { data: (await new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE]).arrayBuffer()), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: { select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_projects: { select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_document_templates: { select: defaultTemplateSelect },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId: "session_concat",
+      iterationNumber: 1,
+      stageSlug: "thesis",
+      documentIdentity: baseContributionRow.id,
+      documentKey: FileType.business_case,
+      sourceContributionId: baseContributionRow.id,
+      template_filename: "thesis_business_case.md",
+    };
+
+    const result: RenderDocumentResult = await renderDocument(dbClient, {
+      downloadFromStorage: mockDownloadFromStorage,
+      fileManager: (() => {
+        const fm = new MockFileManagerService();
+        fm.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+        return fm;
+      })(),
+      notificationService: mockNotificationService,
+      notifyUserId: "user_123",
+      logger: logger,
+    }, params);
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+    assert(rendered.includes("Plain markdown without JSON."), "plain-text content must appear in _extra_content");
+    assert(rendered.includes("No curly braces at start."), "plain-text second line must appear");
+    clearAllStubs?.();
+  });
+
+  await t.step("when sanitization/parse fails, error is thrown with chunk IDs and storage paths", async () => {
+    const path1 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
+    const path2 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json";
+    const fragment1 = `{"content": "unclosed`;
+    const fragment2 = `string`;
+
+    const contributions: Array<Database["public"]["Tables"]["dialectic_contributions"]["Row"]> = [
+      { ...baseContributionRow, id: "chunk-err-1", document_relationships: { thesis: "chunk-err-1" }, raw_response_storage_path: path1 },
+      {
+        ...baseContributionRow,
+        id: "chunk-err-2",
+        file_name: "gpt-4o-mini_1_business_case_raw.json",
+        raw_response_storage_path: path2,
+        target_contribution_id: "chunk-err-1",
+        edit_version: 2,
+        created_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
+        updated_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
+        document_relationships: { thesis: "chunk-err-1" },
+      },
+    ];
+
+    const mockDownloadFromStorage = async (
+      _supabase: SupabaseClient<Database>,
+      _bucket: string,
+      path: string,
+    ): Promise<{ data: ArrayBuffer; error: null }> => {
+      if (path === path1) return { data: (await new Blob([fragment1]).arrayBuffer()), error: null };
+      if (path === path2) return { data: (await new Blob([fragment2]).arrayBuffer()), error: null };
+      return { data: (await new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE]).arrayBuffer()), error: null };
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_contributions: { select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_projects: { select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" } },
+        dialectic_document_templates: { select: defaultTemplateSelect },
+      },
+    });
+
+    const params: RenderDocumentParams = {
+      projectId: "project_123",
+      sessionId: "session_concat",
+      iterationNumber: 1,
+      stageSlug: "thesis",
+      documentIdentity: "chunk-err-1",
+      documentKey: FileType.business_case,
+      sourceContributionId: "chunk-err-1",
+      template_filename: "thesis_business_case.md",
+    };
+
+    let thrown: Error | undefined;
+    try {
+      await renderDocument(dbClient, {
+        downloadFromStorage: mockDownloadFromStorage,
+        fileManager: (() => {
+          const fm = new MockFileManagerService();
+          fm.setUploadAndRegisterFileResponse(createMockFileRecord(), null);
+          return fm;
+        })(),
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+      }, params);
+    } catch (e) {
+      thrown = e instanceof Error ? e : new Error(String(e));
+    }
+
+    assert(thrown !== undefined, "renderDocument must throw when concatenated content fails to parse");
+    const msg = thrown?.message ?? "";
+    assert(msg.includes("chunk-err-1") || msg.includes("chunk-err-2"), "error message must include chunk IDs");
+    assert(msg.includes(path1) || msg.includes(path2), "error message must include storage path");
+    assert(msg.includes("parse") || msg.includes("sanitiz"), "error message must include parse or sanitization failure details");
+    clearAllStubs?.();
+  });
+});
+
