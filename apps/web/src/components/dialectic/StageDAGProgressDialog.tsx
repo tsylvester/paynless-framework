@@ -8,8 +8,9 @@ import type { DAGNodePosition, DAGEdgePosition } from '@paynless/types';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { computeDAGLayout } from './dagLayout';
 
-const NODE_WIDTH = 100;
-const NODE_HEIGHT = 40;
+const NODE_WIDTH = 180;
+const NODE_HEIGHT = 44;
+const TEXT_MAX_LENGTH = NODE_WIDTH - 16;
 
 const STATUS_FILL: Record<UnifiedProjectStatus, string> = {
   not_started: '#9ca3af',
@@ -46,7 +47,7 @@ export const StageDAGProgressDialog: React.FC<StageDAGProgressDialogProps> = ({
   const layout = useMemo(() => {
     const steps = recipe?.steps ?? [];
     const edges = recipe?.edges ?? [];
-    return computeDAGLayout({ steps, edges });
+    return computeDAGLayout({ steps, edges, nodeWidth: NODE_WIDTH, nodeHeight: NODE_HEIGHT });
   }, [recipe]);
 
   const statusByStepKey = useMemo(() => {
@@ -69,17 +70,19 @@ export const StageDAGProgressDialog: React.FC<StageDAGProgressDialogProps> = ({
 
   const hasRecipeData = recipe && recipe.steps.length > 0;
 
+  console.log('[StageDAGProgressDialog] statusByStepKey', Object.fromEntries(statusByStepKey));
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl" aria-describedby={undefined}>
+      <DialogContent className="sm:max-w-4xl" aria-describedby={undefined}>
         <DialogTitle className="sr-only">Stage progress</DialogTitle>
         {!hasRecipeData ? (
           <p className="text-muted-foreground">No recipe data available</p>
         ) : (
           <svg
             viewBox={`0 0 ${layout.width} ${layout.height}`}
-            width={layout.width}
-            height={layout.height}
+            width="100%"
+            preserveAspectRatio="xMidYMid meet"
             className="overflow-visible"
           >
             <defs>
@@ -127,6 +130,8 @@ export const StageDAGProgressDialog: React.FC<StageDAGProgressDialogProps> = ({
                     textAnchor="middle"
                     dominantBaseline="middle"
                     className="fill-background text-xs font-medium"
+                    textLength={node.stepName.length > 18 ? TEXT_MAX_LENGTH : undefined}
+                    lengthAdjust={node.stepName.length > 18 ? 'spacingAndGlyphs' : undefined}
                   >
                     {node.stepName}
                   </text>

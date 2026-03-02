@@ -188,7 +188,10 @@ export const initialDialecticStateValues: DialecticStateValues = {
 
 	// Recipe hydration and per-stage-run progress
 	recipesByStageSlug: {},
+	dagProgressByRun: {},
 	stageRunProgress: {},
+	progressHydrationStatus: {},
+	progressHydrationError: {},
 	focusedStageDocument: {},
 	stageDocumentContent: {},
 	stageDocumentVersions: {},
@@ -529,11 +532,6 @@ export const useDialecticStore = create<DialecticStore>()(
 					templateId,
 					template: response.data,
 				});
-				set({
-					isLoadingProcessTemplate: false,
-					currentProcessTemplate: response.data || null,
-				});
-
 				const { currentProjectDetail } = get();
 				const template = response.data;
 
@@ -541,6 +539,10 @@ export const useDialecticStore = create<DialecticStore>()(
 					logger.warn(
 						"[DialecticStore] Cannot determine active stage without project details or template stages.",
 					);
+					set({
+						isLoadingProcessTemplate: false,
+						currentProcessTemplate: template,
+					});
 					return;
 				}
 
@@ -594,15 +596,34 @@ export const useDialecticStore = create<DialecticStore>()(
 				} else if (stageToSet) {
 					set({ activeContextStage: stageToSet });
 				} else if (!get().activeContextStage) {
-					// Fallback: if no stage could be determined and none is set, set to the first stage in the template
-					const firstStage = template.stages[0];
-					if (firstStage) {
-						logger.info(
-							`[DialecticStore] Fallback: setting stage to the first available stage: ${firstStage.slug}`,
-						);
-						set({ activeContextStage: firstStage });
-					}
+					throw new Error('[DialecticStore] fetchProcessTemplate: no active stage could be determined from session or template starting_stage_id, and no stage is currently set');
 				}
+
+				// Fetch recipes for all stages so recipesByStageSlug is populated
+				// before fetchProcessTemplate returns.
+				logger.info('[DialecticStore] Fetching recipes for all stages in template...');
+				await Promise.all(
+					template.stages.map((stage: DialecticStage) => get().fetchStageRecipe(stage.slug)),
+				);
+				logger.info('[DialecticStore] All stage recipes fetched.');
+
+				// Initialize stageRunProgress for all stages so selectors
+				// never encounter stages without progress entries.
+				if (latestSession) {
+					const iterationNumber = latestSession.iteration_count;
+					for (const stage of template.stages) {
+						await get().ensureRecipeForActiveStage(latestSession.id, stage.slug, iterationNumber);
+					}
+					logger.info('[DialecticStore] All stage progress entries initialized.');
+				}
+
+				// Set currentProcessTemplate only after recipes and progress
+				// entries are loaded. This prevents components from re-rendering
+				// into a state where stages exist but recipes/progress do not.
+				set({
+					isLoadingProcessTemplate: false,
+					currentProcessTemplate: template,
+				});
 			}
 		} catch (error: unknown) {
 			const networkError: ApiError = {
@@ -2616,22 +2637,23 @@ export const useDialecticStore = create<DialecticStore>()(
 
   // --- Recipes & Stage Run Progress ---
   fetchStageRecipe: async (stageSlug: string): Promise<void> => {
-    try {
-      const response = await api.dialectic().fetchStageRecipe(stageSlug);
-      if (!response.error && response.data) {
-        set(state => {
-          state.recipesByStageSlug[stageSlug] = response.data!;
-        });
-      }
-    } catch (_e: unknown) {
-      // Swallow errors per store pattern; caller tests assert state on success path only
+    const response = await api.dialectic().fetchStageRecipe(stageSlug);
+    if (response.error) {
+      throw new Error(`[fetchStageRecipe] API error: ${response.error.code} — ${response.error.message}`);
     }
+    if (response.data === undefined || response.data === null) {
+      throw new Error('[fetchStageRecipe] API returned no data');
+    }
+    const recipe = response.data;
+    set(state => {
+      state.recipesByStageSlug[stageSlug] = recipe;
+    });
   },
 
   ensureRecipeForActiveStage: async (sessionId: string, stageSlug: string, iterationNumber: number): Promise<void> => {
     const recipe = get().recipesByStageSlug[stageSlug];
     if (!recipe) {
-      return; // Require hydration first; idempotent no-op
+      throw new Error(`[ensureRecipeForActiveStage] Recipe not loaded for stage: ${stageSlug} — fetchStageRecipe must succeed before calling this function`);
     }
     const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
     set(state => {
@@ -2660,10 +2682,50 @@ export const useDialecticStore = create<DialecticStore>()(
   },
 
   hydrateStageProgress: async (payload: ListStageDocumentsPayload) => {
-    await hydrateStageProgressLogic(set, payload);
+    const progressKey = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+    set(state => {
+      state.progressHydrationStatus[progressKey] = 'pending';
+    });
+    try {
+      await hydrateStageProgressLogic(set, payload);
+      set(state => {
+        state.progressHydrationStatus[progressKey] = 'success';
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      set(state => {
+        state.progressHydrationStatus[progressKey] = 'failed';
+        state.progressHydrationError[progressKey] = message;
+      });
+      logger.error('[DialecticStore] hydrateStageProgress failed', { progressKey, errorDetails: err });
+    }
   },
+
   hydrateAllStageProgress: async (payload: GetAllStageProgressPayload) => {
-    await hydrateAllStageProgressLogic(set, payload);
+    const runKey = `${payload.sessionId}:${payload.iterationNumber}`;
+    set(state => {
+      state.progressHydrationStatus[runKey] = 'pending';
+    });
+    try {
+      await hydrateAllStageProgressLogic(set, payload);
+      set(state => {
+        state.progressHydrationStatus[runKey] = 'success';
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      set(state => {
+        state.progressHydrationStatus[runKey] = 'failed';
+        state.progressHydrationError[runKey] = message;
+      });
+      logger.error('[DialecticStore] hydrateAllStageProgress failed', { runKey, errorDetails: err });
+    }
+  },
+
+  resetProgressHydrationStatus: (runKey: string): void => {
+    set(state => {
+      delete state.progressHydrationStatus[runKey];
+      delete state.progressHydrationError[runKey];
+    });
   },
     };
   }),

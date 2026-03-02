@@ -254,7 +254,7 @@ describe('GenerateContributionButton', () => {
 
     // beforeEach already sets up models selected and a basic project/session in the store
     render(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Generate Thesis/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).not.toBeDisabled();
   });
 
@@ -310,7 +310,7 @@ describe('GenerateContributionButton', () => {
     });
 
     render(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Regenerate Thesis/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).not.toBeDisabled();
   });
 
@@ -350,7 +350,7 @@ describe('GenerateContributionButton', () => {
     });
 
     render(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Regenerate Thesis/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).not.toBeDisabled();
   });
 
@@ -375,7 +375,7 @@ describe('GenerateContributionButton', () => {
     
     render(<GenerateContributionButton />);
     
-    const button = screen.getByRole('button', { name: /Generate Thesis/i });
+    const button = screen.getByRole('button', { name: /Generate Proposal/i });
     await user.click(button);
     
     await waitFor(() => {
@@ -406,7 +406,7 @@ describe('GenerateContributionButton', () => {
 
     render(<GenerateContributionButton />);
     
-    const button = screen.getByRole('button', { name: /Generate Thesis/i });
+    const button = screen.getByRole('button', { name: /Generate Proposal/i });
     await user.click(button);
 
     await waitFor(() => {
@@ -461,7 +461,7 @@ describe('GenerateContributionButton', () => {
     vi.mocked(storeActions.generateContributions).mockRejectedValue(new Error(errorMessage));
     render(<GenerateContributionButton />);
 
-    const button = screen.getByRole('button', { name: /Generate Thesis/i });
+    const button = screen.getByRole('button', { name: /Generate Proposal/i });
     await user.click(button);
 
     await waitFor(() => {
@@ -487,7 +487,7 @@ describe('GenerateContributionButton', () => {
     render(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.queryByRole('button', { name: /Regenerate Thesis/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Regenerate Proposal/i })).not.toBeInTheDocument();
   });
   
   it('handles missing activeSession or iteration_count gracefully', async () => {
@@ -524,7 +524,7 @@ describe('GenerateContributionButton', () => {
 
     // Use rerender to update the component with the new state
     rerender(<GenerateContributionButton />);
-    const button2 = screen.getByRole('button', { name: /Generate Thesis/i });
+    const button2 = screen.getByRole('button', { name: /Generate Proposal/i });
     
     // The button is enabled, but the click handler should catch the missing iteration
     await act(async () => {
@@ -626,7 +626,7 @@ describe('GenerateContributionButton', () => {
 
     render(<GenerateContributionButton />);
     // Desired behavior: with personal context, button should be enabled and say Generate
-    expect(screen.getByRole('button', { name: /Generate Thesis/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Generate Proposal/i })).not.toBeDisabled();
   });
 
   it('opens DAG progress dialog when generate button is clicked', async () => {
@@ -647,7 +647,7 @@ describe('GenerateContributionButton', () => {
     const user = userEvent.setup();
     render(<GenerateContributionButton />);
     expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
-    const button = screen.getByRole('button', { name: /Generate Thesis/i });
+    const button = screen.getByRole('button', { name: /Generate Proposal/i });
     await user.click(button);
     await waitFor(() => {
       expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
@@ -671,7 +671,7 @@ describe('GenerateContributionButton', () => {
     });
     const user = userEvent.setup();
     render(<GenerateContributionButton />);
-    await user.click(screen.getByRole('button', { name: /Generate Thesis/i }));
+    await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
     await waitFor(() => {
       const dialog = screen.getByTestId('stage-dag-progress-dialog');
       expect(dialog).toHaveAttribute('data-stage-slug', 'thesis');
@@ -697,7 +697,7 @@ describe('GenerateContributionButton', () => {
     });
     const user = userEvent.setup();
     render(<GenerateContributionButton />);
-    await user.click(screen.getByRole('button', { name: /Generate Thesis/i }));
+    await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
     await waitFor(() => {
       expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
     });

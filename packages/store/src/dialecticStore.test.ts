@@ -24,6 +24,8 @@ import type {
   DialecticDomain,
   DialecticProcessTemplate,
   DialecticStage,
+  DialecticStageRecipe,
+  DialecticStageRecipeStep,
   GenerateContributionsPayload,
   GenerateContributionsResponse,
   ContributionGenerationStatus,
@@ -36,6 +38,9 @@ import type {
   StageDocumentCompositeKey,
   SelectedModels,
   GetAllStageProgressPayload,
+  ListStageDocumentsPayload,
+  ListStageDocumentsResponse,
+  StageProgressEntry,
   SubmitStageResponsesPayload,
   StageDocumentContentState,
 } from '@paynless/types';
@@ -109,6 +114,14 @@ describe('useDialecticStore', () => {
             expect(state.activeSessionDetail).toBe(initialDialecticStateValues.activeSessionDetail);
             expect(state.isLoadingActiveSessionDetail).toBe(initialDialecticStateValues.isLoadingActiveSessionDetail);
             expect(state.activeSessionDetailError).toBe(initialDialecticStateValues.activeSessionDetailError);
+
+            expect(state.progressHydrationStatus).toEqual(initialDialecticStateValues.progressHydrationStatus);
+            expect(state.progressHydrationError).toEqual(initialDialecticStateValues.progressHydrationError);
+        });
+
+        it('initialDialecticStateValues includes progressHydrationStatus and progressHydrationError as empty records', () => {
+            expect(initialDialecticStateValues.progressHydrationStatus).toEqual({});
+            expect(initialDialecticStateValues.progressHydrationError).toEqual({});
         });
     });
 
@@ -913,6 +926,20 @@ describe('useDialecticStore', () => {
     });
 
     describe('hydrateAllStageProgress thunk', () => {
+        const validGetAllStageProgressData: { dagProgress: { completedStages: number; totalStages: number }; stages: StageProgressEntry[] } = {
+            dagProgress: { completedStages: 0, totalStages: 0 },
+            stages: [
+                {
+                    stageSlug: 'thesis',
+                    status: 'not_started',
+                    modelCount: null,
+                    progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+                    steps: [],
+                    documents: [],
+                },
+            ],
+        };
+
         it('hydrateAllStageProgress action exists', () => {
             const state = useDialecticStore.getState();
             expect(typeof state.hydrateAllStageProgress).toBe('function');
@@ -926,7 +953,7 @@ describe('useDialecticStore', () => {
                 projectId: 'project-1',
             };
             getMockDialecticClient().getAllStageProgress.mockResolvedValue({
-                data: { dagProgress: { completedStages: 0, totalStages: 0 }, stages: [] },
+                data: validGetAllStageProgressData,
                 status: 200,
             });
 
@@ -935,6 +962,254 @@ describe('useDialecticStore', () => {
 
             expect(getMockDialecticClient().getAllStageProgress).toHaveBeenCalledTimes(1);
             expect(getMockDialecticClient().getAllStageProgress).toHaveBeenCalledWith(payload);
+        });
+
+        it('hydrateAllStageProgress sets progressHydrationStatus[runKey] to pending before calling logic', async () => {
+            const payload: GetAllStageProgressPayload = {
+                sessionId: 'session-1',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const runKey = `${payload.sessionId}:${payload.iterationNumber}`;
+            let resolveApi: (value: ApiResponse<typeof validGetAllStageProgressData>) => void;
+            const apiPromise = new Promise<ApiResponse<typeof validGetAllStageProgressData>>((resolve) => {
+                resolveApi = resolve;
+            });
+            getMockDialecticClient().getAllStageProgress.mockImplementation(() => apiPromise);
+
+            const { hydrateAllStageProgress } = useDialecticStore.getState();
+            const promise = hydrateAllStageProgress(payload);
+
+            await Promise.resolve();
+            const stateBefore = useDialecticStore.getState();
+            expect(stateBefore.progressHydrationStatus[runKey]).toBe('pending');
+
+            resolveApi!({ data: validGetAllStageProgressData, status: 200 });
+            await promise;
+        }, 3000);
+
+        it('hydrateAllStageProgress sets progressHydrationStatus[runKey] to success when logic completes without throwing', async () => {
+            const payload: GetAllStageProgressPayload = {
+                sessionId: 'session-1',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const runKey = `${payload.sessionId}:${payload.iterationNumber}`;
+            getMockDialecticClient().getAllStageProgress.mockResolvedValue({
+                data: validGetAllStageProgressData,
+                status: 200,
+            });
+
+            const { hydrateAllStageProgress } = useDialecticStore.getState();
+            await hydrateAllStageProgress(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.progressHydrationStatus[runKey]).toBe('success');
+        });
+
+        it('hydrateAllStageProgress sets progressHydrationStatus[runKey] to failed and progressHydrationError[runKey] when logic throws', async () => {
+            const payload: GetAllStageProgressPayload = {
+                sessionId: 'session-1',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const runKey = `${payload.sessionId}:${payload.iterationNumber}`;
+            getMockDialecticClient().getAllStageProgress.mockResolvedValue({
+                error: { code: 'SERVER_ERROR', message: 'Backend error' },
+                status: 500,
+            });
+
+            const { hydrateAllStageProgress } = useDialecticStore.getState();
+            await hydrateAllStageProgress(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.progressHydrationStatus[runKey]).toBe('failed');
+            expect(state.progressHydrationError[runKey]).toBeDefined();
+            expect(typeof state.progressHydrationError[runKey]).toBe('string');
+        });
+    });
+
+    describe('hydrateStageProgress thunk', () => {
+        it('hydrateStageProgress action exists', () => {
+            const state = useDialecticStore.getState();
+            expect(typeof state.hydrateStageProgress).toBe('function');
+        });
+
+        it('hydrateStageProgress sets progressHydrationStatus[progressKey] to pending before calling logic', async () => {
+            const payload: ListStageDocumentsPayload = {
+                sessionId: 'session-1',
+                stageSlug: 'thesis',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const progressKey = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+            let resolveApi: (value: ApiResponse<ListStageDocumentsResponse>) => void;
+            const apiPromise = new Promise<ApiResponse<ListStageDocumentsResponse>>((resolve) => {
+                resolveApi = resolve;
+            });
+            getMockDialecticClient().listStageDocuments.mockImplementation(() => apiPromise);
+
+            const { hydrateStageProgress } = useDialecticStore.getState();
+            const promise = hydrateStageProgress(payload);
+
+            await Promise.resolve();
+            const stateBefore = useDialecticStore.getState();
+            expect(stateBefore.progressHydrationStatus[progressKey]).toBe('pending');
+
+            resolveApi!({ data: [], status: 200 });
+            await promise;
+        }, 3000);
+
+        it('hydrateStageProgress sets progressHydrationStatus[progressKey] to success when logic completes without throwing', async () => {
+            const payload: ListStageDocumentsPayload = {
+                sessionId: 'session-1',
+                stageSlug: 'thesis',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const progressKey = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+            getMockDialecticClient().listStageDocuments.mockResolvedValue({
+                data: [],
+                status: 200,
+            });
+
+            const { hydrateStageProgress } = useDialecticStore.getState();
+            await hydrateStageProgress(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.progressHydrationStatus[progressKey]).toBe('success');
+        });
+
+        it('hydrateStageProgress sets progressHydrationStatus[progressKey] to failed and error when logic throws', async () => {
+            const payload: ListStageDocumentsPayload = {
+                sessionId: 'session-1',
+                stageSlug: 'thesis',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const progressKey = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+            getMockDialecticClient().listStageDocuments.mockResolvedValue({
+                error: { code: 'SERVER_ERROR', message: 'Backend error' },
+                status: 500,
+            });
+
+            const { hydrateStageProgress } = useDialecticStore.getState();
+            await hydrateStageProgress(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.progressHydrationStatus[progressKey]).toBe('failed');
+            expect(state.progressHydrationError[progressKey]).toBeDefined();
+            expect(typeof state.progressHydrationError[progressKey]).toBe('string');
+        });
+    });
+
+    describe('fetchStageRecipe thunk', () => {
+        it('fetchStageRecipe throws when API returns error response', async () => {
+            const mockError: ApiError = { code: 'NOT_FOUND', message: 'Stage recipe not found' };
+            getMockDialecticClient().fetchStageRecipe.mockResolvedValue({
+                error: mockError,
+                status: 404,
+            });
+
+            const { fetchStageRecipe } = useDialecticStore.getState();
+            await expect(fetchStageRecipe('thesis')).rejects.toThrow();
+        });
+
+        it('fetchStageRecipe throws when API returns null data', async () => {
+            getMockDialecticClient().fetchStageRecipe.mockResolvedValue({
+                data: undefined,
+                status: 200,
+            });
+
+            const { fetchStageRecipe } = useDialecticStore.getState();
+            await expect(fetchStageRecipe('thesis')).rejects.toThrow();
+        });
+
+        it('fetchStageRecipe sets recipe in store on success', async () => {
+            const mockRecipe: DialecticStageRecipe = {
+                stageSlug: 'thesis',
+                instanceId: 'inst-1',
+                steps: [],
+                edges: [],
+            };
+            getMockDialecticClient().fetchStageRecipe.mockResolvedValue({
+                data: mockRecipe,
+                status: 200,
+            });
+
+            const { fetchStageRecipe } = useDialecticStore.getState();
+            await fetchStageRecipe('thesis');
+
+            const state = useDialecticStore.getState();
+            expect(state.recipesByStageSlug['thesis']).toEqual(mockRecipe);
+        });
+    });
+
+    describe('ensureRecipeForActiveStage thunk', () => {
+        it('ensureRecipeForActiveStage throws when recipe is not in store', async () => {
+            useDialecticStore.setState({ recipesByStageSlug: {} });
+
+            const { ensureRecipeForActiveStage } = useDialecticStore.getState();
+            await expect(
+                ensureRecipeForActiveStage('session-1', 'thesis', 1),
+            ).rejects.toThrow(/Recipe not loaded for stage: thesis/);
+        });
+
+        it('ensureRecipeForActiveStage initializes progress snapshot when recipe exists', async () => {
+            const mockStep: DialecticStageRecipeStep = {
+                id: 'step-1',
+                step_key: 'step_a',
+                step_slug: 'step-a',
+                step_name: 'Step A',
+                execution_order: 0,
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                output_type: 'rendered_document',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [],
+            };
+            const mockRecipe: DialecticStageRecipe = {
+                stageSlug: 'thesis',
+                instanceId: 'inst-1',
+                steps: [mockStep],
+                edges: [],
+            };
+            useDialecticStore.setState({ recipesByStageSlug: { thesis: mockRecipe } });
+
+            const { ensureRecipeForActiveStage } = useDialecticStore.getState();
+            await ensureRecipeForActiveStage('session-1', 'thesis', 1);
+
+            const state = useDialecticStore.getState();
+            const progressKey = 'session-1:thesis:1';
+            const progress = state.stageRunProgress[progressKey];
+            expect(progress).toBeDefined();
+            expect(progress?.stepStatuses['step_a']).toBe('not_started');
+            expect(progress?.progress.completedSteps).toBe(0);
+            expect(progress?.progress.totalSteps).toBe(0);
+            expect(progress?.progress.failedSteps).toBe(0);
+        });
+    });
+
+    describe('resetProgressHydrationStatus', () => {
+        it('resetProgressHydrationStatus clears status and error for the given key', () => {
+            const runKey = 'session-1:1';
+            useDialecticStore.setState({
+                progressHydrationStatus: { [runKey]: 'failed' },
+                progressHydrationError: { [runKey]: 'Some error message' },
+            });
+
+            const { resetProgressHydrationStatus } = useDialecticStore.getState();
+            resetProgressHydrationStatus(runKey);
+
+            const state = useDialecticStore.getState();
+            expect(state.progressHydrationStatus[runKey]).toBeUndefined();
+            expect(state.progressHydrationError[runKey]).toBeUndefined();
         });
     });
 

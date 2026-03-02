@@ -8,10 +8,12 @@ import {
   selectIsStageReadyForSessionIteration,
 } from '../../mocks/dialecticStore.mock';
 import type {
+  DialecticProcessTemplate,
   DialecticProject,
   DialecticSession,
   DialecticStage,
-  DialecticProcessTemplate,
+  DialecticStageRecipe,
+  DialecticStageRecipeStep,
   DialecticStageTransition,
   StageRenderedDocumentDescriptor,
   StageDocumentContentState,
@@ -31,6 +33,7 @@ vi.mock('@paynless/store', async (importOriginal) => {
   return {
     ...mock,
     selectStageHasUnsavedChanges: actual.selectStageHasUnsavedChanges,
+    selectUnifiedProjectProgress: actual.selectUnifiedProjectProgress,
   };
 });
 
@@ -160,6 +163,35 @@ const buildProject = (
   saveContributionEditError: null,
 });
 
+/** Minimal recipe so real selectValidMarkdownDocumentKeys returns the given document key for thesis. */
+function buildThesisRecipeWithDocumentKey(documentKey: string): DialecticStageRecipe {
+  const step: DialecticStageRecipeStep = {
+    id: 'step-1',
+    step_key: 'step-1',
+    step_slug: 'step-1',
+    step_name: 'Step',
+    execution_order: 0,
+    job_type: 'RENDER',
+    prompt_type: 'Turn',
+    output_type: 'rendered_document',
+    granularity_strategy: 'all_to_one',
+    inputs_required: [],
+    outputs_required: [
+      {
+        document_key: documentKey,
+        artifact_class: 'rendered_document',
+        file_type: 'markdown',
+      },
+    ],
+  };
+  return {
+    stageSlug: 'thesis',
+    instanceId: 'inst-1',
+    steps: [step],
+    edges: [],
+  };
+}
+
 function setupVisibleButtonState(): void {
   const stage1 = buildStage('stage-1', 'thesis', 'Thesis');
   const stage2 = buildStage('stage-2', 'antithesis', 'Antithesis');
@@ -170,11 +202,20 @@ function setupVisibleButtonState(): void {
   setDialecticStateValues({
     currentProjectDetail: project,
     activeSessionDetail: session,
+    activeContextSessionId: sessionId,
     currentProcessTemplate: processTemplate,
     activeContextStage: stage1,
     activeStageSlug: stage1.slug,
+    recipesByStageSlug: {
+      thesis: buildThesisRecipeWithDocumentKey('success_metrics'),
+    },
     stageRunProgress: {
       [progressKey]: {
+        progress: {
+          totalSteps: 1,
+          completedSteps: 0,
+          failedSteps: 0,
+        },
         stepStatuses: {},
         documents: {
           [`success_metrics:model-1`]: buildRenderedDescriptor('model-1', 'res-1'),
@@ -253,6 +294,11 @@ describe('SubmitResponsesButton', () => {
       currentProcessTemplate: processTemplate,
       stageRunProgress: {
         [progressKey]: {
+          progress: {
+            totalSteps: 1,
+            completedSteps: 0,
+            failedSteps: 0,
+          },
           stepStatuses: {},
           documents: {
             ['doc:model-1']: buildRenderedDescriptor('model-1', 'res-1'),
@@ -266,7 +312,7 @@ describe('SubmitResponsesButton', () => {
     expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
   });
 
-  it('does not render when session has no contributions for current stage/iteration', () => {
+  it('renders button disabled when session has no contributions for current stage/iteration', () => {
     const stage1 = buildStage('stage-1', 'thesis', 'Thesis');
     const stage2 = buildStage('stage-2', 'antithesis', 'Antithesis');
     const processTemplate = buildProcessTemplate([stage1, stage2]);
@@ -274,20 +320,32 @@ describe('SubmitResponsesButton', () => {
     setDialecticStateValues({
       currentProjectDetail: buildProject(session, processTemplate),
       activeSessionDetail: session,
+      activeContextSessionId: sessionId,
       activeContextStage: stage1,
       currentProcessTemplate: processTemplate,
+      recipesByStageSlug: {},
       stageRunProgress: {},
     });
     selectIsStageReadyForSessionIteration.mockReturnValue(true);
     render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: /Submit Responses & Advance Stage/i });
+    expect(trigger).toBeDisabled();
   });
 
-  it('button is disabled when selectStageProgressSummary.isComplete is false (stage incomplete)', () => {
+  it('button is disabled when not all documents are available (stage incomplete)', () => {
     setupVisibleButtonState();
     setDialecticStateValues({
+      recipesByStageSlug: {
+        thesis: buildThesisRecipeWithDocumentKey('doc'),
+      },
       stageRunProgress: {
         [progressKey]: {
+          progress: {
+            totalSteps: 1,
+            completedSteps: 0,
+            failedSteps: 0,
+          },
           stepStatuses: {},
           documents: {
             ['doc:model-1']: {
@@ -305,7 +363,7 @@ describe('SubmitResponsesButton', () => {
     expect(trigger).toBeDisabled();
   });
 
-  it('button is NOT disabled when selectStageProgressSummary.isComplete is true (stage complete)', () => {
+  it('button is NOT disabled when all documents are available (stage complete)', () => {
     setupVisibleButtonState();
     render(<SubmitResponsesButton />);
     const trigger = screen.getByRole('button', { name: /Submit Responses & Advance Stage/i });

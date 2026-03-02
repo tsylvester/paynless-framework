@@ -10,6 +10,7 @@ import type {
     DialecticStageRecipeStep,
     GetAllStageProgressResponse,
     SelectedModels,
+    StageRunProgressSnapshot,
     UnifiedProjectProgress,
     User,
 } from '@paynless/types';
@@ -18,6 +19,7 @@ import { useStageRunProgressHydration } from './useStageRunProgressHydration';
 import { DynamicProgressBar } from '../components/common/DynamicProgressBar';
 import {
     getDialecticStoreState,
+    getDialecticStoreActionMock,
     initializeMockDialecticState,
     setDialecticStateValues,
 } from '../mocks/dialecticStore.mock';
@@ -71,6 +73,7 @@ const recipeThesis: DialecticStageRecipe = {
     stageSlug: 'thesis',
     instanceId: 'instance-thesis-hydration',
     steps: [documentStep],
+    edges: [],
 };
 
 const selectedModels: SelectedModels[] = [
@@ -127,30 +130,53 @@ const mockUser: User = {
     updated_at: new Date().toISOString(),
 };
 
+const runKey = `${sessionId}:${iterationNumber}`;
+const thesisProgressKey = `${sessionId}:thesis:${iterationNumber}`;
+
+const initialStageRunProgress: Record<string, StageRunProgressSnapshot> = {
+    [thesisProgressKey]: {
+        documents: {},
+        stepStatuses: { document_step: 'not_started' },
+        jobProgress: {},
+        progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 },
+    },
+};
+
 vi.mock('@paynless/api', async () => {
     const actualModule: typeof import('@paynless/api') = await vi.importActual('@paynless/api');
     const { createMockDialecticClient } = await import('../../../../packages/api/src/mocks/dialectic.api.mock');
     const dialecticClient = createMockDialecticClient();
-    const getAllStageProgressResponse: GetAllStageProgressResponse = [
-        {
-            stageSlug: 'thesis',
-            documents: [
-                {
-                    documentKey: 'business_case',
-                    modelId: 'model-1',
-                    status: 'completed',
-                    jobId: 'job-1',
-                    latestRenderedResourceId: 'res-1',
-                    stepKey: 'document_step',
-                },
-            ],
-            stepStatuses: { document_step: 'completed' },
-            stageStatus: 'completed',
-        },
-    ];
+    const getAllStageProgressResponse: GetAllStageProgressResponse = {
+        dagProgress: { completedStages: 1, totalStages: 1 },
+        stages: [
+            {
+                stageSlug: 'thesis',
+                status: 'completed',
+                modelCount: 1,
+                progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+                steps: [{ stepKey: 'document_step', status: 'completed' }],
+                documents: [
+                    {
+                        documentKey: 'business_case',
+                        modelId: 'model-1',
+                        status: 'completed',
+                        jobId: 'job-1',
+                        latestRenderedResourceId: 'res-1',
+                        stepKey: 'document_step',
+                    },
+                ],
+            },
+        ],
+    };
     dialecticClient.getAllStageProgress.mockResolvedValue({
         data: getAllStageProgressResponse,
         status: 200,
+        error: undefined,
+    });
+    dialecticClient.listStageDocuments.mockResolvedValue({
+        data: [],
+        status: 200,
+        error: undefined,
     });
     return {
         ...actualModule,
@@ -169,6 +195,7 @@ vi.mock('@paynless/store', async () => {
         ...actual,
         useDialecticStore: dialecticMock.useDialecticStore,
         getDialecticStoreState: dialecticMock.getDialecticStoreState,
+        getDialecticStoreActionMock: dialecticMock.getDialecticStoreActionMock,
         setDialecticStateValues: dialecticMock.setDialecticStateValues,
         initializeMockDialecticState: dialecticMock.initializeMockDialecticState,
         selectUnifiedProjectProgress: actual.selectUnifiedProjectProgress,
@@ -191,44 +218,95 @@ describe('useStageRunProgressHydration integration', () => {
             activeContextSessionId: sessionId,
             activeSessionDetail: session,
             activeStageSlug: 'thesis',
+            currentProcessTemplate: templateOneStage,
             currentProjectDetail: project,
             recipesByStageSlug: { thesis: recipeThesis },
             selectedModels,
+            dagProgressByRun: { [runKey]: { completedStages: 0, totalStages: 1 } },
+            stageRunProgress: initialStageRunProgress,
         });
     });
 
-    it('after hydration selectUnifiedProjectProgress returns correct overall percentage', async () => {
+    it('full hydration pipeline from hook → store actions → selectors produces correct selectUnifiedProjectProgress output after reload', async () => {
         render(<HydrationWrapper />);
 
         await waitFor(() => {
             const state = getDialecticStoreState();
-            const progressKeys = Object.keys(state.stageRunProgress);
-            expect(progressKeys.length).toBeGreaterThan(0);
+            const thesisProgress = state.stageRunProgress[thesisProgressKey];
+            expect(thesisProgress?.progress.completedSteps).toBe(1);
         });
 
         const state = getDialecticStoreState();
         const progress: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
-        expect(progress.totalStages).toBeGreaterThan(0);
+        expect(progress.totalStages).toBe(1);
+        expect(progress.completedStages).toBe(1);
         expect(progress.overallPercentage).toBeGreaterThan(0);
+        expect(progress.currentStageSlug).toBe('thesis');
     });
 
-    it('after hydration all stage statuses are correctly populated', async () => {
+    it('when API returns valid progress data, selectUnifiedProjectProgress returns hydrationReady: true with correct step counts and document counts', async () => {
         render(<HydrationWrapper />);
 
         await waitFor(() => {
             const state = getDialecticStoreState();
-            const progressKeys = Object.keys(state.stageRunProgress);
-            expect(progressKeys.length).toBeGreaterThan(0);
+            const thesisProgress = state.stageRunProgress[thesisProgressKey];
+            expect(thesisProgress?.progress.completedSteps).toBe(1);
         });
 
         const state = getDialecticStoreState();
         const progress: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
-        expect(progress.stageDetails.length).toBeGreaterThan(0);
+        expect(progress.hydrationReady).toBe(true);
+        expect(progress.stageDetails.length).toBe(1);
         const thesisDetail = progress.stageDetails.find((s) => s.stageSlug === 'thesis');
         expect(thesisDetail).toBeDefined();
         if (thesisDetail !== undefined) {
-            expect(thesisDetail.stageStatus).toBeDefined();
+            expect(thesisDetail.totalSteps).toBe(1);
+            expect(thesisDetail.completedSteps).toBe(1);
+            expect(thesisDetail.totalDocuments).toBe(1);
+            expect(thesisDetail.completedDocuments).toBe(1);
+            expect(thesisDetail.stageStatus).toBe('completed');
         }
+    });
+
+    it('when recipe fetch fails for a stage, hydration does not proceed, status reflects failure', async () => {
+        const fetchStageRecipeMock = getDialecticStoreActionMock('fetchStageRecipe');
+        vi.mocked(fetchStageRecipeMock).mockRejectedValueOnce(new Error('recipe fetch failed'));
+
+        const hydrateAllStageProgressMock = getDialecticStoreActionMock('hydrateAllStageProgress');
+
+        render(<HydrationWrapper />);
+
+        await waitFor(() => {
+            expect(hydrateAllStageProgressMock).not.toHaveBeenCalled();
+        });
+
+        const state = getDialecticStoreState();
+        expect(state.progressHydrationStatus[runKey]).not.toBe('success');
+    });
+
+    it('after failed hydration, re-triggering the hook retries and succeeds when the API is available', async () => {
+        setDialecticStateValues({ progressHydrationStatus: { [runKey]: 'failed' } });
+
+        const { rerender } = render(<HydrationWrapper />);
+
+        await waitFor(() => {
+            const state = getDialecticStoreState();
+            expect(state.progressHydrationStatus[runKey]).toBe('failed');
+        });
+
+        setDialecticStateValues({ progressHydrationStatus: {} });
+        rerender(<HydrationWrapper />);
+
+        await waitFor(() => {
+            const state = getDialecticStoreState();
+            const thesisProgress = state.stageRunProgress[thesisProgressKey];
+            expect(thesisProgress?.progress.completedSteps).toBe(1);
+        });
+
+        const state = getDialecticStoreState();
+        const progress: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+        expect(progress.hydrationReady).toBe(true);
+        expect(progress.overallPercentage).toBeGreaterThan(0);
     });
 
     it('DynamicProgressBar displays non-zero percentage when documents exist after hydration', async () => {

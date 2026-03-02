@@ -338,6 +338,7 @@ Deno.test("getAllStageProgress: thesis stage with full recipe and sparse jobs re
     new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
     new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
 
   const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -640,6 +641,7 @@ Deno.test("getAllStageProgress: progress calculates correctly for every stage in
     new Response(JSON.stringify(allRecipeSteps), { status: 200, headers }),
     new Response(JSON.stringify(allEdges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
 
   const dbClient: SupabaseClient<Database> = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -859,6 +861,7 @@ Deno.test("getAllStageProgress: RENDER jobs excluded from step status derivation
     new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
     new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify(resources), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
   const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -992,6 +995,7 @@ Deno.test("getAllStageProgress: continuation jobs excluded from step status deri
     new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
     new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
   const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -1096,6 +1100,7 @@ Deno.test("getAllStageProgress: spec invariant progress never decreases across s
     new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
     new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
   ];
   mockFetch([...buildMonoResponses(), ...buildMonoResponses()]);
   const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -1198,6 +1203,7 @@ Deno.test("getAllStageProgress: progress independent of model count", async (t) 
     new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
     new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify(sessionRowN3), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
     new Response(JSON.stringify(transitions), { status: 200, headers }),
@@ -1207,6 +1213,7 @@ Deno.test("getAllStageProgress: progress independent of model count", async (t) 
     new Response(JSON.stringify(instances), { status: 200, headers }),
     new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
     new Response(JSON.stringify(edges), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
   const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -1316,6 +1323,7 @@ Deno.test("getAllStageProgress: step with zero jobs whose successors have been r
     new Response(JSON.stringify(instances), { status: 200, headers }),
     new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
     new Response(JSON.stringify(edges), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
   const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -1514,6 +1522,7 @@ Deno.test("getAllStageProgress: randomized DAG test and progress for any valid D
     new Response(JSON.stringify(instances), { status: 200, headers }),
     new Response(JSON.stringify(allSteps), { status: 200, headers }),
     new Response(JSON.stringify(allEdges), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
   const dbClient: SupabaseClient<Database> = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {

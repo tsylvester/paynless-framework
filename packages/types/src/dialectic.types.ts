@@ -280,6 +280,8 @@ export type DAGLayoutOrientation = 'horizontal' | 'vertical';
 export interface DAGLayoutParams {
   steps: DialecticStageRecipeStep[];
   edges: DialecticRecipeEdge[];
+  nodeWidth: number;
+  nodeHeight: number;
   viewport?: DAGViewport;
 }
 
@@ -422,7 +424,13 @@ export interface DialecticStateValues {
 
   // Recipe hydration and per-stage-run progress
   recipesByStageSlug: Record<string, DialecticStageRecipe>;
+  /** DAG-level progress per run; key `${sessionId}:${iterationNumber}`. */
+  dagProgressByRun: Record<string, DagProgressDto>;
   stageRunProgress: Record<string, StageRunProgressSnapshot>;
+  /** Hydration status per run/progress key; key `${sessionId}:${iterationNumber}` or `${sessionId}:${stageSlug}:${iterationNumber}`. */
+  progressHydrationStatus: Record<string, 'idle' | 'pending' | 'success' | 'failed'>;
+  /** Error message when status is `failed`; key same as progressHydrationStatus. */
+  progressHydrationError: Record<string, string>;
   focusedStageDocument: Record<string, FocusedStageDocumentState | null>;
   stageDocumentContent: Record<string, StageDocumentContentState>;
   stageDocumentVersions: Record<string, StageDocumentVersionInfo>;
@@ -576,6 +584,8 @@ export interface StageProgressDetail {
   stageSlug: string;
   totalSteps: number;
   completedSteps: number;
+  totalDocuments: number;
+  completedDocuments: number;
   failedSteps: number;
   stagePercentage: number;
   stepsDetail: StepProgressDetail[];
@@ -589,6 +599,8 @@ export interface UnifiedProjectProgress {
   overallPercentage: number;
   currentStage: DialecticStage | null;
   projectStatus: UnifiedProjectStatus;
+  /** False when process template or progress snapshots are missing; UI must not render fake zeros. */
+  hydrationReady: boolean;
   stageDetails: StageProgressDetail[];
 }
 
@@ -763,6 +775,7 @@ export interface DialecticActions {
   // Recipe hydration and per-stage-run progress
   fetchStageRecipe: (stageSlug: string) => Promise<void>;
   ensureRecipeForActiveStage: (sessionId: string, stageSlug: string, iterationNumber: number) => Promise<void>;
+  resetProgressHydrationStatus: (runKey: string) => void;
 }
 
 export type DialecticStore = DialecticStateValues & DialecticActions;

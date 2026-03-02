@@ -6,8 +6,8 @@ import type {
   DialecticStageRecipeStep,
 } from '@paynless/types';
 
-const H_SPACE = 120;
-const V_SPACE = 80;
+const H_GAP = 40;
+const V_GAP = 30;
 
 function assignLayers(
   stepIds: Set<string>,
@@ -52,10 +52,13 @@ function assignLayers(
 }
 
 export function computeDAGLayout(params: DAGLayoutParams): DAGLayoutResult {
-  const { steps, edges, viewport } = params;
+  const { steps, edges, nodeWidth, nodeHeight, viewport } = params;
   if (steps.length === 0) {
     return { nodes: [], edges: [], width: 0, height: 0 };
   }
+
+  const hStep = nodeWidth + H_GAP;
+  const vStep = nodeHeight + V_GAP;
 
   const idToStep = new Map<string, DialecticStageRecipeStep>();
   const stepIds = new Set<string>();
@@ -111,14 +114,14 @@ export function computeDAGLayout(params: DAGLayoutParams): DAGLayoutResult {
           stepKey: step.step_key,
           stepName: step.step_name,
           jobType: step.job_type,
-          x: l * H_SPACE,
-          y: i * V_SPACE,
+          x: l * hStep,
+          y: i * vStep,
           layer: l,
         });
       }
     }
-    contentWidth = (maxLayer + 1) * H_SPACE;
-    contentHeight = maxNodesInLayer > 0 ? maxNodesInLayer * V_SPACE : V_SPACE;
+    contentWidth = maxLayer * hStep + nodeWidth;
+    contentHeight = maxNodesInLayer > 0 ? (maxNodesInLayer - 1) * vStep + nodeHeight : nodeHeight;
   } else {
     let maxNodesInLayer = 0;
     for (let l = 0; l <= maxLayer; l++) {
@@ -131,20 +134,23 @@ export function computeDAGLayout(params: DAGLayoutParams): DAGLayoutResult {
           stepKey: step.step_key,
           stepName: step.step_name,
           jobType: step.job_type,
-          x: i * H_SPACE,
-          y: l * V_SPACE,
+          x: i * hStep,
+          y: l * vStep,
           layer: l,
         });
       }
     }
-    contentWidth = maxNodesInLayer > 0 ? maxNodesInLayer * H_SPACE : H_SPACE;
-    contentHeight = (maxLayer + 1) * V_SPACE;
+    contentWidth = maxNodesInLayer > 0 ? (maxNodesInLayer - 1) * hStep + nodeWidth : nodeWidth;
+    contentHeight = maxLayer * vStep + nodeHeight;
   }
 
   const nodeByKey = new Map<string, DAGNodePosition>();
   for (const n of nodes) {
     nodeByKey.set(n.stepKey, n);
   }
+
+  const halfW = nodeWidth / 2;
+  const halfH = nodeHeight / 2;
 
   const resultEdges: DAGEdgePosition[] = [];
   for (const e of edges) {
@@ -154,14 +160,25 @@ export function computeDAGLayout(params: DAGLayoutParams): DAGLayoutResult {
     const fromNode = nodeByKey.get(fromStep.step_key);
     const toNode = nodeByKey.get(toStep.step_key);
     if (!fromNode || !toNode) continue;
-    resultEdges.push({
-      fromStepKey: fromStep.step_key,
-      toStepKey: toStep.step_key,
-      fromX: fromNode.x,
-      fromY: fromNode.y,
-      toX: toNode.x,
-      toY: toNode.y,
-    });
+    if (orientation === 'horizontal') {
+      resultEdges.push({
+        fromStepKey: fromStep.step_key,
+        toStepKey: toStep.step_key,
+        fromX: fromNode.x + nodeWidth,
+        fromY: fromNode.y + halfH,
+        toX: toNode.x,
+        toY: toNode.y + halfH,
+      });
+    } else {
+      resultEdges.push({
+        fromStepKey: fromStep.step_key,
+        toStepKey: toStep.step_key,
+        fromX: fromNode.x + halfW,
+        fromY: fromNode.y + nodeHeight,
+        toX: toNode.x + halfW,
+        toY: toNode.y,
+      });
+    }
   }
 
   let width = contentWidth;

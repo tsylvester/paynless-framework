@@ -70,8 +70,6 @@ const StageCard: React.FC<StageCardProps> = ({
 		);
 	}
 
-	const hasDocuments = progress.totalDocuments > 0;
-
 	return (
 		<div className="space-y-1.5" data-testid={`stage-card-${stage.slug}`}>
 			<button
@@ -117,26 +115,24 @@ const StageCard: React.FC<StageCardProps> = ({
 							{displayName}
 						</span>
 					</div>
-					{hasDocuments && (
-						<span
-							data-testid={`stage-progress-label-${stage.slug}`}
-							className={cn(
-								"text-xs font-medium",
-								progress.stageStatus === "failed"
-									? "text-destructive"
-									: progress.isComplete
-										? "text-emerald-600 dark:text-emerald-400"
-										: "text-muted-foreground",
-							)}
-						>
-							{progress.completedDocuments} / {progress.totalDocuments}
-							{progress.stageStatus === "failed"
-								? " Failed"
+					<span
+						data-testid={`stage-progress-label-${stage.slug}`}
+						className={cn(
+							"text-xs font-medium",
+							progress.stageStatus === "failed"
+								? "text-destructive"
 								: progress.isComplete
-									? " Done"
-									: ""}
-						</span>
-					)}
+									? "text-emerald-600 dark:text-emerald-400"
+									: "text-muted-foreground",
+						)}
+					>
+						{progress.completedDocuments} / {progress.totalDocuments}
+						{progress.stageStatus === "failed"
+							? " Failed"
+							: progress.isComplete
+								? " Done"
+								: ""}
+					</span>
 				</div>
 			</button>
 			{checklist && (
@@ -178,8 +174,8 @@ export const StageTabCard: React.FC = () => {
 			const detail = unified.stageDetails.find((d) => d.stageSlug === stage.slug);
 			if (!detail) throw new Error(`Missing stage detail for ${stage.slug}`);
 			summaries[stage.slug] = {
-				totalDocuments: detail.totalSteps,
-				completedDocuments: detail.completedSteps,
+				totalDocuments: detail.totalDocuments,
+				completedDocuments: detail.completedDocuments,
 				isComplete: detail.stageStatus === "completed",
 				stageStatus: detail.stageStatus,
 				stagePercentage: detail.stagePercentage,

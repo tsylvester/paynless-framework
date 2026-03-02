@@ -12,6 +12,7 @@ import type {
   DialecticSession,
   DialecticProject,
   DialecticStateValues,
+  StageRunProgressSnapshot,
   UnifiedProjectProgress,
   NotificationData,
   DialecticNotificationTypes,
@@ -131,6 +132,37 @@ const recipeThesis: DialecticStageRecipe = {
   ],
 };
 
+const recipeAntithesis: DialecticStageRecipe = {
+  stageSlug: 'antithesis',
+  instanceId: 'instance-antithesis-progress',
+  steps: [
+    {
+      id: 'step-antithesis-1',
+      step_key: 'step_1',
+      step_slug: 'step-1',
+      step_name: 'Step 1',
+      execution_order: 1,
+      parallel_group: 1,
+      branch_key: 'b1',
+      job_type: 'EXECUTE',
+      prompt_type: 'Turn',
+      output_type: 'assembled_document_json',
+      granularity_strategy: 'per_source_document',
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: [{ document_key: 'doc_1', artifact_class: 'rendered_document', file_type: 'markdown' }],
+    },
+  ],
+  edges: [],
+};
+
+const emptyStageProgress: StageRunProgressSnapshot = {
+  stepStatuses: {},
+  documents: {},
+  jobProgress: {},
+  progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+};
+
 function buildNotification(
   type: DialecticNotificationTypes,
   data: NotificationData,
@@ -211,7 +243,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       currentProjectDetail: project,
       currentProcessTemplate: templateTwoStages,
       selectedModels: progressSelectedModels,
-      recipesByStageSlug: { [stageSlug]: recipeThesis },
+      recipesByStageSlug: { [stageSlug]: recipeThesis, antithesis: recipeAntithesis },
       stageRunProgress: {
         [progressKey]: {
           stepStatuses: {
@@ -223,6 +255,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
           jobProgress: {},
           progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
         },
+        [`${sessionId}:antithesis:${iterationNumber}`]: emptyStageProgress,
       },
     });
   });
@@ -267,6 +300,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       const progress = state.stageRunProgress[progressKey];
       if (!progress) return;
       progress.stepStatuses.planner_step = 'completed';
+      progress.progress = { completedSteps: 1, totalSteps: 3, failedSteps: 0 };
     });
 
     const state: DialecticStateValues = useDialecticStore.getState();
@@ -321,6 +355,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       if (!progress) return;
       progress.stepStatuses.planner_step = 'completed';
       progress.stepStatuses.document_step = 'in_progress';
+      progress.progress = { completedSteps: 1, totalSteps: 3, failedSteps: 0 };
       progress.documents[getStageRunDocumentKey('business_case', 'model-1')] = {
         descriptorType: 'rendered',
         status: 'completed',
@@ -350,6 +385,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       if (!progress) return;
       progress.stepStatuses.planner_step = 'completed';
       progress.stepStatuses.document_step = 'completed';
+      progress.progress = { completedSteps: 2, totalSteps: 3, failedSteps: 0 };
       progress.documents[getStageRunDocumentKey('business_case', 'model-1')] = {
         descriptorType: 'rendered',
         status: 'completed',
@@ -581,6 +617,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       progress.stepStatuses.planner_step = 'completed';
       progress.stepStatuses.document_step = 'completed';
       progress.stepStatuses.render_step = 'completed';
+      progress.progress = { completedSteps: 3, totalSteps: 3, failedSteps: 0 };
       if (progress.jobProgress) {
         progress.jobProgress.planner_step = { totalJobs: 1, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
         progress.jobProgress.document_step = { totalJobs: 3, completedJobs: 3, inProgressJobs: 0, failedJobs: 0 };
@@ -626,6 +663,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       progress.stepStatuses.planner_step = 'completed';
       progress.stepStatuses.document_step = 'completed';
       progress.stepStatuses.render_step = 'completed';
+      progress.progress = { completedSteps: 3, totalSteps: 3, failedSteps: 0 };
       if (progress.jobProgress) {
         progress.jobProgress.planner_step = { totalJobs: 1, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
         progress.jobProgress.document_step = { totalJobs: 3, completedJobs: 3, inProgressJobs: 0, failedJobs: 0 };

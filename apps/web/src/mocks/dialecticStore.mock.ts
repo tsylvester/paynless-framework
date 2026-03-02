@@ -242,7 +242,7 @@ export const selectStageDocumentChecklist = (
         documentKey,
         status: descriptor.status,
         jobId: descriptor.job_id,
-        latestRenderedResourceId: descriptor.latestRenderedResourceId ?? null,
+        latestRenderedResourceId: descriptor.latestRenderedResourceId,
         modelId: descriptor.modelId,
         stepKey: descriptor.stepKey,
       });
@@ -277,7 +277,7 @@ export const selectStageProgressSummary = (
   const documentKeys = Object.keys(progress.documents).filter((key) => {
     if (!modelId) return true;
     const documentDescriptor = progress.documents[key];
-    return documentDescriptor?.modelId === modelId;
+    return documentDescriptor && documentDescriptor.modelId === modelId;
   });
 
   let completedDocuments = 0;
@@ -407,7 +407,10 @@ export const initialDialecticStateValues: DialecticStateValues = {
   activeDialecticWalletId: null,
   activeStageSlug: 'thesis',
   recipesByStageSlug: {},
+  dagProgressByRun: {},
   stageRunProgress: {},
+  progressHydrationStatus: {},
+  progressHydrationError: {},
   focusedStageDocument: {},
   stageDocumentContent: {},
   stageDocumentVersions: {},
@@ -726,6 +729,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       hydrateAllStageProgress: vi.fn().mockImplementation((payload: GetAllStageProgressPayload) => {
         hydrateAllStageProgressLogic(set, payload);
       }),
+      resetProgressHydrationStatus: vi.fn(),
       initializeFeedbackDraft: vi.fn().mockImplementation(
         async (key: StageDocumentCompositeKey) => {
           const userId = internalMockAuthStoreGetState().user?.id ?? null;

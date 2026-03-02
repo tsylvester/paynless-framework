@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
 import {
   useDialecticStore,
+  selectActiveContextSessionId,
   selectIsStageReadyForSessionIteration,
   selectSortedStages,
   selectStageHasUnsavedChanges,
-  selectStageProgressSummary,
+  selectUnifiedProjectProgress,
 } from '@paynless/store';
 import type { ApiError, SubmitStageResponsesPayload } from '@paynless/types';
 import { Button } from '@/components/ui/button';
@@ -48,20 +49,27 @@ export const SubmitResponsesButton: React.FC = () => {
     );
   });
 
-  const stageProgressSummary = useDialecticStore((state) => {
+  const { activeStageDetail, hasUnsavedEdits, hasUnsavedFeedback } = useDialecticStore((state) => {
     const s = state.activeSessionDetail;
     const a = state.activeContextStage;
-    if (!s || !a || typeof s.iteration_count !== 'number') return undefined;
-    return selectStageProgressSummary(state, s.id, a.slug, s.iteration_count);
-  });
-
-  const { hasUnsavedEdits, hasUnsavedFeedback } = useDialecticStore((state) => {
-    const s = state.activeSessionDetail;
-    const a = state.activeContextStage;
+    const sessionId = selectActiveContextSessionId(state);
     if (!s || !a || typeof s.iteration_count !== 'number') {
-      return { hasUnsavedEdits: false, hasUnsavedFeedback: false };
+      return {
+        activeStageDetail: undefined,
+        hasUnsavedEdits: false,
+        hasUnsavedFeedback: false,
+      };
     }
-    return selectStageHasUnsavedChanges(state, s.id, a.slug, s.iteration_count);
+    const unified = sessionId
+      ? selectUnifiedProjectProgress(state, sessionId)
+      : null;
+    const detail = unified?.stageDetails.find((d) => d.stageSlug === a.slug);
+    const changes = selectStageHasUnsavedChanges(state, s.id, a.slug, s.iteration_count);
+    return {
+      activeStageDetail: detail,
+      hasUnsavedEdits: changes.hasUnsavedEdits,
+      hasUnsavedFeedback: changes.hasUnsavedFeedback,
+    };
   });
 
   const isFinalStage = useMemo(() => {
@@ -71,12 +79,12 @@ export const SubmitResponsesButton: React.FC = () => {
     );
   }, [activeStage, processTemplate?.transitions]);
 
-  const hasContributions =
-    stageProgressSummary !== undefined && stageProgressSummary.totalDocuments > 0;
-  const isStageComplete = stageProgressSummary?.isComplete ?? false;
-  const canShowButton =
-    isStageReady && !isFinalStage && hasContributions;
-  const shouldPulse = canShowButton && isStageComplete && !isSubmitting;
+  const allDocumentsAvailable =
+    activeStageDetail != null &&
+    activeStageDetail.totalDocuments > 0 &&
+    activeStageDetail.completedDocuments === activeStageDetail.totalDocuments;
+  const canShowButton = isStageReady && !isFinalStage;
+  const shouldPulse = canShowButton && allDocumentsAvailable && !isSubmitting;
 
   const handleSubmit = async (): Promise<void> => {
     if (!session || !activeStage || !project) return;
@@ -121,7 +129,7 @@ export const SubmitResponsesButton: React.FC = () => {
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
-              disabled={isSubmitting || !isStageComplete}
+              disabled={isSubmitting || !allDocumentsAvailable}
               className={
                 shouldPulse ? 'animate-pulse ring-2 ring-primary' : undefined
               }

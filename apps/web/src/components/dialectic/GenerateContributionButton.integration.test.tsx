@@ -227,7 +227,7 @@ describe('GenerateContributionButton integration', () => {
     const user = userEvent.setup();
     render(<GenerateContributionButton />);
 
-    await user.click(screen.getByRole('button', { name: /Generate Thesis/i }));
+    await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();

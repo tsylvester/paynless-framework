@@ -958,6 +958,297 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
         *   `[✅]`   Modified: `apps/web/src/components/dialectic/GenerateContributionButton.tsx` — wired dialog to generate action
         *   `[✅]`   Modified: `apps/web/src/components/dialectic/GenerateContributionButton.test.tsx` — tests for dialog integration
 
+*   `[✅]`   `[STORE]` packages/store/src/`dialecticStore.documents.ts` **Fix hydration logic to throw on failure instead of silently returning**
+    *   `[✅]`   `objective`
+        *   `[✅]`   `hydrateStageProgressLogic` must throw when the API returns an error, when validation fails, or when response data is null/undefined — not silently return
+        *   `[✅]`   `hydrateAllStageProgressLogic` must throw when the API returns an error, when validation fails, when stages array is unexpectedly empty, or when step data is absent — not silently return
+        *   `[✅]`   Remove every silent `return` that hides a failure condition
+        *   `[✅]`   Every error path must throw with a descriptive message identifying the function, the failure condition, and the relevant payload keys
+    *   `[✅]`   `role`
+        *   `[✅]`   Application — store logic, async I/O via API client
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic store document/progress hydration
+        *   `[✅]`   Bounded to hydration logic functions; does not change SSE event handlers or document content logic
+    *   `[✅]`   `deps`
+        *   `[✅]`   `api.dialectic().listStageDocuments` — adapter layer, API client — provides document list for stage hydration
+        *   `[✅]`   `api.dialectic().getAllStageProgress` — adapter layer, API client — provides step statuses, progress counts, and documents for all stages
+        *   `[✅]`   `isStageRenderedDocumentChecklistEntry` — utility type guard — validates response shape
+        *   `[✅]`   No new dependencies introduced
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   Injection shape: `set` function from zustand immer, `payload` typed as `ListStageDocumentsPayload` or `GetAllStageProgressPayload`
+        *   `[✅]`   No change to injection shape
+        *   `[✅]`   Confirm no concrete imports from higher or lateral layers
+    *   `[✅]`   packages/types/src/`dialectic.types.ts`
+        *   `[✅]`   No type changes required for this node — functions continue to return `Promise<void>` and throw on failure
+    *   `[✅]`   unit/packages/store/src/`dialecticStore.documents.test.ts`
+        *   `[✅]`   Test: `hydrateStageProgressLogic` throws when API returns error response
+        *   `[✅]`   Test: `hydrateStageProgressLogic` throws when API returns null data
+        *   `[✅]`   Test: `hydrateStageProgressLogic` throws when document validation fails (invalid entries)
+        *   `[✅]`   Test: `hydrateAllStageProgressLogic` throws when API returns error response
+        *   `[✅]`   Test: `hydrateAllStageProgressLogic` throws when API returns undefined data
+        *   `[✅]`   Test: `hydrateAllStageProgressLogic` throws when document validation fails (invalid entries)
+        *   `[✅]`   Test: `hydrateAllStageProgressLogic` throws when stages array is empty and that is unexpected
+        *   `[✅]`   Existing passing tests for success paths remain GREEN
+    *   `[✅]`   `construction`
+        *   `[✅]`   Signature unchanged: `hydrateStageProgressLogic(set, payload): Promise<void>` — throws on failure
+        *   `[✅]`   Signature unchanged: `hydrateAllStageProgressLogic(set, payload): Promise<void>` — throws on failure
+        *   `[✅]`   Callers must catch thrown errors — the store actions in `dialecticStore.ts` are the callers
+    *   `[✅]`   packages/store/src/`dialecticStore.documents.ts`
+        *   `[✅]`   `hydrateStageProgressLogic`: replace every silent `return` on error/validation-failure with `throw new Error('[hydrateStageProgress] <descriptive message>')`
+        *   `[✅]`   `hydrateAllStageProgressLogic`: replace every silent `return` on error/validation-failure with `throw new Error('[hydrateAllStageProgress] <descriptive message>')`
+        *   `[✅]`   Remove the `catch (err: unknown)` blocks that convert errors to logs and silently return — let errors propagate
+        *   `[✅]`   Keep the `set()` calls on the success path unchanged
+    *   `[✅]`   `provides`
+        *   `[✅]`   Exported: `hydrateStageProgressLogic`, `hydrateAllStageProgressLogic` — same exports, changed contract (now throws on failure)
+        *   `[✅]`   Semantic guarantee: on successful return, `stageRunProgress[key]` is populated with valid step statuses, progress counts, and documents
+        *   `[✅]`   Semantic guarantee: on failure, throws with descriptive error — caller is responsible for handling
+    *   `[✅]`   packages/store/src/`dialecticStore.documents.mock.ts`
+        *   `[✅]`   No mock changes — these functions are tested directly, not through mocks
+    *   `[✅]`   integration/packages/store/src/`dialecticStore.documents.integration.test.ts`
+        *   `[✅]`   Not required — integration coverage is provided by the hydration hook integration test (Node 4)
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: application (store logic)
+        *   `[✅]`   All dependencies inward-facing (API adapter, type guards)
+        *   `[✅]`   Provides outward to: `dialecticStore.ts` store actions
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Every failure path throws with a descriptive error message
+        *   `[✅]`   No silent returns on error conditions
+        *   `[✅]`   Success path behavior unchanged — same state mutations on valid data
+        *   `[✅]`   Existing success-path tests remain GREEN
+
+*   `[✅]`   `[STORE]` packages/store/src/`dialecticStore.ts` **Fix fetchStageRecipe, ensureRecipeForActiveStage; add hydration status tracking**
+    *   `[✅]`   `objective`
+        *   `[✅]`   `fetchStageRecipe` must surface errors instead of swallowing them in a catch block — throw on API failure
+        *   `[✅]`   `ensureRecipeForActiveStage` must throw when recipe is missing instead of silently returning — a missing recipe is a prerequisite failure, not a no-op
+        *   `[✅]`   `hydrateAllStageProgress` store action must catch errors from logic function, set hydration status to `failed` in store, and log the error — not silently swallow
+        *   `[✅]`   `hydrateStageProgress` store action must catch errors from logic function, set hydration status to `failed` in store, and log the error — not silently swallow
+        *   `[✅]`   Add `progressHydrationStatus` to store state so consumers can observe hydration success/failure
+        *   `[✅]`   Add `progressHydrationError` to store state so consumers can observe the error message
+    *   `[✅]`   `role`
+        *   `[✅]`   Application — zustand store actions, state management
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic store — recipe fetching, progress hydration orchestration, hydration status tracking
+        *   `[✅]`   Bounded to store actions and state; does not change hydration logic functions in `dialecticStore.documents.ts`
+    *   `[✅]`   `deps`
+        *   `[✅]`   `hydrateStageProgressLogic` — from `dialecticStore.documents.ts` — now throws on failure (Node 1 must be complete)
+        *   `[✅]`   `hydrateAllStageProgressLogic` — from `dialecticStore.documents.ts` — now throws on failure (Node 1 must be complete)
+        *   `[✅]`   `api.dialectic().fetchStageRecipe` — adapter layer, API client
+        *   `[✅]`   No new external dependencies introduced
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   Injection shape: zustand `set`/`get` from store creation
+        *   `[✅]`   Confirm no concrete imports from higher or lateral layers
+    *   `[✅]`   packages/types/src/`dialectic.types.ts`
+        *   `[✅]`   Add to `DialecticStateValues`: `progressHydrationStatus: Record<string, 'idle' | 'pending' | 'success' | 'failed'>` — keyed by `${sessionId}:${iterationNumber}`
+        *   `[✅]`   Add to `DialecticStateValues`: `progressHydrationError: Record<string, string>` — keyed by `${sessionId}:${iterationNumber}`, only present when status is `failed`
+        *   `[✅]`   Add to `DialecticStore`: `resetProgressHydrationStatus: (runKey: string) => void` — allows hook to clear failed status for retry
+    *   `[✅]`   _No type guard changes required — new fields are simple record types_
+    *   `[✅]`   unit/packages/store/src/`dialecticStore.test.ts`
+        *   `[✅]`   Test: `fetchStageRecipe` throws when API returns error response
+        *   `[✅]`   Test: `fetchStageRecipe` throws when API returns null data
+        *   `[✅]`   Test: `fetchStageRecipe` sets recipe in store on success (existing behavior, verify GREEN)
+        *   `[✅]`   Test: `ensureRecipeForActiveStage` throws when recipe is not in store
+        *   `[✅]`   Test: `ensureRecipeForActiveStage` initializes progress snapshot when recipe exists (existing behavior, verify GREEN)
+        *   `[✅]`   Test: `hydrateAllStageProgress` sets `progressHydrationStatus[runKey]` to `pending` before calling logic
+        *   `[✅]`   Test: `hydrateAllStageProgress` sets `progressHydrationStatus[runKey]` to `success` when logic completes without throwing
+        *   `[✅]`   Test: `hydrateAllStageProgress` sets `progressHydrationStatus[runKey]` to `failed` and `progressHydrationError[runKey]` to error message when logic throws
+        *   `[✅]`   Test: `hydrateStageProgress` sets `progressHydrationStatus[progressKey]` to `pending` before calling logic
+        *   `[✅]`   Test: `hydrateStageProgress` sets `progressHydrationStatus[progressKey]` to `success` when logic completes without throwing
+        *   `[✅]`   Test: `hydrateStageProgress` sets `progressHydrationStatus[progressKey]` to `failed` and error when logic throws
+        *   `[✅]`   Test: `resetProgressHydrationStatus` clears status and error for the given key
+        *   `[✅]`   Test: `initialDialecticStateValues` includes `progressHydrationStatus: {}` and `progressHydrationError: {}`
+    *   `[✅]`   `construction`
+        *   `[✅]`   `fetchStageRecipe(stageSlug: string): Promise<void>` — removes catch-swallow, throws on API error
+        *   `[✅]`   `ensureRecipeForActiveStage(sessionId, stageSlug, iterationNumber): Promise<void>` — throws when recipe missing
+        *   `[✅]`   `hydrateAllStageProgress(payload): Promise<void>` — sets hydration status, catches logic errors and sets failed status
+        *   `[✅]`   `hydrateStageProgress(payload): Promise<void>` — sets hydration status, catches logic errors and sets failed status
+        *   `[✅]`   `resetProgressHydrationStatus(runKey): void` — clears status and error
+        *   `[✅]`   Add `progressHydrationStatus: {}` and `progressHydrationError: {}` to `initialDialecticStateValues`
+    *   `[✅]`   packages/store/src/`dialecticStore.ts`
+        *   `[✅]`   `fetchStageRecipe`: remove the `catch (_e: unknown) {}` block — let API errors propagate as thrown errors
+        *   `[✅]`   `ensureRecipeForActiveStage`: replace the silent `return` when `!recipe` with `throw new Error('[ensureRecipeForActiveStage] Recipe not loaded for stage: ${stageSlug} — fetchStageRecipe must succeed before calling this function')`
+        *   `[✅]`   `hydrateAllStageProgress`: wrap logic call in try/catch — set `progressHydrationStatus[runKey] = 'pending'` before, `'success'` after, `'failed'` on catch; set `progressHydrationError[runKey]` on catch; log error on catch
+        *   `[✅]`   `hydrateStageProgress`: same pattern as above with progressKey
+        *   `[✅]`   Add `resetProgressHydrationStatus` action: clears `progressHydrationStatus[runKey]` and `progressHydrationError[runKey]`
+        *   `[✅]`   Add new fields to `initialDialecticStateValues`
+    *   `[✅]`   `provides`
+        *   `[✅]`   Exported: `useDialecticStore` — unchanged export, new state fields and actions available
+        *   `[✅]`   Semantic guarantee: `fetchStageRecipe` either populates `recipesByStageSlug[slug]` or throws
+        *   `[✅]`   Semantic guarantee: `ensureRecipeForActiveStage` either initializes progress snapshot or throws
+        *   `[✅]`   Semantic guarantee: `hydrateAllStageProgress` sets `progressHydrationStatus` to `success` or `failed` — never leaves it ambiguous
+        *   `[✅]`   Stability guarantee: existing SSE event handlers unchanged
+    *   `[✅]`   apps/web/src/mocks/`dialecticStore.mock.ts`
+        *   `[✅]`   Add `progressHydrationStatus: {}` and `progressHydrationError: {}` to mock initial state
+        *   `[✅]`   Add `resetProgressHydrationStatus: vi.fn()` to mock store actions
+    *   `[✅]`   integration/packages/store/src/`dialecticStore.integration.test.ts`
+        *   `[✅]`   Not required — integration coverage is provided by the hydration hook integration test (Node 4)
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: application (store)
+        *   `[✅]`   Dependencies inward: `dialecticStore.documents.ts` (logic), API adapter
+        *   `[✅]`   Provides outward to: selectors, hydration hook, UI components
+    *   `[✅]`   `requirements`
+        *   `[✅]`   No error is silently swallowed — every failure is either thrown or stored in `progressHydrationStatus`/`progressHydrationError`
+        *   `[✅]`   Hydration status is observable in the store for every run key
+        *   `[✅]`   Existing success-path behavior unchanged
+        *   `[✅]`   Mock updated to include new state fields
+
+*   `[✅]`   `[STORE]` packages/store/src/`dialecticStore.selectors.ts` **Fix selectUnifiedProjectProgress to use backend progress counts and demand valid data**
+    *   `[✅]`   `objective`
+        *   `[✅]`   `selectUnifiedProjectProgress` must use `progress.progress.totalSteps`, `progress.progress.completedSteps`, `progress.progress.failedSteps` from the backend-provided data in `stageRunProgress` — not recompute from recipes
+        *   `[✅]`   `selectUnifiedProjectProgress` must enumerate steps from `progress.stepStatuses` keys when recipes are not yet loaded — the backend provides the step keys and statuses
+        *   `[✅]`   `selectUnifiedProjectProgress` must report `hydrationReady: boolean` — false when required data (process template, progress snapshots) is missing
+        *   `[✅]`   `selectRecipeSteps` must not return `EMPTY_RECIPE_STEPS` as a fallback — it must return an explicit empty indicator or the selector must check for recipe absence directly
+        *   `[✅]`   Remove `EMPTY_RECIPE_STEPS` constant — it exists solely to enable the fallback pattern
+        *   `[✅]`   Document counts: `totalDocumentsForStage` and `completedDocumentsForStage` must also work without recipes — derive from `progress.documents` entries when recipes unavailable
+    *   `[✅]`   `role`
+        *   `[✅]`   Application — derived state selectors
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic store selectors — progress computation
+        *   `[✅]`   Bounded to selector functions; does not change store actions or state shape (except adding `hydrationReady` to return type)
+    *   `[✅]`   `deps`
+        *   `[✅]`   `DialecticStateValues` — store state — provides `stageRunProgress`, `recipesByStageSlug`, `currentProcessTemplate`
+        *   `[✅]`   `selectStageRunProgress` — sibling selector — provides progress snapshot for a stage
+        *   `[✅]`   No new dependencies introduced
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   Input: `DialecticStateValues` (full state slice) and `sessionId: string`
+        *   `[✅]`   No change to injection shape
+        *   `[✅]`   Confirm no concrete imports from higher or lateral layers
+    *   `[✅]`   packages/types/src/`dialectic.types.ts`
+        *   `[✅]`   Add `hydrationReady: boolean` to `UnifiedProjectProgress` interface
+    *   `[✅]`   _No type guard changes required — `hydrationReady` is a simple boolean_
+    *   `[✅]`   unit/packages/store/src/`dialecticStore.selectors.documents.test.ts`
+        *   `[✅]`   Test: `selectUnifiedProjectProgress` returns `hydrationReady: false` when `currentProcessTemplate` is null
+        *   `[✅]`   Test: `selectUnifiedProjectProgress` returns `hydrationReady: false` when `stageRunProgress` has no entries for the session
+        *   `[✅]`   Test: `selectUnifiedProjectProgress` returns `hydrationReady: true` when process template and progress snapshots are present
+        *   `[✅]`   Test: `selectUnifiedProjectProgress` uses `progress.progress.totalSteps` from backend, not `recipe.steps.length`
+        *   `[✅]`   Test: `selectUnifiedProjectProgress` uses `progress.progress.completedSteps` from backend, not recomputed count
+        *   `[✅]`   Test: `selectUnifiedProjectProgress` uses `progress.progress.failedSteps` from backend, not recomputed count
+        *   `[✅]`   Test: `selectUnifiedProjectProgress` enumerates steps from `progress.stepStatuses` keys when recipe is not loaded
+        *   `[✅]`   Test: `selectUnifiedProjectProgress` uses recipe step names when recipe IS loaded (enrichment, not dependency)
+        *   `[✅]`   Test: `selectUnifiedProjectProgress` computes `completedDocumentsForStage` from `progress.documents` entries without requiring `validMarkdownKeys` when recipe is absent
+        *   `[✅]`   Test: `selectUnifiedProjectProgress` computes `totalDocumentsForStage` from `progress.documents` entry count when recipe is absent
+        *   `[✅]`   Existing passing tests for success paths with recipes present remain GREEN
+    *   `[✅]`   `construction`
+        *   `[✅]`   Signature unchanged: `selectUnifiedProjectProgress(state, sessionId): UnifiedProjectProgress` — return type gains `hydrationReady`
+        *   `[✅]`   `selectRecipeSteps`: remove `EMPTY_RECIPE_STEPS` fallback — return `undefined` when recipe is absent, or remove this helper entirely and inline the check
+    *   `[✅]`   packages/store/src/`dialecticStore.selectors.ts`
+        *   `[✅]`   `selectUnifiedProjectProgress`: for each stage, read `progress.progress.totalSteps`, `.completedSteps`, `.failedSteps` from `selectStageRunProgress` — these are the backend-computed values
+        *   `[✅]`   `selectUnifiedProjectProgress`: enumerate `stepsDetail` from `progress.stepStatuses` keys — use recipe step names when available, use step key as name when recipe absent
+        *   `[✅]`   `selectUnifiedProjectProgress`: compute `totalDocumentsForStage` from `validMarkdownKeys.size` when recipe available, from `Object.keys(progress.documents).length` when recipe absent
+        *   `[✅]`   `selectUnifiedProjectProgress`: compute `completedDocumentsForStage` from `progress.documents` entries with `status === 'completed'` — same logic, but works without `validMarkdownKeys` filter when recipe absent
+        *   `[✅]`   `selectUnifiedProjectProgress`: set `hydrationReady` to `true` only when `currentProcessTemplate` is non-null AND at least one `stageRunProgress` entry exists for the session
+        *   `[✅]`   Remove `EMPTY_RECIPE_STEPS` constant
+        *   `[✅]`   `selectRecipeSteps`: return `undefined` when recipe absent (or remove entirely)
+    *   `[✅]`   `provides`
+        *   `[✅]`   Exported: `selectUnifiedProjectProgress` — same export, return type now includes `hydrationReady`
+        *   `[✅]`   Semantic guarantee: progress counts reflect backend truth, not frontend recipe enumeration
+        *   `[✅]`   Semantic guarantee: `hydrationReady === false` means the selector does not have enough data to report accurate progress — UI must not render fake zeros
+        *   `[✅]`   Stability guarantee: when recipes are loaded, step detail includes step names (enriched); when recipes are absent, step detail uses step keys as names (degraded but truthful)
+    *   `[✅]`   _No mock changes required — selectors are pure functions, not mocked_
+    *   `[✅]`   integration/packages/store/src/`dialecticStore.selectors.integration.test.ts`
+        *   `[✅]`   Not required — integration coverage is provided by the hydration hook integration test (Node 4)
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: application (derived state)
+        *   `[✅]`   Dependencies inward: store state types
+        *   `[✅]`   Provides outward to: UI components (`DynamicProgressBar`, `StageTabCard`, `StageDAGProgressDialog`, `SessionInfoCard`, `SubmitResponsesButton`)
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Progress counts come from backend data, not recipe enumeration
+        *   `[✅]`   No fallback to empty array or zero when data is absent — `hydrationReady: false` signals the gap
+        *   `[✅]`   Step detail works with or without recipes — uses step keys as fallback names, not empty array
+        *   `[✅]`   Document counts work with or without recipe-derived `validMarkdownKeys`
+        *   `[✅]`   All consumers of `UnifiedProjectProgress` must handle `hydrationReady: false` (addressed in UI node or as separate follow-up)
+
+*   `[✅]`   `[UI]` apps/web/src/hooks/`useStageRunProgressHydration.ts` **Fix execution ordering, replace ref guard with store-based status, support retry**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Remove `hasHydratedAllStagesRef` — replace with store-based `progressHydrationStatus` read from `useDialecticStore`
+        *   `[✅]`   Remove `isFetchingRef` — replace with store-based status check
+        *   `[✅]`   Guarantee execution ordering: `fetchStageRecipe` must succeed (verified) before `ensureRecipeForActiveStage`, which must succeed before `hydrateAllStageProgress`
+        *   `[✅]`   On failure of any step: do NOT mark hydration complete — leave status as `failed` so retry can occur
+        *   `[✅]`   Support retry: when `progressHydrationStatus` is `failed`, allow re-triggering hydration (e.g., on re-render, on user action, or after a delay)
+        *   `[✅]`   Log errors explicitly — the user (developer) must see what failed and why
+    *   `[✅]`   `role`
+        *   `[✅]`   UI — React hook, orchestrates hydration lifecycle
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic progress hydration hook
+        *   `[✅]`   Bounded to the hook file; does not change store actions, selectors, or logic functions
+    *   `[✅]`   `deps`
+        *   `[✅]`   `useDialecticStore` — store — provides `fetchStageRecipe`, `ensureRecipeForActiveStage`, `hydrateAllStageProgress`, `hydrateStageProgress`, `resetProgressHydrationStatus`, `progressHydrationStatus`, `recipesByStageSlug`
+        *   `[✅]`   `useAuthStore` — store — provides `user`
+        *   `[✅]`   `selectSortedStages` — selector — provides sorted stage list
+        *   `[✅]`   Node 1 (dialecticStore.documents.ts) must be complete — logic functions throw on failure
+        *   `[✅]`   Node 2 (dialecticStore.ts) must be complete — store actions set hydration status, fetchStageRecipe throws
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   Hook reads from stores via selectors; no DI injection
+        *   `[✅]`   Confirm no concrete imports from higher or lateral layers
+    *   `[✅]`   packages/types/src/`dialectic.types.ts`
+        *   `[✅]`   No type changes required for this node — all required types were added in Nodes 2 and 3
+    *   `[✅]`   _No type guard changes required_
+    *   `[✅]`   unit/apps/web/src/hooks/`useStageRunProgressHydration.test.tsx`
+        *   `[✅]`   Test: hook does not attempt hydration when `user` is null
+        *   `[✅]`   Test: hook does not attempt hydration when `activeContextSessionId` is null
+        *   `[✅]`   Test: hook does not attempt hydration when `activeSessionDetail` is null
+        *   `[✅]`   Test: hook does not attempt hydration when `sortedStages` is empty
+        *   `[✅]`   Test: hook calls `fetchStageRecipe` for all sorted stages before calling `ensureRecipeForActiveStage`
+        *   `[✅]`   Test: hook verifies `recipesByStageSlug` has entries for all stages after `fetchStageRecipe` completes — if any are missing, does not proceed and logs error
+        *   `[✅]`   Test: hook calls `ensureRecipeForActiveStage` for all stages with loaded recipes before calling `hydrateAllStageProgress`
+        *   `[✅]`   Test: hook calls `hydrateAllStageProgress` only after recipes and progress snapshots are initialized
+        *   `[✅]`   Test: hook reads `progressHydrationStatus[runKey]` from store — does not use a ref
+        *   `[✅]`   Test: hook does not re-trigger hydration when `progressHydrationStatus[runKey]` is `success`
+        *   `[✅]`   Test: hook re-triggers hydration when `progressHydrationStatus[runKey]` is `failed`
+        *   `[✅]`   Test: hook re-triggers hydration when `progressHydrationStatus[runKey]` is `idle` (never attempted)
+        *   `[✅]`   Test: when `fetchStageRecipe` throws, hook logs the error and does not proceed to `ensureRecipeForActiveStage`
+        *   `[✅]`   Test: when `ensureRecipeForActiveStage` throws, hook logs the error and does not proceed to `hydrateAllStageProgress`
+        *   `[✅]`   Test: per-stage effect (Effect 2) also respects ordering and error handling
+        *   `[✅]`   Existing tests updated to reflect removal of ref-based guards
+    *   `[✅]`   `construction`
+        *   `[✅]`   Signature unchanged: `useStageRunProgressHydration(): void`
+        *   `[✅]`   Remove `hasHydratedAllStagesRef` — replaced by `progressHydrationStatus` from store
+        *   `[✅]`   Remove `isFetchingRef` — replaced by `progressHydrationStatus` check
+        *   `[✅]`   Hydration sequence: `fetchStageRecipe` (all) → verify recipes loaded → `ensureRecipeForActiveStage` (all) → `hydrateAllStageProgress` → verify status is `success`
+        *   `[✅]`   On any step failure: log error, stop sequence — store action already sets `failed` status
+    *   `[✅]`   apps/web/src/hooks/`useStageRunProgressHydration.ts`
+        *   `[✅]`   Remove `hasHydratedAllStagesRef` and `isFetchingRef`
+        *   `[✅]`   Read `progressHydrationStatus` from `useDialecticStore`
+        *   `[✅]`   Read `recipesByStageSlug` from `useDialecticStore`
+        *   `[✅]`   Effect 1 (hydrate all): compute `runKey` from `sessionId:iterationNumber`; check `progressHydrationStatus[runKey]`; if `success`, skip; if `pending`, skip; if `idle` or `failed`, proceed
+        *   `[✅]`   Effect 1: wrap `fetchStageRecipe` calls in try/catch — on catch, log error and return (store already set failed status for recipe fetch... actually no, fetchStageRecipe throws but the store doesn't catch it in the action — it propagates. So the hook must catch.)
+        *   `[✅]`   WAIT — re-evaluate: `fetchStageRecipe` in Node 2 removes the catch block and lets errors propagate. The store action itself throws. The hook must catch this throw. When it catches, it should log and stop the sequence. The `progressHydrationStatus` for recipe fetch is not tracked (only hydrate actions track it). The hook should handle recipe fetch failure by logging and not proceeding.
+        *   `[✅]`   Effect 1: after `fetchStageRecipe` completes for all stages, verify `recipesByStageSlug` has entries for every stage — if any are missing, log which stages failed and return
+        *   `[✅]`   Effect 1: call `ensureRecipeForActiveStage` for each stage — wrapped in try/catch (it now throws if recipe missing, but we just verified they're all present, so this should not throw; catch is defensive)
+        *   `[✅]`   Effect 1: call `hydrateAllStageProgress` — this sets `progressHydrationStatus` to pending/success/failed internally
+        *   `[✅]`   Effect 2 (per-stage): same ordering guarantees — verify recipe exists, ensure progress snapshot, hydrate stage
+        *   `[✅]`   Effect 2: check `progressHydrationStatus` for the stage key — skip if `success` or `pending`
+    *   `[✅]`   `provides`
+        *   `[✅]`   Exported: `useStageRunProgressHydration` — same export, same signature
+        *   `[✅]`   Semantic guarantee: hydration either succeeds (progress data in store, status `success`) or fails visibly (status `failed`, error logged)
+        *   `[✅]`   Semantic guarantee: no one-shot lockout — failed hydrations can be retried
+        *   `[✅]`   Stability guarantee: does not re-trigger hydration when status is `success`
+    *   `[✅]`   apps/web/src/mocks/`dialecticStore.mock.ts`
+        *   `[✅]`   Verify mock includes `progressHydrationStatus` and `progressHydrationError` and `resetProgressHydrationStatus` (added in Node 2)
+    *   `[✅]`   integration/apps/web/src/hooks/`useStageRunProgressHydration.integration.test.tsx`
+        *   `[✅]`   Test: full hydration pipeline from hook → store actions → selectors produces correct `selectUnifiedProjectProgress` output after reload
+        *   `[✅]`   Test: when API returns valid progress data, `selectUnifiedProjectProgress` returns `hydrationReady: true` with correct step counts and document counts
+        *   `[✅]`   Test: when recipe fetch fails for a stage, hydration does not proceed, status reflects failure
+        *   `[✅]`   Test: after failed hydration, re-triggering the hook retries and succeeds when the API is available
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: UI (React hook)
+        *   `[✅]`   Dependencies inward: store actions and selectors
+        *   `[✅]`   Provides outward to: `App.tsx`, `SessionContributionsDisplayCard.tsx` (callers of the hook)
+    *   `[✅]`   `requirements`
+        *   `[✅]`   No refs for hydration state — all state in the store
+        *   `[✅]`   No silent error swallowing — every failure logged and reflected in store status
+        *   `[✅]`   Execution ordering guaranteed — each step verified before the next begins
+        *   `[✅]`   Retry on failure — failed hydrations are not permanently locked out
+        *   `[✅]`   Successful hydration is idempotent — does not re-trigger when status is `success`
+    *   `[✅]`   **Commit** `fix(store,ui) packages/store + apps/web fix progress hydration pipeline to throw on failure, track hydration status, guarantee execution ordering, and use backend progress counts`
+        *   `[✅]`   Node 1: `dialecticStore.documents.ts` — hydration logic throws on failure instead of silently returning
+        *   `[✅]`   Node 2: `dialecticStore.ts` + `dialectic.types.ts` — fetchStageRecipe throws, ensureRecipeForActiveStage throws, store actions track hydration status
+        *   `[✅]`   Node 3: `dialecticStore.selectors.ts` + `dialectic.types.ts` — selector uses backend progress counts, reports `hydrationReady`
+        *   `[✅]`   Node 4: `useStageRunProgressHydration.ts` — ref guards replaced with store status, execution ordering guaranteed, retry supported
+
 # ToDo
 
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
@@ -1035,4 +1326,8 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
    --- IS, BS, CF 
    -- A "generate next set of work" for the implementation stage 
 
-   - Change "Generate {stage}" button to use semantic names 
+   x Change "Generate {stage}" button to use semantic names 
+
+   - DynamicProgressBar uses formal names instead of friendly names
+   - SessionContributionsDisplayCard uses formal names instead of friendly names 
+   - SessionInfoCard uses formal names instead of friendly names 

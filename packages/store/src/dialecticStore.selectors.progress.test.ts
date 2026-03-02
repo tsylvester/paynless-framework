@@ -73,6 +73,7 @@ import type {
     StageDocumentContentState,
     StageRenderedDocumentDescriptor,
     StageProgressDetail,
+    StageRunProgressSnapshot,
     UnifiedProjectProgress,
     SelectedModels,
     JobProgressEntry,
@@ -144,6 +145,25 @@ describe('selectUnifiedProjectProgress', () => {
       saveContributionEditError: null,
     };
 
+    const recipe1Minimal: DialecticStageRecipe = {
+      stageSlug: 'mock-stage-1',
+      instanceId: 'inst-min-1',
+      steps: [{ id: 's1', step_key: 'step_1', step_slug: 's1', step_name: 'Step 1', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd1', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+      edges: [],
+    };
+    const recipe2Minimal: DialecticStageRecipe = {
+      stageSlug: 'mock-stage-2',
+      instanceId: 'inst-min-2',
+      steps: [{ id: 's2', step_key: 'step_2', step_slug: 's2', step_name: 'Step 2', execution_order: 1, parallel_group: 1, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd2', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+      edges: [],
+    };
+    const emptyStageProgress: StageRunProgressSnapshot = {
+      stepStatuses: {},
+      documents: {},
+      jobProgress: {},
+      progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+    };
+
     it('returns 0% progress for new project with no completed documents', () => {
       const session: DialecticSession = {
         id: sessionId,
@@ -167,8 +187,11 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: {},
-        stageRunProgress: {},
+        recipesByStageSlug: { 'mock-stage-1': recipe1Minimal, 'mock-stage-2': recipe2Minimal },
+        stageRunProgress: {
+          [progressKeyForStage('mock-stage-1')]: emptyStageProgress,
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
+        },
       };
 
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
@@ -204,6 +227,7 @@ describe('selectUnifiedProjectProgress', () => {
           { id: 's2', step_key: 'step_b', step_slug: 'step-b', step_name: 'Step B', execution_order: 2, parallel_group: 2, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_b', artifact_class: 'rendered_document', file_type: 'markdown' }] },
           { id: 's3', step_key: 'step_c', step_slug: 'step-c', step_name: 'Step C', execution_order: 3, parallel_group: 3, branch_key: 'b3', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_c', artifact_class: 'rendered_document', file_type: 'markdown' }] },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -215,7 +239,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { step_a: 'not_started', step_b: 'not_started', step_c: 'in_progress' },
@@ -223,6 +247,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 3, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
 
@@ -265,6 +290,7 @@ describe('selectUnifiedProjectProgress', () => {
           { id: 's2', step_key: 'step_b', step_slug: 'step-b', step_name: 'Step B', execution_order: 2, parallel_group: 2, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_b', artifact_class: 'rendered_document', file_type: 'markdown' }] },
           { id: 's3', step_key: 'step_c', step_slug: 'step-c', step_name: 'Step C', execution_order: 3, parallel_group: 3, branch_key: 'b3', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_c', artifact_class: 'rendered_document', file_type: 'markdown' }] },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -276,7 +302,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { step_a: 'completed', step_b: 'completed', step_c: 'completed' },
@@ -284,6 +310,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 3, totalSteps: 3, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
 
@@ -322,6 +349,7 @@ describe('selectUnifiedProjectProgress', () => {
           { id: 's2', step_key: 'step_b', step_slug: 'step-b', step_name: 'Step B', execution_order: 2, parallel_group: 2, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_b', artifact_class: 'rendered_document', file_type: 'markdown' }] },
           { id: 's3', step_key: 'step_c', step_slug: 'step-c', step_name: 'Step C', execution_order: 3, parallel_group: 3, branch_key: 'b3', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_c', artifact_class: 'rendered_document', file_type: 'markdown' }] },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -333,7 +361,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { step_a: 'completed', step_b: 'completed', step_c: 'in_progress' },
@@ -341,6 +369,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 2, totalSteps: 3, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
 
@@ -376,11 +405,13 @@ describe('selectUnifiedProjectProgress', () => {
         stageSlug: 'mock-stage-1',
         instanceId: 'i1',
         steps: [{ id: 's1', step_key: 'step_1', step_slug: 's1', step_name: 'Step 1', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd1', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+        edges: [],
       };
       const recipe2: DialecticStageRecipe = {
         stageSlug: 'mock-stage-2',
         instanceId: 'i2',
         steps: [{ id: 's2', step_key: 'step_2', step_slug: 's2', step_name: 'Step 2', execution_order: 1, parallel_group: 1, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd2', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+        edges: [],
       };
       const key1 = progressKeyForStage('mock-stage-1');
       const key2 = progressKeyForStage('mock-stage-2');
@@ -436,11 +467,13 @@ describe('selectUnifiedProjectProgress', () => {
         stageSlug: 'mock-stage-1',
         instanceId: 'i1',
         steps: [{ id: 's1', step_key: 'step_1', step_slug: 's1', step_name: 'Step 1', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd1', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+        edges: [],
       };
       const recipe2: DialecticStageRecipe = {
         stageSlug: 'mock-stage-2',
         instanceId: 'i2',
         steps: [{ id: 's2', step_key: 'step_2', step_slug: 's2', step_name: 'Step 2', execution_order: 1, parallel_group: 1, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd2', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+        edges: [],
       };
       const key1 = progressKeyForStage('mock-stage-1');
       const key2 = progressKeyForStage('mock-stage-2');
@@ -470,13 +503,13 @@ describe('selectUnifiedProjectProgress', () => {
             stepStatuses: { step_1: 'completed' },
             documents: { [`d1${sep}model-1`]: completedDoc },
             jobProgress: {},
-            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
           },
           [key2]: {
-            stepStatuses: { step_2: 'completed' },  
+            stepStatuses: { step_2: 'completed' },
             documents: { [`d2${sep}model-1`]: { ...completedDoc, job_id: 'j2', latestRenderedResourceId: 'r2', lastRenderedResourceId: 'r2' } },
             jobProgress: {},
-            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
           },
         },
       };
@@ -530,6 +563,7 @@ describe('selectUnifiedProjectProgress', () => {
           inputs_relevance: [],
           outputs_required: [{ document_key: documentKey, artifact_class: 'rendered_document', file_type: 'markdown' }],
         }],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -555,7 +589,7 @@ describe('selectUnifiedProjectProgress', () => {
             { id: 'model-2', displayName: 'Model 2' },
             { id: 'model-3', displayName: 'Model 3' },
         ],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { doc_step: 'in_progress' },
@@ -567,6 +601,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
 
@@ -620,6 +655,7 @@ describe('selectUnifiedProjectProgress', () => {
             outputs_required: [{ document_key: 'out', artifact_class: 'rendered_document', file_type: 'markdown' }],
           },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -631,14 +667,15 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { render_step: 'completed' },
             documents: {},
             jobProgress: {},
-            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
 
@@ -702,6 +739,7 @@ describe('selectUnifiedProjectProgress', () => {
             outputs_required: [{ document_key: 'doc_x', artifact_class: 'rendered_document', file_type: 'markdown' }],
           },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -713,7 +751,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { exec_step: 'completed', render_step: 'completed' },
@@ -732,6 +770,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
 
@@ -767,6 +806,7 @@ describe('selectUnifiedProjectProgress', () => {
           { id: 's2', step_key: 'step_b', step_slug: 'step-b', step_name: 'Step B', execution_order: 2, parallel_group: 2, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_b', artifact_class: 'rendered_document', file_type: 'markdown' }] },
           { id: 's3', step_key: 'step_c', step_slug: 'step-c', step_name: 'Step C', execution_order: 3, parallel_group: 3, branch_key: 'b3', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_c', artifact_class: 'rendered_document', file_type: 'markdown' }] },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -778,7 +818,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { step_a: 'completed', step_b: 'failed', step_c: 'not_started' },
@@ -786,6 +826,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 1, totalSteps: 3, failedSteps: 1 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
 
@@ -838,6 +879,7 @@ describe('selectUnifiedProjectProgress', () => {
           inputs_relevance: [],
           outputs_required: [{ document_key: 'doc_gen', artifact_class: 'rendered_document', file_type: 'markdown' }],
         }],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -849,7 +891,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { doc_step: 'in_progress' },
@@ -868,6 +910,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
 
@@ -902,8 +945,11 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: {},
-        stageRunProgress: {},
+        recipesByStageSlug: { 'mock-stage-1': recipe1Minimal, 'mock-stage-2': recipe2Minimal },
+        stageRunProgress: {
+          [progressKeyForStage('mock-stage-1')]: emptyStageProgress,
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
+        },
       };
 
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
@@ -950,6 +996,7 @@ describe('selectUnifiedProjectProgress', () => {
             outputs_required: [{ document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' }],
           },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -961,7 +1008,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { doc_step: 'completed' },
@@ -971,6 +1018,7 @@ describe('selectUnifiedProjectProgress', () => {
             },
             progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
 
@@ -1040,6 +1088,7 @@ describe('selectUnifiedProjectProgress', () => {
             outputs_required: [{ document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' }],
           },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -1051,7 +1100,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { doc_step: 'in_progress' },
@@ -1059,6 +1108,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
@@ -1106,6 +1156,7 @@ describe('selectUnifiedProjectProgress', () => {
             outputs_required: [{ document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' }],
           },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const jobProgressEntry: JobProgressEntry = {
@@ -1122,7 +1173,7 @@ describe('selectUnifiedProjectProgress', () => {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { doc_step: 'completed' },
@@ -1130,6 +1181,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
       const stateWithTwoModels: DialecticStateValues = { ...baseState, selectedModels: [{ id: 'model-1', displayName: 'M1' }, { id: 'model-2', displayName: 'M2' }] };
@@ -1177,6 +1229,7 @@ describe('selectUnifiedProjectProgress', () => {
             outputs_required: [],
           },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -1188,7 +1241,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { plan_step: 'completed' },
@@ -1196,6 +1249,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
@@ -1238,6 +1292,7 @@ describe('selectUnifiedProjectProgress', () => {
             outputs_required: [],
           },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -1249,7 +1304,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { plan_step: 'not_started' },
@@ -1257,6 +1312,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
@@ -1299,6 +1355,7 @@ describe('selectUnifiedProjectProgress', () => {
             outputs_required: [{ document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' }],
           },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -1310,7 +1367,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { doc_step: 'in_progress' },
@@ -1318,6 +1375,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
@@ -1343,6 +1401,7 @@ describe('selectUnifiedProjectProgress', () => {
         stageSlug: 'mock-stage-1',
         instanceId: 'i1',
         steps: [{ id: 's1', step_key: 'step_1', step_slug: 's1', step_name: 'Step 1', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd1', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+        edges: [],
       };
       const recipe2: DialecticStageRecipe = {
         stageSlug: 'mock-stage-2',
@@ -1351,6 +1410,7 @@ describe('selectUnifiedProjectProgress', () => {
           { id: 's2a', step_key: 'step_2a', step_slug: 's2a', step_name: 'Step 2a', execution_order: 1, parallel_group: 1, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd2a', artifact_class: 'rendered_document', file_type: 'markdown' }] },
           { id: 's2b', step_key: 'step_2b', step_slug: 's2b', step_name: 'Step 2b', execution_order: 2, parallel_group: 2, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd2b', artifact_class: 'rendered_document', file_type: 'markdown' }] },
         ],
+        edges: [],
       };
       const key1 = progressKeyForStage('mock-stage-1');
       const key2 = progressKeyForStage('mock-stage-2');
@@ -1417,6 +1477,7 @@ describe('selectUnifiedProjectProgress', () => {
           { id: 's2', step_key: 'step_b', step_slug: 'step-b', step_name: 'Step B', execution_order: 2, parallel_group: 2, branch_key: 'b2', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd2', artifact_class: 'rendered_document', file_type: 'markdown' }] },
           { id: 's3', step_key: 'step_c', step_slug: 'step-c', step_name: 'Step C', execution_order: 3, parallel_group: 3, branch_key: 'b3', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd3', artifact_class: 'rendered_document', file_type: 'markdown' }] },
         ],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -1428,7 +1489,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { step_a: 'completed', step_b: 'failed', step_c: 'not_started' },
@@ -1436,6 +1497,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 1, totalSteps: 3, failedSteps: 1 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
@@ -1465,6 +1527,7 @@ describe('selectUnifiedProjectProgress', () => {
         stageSlug: 'mock-stage-1',
         instanceId: 'inst-1',
         steps: [{ id: 's1', step_key: 'doc_step', step_slug: 'doc-step', step_name: 'Doc Step', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd1', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -1476,7 +1539,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { doc_step: 'in_progress' },
@@ -1484,6 +1547,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
@@ -1509,6 +1573,7 @@ describe('selectUnifiedProjectProgress', () => {
         stageSlug: 'mock-stage-1',
         instanceId: 'inst-1',
         steps: [{ id: 's1', step_key: 'doc_step', step_slug: 'doc-step', step_name: 'Doc Step', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'd1', artifact_class: 'rendered_document', file_type: 'markdown' }] }],
+        edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
       const projectWithSession: DialecticProject = {
@@ -1520,7 +1585,7 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: { 'mock-stage-1': recipe },
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { doc_step: 'completed' },
@@ -1528,6 +1593,7 @@ describe('selectUnifiedProjectProgress', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
           },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
       };
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
@@ -1558,8 +1624,11 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: {},
-        stageRunProgress: {},
+        recipesByStageSlug: { 'mock-stage-1': recipe1Minimal, 'mock-stage-2': recipe2Minimal },
+        stageRunProgress: {
+          [progressKeyForStage('mock-stage-1')]: emptyStageProgress,
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
+        },
       };
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
       expect(result.totalStages).toBe(2);
@@ -1618,8 +1687,11 @@ describe('selectUnifiedProjectProgress', () => {
         currentProjectDetail: projectWithSession,
         currentProcessTemplate: templateForUnified,
         selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
-        recipesByStageSlug: {},
-        stageRunProgress: {},
+        recipesByStageSlug: { 'mock-stage-1': recipe1Minimal, 'mock-stage-2': recipe2Minimal },
+        stageRunProgress: {
+          [progressKeyForStage('mock-stage-1')]: emptyStageProgress,
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
+        },
       };
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
       expect(result.totalStages).toBe(2);

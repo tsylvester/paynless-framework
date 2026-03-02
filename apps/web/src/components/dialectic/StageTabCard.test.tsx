@@ -416,7 +416,7 @@ describe('StageTabCard', () => {
 
     const antithesisCard = screen.getByTestId('stage-card-antithesis');
     expect(antithesisCard).toBeInTheDocument();
-    expect(within(antithesisCard).queryByTestId('stage-progress-label-antithesis')).toBeNull();
+    expect(within(antithesisCard).getByTestId('stage-progress-label-antithesis')).toHaveTextContent('0 / 0');
   });
 
   it('renders one StageRunChecklist (not one per model) and forwards checklist selections', () => {
@@ -505,7 +505,7 @@ describe('StageTabCard', () => {
     expect(accordions.length).toBe(0);
   });
 
-  it('does not display document count but shows Done when complete and not active', () => {
+  it('shows document count and Done when complete and not active', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({

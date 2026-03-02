@@ -12,6 +12,7 @@ import type {
 	RenderCompletedPayload,
 	DocumentCompletedPayload,
 	DialecticStageRecipe,
+	ListStageDocumentsPayload,
 	ListStageDocumentsResponse,
 	StageDocumentChecklistEntry,
 	SubmitStageDocumentFeedbackPayload,
@@ -36,6 +37,7 @@ import {
 	recordStageDocumentDraftLogic,
 	recordStageDocumentFeedbackDraftLogic,
 	flushStageDocumentFeedbackDraftLogic,
+	hydrateStageProgressLogic,
 	hydrateAllStageProgressLogic,
 	upsertStageDocumentVersionLogic,
 	fetchStageDocumentContentLogic,
@@ -159,6 +161,99 @@ describe('Stage Progress Hydration', () => {
 				status: 'generating',
 				modelId: 'model-b',
 			}),
+		);
+	});
+});
+
+describe('hydrateStageProgressLogic', () => {
+	const sessionId = 'session-1';
+	const stageSlug = 'synthesis';
+	const iterationNumber = 1;
+	const userId = 'user-1';
+	const projectId = 'project-1';
+	const payload: ListStageDocumentsPayload = {
+		sessionId,
+		stageSlug,
+		iterationNumber,
+		userId,
+		projectId,
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('throws when API returns error response', async () => {
+		vi.spyOn(mockDialecticClient, 'listStageDocuments').mockResolvedValue({
+			data: undefined,
+			error: { message: 'Server error', code: 'INTERNAL_ERROR' },
+			status: 500,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await expect(hydrateStageProgressLogic(set, payload)).rejects.toThrow(
+			/[hydrateStageProgress]/,
+		);
+	});
+
+	it('throws when API returns null data', async () => {
+		vi.spyOn(mockDialecticClient, 'listStageDocuments').mockResolvedValue({
+			data: undefined,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await expect(hydrateStageProgressLogic(set, payload)).rejects.toThrow(
+			/[hydrateStageProgress]/,
+		);
+	});
+
+	it('throws when document validation fails (invalid entries)', async () => {
+		const invalidResponse: ListStageDocumentsResponse = [
+			{
+				documentKey: '',
+				modelId: 'model-a',
+				status: 'completed',
+				jobId: 'job-a',
+				latestRenderedResourceId: 'res-a',
+			},
+		];
+
+		vi.spyOn(mockDialecticClient, 'listStageDocuments').mockResolvedValue({
+			data: invalidResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await expect(hydrateStageProgressLogic(set, payload)).rejects.toThrow(
+			/[hydrateStageProgress].*validation/,
 		);
 	});
 });
@@ -370,7 +465,7 @@ describe('hydrateAllStageProgressLogic', () => {
 		);
 	});
 
-	it('handles empty response gracefully', async () => {
+	it('throws when stages array is empty', async () => {
 		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
 			data: { dagProgress: { completedStages: 0, totalStages: 0 }, stages: [] },
 			status: 200,
@@ -384,12 +479,12 @@ describe('hydrateAllStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await hydrateAllStageProgressLogic(set, payload);
-
-		expect(Object.keys(state.stageRunProgress).length).toBe(0);
+		await expect(hydrateAllStageProgressLogic(set, payload)).rejects.toThrow(
+			/[hydrateAllStageProgress].*stages array is empty/,
+		);
 	});
 
-	it('handles API error gracefully', async () => {
+	it('throws when API returns error response', async () => {
 		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
 			data: undefined,
 			error: { message: 'Server error', code: 'INTERNAL_ERROR' },
@@ -404,9 +499,69 @@ describe('hydrateAllStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await hydrateAllStageProgressLogic(set, payload);
+		await expect(hydrateAllStageProgressLogic(set, payload)).rejects.toThrow(
+			/[hydrateAllStageProgress]/,
+		);
+	});
 
-		expect(Object.keys(state.stageRunProgress).length).toBe(0);
+	it('throws when API returns undefined data', async () => {
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: undefined,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await expect(hydrateAllStageProgressLogic(set, payload)).rejects.toThrow(
+			/[hydrateAllStageProgress]/,
+		);
+	});
+
+	it('throws when document validation fails (invalid entries)', async () => {
+		const mockResponse: GetAllStageProgressResponse = {
+			dagProgress: { completedStages: 0, totalStages: 1 },
+			stages: [
+				{
+					stageSlug: 'thesis',
+					status: 'in_progress',
+					modelCount: null,
+					progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+					steps: [],
+					documents: [
+						{
+							documentKey: '',
+							modelId: 'model-a',
+							status: 'completed',
+							jobId: 'job-a',
+							latestRenderedResourceId: 'res-a',
+						},
+					],
+				},
+			],
+		};
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await expect(hydrateAllStageProgressLogic(set, payload)).rejects.toThrow(
+			/[hydrateAllStageProgress].*validation/,
+		);
 	});
 
 	it('adds valid documents to progress', async () => {
@@ -559,6 +714,7 @@ describe('Dialectic store document refresh behaviour', () => {
 					inputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState({
@@ -623,6 +779,7 @@ describe('Dialectic store document refresh behaviour', () => {
 					inputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState({
@@ -782,6 +939,7 @@ describe('Dialectic store document refresh behaviour', () => {
 					inputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state: DialecticStateValues) => {
@@ -1573,8 +1731,9 @@ describe('handleJobFailedLogic', () => {
 					granularity_strategy: 'all_to_one',
 					inputs_required: [],
 					outputs_required: [],
-				},
+				},	
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -1670,6 +1829,7 @@ describe('handleJobFailedLogic', () => {
 					outputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		const existingResourceId = 'resource-placeholder';
@@ -1796,6 +1956,7 @@ describe('handleDocumentStartedLogic', () => {
 					outputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -1875,6 +2036,7 @@ describe('handleDocumentCompletedLogic', () => {
 					outputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -1962,6 +2124,7 @@ describe('handleDocumentCompletedLogic', () => {
 					],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -2048,6 +2211,7 @@ describe('handleDocumentCompletedLogic', () => {
 					outputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		const getProjectResourceContentSpy = vi
@@ -2174,6 +2338,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 					],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -2268,6 +2433,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 					outputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		const getProjectResourceContentSpy = vi
@@ -2378,6 +2544,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 					],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -2474,6 +2641,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 					],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -2562,6 +2730,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 				outputs_required: [],
 			},
 		],
+		edges: [],
 	};
 
 	beforeEach(() => {
@@ -2847,6 +3016,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 					outputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -3487,6 +3657,7 @@ describe('progress.documents composite key (documentKey:modelId)', () => {
 					outputs_required: [{ document_key, artifact_class: 'rendered_document', file_type: 'markdown' }],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -3538,6 +3709,7 @@ describe('progress.documents composite key (documentKey:modelId)', () => {
 					outputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -3606,6 +3778,7 @@ describe('progress.documents composite key (documentKey:modelId)', () => {
 					outputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -3674,6 +3847,7 @@ describe('progress.documents composite key (documentKey:modelId)', () => {
 					outputs_required: [],
 				},
 			],
+			edges: [],
 		};
 
 		useDialecticStore.setState((state) => {
@@ -3756,6 +3930,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 				outputs_required: [],
 			},
 		],
+		edges: [],
 	};
 
 	beforeEach(() => {

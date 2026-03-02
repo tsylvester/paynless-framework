@@ -635,6 +635,64 @@ export async function getAllStageProgress(
     resourceIdBySourceContributionId.set(sourceContributionId, resource.id);
   }
 
+  // Walk continuation chains so RENDER jobs referencing an original contribution
+  // can find the resource keyed under a continuation contribution.
+  // Query contributions for this session to get target_contribution_id relationships.
+  const contributionsResponse = await dbClient
+    .from("dialectic_contributions")
+    .select("id, target_contribution_id")
+    .eq("session_id", sessionId)
+    .eq("iteration_number", iterationNumber);
+  if (contributionsResponse.error) {
+    const error = { message: `Failed to fetch contributions for continuation chain: ${contributionsResponse.error.message}`, status: 500 };
+    return { status: 500, error };
+  }
+  if (contributionsResponse.data) {
+    // target_contribution_id on a continuation row points to the original.
+    // Build forward map: original → continuation (the contribution that continued it).
+    const originalToContinuation: Map<string, string> = new Map<string, string>();
+    for (const row of contributionsResponse.data) {
+      const contribId: unknown = row.id;
+      const targetId: unknown = row.target_contribution_id;
+      if (typeof contribId === "string" && contribId.length > 0 &&
+          typeof targetId === "string" && targetId.length > 0) {
+        originalToContinuation.set(targetId, contribId);
+      }
+    }
+    // For each original contribution that has a continuation chain,
+    // walk forward to find the final continuation. If the final continuation
+    // has a resource, map the original (and all intermediates) to that resource.
+    for (const startId of originalToContinuation.keys()) {
+      if (resourceIdBySourceContributionId.has(startId)) {
+        continue;
+      }
+      // Walk the chain forward: startId → continuation → continuation → ...
+      const chain: string[] = [startId];
+      let currentId: string = startId;
+      let depth = 0;
+      while (depth < 20) {
+        const nextId: string | undefined = originalToContinuation.get(currentId);
+        if (!nextId) break;
+        chain.push(nextId);
+        currentId = nextId;
+        depth += 1;
+      }
+      // Find the first ID in the chain that has a resource (typically the last)
+      let resourceId: string | undefined;
+      for (let i: number = chain.length - 1; i >= 0; i--) {
+        resourceId = resourceIdBySourceContributionId.get(chain[i]);
+        if (resourceId) break;
+      }
+      if (resourceId) {
+        for (const id of chain) {
+          if (!resourceIdBySourceContributionId.has(id)) {
+            resourceIdBySourceContributionId.set(id, resourceId);
+          }
+        }
+      }
+    }
+  }
+
   const jobIdToJob: Map<string, DialecticJobRow> = new Map<string, DialecticJobRow>();
   for (const job of jobsData) {
     if (typeof job.id !== "string" || job.id.length === 0) {

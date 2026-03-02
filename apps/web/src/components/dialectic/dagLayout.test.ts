@@ -10,6 +10,9 @@ import type {
   DialecticRecipeEdge,
 } from '@paynless/types';
 
+const NODE_W = 180;
+const NODE_H = 44;
+
 function step(
   overrides: {
     id: string;
@@ -39,7 +42,7 @@ function edge(fromId: string, toId: string): DialecticRecipeEdge {
 
 describe('computeDAGLayout', () => {
   it('returns empty nodes, empty edges, zero width and height when steps array is empty', () => {
-    const params: DAGLayoutParams = { steps: [], edges: [] };
+    const params: DAGLayoutParams = { steps: [], edges: [], nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     expect(result.nodes).toEqual([]);
     expect(result.edges).toEqual([]);
@@ -51,7 +54,7 @@ describe('computeDAGLayout', () => {
     const steps: DialecticStageRecipeStep[] = [
       step({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
-    const params: DAGLayoutParams = { steps, edges: [] };
+    const params: DAGLayoutParams = { steps, edges: [], nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     expect(result.nodes).toHaveLength(1);
     expect(result.nodes[0].stepKey).toBe('plan');
@@ -70,7 +73,7 @@ describe('computeDAGLayout', () => {
       step({ id: 'c', step_key: 'c', step_name: 'C', job_type: 'RENDER', execution_order: 2 }),
     ];
     const edges: DialecticRecipeEdge[] = [edge('a', 'b'), edge('b', 'c')];
-    const params: DAGLayoutParams = { steps, edges };
+    const params: DAGLayoutParams = { steps, edges, nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     expect(result.nodes).toHaveLength(3);
     const byKey = new Map(result.nodes.map((n) => [n.stepKey, n]));
@@ -92,7 +95,7 @@ describe('computeDAGLayout', () => {
       edge('plan', 'e2'),
       edge('plan', 'e3'),
     ];
-    const params: DAGLayoutParams = { steps, edges };
+    const params: DAGLayoutParams = { steps, edges, nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     expect(result.nodes).toHaveLength(4);
     const byKey = new Map(result.nodes.map((n) => [n.stepKey, n]));
@@ -118,7 +121,7 @@ describe('computeDAGLayout', () => {
       edge('b', 'd'),
       edge('c', 'd'),
     ];
-    const params: DAGLayoutParams = { steps, edges };
+    const params: DAGLayoutParams = { steps, edges, nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     expect(result.nodes).toHaveLength(4);
     const byKey = new Map(result.nodes.map((n) => [n.stepKey, n]));
@@ -134,7 +137,7 @@ describe('computeDAGLayout', () => {
       step({ id: 'a', step_key: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
       step({ id: 'b', step_key: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
     ];
-    const params: DAGLayoutParams = { steps, edges: [edge('a', 'b')] };
+    const params: DAGLayoutParams = { steps, edges: [edge('a', 'b')], nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     for (const node of result.nodes) {
       expect(node.x).toBeGreaterThanOrEqual(0);
@@ -148,7 +151,7 @@ describe('computeDAGLayout', () => {
       step({ id: 'e1', step_key: 'e1', step_name: 'E1', job_type: 'EXECUTE', execution_order: 1 }),
       step({ id: 'e2', step_key: 'e2', step_name: 'E2', job_type: 'EXECUTE', execution_order: 2 }),
     ];
-    const params: DAGLayoutParams = { steps, edges: [edge('plan', 'e1'), edge('plan', 'e2')] };
+    const params: DAGLayoutParams = { steps, edges: [edge('plan', 'e1'), edge('plan', 'e2')], nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     const layer1 = result.nodes.filter((n) => n.layer === 1);
     expect(layer1).toHaveLength(2);
@@ -161,19 +164,19 @@ describe('computeDAGLayout', () => {
       step({ id: 'e1', step_key: 'e1', step_name: 'E1', job_type: 'EXECUTE', execution_order: 1 }),
       step({ id: 'e2', step_key: 'e2', step_name: 'E2', job_type: 'EXECUTE', execution_order: 2 }),
     ];
-    const params: DAGLayoutParams = { steps, edges: [edge('plan', 'e1'), edge('plan', 'e2')] };
+    const params: DAGLayoutParams = { steps, edges: [edge('plan', 'e1'), edge('plan', 'e2')], nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     const layer1 = result.nodes.filter((n) => n.layer === 1);
     const yValues = layer1.map((n) => n.y);
     expect(new Set(yValues).size).toBe(yValues.length);
   });
 
-  it('sets edge fromX/fromY and toX/toY to match their respective node positions', () => {
+  it('sets edge fromX/fromY to right-center of source node and toX/toY to left-center of target node (horizontal)', () => {
     const steps: DialecticStageRecipeStep[] = [
       step({ id: 'a', step_key: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
       step({ id: 'b', step_key: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
     ];
-    const params: DAGLayoutParams = { steps, edges: [edge('a', 'b')] };
+    const params: DAGLayoutParams = { steps, edges: [edge('a', 'b')], nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     expect(result.edges).toHaveLength(1);
     const nodeByKey = new Map(result.nodes.map((n) => [n.stepKey, n]));
@@ -182,10 +185,10 @@ describe('computeDAGLayout', () => {
     const edgePos: DAGEdgePosition = result.edges[0];
     expect(fromNode).toBeDefined();
     expect(toNode).toBeDefined();
-    expect(edgePos.fromX).toBe(fromNode!.x);
-    expect(edgePos.fromY).toBe(fromNode!.y);
+    expect(edgePos.fromX).toBe(fromNode!.x + NODE_W);
+    expect(edgePos.fromY).toBe(fromNode!.y + NODE_H / 2);
     expect(edgePos.toX).toBe(toNode!.x);
-    expect(edgePos.toY).toBe(toNode!.y);
+    expect(edgePos.toY).toBe(toNode!.y + NODE_H / 2);
   });
 
   describe('viewport: layout reacts to window size, scales to fit, prefers largest dimension', () => {
@@ -198,7 +201,7 @@ describe('computeDAGLayout', () => {
 
     it('uses horizontal layout when viewport is wider than tall (largest dimension is width)', () => {
       const viewport: DAGViewport = { width: 800, height: 400 };
-      const params: DAGLayoutParams = { steps: linearSteps, edges: linearEdges, viewport };
+      const params: DAGLayoutParams = { steps: linearSteps, edges: linearEdges, nodeWidth: NODE_W, nodeHeight: NODE_H, viewport };
       const result: DAGLayoutResult = computeDAGLayout(params);
       expect(result.orientation).toBe('horizontal');
       const byKey = new Map(result.nodes.map((n) => [n.stepKey, n]));
@@ -214,7 +217,7 @@ describe('computeDAGLayout', () => {
 
     it('uses vertical layout when viewport is taller than wide (largest dimension is height)', () => {
       const viewport: DAGViewport = { width: 400, height: 800 };
-      const params: DAGLayoutParams = { steps: linearSteps, edges: linearEdges, viewport };
+      const params: DAGLayoutParams = { steps: linearSteps, edges: linearEdges, nodeWidth: NODE_W, nodeHeight: NODE_H, viewport };
       const result: DAGLayoutResult = computeDAGLayout(params);
       expect(result.orientation).toBe('vertical');
       const byKey = new Map(result.nodes.map((n) => [n.stepKey, n]));
@@ -227,7 +230,7 @@ describe('computeDAGLayout', () => {
 
     it('scales layout to fit within viewport when viewport is provided', () => {
       const viewport: DAGViewport = { width: 600, height: 400 };
-      const params: DAGLayoutParams = { steps: linearSteps, edges: linearEdges, viewport };
+      const params: DAGLayoutParams = { steps: linearSteps, edges: linearEdges, nodeWidth: NODE_W, nodeHeight: NODE_H, viewport };
       const result: DAGLayoutResult = computeDAGLayout(params);
       expect(result.width).toBeLessThanOrEqual(viewport.width);
       expect(result.height).toBeLessThanOrEqual(viewport.height);
@@ -246,8 +249,8 @@ describe('computeDAGLayout', () => {
     it('reacts to window size: same graph with wide vs tall viewport yields different orientation', () => {
       const wideViewport: DAGViewport = { width: 1000, height: 300 };
       const tallViewport: DAGViewport = { width: 300, height: 1000 };
-      const paramsWide: DAGLayoutParams = { steps: linearSteps, edges: linearEdges, viewport: wideViewport };
-      const paramsTall: DAGLayoutParams = { steps: linearSteps, edges: linearEdges, viewport: tallViewport };
+      const paramsWide: DAGLayoutParams = { steps: linearSteps, edges: linearEdges, nodeWidth: NODE_W, nodeHeight: NODE_H, viewport: wideViewport };
+      const paramsTall: DAGLayoutParams = { steps: linearSteps, edges: linearEdges, nodeWidth: NODE_W, nodeHeight: NODE_H, viewport: tallViewport };
       const resultWide: DAGLayoutResult = computeDAGLayout(paramsWide);
       const resultTall: DAGLayoutResult = computeDAGLayout(paramsTall);
       expect(resultWide.orientation).toBe('horizontal');

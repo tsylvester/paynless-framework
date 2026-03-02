@@ -9,7 +9,7 @@ import {
 	useWalletStore,
 	selectActiveChatWalletInfo,
 } from "@paynless/store";
-import { GenerateContributionsPayload } from "@paynless/types";
+import { GenerateContributionsPayload, getDisplayName } from "@paynless/types";
 import { useAiStore } from "@paynless/store";
 import { toast } from "sonner";
 import { Loader2, RefreshCcw } from "lucide-react";
@@ -141,8 +141,6 @@ export const GenerateContributionButton: React.FC<
 		!activeSession ||
 		!isStageReady ||
 		!isWalletReady;
-	const friendlyName = activeStage?.display_name || "...";
-
 	const getButtonText = () => {
 		if (isSessionGenerating)
 			return (
@@ -154,10 +152,11 @@ export const GenerateContributionButton: React.FC<
 		if (!isWalletReady) return "Wallet Not Ready";
 		if (!activeStage || !activeSession) return "Stage Not Ready";
 		if (!isStageReady) return "Previous Stage Incomplete";
-		if (didGenerationFail) return `Retry ${friendlyName}`;
+		const displayName = getDisplayName(activeStage.slug);
+		if (didGenerationFail) return `Retry ${displayName}`;
 		if (contributionsForStageAndIterationExist)
-			return `Regenerate ${friendlyName}`;
-		return `Generate ${friendlyName}`;
+			return `Regenerate ${displayName}`;
+		return `Generate ${displayName}`;
 	};
 
 	return (
