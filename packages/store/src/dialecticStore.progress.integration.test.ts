@@ -12,6 +12,7 @@ import type {
   DialecticSession,
   DialecticProject,
   DialecticStateValues,
+  StageRunProgressSnapshot,
   UnifiedProjectProgress,
   NotificationData,
   DialecticNotificationTypes,
@@ -125,6 +126,41 @@ const recipeThesis: DialecticStageRecipe = {
   stageSlug: 'thesis',
   instanceId: 'instance-thesis-progress',
   steps: [plannerStep, documentStep, renderStep],
+  edges: [
+    { from_step_id: 'step-planner', to_step_id: 'step-document' },
+    { from_step_id: 'step-document', to_step_id: 'step-render' },
+  ],
+};
+
+const recipeAntithesis: DialecticStageRecipe = {
+  stageSlug: 'antithesis',
+  instanceId: 'instance-antithesis-progress',
+  steps: [
+    {
+      id: 'step-antithesis-1',
+      step_key: 'step_1',
+      step_slug: 'step-1',
+      step_name: 'Step 1',
+      execution_order: 1,
+      parallel_group: 1,
+      branch_key: 'b1',
+      job_type: 'EXECUTE',
+      prompt_type: 'Turn',
+      output_type: 'assembled_document_json',
+      granularity_strategy: 'per_source_document',
+      inputs_required: [],
+      inputs_relevance: [],
+      outputs_required: [{ document_key: 'doc_1', artifact_class: 'rendered_document', file_type: 'markdown' }],
+    },
+  ],
+  edges: [],
+};
+
+const emptyStageProgress: StageRunProgressSnapshot = {
+  stepStatuses: {},
+  documents: {},
+  jobProgress: {},
+  progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
 };
 
 function buildNotification(
@@ -207,7 +243,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       currentProjectDetail: project,
       currentProcessTemplate: templateTwoStages,
       selectedModels: progressSelectedModels,
-      recipesByStageSlug: { [stageSlug]: recipeThesis },
+      recipesByStageSlug: { [stageSlug]: recipeThesis, antithesis: recipeAntithesis },
       stageRunProgress: {
         [progressKey]: {
           stepStatuses: {
@@ -217,7 +253,9 @@ describe('Integration test: Frontend progress tracking from notifications to dis
           },
           documents: {},
           jobProgress: {},
+          progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
         },
+        [`${sessionId}:antithesis:${iterationNumber}`]: emptyStageProgress,
       },
     });
   });
@@ -262,19 +300,17 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       const progress = state.stageRunProgress[progressKey];
       if (!progress) return;
       progress.stepStatuses.planner_step = 'completed';
-      if (progress.jobProgress) {
-        progress.jobProgress.planner_step = { totalJobs: 1, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
-      }
+      progress.progress = { completedSteps: 1, totalSteps: 3, failedSteps: 0 };
     });
 
     const state: DialecticStateValues = useDialecticStore.getState();
     const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
     const thesisStage = result.stageDetails.find((s) => s.stageSlug === stageSlug);
     const plannerStepDetail = thesisStage?.stepsDetail.find((s) => s.stepKey === 'planner_step');
-    expect(plannerStepDetail?.totalJobs).toBe(1);
-    expect(plannerStepDetail?.completedJobs).toBe(1);
-    expect(plannerStepDetail?.stepPercentage).toBe(100);
     expect(plannerStepDetail?.status).toBe('completed');
+    expect(thesisStage?.completedSteps).toBe(1);
+    expect(thesisStage?.totalSteps).toBe(3);
+    expect(thesisStage?.stagePercentage).toBeCloseTo(100 / 3, 1);
   });
 
   it('document_started notification updates step status and selector returns in_progress for document step', () => {
@@ -317,9 +353,9 @@ describe('Integration test: Frontend progress tracking from notifications to dis
     useDialecticStore.setState((state) => {
       const progress = state.stageRunProgress[progressKey];
       if (!progress) return;
-      if (progress.jobProgress) {
-        progress.jobProgress.document_step = { totalJobs: 3, completedJobs: 1, inProgressJobs: 2, failedJobs: 0 };
-      }
+      progress.stepStatuses.planner_step = 'completed';
+      progress.stepStatuses.document_step = 'in_progress';
+      progress.progress = { completedSteps: 1, totalSteps: 3, failedSteps: 0 };
       progress.documents[getStageRunDocumentKey('business_case', 'model-1')] = {
         descriptorType: 'rendered',
         status: 'completed',
@@ -337,11 +373,10 @@ describe('Integration test: Frontend progress tracking from notifications to dis
     const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
     const thesisStage = result.stageDetails.find((s) => s.stageSlug === stageSlug);
     const documentStepDetail = thesisStage?.stepsDetail.find((s) => s.stepKey === 'document_step');
-    expect(documentStepDetail?.totalJobs).toBe(3);
-    expect(documentStepDetail?.completedJobs).toBe(1);
-    expect(documentStepDetail?.stepPercentage).toBeGreaterThan(0);
-    expect(documentStepDetail?.stepPercentage).toBeLessThan(100);
     expect(documentStepDetail?.status).toBe('in_progress');
+    expect(thesisStage?.completedSteps).toBe(1);
+    expect(thesisStage?.totalSteps).toBe(3);
+    expect(thesisStage?.stagePercentage).toBeCloseTo(100 / 3, 1);
   });
 
   it('all document step models complete yields selector 100% step progress for document step', () => {
@@ -349,9 +384,8 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       const progress = state.stageRunProgress[progressKey];
       if (!progress) return;
       progress.stepStatuses.planner_step = 'completed';
-      if (progress.jobProgress) {
-        progress.jobProgress.document_step = { totalJobs: 3, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
-      }
+      progress.stepStatuses.document_step = 'completed';
+      progress.progress = { completedSteps: 2, totalSteps: 3, failedSteps: 0 };
       progress.documents[getStageRunDocumentKey('business_case', 'model-1')] = {
         descriptorType: 'rendered',
         status: 'completed',
@@ -441,10 +475,10 @@ describe('Integration test: Frontend progress tracking from notifications to dis
     const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
     const thesisStage = result.stageDetails.find((s) => s.stageSlug === stageSlug);
     const documentStepDetail = thesisStage?.stepsDetail.find((s) => s.stepKey === 'document_step');
-    expect(documentStepDetail?.totalJobs).toBe(3);
-    expect(documentStepDetail?.completedJobs).toBe(3);
-    expect(documentStepDetail?.stepPercentage).toBe(100);
     expect(documentStepDetail?.status).toBe('completed');
+    expect(thesisStage?.completedSteps).toBe(2);
+    expect(thesisStage?.totalSteps).toBe(3);
+    expect(thesisStage?.stagePercentage).toBeCloseTo((2 / 3) * 100, 1);
   });
 
   it('render_completed flow updates document descriptor and selector reflects render step when step_key provided', () => {
@@ -583,6 +617,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       progress.stepStatuses.planner_step = 'completed';
       progress.stepStatuses.document_step = 'completed';
       progress.stepStatuses.render_step = 'completed';
+      progress.progress = { completedSteps: 3, totalSteps: 3, failedSteps: 0 };
       if (progress.jobProgress) {
         progress.jobProgress.planner_step = { totalJobs: 1, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
         progress.jobProgress.document_step = { totalJobs: 3, completedJobs: 3, inProgressJobs: 0, failedJobs: 0 };
@@ -628,6 +663,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
       progress.stepStatuses.planner_step = 'completed';
       progress.stepStatuses.document_step = 'completed';
       progress.stepStatuses.render_step = 'completed';
+      progress.progress = { completedSteps: 3, totalSteps: 3, failedSteps: 0 };
       if (progress.jobProgress) {
         progress.jobProgress.planner_step = { totalJobs: 1, completedJobs: 1, inProgressJobs: 0, failedJobs: 0 };
         progress.jobProgress.document_step = { totalJobs: 3, completedJobs: 3, inProgressJobs: 0, failedJobs: 0 };

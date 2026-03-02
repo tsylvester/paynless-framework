@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useDialecticStore, useAuthStore, selectSortedStages } from '@paynless/store';
 
 export const useStageRunProgressHydration = (): void => {
@@ -7,118 +7,127 @@ export const useStageRunProgressHydration = (): void => {
     const activeStageSlug = useDialecticStore((state) => state.activeStageSlug);
     const activeSessionDetail = useDialecticStore((state) => state.activeSessionDetail);
     const recipesByStageSlug = useDialecticStore((state) => state.recipesByStageSlug);
+    const progressHydrationStatus = useDialecticStore((state) => state.progressHydrationStatus);
     const sortedStages = useDialecticStore(selectSortedStages);
     const fetchStageRecipe = useDialecticStore((state) => state.fetchStageRecipe);
     const ensureRecipeForActiveStage = useDialecticStore((state) => state.ensureRecipeForActiveStage);
     const hydrateAllStageProgress = useDialecticStore((state) => state.hydrateAllStageProgress);
     const hydrateStageProgress = useDialecticStore((state) => state.hydrateStageProgress);
 
-    const hasHydratedAllStagesRef = useRef<string | null>(null);
-    const isFetchingRef = useRef(false);
-
     // Hydrate progress and recipes for ALL stages on initial load
     useEffect(() => {
         if (!activeContextSessionId || !activeSessionDetail || !user || sortedStages.length === 0) {
             return;
         }
-        if (hasHydratedAllStagesRef.current === activeContextSessionId) {
+        const iterationNumber = activeSessionDetail.iteration_count;
+        const runKey = `${activeContextSessionId}:${iterationNumber}`;
+        const status = progressHydrationStatus[runKey];
+        if (status === 'success' || status === 'pending') {
             return;
         }
         const userId = user.id;
         const projectId = activeSessionDetail.project_id;
-        const iterationNumber = activeSessionDetail.iteration_count;
         const hydrateAll = async (): Promise<void> => {
-            // Fetch recipes for all stages in parallel
-            await Promise.all(
-                sortedStages.map((stage) => fetchStageRecipe(stage.slug)),
-            );
-            // Ensure progress snapshots exist for all stages
-            const currentRecipes = useDialecticStore.getState().recipesByStageSlug;
-            for (const stage of sortedStages) {
-                if (currentRecipes[stage.slug]) {
+            try {
+                await Promise.all(
+                    sortedStages.map((stage) => fetchStageRecipe(stage.slug)),
+                );
+                const currentRecipes = useDialecticStore.getState().recipesByStageSlug;
+                const missingSlugs: string[] = sortedStages
+                    .filter((stage) => !currentRecipes[stage.slug])
+                    .map((stage) => stage.slug);
+                if (missingSlugs.length > 0) {
+                    console.error(
+                        '[useStageRunProgressHydration] Recipe fetch did not populate all stages; missing:',
+                        missingSlugs,
+                    );
+                    return;
+                }
+                for (const stage of sortedStages) {
                     await ensureRecipeForActiveStage(
                         activeContextSessionId,
                         stage.slug,
                         iterationNumber,
                     );
                 }
+                await hydrateAllStageProgress({
+                    sessionId: activeContextSessionId,
+                    iterationNumber,
+                    userId,
+                    projectId,
+                });
+            } catch (err: unknown) {
+                console.error('[useStageRunProgressHydration] Hydrate-all failed:', err);
             }
-            await hydrateAllStageProgress({
-                sessionId: activeContextSessionId,
-                iterationNumber,
-                userId,
-                projectId,
-            });
-            hasHydratedAllStagesRef.current = activeContextSessionId;
         };
         void hydrateAll();
-    }, [user, activeContextSessionId, activeSessionDetail, sortedStages, hydrateAllStageProgress, fetchStageRecipe, ensureRecipeForActiveStage]);
+    }, [
+        user,
+        activeContextSessionId,
+        activeSessionDetail,
+        sortedStages,
+        progressHydrationStatus,
+        fetchStageRecipe,
+        ensureRecipeForActiveStage,
+        hydrateAllStageProgress,
+    ]);
 
     useEffect(() => {
         if (!activeContextSessionId || !activeStageSlug || !activeSessionDetail || !user) {
             return;
         }
-
+        const iterationNumber = activeSessionDetail.iteration_count;
+        const progressKey = `${activeContextSessionId}:${activeStageSlug}:${iterationNumber}`;
+        const status = progressHydrationStatus[progressKey];
+        if (status === 'success' || status === 'pending') {
+            return;
+        }
         const userId = user.id;
         const projectId = activeSessionDetail.project_id;
-
-        const hydrate = async () => {
-            await fetchStageRecipe(activeStageSlug);
-            await ensureRecipeForActiveStage(
-                activeContextSessionId,
-                activeStageSlug,
-                activeSessionDetail.iteration_count,
-            );
-            await hydrateStageProgress({
-                sessionId: activeContextSessionId,
-                stageSlug: activeStageSlug,
-                iterationNumber: activeSessionDetail.iteration_count,
-                userId,
-                projectId,
-            });
-        };
-
-        const ensureProgress = async () => {
-            await ensureRecipeForActiveStage(
-                activeContextSessionId,
-                activeStageSlug,
-                activeSessionDetail.iteration_count,
-            );
-            await hydrateStageProgress({
-                sessionId: activeContextSessionId,
-                stageSlug: activeStageSlug,
-                iterationNumber: activeSessionDetail.iteration_count,
-                userId,
-                projectId,
-            });
-        };
-
-        const hydrateIfNeeded = async () => {
-            if (isFetchingRef.current) {
-                return;
-            }
-            isFetchingRef.current = true;
+        const runPerStage = async (): Promise<void> => {
             try {
                 if (recipesByStageSlug[activeStageSlug]) {
-                    await ensureProgress();
+                    await ensureRecipeForActiveStage(
+                        activeContextSessionId,
+                        activeStageSlug,
+                        iterationNumber,
+                    );
+                    await hydrateStageProgress({
+                        sessionId: activeContextSessionId,
+                        stageSlug: activeStageSlug,
+                        iterationNumber,
+                        userId,
+                        projectId,
+                    });
                 } else {
-                    await hydrate();
+                    await fetchStageRecipe(activeStageSlug);
+                    await ensureRecipeForActiveStage(
+                        activeContextSessionId,
+                        activeStageSlug,
+                        iterationNumber,
+                    );
+                    await hydrateStageProgress({
+                        sessionId: activeContextSessionId,
+                        stageSlug: activeStageSlug,
+                        iterationNumber,
+                        userId,
+                        projectId,
+                    });
                 }
-            } finally {
-                isFetchingRef.current = false;
+            } catch (err: unknown) {
+                console.error('[useStageRunProgressHydration] Per-stage hydrate failed:', err);
             }
         };
-
-        void hydrateIfNeeded();
+        void runPerStage();
     }, [
         user,
         activeContextSessionId,
         activeStageSlug,
         activeSessionDetail,
         recipesByStageSlug,
+        progressHydrationStatus,
         fetchStageRecipe,
         ensureRecipeForActiveStage,
         hydrateStageProgress,
     ]);
 };
-

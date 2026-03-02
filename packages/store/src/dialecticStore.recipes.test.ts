@@ -3,6 +3,7 @@ import {
     ApiResponse, 
     DialecticStageRecipe, 
     DialecticStageRecipeStep,
+    DialecticRecipeEdge,
     StageDocumentCompositeKey,
     StageRenderedDocumentDescriptor,
     StageDocumentContentState,
@@ -65,12 +66,15 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
     outputs_required: [{ document_key: 'header_ctx_b', artifact_class: 'header_context', file_type: 'json' }],
   };
 
+  const recipeEdges: DialecticRecipeEdge[] = [{ from_step_id: stepA.id, to_step_id: stepB.id }];
+
   const recipeResponse: ApiResponse<DialecticStageRecipe> = {
     status: 200,
     data: {
       stageSlug,
       instanceId: 'instance-123',
       steps: [stepA, stepB],
+      edges: recipeEdges,
     }
   };
 
@@ -89,6 +93,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       expect(state.recipesByStageSlug[stageSlug]).toBeDefined();
       expect(state.recipesByStageSlug[stageSlug]?.stageSlug).toBe(stageSlug);
       expect(state.recipesByStageSlug[stageSlug]?.steps.length).toBe(2);
+      expect(state.recipesByStageSlug[stageSlug]?.edges).toEqual(recipeEdges);
     });
   });
 
@@ -111,6 +116,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       expect(progress?.documents).toEqual({});
       expect(progress?.stepStatuses['a_key']).toBe('not_started');
       expect(progress?.stepStatuses['b_key']).toBe('not_started');
+      expect(progress?.progress).toEqual({ completedSteps: 0, totalSteps: 0, failedSteps: 0 });
     });
 
     it('is idempotent: repeated calls do not reset completed statuses', async () => {
@@ -249,6 +255,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
             [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
+          progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
         };
         // No cached content - stageDocumentContent is empty
       });
@@ -289,6 +296,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
             [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
+          progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
         };
       });
 
@@ -328,6 +336,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
             [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
+          progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
         };
         // Content IS cached with matching version
         const cachedContent: StageDocumentContentState = {
@@ -388,6 +397,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
             [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
+          progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
         };
         // Content cached but with OLD resource ID (stale)
         const staleContent: StageDocumentContentState = {
@@ -445,6 +455,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
             [getStageRunDocumentKey(documentKey, modelId)]: documentDescriptor,
           },
           stepStatuses: {},
+          progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
         };
       });
 

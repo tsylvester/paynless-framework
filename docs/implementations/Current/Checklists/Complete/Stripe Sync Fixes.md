@@ -213,4 +213,36 @@ The Stripe plan sync webhook correctly handles recurring subscription prices via
    - Build test fixtures for major function groups 
    -- Provide standard mock factories and objects 
 
-   - Show exact job progress in front end as pop up while working, then minimize to documents once documents arrive 
+   - Show exact job progress in front end as pop up while working, then minimize to documents once documents arrive
+   
+   - Update the prod models & availability 
+   
+   - Support user-provided API keys for their preferred providers 
+
+   - Regenerate existing document from user feedback & edits 
+
+   - Have an additional user input panel where they user can build their own hybrid versions from the ones provided 
+   AND/OR
+   - Let the user pick/rate their preferred version and drop the others 
+
+   - Use a gentle color schema to differentiate model outputs visually / at a glance 
+
+   - When doc loads for the first time, position at top 
+
+   - Search across documents for key terms 
+
+   - Collect user satisfaction evaluation after each generation "How would you feel if you couldn't use this again?" 
+
+   - Fix StageTabCard count so that Save Responses & Advance Stage is visible 
+
+   - Add a "landing page" output for the proposal stage
+   -- Landing page
+   -- Hero banner
+   -- Call to action
+   -- Email sign up 
+   -- 
+   
+   - Add a "financial analysis" output for the "refinement" stage
+   -- 1/3/5 year 
+   -- Conservative / base / aggressive
+   -- IS, BS, CF 
