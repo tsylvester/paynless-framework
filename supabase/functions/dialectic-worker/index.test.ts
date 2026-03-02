@@ -34,7 +34,6 @@ import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { renderDocument } from '../_shared/services/document_renderer.ts';
 import { createMockJobContextParams } from './JobContext.mock.ts';
 import { createJobContext } from './createJobContext.ts';
-
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
 // Global mock objects
@@ -1144,4 +1143,184 @@ Deno.test('handleJob - prevents concurrent processing of the same job atomically
         1,
         'Only one update attempt should succeed. The atomic update pattern ensures the second call fails when status is already "processing".'
     );
+});
+
+// --- NSF detection: Insufficient funds routes to pauseJobsForNsf; other errors use failure path ---
+const mockJobNsf: MockJob = {
+    id: 'job-nsf-test',
+    user_id: 'user-nsf',
+    session_id: 'session-nsf',
+    stage_slug: 'thesis',
+    payload: {
+        job_type: 'PLAN',
+        sessionId: 'session-nsf',
+        projectId: 'project-nsf',
+        stageSlug: 'thesis',
+        model_id: 'model-id',
+        iterationNumber: 1,
+    },
+    iteration_number: 1,
+    status: 'pending',
+    attempt_count: 0,
+    max_retries: 3,
+    created_at: new Date().toISOString(),
+    started_at: null,
+    completed_at: null,
+    results: null,
+    error_details: null,
+    parent_job_id: null,
+    target_contribution_id: null,
+    prerequisite_job_id: null,
+    is_test_job: false,
+    job_type: 'PLAN',
+};
+
+const mockSupabaseClientNsf = createMockSupabaseClient(undefined, {
+    genericMockResults: {
+        'dialectic_generation_jobs': {
+            select: { data: [mockJobNsf], error: null },
+            update: { data: [{ id: mockJobNsf.id }], error: null },
+        },
+        'dialectic_stages': {
+            select: {
+                data: [{ id: 1, slug: 'thesis', name: 'Thesis', display_name: 'Thesis' }],
+                error: null,
+            },
+        },
+    },
+    rpcResults: {
+        'create_notification_for_user': { data: null, error: null },
+    },
+});
+
+Deno.test('handleJob - when processJob throws Insufficient funds, routes to pause path and does not run failure path', async () => {
+    mockSupabaseClientNsf.client.clearAllTrackedBuilders();
+    const testDepsNsf = createJobContext(createMockJobContextParams({
+        ...createMockJobContextParams(),
+        logger: mockLogger,
+        fileManager: new MockFileManagerService(),
+        notificationService: new NotificationService(mockSupabaseClientNsf.client as unknown as SupabaseClient<Database>),
+    }));
+    const { processors } = createMockJobProcessors();
+    processors.processComplexJob = async () => {
+        throw new Error('Insufficient funds to cover the input prompt cost.');
+    };
+
+    const pausedNsfSpy = spy(testDepsNsf.notificationService, 'sendContributionGenerationPausedNsfEvent');
+    const failedNotificationSpy = spy(testDepsNsf.notificationService, 'sendContributionFailedNotification');
+    const failedEventSpy = spy(testDepsNsf.notificationService, 'sendContributionGenerationFailedEvent');
+
+    await handleJob(
+        mockSupabaseClientNsf.client as unknown as SupabaseClient<Database>,
+        mockJobNsf,
+        testDepsNsf,
+        'mock-token',
+        processors,
+    );
+
+    const updateSpies = mockSupabaseClientNsf.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+    assertExists(updateSpies, 'Update spy should exist');
+    assert(updateSpies.callCount >= 2, 'Should update to processing, then at least the failing job to paused_nsf (siblings may add more)');
+    const secondUpdatePayload = updateSpies.callsArgs[1][0];
+    assert(secondUpdatePayload && typeof secondUpdatePayload === 'object' && 'status' in secondUpdatePayload);
+    assertEquals(secondUpdatePayload.status, 'paused_nsf', 'Job status should be paused_nsf');
+
+    assertEquals(pausedNsfSpy.calls.length, 1, 'sendContributionGenerationPausedNsfEvent should be called once');
+    assertEquals(failedNotificationSpy.calls.length, 0, 'sendContributionFailedNotification should not be called');
+    assertEquals(failedEventSpy.calls.length, 0, 'sendContributionGenerationFailedEvent should not be called');
+
+    const pausedPayload = pausedNsfSpy.calls[0].args[0];
+    assert(pausedPayload && typeof pausedPayload === 'object');
+    assertEquals(pausedPayload.sessionId, mockJobNsf.session_id);
+    assertEquals(pausedPayload.projectId, 'project-nsf');
+    assertEquals(pausedPayload.stageSlug, mockJobNsf.stage_slug);
+    assertEquals(pausedPayload.iterationNumber, 1);
+    assertEquals(pausedNsfSpy.calls[0].args[1], mockJobNsf.user_id);
+
+    pausedNsfSpy.restore();
+    failedNotificationSpy.restore();
+    failedEventSpy.restore();
+});
+
+Deno.test('handleJob - when processJob throws non-NSF error, runs existing failure path unchanged', async () => {
+    mockSupabaseClientNsf.client.clearAllTrackedBuilders();
+    const testDepsNsf = createJobContext(createMockJobContextParams({
+        ...createMockJobContextParams(),
+        logger: mockLogger,
+        fileManager: new MockFileManagerService(),
+        notificationService: new NotificationService(mockSupabaseClientNsf.client as unknown as SupabaseClient<Database>),
+    }));
+    const { processors } = createMockJobProcessors();
+    processors.processComplexJob = async () => {
+        throw new Error('Simulated processJob error');
+    };
+
+    const pausedNsfSpy = spy(testDepsNsf.notificationService, 'sendContributionGenerationPausedNsfEvent');
+    const failedEventSpy = spy(testDepsNsf.notificationService, 'sendContributionGenerationFailedEvent');
+
+    await handleJob(
+        mockSupabaseClientNsf.client as unknown as SupabaseClient<Database>,
+        mockJobNsf,
+        testDepsNsf,
+        'mock-token',
+        processors,
+    );
+
+    const updateSpies = mockSupabaseClientNsf.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+    assertExists(updateSpies, 'Update spy should exist');
+    assertEquals(updateSpies.callCount, 2, 'Should update to processing, then to failed');
+    const secondUpdatePayload = updateSpies.callsArgs[1][0];
+    assert(secondUpdatePayload && typeof secondUpdatePayload === 'object' && 'status' in secondUpdatePayload);
+    assertEquals(secondUpdatePayload.status, 'failed', 'Job status should be failed');
+
+    assertEquals(pausedNsfSpy.calls.length, 0, 'sendContributionGenerationPausedNsfEvent should not be called');
+    assertEquals(failedEventSpy.calls.length, 1, 'sendContributionGenerationFailedEvent should be called once');
+
+    pausedNsfSpy.restore();
+    failedEventSpy.restore();
+});
+
+Deno.test('handleJob - when processJob throws Insufficient funds but pauseJobsForNsf throws, logs error and runs failure path', async () => {
+    mockSupabaseClientNsf.client.clearAllTrackedBuilders();
+    const testDepsNsf = createJobContext(createMockJobContextParams({
+        ...createMockJobContextParams(),
+        logger: mockLogger,
+        fileManager: new MockFileManagerService(),
+        notificationService: new NotificationService(mockSupabaseClientNsf.client as unknown as SupabaseClient<Database>),
+    }));
+    const pauseThrowsStub = stub(
+        testDepsNsf.notificationService,
+        'sendContributionGenerationPausedNsfEvent',
+        () => Promise.reject(new Error('pause notification failed')),
+    );
+    const { processors } = createMockJobProcessors();
+    processors.processComplexJob = async () => {
+        throw new Error('Insufficient funds: estimated total cost exceeds wallet balance.');
+    };
+
+    const loggerErrorSpy = spy(mockLogger, 'error');
+    const failedEventSpy = spy(testDepsNsf.notificationService, 'sendContributionGenerationFailedEvent');
+
+    await handleJob(
+        mockSupabaseClientNsf.client as unknown as SupabaseClient<Database>,
+        mockJobNsf,
+        testDepsNsf,
+        'mock-token',
+        processors,
+    );
+
+    assert(loggerErrorSpy.calls.length >= 1, 'Logger error should be called at least once for pauseJobsForNsf failure');
+
+    const updateSpies = mockSupabaseClientNsf.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+    assertExists(updateSpies, 'Update spy should exist');
+    const lastIdx = updateSpies.callsArgs.length - 1;
+    const lastUpdatePayload = updateSpies.callsArgs[lastIdx][0];
+    assert(lastUpdatePayload && typeof lastUpdatePayload === 'object' && 'status' in lastUpdatePayload);
+    assertEquals(lastUpdatePayload.status, 'failed', 'Job should fall back to failed status');
+
+    assertEquals(failedEventSpy.calls.length, 1, 'Failure path should send sendContributionGenerationFailedEvent');
+
+    pauseThrowsStub.restore();
+    loggerErrorSpy.restore();
+    failedEventSpy.restore();
 });

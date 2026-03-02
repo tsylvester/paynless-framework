@@ -10,6 +10,7 @@ export interface NotificationServiceType {
     sendContributionGenerationContinuedEvent(payload: ContributionGenerationContinuedPayload, targetUserId: string): Promise<void>;
     sendContributionGenerationFailedEvent(payload: ContributionGenerationFailedInternalPayload, targetUserId: string): Promise<void>;
     sendJobNotificationEvent(payload: JobNotificationEvent, targetUserId: string): Promise<void>;
+    sendContributionGenerationPausedNsfEvent(payload: ContributionGenerationPausedNsfPayload, targetUserId: string): Promise<void>;
 }
 
 export interface RpcNotification<T> {
@@ -106,6 +107,14 @@ export interface ContributionGenerationStartedPayload {
     projectId: string;
     job_id: string;
   }
+
+  export interface ContributionGenerationPausedNsfPayload {
+    type: 'contribution_generation_paused_nsf';
+    sessionId: string;
+    projectId: string;
+    stageSlug: string;
+    iterationNumber: number;
+  }
   
   export type DialecticLifecycleEvent = 
   ContributionGenerationStartedPayload 
@@ -114,7 +123,8 @@ export interface ContributionGenerationStartedPayload {
   | DialecticContributionReceivedPayload 
   | ContributionGenerationFailedPayload 
   | ContributionGenerationContinuedPayload
-  | ContributionGenerationCompletePayload;
+  | ContributionGenerationCompletePayload
+  | ContributionGenerationPausedNsfPayload;
 
 // ------------------------------
 // Job notification type hierarchy (PLAN / EXECUTE / RENDER lifecycle, unified job_failed)

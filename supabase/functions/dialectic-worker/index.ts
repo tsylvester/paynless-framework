@@ -43,6 +43,7 @@ import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.
 import { IJobContext } from './JobContext.interface.ts';
 import { createJobContext } from './createJobContext.ts';
 import { findSourceDocuments } from './findSourceDocuments.ts';
+import { pauseJobsForNsf } from './pauseJobsForNsf.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -340,6 +341,25 @@ export async function handleJob(
       let projectId = '';
       if (job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload) && 'projectId' in job.payload && typeof job.payload.projectId === 'string') {
           projectId = job.payload.projectId;
+      }
+
+      if (error.message.includes('Insufficient funds')) {
+        try {
+          await pauseJobsForNsf(
+            { adminClient, notificationService: deps.notificationService, logger: deps.logger },
+            {
+              failingJobId: jobId,
+              sessionId: job.session_id,
+              stageSlug: job.stage_slug,
+              iterationNumber: job.payload.iterationNumber ?? 0,
+              projectId,
+              projectOwnerUserId,
+            },
+          );
+          return;
+        } catch (pauseErr) {
+          deps.logger.error(`[dialectic-worker] [handleJob] pauseJobsForNsf failed for job ${jobId}, falling back to failure path`, { error: pauseErr });
+        }
       }
 
       await deps.notificationService.sendContributionFailedNotification({

@@ -1485,12 +1485,6 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
     - Set baseline values for each stage "Generate" action and encourage users to top up their account if they are at risk of NSF
     -- Pause the work mid-stream if NSF and encourage user to top up to continue 
 
-    - hydrateAllStages doesn't, but the stage-specific one does
-    -- Front end shows "complete" and "Submit Responses" as soon as a document is available instead of waiting for the entire stage to actually complete 
-    -- Populating document list is unreliable
-    -- Total progress indicator loses track constantly
-    -- Stage completion indicators lose track the moment they're defocused
-
     - New user sign in banner doesn't display, throws console error  
     -- Chase, diagnose, fix 
 
@@ -1509,8 +1503,6 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
 
    - Build test fixtures for major function groups 
    -- Provide standard mock factories and objects 
-
-   - Show exact job progress in front end as pop up while working, then minimize to documents once documents arrive
       
    - Support user-provided API keys for their preferred providers 
 
@@ -1527,8 +1519,6 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
    - Search across documents for key terms 
 
    - Collect user satisfaction evaluation after each generation "How would you feel if you couldn't use this again?" 
-
-   - Fix StageTabCard count so that Save Responses & Advance Stage is visible 
 
    - Add optional outputs for selected stages
    -- A "landing page" output for the proposal stage

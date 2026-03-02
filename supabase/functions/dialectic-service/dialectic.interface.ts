@@ -1118,6 +1118,27 @@ export interface ResolveNextBlockerResult {
 	status: string;
 }
 
+/**
+ * Parameters for pauseJobsForNsf (NSF pause: failing job + active siblings, single notification).
+ */
+export interface PauseJobsForNsfParams {
+	failingJobId: string;
+	sessionId: string;
+	stageSlug: string;
+	iterationNumber: number;
+	projectId: string;
+	projectOwnerUserId: string;
+}
+
+/**
+ * Dependencies for pauseJobsForNsf.
+ */
+export interface PauseJobsForNsfDeps {
+	adminClient: SupabaseClient<Database>;
+	notificationService: NotificationServiceType;
+	logger: ILogger;
+}
+
 export interface PromptConstructionPayload {
 	systemInstruction?: SystemInstruction;
 	conversationHistory: Messages[];
