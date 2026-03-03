@@ -33,6 +33,9 @@ import {
   GetStageDocumentFeedbackResponse,
   GetAllStageProgressPayload,
   GetAllStageProgressResult,
+  ResumePausedNsfJobsPayload,
+  ResumePausedNsfJobsResponse,
+  ResumePausedNsfJobsResult,
   StartSessionSuccessResponse,
   DialecticProcessTemplate,
 } from "./dialectic.interface.ts";
@@ -120,6 +123,7 @@ const mockFeedbackRow: DialecticFeedbackRow = {
 const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
   getStageRecipe?: (...args: unknown[]) => Promise<{ data?: unknown; error?: { message: string }; status?: number }>;
   getAllStageProgress?: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
+  resumePausedNsfJobs?: (payload: ResumePausedNsfJobsPayload, dbClient: SupabaseClient, user: User) => Promise<ResumePausedNsfJobsResult>;
 }): ActionHandlers => {
     return {
         createProject: overrides?.createProject || (() => Promise.resolve({ data: { id: 'mock-project-id', user_id: 'mock-user-id', project_name: 'mock-project-name', initial_user_prompt: 'mock-initial-user-prompt', selected_domain_id: 'mock-domain-id', repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, user_domain_overlay_values: null }, status: 201 })),
@@ -146,6 +150,7 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
         submitStageDocumentFeedback: overrides?.submitStageDocumentFeedback || (() => Promise.resolve({ data: mockFeedbackRow })),
         getStageDocumentFeedback: overrides?.getStageDocumentFeedback || (() => Promise.resolve({ data: [] })),
         getAllStageProgress: overrides?.getAllStageProgress || (() => Promise.resolve({ data: { dagProgress: { completedStages: 0, totalStages: 0 }, stages: [] }, status: 200 })),
+        resumePausedNsfJobs: overrides?.resumePausedNsfJobs || (() => Promise.resolve({ data: { resumedCount: 0 }, status: 200 })),
         ...overrides,
     };
 };
@@ -1781,6 +1786,87 @@ withSupabaseEnv("handleRequest - getAllStageProgress", async (t) => {
 
         assertEquals(response.status, 401);
         assertEquals(getAllStageProgressSpy.calls.length, 0);
+    });
+});
+
+withSupabaseEnv("handleRequest - resumePausedNsfJobs", async (t) => {
+    const payload: ResumePausedNsfJobsPayload = {
+        sessionId: 'sess-resume-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+    };
+
+    await t.step("should route action 'resumePausedNsfJobs' to handler and return 200 with resumedCount", async () => {
+        const resumedCount = 3;
+        const resumeSpy = spy(() => Promise.resolve({ data: { resumedCount }, status: 200 }));
+        const mockHandlers = createMockHandlers({ resumePausedNsfJobs: resumeSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("resumePausedNsfJobs", payload, mockToken);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 200);
+        const body = await response.json();
+        assertExists(body.resumedCount);
+        assertEquals(typeof body.resumedCount, 'number');
+        assertEquals(body.resumedCount, resumedCount);
+        assertEquals(resumeSpy.calls.length, 1);
+    });
+
+    await t.step("should pass correct payload, dbClient, and user to resumePausedNsfJobs handler", async () => {
+        const resumeSpy = spy((_p: ResumePausedNsfJobsPayload, _db: SupabaseClient, _u: User): Promise<ResumePausedNsfJobsResult> =>
+            Promise.resolve({ data: { resumedCount: 0 }, status: 200 }));
+        const mockHandlers = createMockHandlers({ resumePausedNsfJobs: resumeSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("resumePausedNsfJobs", payload, mockToken);
+        await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(resumeSpy.calls.length, 1);
+        assertEquals(resumeSpy.calls[0].args[0], payload);
+        assert((resumeSpy.calls[0].args[1]) === (mockAdminClient as unknown), "handler should receive adminClient as dbClient");
+        assertEquals(resumeSpy.calls[0].args[2].id, mockUser.id);
+    });
+
+    await t.step("should return 401 if not authenticated", async () => {
+        const resumeSpy = spy(() => Promise.resolve({ data: { resumedCount: 0 }, status: 200 }));
+        const mockHandlers = createMockHandlers({ resumePausedNsfJobs: resumeSpy });
+
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: null }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("resumePausedNsfJobs", payload);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 401);
+        assertEquals(resumeSpy.calls.length, 0);
     });
 });
 

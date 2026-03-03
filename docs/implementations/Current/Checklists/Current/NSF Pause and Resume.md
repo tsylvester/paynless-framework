@@ -274,103 +274,103 @@ A user cannot begin a set of work when they have NSF. If a user reaches NSF whil
     *   `[✅]`   All existing step status derivation behavior must be preserved
 
 ### Node 6
-*   `[ ]`   [BE] supabase/functions/dialectic-service/`getAllStageProgress` **Handle `paused_nsf` step status in stage progress computation**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Update the step-counting loop in `getAllStageProgress.ts` to count `paused_nsf` steps so that stage status correctly reflects when any step is paused due to NSF
-    *   `[ ]`   Update stage status derivation priority: `failed` > `paused_nsf` > `completed` > `in_progress` > `not_started`
-  *   `[ ]`   `role`
-    *   `[ ]`   Infrastructure — stage progress aggregation within the dialectic-service edge function
-  *   `[ ]`   `module`
-    *   `[ ]`   Progress tracking — stage-level aggregation from step statuses
-    *   `[ ]`   Boundary: receives step statuses from `deriveStepStatuses`, computes stage-level progress and status for the `GetAllStageProgressResponse`
-  *   `[ ]`   `deps`
-    *   `[ ]`   Node 5 (`deriveStepStatuses`) — must return `paused_nsf` as a valid `UnifiedStageStatus` before this node can count it
-    *   `[ ]`   `StageProgressEntry` interface (dialectic.interface.ts line 689) — `status` field is `UnifiedStageStatus`, which already includes `paused_nsf` after Node 5
-    *   `[ ]`   No reverse dependency introduced — this is consumed by the frontend via the API layer
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Step-counting loop (line 841): iterates `steps`, gets status from `stepStatusMap`, counts `completedSteps` and `failedSteps`
-    *   `[ ]`   Stage status derivation (line 848): priority logic that produces `stageStatus: UnifiedStageStatus`
-    *   `[ ]`   No new injected dependencies
-  *   `[ ]`   unit/`getAllStageProgress.test.ts`
-    *   `[ ]`   Test: when any step has status `paused_nsf`, stage status is `paused_nsf`
-    *   `[ ]`   Test: when steps have mix of `paused_nsf` and `completed`, stage status is `paused_nsf`
-    *   `[ ]`   Test: when steps have mix of `paused_nsf` and `failed`, stage status is `failed` (failure takes priority at stage level)
-    *   `[ ]`   Test: existing tests for `in_progress`, `completed`, `failed`, `not_started` stage statuses continue to pass
-  *   `[ ]`   `construction`
-    *   `[ ]`   No new functions — modification to existing step-counting and stage status derivation logic
-  *   `[ ]`   `getAllStageProgress.ts`
-    *   `[ ]`   Add `let pausedNsfSteps: number = 0;` alongside `completedSteps` and `failedSteps` (line 838)
-    *   `[ ]`   In the step-counting loop (line 841), add: `if (status === "paused_nsf") pausedNsfSteps += 1;`
-    *   `[ ]`   In stage status derivation (line 848), insert `paused_nsf` check after `failed` and before `completed`: `if (failedSteps > 0) { stageStatus = "failed"; } else if (pausedNsfSteps > 0) { stageStatus = "paused_nsf"; } else if (completedSteps === totalSteps && failedSteps === 0) { ...existing... }`
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: infrastructure (progress aggregation)
-    *   `[ ]`   Dependencies face inward: consumes `deriveStepStatuses` output and `UnifiedStageStatus` type
-    *   `[ ]`   Provides face outward: returns `GetAllStageProgressResponse` consumed by the API layer → frontend
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Stage status must be `paused_nsf` when any step is `paused_nsf` and no steps have failed
-    *   `[ ]`   `failed` stage status still takes priority over `paused_nsf` — a failed step is more severe
-    *   `[ ]`   `paused_nsf` step count must not be counted as `completedSteps` or `failedSteps`
-    *   `[ ]`   All existing stage progress computation behavior must be preserved
-  *   `[ ]`   **Commit** `fix(be) supabase/functions/dialectic-service paused_nsf status in progress derivation and stage aggregation`
-    *   `[ ]`   Updated type: `UnifiedStageStatus` in `dialectic.interface.ts` — added `paused_nsf`
-    *   `[ ]`   Modified: `deriveStepStatuses.ts` — maps `paused_nsf` job status to `paused_nsf` step status
-    *   `[ ]`   Modified: `getAllStageProgress.ts` — counts paused steps, derives `paused_nsf` stage status
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`getAllStageProgress` **Handle `paused_nsf` step status in stage progress computation**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Update the step-counting loop in `getAllStageProgress.ts` to count `paused_nsf` steps so that stage status correctly reflects when any step is paused due to NSF
+    *   `[✅]`   Update stage status derivation priority: `failed` > `paused_nsf` > `completed` > `in_progress` > `not_started`
+  *   `[✅]`   `role`
+    *   `[✅]`   Infrastructure — stage progress aggregation within the dialectic-service edge function
+  *   `[✅]`   `module`
+    *   `[✅]`   Progress tracking — stage-level aggregation from step statuses
+    *   `[✅]`   Boundary: receives step statuses from `deriveStepStatuses`, computes stage-level progress and status for the `GetAllStageProgressResponse`
+  *   `[✅]`   `deps`
+    *   `[✅]`   Node 5 (`deriveStepStatuses`) — must return `paused_nsf` as a valid `UnifiedStageStatus` before this node can count it
+    *   `[✅]`   `StageProgressEntry` interface (dialectic.interface.ts line 689) — `status` field is `UnifiedStageStatus`, which already includes `paused_nsf` after Node 5
+    *   `[✅]`   No reverse dependency introduced — this is consumed by the frontend via the API layer
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Step-counting loop (line 841): iterates `steps`, gets status from `stepStatusMap`, counts `completedSteps` and `failedSteps`
+    *   `[✅]`   Stage status derivation (line 848): priority logic that produces `stageStatus: UnifiedStageStatus`
+    *   `[✅]`   No new injected dependencies
+  *   `[✅]`   unit/`getAllStageProgress.test.ts`
+    *   `[✅]`   Test: when any step has status `paused_nsf`, stage status is `paused_nsf`
+    *   `[✅]`   Test: when steps have mix of `paused_nsf` and `completed`, stage status is `paused_nsf`
+    *   `[✅]`   Test: when steps have mix of `paused_nsf` and `failed`, stage status is `failed` (failure takes priority at stage level)
+    *   `[✅]`   Test: existing tests for `in_progress`, `completed`, `failed`, `not_started` stage statuses continue to pass
+  *   `[✅]`   `construction`
+    *   `[✅]`   No new functions — modification to existing step-counting and stage status derivation logic
+  *   `[✅]`   `getAllStageProgress.ts`
+    *   `[✅]`   Add `let pausedNsfSteps: number = 0;` alongside `completedSteps` and `failedSteps` (line 838)
+    *   `[✅]`   In the step-counting loop (line 841), add: `if (status === "paused_nsf") pausedNsfSteps += 1;`
+    *   `[✅]`   In stage status derivation (line 848), insert `paused_nsf` check after `failed` and before `completed`: `if (failedSteps > 0) { stageStatus = "failed"; } else if (pausedNsfSteps > 0) { stageStatus = "paused_nsf"; } else if (completedSteps === totalSteps && failedSteps === 0) { ...existing... }`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: infrastructure (progress aggregation)
+    *   `[✅]`   Dependencies face inward: consumes `deriveStepStatuses` output and `UnifiedStageStatus` type
+    *   `[✅]`   Provides face outward: returns `GetAllStageProgressResponse` consumed by the API layer → frontend
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Stage status must be `paused_nsf` when any step is `paused_nsf` and no steps have failed
+    *   `[✅]`   `failed` stage status still takes priority over `paused_nsf` — a failed step is more severe
+    *   `[✅]`   `paused_nsf` step count must not be counted as `completedSteps` or `failedSteps`
+    *   `[✅]`   All existing stage progress computation behavior must be preserved
+  *   `[✅]`   **Commit** `fix(be) supabase/functions/dialectic-service paused_nsf status in progress derivation and stage aggregation`
+    *   `[✅]`   Updated type: `UnifiedStageStatus` in `dialectic.interface.ts` — added `paused_nsf`
+    *   `[✅]`   Modified: `deriveStepStatuses.ts` — maps `paused_nsf` job status to `paused_nsf` step status
+    *   `[✅]`   Modified: `getAllStageProgress.ts` — counts paused steps, derives `paused_nsf` stage status
 
 ### Node 7
-*   `[ ]`   [BE] supabase/functions/dialectic-service/`resumePausedNsfJobs` **Resume handler, routing, and `ActionHandlers` wiring for the `resumePausedNsfJobs` action**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Create a `resumePausedNsfJobs` handler in the dialectic-service edge function that receives `sessionId`, `stageSlug`, `iterationNumber` from an authenticated request, calls the `resume_paused_nsf_jobs` RPC via `adminClient`, and returns the count of resumed jobs
-    *   `[ ]`   Add a `resumePausedNsfJobs` routing case to the `handleRequest` switch in `index.ts` and register it in `defaultHandlers` and the `ActionHandlers` interface
-    *   `[ ]`   Add the corresponding `ResumePausedNsfJobsAction` to the `DialecticServiceRequest` union so the request type-checks
-  *   `[ ]`   `role`
-    *   `[ ]`   Backend / adapter — the edge function handler that bridges an authenticated API request to the database RPC
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic service — resume handler within the existing action-routed edge function
-    *   `[ ]`   Boundary: receives authenticated request → validates payload → calls `adminClient.rpc('resume_paused_nsf_jobs')` → returns result
-  *   `[ ]`   `deps`
-    *   `[ ]`   Node 1 (migration) — `resume_paused_nsf_jobs` RPC must exist in the database
-    *   `[ ]`   `adminClient` (Supabase admin client) — available in the `handleRequest` scope via `index.ts`
-    *   `[ ]`   `ActionHandlers` interface (index.ts line 158) — must be extended with the new handler signature
-    *   `[ ]`   `DialecticServiceRequest` union (dialectic.interface.ts line 601) — must include the new action type
-    *   `[ ]`   `defaultHandlers` (index.ts line 637) — must include the new handler
-    *   `[ ]`   No reverse dependency introduced — this is consumed by the API layer (Node 8)
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Existing routing pattern in `handleRequest` (index.ts line 284): `switch (action) { case "getAllStageProgress": ... }` — the new case follows this pattern
-    *   `[ ]`   `adminClient`: `SupabaseClient` — used for `adminClient.rpc('resume_paused_nsf_jobs', { p_session_id, p_stage_slug, p_iteration_number })`
-    *   `[ ]`   `userForJson`: `User` — used for ownership verification (the RPC itself verifies ownership, but auth check gates access)
-  *   `[ ]`   interface/`dialectic.interface.ts`
-    *   `[ ]`   `ResumePausedNsfJobsPayload` — `{ sessionId: string; stageSlug: string; iterationNumber: number }` — matches the parameters of the `resume_paused_nsf_jobs` RPC
-    *   `[ ]`   `ResumePausedNsfJobsAction` — `{ action: "resumePausedNsfJobs"; payload: ResumePausedNsfJobsPayload }` — follows the existing discriminated union pattern
-    *   `[ ]`   Add `ResumePausedNsfJobsAction` to the `DialecticServiceRequest` union (line 601)
-    *   `[ ]`   `ResumePausedNsfJobsResponse` — `{ resumedCount: number }` — returned by the handler on success
-  *   `[ ]`   unit/`resumePausedNsfJobs.test.ts`
-    *   `[ ]`   Test: handler calls `adminClient.rpc('resume_paused_nsf_jobs', { p_session_id, p_stage_slug, p_iteration_number })` with correct parameters
-    *   `[ ]`   Test: handler returns `{ resumedCount: N }` on success where N is the RPC return value
-    *   `[ ]`   Test: handler returns 401 error when user is not authenticated
-    *   `[ ]`   Test: handler returns 500 error when RPC fails and logs the error
-  *   `[ ]`   `construction`
-    *   `[ ]`   Single exported async function: `handleResumePausedNsfJobs(payload: ResumePausedNsfJobsPayload, adminClient: SupabaseClient, user: User): Promise<{ data?: ResumePausedNsfJobsResponse; error?: ServiceError; status?: number }>`
-    *   `[ ]`   Follows existing handler signature pattern from `ActionHandlers`
-  *   `[ ]`   `resumePausedNsfJobs.ts`
-    *   `[ ]`   Import `ResumePausedNsfJobsPayload`, `ResumePausedNsfJobsResponse` from `./dialectic.interface.ts`
-    *   `[ ]`   Call `adminClient.rpc('resume_paused_nsf_jobs', { p_session_id: payload.sessionId, p_stage_slug: payload.stageSlug, p_iteration_number: payload.iterationNumber })`
-    *   `[ ]`   On success: return `{ status: 200, data: { resumedCount: data } }`
-    *   `[ ]`   On error: return `{ status: 500, error: { message: error.message, status: 500, code: 'RESUME_FAILED' } }`
-  *   `[ ]`   `index.ts`
-    *   `[ ]`   Add `import { handleResumePausedNsfJobs } from './resumePausedNsfJobs.ts';` at the top
-    *   `[ ]`   Add `resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload, adminClient: SupabaseClient, user: User) => Promise<{ data?: ResumePausedNsfJobsResponse; error?: ServiceError; status?: number }>;` to the `ActionHandlers` interface (line 158)
-    *   `[ ]`   Add `case "resumePausedNsfJobs":` to the switch in `handleRequest`, following the same pattern as `getAllStageProgress` (line 586): auth check → extract payload → call handler → return response
-    *   `[ ]`   Add `resumePausedNsfJobs: handleResumePausedNsfJobs,` to `defaultHandlers` (line 637)
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: adapter (edge function handler)
-    *   `[ ]`   Dependencies face inward: depends on `adminClient` (infra) and `resume_paused_nsf_jobs` RPC (infra)
-    *   `[ ]`   Provides face outward: consumed by the API layer (Node 8) via HTTP POST to `dialectic-service`
-  *   `[ ]`   `requirements`
-    *   `[ ]`   The handler must require authentication — unauthenticated requests must be rejected
-    *   `[ ]`   The handler must call the `resume_paused_nsf_jobs` RPC with the correct parameters
-    *   `[ ]`   The handler must return the count of resumed jobs on success
-    *   `[ ]`   RPC failures must be returned as 500 errors with the error message — not silently swallowed
-    *   `[ ]`   The routing case, handler signature, and `defaultHandlers` entry must follow the existing patterns exactly
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`resumePausedNsfJobs` **Resume handler, routing, and `ActionHandlers` wiring for the `resumePausedNsfJobs` action**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Create a `resumePausedNsfJobs` handler in the dialectic-service edge function that receives `sessionId`, `stageSlug`, `iterationNumber` from an authenticated request, calls the `resume_paused_nsf_jobs` RPC via `adminClient`, and returns the count of resumed jobs
+    *   `[✅]`   Add a `resumePausedNsfJobs` routing case to the `handleRequest` switch in `index.ts` and register it in `defaultHandlers` and the `ActionHandlers` interface
+    *   `[✅]`   Add the corresponding `ResumePausedNsfJobsAction` to the `DialecticServiceRequest` union so the request type-checks
+  *   `[✅]`   `role`
+    *   `[✅]`   Backend / adapter — the edge function handler that bridges an authenticated API request to the database RPC
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic service — resume handler within the existing action-routed edge function
+    *   `[✅]`   Boundary: receives authenticated request → validates payload → calls `adminClient.rpc('resume_paused_nsf_jobs')` → returns result
+  *   `[✅]`   `deps`
+    *   `[✅]`   Node 1 (migration) — `resume_paused_nsf_jobs` RPC must exist in the database
+    *   `[✅]`   `adminClient` (Supabase admin client) — available in the `handleRequest` scope via `index.ts`
+    *   `[✅]`   `ActionHandlers` interface (index.ts line 158) — must be extended with the new handler signature
+    *   `[✅]`   `DialecticServiceRequest` union (dialectic.interface.ts line 601) — must include the new action type
+    *   `[✅]`   `defaultHandlers` (index.ts line 637) — must include the new handler
+    *   `[✅]`   No reverse dependency introduced — this is consumed by the API layer (Node 8)
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Existing routing pattern in `handleRequest` (index.ts line 284): `switch (action) { case "getAllStageProgress": ... }` — the new case follows this pattern
+    *   `[✅]`   `adminClient`: `SupabaseClient` — used for `adminClient.rpc('resume_paused_nsf_jobs', { p_session_id, p_stage_slug, p_iteration_number })`
+    *   `[✅]`   `userForJson`: `User` — used for ownership verification (the RPC itself verifies ownership, but auth check gates access)
+  *   `[✅]`   interface/`dialectic.interface.ts`
+    *   `[✅]`   `ResumePausedNsfJobsPayload` — `{ sessionId: string; stageSlug: string; iterationNumber: number }` — matches the parameters of the `resume_paused_nsf_jobs` RPC
+    *   `[✅]`   `ResumePausedNsfJobsAction` — `{ action: "resumePausedNsfJobs"; payload: ResumePausedNsfJobsPayload }` — follows the existing discriminated union pattern
+    *   `[✅]`   Add `ResumePausedNsfJobsAction` to the `DialecticServiceRequest` union (line 601)
+    *   `[✅]`   `ResumePausedNsfJobsResponse` — `{ resumedCount: number }` — returned by the handler on success
+  *   `[✅]`   unit/`resumePausedNsfJobs.test.ts`
+    *   `[✅]`   Test: handler calls `adminClient.rpc('resume_paused_nsf_jobs', { p_session_id, p_stage_slug, p_iteration_number })` with correct parameters
+    *   `[✅]`   Test: handler returns `{ resumedCount: N }` on success where N is the RPC return value
+    *   `[✅]`   Test: handler returns 401 error when user is not authenticated
+    *   `[✅]`   Test: handler returns 500 error when RPC fails and logs the error
+  *   `[✅]`   `construction`
+    *   `[✅]`   Single exported async function: `handleResumePausedNsfJobs(payload: ResumePausedNsfJobsPayload, adminClient: SupabaseClient, user: User): Promise<{ data?: ResumePausedNsfJobsResponse; error?: ServiceError; status?: number }>`
+    *   `[✅]`   Follows existing handler signature pattern from `ActionHandlers`
+  *   `[✅]`   `resumePausedNsfJobs.ts`
+    *   `[✅]`   Import `ResumePausedNsfJobsPayload`, `ResumePausedNsfJobsResponse` from `./dialectic.interface.ts`
+    *   `[✅]`   Call `adminClient.rpc('resume_paused_nsf_jobs', { p_session_id: payload.sessionId, p_stage_slug: payload.stageSlug, p_iteration_number: payload.iterationNumber })`
+    *   `[✅]`   On success: return `{ status: 200, data: { resumedCount: data } }`
+    *   `[✅]`   On error: return `{ status: 500, error: { message: error.message, status: 500, code: 'RESUME_FAILED' } }`
+  *   `[✅]`   `index.ts`
+    *   `[✅]`   Add `import { handleResumePausedNsfJobs } from './resumePausedNsfJobs.ts';` at the top
+    *   `[✅]`   Add `resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload, adminClient: SupabaseClient, user: User) => Promise<{ data?: ResumePausedNsfJobsResponse; error?: ServiceError; status?: number }>;` to the `ActionHandlers` interface (line 158)
+    *   `[✅]`   Add `case "resumePausedNsfJobs":` to the switch in `handleRequest`, following the same pattern as `getAllStageProgress` (line 586): auth check → extract payload → call handler → return response
+    *   `[✅]`   Add `resumePausedNsfJobs: handleResumePausedNsfJobs,` to `defaultHandlers` (line 637)
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: adapter (edge function handler)
+    *   `[✅]`   Dependencies face inward: depends on `adminClient` (infra) and `resume_paused_nsf_jobs` RPC (infra)
+    *   `[✅]`   Provides face outward: consumed by the API layer (Node 8) via HTTP POST to `dialectic-service`
+  *   `[✅]`   `requirements`
+    *   `[✅]`   The handler must require authentication — unauthenticated requests must be rejected
+    *   `[✅]`   The handler must call the `resume_paused_nsf_jobs` RPC with the correct parameters
+    *   `[✅]`   The handler must return the count of resumed jobs on success
+    *   `[✅]`   RPC failures must be returned as 500 errors with the error message — not silently swallowed
+    *   `[✅]`   The routing case, handler signature, and `defaultHandlers` entry must follow the existing patterns exactly
 
 ### Node 8
 *   `[ ]`   [API] packages/api/src/`dialectic.api` **Add `resumePausedNsfJobs` method to `DialecticApiClient` interface and implementation**

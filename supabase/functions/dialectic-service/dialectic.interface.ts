@@ -515,6 +515,26 @@ type GetAllStageProgressAction = {
 	payload: GetAllStageProgressPayload;
 };
 
+export interface ResumePausedNsfJobsPayload {
+	sessionId: string;
+	stageSlug: string;
+	iterationNumber: number;
+}
+export interface ResumePausedNsfJobsResponse {
+	resumedCount: number;
+}
+
+export interface ResumePausedNsfJobsResult {
+	data?: ResumePausedNsfJobsResponse;
+	error?: ServiceError;
+	status?: number;
+}
+
+type ResumePausedNsfJobsAction = {
+	action: "resumePausedNsfJobs";
+	payload: ResumePausedNsfJobsPayload;
+};
+
 // DAG progress computation — step ordering (topologicalSortSteps)
 export interface ProgressRecipeStep {
 	id: string;
@@ -620,6 +640,7 @@ export type DialecticServiceRequest =
 	| GetStageRecipeAction
 	| ListStageDocumentsAction
 	| GetAllStageProgressAction
+	| ResumePausedNsfJobsAction
 	| GetStageDocumentFeedbackAction
 	| SubmitStageDocumentFeedbackAction;
 
