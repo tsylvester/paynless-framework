@@ -1,5 +1,7 @@
+import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GenerateContributionButton } from './GenerateContributionButton';
@@ -225,10 +227,82 @@ describe('GenerateContributionButton NSF', () => {
     });
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
 
-    render(<GenerateContributionButton />);
+    render(
+      <MemoryRouter>
+        <GenerateContributionButton />
+      </MemoryRouter>
+    );
 
     expect(screen.getByRole('button')).toBeDisabled();
     expect(screen.getByRole('button')).toHaveTextContent(/Insufficient Balance/i);
+  });
+
+  it('when balance is below threshold, balance callout is present with minimum tokens and stage name and links to /subscription', () => {
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'wallet-id',
+      orgId: null,
+      balance: String(THESIS_BALANCE_THRESHOLD - 1),
+      isLoadingPrimaryWallet: false,
+    });
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
+
+    render(
+      <MemoryRouter>
+        <GenerateContributionButton />
+      </MemoryRouter>
+    );
+
+    const callout = screen.getByTestId('generate-button-balance-callout');
+    expect(callout).toBeInTheDocument();
+    expect(callout).toHaveTextContent(/Minimum.*200,000.*token balance.*Proposal/i);
+    const link = callout.querySelector('a[href="/subscription"]');
+    expect(link).toBeInTheDocument();
+  });
+
+  it('when balance is below threshold and stage is paused_nsf, balance callout is present and links to /subscription', () => {
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'wallet-id',
+      orgId: null,
+      balance: '100000',
+      isLoadingPrimaryWallet: false,
+    });
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
+
+    render(
+      <MemoryRouter>
+        <GenerateContributionButton />
+      </MemoryRouter>
+    );
+
+    const callout = screen.getByTestId('generate-button-balance-callout');
+    expect(callout).toBeInTheDocument();
+    expect(callout).toHaveTextContent(/Minimum.*200,000.*token balance.*Proposal/i);
+    const link = callout.querySelector('a[href="/subscription"]');
+    expect(link).toBeInTheDocument();
+  });
+
+  it('when balance meets threshold, balance callout is not present', () => {
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'wallet-id',
+      orgId: null,
+      balance: String(THESIS_BALANCE_THRESHOLD),
+      isLoadingPrimaryWallet: false,
+    });
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
+
+    render(
+      <MemoryRouter>
+        <GenerateContributionButton />
+      </MemoryRouter>
+    );
+
+    expect(screen.queryByTestId('generate-button-balance-callout')).not.toBeInTheDocument();
   });
 
   it('when activeWalletInfo.balance meets threshold and active stage is NOT paused_nsf, button is enabled and shows "Generate {displayName}"', () => {
@@ -259,7 +333,11 @@ describe('GenerateContributionButton NSF', () => {
     });
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
 
-    render(<GenerateContributionButton />);
+    render(
+      <MemoryRouter>
+        <GenerateContributionButton />
+      </MemoryRouter>
+    );
 
     expect(screen.getByRole('button')).toBeDisabled();
     expect(screen.getByRole('button')).toHaveTextContent(/Add Funds to Resume/i);

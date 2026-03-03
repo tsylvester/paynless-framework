@@ -1,5 +1,7 @@
+import React from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   DialecticStateValues,
@@ -59,6 +61,14 @@ const stageSlug = 'thesis';
 const sessionId = 'test-session-id';
 const iterationNumber = 1;
 const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+function renderWithRouter(ui: React.ReactElement) {
+  return render(ui, {
+    wrapper: ({ children }: { children: React.ReactNode }) => (
+      <MemoryRouter>{children}</MemoryRouter>
+    ),
+  });
+}
 
 function buildStep(overrides: {
   id: string;
@@ -220,7 +230,7 @@ describe('GenerateContributionButton integration', () => {
       isLoadingPrimaryWallet: false,
     });
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     const button = screen.getByRole('button', { name: /Add Funds to Resume/i });
     expect(button).toBeInTheDocument();
@@ -245,7 +255,7 @@ describe('GenerateContributionButton integration', () => {
     });
 
     const user = userEvent.setup();
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     const button = screen.getByRole('button', { name: /Resume Proposal/i });
     expect(button).toBeInTheDocument();
@@ -277,7 +287,7 @@ describe('GenerateContributionButton integration', () => {
       isLoadingPrimaryWallet: false,
     });
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     const button = screen.getByRole('button', { name: /Insufficient Balance/i });
     expect(button).toBeInTheDocument();
@@ -292,7 +302,7 @@ describe('GenerateContributionButton integration', () => {
     const progress = buildProgressSnapshot({ plan: 'not_started' }, {});
     setStoreForButton(recipe, progress);
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     const button = screen.getByRole('button', { name: /Generate Proposal/i });
     expect(button).toBeInTheDocument();
@@ -322,7 +332,7 @@ describe('GenerateContributionButton integration', () => {
     });
 
     const user = userEvent.setup();
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
 

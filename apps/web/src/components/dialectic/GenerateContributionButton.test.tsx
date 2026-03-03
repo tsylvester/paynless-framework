@@ -1,6 +1,8 @@
+import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom'; // Still useful for DOM assertions
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { toast } from 'sonner'; // Import the mocked toast
 import { GenerateContributionButton } from './GenerateContributionButton';
@@ -91,6 +93,13 @@ vi.mock('./StageDAGProgressDialog', async () => {
   );
   return { StageDAGProgressDialog: mockImpl };
 });
+
+const renderWithRouter = (ui: React.ReactElement) =>
+  render(ui, {
+    wrapper: ({ children }: { children: React.ReactNode }) => (
+      <MemoryRouter>{children}</MemoryRouter>
+    ),
+  });
 
 const mockThesisStage: DialecticStage = {
   id: 'stage-1',
@@ -255,7 +264,7 @@ describe('GenerateContributionButton', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
 
     // beforeEach already sets up models selected and a basic project/session in the store
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).not.toBeDisabled();
   });
@@ -269,20 +278,22 @@ describe('GenerateContributionButton', () => {
       activeContextSessionId: 'test-session-id',
       activeStageSlug: 'thesis',
     });
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
   it('is disabled and shows "Stage Not Ready" when no active stage is selected', () => {
-    // We now need to explicitly mock the stage readiness check to return true to isolate the test
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const defaultSession = createMockSession('test-session-id', 'test-project-id', 1);
+    const defaultProject = createMockProject('test-project-id', [defaultSession]);
     setDialecticStateValues({
       selectedModels: oneSelectedModel,
-      activeStageSlug: null, // No active stage
-      currentProjectDetail: createMockProject('test-project-id', [createMockSession('test-session-id', 'test-project-id', 1)]),
+      currentProjectDetail: defaultProject,
+      activeContextSessionId: null, // No active session → getButtonText returns "Stage Not Ready"
+      activeStageSlug: 'thesis', // Stage and threshold present so the button renders
     });
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).toBeDisabled();
   });
@@ -291,7 +302,7 @@ describe('GenerateContributionButton', () => {
     // This is the new test case for our added logic
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(false);
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Previous Stage Incomplete/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).toBeDisabled();
   });
@@ -311,7 +322,7 @@ describe('GenerateContributionButton', () => {
       activeStageSlug: 'thesis',
     });
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).not.toBeDisabled();
   });
@@ -329,7 +340,7 @@ describe('GenerateContributionButton', () => {
       generatingSessions: { 'test-session-id': ['job-1'] }, // This session is generating
     });
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     // The text is inside a more complex structure now with an SVG
     expect(screen.getByRole('button')).toHaveTextContent(/Generating.../i);
@@ -351,7 +362,7 @@ describe('GenerateContributionButton', () => {
       activeStageSlug: 'thesis',
     });
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).not.toBeDisabled();
   });
@@ -375,7 +386,7 @@ describe('GenerateContributionButton', () => {
       status: 202,
     });
     
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     
     const button = screen.getByRole('button', { name: /Generate Proposal/i });
     await user.click(button);
@@ -406,7 +417,7 @@ describe('GenerateContributionButton', () => {
     const { generateContributions } = getDialecticStoreState();
     vi.mocked(generateContributions).mockRejectedValue(dispatchError);
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     
     const button = screen.getByRole('button', { name: /Generate Proposal/i });
     await user.click(button);
@@ -430,7 +441,7 @@ describe('GenerateContributionButton', () => {
       activeStageSlug: 'thesis',
     });
     
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     const button = screen.getByRole('button');
     // The button should be disabled because the active session is missing.
     expect(button).toBeDisabled();
@@ -442,17 +453,17 @@ describe('GenerateContributionButton', () => {
   });
 
   it('is disabled when the active stage cannot be found from the store', () => {
-    // This test implicitly checks for the 'Stage Not Ready' state, so no readiness mock needed
     const defaultSession = createMockSession('test-session-id', 'test-project-id', 1);
-    const projectWithoutStages = createMockProject('test-project-id', [defaultSession], []); // No stages in template
+    const projectWithThesisStage = createMockProject('test-project-id', [defaultSession]); // Has thesis stage
     setDialecticStateValues({
       selectedModels: oneSelectedModel,
-      activeStageSlug: 'non-existent-stage', // This stage doesn't exist in the mock project
-      currentProjectDetail: projectWithoutStages,
-      activeContextSessionId: 's-id'
+      activeStageSlug: 'non-existent-stage', // Slug not in template → selectActiveStage returns null → no threshold
+      currentProjectDetail: projectWithThesisStage,
+      activeContextSessionId: 'test-session-id',
     });
-    render(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
+    renderWithRouter(<GenerateContributionButton />);
+    // No stage threshold when slug does not match any stage, so component returns null
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('handles unexpected exception during thunk execution (mockRejectedValue)', async () => {
@@ -461,7 +472,7 @@ describe('GenerateContributionButton', () => {
     const user = userEvent.setup();
     const errorMessage = 'Unexpected Thunk Error';
     vi.mocked(storeActions.generateContributions).mockRejectedValue(new Error(errorMessage));
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     const button = screen.getByRole('button', { name: /Generate Proposal/i });
     await user.click(button);
@@ -486,7 +497,7 @@ describe('GenerateContributionButton', () => {
       activeStageSlug: 'thesis',
     });
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).toBeDisabled();
     expect(screen.queryByRole('button', { name: /Regenerate Proposal/i })).not.toBeInTheDocument();
@@ -505,7 +516,7 @@ describe('GenerateContributionButton', () => {
       activeStageSlug: 'thesis',
     });
 
-    const { rerender } = render(<GenerateContributionButton />);
+    const { rerender } = renderWithRouter(<GenerateContributionButton />);
     const button = screen.getByRole('button');
     expect(button).toBeDisabled();
     expect(button).toHaveTextContent(/Stage Not Ready/i);
@@ -540,20 +551,16 @@ describe('GenerateContributionButton', () => {
   });
 
    it('handles currentProjectDetail being null gracefully by being disabled', () => {
-    // No readiness mock needed as this checks a more fundamental missing piece of state
     setDialecticStateValues({
       selectedModels: oneSelectedModel,
-      currentProjectDetail: null, // Project is null
+      currentProjectDetail: null, // No project → selectActiveStage returns null → no stage threshold
       activeContextSessionId: 'test-session-id',
       activeStageSlug: 'thesis',
     });
 
-    render(<GenerateContributionButton />);
-    
-    // The button should be disabled because there's no project/stage info
-    expect(screen.getByRole('button')).toBeDisabled();
-    // And it should indicate why
-    expect(screen.getByText(/Stage Not Ready/i)).toBeInTheDocument();
+    renderWithRouter(<GenerateContributionButton />);
+    // No stage threshold without project, so component returns null (no button)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('is disabled when no active wallet is available', () => {
@@ -570,7 +577,7 @@ describe('GenerateContributionButton', () => {
       isLoadingPrimaryWallet: true,
     });
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
@@ -587,7 +594,7 @@ describe('GenerateContributionButton', () => {
     });
 
     const user = userEvent.setup();
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     const button = screen.getByRole('button');
     await user.click(button);
@@ -628,7 +635,7 @@ describe('GenerateContributionButton', () => {
       };
     });
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     // Desired behavior: with personal context, button should be enabled and say Generate
     expect(screen.getByRole('button', { name: /Generate Proposal/i })).not.toBeDisabled();
   });
@@ -649,7 +656,7 @@ describe('GenerateContributionButton', () => {
       status: 202,
     });
     const user = userEvent.setup();
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
     const button = screen.getByRole('button', { name: /Generate Proposal/i });
     await user.click(button);
@@ -674,7 +681,7 @@ describe('GenerateContributionButton', () => {
       status: 202,
     });
     const user = userEvent.setup();
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
     await waitFor(() => {
       const dialog = screen.getByTestId('stage-dag-progress-dialog');
@@ -700,7 +707,7 @@ describe('GenerateContributionButton', () => {
       status: 202,
     });
     const user = userEvent.setup();
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
     await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
     await waitFor(() => {
       expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();

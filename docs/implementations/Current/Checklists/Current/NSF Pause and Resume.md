@@ -1111,24 +1111,6 @@ A user clicks a regenerate button on any document in the stage run checklist, se
 
 # ToDo
 
-    - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
-    -- User reports that a single document failed and they liked the other documents, but had to regenerate the entire stage
-    -- User requests option to only regenerate the exact document that failed
-    -- Initial investigation shows this should be possible, all the deps are met, we just need a means to dispatch a job for only the exact document that errored or otherwise wasn't produced so that the user does't have to rerun the entire stage to get a single document
-    -- Added bonus, this lets users "roll the dice" to get a different/better/alternative version of an existing document if they want to try again 
-    -- FOR CONSIDERATION: This is a powerful feature but implies a branch in the work
-    --- User generates stage, all succeeds
-    --- User advances stages, decides they want to fix an oversight in a prior stage
-    --- User regenerates a prior document
-    --- Now subsequent documents derived from the original are invalid
-    --- Is this a true branch/iteration, or do we highlight the downstream products so that those can be regenerated from the new input that was produced? 
-    --- If we "only" highlight downstream products, all downstream products are invalid, because the header_context used to generate them would be invalid 
-    --- PROPOSED: Implement regeneration prior to stage advancement, disable regeneration for documents who have downstream documents, set up future sprint for branching/iteration to support hints to regenerate downstream documents if a user regenerates upstream documents
-    --- BLOCKER: Some stages are fundamentally dependent on all prior outputs, like synthesis, and the entire stage needs to be rerun if thesis/antithesis documents are regenerated
-
-    - Set baseline values for each stage "Generate" action and encourage users to top up their account if they are at risk of NSF
-    -- Pause the work mid-stream if NSF and encourage user to top up to continue 
-
     - New user sign in banner doesn't display, throws console error  
     -- Chase, diagnose, fix 
 

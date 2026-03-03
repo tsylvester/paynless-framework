@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
 	useDialecticStore,
@@ -174,6 +175,12 @@ export const GenerateContributionButton: React.FC<
 		!isStageReady ||
 		!isWalletReady ||
 		!balanceMeetsThreshold;
+	const showBalanceCallout =
+		activeStage !== null &&
+		activeStage !== undefined &&
+		stageThreshold !== undefined &&
+		!balanceMeetsThreshold;
+
 	const getButtonText = () => {
 		if (isSessionGenerating)
 			return (
@@ -195,8 +202,25 @@ export const GenerateContributionButton: React.FC<
 		return `Generate ${displayName}`;
 	};
 
+	if (!stageThreshold) return null;
+	const formattedThreshold = new Intl.NumberFormat("en-US").format(stageThreshold);
+
 	return (
-		<>
+		<div className="relative inline-flex flex-col items-end">
+			{showBalanceCallout && (
+				<p
+					className="absolute bottom-full right-0 mb-1.5 z-10 max-w-[280px] rounded-md border border-primary/60 bg-primary/15 px-3 py-2 text-center text-xs font-medium text-primary shadow-md animate-pulse"
+					data-testid="generate-button-balance-callout"
+				>
+					<Link
+						to="/subscription"
+						className="font-semibold underline underline-offset-2 hover:no-underline"
+					>
+						Minimum {formattedThreshold} token balance for {getDisplayName(activeStage.slug)}{" "}
+
+					</Link>
+				</p>
+			)}
 			<Button
 				onClick={handleClick}
 				disabled={isDisabled}
@@ -217,6 +241,6 @@ export const GenerateContributionButton: React.FC<
 						iterationNumber={activeSession.iteration_count}
 					/>
 				)}
-		</>
+		</div>
 	);
 };
