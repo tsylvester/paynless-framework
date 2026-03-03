@@ -38,6 +38,8 @@ import type {
     GetAllStageProgressResponse,
     ResumePausedNsfJobsPayload,
     ResumePausedNsfJobsResponse,
+    RegenerateDocumentPayload,
+    RegenerateDocumentResponse,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -693,6 +695,20 @@ export class DialecticApiClient {
             logger.error('Error resuming paused NSF jobs:', { error: response.error, ...payload });
         } else {
             logger.info('Successfully resumed paused NSF jobs', { ...payload });
+        }
+        return response;
+    }
+
+    async regenerateDocument(payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>> {
+        logger.info('Regenerating document', { sessionId: payload.sessionId, stageSlug: payload.stageSlug, iterationNumber: payload.iterationNumber, documentCount: payload.documents.length });
+        const response = await this.apiClient.post<RegenerateDocumentResponse, DialecticServiceActionPayload>(
+            'dialectic-service',
+            { action: 'regenerateDocument', payload }
+        );
+        if (response.error) {
+            logger.error('Error regenerating document:', { error: response.error, sessionId: payload.sessionId, stageSlug: payload.stageSlug });
+        } else {
+            logger.info('Successfully regenerated document', { sessionId: payload.sessionId, stageSlug: payload.stageSlug, jobIds: response.data?.jobIds });
         }
         return response;
     }

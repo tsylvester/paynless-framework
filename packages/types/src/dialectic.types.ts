@@ -724,7 +724,8 @@ export interface DialecticActions {
   generateContributions: (payload: GenerateContributionsPayload) => Promise<ApiResponse<GenerateContributionsResponse>>;
 
   resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload) => Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
-  
+  regenerateDocument: (payload: RegenerateDocumentPayload) => Promise<ApiResponse<RegenerateDocumentResponse>>;
+
   // Actions for submitting stage responses and preparing next seed (plan 1.2.Y / 1.5.6.4)
   setSubmittingStageResponses: (isSubmitting: boolean) => void;
   setSubmitStageResponsesError: (error: ApiError | null) => void;
@@ -1097,6 +1098,7 @@ export interface DialecticApiClient {
   submitStageDocumentFeedback(payload: SubmitStageDocumentFeedbackPayload): Promise<ApiResponse<{ success: boolean }>>;
   listStageDocuments(payload: ListStageDocumentsPayload): Promise<ApiResponse<ListStageDocumentsResponse>>;
   resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
+  regenerateDocument(payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>>;
 }
 
 
@@ -1180,6 +1182,17 @@ export interface ResumePausedNsfJobsPayload {
 
 export interface ResumePausedNsfJobsResponse {
   resumedCount: number;
+}
+
+export interface RegenerateDocumentPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  documents: Array<{ documentKey: string; modelId: string }>;
+}
+
+export interface RegenerateDocumentResponse {
+  jobIds: string[];
 }
 
 export interface ContributionContentSignedUrlResponse {
@@ -1318,6 +1331,9 @@ export type DialecticServiceActionPayload = {
 } | {
   action: 'resumePausedNsfJobs';
   payload: ResumePausedNsfJobsPayload;
+} | {
+  action: 'regenerateDocument';
+  payload: RegenerateDocumentPayload;
 }
 
 export interface DialecticServiceResponsePayload {

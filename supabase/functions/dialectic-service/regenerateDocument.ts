@@ -19,11 +19,11 @@ function isValidRegeneratePayload(
   if (typeof value["stageSlug"] !== "string" || value["stageSlug"].length === 0)
     return false;
   if (typeof value["iterationNumber"] !== "number") return false;
-  const jobs = value["jobs"];
-  if (!Array.isArray(jobs)) return false;
-  for (const entry of jobs) {
+  const documents = value["documents"];
+  if (!Array.isArray(documents)) return false;
+  for (const entry of documents) {
     if (!isRecord(entry)) return false;
-    if (typeof entry["jobId"] !== "string" || entry["jobId"].length === 0)
+    if (typeof entry["documentKey"] !== "string" || entry["documentKey"].length === 0)
       return false;
     if (typeof entry["modelId"] !== "string" || entry["modelId"].length === 0)
       return false;
@@ -47,7 +47,7 @@ export async function regenerateDocument(
 
   if (!isValidRegeneratePayload(payload)) {
     const error: ServiceError = {
-      message: "Invalid payload: sessionId, stageSlug, iterationNumber, and jobs array with jobId and modelId required",
+      message: "Invalid payload: sessionId, stageSlug, iterationNumber, and documents array with documentKey and modelId required",
       status: 400,
       code: "VALIDATION_ERROR",
     };
@@ -109,24 +109,25 @@ export async function regenerateDocument(
 
   const jobIds: string[] = [];
 
-  for (const jobRef of payload.jobs) {
-    const { data: jobData, error: jobError } = await dbClient
+  for (const docRef of payload.documents) {
+    const { data: jobRows, error: jobError } = await dbClient
       .from("dialectic_generation_jobs")
       .select("*")
-      .eq("id", jobRef.jobId)
-      .single();
+      .eq("session_id", payload.sessionId)
+      .eq("stage_slug", payload.stageSlug)
+      .eq("iteration_number", payload.iterationNumber)
+      .eq("user_id", user.id)
+      .eq("job_type", "EXECUTE")
+      .neq("status", "superseded")
+      .filter("payload->>document_key", "eq", docRef.documentKey)
+      .filter("payload->>model_id", "eq", docRef.modelId)
+      .order("created_at", { ascending: false })
+      .limit(1);
 
     if (jobError) {
-      if (jobError.code === "PGRST116") {
-        const error: ServiceError = {
-          message: "Job not found",
-          status: 404,
-          code: "NOT_FOUND",
-        };
-        return { status: 404, error };
-      }
       logger.error("regenerateDocument: failed to fetch job", {
-        jobId: jobRef.jobId,
+        documentKey: docRef.documentKey,
+        modelId: docRef.modelId,
         error: jobError.message,
       });
       const error: ServiceError = {
@@ -137,9 +138,10 @@ export async function regenerateDocument(
       return { status: 500, error };
     }
 
+    const jobData = jobRows?.[0] ?? null;
     if (!jobData) {
       const error: ServiceError = {
-        message: "Job not found",
+        message: `No EXECUTE job found for documentKey '${docRef.documentKey}' and modelId '${docRef.modelId}'`,
         status: 404,
         code: "NOT_FOUND",
       };
@@ -148,7 +150,8 @@ export async function regenerateDocument(
 
     if (!isDialecticJobRow(jobData)) {
       logger.error("regenerateDocument: job row shape invalid", {
-        jobId: jobRef.jobId,
+        documentKey: docRef.documentKey,
+        modelId: docRef.modelId,
       });
       const error: ServiceError = {
         message: "Invalid job data",
@@ -167,24 +170,6 @@ export async function regenerateDocument(
         code: "FORBIDDEN",
       };
       return { status: 403, error };
-    }
-
-    if (job.stage_slug !== payload.stageSlug) {
-      const error: ServiceError = {
-        message: "Job stage does not match requested stage",
-        status: 400,
-        code: "STAGE_MISMATCH",
-      };
-      return { status: 400, error };
-    }
-
-    if (job.iteration_number !== payload.iterationNumber) {
-      const error: ServiceError = {
-        message: "Job iteration does not match requested iteration",
-        status: 400,
-        code: "ITERATION_MISMATCH",
-      };
-      return { status: 400, error };
     }
 
     if (job.user_id !== user.id) {
@@ -208,12 +193,14 @@ export async function regenerateDocument(
     const updateError = await dbClient
       .from("dialectic_generation_jobs")
       .update({ status: "superseded" })
-      .eq("id", jobRef.jobId)
+      .eq("id", job.id)
       .then((r) => r.error);
 
     if (updateError) {
       logger.error("regenerateDocument: failed to mark job superseded", {
-        jobId: jobRef.jobId,
+        jobId: job.id,
+        documentKey: docRef.documentKey,
+        modelId: docRef.modelId,
         error: updateError.message,
       });
       const error: ServiceError = {
@@ -252,7 +239,9 @@ export async function regenerateDocument(
 
     if (insertError) {
       logger.error("regenerateDocument: failed to insert clone job", {
-        originalJobId: jobRef.jobId,
+        originalJobId: job.id,
+        documentKey: docRef.documentKey,
+        modelId: docRef.modelId,
         error: insertError.message,
       });
       const error: ServiceError = {

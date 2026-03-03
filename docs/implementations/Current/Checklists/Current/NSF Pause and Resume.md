@@ -815,12 +815,12 @@ A user clicks a regenerate button on any document in the stage run checklist, se
     *   `[✅]`   All existing status derivation behavior must be preserved for non-superseded jobs
     *   `[✅]`   A step with only superseded jobs and no successors must show `not_started`
 
-*   `[✅]`   [BE] dialectic-service/`regenerateDocument` **Clone failed/completed EXECUTE jobs as new `pending` jobs for targeted document regeneration**
+*   `[✅]`   [BE] dialectic-service/`regenerateDocument` **Look up and clone EXECUTE jobs by document identity for targeted document regeneration**
   *   `[✅]`   `objective`
-    *   `[✅]`   Accept a request specifying session, stage, iteration, and a list of `{ jobId, modelId }` pairs identifying which EXECUTE jobs to regenerate
+    *   `[✅]`   Accept a request specifying session, stage, iteration, and a list of `{ documentKey, modelId }` pairs identifying which documents to regenerate
+    *   `[✅]`   For each `{ documentKey, modelId }`, query `dialectic_generation_jobs` to find the matching EXECUTE job by `session_id`, `stage_slug`, `iteration_number`, `user_id`, `job_type = 'EXECUTE'`, and JSONB payload fields matching `documentKey` and `modelId`; exclude already-`superseded` jobs; order by `created_at DESC`; take first
     *   `[✅]`   Validate that the stage matches the session's current stage (active-stage-only gate)
-    *   `[✅]`   Validate that each referenced job belongs to the correct session/stage/iteration and is an EXECUTE job
-    *   `[✅]`   Mark each original job as `superseded`
+    *   `[✅]`   Mark each matched original job as `superseded`
     *   `[✅]`   Clone each original job's row: copy `payload`, `stage_slug`, `iteration_number`, `session_id`, `user_id`, `max_retries`, `job_type`; set `status: 'pending'`, `attempt_count: 0`, `parent_job_id: null`, `prerequisite_job_id: null`, `started_at: null`, `completed_at: null`, `results: null`, `error_details: null`, `target_contribution_id: null`
     *   `[✅]`   Insert the cloned row — the existing `on_new_job_created` trigger fires and the worker picks it up
     *   `[✅]`   Return the array of new job IDs
@@ -828,10 +828,10 @@ A user clicks a regenerate button on any document in the stage run checklist, se
     *   `[✅]`   Backend logic — edge function handler for document regeneration
   *   `[✅]`   `module`
     *   `[✅]`   Dialectic service — new handler function within the `dialectic-service` edge function
-    *   `[✅]`   Boundary: receives validated request → marks originals superseded → inserts cloned jobs → returns new job IDs
+    *   `[✅]`   Boundary: receives document identity → resolves EXECUTE job → marks original superseded → inserts cloned job → returns new job IDs
   *   `[✅]`   `deps`
     *   `[✅]`   DB migration node — `superseded` status must exist
-    *   `[✅]`   `dialectic_generation_jobs` table — read original job, update to `superseded`, insert clone
+    *   `[✅]`   `dialectic_generation_jobs` table — query by JSONB payload fields to find EXECUTE job, update to `superseded`, insert clone
     *   `[✅]`   `dialectic_sessions` table — validate `current_stage_id` matches requested `stageSlug`
     *   `[✅]`   `dialectic_stages` table — resolve `current_stage_id` to slug
     *   `[✅]`   Supabase admin client — for DB operations
@@ -840,38 +840,37 @@ A user clicks a regenerate button on any document in the stage run checklist, se
   *   `[✅]`   `context_slice`
     *   `[✅]`   `dbClient: SupabaseClient` — admin client for DB reads/writes
     *   `[✅]`   `user: User` — authenticated user from request
-    *   `[✅]`   `payload: RegenerateDocumentPayload` — `{ sessionId, stageSlug, iterationNumber, jobs: Array<{ jobId: string; modelId: string }> }`
+    *   `[✅]`   `payload: RegenerateDocumentPayload` — `{ sessionId, stageSlug, iterationNumber, documents: Array<{ documentKey: string; modelId: string }> }`
   *   `[✅]`   interface/`dialectic.interface.ts`
-    *   `[✅]`   `RegenerateDocumentPayload`: `{ sessionId: string; stageSlug: string; iterationNumber: number; jobs: Array<{ jobId: string; modelId: string }> }`
+    *   `[✅]`   `RegenerateDocumentPayload`: `{ sessionId: string; stageSlug: string; iterationNumber: number; documents: Array<{ documentKey: string; modelId: string }> }`
     *   `[✅]`   `RegenerateDocumentResponse`: `{ jobIds: string[] }`
     *   `[✅]`   `RegenerateDocumentAction`: `{ action: 'regenerateDocument'; payload: RegenerateDocumentPayload }`
     *   `[✅]`   Add `RegenerateDocumentAction` to the `DialecticServiceRequest` union
     *   `[✅]`   Add `regenerateDocument` to `ActionHandlers` interface
   *   `[✅]`   interface/tests/`regenerateDocument.interface.test.ts`
-    *   `[✅]`   Test: `RegenerateDocumentPayload` requires `sessionId`, `stageSlug`, `iterationNumber`, and `jobs` array
+    *   `[✅]`   Test: `RegenerateDocumentPayload` requires `sessionId`, `stageSlug`, `iterationNumber`, and `documents` array with `documentKey` and `modelId` per entry
     *   `[✅]`   Test: `RegenerateDocumentResponse` has `jobIds` string array
   *   `[✅]`   interface/guards/`regenerateDocument.interface.guards.ts`
-    *   `[✅]`   `isRegenerateDocumentPayload(value: unknown): value is RegenerateDocumentPayload` — validates all required fields and jobs array structure
+    *   `[✅]`   `isRegenerateDocumentPayload(value: unknown): value is RegenerateDocumentPayload` — validates all required fields and documents array structure
   *   `[✅]`   unit/`regenerateDocument.test.ts`
-    *   `[✅]`   Test: valid request with one job → original marked `superseded`, clone inserted as `pending` with correct payload copy, returns new job ID
-    *   `[✅]`   Test: valid request with multiple jobs → all originals marked `superseded`, all clones inserted, returns array of new job IDs
+    *   `[✅]`   Test: valid request with one document → handler finds matching EXECUTE job by JSONB payload query, marks it `superseded`, clone inserted as `pending` with correct payload copy, returns new job ID
+    *   `[✅]`   Test: valid request with multiple documents → all matching EXECUTE jobs found, marked `superseded`, clones inserted, returns array of new job IDs
     *   `[✅]`   Test: stage mismatch (requested stage ≠ session's current stage) → returns 400 error, no jobs modified
-    *   `[✅]`   Test: job not found → returns 404 error
-    *   `[✅]`   Test: job belongs to different session → returns 403 error
-    *   `[✅]`   Test: job is not an EXECUTE job → returns 400 error
-    *   `[✅]`   Test: user does not own the job → returns 403 error
+    *   `[✅]`   Test: no matching EXECUTE job found for a `{ documentKey, modelId }` pair → returns 404 error with descriptive message identifying which document/model had no job
+    *   `[✅]`   Test: multiple EXECUTE jobs match (original + prior retries) → selects most recent non-superseded one by `created_at DESC`
+    *   `[✅]`   Test: user does not own the matched job → returns 403 error
     *   `[✅]`   Test: cloned job has `parent_job_id: null`, `prerequisite_job_id: null`, `attempt_count: 0`, `status: 'pending'`
     *   `[✅]`   Test: cloned job preserves original's `payload`, `stage_slug`, `iteration_number`, `session_id`, `job_type`, `max_retries`
   *   `[✅]`   `construction`
     *   `[✅]`   Single exported async function `regenerateDocument(dbClient, payload, user)`
     *   `[✅]`   Returns `{ success: boolean; data?: RegenerateDocumentResponse; error?: { message: string; status?: number } }`
-    *   `[✅]`   No DI beyond `dbClient` and `user` — this is a thin data-copy operation
+    *   `[✅]`   No DI beyond `dbClient` and `user` — this is a thin lookup-and-copy operation
   *   `[✅]`   `regenerateDocument.ts`
     *   `[✅]`   Validate payload fields
     *   `[✅]`   Fetch session and verify `current_stage.slug === payload.stageSlug`
-    *   `[✅]`   For each job in `payload.jobs`:
-      *   `[✅]`   Fetch original job by ID
-      *   `[✅]`   Validate ownership (`user_id === user.id`), session match, stage match, iteration match, `job_type === 'EXECUTE'`
+    *   `[✅]`   For each document in `payload.documents`:
+      *   `[✅]`   Query `dialectic_generation_jobs` for EXECUTE jobs matching `session_id`, `stage_slug`, `iteration_number`, `user_id`, `job_type = 'EXECUTE'`, and JSONB payload fields for `documentKey` and `modelId`; exclude `status = 'superseded'`; order by `created_at DESC`; take first
+      *   `[✅]`   Validate ownership (`user_id === user.id`)
       *   `[✅]`   Update original job: `SET status = 'superseded'`
       *   `[✅]`   Insert clone row with fields copied from original, reset fields as specified in objective
     *   `[✅]`   Return `{ success: true, data: { jobIds } }`
@@ -880,6 +879,9 @@ A user clicks a regenerate button on any document in the stage run checklist, se
     *   `[✅]`   Dependencies face inward: reads/writes `dialectic_generation_jobs`, reads `dialectic_sessions` and `dialectic_stages`
     *   `[✅]`   Provides face outward: consumed by `dialectic-service/index.ts` router
   *   `[✅]`   `requirements`
+    *   `[✅]`   The handler resolves EXECUTE jobs server-side — the frontend never needs to know EXECUTE job IDs, only `documentKey` and `modelId`
+    *   `[✅]`   JSONB query must match the document identity fields as stored in the EXECUTE job's payload by the planner — verify actual payload structure during implementation
+    *   `[✅]`   When multiple EXECUTE jobs match (original + prior superseded retries), select the most recent non-superseded one
     *   `[✅]`   Original job must be marked `superseded` BEFORE clone is inserted to prevent race conditions with progress tracking
     *   `[✅]`   Clone must have `parent_job_id: null` to prevent interference with original PLAN completion tracking
     *   `[✅]`   Clone must have `prerequisite_job_id: null` — the document's prerequisites are already met (they were met when the original ran)
@@ -930,101 +932,101 @@ A user clicks a regenerate button on any document in the stage run checklist, se
     *   `[✅]`   Handler receives `adminClient` (not `userClient`) as `dbClient` — consistent with other handlers like `resumePausedNsfJobs`
     *   `[✅]`   Follows exact same routing pattern as `resumePausedNsfJobs` case block
 
-*   `[ ]`   [API] packages/api/`dialectic.api` **`regenerateDocument` API client method**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Add a `regenerateDocument` method to `DialecticApiClient` that calls the `dialectic-service` edge function with action `'regenerateDocument'`
-    *   `[ ]`   Follow the same pattern as `resumePausedNsfJobs` method
-  *   `[ ]`   `role`
-    *   `[ ]`   API client — typed HTTP adapter for the edge function
-  *   `[ ]`   `module`
-    *   `[ ]`   `@paynless/api` — dialectic API client class
-    *   `[ ]`   Boundary: accepts typed payload → posts to edge function → returns typed response
-  *   `[ ]`   `deps`
-    *   `[ ]`   Edge function router node (above) — `regenerateDocument` action must be routable
-    *   `[ ]`   `apiClient.post` — existing HTTP post method on the base API client
-    *   `[ ]`   No reverse dependency introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `this.apiClient.post<RegenerateDocumentResponse, DialecticServiceActionPayload>('dialectic-service', { action: 'regenerateDocument', payload })`
-  *   `[ ]`   interface/`dialectic.types.ts`
-    *   `[ ]`   `RegenerateDocumentPayload`: `{ sessionId: string; stageSlug: string; iterationNumber: number; jobs: Array<{ jobId: string; modelId: string }> }` — mirrors the backend interface
-    *   `[ ]`   `RegenerateDocumentResponse`: `{ jobIds: string[] }`
-  *   `[ ]`   interface/tests/`dialectic.types.test.ts`
-    *   `[ ]`   Test: `RegenerateDocumentPayload` shape contract
-    *   `[ ]`   Test: `RegenerateDocumentResponse` shape contract
-  *   `[ ]`   interface/guards/`type_guards.ts`
-    *   `[ ]`   `isRegenerateDocumentPayload(value: unknown): value is RegenerateDocumentPayload` — if needed by consumers
-    *   `[ ]`   `isRegenerateDocumentResponse(value: unknown): value is RegenerateDocumentResponse`
-  *   `[ ]`   unit/`dialectic.api.test.ts`
-    *   `[ ]`   Test: `regenerateDocument` calls `apiClient.post` with `{ action: 'regenerateDocument', payload }` and correct typing
-    *   `[ ]`   Test: successful response returns `{ data: { jobIds: [...] }, error: null }`
-    *   `[ ]`   Test: error response returns `{ data: null, error: { message, status } }`
-  *   `[ ]`   `construction`
-    *   `[ ]`   New `async regenerateDocument(payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>>` method on `DialecticApiClient`
-    *   `[ ]`   Follows identical pattern to `resumePausedNsfJobs` method at line 686
-  *   `[ ]`   `dialectic.api.ts`
-    *   `[ ]`   Add import for `RegenerateDocumentPayload`, `RegenerateDocumentResponse` from types
-    *   `[ ]`   Add `regenerateDocument` method to `DialecticApiClient` class
-  *   `[ ]`   `dialectic.api.mock.ts`
-    *   `[ ]`   Add `regenerateDocument` mock method returning default success response
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: adapter (API client)
-    *   `[ ]`   Dependencies face inward: uses types from `@paynless/types`, posts to edge function
-    *   `[ ]`   Provides face outward: consumed by `@paynless/store` dialectic store action
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Must follow the same pattern as `resumePausedNsfJobs` — post to `dialectic-service` with typed action payload
-    *   `[ ]`   Must return `ApiResponse<RegenerateDocumentResponse>` with standard error handling
-    *   `[ ]`   Mock must be updated for store tests
+*   `[✅]`   [API] packages/api/`dialectic.api` **`regenerateDocument` API client method**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add a `regenerateDocument` method to `DialecticApiClient` that calls the `dialectic-service` edge function with action `'regenerateDocument'`
+    *   `[✅]`   Follow the same pattern as `resumePausedNsfJobs` method
+  *   `[✅]`   `role`
+    *   `[✅]`   API client — typed HTTP adapter for the edge function
+  *   `[✅]`   `module`
+    *   `[✅]`   `@paynless/api` — dialectic API client class
+    *   `[✅]`   Boundary: accepts typed payload → posts to edge function → returns typed response
+  *   `[✅]`   `deps`
+    *   `[✅]`   Edge function router node (above) — `regenerateDocument` action must be routable
+    *   `[✅]`   `apiClient.post` — existing HTTP post method on the base API client
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `this.apiClient.post<RegenerateDocumentResponse, DialecticServiceActionPayload>('dialectic-service', { action: 'regenerateDocument', payload })`
+  *   `[✅]`   interface/`dialectic.types.ts`
+    *   `[✅]`   `RegenerateDocumentPayload`: `{ sessionId: string; stageSlug: string; iterationNumber: number; documents: Array<{ documentKey: string; modelId: string }> }` — mirrors the backend interface
+    *   `[✅]`   `RegenerateDocumentResponse`: `{ jobIds: string[] }`
+  *   `[✅]`   interface/tests/`dialectic.types.test.ts`
+    *   `[✅]`   Test: `RegenerateDocumentPayload` shape contract
+    *   `[✅]`   Test: `RegenerateDocumentResponse` shape contract
+  *   `[✅]`   interface/guards/`type_guards.ts`
+    *   `[✅]`   `isRegenerateDocumentPayload(value: unknown): value is RegenerateDocumentPayload` — if needed by consumers
+    *   `[✅]`   `isRegenerateDocumentResponse(value: unknown): value is RegenerateDocumentResponse`
+  *   `[✅]`   unit/`dialectic.api.test.ts`
+    *   `[✅]`   Test: `regenerateDocument` calls `apiClient.post` with `{ action: 'regenerateDocument', payload }` and correct typing
+    *   `[✅]`   Test: successful response returns `{ data: { jobIds: [...] }, error: null }`
+    *   `[✅]`   Test: error response returns `{ data: null, error: { message, status } }`
+  *   `[✅]`   `construction`
+    *   `[✅]`   New `async regenerateDocument(payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>>` method on `DialecticApiClient`
+    *   `[✅]`   Follows identical pattern to `resumePausedNsfJobs` method at line 686
+  *   `[✅]`   `dialectic.api.ts`
+    *   `[✅]`   Add import for `RegenerateDocumentPayload`, `RegenerateDocumentResponse` from types
+    *   `[✅]`   Add `regenerateDocument` method to `DialecticApiClient` class
+  *   `[✅]`   `dialectic.api.mock.ts`
+    *   `[✅]`   Add `regenerateDocument` mock method returning default success response
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: adapter (API client)
+    *   `[✅]`   Dependencies face inward: uses types from `@paynless/types`, posts to edge function
+    *   `[✅]`   Provides face outward: consumed by `@paynless/store` dialectic store action
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Must follow the same pattern as `resumePausedNsfJobs` — post to `dialectic-service` with typed action payload
+    *   `[✅]`   Must return `ApiResponse<RegenerateDocumentResponse>` with standard error handling
+    *   `[✅]`   Mock must be updated for store tests
 
-*   `[ ]`   [STORE] packages/store/`dialecticStore` **`regenerateDocument` action with progress re-hydration**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Provide a `regenerateDocument` store action that calls `api.dialectic().regenerateDocument(payload)` and triggers progress re-hydration so the UI reflects the new job's lifecycle
-    *   `[ ]`   Track the new job IDs in `generatingSessions` so the generating state is correctly reflected
-    *   `[ ]`   Set `generatingForStageSlug` so the checklist shows generating spinners for the affected documents
-  *   `[ ]`   `role`
-    *   `[ ]`   State management — bridges UI action to API call and progress refresh
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic store — extends existing actions
-    *   `[ ]`   Boundary: receives regenerate action from UI → calls API → tracks jobs → re-hydrates progress
-  *   `[ ]`   `deps`
-    *   `[ ]`   API client node (above) — `api.dialectic().regenerateDocument` must exist
-    *   `[ ]`   Existing `hydrateAllStageProgress` action — called after successful API response to refresh progress data
-    *   `[ ]`   Existing `generatingSessions` state — tracks active job IDs per session
-    *   `[ ]`   Existing `generatingForStageSlug` state — identifies which stage is actively generating
-    *   `[ ]`   Existing `contributionGenerationStatus` state — set to `'generating'` during regeneration
-    *   `[ ]`   `api` — the API client instance, available via the store's existing infrastructure pattern (same as `generateContributions` at line 1906)
-    *   `[ ]`   No reverse dependency introduced — the store is consumed by UI components
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `api.dialectic().regenerateDocument`: from `@paynless/api` via the store's existing API infrastructure
-    *   `[ ]`   `RegenerateDocumentPayload`, `RegenerateDocumentResponse`: from `@paynless/types`
-    *   `[ ]`   `hydrateAllStageProgress`: existing store action
-    *   `[ ]`   Existing store state: `generatingSessions`, `contributionGenerationStatus`, `generatingForStageSlug`
-  *   `[ ]`   interface/`dialectic.types.ts`
-    *   `[ ]`   Add `regenerateDocument: (payload: RegenerateDocumentPayload) => Promise<ApiResponse<RegenerateDocumentResponse>>` to `DialecticActions` (alongside existing actions like `generateContributions`)
-  *   `[ ]`   unit/`dialecticStore.regenerateDocument.test.ts`
-    *   `[ ]`   Test: `regenerateDocument` calls `api.dialectic().regenerateDocument(payload)` with correct `{ sessionId, stageSlug, iterationNumber, jobs }`
-    *   `[ ]`   Test: on successful API response, `regenerateDocument` adds returned job IDs to `generatingSessions[sessionId]`
-    *   `[ ]`   Test: on successful API response, `regenerateDocument` sets `contributionGenerationStatus` to `'generating'` and `generatingForStageSlug` to `payload.stageSlug`
-    *   `[ ]`   Test: on successful API response, `regenerateDocument` calls `hydrateAllStageProgress` to refresh progress data
-    *   `[ ]`   Test: on API failure, `regenerateDocument` does NOT modify `generatingSessions` or `contributionGenerationStatus`
-    *   `[ ]`   Test: on API failure, `regenerateDocument` returns the error response
-  *   `[ ]`   `construction`
-    *   `[ ]`   `regenerateDocument` is a public action exposed on the store interface
-    *   `[ ]`   Follows the same pattern as `generateContributions` for job tracking and status management
-  *   `[ ]`   `dialecticStore.ts`
-    *   `[ ]`   Add `regenerateDocument(payload: RegenerateDocumentPayload)` action:
-      *   `[ ]`   Set `contributionGenerationStatus = 'generating'`, `generatingForStageSlug = payload.stageSlug`
-      *   `[ ]`   Call `api.dialectic().regenerateDocument(payload)`
-      *   `[ ]`   On success: add returned `jobIds` to `generatingSessions[payload.sessionId]`, call `get().hydrateAllStageProgress(...)`, return response
-      *   `[ ]`   On failure: reset `contributionGenerationStatus = 'idle'`, reset `generatingForStageSlug = null`, return error response
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: application (state management)
-    *   `[ ]`   Dependencies face inward: consumes API layer (`api.dialectic()`) and types
-    *   `[ ]`   Provides face outward: consumed by UI component (StageRunChecklist regenerate button)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   The action must call through the API layer: store → `api.dialectic().regenerateDocument()` → edge function — NOT directly to Supabase
-    *   `[ ]`   After successful regeneration, `hydrateAllStageProgress` must be called to refresh progress — the progress tracker is the source of truth for UI state transitions
-    *   `[ ]`   Job IDs must be tracked in `generatingSessions` so lifecycle events from the worker are correctly processed by existing `_handleDialecticLifecycleEvent` handlers
-    *   `[ ]`   `generatingForStageSlug` must be set so the StageRunChecklist shows generating spinners for affected documents
+*   `[✅]`   [STORE] packages/store/`dialecticStore` **`regenerateDocument` action with progress re-hydration**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Provide a `regenerateDocument` store action that calls `api.dialectic().regenerateDocument(payload)` and triggers progress re-hydration so the UI reflects the new job's lifecycle
+    *   `[✅]`   Track the new job IDs in `generatingSessions` so the generating state is correctly reflected
+    *   `[✅]`   Set `generatingForStageSlug` so the checklist shows generating spinners for the affected documents
+  *   `[✅]`   `role`
+    *   `[✅]`   State management — bridges UI action to API call and progress refresh
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic store — extends existing actions
+    *   `[✅]`   Boundary: receives regenerate action from UI → calls API → tracks jobs → re-hydrates progress
+  *   `[✅]`   `deps`
+    *   `[✅]`   API client node (above) — `api.dialectic().regenerateDocument` must exist
+    *   `[✅]`   Existing `hydrateAllStageProgress` action — called after successful API response to refresh progress data
+    *   `[✅]`   Existing `generatingSessions` state — tracks active job IDs per session
+    *   `[✅]`   Existing `generatingForStageSlug` state — identifies which stage is actively generating
+    *   `[✅]`   Existing `contributionGenerationStatus` state — set to `'generating'` during regeneration
+    *   `[✅]`   `api` — the API client instance, available via the store's existing infrastructure pattern (same as `generateContributions` at line 1906)
+    *   `[✅]`   No reverse dependency introduced — the store is consumed by UI components
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `api.dialectic().regenerateDocument`: from `@paynless/api` via the store's existing API infrastructure
+    *   `[✅]`   `RegenerateDocumentPayload`, `RegenerateDocumentResponse`: from `@paynless/types`
+    *   `[✅]`   `hydrateAllStageProgress`: existing store action
+    *   `[✅]`   Existing store state: `generatingSessions`, `contributionGenerationStatus`, `generatingForStageSlug`
+  *   `[✅]`   interface/`dialectic.types.ts`
+    *   `[✅]`   Add `regenerateDocument: (payload: RegenerateDocumentPayload) => Promise<ApiResponse<RegenerateDocumentResponse>>` to `DialecticActions` (alongside existing actions like `generateContributions`)
+  *   `[✅]`   unit/`dialecticStore.regenerateDocument.test.ts`
+    *   `[✅]`   Test: `regenerateDocument` calls `api.dialectic().regenerateDocument(payload)` with correct `{ sessionId, stageSlug, iterationNumber, documents }`
+    *   `[✅]`   Test: on successful API response, `regenerateDocument` adds returned job IDs to `generatingSessions[sessionId]`
+    *   `[✅]`   Test: on successful API response, `regenerateDocument` sets `contributionGenerationStatus` to `'generating'` and `generatingForStageSlug` to `payload.stageSlug`
+    *   `[✅]`   Test: on successful API response, `regenerateDocument` calls `hydrateAllStageProgress` to refresh progress data
+    *   `[✅]`   Test: on API failure, `regenerateDocument` does NOT modify `generatingSessions` or `contributionGenerationStatus`
+    *   `[✅]`   Test: on API failure, `regenerateDocument` returns the error response
+  *   `[✅]`   `construction`
+    *   `[✅]`   `regenerateDocument` is a public action exposed on the store interface
+    *   `[✅]`   Follows the same pattern as `generateContributions` for job tracking and status management
+  *   `[✅]`   `dialecticStore.ts`
+    *   `[✅]`   Add `regenerateDocument(payload: RegenerateDocumentPayload)` action:
+      *   `[✅]`   Set `contributionGenerationStatus = 'generating'`, `generatingForStageSlug = payload.stageSlug`
+      *   `[✅]`   Call `api.dialectic().regenerateDocument(payload)`
+      *   `[✅]`   On success: add returned `jobIds` to `generatingSessions[payload.sessionId]`, call `get().hydrateAllStageProgress(...)`, return response
+      *   `[✅]`   On failure: reset `contributionGenerationStatus = 'idle'`, reset `generatingForStageSlug = null`, return error response
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: application (state management)
+    *   `[✅]`   Dependencies face inward: consumes API layer (`api.dialectic()`) and types
+    *   `[✅]`   Provides face outward: consumed by UI component (StageRunChecklist regenerate button)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   The action must call through the API layer: store → `api.dialectic().regenerateDocument()` → edge function — NOT directly to Supabase
+    *   `[✅]`   After successful regeneration, `hydrateAllStageProgress` must be called to refresh progress — the progress tracker is the source of truth for UI state transitions
+    *   `[✅]`   Job IDs must be tracked in `generatingSessions` so lifecycle events from the worker are correctly processed by existing `_handleDialecticLifecycleEvent` handlers
+    *   `[✅]`   `generatingForStageSlug` must be set so the StageRunChecklist shows generating spinners for affected documents
 
 *   `[ ]`   [UI] apps/web/`StageRunChecklist` **Per-document regenerate button with model selection dialog**
   *   `[ ]`   `objective`
@@ -1034,7 +1036,7 @@ A user clicks a regenerate button on any document in the stage run checklist, se
     *   `[ ]`   On click, show a model-selection confirmation dialog listing all models for that document with checkboxes
     *   `[ ]`   Pre-check models whose status is `Failed` or `Not started`; leave `Completed` models unchecked (user must actively opt in to re-roll a successful document)
     *   `[ ]`   Disable the regenerate button when the document's stage is not the session's current stage
-    *   `[ ]`   On confirmation, call the `regenerateDocument` store action with the selected `{ jobId, modelId }` pairs
+    *   `[ ]`   On confirmation, call the `regenerateDocument` store action with the selected `{ documentKey, modelId }` pairs
   *   `[ ]`   `role`
     *   `[ ]`   UI / presentation — user-facing regeneration trigger
   *   `[ ]`   `module`
@@ -1054,11 +1056,9 @@ A user clicks a regenerate button on any document in the stage run checklist, se
     *   `[ ]`   `activeSessionDetail` — for `current_stage_id` and `iteration_count`
     *   `[ ]`   `activeStageSlug` — to determine if the current stage matches the session's current stage
     *   `[ ]`   `perModelLabels` — already computed per document row, provides model status for pre-checking
-    *   `[ ]`   `entry.jobId` — the original EXECUTE job ID per model (needed for the payload)
-    *   `[ ]`   Note: `entry.jobId` in `StageDocumentEntry` currently holds the first rendered entry's job ID, which is a RENDER job ID, not an EXECUTE job ID. The dialog needs the EXECUTE job ID. This may require enriching `perModelLabels` or `StageDocumentEntry` with per-model EXECUTE job IDs from `stageRunProgress` descriptors.
+    *   `[ ]`   `entry.documentKey` — the document identity per model (the backend resolves the EXECUTE job ID server-side)
   *   `[ ]`   interface/`StageRunChecklist types`
-    *   `[ ]`   Extend `PerModelLabel` to include `jobId: string | null` — the EXECUTE job ID for that model's document, sourced from the rendered document descriptor's `job_id` field (which tracks the EXECUTE job, not the RENDER job)
-    *   `[ ]`   `RegenerateDocumentDialogProps`: `{ open: boolean; documentKey: string; stageSlug: string; perModelLabels: PerModelLabel[]; onConfirm: (selectedJobs: Array<{ jobId: string; modelId: string }>) => void; onCancel: () => void }`
+    *   `[ ]`   `RegenerateDocumentDialogProps`: `{ open: boolean; documentKey: string; stageSlug: string; perModelLabels: PerModelLabel[]; onConfirm: (selectedDocuments: Array<{ documentKey: string; modelId: string }>) => void; onCancel: () => void }`
   *   `[ ]`   unit/`StageRunChecklist.test.tsx`
     *   `[ ]`   Test: completed document renders green clickable icon-button (not static circle)
     *   `[ ]`   Test: failed document renders red clickable icon-button
@@ -1081,7 +1081,7 @@ A user clicks a regenerate button on any document in the stage run checklist, se
     *   `[ ]`   Replace static `<span>` circles (lines 538-554) with `<button>` elements that open the dialog on click
     *   `[ ]`   Preserve `Loader2` spinner for generating/continuing states as non-clickable
     *   `[ ]`   Implement `RegenerateDocumentDialog` with checkboxes per model, pre-fill logic, confirm/cancel
-    *   `[ ]`   Enrich `perModelLabels` computation (in `computeStageRunChecklistData`) to include the EXECUTE `jobId` per model by reading from `stageRunProgress` document descriptors
+    *   `[ ]`   On confirm: map selected `perModelLabels` entries to `{ documentKey, modelId }` pairs for the payload
     *   `[ ]`   On confirm: construct `RegenerateDocumentPayload` and call `regenerateDocument`
   *   `[ ]`   `directionality`
     *   `[ ]`   Layer: UI / presentation

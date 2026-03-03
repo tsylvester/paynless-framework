@@ -50,6 +50,8 @@ import {
   type ListStageDocumentsPayload,
   type GetAllStageProgressPayload,
   type ResumePausedNsfJobsPayload,
+  type RegenerateDocumentPayload,
+  type RegenerateDocumentResponse,
   StartSessionSuccessResponse,
 } from '@paynless/types';
 import { api } from '@paynless/api';
@@ -2027,6 +2029,57 @@ export const useDialecticStore = create<DialecticStore>()(
       });
     }
     return response;
+  },
+
+  regenerateDocument: async (payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>> => {
+    set(state => {
+      state.contributionGenerationStatus = 'generating';
+      state.generatingForStageSlug = payload.stageSlug;
+    });
+    try {
+      const response = await api.dialectic().regenerateDocument(payload);
+      if (response.error || !response.data?.jobIds) {
+        const error: ApiError = response.error ?? { message: 'API call succeeded but returned no jobIds', code: 'UNEXPECTED_RESPONSE' };
+        logger.error('[DialecticStore] regenerateDocument failed', { payload, errorDetails: error });
+        set(state => {
+          state.contributionGenerationStatus = 'idle';
+          state.generatingForStageSlug = null;
+        });
+        return { error, status: response.status ?? 500 };
+      }
+      const sessionId: string = payload.sessionId;
+      const jobIds: string[] = response.data.jobIds;
+      set(state => {
+        const existing: string[] | undefined = state.generatingSessions[sessionId];
+        if (existing !== undefined) {
+          state.generatingSessions[sessionId] = [...existing, ...jobIds];
+        } else {
+          state.generatingSessions[sessionId] = jobIds;
+        }
+      });
+      const userId: string | undefined = useAuthStore.getState().user?.id;
+      const projectId: string | undefined = get().currentProjectDetail?.id;
+      if (userId && userId.length > 0 && projectId) {
+        get().hydrateAllStageProgress({
+          sessionId: payload.sessionId,
+          iterationNumber: payload.iterationNumber,
+          userId,
+          projectId,
+        });
+      }
+      return { data: response.data, status: response.status };
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] regenerateDocument network error', { payload, errorDetails: networkError });
+      set(state => {
+        state.contributionGenerationStatus = 'idle';
+        state.generatingForStageSlug = null;
+      });
+      return { error: networkError, status: 500 };
+    }
   },
 
 	setSubmittingStageResponses: (isSubmitting: boolean) =>

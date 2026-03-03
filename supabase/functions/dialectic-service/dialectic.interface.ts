@@ -539,7 +539,7 @@ export interface RegenerateDocumentPayload {
 	sessionId: string;
 	stageSlug: string;
 	iterationNumber: number;
-	jobs: Array<{ jobId: string; modelId: string }>;
+	documents: Array<{ documentKey: string; modelId: string }>;
 }
 
 export interface RegenerateDocumentResponse {
