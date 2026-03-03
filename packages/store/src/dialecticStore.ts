@@ -31,6 +31,7 @@ import {
   type ContributionGenerationFailedPayload,
   type ContributionGenerationCompletePayload,
   type ContributionGenerationContinuedPayload,
+  type ContributionGenerationPausedNsfPayload,
   type PlannerStartedPayload,
   type PlannerCompletedPayload,
   type DocumentStartedPayload,
@@ -48,6 +49,9 @@ import {
   type SubmitStageDocumentFeedbackPayload,
   type ListStageDocumentsPayload,
   type GetAllStageProgressPayload,
+  type ResumePausedNsfJobsPayload,
+  type RegenerateDocumentPayload,
+  type RegenerateDocumentResponse,
   StartSessionSuccessResponse,
 } from '@paynless/types';
 import { api } from '@paynless/api';
@@ -1526,7 +1530,9 @@ export const useDialecticStore = create<DialecticStore>()(
                     modelId: payload.modelId,
                 });
             } else {
+				if (payload.step_key !== undefined && payload.step_key !== '') {
                 setStepStatusLogic(get, set, `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`, payload.step_key, 'in_progress');
+				}
             }
             break;
         case 'document_chunk_completed':
@@ -1564,7 +1570,9 @@ export const useDialecticStore = create<DialecticStore>()(
                     modelId: payload.modelId,
                 });
             } else {
-                setStepStatusLogic(get, set, `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`, payload.step_key, 'completed');
+				if (payload.step_key !== undefined && payload.step_key !== '') {
+					setStepStatusLogic(get, set, `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`, payload.step_key, 'completed');
+				}
             }
             break;
         case 'render_started':
@@ -1578,6 +1586,9 @@ export const useDialecticStore = create<DialecticStore>()(
             break;
         case 'job_failed':
             handlers._handleJobFailed(payload);
+            break;
+        case 'contribution_generation_paused_nsf':
+            handlers._handleContributionGenerationPausedNsf(payload);
             break;
         default:
             logger.warn('[DialecticStore] Received unhandled dialectic lifecycle event', { payload });
@@ -1604,6 +1615,28 @@ export const useDialecticStore = create<DialecticStore>()(
 		handleRenderCompletedLogic(get, set, event),
 
 	_handleJobFailed: (event: JobFailedPayload) => handleJobFailedLogic(get, set, event),
+
+  _handleContributionGenerationPausedNsf: (payload: ContributionGenerationPausedNsfPayload) => {
+    set(state => {
+      delete state.generatingSessions[payload.sessionId];
+      state.contributionGenerationStatus = 'idle';
+      state.generatingForStageSlug = null;
+    });
+    const userId: string | undefined = useAuthStore.getState().user?.id;
+    if (userId && userId.length > 0) {
+      get().hydrateAllStageProgress({
+        sessionId: payload.sessionId,
+        iterationNumber: payload.iterationNumber,
+        userId,
+        projectId: payload.projectId,
+      });
+    } else {
+      logger.warn('[DialecticStore] _handleContributionGenerationPausedNsf: no userId available, skipping hydrateAllStageProgress', {
+        sessionId: payload.sessionId,
+        projectId: payload.projectId,
+      });
+    }
+  },
 
   _handleContributionGenerationStarted: (event: ContributionGenerationStartedPayload) => {
     set({
@@ -1974,6 +2007,76 @@ export const useDialecticStore = create<DialecticStore>()(
             }
           });
         }
+      });
+      return { error: networkError, status: 500 };
+    }
+  },
+
+  resumePausedNsfJobs: async (payload: ResumePausedNsfJobsPayload) => {
+    const response = await api.dialectic().resumePausedNsfJobs(payload);
+    if (response.error) {
+      logger.error('[DialecticStore] resumePausedNsfJobs failed', { payload, errorDetails: response.error });
+      return response;
+    }
+    const userId: string | undefined = useAuthStore.getState().user?.id;
+    const projectId: string | undefined = get().currentProjectDetail?.id;
+    if (userId && userId.length > 0 && projectId) {
+      get().hydrateAllStageProgress({
+        sessionId: payload.sessionId,
+        iterationNumber: payload.iterationNumber,
+        userId,
+        projectId,
+      });
+    }
+    return response;
+  },
+
+  regenerateDocument: async (payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>> => {
+    set(state => {
+      state.contributionGenerationStatus = 'generating';
+      state.generatingForStageSlug = payload.stageSlug;
+    });
+    try {
+      const response = await api.dialectic().regenerateDocument(payload);
+      if (response.error || !response.data?.jobIds) {
+        const error: ApiError = response.error ?? { message: 'API call succeeded but returned no jobIds', code: 'UNEXPECTED_RESPONSE' };
+        logger.error('[DialecticStore] regenerateDocument failed', { payload, errorDetails: error });
+        set(state => {
+          state.contributionGenerationStatus = 'idle';
+          state.generatingForStageSlug = null;
+        });
+        return { error, status: response.status ?? 500 };
+      }
+      const sessionId: string = payload.sessionId;
+      const jobIds: string[] = response.data.jobIds;
+      set(state => {
+        const existing: string[] | undefined = state.generatingSessions[sessionId];
+        if (existing !== undefined) {
+          state.generatingSessions[sessionId] = [...existing, ...jobIds];
+        } else {
+          state.generatingSessions[sessionId] = jobIds;
+        }
+      });
+      const userId: string | undefined = useAuthStore.getState().user?.id;
+      const projectId: string | undefined = get().currentProjectDetail?.id;
+      if (userId && userId.length > 0 && projectId) {
+        get().hydrateAllStageProgress({
+          sessionId: payload.sessionId,
+          iterationNumber: payload.iterationNumber,
+          userId,
+          projectId,
+        });
+      }
+      return { data: response.data, status: response.status };
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] regenerateDocument network error', { payload, errorDetails: networkError });
+      set(state => {
+        state.contributionGenerationStatus = 'idle';
+        state.generatingForStageSlug = null;
       });
       return { error: networkError, status: 500 };
     }

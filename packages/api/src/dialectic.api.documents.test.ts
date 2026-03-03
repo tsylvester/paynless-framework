@@ -5,6 +5,10 @@ import type {
   StageRunDocumentDescriptor,
   GetAllStageProgressPayload,
   GetAllStageProgressResponse,
+  ResumePausedNsfJobsPayload,
+  ResumePausedNsfJobsResponse,
+  RegenerateDocumentPayload,
+  RegenerateDocumentResponse,
   ApiError,
   ApiResponse,
 } from '@paynless/types';
@@ -340,6 +344,169 @@ describe('DialecticApiClient - Document Listing', () => {
         code: 'NETWORK_ERROR',
         message: 'Network request failed',
       });
+    });
+  });
+
+  describe('resumePausedNsfJobs', () => {
+    it('should call the post method with the correct action and payload and return resumedCount on success', async () => {
+      const payload: ResumePausedNsfJobsPayload = {
+        sessionId: 'test-session-id',
+        stageSlug: 'antithesis',
+        iterationNumber: 1,
+      };
+      const mockResponseData: ResumePausedNsfJobsResponse = { resumedCount: 3 };
+      const mockApiResponse: ApiResponse<ResumePausedNsfJobsResponse> = {
+        data: mockResponseData,
+        error: undefined,
+        status: 200,
+      };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
+
+      const result = await dialecticApiClient.resumePausedNsfJobs(payload);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'resumePausedNsfJobs',
+          payload,
+        }
+      );
+      expect(result.data).toEqual(mockResponseData);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(200);
+    });
+
+    it('should return an error when the API call fails', async () => {
+      const payload: ResumePausedNsfJobsPayload = {
+        sessionId: 'test-session-id',
+        stageSlug: 'antithesis',
+        iterationNumber: 1,
+      };
+      const mockError: ApiError = { message: 'Resume failed', code: '500' };
+      const mockApiResponse: ApiResponse<ResumePausedNsfJobsResponse> = {
+        data: undefined,
+        error: mockError,
+        status: 500,
+      };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
+
+      const result = await dialecticApiClient.resumePausedNsfJobs(payload);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'resumePausedNsfJobs',
+          payload,
+        }
+      );
+      expect(result.data).toBeUndefined();
+      expect(result.error).toEqual(mockError);
+      expect(result.status).toBe(500);
+    });
+
+    it('should propagate when post rejects (network error)', async () => {
+      const payload: ResumePausedNsfJobsPayload = {
+        sessionId: 'test-session-id',
+        stageSlug: 'antithesis',
+        iterationNumber: 1,
+      };
+      const networkError = new Error('Network request failed');
+      vi.mocked(mockApiClient.post).mockRejectedValue(networkError);
+
+      await expect(dialecticApiClient.resumePausedNsfJobs(payload)).rejects.toThrow('Network request failed');
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'resumePausedNsfJobs',
+          payload,
+        }
+      );
+    });
+  });
+
+  describe('regenerateDocument', () => {
+    it('should call the post method with the correct action and payload and return jobIds on success', async () => {
+      const payload: RegenerateDocumentPayload = {
+        sessionId: 'test-session-id',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        documents: [{ documentKey: 'doc-1', modelId: 'model-a' }, { documentKey: 'doc-2', modelId: 'model-b' }],
+      };
+      const mockResponseData: RegenerateDocumentResponse = { jobIds: ['new-job-1', 'new-job-2'] };
+      const mockApiResponse: ApiResponse<RegenerateDocumentResponse> = {
+        data: mockResponseData,
+        error: undefined,
+        status: 200,
+      };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
+
+      const result = await dialecticApiClient.regenerateDocument(payload);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'regenerateDocument',
+          payload,
+        }
+      );
+      expect(result.data).toEqual(mockResponseData);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(200);
+    });
+
+    it('should return an error when the API call fails', async () => {
+      const payload: RegenerateDocumentPayload = {
+        sessionId: 'test-session-id',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        documents: [{ documentKey: 'doc-1', modelId: 'model-a' }],
+      };
+      const mockError: ApiError = { message: 'Regenerate failed', code: '500' };
+      const mockApiResponse: ApiResponse<RegenerateDocumentResponse> = {
+        data: undefined,
+        error: mockError,
+        status: 500,
+      };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
+
+      const result = await dialecticApiClient.regenerateDocument(payload);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'regenerateDocument',
+          payload,
+        }
+      );
+      expect(result.data).toBeUndefined();
+      expect(result.error).toEqual(mockError);
+      expect(result.status).toBe(500);
+    });
+
+    it('should propagate when post rejects (network error)', async () => {
+      const payload: RegenerateDocumentPayload = {
+        sessionId: 'test-session-id',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        documents: [{ documentKey: 'doc-1', modelId: 'model-a' }],
+      };
+      const networkError = new Error('Network request failed');
+      vi.mocked(mockApiClient.post).mockRejectedValue(networkError);
+
+      await expect(dialecticApiClient.regenerateDocument(payload)).rejects.toThrow('Network request failed');
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'regenerateDocument',
+          payload,
+        }
+      );
     });
   });
 });

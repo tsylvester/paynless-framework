@@ -837,17 +837,21 @@ export async function getAllStageProgress(
     const totalSteps: number = steps.length;
     let completedSteps: number = 0;
     let failedSteps: number = 0;
+    let pausedNsfSteps: number = 0;
     const stepDtos: StepProgressDto[] = [];
     for (const step of steps) {
       const status: UnifiedStageStatus = stepStatusMap.get(step.step_key) ?? "not_started";
       if (status === "completed") completedSteps += 1;
       if (status === "failed") failedSteps += 1;
+      if (status === "paused_nsf") pausedNsfSteps += 1;
       stepDtos.push({ stepKey: step.step_key, status });
     }
 
     let stageStatus: UnifiedStageStatus = "not_started";
     if (failedSteps > 0) {
       stageStatus = "failed";
+    } else if (pausedNsfSteps > 0) {
+      stageStatus = "paused_nsf";
     } else if (completedSteps === totalSteps && failedSteps === 0) {
       stageStatus = "completed";
     } else if (completedSteps > 0 || failedSteps > 0) {

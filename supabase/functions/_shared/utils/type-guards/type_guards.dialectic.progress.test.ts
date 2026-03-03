@@ -313,7 +313,7 @@ Deno.test("Type Guard: isStepProgressDto", async (t) => {
 	});
 
 	await t.step("returns true for each valid UnifiedStageStatus", () => {
-		const statuses: StepProgressDto["status"][] = ["not_started", "in_progress", "completed", "failed"];
+		const statuses: StepProgressDto["status"][] = ["not_started", "in_progress", "completed", "failed", "paused_nsf"];
 		for (const status of statuses) {
 			const s: StepProgressDto = { stepKey: validStep.stepKey, status };
 			assertEquals(isStepProgressDto(s), true);

@@ -2427,4 +2427,554 @@ Deno.test('FileManagerService', async (t) => {
       afterEach();
     }
   });
+
+  await t.step('assembleAndSaveFinalDocument: two chunks as JSON fragments are concatenated, sanitized, and parsed successfully', async () => {
+    try {
+      const rootContributionId = 'root-frag-1';
+      const sessionId = 'session-frag-1';
+      const projectId = 'p1';
+      const shortSessionId = generateShortId(sessionId);
+      const documentRelationships: DocumentRelationships = { thesis: rootContributionId };
+
+      const rootChunk: DialecticContributionRow = {
+        id: rootContributionId,
+        storage_bucket: 'test-bucket',
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/raw_responses`,
+        file_name: 'model_0_header_context_raw.json',
+        document_relationships: documentRelationships,
+        created_at: '2025-01-01T12:00:00Z',
+        citations: [],
+        contribution_type: 'synthesis',
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'application/json',
+        model_id: 'model-id',
+        model_name: 'Model',
+        session_id: sessionId,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 1,
+        stage: 'synthesis',
+        target_contribution_id: null,
+        updated_at: '2025-01-01T12:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+      };
+
+      const continuationChunk: DialecticContributionRow = {
+        id: 'cont-frag-1',
+        storage_bucket: 'test-bucket',
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`,
+        file_name: 'model_0_header_context_continuation_1_raw.json',
+        document_relationships: documentRelationships,
+        created_at: '2025-01-01T12:01:00Z',
+        citations: [],
+        contribution_type: 'synthesis',
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'application/json',
+        model_id: 'model-id',
+        model_name: 'Model',
+        session_id: sessionId,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 1,
+        stage: 'synthesis',
+        target_contribution_id: rootContributionId,
+        updated_at: '2025-01-01T12:01:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+      };
+
+      const fragment1 = '{"key": "val';
+      const fragment2 = 'ue", "key2": "v2"}';
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            select: (state: MockQueryBuilderState) => {
+              if (state.filters.some((f) => f.column === 'id' && f.value === rootContributionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              if (state.filters.some((f) => f.column === 'session_id' && f.value === sessionId)) {
+                return Promise.resolve({ data: [rootChunk, continuationChunk], error: null });
+              }
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const fullRootPath = `${rootChunk.storage_path}/${rootChunk.file_name}`;
+      const fullContPath = `${continuationChunk.storage_path}/${continuationChunk.file_name}`;
+      const originalStorageFrom = setup.client.storage.from;
+      setup.client.storage.from = (bucketName: string) => {
+        const bucket = originalStorageFrom(bucketName);
+        const originalDownload = bucket.download;
+        bucket.download = async (path: string) => {
+          if (path === fullRootPath) return { data: new Blob([fragment1]), error: null };
+          if (path === fullContPath) return { data: new Blob([fragment2]), error: null };
+          return originalDownload.call(bucket, path);
+        };
+        return bucket;
+      };
+
+      const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+      const result = await fileManager.assembleAndSaveFinalDocument(rootContributionId);
+
+      assertEquals(result.error, null);
+      assertExists(uploadSpy);
+      assertEquals(uploadSpy.calls.length, 1);
+
+      const uploadBody = uploadSpy.calls[0].args[1];
+      const finalContent: string = typeof uploadBody === 'string' ? uploadBody : uploadBody instanceof Blob ? await uploadBody.text() : new TextDecoder().decode(uploadBody);
+      const parsed: Record<string, unknown> = JSON.parse(finalContent);
+      assert(!Array.isArray(parsed) && typeof parsed === 'object' && parsed !== null);
+      assertEquals(parsed.key, 'value');
+      assertEquals(parsed.key2, 'v2');
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('assembleAndSaveFinalDocument: single chunk with complete JSON still works (regression)', async () => {
+    try {
+      const rootContributionId = 'root-single-1';
+      const sessionId = 'session-single-1';
+      const projectId = 'p1';
+      const shortSessionId = generateShortId(sessionId);
+      const documentRelationships: DocumentRelationships = { thesis: rootContributionId };
+
+      const rootChunk: DialecticContributionRow = {
+        id: rootContributionId,
+        storage_bucket: 'test-bucket',
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/raw_responses`,
+        file_name: 'model_0_product_requirements_raw.json',
+        document_relationships: documentRelationships,
+        created_at: '2025-01-01T12:00:00Z',
+        citations: [],
+        contribution_type: 'synthesis',
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'application/json',
+        model_id: 'model-id',
+        model_name: 'Model',
+        session_id: sessionId,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 1,
+        stage: 'synthesis',
+        target_contribution_id: null,
+        updated_at: '2025-01-01T12:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+      };
+
+      const singleJson = '{"title":"Doc","content":"Hello"}';
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            select: (state: MockQueryBuilderState) => {
+              if (state.filters.some((f) => f.column === 'id' && f.value === rootContributionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              if (state.filters.some((f) => f.column === 'session_id' && f.value === sessionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const fullRootPath = `${rootChunk.storage_path}/${rootChunk.file_name}`;
+      const originalStorageFrom = setup.client.storage.from;
+      setup.client.storage.from = (bucketName: string) => {
+        const bucket = originalStorageFrom(bucketName);
+        const originalDownload = bucket.download;
+        bucket.download = async (path: string) => {
+          if (path === fullRootPath) return { data: new Blob([singleJson]), error: null };
+          return originalDownload.call(bucket, path);
+        };
+        return bucket;
+      };
+
+      const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+      const result = await fileManager.assembleAndSaveFinalDocument(rootContributionId);
+
+      assertEquals(result.error, null);
+      assertEquals(uploadSpy.calls.length, 1);
+
+      const uploadBody = uploadSpy.calls[0].args[1];
+      const finalContent: string = typeof uploadBody === 'string' ? uploadBody : uploadBody instanceof Blob ? await uploadBody.text() : new TextDecoder().decode(uploadBody);
+      const parsed: Record<string, unknown> = JSON.parse(finalContent);
+      assert(!Array.isArray(parsed) && typeof parsed === 'object' && parsed !== null);
+      assertEquals(parsed.title, 'Doc');
+      assertEquals(parsed.content, 'Hello');
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('assembleAndSaveFinalDocument: concatenated result with backtick wrappers is sanitized before parse', async () => {
+    try {
+      const rootContributionId = 'root-backtick-1';
+      const sessionId = 'session-backtick-1';
+      const projectId = 'p1';
+      const shortSessionId = generateShortId(sessionId);
+      const documentRelationships: DocumentRelationships = { thesis: rootContributionId };
+
+      const rootChunk: DialecticContributionRow = {
+        id: rootContributionId,
+        storage_bucket: 'test-bucket',
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/raw_responses`,
+        file_name: 'model_0_header_context_raw.json',
+        document_relationships: documentRelationships,
+        created_at: '2025-01-01T12:00:00Z',
+        citations: [],
+        contribution_type: 'synthesis',
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'application/json',
+        model_id: 'model-id',
+        model_name: 'Model',
+        session_id: sessionId,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 1,
+        stage: 'synthesis',
+        target_contribution_id: null,
+        updated_at: '2025-01-01T12:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+      };
+
+      const wrappedContent = '```json\n{"x": 42}\n```';
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            select: (state: MockQueryBuilderState) => {
+              if (state.filters.some((f) => f.column === 'id' && f.value === rootContributionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              if (state.filters.some((f) => f.column === 'session_id' && f.value === sessionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const fullRootPath = `${rootChunk.storage_path}/${rootChunk.file_name}`;
+      const originalStorageFrom = setup.client.storage.from;
+      setup.client.storage.from = (bucketName: string) => {
+        const bucket = originalStorageFrom(bucketName);
+        const originalDownload = bucket.download;
+        bucket.download = async (path: string) => {
+          if (path === fullRootPath) return { data: new Blob([wrappedContent]), error: null };
+          return originalDownload.call(bucket, path);
+        };
+        return bucket;
+      };
+
+      const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+      const result = await fileManager.assembleAndSaveFinalDocument(rootContributionId);
+
+      assertEquals(result.error, null);
+      assertEquals(uploadSpy.calls.length, 1);
+
+      const uploadBody = uploadSpy.calls[0].args[1];
+      const finalContent: string = typeof uploadBody === 'string' ? uploadBody : uploadBody instanceof Blob ? await uploadBody.text() : new TextDecoder().decode(uploadBody);
+      const parsed: Record<string, unknown> = JSON.parse(finalContent);
+      assert(!Array.isArray(parsed) && typeof parsed === 'object' && parsed !== null);
+      assertEquals(parsed.x, 42);
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('assembleAndSaveFinalDocument: multiple independently-complete chunks use per-chunk sanitize/parse and deep-merge', async () => {
+    try {
+      const rootContributionId = 'root-indep-1';
+      const sessionId = 'session-indep-1';
+      const projectId = 'p1';
+      const shortSessionId = generateShortId(sessionId);
+      const documentRelationships: DocumentRelationships = { thesis: rootContributionId };
+
+      const rootChunk: DialecticContributionRow = {
+        id: rootContributionId,
+        storage_bucket: 'test-bucket',
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/raw_responses`,
+        file_name: 'model_0_product_requirements_raw.json',
+        document_relationships: documentRelationships,
+        created_at: '2025-01-01T12:00:00Z',
+        citations: [],
+        contribution_type: 'synthesis',
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'application/json',
+        model_id: 'model-id',
+        model_name: 'Model',
+        session_id: sessionId,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 1,
+        stage: 'synthesis',
+        target_contribution_id: null,
+        updated_at: '2025-01-01T12:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+      };
+
+      const continuationChunk: DialecticContributionRow = {
+        id: 'cont-indep-1',
+        storage_bucket: 'test-bucket',
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`,
+        file_name: 'model_0_product_requirements_continuation_1_raw.json',
+        document_relationships: documentRelationships,
+        created_at: '2025-01-01T12:01:00Z',
+        citations: [],
+        contribution_type: 'synthesis',
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'application/json',
+        model_id: 'model-id',
+        model_name: 'Model',
+        session_id: sessionId,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 1,
+        stage: 'synthesis',
+        target_contribution_id: rootContributionId,
+        updated_at: '2025-01-01T12:01:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+      };
+
+      const chunk1Json = '{"a": 1}';
+      const chunk2Json = '{"b": 2}';
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            select: (state: MockQueryBuilderState) => {
+              if (state.filters.some((f) => f.column === 'id' && f.value === rootContributionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              if (state.filters.some((f) => f.column === 'session_id' && f.value === sessionId)) {
+                return Promise.resolve({ data: [rootChunk, continuationChunk], error: null });
+              }
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const fullRootPath = `${rootChunk.storage_path}/${rootChunk.file_name}`;
+      const fullContPath = `${continuationChunk.storage_path}/${continuationChunk.file_name}`;
+      const originalStorageFrom = setup.client.storage.from;
+      setup.client.storage.from = (bucketName: string) => {
+        const bucket = originalStorageFrom(bucketName);
+        const originalDownload = bucket.download;
+        bucket.download = async (path: string) => {
+          if (path === fullRootPath) return { data: new Blob([chunk1Json]), error: null };
+          if (path === fullContPath) return { data: new Blob([chunk2Json]), error: null };
+          return originalDownload.call(bucket, path);
+        };
+        return bucket;
+      };
+
+      const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+      const result = await fileManager.assembleAndSaveFinalDocument(rootContributionId);
+
+      assertEquals(result.error, null);
+      assertEquals(uploadSpy.calls.length, 1);
+
+      const uploadBody = uploadSpy.calls[0].args[1];
+      const finalContent: string = typeof uploadBody === 'string' ? uploadBody : uploadBody instanceof Blob ? await uploadBody.text() : new TextDecoder().decode(uploadBody);
+      const parsed: Record<string, unknown> = JSON.parse(finalContent);
+      assert(!Array.isArray(parsed) && typeof parsed === 'object' && parsed !== null);
+      assertEquals(parsed.a, 1);
+      assertEquals(parsed.b, 2);
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('assembleAndSaveFinalDocument: when both concatenated and per-chunk parse fail, error includes chunk IDs, storage paths, and parse details', async () => {
+    try {
+      const rootContributionId = 'root-fail-1';
+      const sessionId = 'session-fail-1';
+      const projectId = 'p1';
+      const shortSessionId = generateShortId(sessionId);
+      const documentRelationships: DocumentRelationships = { thesis: rootContributionId };
+
+      const rootChunk: DialecticContributionRow = {
+        id: rootContributionId,
+        storage_bucket: 'test-bucket',
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/raw_responses`,
+        file_name: 'model_0_fail_raw.json',
+        document_relationships: documentRelationships,
+        created_at: '2025-01-01T12:00:00Z',
+        citations: [],
+        contribution_type: 'synthesis',
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'application/json',
+        model_id: 'model-id',
+        model_name: 'Model',
+        session_id: sessionId,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 1,
+        stage: 'synthesis',
+        target_contribution_id: null,
+        updated_at: '2025-01-01T12:00:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+      };
+
+      const continuationChunk: DialecticContributionRow = {
+        id: 'cont-fail-1',
+        storage_bucket: 'test-bucket',
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`,
+        file_name: 'model_0_fail_continuation_1_raw.json',
+        document_relationships: documentRelationships,
+        created_at: '2025-01-01T12:01:00Z',
+        citations: [],
+        contribution_type: 'synthesis',
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'application/json',
+        model_id: 'model-id',
+        model_name: 'Model',
+        session_id: sessionId,
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 1,
+        stage: 'synthesis',
+        target_contribution_id: rootContributionId,
+        updated_at: '2025-01-01T12:01:00Z',
+        is_header: false,
+        source_prompt_resource_id: null,
+      };
+
+      const unparseable1 = '{"key": "incomplete';
+      const unparseable2 = 'truncated';
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            select: (state: MockQueryBuilderState) => {
+              if (state.filters.some((f) => f.column === 'id' && f.value === rootContributionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              if (state.filters.some((f) => f.column === 'session_id' && f.value === sessionId)) {
+                return Promise.resolve({ data: [rootChunk, continuationChunk], error: null });
+              }
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const fullRootPath = `${rootChunk.storage_path}/${rootChunk.file_name}`;
+      const fullContPath = `${continuationChunk.storage_path}/${continuationChunk.file_name}`;
+      const originalStorageFrom = setup.client.storage.from;
+      setup.client.storage.from = (bucketName: string) => {
+        const bucket = originalStorageFrom(bucketName);
+        const originalDownload = bucket.download;
+        bucket.download = async (path: string) => {
+          if (path === fullRootPath) return { data: new Blob([unparseable1]), error: null };
+          if (path === fullContPath) return { data: new Blob([unparseable2]), error: null };
+          return originalDownload.call(bucket, path);
+        };
+        return bucket;
+      };
+
+      const result = await fileManager.assembleAndSaveFinalDocument(rootContributionId);
+
+      assert(result.error !== null);
+      assert(result.error instanceof Error);
+      const msg = result.error.message;
+      assert(msg.includes(rootContributionId) || msg.includes('root-fail-1'), 'Error should include root chunk ID');
+      assert(msg.includes(continuationChunk.id) || msg.includes('cont-fail-1'), 'Error should include continuation chunk ID');
+      assert(msg.includes(fullRootPath) || msg.includes('raw_responses'), 'Error should include storage path');
+      assert(msg.includes(fullContPath) || msg.includes('_work/raw_responses'), 'Error should include continuation storage path');
+    } finally {
+      afterEach();
+    }
+  });
 });

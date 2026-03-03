@@ -251,7 +251,7 @@ export interface IMockClientSpies {
           };
       };
       rpcResults?: {
-          [functionName: string]: { data?: object | object[] | null; error?: Error | null } | (() => Promise<{ data?: object | object[] | null; error?: Error | null }>);
+          [functionName: string]: { data?: object | object[] | number | null; error?: Error | null } | (() => Promise<{ data?: object | object[] | number | null; error?: Error | null }>);
       };
       mockRpc?: {
         [functionName: string]: () => Promise<{ data: any; error: any }>;

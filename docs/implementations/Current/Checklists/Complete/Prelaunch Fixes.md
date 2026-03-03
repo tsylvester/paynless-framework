@@ -1249,6 +1249,222 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
         *   `[✅]`   Node 3: `dialecticStore.selectors.ts` + `dialectic.types.ts` — selector uses backend progress counts, reports `hydrationReady`
         *   `[✅]`   Node 4: `useStageRunProgressHydration.ts` — ref guards replaced with store status, execution ordering guaranteed, retry supported
 
+*   `[✅]`   `[STORE]` packages/store/notificationStore **Handle execute lifecycle events and relax planner_started validation**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Add `case` branches for `execute_started`, `execute_chunk_completed`, `execute_completed` so these events reach `_handleDialecticLifecycleEvent`
+        *   `[✅]`   Relax `planner_started` validation to make `document_key` and `modelId` optional, matching backend payload (PLAN jobs intentionally omit these)
+        *   `[✅]`   Preserve all existing case branches and their validation logic
+    *   `[✅]`   `role`
+        *   `[✅]`   Application — notification ingestion and routing to dialectic store
+    *   `[✅]`   `module`
+        *   `[✅]`   Notification store — internal event dispatch
+        *   `[✅]`   Bounded to the `handleIncomingNotification` switch statement
+    *   `[✅]`   `deps`
+        *   `[✅]`   `isDialecticLifecycleEventType` from `@paynless/utils` — domain utility — inward dependency
+        *   `[✅]`   `ExecuteStartedPayload`, `ExecuteChunkCompletedPayload`, `ExecuteCompletedPayload`, `PlannerStartedPayload` from `@paynless/types` — domain types — inward dependency
+        *   `[✅]`   `_handleDialecticLifecycleEvent` from `useDialecticStore` — application — lateral dependency (existing, unchanged)
+        *   `[✅]`   Confirm no reverse dependency is introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   Injection via Zustand store — no changes to store shape
+        *   `[✅]`   Confirm no concrete imports from higher or lateral layers
+    *   `[✅]`   interface/`dialectic.types.ts`
+        *   `[✅]`   `PlannerStartedPayload` — override `document_key` and `modelId` as optional (do not change base `DocumentLifecyclePayload` — other consumers need them required)
+        *   `[✅]`   `ExecuteStartedPayload`, `ExecuteChunkCompletedPayload`, `ExecuteCompletedPayload` — verify already defined, no changes needed
+    *   `[✅]`   interface/tests/`type_guards.dialectic.test.ts`
+        *   `[✅]`   Contract: `isDialecticLifecycleEventType('execute_started')` returns `true`
+        *   `[✅]`   Contract: `isDialecticLifecycleEventType('execute_chunk_completed')` returns `true`
+        *   `[✅]`   Contract: `isDialecticLifecycleEventType('execute_completed')` returns `true`
+        *   `[✅]`   Confirm existing contracts for `planner_started`, `document_*`, `render_completed`, `job_failed`, `contribution_*`, `dialectic_contribution_*` unchanged
+    *   `[✅]`   interface/guards/`type_guards.ts`
+        *   `[✅]`   Add `execute_started`, `execute_chunk_completed`, `execute_completed` to the string comparison block in `isDialecticLifecycleEventType`
+    *   `[✅]`   unit/`notificationStore.test.ts`
+        *   `[✅]`   Test: `execute_started` notification with valid data dispatches to `_handleDialecticLifecycleEvent`
+        *   `[✅]`   Test: `execute_chunk_completed` notification with valid data dispatches to `_handleDialecticLifecycleEvent`
+        *   `[✅]`   Test: `execute_completed` notification with valid data (including optional `latestRenderedResourceId`) dispatches to `_handleDialecticLifecycleEvent`
+        *   `[✅]`   Test: `planner_started` notification **without** `document_key` and `modelId` dispatches successfully
+        *   `[✅]`   Test: `planner_started` notification **with** `document_key` and `modelId` still dispatches successfully
+        *   `[✅]`   Confirm all existing notification tests unchanged
+    *   `[✅]`   `construction`
+        *   `[✅]`   No new functions — additions are `case` branches within existing `handleIncomingNotification`
+        *   `[✅]`   Validation pattern: match existing case style (check required fields with `typeof`, assign optional fields conditionally)
+    *   `[✅]`   `notificationStore.ts`
+        *   `[✅]`   Add `case 'execute_started'` — validate `sessionId`, `stageSlug`, `iterationNumber`, `job_id`, `modelId` required; `document_key`, `step_key` optional
+        *   `[✅]`   Add `case 'execute_chunk_completed'` — same as `execute_started` plus optional `isFinalChunk`, `continuationNumber`
+        *   `[✅]`   Add `case 'execute_completed'` — same as `execute_started` plus optional `latestRenderedResourceId`
+        *   `[✅]`   Modify `case 'planner_started'` — make `document_key` and `modelId` optional (conditional `typeof` assignment like `step_key` already does)
+    *   `[✅]`   provides/`notificationStore.provides.ts`
+        *   `[✅]`   Not applicable — `useNotificationStore` is the existing Zustand export, unchanged
+    *   `[✅]`   `notificationStore.mock.ts`
+        *   `[✅]`   Not required — no new exported surface; existing mock (if any) unchanged
+    *   `[✅]`   integration/`notificationStore.integration.test.ts`
+        *   `[✅]`   Not required — changes are internal routing logic, covered by unit tests
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: application
+        *   `[✅]`   All dependencies inward-facing (types, utils)
+        *   `[✅]`   Provides outward to: UI components via Zustand subscription
+    *   `[✅]`   `requirements`
+        *   `[✅]`   `execute_started`, `execute_chunk_completed`, `execute_completed` events reach `_handleDialecticLifecycleEvent`
+        *   `[✅]`   `planner_started` events from backend (without `document_key`/`modelId`) no longer produce the "data payload did not match" warning
+        *   `[✅]`   All existing event types continue to work unchanged
+        *   `[✅]`   DAG popup receives progress updates for both plan and execute phases
+    *   `[✅]`   **Commit** `fix(store) packages/utils + packages/store add execute lifecycle event handling and relax planner_started validation to match backend payloads`
+        *   `[✅]`   `dialectic.types.ts` — updated `PlannerStartedPayload` to allow optional `document_key`/`modelId`
+        *   `[✅]`   `type_guards.ts` — added execute event types to `isDialecticLifecycleEventType`
+        *   `[✅]`   `type_guards.dialectic.test.ts` — added contracts for execute event types
+        *   `[✅]`   `notificationStore.ts` — added execute case branches, relaxed planner_started validation
+        *   `[✅]`   `notificationStore.test.ts` — added tests for execute events and planner_started without document_key/modelId
+
+*   `[✅]` supabase/functions/dialectic-worker/`executeModelCallAndSave` **[BE] Gate RENDER job enqueue behind continuation completion**
+    *   `[✅]` `objective`
+        *   `[✅]` Prevent RENDER jobs from being enqueued for intermediate continuation chunks that contain incomplete JSON fragments
+        *   `[✅]` RENDER jobs must only be enqueued when `needsContinuation` is false (i.e., the current chunk is the final chunk in the continuation chain, or the response completed without needing continuation)
+        *   `[✅]` Preserve existing behavior for non-continuation responses (single-chunk responses that complete with `finish_reason: 'stop'` must still enqueue RENDER jobs immediately)
+    *   `[✅]` `role`
+        *   `[✅]` Infrastructure — orchestrator function that coordinates AI model calls, response storage, continuation dispatch, and downstream job enqueue
+    *   `[✅]` `module`
+        *   `[✅]` Dialectic worker pipeline: the RENDER job enqueue section (lines ~1504–1751) currently runs unconditionally after every chunk save
+        *   `[✅]` The fix wraps the RENDER job enqueue block in a `!needsContinuation` guard so it only fires on the terminal chunk
+    *   `[✅]` `deps`
+        *   `[✅]` `needsContinuation` (local boolean, already computed at line 1789) — must be moved or duplicated earlier in the function, before the RENDER enqueue block at line 1504
+        *   `[✅]` `shouldContinue` (local boolean, line 1102) — already available at the RENDER enqueue site
+        *   `[✅]` `job.payload.continueUntilComplete` (payload field) — already available
+        *   `[✅]` No new external dependencies introduced
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` Requires `shouldContinue` and `job.payload.continueUntilComplete` to compute `needsContinuation` earlier in the function
+        *   `[✅]` No new injection shape needed — uses existing local variables
+        *   `[✅]` Confirm no concrete imports from higher or lateral layers
+    *   `[✅]` unit/`executeModelCallAndSave.render.test.ts`
+        *   `[✅]` Test: when `shouldContinue` is true and `continueUntilComplete` is true (`needsContinuation` = true), no RENDER job is inserted into `dialectic_generation_jobs`
+        *   `[✅]` Test: when `shouldContinue` is false (final chunk, `finish_reason: 'stop'`), RENDER job IS enqueued as before
+        *   `[✅]` Test: when `continueUntilComplete` is false (no continuation opted in), RENDER job IS enqueued as before even if `shouldContinue` would be true
+        *   `[✅]` Test: single-chunk non-continuation response still enqueues RENDER job (regression guard)
+    *   `[✅]` `construction`
+        *   `[✅]` Move computation of `needsContinuation` (currently at line 1789: `job.payload.continueUntilComplete && shouldContinue`) to immediately after the sanitize/parse decision block (after line 1178), so it is available before the RENDER enqueue section
+        *   `[✅]` Keep the existing `needsContinuation` reference at line 1789 working (use the same variable)
+        *   `[✅]` No new objects or factories required
+    *   `[✅]` `executeModelCallAndSave.ts`
+        *   `[✅]` Move `const needsContinuation = job.payload.continueUntilComplete && shouldContinue;` from line 1789 to after line 1178 (after the sanitize/parse/content-level-continuation-flag block completes)
+        *   `[✅]` Wrap the RENDER job enqueue block (lines ~1504–1751, starting at `const { shouldRender, reason, details } = ...`) inside `if (!needsContinuation) { ... }`
+        *   `[✅]` Remove the duplicate `needsContinuation` declaration at the old location (line 1789) and reference the earlier variable
+        *   `[✅]` Preserve all existing RENDER enqueue logic, error handling, and logging unchanged inside the guard
+    *   `[✅]` `requirements`
+        *   `[✅]` Intermediate continuation chunks (chunks 1..N-1) must NOT trigger a RENDER job
+        *   `[✅]` The final chunk (or a single non-continuation chunk) MUST trigger a RENDER job for markdown outputs, exactly as before
+        *   `[✅]` `assembleAndSaveFinalDocument` path (line 1861, gated by `isFinalChunk && !shouldRender`) must remain unaffected
+        *   `[✅]` Continuation dispatch (`continueJob` call at line 1806) must remain unaffected
+        *   `[✅]` All existing tests in `executeModelCallAndSave.render.test.ts` and `executeModelCallAndSave.continue.test.ts` must continue to pass
+
+*   `[✅]` supabase/functions/_shared/services/`renderDocument` **[BE] Concatenate continuation chunks before sanitize/parse in renderDocument**
+    *   `[✅]` `objective`
+        *   `[✅]` Change `renderDocument` to concatenate all ordered chunk text content first, then run the concatenated result through `sanitizeJsonContent` → `isJsonSanitizationResult` → `JSON.parse` — the same sanitize/parse pipeline used in `executeModelCallAndSave` — instead of calling `JSON.parse` on each chunk individually
+        *   `[✅]` This is a defensive-depth fix: even if a RENDER job somehow runs against incomplete chunks, the parse strategy must handle fragment-based continuations where individual chunks are not valid JSON
+        *   `[✅]` All finished content — single-chunk or multi-chunk — must be judged by one sanitization/validation standard
+    *   `[✅]` `role`
+        *   `[✅]` Infrastructure — document rendering service that assembles raw model contributions into rendered markdown documents using templates
+    *   `[✅]` `module`
+        *   `[✅]` The chunk iteration loop in `renderDocument` (lines ~308–374 in `document_renderer.ts`) currently downloads each chunk, checks if it starts with `{`, and calls `JSON.parse(text)` on each chunk individually
+        *   `[✅]` The fix changes this to: download all chunks, attempt concatenated sanitize/parse first (normal path for continuation fragments), then if that fails attempt per-chunk sanitize/parse (normal path for independently-complete chunks), then throw if neither method produces a valid result
+    *   `[✅]` `deps`
+        *   `[✅]` `downloadText` (internal helper, already used at line 314) — no change
+        *   `[✅]` `sanitizeJsonContent` from `../utils/jsonSanitizer.ts` — **new import** required
+        *   `[✅]` `isJsonSanitizationResult` from `../utils/type_guards.ts` — **new import** required
+        *   `[✅]` `JsonSanitizationResult` from `../types/jsonSanitizer.interface.ts` — **new import** required for typing the sanitization result
+        *   `[✅]` `isRecord` (type guard, already imported) — no change
+        *   `[✅]` No new external dependencies introduced
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` Requires the ordered chunk list (`uniqueChunks`) and `downloadText` function — both already in scope
+        *   `[✅]` `sanitizeJsonContent` is a pure function in `_shared/utils/` — same layer, inward-facing dependency
+        *   `[✅]` No new injection shape needed
+        *   `[✅]` Confirm no concrete imports from higher or lateral layers
+    *   `[✅]` unit/`document_renderer.test.ts`
+        *   `[✅]` Test: two chunks whose individual text are JSON fragments (e.g., `{"content": "hello ` and `world"}`) are concatenated, sanitized, and parsed successfully into a single object
+        *   `[✅]` Test: single chunk with complete JSON still works (regression guard)
+        *   `[✅]` Test: concatenated result with backtick wrappers (e.g., chunk 1 starts with `` ```json ``) is sanitized correctly before parse
+        *   `[✅]` Test: multiple chunks that are each independently complete JSON objects — concatenated parse fails, per-chunk sanitize/parse succeeds and results are merged
+        *   `[✅]` Test: non-JSON chunks (plain text not starting with `{` or `[`) are still handled by the existing plain-text path
+        *   `[✅]` Test: when both concatenated and per-chunk sanitize/parse fail, error is thrown with chunk IDs, storage paths, and parse error details
+    *   `[✅]` `construction`
+        *   `[✅]` No new objects or factories required
+        *   `[✅]` The concatenation buffer is a local `string` variable initialized to `""`
+    *   `[✅]` `document_renderer.ts`
+        *   `[✅]` Add imports: `sanitizeJsonContent` from `../utils/jsonSanitizer.ts`, `isJsonSanitizationResult` from `../utils/type_guards.ts`, `JsonSanitizationResult` from `../types/jsonSanitizer.interface.ts`
+        *   `[✅]` Replace the per-chunk download-and-parse loop (lines ~308–374) with a three-phase approach:
+            *   `[✅]` Phase 1 (download): iterate over `uniqueChunks`, download each chunk's text via `downloadText`, and accumulate into an ordered array of `{ chunkId: string, text: string, rawJsonPath: string }` tuples
+            *   `[✅]` Phase 2 (concatenated sanitize/parse — normal path for continuation fragments): if ALL trimmed texts start with `{` or `[` (JSON-like), concatenate them in order and run the concatenated result through `sanitizeJsonContent(concatenated)` → validate with `isJsonSanitizationResult` → `JSON.parse(sanitizationResult.sanitized)` → extract structured data from the parsed object as before
+            *   `[✅]` Phase 3 (per-chunk sanitize/parse — normal path for independently-complete chunks): if Phase 2 did not produce a valid parsed object (concatenated parse threw, or not all chunks were JSON-like), process each chunk individually through `sanitizeJsonContent(chunk.text)` → `isJsonSanitizationResult` → `JSON.parse(sanitizationResult.sanitized)`, merge per-chunk results using the existing structured data merge logic (`content` envelope unwrap, key merging)
+            *   `[✅]` If neither Phase 2 nor Phase 3 produces a valid parsed object, throw with chunk IDs, storage paths, sanitization details, and parse error
+            *   `[✅]` Non-JSON chunks (plain text) continue through the existing `_extra_content` path unchanged
+        *   `[✅]` Preserve all existing structured data extraction logic (`content` envelope unwrap, `continuation_needed`/`stop_reason` stripping, key merging)
+        *   `[✅]` Preserve all existing logging; add logging for sanitization events (wasSanitized, wasStructurallyFixed, hasDuplicateKeys) consistent with `executeModelCallAndSave`'s logging pattern
+    *   `[✅]` `requirements`
+        *   `[✅]` Continuation chunks that are individual JSON fragments must be parseable when concatenated and sanitized in chain order
+        *   `[✅]` Independently-complete chunks must be parseable via per-chunk sanitize/parse and merged
+        *   `[✅]` The sanitize/parse pipeline for both methods must be the same as `executeModelCallAndSave`: `sanitizeJsonContent` → `isJsonSanitizationResult` → `JSON.parse`
+        *   `[✅]` Single-chunk documents must render identically to current behavior
+        *   `[✅]` Non-JSON content (plain markdown text) must continue through the plain-text rendering path
+        *   `[✅]` If no method produces a valid parsed object, the error must propagate with actionable diagnostics including chunk IDs and storage paths
+        *   `[✅]` All existing tests in `document_renderer.test.ts` and `document_renderer.examples.test.ts` must continue to pass
+
+*   `[✅]` supabase/functions/_shared/services/`assembleAndSaveFinalDocument` **[BE] Concatenate continuation chunks before sanitize/parse in assembleAndSaveFinalDocument**
+    *   `[✅]` `objective`
+        *   `[✅]` Change `assembleAndSaveFinalDocument` to concatenate all ordered chunk text content first, then run the concatenated result through `sanitizeJsonContent` → `isJsonSanitizationResult` → `JSON.parse` — the same sanitize/parse pipeline used in `executeModelCallAndSave` — instead of calling `JSON.parse` on each chunk individually
+        *   `[✅]` This is a defensive-depth fix for the JSON assembly path (non-rendered JSON-only artifacts): individual continuation chunks are fragments of a single JSON object and are not independently parseable
+        *   `[✅]` All finished content — single-chunk or multi-chunk — must be judged by one sanitization/validation standard
+    *   `[✅]` `role`
+        *   `[✅]` Infrastructure — file management service method that assembles continuation chain chunks into a single final JSON document for storage
+    *   `[✅]` `module`
+        *   `[✅]` The chunk download-and-parse loop in `assembleAndSaveFinalDocument` (lines ~620–651 in `file_manager.ts`) currently downloads each chunk, calls `JSON.parse(textContent)` on each chunk individually, validates each is a record, then deep-merges them
+        *   `[✅]` The fix changes this to: download all chunks, attempt concatenated sanitize/parse first (normal path for continuation fragments), then if that fails attempt per-chunk sanitize/parse with merge (normal path for independently-complete chunks), then throw if neither method produces a valid result
+    *   `[✅]` `deps`
+        *   `[✅]` `this.supabase.storage.from().download()` — already used, no change
+        *   `[✅]` `sanitizeJsonContent` from `../utils/jsonSanitizer.ts` — **new import** required
+        *   `[✅]` `isJsonSanitizationResult` from `../utils/type_guards.ts` — **new import** required
+        *   `[✅]` `JsonSanitizationResult` from `../types/jsonSanitizer.interface.ts` — **new import** required for typing the sanitization result
+        *   `[✅]` `isRecord` (type guard, already imported) — called on the final parsed result regardless of which method succeeded
+        *   `[✅]` No new external dependencies introduced
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` Requires the ordered chunk list (`orderedChunks`) and Supabase storage client — both already in scope
+        *   `[✅]` `sanitizeJsonContent` is a pure function in `_shared/utils/` — same layer, inward-facing dependency
+        *   `[✅]` No new injection shape needed
+        *   `[✅]` Confirm no concrete imports from higher or lateral layers
+    *   `[✅]` unit/`file_manager.assemble.test.ts`
+        *   `[✅]` Test: two chunks whose individual text are JSON fragments (e.g., `{"key": "val` and `ue", "key2": "v2"}`) are concatenated, sanitized, and parsed successfully
+        *   `[✅]` Test: single-chunk assembly still works (regression guard — concatenation of one string is the same string)
+        *   `[✅]` Test: concatenated result with backtick wrappers is sanitized correctly before parse
+        *   `[✅]` Test: multiple independently-complete chunks — concatenated parse fails, per-chunk sanitize/parse succeeds and results are deep-merged
+        *   `[✅]` Test: error message when both concatenated and per-chunk sanitize/parse fail includes all chunk IDs, storage paths, and parse error details
+        *   `[✅]` Test: the parsed result must be validated as a record via `isRecord` (existing behavior preserved)
+        *   `[✅]` Test: when sanitization result fails `isJsonSanitizationResult`, error is thrown with diagnostic info
+    *   `[✅]` `construction`
+        *   `[✅]` No new objects or factories required
+        *   `[✅]` The concatenation buffer is a local `string` variable
+    *   `[✅]` `file_manager.ts` / `assembleAndSaveFinalDocument`
+        *   `[✅]` Add imports: `sanitizeJsonContent` from `../utils/jsonSanitizer.ts`, `isJsonSanitizationResult` from `../utils/type_guards.ts`, `JsonSanitizationResult` from `../types/jsonSanitizer.interface.ts`
+        *   `[✅]` Replace the per-chunk download-parse-validate loop (lines ~620–651) with a three-phase approach:
+            *   `[✅]` Phase 1 (download): iterate over `orderedChunks`, download each chunk's content via storage, decode to text, and accumulate text strings in order (with chunk ID and storage path for diagnostics)
+            *   `[✅]` Phase 2 (concatenated sanitize/parse — normal path for continuation fragments): concatenate all text strings in order, run through `sanitizeJsonContent(concatenated)` → validate with `isJsonSanitizationResult` → `JSON.parse(sanitizationResult.sanitized)`, validate result is a record via `isRecord`
+            *   `[✅]` Phase 3 (per-chunk sanitize/parse — normal path for independently-complete chunks): if Phase 2 did not produce a valid parsed record, process each chunk individually through `sanitizeJsonContent(chunkText)` → `isJsonSanitizationResult` → `JSON.parse(sanitizationResult.sanitized)` → validate each is a record via `isRecord`, then deep-merge using the existing merge logic
+            *   `[✅]` If neither Phase 2 nor Phase 3 produces a valid parsed record, throw with chunk IDs, storage paths, sanitization details, and parse error
+        *   `[✅]` Add logging for sanitization events (wasSanitized, wasStructurallyFixed, hasDuplicateKeys) consistent with `executeModelCallAndSave`'s logging pattern
+        *   `[✅]` Preserve all existing error handling beyond sanitize/parse: if storage download fails, throw as before
+        *   `[✅]` Preserve the existing upload-to-assembled-path logic and `is_latest_edit` flag management unchanged
+    *   `[✅]` `requirements`
+        *   `[✅]` Continuation chunks that are individual JSON fragments must be parseable when concatenated and sanitized in chain order
+        *   `[✅]` Independently-complete chunks must be parseable via per-chunk sanitize/parse and deep-merged
+        *   `[✅]` The sanitize/parse pipeline for both methods must be the same as `executeModelCallAndSave`: `sanitizeJsonContent` → `isJsonSanitizationResult` → `JSON.parse`
+        *   `[✅]` Single-chunk assembly must produce identical output to current behavior
+        *   `[✅]` If no method produces a valid parsed record, the error must propagate with actionable diagnostics including chunk IDs, storage paths, and parse error details
+        *   `[✅]` All existing tests in `file_manager.assemble.test.ts` must continue to pass
+        *   `[✅]` The `shouldRender` guard (lines 708–724) that prevents this method from being called on rendered documents must remain unchanged
+    *   `[✅]` **Commit** `fix(be) supabase/functions gate RENDER enqueue behind continuation completion and concatenate continuation chunks before sanitize/parse in renderDocument and assembleAndSaveFinalDocument`
+        *   `[✅]` `executeModelCallAndSave.ts`: moved `needsContinuation` computation earlier; wrapped RENDER enqueue block in `!needsContinuation` guard
+        *   `[✅]` `document_renderer.ts`: replaced per-chunk JSON.parse with concatenated sanitize/parse then per-chunk sanitize/parse strategy for continuation chunk support
+        *   `[✅]` `file_manager.ts` / `assembleAndSaveFinalDocument`: replaced per-chunk JSON.parse with concatenated sanitize/parse then per-chunk sanitize/parse strategy for continuation chunk support
+        *   `[✅]` Updated tests in `executeModelCallAndSave.render.test.ts`, `document_renderer.test.ts`, and `file_manager.assemble.test.ts`
+
 # ToDo
 
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
@@ -1269,12 +1485,6 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
     - Set baseline values for each stage "Generate" action and encourage users to top up their account if they are at risk of NSF
     -- Pause the work mid-stream if NSF and encourage user to top up to continue 
 
-    - hydrateAllStages doesn't, but the stage-specific one does
-    -- Front end shows "complete" and "Submit Responses" as soon as a document is available instead of waiting for the entire stage to actually complete 
-    -- Populating document list is unreliable
-    -- Total progress indicator loses track constantly
-    -- Stage completion indicators lose track the moment they're defocused
-
     - New user sign in banner doesn't display, throws console error  
     -- Chase, diagnose, fix 
 
@@ -1293,8 +1503,6 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
 
    - Build test fixtures for major function groups 
    -- Provide standard mock factories and objects 
-
-   - Show exact job progress in front end as pop up while working, then minimize to documents once documents arrive
       
    - Support user-provided API keys for their preferred providers 
 
@@ -1312,8 +1520,6 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
 
    - Collect user satisfaction evaluation after each generation "How would you feel if you couldn't use this again?" 
 
-   - Fix StageTabCard count so that Save Responses & Advance Stage is visible 
-
    - Add optional outputs for selected stages
    -- A "landing page" output for the proposal stage
    --- Landing page
@@ -1325,8 +1531,6 @@ The user sees per-stage progress as `completedSteps / totalSteps` and per-DAG pr
    --- Conservative / base / aggressive
    --- IS, BS, CF 
    -- A "generate next set of work" for the implementation stage 
-
-   x Change "Generate {stage}" button to use semantic names 
 
    - DynamicProgressBar uses formal names instead of friendly names
    - SessionContributionsDisplayCard uses formal names instead of friendly names 

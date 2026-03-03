@@ -33,6 +33,12 @@ import {
   GetStageDocumentFeedbackResponse,
   GetAllStageProgressPayload,
   GetAllStageProgressResult,
+  ResumePausedNsfJobsPayload,
+  ResumePausedNsfJobsResponse,
+  ResumePausedNsfJobsResult,
+  RegenerateDocumentPayload,
+  RegenerateDocumentResponse,
+  RegenerateDocumentResult,
   StartSessionSuccessResponse,
   DialecticProcessTemplate,
 } from "./dialectic.interface.ts";
@@ -120,6 +126,8 @@ const mockFeedbackRow: DialecticFeedbackRow = {
 const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
   getStageRecipe?: (...args: unknown[]) => Promise<{ data?: unknown; error?: { message: string }; status?: number }>;
   getAllStageProgress?: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
+  resumePausedNsfJobs?: (payload: ResumePausedNsfJobsPayload, dbClient: SupabaseClient, user: User) => Promise<ResumePausedNsfJobsResult>;
+  regenerateDocument?: (payload: RegenerateDocumentPayload, dbClient: SupabaseClient, user: User) => Promise<RegenerateDocumentResult>;
 }): ActionHandlers => {
     return {
         createProject: overrides?.createProject || (() => Promise.resolve({ data: { id: 'mock-project-id', user_id: 'mock-user-id', project_name: 'mock-project-name', initial_user_prompt: 'mock-initial-user-prompt', selected_domain_id: 'mock-domain-id', repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, user_domain_overlay_values: null }, status: 201 })),
@@ -146,6 +154,8 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
         submitStageDocumentFeedback: overrides?.submitStageDocumentFeedback || (() => Promise.resolve({ data: mockFeedbackRow })),
         getStageDocumentFeedback: overrides?.getStageDocumentFeedback || (() => Promise.resolve({ data: [] })),
         getAllStageProgress: overrides?.getAllStageProgress || (() => Promise.resolve({ data: { dagProgress: { completedStages: 0, totalStages: 0 }, stages: [] }, status: 200 })),
+        resumePausedNsfJobs: overrides?.resumePausedNsfJobs || (() => Promise.resolve({ data: { resumedCount: 0 }, status: 200 })),
+        regenerateDocument: overrides?.regenerateDocument || (() => Promise.resolve({ data: { jobIds: [] }, status: 200 })),
         ...overrides,
     };
 };
@@ -1781,6 +1791,194 @@ withSupabaseEnv("handleRequest - getAllStageProgress", async (t) => {
 
         assertEquals(response.status, 401);
         assertEquals(getAllStageProgressSpy.calls.length, 0);
+    });
+});
+
+withSupabaseEnv("handleRequest - resumePausedNsfJobs", async (t) => {
+    const payload: ResumePausedNsfJobsPayload = {
+        sessionId: 'sess-resume-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+    };
+
+    await t.step("should route action 'resumePausedNsfJobs' to handler and return 200 with resumedCount", async () => {
+        const resumedCount = 3;
+        const resumeSpy = spy(() => Promise.resolve({ data: { resumedCount }, status: 200 }));
+        const mockHandlers = createMockHandlers({ resumePausedNsfJobs: resumeSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("resumePausedNsfJobs", payload, mockToken);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 200);
+        const body = await response.json();
+        assertExists(body.resumedCount);
+        assertEquals(typeof body.resumedCount, 'number');
+        assertEquals(body.resumedCount, resumedCount);
+        assertEquals(resumeSpy.calls.length, 1);
+    });
+
+    await t.step("should pass correct payload, dbClient, and user to resumePausedNsfJobs handler", async () => {
+        const resumeSpy = spy((_p: ResumePausedNsfJobsPayload, _db: SupabaseClient, _u: User): Promise<ResumePausedNsfJobsResult> =>
+            Promise.resolve({ data: { resumedCount: 0 }, status: 200 }));
+        const mockHandlers = createMockHandlers({ resumePausedNsfJobs: resumeSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("resumePausedNsfJobs", payload, mockToken);
+        await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(resumeSpy.calls.length, 1);
+        assertEquals(resumeSpy.calls[0].args[0], payload);
+        assert((resumeSpy.calls[0].args[1]) === (mockAdminClient as unknown), "handler should receive adminClient as dbClient");
+        assertEquals(resumeSpy.calls[0].args[2].id, mockUser.id);
+    });
+
+    await t.step("should return 401 if not authenticated", async () => {
+        const resumeSpy = spy(() => Promise.resolve({ data: { resumedCount: 0 }, status: 200 }));
+        const mockHandlers = createMockHandlers({ resumePausedNsfJobs: resumeSpy });
+
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: null }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("resumePausedNsfJobs", payload);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 401);
+        assertEquals(resumeSpy.calls.length, 0);
+    });
+});
+
+withSupabaseEnv("handleRequest - regenerateDocument", async (t) => {
+    const payload: RegenerateDocumentPayload = {
+        sessionId: 'sess-regen-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        jobs: [{ jobId: 'job-1', modelId: 'model-1' }],
+    };
+
+    await t.step("should route action 'regenerateDocument' to handler and return 200 with jobIds", async () => {
+        const jobIds = ['new-job-id-1'];
+        const regenerateSpy = spy(() => Promise.resolve({ data: { jobIds }, status: 200 }));
+        const mockHandlers = createMockHandlers({ regenerateDocument: regenerateSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("regenerateDocument", payload, mockToken);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 200);
+        const body = await response.json();
+        assertExists(body.jobIds);
+        assertEquals(Array.isArray(body.jobIds), true);
+        assertEquals(body.jobIds, jobIds);
+        assertEquals(regenerateSpy.calls.length, 1);
+    });
+
+    await t.step("should pass correct payload, dbClient, and user to regenerateDocument handler", async () => {
+        const regenerateSpy = spy((_p: RegenerateDocumentPayload, _db: SupabaseClient, _u: User): Promise<RegenerateDocumentResult> =>
+            Promise.resolve({ data: { jobIds: [] }, status: 200 }));
+        const mockHandlers = createMockHandlers({ regenerateDocument: regenerateSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("regenerateDocument", payload, mockToken);
+        await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(regenerateSpy.calls.length, 1);
+        assertEquals(regenerateSpy.calls[0].args[0], payload);
+        assert((regenerateSpy.calls[0].args[1]) === (mockAdminClient as unknown), "handler should receive adminClient as dbClient");
+        assertEquals(regenerateSpy.calls[0].args[2].id, mockUser.id);
+    });
+
+    await t.step("should return 401 if not authenticated", async () => {
+        const regenerateSpy = spy(() => Promise.resolve({ data: { jobIds: [] }, status: 200 }));
+        const mockHandlers = createMockHandlers({ regenerateDocument: regenerateSpy });
+
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: null }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("regenerateDocument", payload);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 401);
+        assertEquals(regenerateSpy.calls.length, 0);
+    });
+
+    await t.step("should return error status and message when handler returns error", async () => {
+        const handlerError: ServiceError = { message: "Session not found", status: 404, code: "NOT_FOUND" };
+        const regenerateSpy = spy(() => Promise.resolve({ error: handlerError, status: 404 }));
+        const mockHandlers = createMockHandlers({ regenerateDocument: regenerateSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("regenerateDocument", payload, mockToken);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 404);
+        const body = await response.json();
+        assertEquals(body.error, handlerError.message);
+        assertEquals(regenerateSpy.calls.length, 1);
     });
 });
 

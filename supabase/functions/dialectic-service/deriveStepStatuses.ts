@@ -16,6 +16,10 @@ const ACTIVE_STATUSES: Set<string> = new Set([
 
 const FAILED_STATUSES: Set<string> = new Set(["failed", "retry_loop_failed"]);
 
+const PAUSED_NSF_STATUSES: Set<string> = new Set(["paused_nsf"]);
+
+const SUPERSEDED_STATUSES: Set<string> = new Set(["superseded"]);
+
 function getRecipeStepIdFromPayload(payload: unknown): string | undefined {
 	if (!isRecord(payload)) return undefined;
 	const planner_metadata: unknown = payload.planner_metadata;
@@ -42,10 +46,12 @@ export function deriveStepStatuses(
 	const stepKeyToHasActive: Map<string, boolean> = new Map<string, boolean>();
 	const stepKeyToHasCompleted: Map<string, boolean> = new Map<string, boolean>();
 	const stepKeyToHasFailed: Map<string, boolean> = new Map<string, boolean>();
+	const stepKeyToHasPausedNsf: Map<string, boolean> = new Map<string, boolean>();
 
 	for (const job of jobs) {
 		if (job.job_type === "RENDER") continue;
 		if (job.target_contribution_id !== null) continue;
+		if (SUPERSEDED_STATUSES.has(job.status)) continue;
 		const recipeStepId: string | undefined = getRecipeStepIdFromPayload(job.payload);
 		if (recipeStepId === undefined) continue;
 		const stepKey: string | undefined = stepIdToStepKey.get(recipeStepId);
@@ -53,6 +59,8 @@ export function deriveStepStatuses(
 
 		if (ACTIVE_STATUSES.has(job.status)) {
 			stepKeyToHasActive.set(stepKey, true);
+		} else if (PAUSED_NSF_STATUSES.has(job.status)) {
+			stepKeyToHasPausedNsf.set(stepKey, true);
 		} else if (job.status === "completed") {
 			stepKeyToHasCompleted.set(stepKey, true);
 		} else if (FAILED_STATUSES.has(job.status)) {
@@ -64,6 +72,7 @@ export function deriveStepStatuses(
 	for (const stepKey of stepKeyToHasActive.keys()) stepsWithJobs.add(stepKey);
 	for (const stepKey of stepKeyToHasCompleted.keys()) stepsWithJobs.add(stepKey);
 	for (const stepKey of stepKeyToHasFailed.keys()) stepsWithJobs.add(stepKey);
+	for (const stepKey of stepKeyToHasPausedNsf.keys()) stepsWithJobs.add(stepKey);
 
 	const stepKeyToStepId: Map<string, string> = new Map<string, string>();
 	for (const s of steps) {
@@ -75,11 +84,14 @@ export function deriveStepStatuses(
 		const hasActive: boolean = stepKeyToHasActive.get(sk) === true;
 		const hasCompleted: boolean = stepKeyToHasCompleted.get(sk) === true;
 		const hasFailed: boolean = stepKeyToHasFailed.get(sk) === true;
-		const hasEvidence: boolean = hasActive || hasCompleted || hasFailed;
+		const hasPausedNsf: boolean = stepKeyToHasPausedNsf.get(sk) === true;
+		const hasEvidence: boolean = hasActive || hasCompleted || hasFailed || hasPausedNsf;
 
 		if (hasEvidence) {
 			if (hasActive) {
 				result.set(sk, "in_progress");
+			} else if (hasPausedNsf) {
+				result.set(sk, "paused_nsf");
 			} else if (hasFailed) {
 				result.set(sk, "failed");
 			} else {

@@ -17,6 +17,7 @@ const STATUS_FILL: Record<UnifiedProjectStatus, string> = {
   in_progress: '#f59e0b',
   completed: '#10b981',
   failed: '#ef4444',
+  paused_nsf: '#f97316',
 };
 
 function isRenderedAndCompleted(descriptor: StageRunDocumentDescriptor | undefined): boolean {

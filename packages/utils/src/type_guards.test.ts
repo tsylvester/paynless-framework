@@ -150,6 +150,7 @@ describe('isChatContextPreferences', () => {
 describe('isDialecticLifecycleEventType', () => {
     it('should return true for valid dialectic event types', () => {
         expect(isDialecticLifecycleEventType('contribution_generation_started')).toBe(true);
+        expect(isDialecticLifecycleEventType('contribution_generation_paused_nsf')).toBe(true);
         expect(isDialecticLifecycleEventType('dialectic_contribution_received')).toBe(true);
         expect(isDialecticLifecycleEventType('planner_started')).toBe(true);
         expect(isDialecticLifecycleEventType('document_started')).toBe(true);
@@ -157,6 +158,9 @@ describe('isDialecticLifecycleEventType', () => {
         expect(isDialecticLifecycleEventType('document_completed')).toBe(true);
         expect(isDialecticLifecycleEventType('render_completed')).toBe(true);
         expect(isDialecticLifecycleEventType('job_failed')).toBe(true);
+        expect(isDialecticLifecycleEventType('execute_started')).toBe(true);
+        expect(isDialecticLifecycleEventType('execute_chunk_completed')).toBe(true);
+        expect(isDialecticLifecycleEventType('execute_completed')).toBe(true);
     });
 
     it('should return false for invalid event types', () => {

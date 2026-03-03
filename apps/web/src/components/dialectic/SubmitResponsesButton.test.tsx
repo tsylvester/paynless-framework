@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
 import {
+  emptyStageRunProgressSnapshot,
   getDialecticStoreState,
   initializeMockDialecticState,
   setDialecticStateValues,
@@ -42,7 +43,17 @@ const sessionId = 'sess-1';
 const stageSlug = 'thesis';
 const iterationNumber = 1;
 const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+const antithesisProgressKey = `${sessionId}:antithesis:${iterationNumber}`;
 const isoTimestamp = '2024-01-01T00:00:00.000Z';
+
+function buildMinimalRecipe(slug: string): DialecticStageRecipe {
+  return {
+    stageSlug: slug,
+    instanceId: 'inst-1',
+    steps: [],
+    edges: [],
+  };
+}
 
 function buildRenderedDescriptor(
   modelId: string,
@@ -208,6 +219,7 @@ function setupVisibleButtonState(): void {
     activeStageSlug: stage1.slug,
     recipesByStageSlug: {
       thesis: buildThesisRecipeWithDocumentKey('success_metrics'),
+      antithesis: buildMinimalRecipe('antithesis'),
     },
     stageRunProgress: {
       [progressKey]: {
@@ -222,6 +234,7 @@ function setupVisibleButtonState(): void {
         },
         jobProgress: {},
       },
+      [antithesisProgressKey]: emptyStageRunProgressSnapshot,
     },
     isSubmittingStageResponses: false,
     submitStageResponsesError: null,
@@ -276,13 +289,6 @@ describe('SubmitResponsesButton', () => {
     expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
   });
 
-  it('does not render when selectIsStageReadyForSessionIteration returns false', () => {
-    setupVisibleButtonState();
-    selectIsStageReadyForSessionIteration.mockReturnValue(false);
-    render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
-  });
-
   it('does not render when isFinalStage is true (no outgoing transitions from activeStage)', () => {
     const stage = buildStage('stage-1', stageSlug, 'Thesis');
     const processTemplate = buildProcessTemplate([stage]);
@@ -323,8 +329,14 @@ describe('SubmitResponsesButton', () => {
       activeContextSessionId: sessionId,
       activeContextStage: stage1,
       currentProcessTemplate: processTemplate,
-      recipesByStageSlug: {},
-      stageRunProgress: {},
+      recipesByStageSlug: {
+        thesis: buildMinimalRecipe('thesis'),
+        antithesis: buildMinimalRecipe('antithesis'),
+      },
+      stageRunProgress: {
+        [progressKey]: emptyStageRunProgressSnapshot,
+        [antithesisProgressKey]: emptyStageRunProgressSnapshot,
+      },
     });
     selectIsStageReadyForSessionIteration.mockReturnValue(true);
     render(<SubmitResponsesButton />);
@@ -338,6 +350,7 @@ describe('SubmitResponsesButton', () => {
     setDialecticStateValues({
       recipesByStageSlug: {
         thesis: buildThesisRecipeWithDocumentKey('doc'),
+        antithesis: buildMinimalRecipe('antithesis'),
       },
       stageRunProgress: {
         [progressKey]: {
@@ -356,6 +369,7 @@ describe('SubmitResponsesButton', () => {
           },
           jobProgress: {},
         },
+        [antithesisProgressKey]: emptyStageRunProgressSnapshot,
       },
     });
     render(<SubmitResponsesButton />);

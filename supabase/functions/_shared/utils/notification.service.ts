@@ -9,6 +9,7 @@ import type {
   ContributionGenerationRetryingPayload,
   ContributionGenerationContinuedPayload,
   ContributionGenerationCompletePayload,
+  ContributionGenerationPausedNsfPayload,
   DialecticContributionReceivedPayload,
   ContributionGenerationFailedPayload,
   ContributionGenerationFailedInternalPayload,
@@ -122,6 +123,18 @@ export class NotificationService implements NotificationServiceType {
     await this._sendNotification({
       target_user_id: targetUserId,
       notification_type: 'contribution_generation_complete',
+      is_internal_event: true,
+      notification_data: payload,
+    });
+  }
+
+  public async sendContributionGenerationPausedNsfEvent(
+    payload: ContributionGenerationPausedNsfPayload,
+    targetUserId: string,
+  ): Promise<void> {
+    await this._sendNotification({
+      target_user_id: targetUserId,
+      notification_type: 'contribution_generation_paused_nsf',
       is_internal_event: true,
       notification_data: payload,
     });

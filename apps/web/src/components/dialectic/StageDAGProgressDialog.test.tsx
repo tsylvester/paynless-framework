@@ -292,6 +292,21 @@ describe('StageDAGProgressDialog', () => {
     expect(rect?.getAttribute('class') ?? '').toMatch(/animate|pulse/i);
   });
 
+  it('node for a paused_nsf step has orange fill', () => {
+    const steps: DialecticStageRecipeStep[] = [
+      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+    ];
+    const recipe = buildRecipe(steps, []);
+    setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'paused_nsf' }));
+
+    render(<StageDAGProgressDialog {...defaultProps} />);
+
+    const svg = document.querySelector('svg');
+    const rect = svg?.querySelector('rect');
+    expect(rect).toBeInTheDocument();
+    expect(rect?.getAttribute('fill')).toMatch(/#f97316/i);
+  });
+
   it('each node displays step_name text label', () => {
     const steps: DialecticStageRecipeStep[] = [
       buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan step', job_type: 'PLAN', execution_order: 0 }),
@@ -350,7 +365,7 @@ describe('StageDAGProgressDialog', () => {
 
   it('empty recipe (no steps) shows No recipe data available', () => {
     const recipe = buildRecipe([], []);
-    setStoreForDialog(recipe, undefined);
+    setStoreForDialog(recipe, buildProgressSnapshot({}));
 
     render(<StageDAGProgressDialog {...defaultProps} />);
 
