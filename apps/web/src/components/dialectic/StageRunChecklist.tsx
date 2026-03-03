@@ -638,24 +638,18 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
                 )
               }
             >
-              {entry.status === 'not_started' ? (
-                <span
-                  className={cn(
-                    'inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400',
-                  )}
-                  data-testid="document-not-started-icon"
-                  aria-hidden
-                />
-              ) : isDocumentOnCurrentStage &&
-                stageData.hasStageProgress &&
-                perModelLabels.length > 0 ? (
+              {isDocumentOnCurrentStage &&
+              stageData.hasStageProgress &&
+              perModelLabels.length > 0 ? (
                 <button
                   type="button"
                   className={cn(
                     'inline-flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full',
                     entry.status === 'completed' && 'bg-emerald-500',
                     entry.status === 'failed' && 'bg-destructive',
-                    (entry.status === 'generating' || entry.status === 'continuing') &&
+                    (entry.status === 'generating' ||
+                      entry.status === 'continuing' ||
+                      entry.status === 'not_started') &&
                       'bg-amber-400',
                   )}
                   aria-label="Regenerate document"
@@ -664,7 +658,9 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
                       ? 'document-completed-icon'
                       : entry.status === 'failed'
                         ? 'document-failed-icon'
-                        : 'document-generating-icon'
+                        : entry.status === 'not_started'
+                          ? 'document-not-started-icon'
+                          : 'document-generating-icon'
                   }
                   onClick={(e) =>
                     handleRegenerateButtonClick(
@@ -683,7 +679,9 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
                     'inline-block h-2.5 w-2.5 shrink-0 rounded-full',
                     entry.status === 'completed' && 'bg-emerald-500',
                     entry.status === 'failed' && 'bg-destructive',
-                    (entry.status === 'generating' || entry.status === 'continuing') &&
+                    (entry.status === 'generating' ||
+                      entry.status === 'continuing' ||
+                      entry.status === 'not_started') &&
                       'bg-amber-400',
                   )}
                   data-testid={
@@ -691,7 +689,9 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
                       ? 'document-completed-icon'
                       : entry.status === 'failed'
                         ? 'document-failed-icon'
-                        : 'document-generating-icon'
+                        : entry.status === 'not_started'
+                          ? 'document-not-started-icon'
+                          : 'document-generating-icon'
                   }
                   aria-hidden
                 />
