@@ -1028,86 +1028,86 @@ A user clicks a regenerate button on any document in the stage run checklist, se
     *   `[✅]`   Job IDs must be tracked in `generatingSessions` so lifecycle events from the worker are correctly processed by existing `_handleDialecticLifecycleEvent` handlers
     *   `[✅]`   `generatingForStageSlug` must be set so the StageRunChecklist shows generating spinners for affected documents
 
-*   `[ ]`   [UI] apps/web/`StageRunChecklist` **Per-document regenerate button with model selection dialog**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Replace the static status circle indicators with clickable icon-buttons that trigger document regeneration
-    *   `[ ]`   Color the icon-button based on document status: green for completed, red for failed, amber for not started — preserving the existing visual language
-    *   `[ ]`   Keep the `Loader2` spinner for `generating`/`continuing` states as non-clickable (cannot regenerate mid-generation)
-    *   `[ ]`   On click, show a model-selection confirmation dialog listing all models for that document with checkboxes
-    *   `[ ]`   Pre-check models whose status is `Failed` or `Not started`; leave `Completed` models unchecked (user must actively opt in to re-roll a successful document)
-    *   `[ ]`   Disable the regenerate button when the document's stage is not the session's current stage
-    *   `[ ]`   On confirmation, call the `regenerateDocument` store action with the selected `{ documentKey, modelId }` pairs
-  *   `[ ]`   `role`
-    *   `[ ]`   UI / presentation — user-facing regeneration trigger
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic UI — StageRunChecklist component within the stage sidebar
-    *   `[ ]`   Boundary: reads document status from store selectors → presents regeneration UI → dispatches store action
-  *   `[ ]`   `deps`
-    *   `[ ]`   Store node (above) — `regenerateDocument` action must exist on the store
-    *   `[ ]`   `RegenerateDocumentPayload` type from `@paynless/types`
-    *   `[ ]`   Existing `perModelLabels` computed in `computeStageRunChecklistData` — provides `modelId`, `displayName`, `statusLabel` per model per document
-    *   `[ ]`   Existing `StageDocumentRow` type — provides `entry` (with `documentKey`, `status`, `jobId`, `stepKey`) and `perModelLabels`
-    *   `[ ]`   Existing store selectors: `selectActiveContextSessionId`, `selectActiveStageSlug`
-    *   `[ ]`   Session's `current_stage_id` — to determine if the document's stage is the active stage (for the gate)
-    *   `[ ]`   `useDialecticStore` — for accessing store state and actions
-    *   `[ ]`   No reverse dependency introduced — leaf component
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `regenerateDocument: state.regenerateDocument` — store action
-    *   `[ ]`   `activeSessionDetail` — for `current_stage_id` and `iteration_count`
-    *   `[ ]`   `activeStageSlug` — to determine if the current stage matches the session's current stage
-    *   `[ ]`   `perModelLabels` — already computed per document row, provides model status for pre-checking
-    *   `[ ]`   `entry.documentKey` — the document identity per model (the backend resolves the EXECUTE job ID server-side)
-  *   `[ ]`   interface/`StageRunChecklist types`
-    *   `[ ]`   `RegenerateDocumentDialogProps`: `{ open: boolean; documentKey: string; stageSlug: string; perModelLabels: PerModelLabel[]; onConfirm: (selectedDocuments: Array<{ documentKey: string; modelId: string }>) => void; onCancel: () => void }`
-  *   `[ ]`   unit/`StageRunChecklist.test.tsx`
-    *   `[ ]`   Test: completed document renders green clickable icon-button (not static circle)
-    *   `[ ]`   Test: failed document renders red clickable icon-button
-    *   `[ ]`   Test: not-started document renders amber clickable icon-button
-    *   `[ ]`   Test: generating document renders non-clickable spinner (existing behavior preserved)
-    *   `[ ]`   Test: clicking icon-button opens model selection dialog with correct model list
-    *   `[ ]`   Test: dialog pre-checks failed models, leaves completed models unchecked
-    *   `[ ]`   Test: confirming dialog with selected models calls `regenerateDocument` with correct payload
-    *   `[ ]`   Test: icon-button is disabled when document's stage ≠ session's current stage
-    *   `[ ]`   Test: canceling dialog does not call `regenerateDocument`
-  *   `[ ]`   `construction`
-    *   `[ ]`   `RegenerateDocumentDialog` — small inline component or extracted component for the model selection confirmation
-    *   `[ ]`   Replace `<span>` circle elements with `<button>` icon-buttons retaining the same color classes
-    *   `[ ]`   Add state for dialog open/close and selected document context
-    *   `[ ]`   Wire dialog confirm to `regenerateDocument` store action
-  *   `[ ]`   `StageRunChecklist.tsx`
-    *   `[ ]`   Add `regenerateDocument` from store to component's store subscription
-    *   `[ ]`   Add `activeSessionDetail` to determine current stage for the gate
-    *   `[ ]`   Add state: `regenerateDialogOpen`, `regenerateDialogContext` (documentKey, stageSlug, perModelLabels)
-    *   `[ ]`   Replace static `<span>` circles (lines 538-554) with `<button>` elements that open the dialog on click
-    *   `[ ]`   Preserve `Loader2` spinner for generating/continuing states as non-clickable
-    *   `[ ]`   Implement `RegenerateDocumentDialog` with checkboxes per model, pre-fill logic, confirm/cancel
-    *   `[ ]`   On confirm: map selected `perModelLabels` entries to `{ documentKey, modelId }` pairs for the payload
-    *   `[ ]`   On confirm: construct `RegenerateDocumentPayload` and call `regenerateDocument`
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: UI / presentation
-    *   `[ ]`   Dependencies face inward: consumes store (selectors, actions) and types
-    *   `[ ]`   No outward-facing provides — this is a leaf component
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Visual language must be preserved: green = completed, red = failed, amber = not started, blue spinner = generating
-    *   `[ ]`   The regenerate button must be visually distinguishable as clickable (not just a colored dot) — an icon-button with the status color
-    *   `[ ]`   The model selection dialog must pre-check only failed/not-started models — completed models require active user opt-in
-    *   `[ ]`   Active-stage-only gate: the button is disabled (or hidden) for documents on stages that are not the session's current stage
-    *   `[ ]`   The dialog must show model display names (not IDs) — these are already available in `perModelLabels.displayName`
-    *   `[ ]`   If only one model is selected for the session, skip the dialog and regenerate directly (single-model fast path)
-    *   `[ ]`   The user must be able to cancel without side effects
-  *   `[ ]`   **Commit** `feat(be,api,store,ui) Regenerate individual documents — superseded job status, EXECUTE job cloning, API client, store action, and per-document regenerate button with model selection`
-    *   `[ ]`   New migration: `superseded` terminal job status in `handle_job_completion()`
-    *   `[ ]`   Updated: `deriveStepStatuses.ts` — skip `superseded` jobs in status derivation
-    *   `[ ]`   New handler: `regenerateDocument.ts` in `dialectic-service` — clone EXECUTE jobs, mark originals superseded
-    *   `[ ]`   Updated: `dialectic-service/index.ts` — route `regenerateDocument` action
-    *   `[ ]`   Updated: `dialectic.interface.ts` — `RegenerateDocumentPayload`, `RegenerateDocumentResponse`, `RegenerateDocumentAction`, `ActionHandlers`
-    *   `[ ]`   New API method: `regenerateDocument()` in `packages/api/src/dialectic.api.ts`
-    *   `[ ]`   Updated: `dialectic.api.mock.ts` — mock for `regenerateDocument`
-    *   `[ ]`   New frontend types: `RegenerateDocumentPayload`, `RegenerateDocumentResponse` in `packages/types/src/dialectic.types.ts`
-    *   `[ ]`   Updated: `DialecticActions` in `packages/types/src/dialectic.types.ts` — `regenerateDocument` action signature
-    *   `[ ]`   New store action: `regenerateDocument` in `packages/store/src/dialecticStore.ts`
-    *   `[ ]`   Updated: `StageRunChecklist.tsx` — per-document regenerate icon-buttons, model selection dialog, active-stage gate
-    *   `[ ]`   New tests: migration validation, `deriveStepStatuses` superseded tests, `regenerateDocument` handler unit tests, API client tests, store action tests, StageRunChecklist UI tests
+*   `[✅]`   [UI] apps/web/`StageRunChecklist` **Per-document regenerate button with model selection dialog**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Replace the static status circle indicators with clickable icon-buttons that trigger document regeneration
+    *   `[✅]`   Color the icon-button based on document status: green for completed, red for failed, amber for not started — preserving the existing visual language
+    *   `[✅]`   Keep the `Loader2` spinner for `generating`/`continuing` states as non-clickable (cannot regenerate mid-generation)
+    *   `[✅]`   On click, show a model-selection confirmation dialog listing all models for that document with checkboxes
+    *   `[✅]`   Pre-check models whose status is `Failed` or `Not started`; leave `Completed` models unchecked (user must actively opt in to re-roll a successful document)
+    *   `[✅]`   Disable the regenerate button when the document's stage is not the session's current stage
+    *   `[✅]`   On confirmation, call the `regenerateDocument` store action with the selected `{ documentKey, modelId }` pairs
+  *   `[✅]`   `role`
+    *   `[✅]`   UI / presentation — user-facing regeneration trigger
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic UI — StageRunChecklist component within the stage sidebar
+    *   `[✅]`   Boundary: reads document status from store selectors → presents regeneration UI → dispatches store action
+  *   `[✅]`   `deps`
+    *   `[✅]`   Store node (above) — `regenerateDocument` action must exist on the store
+    *   `[✅]`   `RegenerateDocumentPayload` type from `@paynless/types`
+    *   `[✅]`   Existing `perModelLabels` computed in `computeStageRunChecklistData` — provides `modelId`, `displayName`, `statusLabel` per model per document
+    *   `[✅]`   Existing `StageDocumentRow` type — provides `entry` (with `documentKey`, `status`, `jobId`, `stepKey`) and `perModelLabels`
+    *   `[✅]`   Existing store selectors: `selectActiveContextSessionId`, `selectActiveStageSlug`
+    *   `[✅]`   Session's `current_stage_id` — to determine if the document's stage is the active stage (for the gate)
+    *   `[✅]`   `useDialecticStore` — for accessing store state and actions
+    *   `[✅]`   No reverse dependency introduced — leaf component
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `regenerateDocument: state.regenerateDocument` — store action
+    *   `[✅]`   `activeSessionDetail` — for `current_stage_id` and `iteration_count`
+    *   `[✅]`   `activeStageSlug` — to determine if the current stage matches the session's current stage
+    *   `[✅]`   `perModelLabels` — already computed per document row, provides model status for pre-checking
+    *   `[✅]`   `entry.documentKey` — the document identity per model (the backend resolves the EXECUTE job ID server-side)
+  *   `[✅]`   interface/`StageRunChecklist types`
+    *   `[✅]`   `RegenerateDocumentDialogProps`: `{ open: boolean; documentKey: string; stageSlug: string; perModelLabels: PerModelLabel[]; onConfirm: (selectedDocuments: Array<{ documentKey: string; modelId: string }>) => void; onCancel: () => void }`
+  *   `[✅]`   unit/`StageRunChecklist.test.tsx`
+    *   `[✅]`   Test: completed document renders green clickable icon-button (not static circle)
+    *   `[✅]`   Test: failed document renders red clickable icon-button
+    *   `[✅]`   Test: not-started document renders amber clickable icon-button
+    *   `[✅]`   Test: generating document renders non-clickable spinner (existing behavior preserved)
+    *   `[✅]`   Test: clicking icon-button opens model selection dialog with correct model list
+    *   `[✅]`   Test: dialog pre-checks failed models, leaves completed models unchecked
+    *   `[✅]`   Test: confirming dialog with selected models calls `regenerateDocument` with correct payload
+    *   `[✅]`   Test: icon-button is disabled when document's stage ≠ session's current stage
+    *   `[✅]`   Test: canceling dialog does not call `regenerateDocument`
+  *   `[✅]`   `construction`
+    *   `[✅]`   `RegenerateDocumentDialog` — small inline component or extracted component for the model selection confirmation
+    *   `[✅]`   Replace `<span>` circle elements with `<button>` icon-buttons retaining the same color classes
+    *   `[✅]`   Add state for dialog open/close and selected document context
+    *   `[✅]`   Wire dialog confirm to `regenerateDocument` store action
+  *   `[✅]`   `StageRunChecklist.tsx`
+    *   `[✅]`   Add `regenerateDocument` from store to component's store subscription
+    *   `[✅]`   Add `activeSessionDetail` to determine current stage for the gate
+    *   `[✅]`   Add state: `regenerateDialogOpen`, `regenerateDialogContext` (documentKey, stageSlug, perModelLabels)
+    *   `[✅]`   Replace static `<span>` circles (lines 538-554) with `<button>` elements that open the dialog on click
+    *   `[✅]`   Preserve `Loader2` spinner for generating/continuing states as non-clickable
+    *   `[✅]`   Implement `RegenerateDocumentDialog` with checkboxes per model, pre-fill logic, confirm/cancel
+    *   `[✅]`   On confirm: map selected `perModelLabels` entries to `{ documentKey, modelId }` pairs for the payload
+    *   `[✅]`   On confirm: construct `RegenerateDocumentPayload` and call `regenerateDocument`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: UI / presentation
+    *   `[✅]`   Dependencies face inward: consumes store (selectors, actions) and types
+    *   `[✅]`   No outward-facing provides — this is a leaf component
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Visual language must be preserved: green = completed, red = failed, amber = not started, blue spinner = generating
+    *   `[✅]`   The regenerate button must be visually distinguishable as clickable (not just a colored dot) — an icon-button with the status color
+    *   `[✅]`   The model selection dialog must pre-check only failed/not-started models — completed models require active user opt-in
+    *   `[✅]`   Active-stage-only gate: the button is disabled (or hidden) for documents on stages that are not the session's current stage
+    *   `[✅]`   The dialog must show model display names (not IDs) — these are already available in `perModelLabels.displayName`
+    *   `[✅]`   If only one model is selected for the session, skip the dialog and regenerate directly (single-model fast path)
+    *   `[✅]`   The user must be able to cancel without side effects
+  *   `[✅]`   **Commit** `feat(be,api,store,ui) Regenerate individual documents — superseded job status, EXECUTE job cloning, API client, store action, and per-document regenerate button with model selection`
+    *   `[✅]`   New migration: `superseded` terminal job status in `handle_job_completion()`
+    *   `[✅]`   Updated: `deriveStepStatuses.ts` — skip `superseded` jobs in status derivation
+    *   `[✅]`   New handler: `regenerateDocument.ts` in `dialectic-service` — clone EXECUTE jobs, mark originals superseded
+    *   `[✅]`   Updated: `dialectic-service/index.ts` — route `regenerateDocument` action
+    *   `[✅]`   Updated: `dialectic.interface.ts` — `RegenerateDocumentPayload`, `RegenerateDocumentResponse`, `RegenerateDocumentAction`, `ActionHandlers`
+    *   `[✅]`   New API method: `regenerateDocument()` in `packages/api/src/dialectic.api.ts`
+    *   `[✅]`   Updated: `dialectic.api.mock.ts` — mock for `regenerateDocument`
+    *   `[✅]`   New frontend types: `RegenerateDocumentPayload`, `RegenerateDocumentResponse` in `packages/types/src/dialectic.types.ts`
+    *   `[✅]`   Updated: `DialecticActions` in `packages/types/src/dialectic.types.ts` — `regenerateDocument` action signature
+    *   `[✅]`   New store action: `regenerateDocument` in `packages/store/src/dialecticStore.ts`
+    *   `[✅]`   Updated: `StageRunChecklist.tsx` — per-document regenerate icon-buttons, model selection dialog, active-stage gate
+    *   `[✅]`   New tests: migration validation, `deriveStepStatuses` superseded tests, `regenerateDocument` handler unit tests, API client tests, store action tests, StageRunChecklist UI tests
 
 # ToDo
 
