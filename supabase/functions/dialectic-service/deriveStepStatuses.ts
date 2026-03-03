@@ -18,6 +18,8 @@ const FAILED_STATUSES: Set<string> = new Set(["failed", "retry_loop_failed"]);
 
 const PAUSED_NSF_STATUSES: Set<string> = new Set(["paused_nsf"]);
 
+const SUPERSEDED_STATUSES: Set<string> = new Set(["superseded"]);
+
 function getRecipeStepIdFromPayload(payload: unknown): string | undefined {
 	if (!isRecord(payload)) return undefined;
 	const planner_metadata: unknown = payload.planner_metadata;
@@ -49,6 +51,7 @@ export function deriveStepStatuses(
 	for (const job of jobs) {
 		if (job.job_type === "RENDER") continue;
 		if (job.target_contribution_id !== null) continue;
+		if (SUPERSEDED_STATUSES.has(job.status)) continue;
 		const recipeStepId: string | undefined = getRecipeStepIdFromPayload(job.payload);
 		if (recipeStepId === undefined) continue;
 		const stepKey: string | undefined = stepIdToStepKey.get(recipeStepId);

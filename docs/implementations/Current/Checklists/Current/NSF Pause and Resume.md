@@ -741,194 +741,194 @@ A user clicks a regenerate button on any document in the stage run checklist, se
 - **Active-stage-only gate**: `generateContributions` already validates `session.current_stage.slug === payload.stageSlug`. The regenerate handler applies the same validation.
 - **Model selection dialog**: The checklist already computes `perModelLabels` with per-model status. Failed/not-started models are pre-checked; completed models are unchecked (user must actively opt in).
 
-*   `[ ]`   [DB] supabase/migrations **`superseded` job status for regenerated document jobs**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Introduce the `superseded` terminal job status so that original jobs replaced by a regeneration clone are marked as replaced rather than remaining `failed`
-    *   `[ ]`   Ensure `superseded` IS treated as a terminal status by `handle_job_completion()` — it should not wake parent jobs or prerequisite chains
-    *   `[ ]`   Ensure `superseded` does NOT appear in worker-invoking trigger WHEN clauses (`on_job_status_change`, `on_new_job_created`) — the worker must never be invoked for superseded jobs
-    *   `[ ]`   Ensure `superseded` is excluded from the NSF pause function `resume_paused_nsf_jobs` — superseded jobs must not be resumed
-  *   `[ ]`   `role`
-    *   `[ ]`   Infrastructure — database schema and trigger layer
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic generation job state machine — extends the terminal status set
-    *   `[ ]`   Boundary: defines the `superseded` status semantics within the existing trigger and completion infrastructure
-  *   `[ ]`   `deps`
-    *   `[ ]`   `handle_job_completion()` function (defined in `supabase/migrations/20260109165706_state_machine_fix.sql` line 180) — must include `superseded` in the terminal status check at line 204: `IF NEW.status NOT IN ('completed', 'failed', 'retry_loop_failed')` → add `'superseded'`
-    *   `[ ]`   `on_job_status_change` trigger (defined in `supabase/migrations/20260109165706_state_machine_fix.sql` line 165) — WHEN clause must NOT include `superseded`
-    *   `[ ]`   `on_new_job_created` trigger (defined in `supabase/migrations/20260220213950_conditional_on_new_job_created.sql` line 15) — WHEN clause must NOT include `superseded`
-    *   `[ ]`   `resume_paused_nsf_jobs` RPC (defined in `supabase/migrations/20260302193405_nsf_pause_resume.sql`) — WHERE clause must exclude `superseded` jobs
-    *   `[ ]`   No reverse dependency introduced — this migration only extends existing infrastructure
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Requires access to `dialectic_generation_jobs` table status values and existing trigger/function definitions
-  *   `[ ]`   interface/`migration SQL`
-    *   `[ ]`   `superseded` added to the terminal status set in `handle_job_completion()` line 204
-    *   `[ ]`   `superseded` added to the terminal status set in `handle_job_completion()` line 209 (re-trigger guard)
-    *   `[ ]`   Sibling terminal count query in `handle_job_completion()` must include `superseded` in its terminal status list
-  *   `[ ]`   `construction`
-    *   `[ ]`   Single migration file with `CREATE OR REPLACE FUNCTION` for `handle_job_completion()` incorporating `superseded`
-    *   `[ ]`   No trigger recreation needed — existing WHEN clauses already exclude unlisted statuses
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: infrastructure (database)
-    *   `[ ]`   Dependencies face inward: modifies only the job state machine
-    *   `[ ]`   Provides face outward: consumed by the worker trigger system and the `regenerateDocument` handler
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `superseded` must be terminal: `handle_job_completion()` must fire for it (to unblock any prerequisite chains if needed) and must not re-trigger on already-terminal rows
-    *   `[ ]`   `superseded` must not invoke the worker: triggers must not include it in their WHEN clauses
-    *   `[ ]`   `superseded` must not be resumed by `resume_paused_nsf_jobs`
-    *   `[ ]`   Existing terminal statuses (`completed`, `failed`, `retry_loop_failed`) must continue to work identically
+*   `[✅]`   [DB] supabase/migrations **`superseded` job status for regenerated document jobs**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Introduce the `superseded` terminal job status so that original jobs replaced by a regeneration clone are marked as replaced rather than remaining `failed`
+    *   `[✅]`   Ensure `superseded` IS treated as a terminal status by `handle_job_completion()` — it should not wake parent jobs or prerequisite chains
+    *   `[✅]`   Ensure `superseded` does NOT appear in worker-invoking trigger WHEN clauses (`on_job_status_change`, `on_new_job_created`) — the worker must never be invoked for superseded jobs
+    *   `[✅]`   Ensure `superseded` is excluded from the NSF pause function `resume_paused_nsf_jobs` — superseded jobs must not be resumed
+  *   `[✅]`   `role`
+    *   `[✅]`   Infrastructure — database schema and trigger layer
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic generation job state machine — extends the terminal status set
+    *   `[✅]`   Boundary: defines the `superseded` status semantics within the existing trigger and completion infrastructure
+  *   `[✅]`   `deps`
+    *   `[✅]`   `handle_job_completion()` function (defined in `supabase/migrations/20260109165706_state_machine_fix.sql` line 180) — must include `superseded` in the terminal status check at line 204: `IF NEW.status NOT IN ('completed', 'failed', 'retry_loop_failed')` → add `'superseded'`
+    *   `[✅]`   `on_job_status_change` trigger (defined in `supabase/migrations/20260109165706_state_machine_fix.sql` line 165) — WHEN clause must NOT include `superseded`
+    *   `[✅]`   `on_new_job_created` trigger (defined in `supabase/migrations/20260220213950_conditional_on_new_job_created.sql` line 15) — WHEN clause must NOT include `superseded`
+    *   `[✅]`   `resume_paused_nsf_jobs` RPC (defined in `supabase/migrations/20260302193405_nsf_pause_resume.sql`) — WHERE clause must exclude `superseded` jobs
+    *   `[✅]`   No reverse dependency introduced — this migration only extends existing infrastructure
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Requires access to `dialectic_generation_jobs` table status values and existing trigger/function definitions
+  *   `[✅]`   interface/`migration SQL`
+    *   `[✅]`   `superseded` added to the terminal status set in `handle_job_completion()` line 204
+    *   `[✅]`   `superseded` added to the terminal status set in `handle_job_completion()` line 209 (re-trigger guard)
+    *   `[✅]`   Sibling terminal count query in `handle_job_completion()` must include `superseded` in its terminal status list
+  *   `[✅]`   `construction`
+    *   `[✅]`   Single migration file with `CREATE OR REPLACE FUNCTION` for `handle_job_completion()` incorporating `superseded`
+    *   `[✅]`   No trigger recreation needed — existing WHEN clauses already exclude unlisted statuses
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: infrastructure (database)
+    *   `[✅]`   Dependencies face inward: modifies only the job state machine
+    *   `[✅]`   Provides face outward: consumed by the worker trigger system and the `regenerateDocument` handler
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `superseded` must be terminal: `handle_job_completion()` must fire for it (to unblock any prerequisite chains if needed) and must not re-trigger on already-terminal rows
+    *   `[✅]`   `superseded` must not invoke the worker: triggers must not include it in their WHEN clauses
+    *   `[✅]`   `superseded` must not be resumed by `resume_paused_nsf_jobs`
+    *   `[✅]`   Existing terminal statuses (`completed`, `failed`, `retry_loop_failed`) must continue to work identically
 
-*   `[ ]`   [BE] dialectic-service/`deriveStepStatuses` **Skip `superseded` jobs in step status derivation**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Ensure `superseded` jobs are completely invisible to progress tracking — they must not contribute to any step status flag (`hasActive`, `hasCompleted`, `hasFailed`, `hasPausedNsf`)
-    *   `[ ]`   The cloned replacement job's status is the only one that matters for the step
-  *   `[ ]`   `role`
-    *   `[ ]`   Backend logic — progress derivation
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic service — step status derivation within `getAllStageProgress`
-    *   `[ ]`   Boundary: receives jobs array → produces step status map; `superseded` jobs must be filtered out before status aggregation
-  *   `[ ]`   `deps`
-    *   `[ ]`   DB migration node (above) — `superseded` status must exist in the database
-    *   `[ ]`   Existing `ACTIVE_STATUSES`, `FAILED_STATUSES`, `PAUSED_NSF_STATUSES` sets in `deriveStepStatuses.ts`
-    *   `[ ]`   No reverse dependency introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `deriveStepStatuses` function at `supabase/functions/dialectic-service/deriveStepStatuses.ts`
-    *   `[ ]`   Job `status` field — must recognize `superseded` as a skip condition
-  *   `[ ]`   interface/`dialectic.interface.ts`
-    *   `[ ]`   No interface changes required — `UnifiedStageStatus` does not need a `superseded` value because superseded jobs produce no status; they are skipped
-  *   `[ ]`   unit/`deriveStepStatuses.test.ts`
-    *   `[ ]`   Test: a step with one `superseded` job and one `completed` job → step status is `completed` (superseded job is invisible)
-    *   `[ ]`   Test: a step with one `superseded` job and one `pending` job → step status is `in_progress` (active clone is visible)
-    *   `[ ]`   Test: a step with only `superseded` jobs and no other jobs → step status is `not_started` (all evidence invisible)
-    *   `[ ]`   Test: a step with one `superseded` job, one `failed` job, and one `completed` job → step status is `failed` (the non-superseded failed job still counts)
-  *   `[ ]`   `construction`
-    *   `[ ]`   Add `const SUPERSEDED_STATUSES: Set<string> = new Set(["superseded"]);` alongside existing status sets
-    *   `[ ]`   Add skip condition at line 57 (after RENDER skip, after continuation skip): `if (SUPERSEDED_STATUSES.has(job.status)) continue;`
-  *   `[ ]`   `deriveStepStatuses.ts`
-    *   `[ ]`   Add `SUPERSEDED_STATUSES` constant
-    *   `[ ]`   Add `continue` guard for superseded jobs in the job iteration loop
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: backend logic (service)
-    *   `[ ]`   Dependencies face inward: reads job status values defined by DB migration
-    *   `[ ]`   Provides face outward: consumed by `getAllStageProgress` → frontend progress hydration
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `superseded` jobs must not set any status flag (`hasActive`, `hasCompleted`, `hasFailed`, `hasPausedNsf`)
-    *   `[ ]`   All existing status derivation behavior must be preserved for non-superseded jobs
-    *   `[ ]`   A step with only superseded jobs and no successors must show `not_started`
+*   `[✅]`   [BE] dialectic-service/`deriveStepStatuses` **Skip `superseded` jobs in step status derivation**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Ensure `superseded` jobs are completely invisible to progress tracking — they must not contribute to any step status flag (`hasActive`, `hasCompleted`, `hasFailed`, `hasPausedNsf`)
+    *   `[✅]`   The cloned replacement job's status is the only one that matters for the step
+  *   `[✅]`   `role`
+    *   `[✅]`   Backend logic — progress derivation
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic service — step status derivation within `getAllStageProgress`
+    *   `[✅]`   Boundary: receives jobs array → produces step status map; `superseded` jobs must be filtered out before status aggregation
+  *   `[✅]`   `deps`
+    *   `[✅]`   DB migration node (above) — `superseded` status must exist in the database
+    *   `[✅]`   Existing `ACTIVE_STATUSES`, `FAILED_STATUSES`, `PAUSED_NSF_STATUSES` sets in `deriveStepStatuses.ts`
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `deriveStepStatuses` function at `supabase/functions/dialectic-service/deriveStepStatuses.ts`
+    *   `[✅]`   Job `status` field — must recognize `superseded` as a skip condition
+  *   `[✅]`   interface/`dialectic.interface.ts`
+    *   `[✅]`   No interface changes required — `UnifiedStageStatus` does not need a `superseded` value because superseded jobs produce no status; they are skipped
+  *   `[✅]`   unit/`deriveStepStatuses.test.ts`
+    *   `[✅]`   Test: a step with one `superseded` job and one `completed` job → step status is `completed` (superseded job is invisible)
+    *   `[✅]`   Test: a step with one `superseded` job and one `pending` job → step status is `in_progress` (active clone is visible)
+    *   `[✅]`   Test: a step with only `superseded` jobs and no other jobs → step status is `not_started` (all evidence invisible)
+    *   `[✅]`   Test: a step with one `superseded` job, one `failed` job, and one `completed` job → step status is `failed` (the non-superseded failed job still counts)
+  *   `[✅]`   `construction`
+    *   `[✅]`   Add `const SUPERSEDED_STATUSES: Set<string> = new Set(["superseded"]);` alongside existing status sets
+    *   `[✅]`   Add skip condition at line 57 (after RENDER skip, after continuation skip): `if (SUPERSEDED_STATUSES.has(job.status)) continue;`
+  *   `[✅]`   `deriveStepStatuses.ts`
+    *   `[✅]`   Add `SUPERSEDED_STATUSES` constant
+    *   `[✅]`   Add `continue` guard for superseded jobs in the job iteration loop
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: backend logic (service)
+    *   `[✅]`   Dependencies face inward: reads job status values defined by DB migration
+    *   `[✅]`   Provides face outward: consumed by `getAllStageProgress` → frontend progress hydration
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `superseded` jobs must not set any status flag (`hasActive`, `hasCompleted`, `hasFailed`, `hasPausedNsf`)
+    *   `[✅]`   All existing status derivation behavior must be preserved for non-superseded jobs
+    *   `[✅]`   A step with only superseded jobs and no successors must show `not_started`
 
-*   `[ ]`   [BE] dialectic-service/`regenerateDocument` **Clone failed/completed EXECUTE jobs as new `pending` jobs for targeted document regeneration**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Accept a request specifying session, stage, iteration, and a list of `{ jobId, modelId }` pairs identifying which EXECUTE jobs to regenerate
-    *   `[ ]`   Validate that the stage matches the session's current stage (active-stage-only gate)
-    *   `[ ]`   Validate that each referenced job belongs to the correct session/stage/iteration and is an EXECUTE job
-    *   `[ ]`   Mark each original job as `superseded`
-    *   `[ ]`   Clone each original job's row: copy `payload`, `stage_slug`, `iteration_number`, `session_id`, `user_id`, `max_retries`, `job_type`; set `status: 'pending'`, `attempt_count: 0`, `parent_job_id: null`, `prerequisite_job_id: null`, `started_at: null`, `completed_at: null`, `results: null`, `error_details: null`, `target_contribution_id: null`
-    *   `[ ]`   Insert the cloned row — the existing `on_new_job_created` trigger fires and the worker picks it up
-    *   `[ ]`   Return the array of new job IDs
-  *   `[ ]`   `role`
-    *   `[ ]`   Backend logic — edge function handler for document regeneration
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic service — new handler function within the `dialectic-service` edge function
-    *   `[ ]`   Boundary: receives validated request → marks originals superseded → inserts cloned jobs → returns new job IDs
-  *   `[ ]`   `deps`
-    *   `[ ]`   DB migration node — `superseded` status must exist
-    *   `[ ]`   `dialectic_generation_jobs` table — read original job, update to `superseded`, insert clone
-    *   `[ ]`   `dialectic_sessions` table — validate `current_stage_id` matches requested `stageSlug`
-    *   `[ ]`   `dialectic_stages` table — resolve `current_stage_id` to slug
-    *   `[ ]`   Supabase admin client — for DB operations
-    *   `[ ]`   Authenticated user — for authorization (job's `user_id` must match requesting user)
-    *   `[ ]`   No reverse dependency introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `dbClient: SupabaseClient` — admin client for DB reads/writes
-    *   `[ ]`   `user: User` — authenticated user from request
-    *   `[ ]`   `payload: RegenerateDocumentPayload` — `{ sessionId, stageSlug, iterationNumber, jobs: Array<{ jobId: string; modelId: string }> }`
-  *   `[ ]`   interface/`dialectic.interface.ts`
-    *   `[ ]`   `RegenerateDocumentPayload`: `{ sessionId: string; stageSlug: string; iterationNumber: number; jobs: Array<{ jobId: string; modelId: string }> }`
-    *   `[ ]`   `RegenerateDocumentResponse`: `{ jobIds: string[] }`
-    *   `[ ]`   `RegenerateDocumentAction`: `{ action: 'regenerateDocument'; payload: RegenerateDocumentPayload }`
-    *   `[ ]`   Add `RegenerateDocumentAction` to the `DialecticServiceRequest` union
-    *   `[ ]`   Add `regenerateDocument` to `ActionHandlers` interface
-  *   `[ ]`   interface/tests/`regenerateDocument.interface.test.ts`
-    *   `[ ]`   Test: `RegenerateDocumentPayload` requires `sessionId`, `stageSlug`, `iterationNumber`, and `jobs` array
-    *   `[ ]`   Test: `RegenerateDocumentResponse` has `jobIds` string array
-  *   `[ ]`   interface/guards/`regenerateDocument.interface.guards.ts`
-    *   `[ ]`   `isRegenerateDocumentPayload(value: unknown): value is RegenerateDocumentPayload` — validates all required fields and jobs array structure
-  *   `[ ]`   unit/`regenerateDocument.test.ts`
-    *   `[ ]`   Test: valid request with one job → original marked `superseded`, clone inserted as `pending` with correct payload copy, returns new job ID
-    *   `[ ]`   Test: valid request with multiple jobs → all originals marked `superseded`, all clones inserted, returns array of new job IDs
-    *   `[ ]`   Test: stage mismatch (requested stage ≠ session's current stage) → returns 400 error, no jobs modified
-    *   `[ ]`   Test: job not found → returns 404 error
-    *   `[ ]`   Test: job belongs to different session → returns 403 error
-    *   `[ ]`   Test: job is not an EXECUTE job → returns 400 error
-    *   `[ ]`   Test: user does not own the job → returns 403 error
-    *   `[ ]`   Test: cloned job has `parent_job_id: null`, `prerequisite_job_id: null`, `attempt_count: 0`, `status: 'pending'`
-    *   `[ ]`   Test: cloned job preserves original's `payload`, `stage_slug`, `iteration_number`, `session_id`, `job_type`, `max_retries`
-  *   `[ ]`   `construction`
-    *   `[ ]`   Single exported async function `regenerateDocument(dbClient, payload, user)`
-    *   `[ ]`   Returns `{ success: boolean; data?: RegenerateDocumentResponse; error?: { message: string; status?: number } }`
-    *   `[ ]`   No DI beyond `dbClient` and `user` — this is a thin data-copy operation
-  *   `[ ]`   `regenerateDocument.ts`
-    *   `[ ]`   Validate payload fields
-    *   `[ ]`   Fetch session and verify `current_stage.slug === payload.stageSlug`
-    *   `[ ]`   For each job in `payload.jobs`:
-      *   `[ ]`   Fetch original job by ID
-      *   `[ ]`   Validate ownership (`user_id === user.id`), session match, stage match, iteration match, `job_type === 'EXECUTE'`
-      *   `[ ]`   Update original job: `SET status = 'superseded'`
-      *   `[ ]`   Insert clone row with fields copied from original, reset fields as specified in objective
-    *   `[ ]`   Return `{ success: true, data: { jobIds } }`
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: backend logic (service handler)
-    *   `[ ]`   Dependencies face inward: reads/writes `dialectic_generation_jobs`, reads `dialectic_sessions` and `dialectic_stages`
-    *   `[ ]`   Provides face outward: consumed by `dialectic-service/index.ts` router
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Original job must be marked `superseded` BEFORE clone is inserted to prevent race conditions with progress tracking
-    *   `[ ]`   Clone must have `parent_job_id: null` to prevent interference with original PLAN completion tracking
-    *   `[ ]`   Clone must have `prerequisite_job_id: null` — the document's prerequisites are already met (they were met when the original ran)
-    *   `[ ]`   Active-stage-only gate: reject requests where `stageSlug` does not match `session.current_stage.slug`
-    *   `[ ]`   The clone's `payload` must be an exact copy of the original's `payload` — the worker uses payload fields to determine what to generate and where to store results
+*   `[✅]`   [BE] dialectic-service/`regenerateDocument` **Clone failed/completed EXECUTE jobs as new `pending` jobs for targeted document regeneration**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Accept a request specifying session, stage, iteration, and a list of `{ jobId, modelId }` pairs identifying which EXECUTE jobs to regenerate
+    *   `[✅]`   Validate that the stage matches the session's current stage (active-stage-only gate)
+    *   `[✅]`   Validate that each referenced job belongs to the correct session/stage/iteration and is an EXECUTE job
+    *   `[✅]`   Mark each original job as `superseded`
+    *   `[✅]`   Clone each original job's row: copy `payload`, `stage_slug`, `iteration_number`, `session_id`, `user_id`, `max_retries`, `job_type`; set `status: 'pending'`, `attempt_count: 0`, `parent_job_id: null`, `prerequisite_job_id: null`, `started_at: null`, `completed_at: null`, `results: null`, `error_details: null`, `target_contribution_id: null`
+    *   `[✅]`   Insert the cloned row — the existing `on_new_job_created` trigger fires and the worker picks it up
+    *   `[✅]`   Return the array of new job IDs
+  *   `[✅]`   `role`
+    *   `[✅]`   Backend logic — edge function handler for document regeneration
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic service — new handler function within the `dialectic-service` edge function
+    *   `[✅]`   Boundary: receives validated request → marks originals superseded → inserts cloned jobs → returns new job IDs
+  *   `[✅]`   `deps`
+    *   `[✅]`   DB migration node — `superseded` status must exist
+    *   `[✅]`   `dialectic_generation_jobs` table — read original job, update to `superseded`, insert clone
+    *   `[✅]`   `dialectic_sessions` table — validate `current_stage_id` matches requested `stageSlug`
+    *   `[✅]`   `dialectic_stages` table — resolve `current_stage_id` to slug
+    *   `[✅]`   Supabase admin client — for DB operations
+    *   `[✅]`   Authenticated user — for authorization (job's `user_id` must match requesting user)
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `dbClient: SupabaseClient` — admin client for DB reads/writes
+    *   `[✅]`   `user: User` — authenticated user from request
+    *   `[✅]`   `payload: RegenerateDocumentPayload` — `{ sessionId, stageSlug, iterationNumber, jobs: Array<{ jobId: string; modelId: string }> }`
+  *   `[✅]`   interface/`dialectic.interface.ts`
+    *   `[✅]`   `RegenerateDocumentPayload`: `{ sessionId: string; stageSlug: string; iterationNumber: number; jobs: Array<{ jobId: string; modelId: string }> }`
+    *   `[✅]`   `RegenerateDocumentResponse`: `{ jobIds: string[] }`
+    *   `[✅]`   `RegenerateDocumentAction`: `{ action: 'regenerateDocument'; payload: RegenerateDocumentPayload }`
+    *   `[✅]`   Add `RegenerateDocumentAction` to the `DialecticServiceRequest` union
+    *   `[✅]`   Add `regenerateDocument` to `ActionHandlers` interface
+  *   `[✅]`   interface/tests/`regenerateDocument.interface.test.ts`
+    *   `[✅]`   Test: `RegenerateDocumentPayload` requires `sessionId`, `stageSlug`, `iterationNumber`, and `jobs` array
+    *   `[✅]`   Test: `RegenerateDocumentResponse` has `jobIds` string array
+  *   `[✅]`   interface/guards/`regenerateDocument.interface.guards.ts`
+    *   `[✅]`   `isRegenerateDocumentPayload(value: unknown): value is RegenerateDocumentPayload` — validates all required fields and jobs array structure
+  *   `[✅]`   unit/`regenerateDocument.test.ts`
+    *   `[✅]`   Test: valid request with one job → original marked `superseded`, clone inserted as `pending` with correct payload copy, returns new job ID
+    *   `[✅]`   Test: valid request with multiple jobs → all originals marked `superseded`, all clones inserted, returns array of new job IDs
+    *   `[✅]`   Test: stage mismatch (requested stage ≠ session's current stage) → returns 400 error, no jobs modified
+    *   `[✅]`   Test: job not found → returns 404 error
+    *   `[✅]`   Test: job belongs to different session → returns 403 error
+    *   `[✅]`   Test: job is not an EXECUTE job → returns 400 error
+    *   `[✅]`   Test: user does not own the job → returns 403 error
+    *   `[✅]`   Test: cloned job has `parent_job_id: null`, `prerequisite_job_id: null`, `attempt_count: 0`, `status: 'pending'`
+    *   `[✅]`   Test: cloned job preserves original's `payload`, `stage_slug`, `iteration_number`, `session_id`, `job_type`, `max_retries`
+  *   `[✅]`   `construction`
+    *   `[✅]`   Single exported async function `regenerateDocument(dbClient, payload, user)`
+    *   `[✅]`   Returns `{ success: boolean; data?: RegenerateDocumentResponse; error?: { message: string; status?: number } }`
+    *   `[✅]`   No DI beyond `dbClient` and `user` — this is a thin data-copy operation
+  *   `[✅]`   `regenerateDocument.ts`
+    *   `[✅]`   Validate payload fields
+    *   `[✅]`   Fetch session and verify `current_stage.slug === payload.stageSlug`
+    *   `[✅]`   For each job in `payload.jobs`:
+      *   `[✅]`   Fetch original job by ID
+      *   `[✅]`   Validate ownership (`user_id === user.id`), session match, stage match, iteration match, `job_type === 'EXECUTE'`
+      *   `[✅]`   Update original job: `SET status = 'superseded'`
+      *   `[✅]`   Insert clone row with fields copied from original, reset fields as specified in objective
+    *   `[✅]`   Return `{ success: true, data: { jobIds } }`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: backend logic (service handler)
+    *   `[✅]`   Dependencies face inward: reads/writes `dialectic_generation_jobs`, reads `dialectic_sessions` and `dialectic_stages`
+    *   `[✅]`   Provides face outward: consumed by `dialectic-service/index.ts` router
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Original job must be marked `superseded` BEFORE clone is inserted to prevent race conditions with progress tracking
+    *   `[✅]`   Clone must have `parent_job_id: null` to prevent interference with original PLAN completion tracking
+    *   `[✅]`   Clone must have `prerequisite_job_id: null` — the document's prerequisites are already met (they were met when the original ran)
+    *   `[✅]`   Active-stage-only gate: reject requests where `stageSlug` does not match `session.current_stage.slug`
+    *   `[✅]`   The clone's `payload` must be an exact copy of the original's `payload` — the worker uses payload fields to determine what to generate and where to store results
 
-*   `[ ]`   [BE] dialectic-service/`index` **Route `regenerateDocument` action to handler**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Add `regenerateDocument` as a routable action in the dialectic-service edge function entry point
-    *   `[ ]`   Wire the action to the `regenerateDocument` handler with authentication required
-  *   `[ ]`   `role`
-    *   `[ ]`   Infrastructure — edge function router
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic service entry point — action dispatch
-    *   `[ ]`   Boundary: receives HTTP request → authenticates → routes to handler → returns response
-  *   `[ ]`   `deps`
-    *   `[ ]`   `regenerateDocument` handler (node above) — must exist as an importable function
-    *   `[ ]`   `RegenerateDocumentPayload` type from `dialectic.interface.ts`
-    *   `[ ]`   Existing `ActionHandlers` interface — must include `regenerateDocument` (added in the handler node's interface section)
-    *   `[ ]`   Existing `actionsRequiringAuth` array — must include `'regenerateDocument'`
-    *   `[ ]`   Existing `DialecticServiceRequest` union — must include `RegenerateDocumentAction` (added in the handler node's interface section)
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `handlers.regenerateDocument` — the handler function
-    *   `[ ]`   `adminClient` — passed to handler as `dbClient`
-    *   `[ ]`   `userForJson` — authenticated user
-    *   `[ ]`   `requestBody.payload` — typed as `RegenerateDocumentPayload`
-  *   `[ ]`   unit/`index.test.ts`
-    *   `[ ]`   Test: `regenerateDocument` action routes to handler with correct arguments
-    *   `[ ]`   Test: `regenerateDocument` action without authentication returns 401
-    *   `[ ]`   Test: handler success → returns 200 with `{ jobIds }` response
-    *   `[ ]`   Test: handler error → returns error status with error message
-  *   `[ ]`   `construction`
-    *   `[ ]`   Import `regenerateDocument` from `./regenerateDocument.ts`
-    *   `[ ]`   Add `'regenerateDocument'` to `actionsRequiringAuth` array
-    *   `[ ]`   Add `case "regenerateDocument"` to the action switch with standard auth guard pattern
-    *   `[ ]`   Wire `regenerateDocument` into `defaultHandlers` object
-  *   `[ ]`   `index.ts`
-    *   `[ ]`   Add import for `regenerateDocument` handler
-    *   `[ ]`   Add `'regenerateDocument'` to `actionsRequiringAuth` array (line 269)
-    *   `[ ]`   Add case block in switch statement (before `default:` case, after `resumePausedNsfJobs` case at line 602)
-    *   `[ ]`   Add `regenerateDocument` to `defaultHandlers` object
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: infrastructure (edge function entry point)
-    *   `[ ]`   Dependencies face inward: imports handler function, uses types from interface
-    *   `[ ]`   Provides face outward: HTTP endpoint consumed by API client
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Authentication is required — unauthenticated requests return 401
-    *   `[ ]`   Handler receives `adminClient` (not `userClient`) as `dbClient` — consistent with other handlers like `resumePausedNsfJobs`
-    *   `[ ]`   Follows exact same routing pattern as `resumePausedNsfJobs` case block
+*   `[✅]`   [BE] dialectic-service/`index` **Route `regenerateDocument` action to handler**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add `regenerateDocument` as a routable action in the dialectic-service edge function entry point
+    *   `[✅]`   Wire the action to the `regenerateDocument` handler with authentication required
+  *   `[✅]`   `role`
+    *   `[✅]`   Infrastructure — edge function router
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic service entry point — action dispatch
+    *   `[✅]`   Boundary: receives HTTP request → authenticates → routes to handler → returns response
+  *   `[✅]`   `deps`
+    *   `[✅]`   `regenerateDocument` handler (node above) — must exist as an importable function
+    *   `[✅]`   `RegenerateDocumentPayload` type from `dialectic.interface.ts`
+    *   `[✅]`   Existing `ActionHandlers` interface — must include `regenerateDocument` (added in the handler node's interface section)
+    *   `[✅]`   Existing `actionsRequiringAuth` array — must include `'regenerateDocument'`
+    *   `[✅]`   Existing `DialecticServiceRequest` union — must include `RegenerateDocumentAction` (added in the handler node's interface section)
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `handlers.regenerateDocument` — the handler function
+    *   `[✅]`   `adminClient` — passed to handler as `dbClient`
+    *   `[✅]`   `userForJson` — authenticated user
+    *   `[✅]`   `requestBody.payload` — typed as `RegenerateDocumentPayload`
+  *   `[✅]`   unit/`index.test.ts`
+    *   `[✅]`   Test: `regenerateDocument` action routes to handler with correct arguments
+    *   `[✅]`   Test: `regenerateDocument` action without authentication returns 401
+    *   `[✅]`   Test: handler success → returns 200 with `{ jobIds }` response
+    *   `[✅]`   Test: handler error → returns error status with error message
+  *   `[✅]`   `construction`
+    *   `[✅]`   Import `regenerateDocument` from `./regenerateDocument.ts`
+    *   `[✅]`   Add `'regenerateDocument'` to `actionsRequiringAuth` array
+    *   `[✅]`   Add `case "regenerateDocument"` to the action switch with standard auth guard pattern
+    *   `[✅]`   Wire `regenerateDocument` into `defaultHandlers` object
+  *   `[✅]`   `index.ts`
+    *   `[✅]`   Add import for `regenerateDocument` handler
+    *   `[✅]`   Add `'regenerateDocument'` to `actionsRequiringAuth` array (line 269)
+    *   `[✅]`   Add case block in switch statement (before `default:` case, after `resumePausedNsfJobs` case at line 602)
+    *   `[✅]`   Add `regenerateDocument` to `defaultHandlers` object
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: infrastructure (edge function entry point)
+    *   `[✅]`   Dependencies face inward: imports handler function, uses types from interface
+    *   `[✅]`   Provides face outward: HTTP endpoint consumed by API client
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Authentication is required — unauthenticated requests return 401
+    *   `[✅]`   Handler receives `adminClient` (not `userClient`) as `dbClient` — consistent with other handlers like `resumePausedNsfJobs`
+    *   `[✅]`   Follows exact same routing pattern as `resumePausedNsfJobs` case block
 
 *   `[ ]`   [API] packages/api/`dialectic.api` **`regenerateDocument` API client method**
   *   `[ ]`   `objective`
