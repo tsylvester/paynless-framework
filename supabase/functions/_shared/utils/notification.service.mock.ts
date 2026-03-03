@@ -8,6 +8,7 @@ import type {
     ContributionGenerationStartedPayload,
     ContributionGenerationContinuedPayload,
     ContributionGenerationCompletePayload,
+    ContributionGenerationPausedNsfPayload,
     ContributionGenerationFailedPayload,
     ContributionGenerationFailedInternalPayload,
     ApiError,
@@ -26,6 +27,7 @@ function createMockService(): MockNotificationService {
         sendContributionReceivedEvent: spy(() => Promise.resolve()),
         sendContributionGenerationContinuedEvent: spy(() => Promise.resolve()),
         sendContributionGenerationCompleteEvent: spy(() => Promise.resolve()),
+        sendContributionGenerationPausedNsfEvent: spy(() => Promise.resolve()),
         sendContributionGenerationFailedEvent: spy(() => Promise.resolve()),
         sendContributionFailedNotification: spy(() => Promise.resolve()),
         sendJobNotificationEvent: spy(() => Promise.resolve()),
@@ -122,6 +124,14 @@ export const mockContributionGenerationCompletePayload: ContributionGenerationCo
     type: 'contribution_generation_complete',
     job_id: 'job-uuid-123',
   };
+
+export const mockContributionGenerationPausedNsfPayload: ContributionGenerationPausedNsfPayload = {
+  type: 'contribution_generation_paused_nsf',
+  sessionId: 'session-uuid-456',
+  projectId: 'project-uuid-abc',
+  stageSlug: 'antithesis',
+  iterationNumber: 1,
+};
 
 export const mockContributionGenerationFailedApiError: ApiError = {
     code: 'AI_ERROR',

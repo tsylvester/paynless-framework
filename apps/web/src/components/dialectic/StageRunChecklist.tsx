@@ -1,6 +1,7 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import type {
   DialecticStateValues,
+  RegenerateDocumentPayload,
   SetFocusedStageDocumentPayload,
   StageDocumentEntry,
   StageRunChecklistProps,
@@ -20,7 +21,16 @@ import {
 
 import { isDocumentHighlighted } from '@paynless/utils';
 import { cn } from '@/lib/utils';
-import { Loader2 } from 'lucide-react';
+import { RefreshCcw } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 
 type MarkdownDocumentDescriptor = {
   documentKey: string;
@@ -119,6 +129,12 @@ function getMarkdownDocumentDescriptors(
 
 type PerModelLabel = { modelId: string; displayName: string; statusLabel: string };
 
+type RegenerateDialogContext = {
+  documentKey: string;
+  stageSlug: string;
+  perModelLabels: PerModelLabel[];
+};
+
 type StageDocumentRow = {
   entry: StageDocumentEntry;
   stepKey: string;
@@ -129,6 +145,7 @@ type StageDocumentRow = {
 type StageChecklistData = {
   stage: { id: string; slug: string; display_name: string | null };
   isReady: boolean;
+  hasStageProgress: boolean;
   documentRows: StageDocumentRow[];
 };
 
@@ -339,6 +356,8 @@ function computeStageRunChecklistData(
 
     documentRows.sort((a, b) => a.entry.documentKey.localeCompare(b.entry.documentKey));
 
+    const hasStageProgress = stageProgress != null;
+
     return {
       stage: {
         id: stage.id,
@@ -346,6 +365,7 @@ function computeStageRunChecklistData(
         display_name: stage.display_name ?? null,
       },
       isReady,
+      hasStageProgress,
       documentRows,
     };
   });
@@ -373,11 +393,16 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
   const iterationNumber = activeSessionDetail?.iteration_count;
   const storeActiveStageSlug = useDialecticStore((state) => state.activeStageSlug);
   const setActiveStage = useDialecticStore((state) => state.setActiveStage);
+  const regenerateDocument = useDialecticStore((state) => state.regenerateDocument);
   const effectiveStageSlug = stageSlugProp ?? storeActiveStageSlug;
   const checklistData = useDialecticStore((state) =>
     computeStageRunChecklistData(state, modelId),
   );
   const effectiveFocusedStageDocumentMap = focusedStageDocumentMap ?? {};
+
+  const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
+  const [regenerateDialogContext, setRegenerateDialogContext] = useState<RegenerateDialogContext | null>(null);
+  const [regenerateSelectedModelIds, setRegenerateSelectedModelIds] = useState<Set<string>>(new Set());
 
   const handleDocumentSelectForStage = useCallback(
     (documentKey: string, stepKey: string, stageSlug: string, modelIds: string[]) => {
@@ -429,6 +454,91 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
       }
     },
     [handleDocumentSelectForStage],
+  );
+
+  const stageDataForCurrentStage = checklistData.stageDataList.find(
+    (candidate) => candidate.stage.slug === effectiveStageSlug,
+  );
+  const isDocumentOnCurrentStage =
+    activeSessionDetail?.current_stage_id != null &&
+    stageDataForCurrentStage != null &&
+    stageDataForCurrentStage.stage.id === activeSessionDetail.current_stage_id;
+
+  const openRegenerateDialog = useCallback(
+    (documentKey: string, stageSlug: string, perModelLabels: PerModelLabel[]) => {
+      const preChecked = new Set(
+        perModelLabels
+          .filter((l) => l.statusLabel === 'Failed' || l.statusLabel === 'Not started')
+          .map((l) => l.modelId),
+      );
+      setRegenerateDialogContext({ documentKey, stageSlug, perModelLabels });
+      setRegenerateSelectedModelIds(preChecked);
+      setRegenerateDialogOpen(true);
+    },
+    [],
+  );
+
+  const handleRegenerateConfirm = useCallback(() => {
+    if (
+      !regenerateDialogContext ||
+      !activeSessionId ||
+      typeof iterationNumber !== 'number' ||
+      regenerateSelectedModelIds.size === 0
+    ) {
+      setRegenerateDialogOpen(false);
+      setRegenerateDialogContext(null);
+      return;
+    }
+    const documents = Array.from(regenerateSelectedModelIds).map((modelId) => ({
+      documentKey: regenerateDialogContext.documentKey,
+      modelId,
+    }));
+    const payload: RegenerateDocumentPayload = {
+      sessionId: activeSessionId,
+      stageSlug: regenerateDialogContext.stageSlug,
+      iterationNumber,
+      documents,
+    };
+    void regenerateDocument(payload);
+    setRegenerateDialogOpen(false);
+    setRegenerateDialogContext(null);
+  }, [
+    regenerateDialogContext,
+    activeSessionId,
+    iterationNumber,
+    regenerateSelectedModelIds,
+    regenerateDocument,
+  ]);
+
+  const handleRegenerateButtonClick = useCallback(
+    (e: React.MouseEvent, documentKey: string, stageSlug: string, perModelLabels: PerModelLabel[]) => {
+      e.stopPropagation();
+      if (
+        !isDocumentOnCurrentStage ||
+        !activeSessionId ||
+        typeof iterationNumber !== 'number'
+      ) {
+        return;
+      }
+      if (perModelLabels.length === 1) {
+        const payload: RegenerateDocumentPayload = {
+          sessionId: activeSessionId,
+          stageSlug,
+          iterationNumber,
+          documents: [{ documentKey, modelId: perModelLabels[0].modelId }],
+        };
+        void regenerateDocument(payload);
+      } else {
+        openRegenerateDialog(documentKey, stageSlug, perModelLabels);
+      }
+    },
+    [
+      isDocumentOnCurrentStage,
+      activeSessionId,
+      iterationNumber,
+      regenerateDocument,
+      openRegenerateDialog,
+    ],
   );
 
   const shouldShowGuard = checklistData.sortedStages.length === 0;
@@ -528,29 +638,62 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
                 )
               }
             >
-              {entry.status === 'generating' || entry.status === 'continuing' ? (
-                <Loader2
-                  aria-label="Document generating"
-                  className="h-3 w-3 shrink-0 text-blue-500 animate-spin"
-                  data-testid="document-generating-icon"
-                />
-              ) : entry.status === 'completed' ? (
+              {entry.status === 'not_started' ? (
                 <span
-                  aria-label="Document completed"
-                  className="block h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500"
-                  data-testid="document-completed-icon"
+                  className={cn(
+                    'inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400',
+                  )}
+                  data-testid="document-not-started-icon"
+                  aria-hidden
                 />
-              ) : entry.status === 'failed' ? (
-                <span
-                  aria-label="Document failed"
-                  className="block h-2.5 w-2.5 shrink-0 rounded-full bg-destructive"
-                  data-testid="document-failed-icon"
-                />
+              ) : isDocumentOnCurrentStage &&
+                stageData.hasStageProgress &&
+                perModelLabels.length > 0 ? (
+                <button
+                  type="button"
+                  className={cn(
+                    'inline-flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full',
+                    entry.status === 'completed' && 'bg-emerald-500',
+                    entry.status === 'failed' && 'bg-destructive',
+                    (entry.status === 'generating' || entry.status === 'continuing') &&
+                      'bg-amber-400',
+                  )}
+                  aria-label="Regenerate document"
+                  data-testid={
+                    entry.status === 'completed'
+                      ? 'document-completed-icon'
+                      : entry.status === 'failed'
+                        ? 'document-failed-icon'
+                        : 'document-generating-icon'
+                  }
+                  onClick={(e) =>
+                    handleRegenerateButtonClick(
+                      e,
+                      entry.documentKey,
+                      stageData.stage.slug,
+                      perModelLabels,
+                    )
+                  }
+                >
+                  <RefreshCcw className="h-[15px] w-[15px] text-white" />
+                </button>
               ) : (
                 <span
-                  aria-label="Not started"
-                  className="block h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400"
-                  data-testid="document-not-started-icon"
+                  className={cn(
+                    'inline-block h-2.5 w-2.5 shrink-0 rounded-full',
+                    entry.status === 'completed' && 'bg-emerald-500',
+                    entry.status === 'failed' && 'bg-destructive',
+                    (entry.status === 'generating' || entry.status === 'continuing') &&
+                      'bg-amber-400',
+                  )}
+                  data-testid={
+                    entry.status === 'completed'
+                      ? 'document-completed-icon'
+                      : entry.status === 'failed'
+                        ? 'document-failed-icon'
+                        : 'document-generating-icon'
+                  }
+                  aria-hidden
                 />
               )}
               <span className="font-mono text-xs truncate">
@@ -560,6 +703,71 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
           );
         })}
       </ul>
+      <Dialog
+        open={regenerateDialogOpen}
+        onOpenChange={(open) => {
+          setRegenerateDialogOpen(open);
+          if (!open) setRegenerateDialogContext(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Regenerate document</DialogTitle>
+          </DialogHeader>
+          {regenerateDialogContext && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Select which model outputs to regenerate for{' '}
+                <code className="font-mono text-xs">{regenerateDialogContext.documentKey}</code>.
+              </p>
+              <div className="flex flex-col gap-2">
+                {regenerateDialogContext.perModelLabels.map((label) => (
+                  <label
+                    key={label.modelId}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
+                    <Checkbox
+                      checked={regenerateSelectedModelIds.has(label.modelId)}
+                      onCheckedChange={(checked) => {
+                        setRegenerateSelectedModelIds((prev) => {
+                          const next = new Set(prev);
+                          if (checked) {
+                            next.add(label.modelId);
+                          } else {
+                            next.delete(label.modelId);
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                    <span className="text-sm">{label.displayName}</span>
+                    <span className="text-xs text-muted-foreground">
+                      ({label.statusLabel})
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setRegenerateDialogOpen(false);
+                    setRegenerateDialogContext(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleRegenerateConfirm}
+                  disabled={regenerateSelectedModelIds.size === 0}
+                >
+                  Regenerate
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

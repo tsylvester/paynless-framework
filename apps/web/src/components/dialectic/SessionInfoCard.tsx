@@ -49,6 +49,7 @@ const PROJECT_STATUS_LABELS: Record<UnifiedProjectStatus, string> = {
 	in_progress: "In Progress",
 	completed: "Completed",
 	failed: "Failed",
+	paused_nsf: "Paused NSF",
 };
 
 interface SessionInfoCardProps {

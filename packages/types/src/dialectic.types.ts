@@ -35,6 +35,15 @@ export function getDisplayName(slug: string): string {
   return DialecticStages[slug];
 }
 
+/** Per-stage minimum wallet balance (token count) required before generating. Values from product owner. */
+export const STAGE_BALANCE_THRESHOLDS: Record<string, number> = {
+  thesis: 200_000,
+  antithesis: 400_000,
+  synthesis: 1_000_000,
+  parenthesis: 250_000,
+  paralysis: 250_000,
+};
+
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
 
 export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'] & {
@@ -565,14 +574,14 @@ export interface JobProgressEntry {
 export type StepJobProgress = Record<string, JobProgressEntry>;
 
 export interface StageRunProgressSnapshot {
-  stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed'>;
+  stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed' | 'paused_nsf'>;
   /** Keyed by StageRunDocumentKey (documentKey:modelId). One document key can have N descriptors. */
   documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
   jobProgress: StepJobProgress;
   progress: { completedSteps: number; totalSteps: number; failedSteps: number };
 }
 
-export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
+export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed' | 'paused_nsf';
 
 export interface StepProgressDetail {
   stepKey: string;
@@ -713,7 +722,10 @@ export interface DialecticActions {
 
   // Action for generating contributions
   generateContributions: (payload: GenerateContributionsPayload) => Promise<ApiResponse<GenerateContributionsResponse>>;
-  
+
+  resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload) => Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
+  regenerateDocument: (payload: RegenerateDocumentPayload) => Promise<ApiResponse<RegenerateDocumentResponse>>;
+
   // Actions for submitting stage responses and preparing next seed (plan 1.2.Y / 1.5.6.4)
   setSubmittingStageResponses: (isSubmitting: boolean) => void;
   setSubmitStageResponsesError: (error: ApiError | null) => void;
@@ -768,6 +780,7 @@ export interface DialecticActions {
   _handleRenderStarted: (event: RenderStartedPayload) => void;
   _handleRenderCompleted: (event: RenderCompletedPayload) => void;
   _handleJobFailed: (event: JobFailedPayload) => void;
+  _handleContributionGenerationPausedNsf: (event: ContributionGenerationPausedNsfPayload) => void;
   
   
   reset: () => void;
@@ -832,6 +845,7 @@ export type DialecticNotificationTypes =
   | 'contribution_generation_failed'
   | 'contribution_generation_complete'
   | 'contribution_generation_continued'
+  | 'contribution_generation_paused_nsf'
   | 'planner_started'
   | 'planner_completed'
   | 'document_started'
@@ -910,6 +924,14 @@ export interface ContributionGenerationCompletePayload {
   projectId: string;
 }
 
+export interface ContributionGenerationPausedNsfPayload {
+  type: 'contribution_generation_paused_nsf';
+  sessionId: string;
+  projectId: string;
+  stageSlug: string;
+  iterationNumber: number;
+}
+
 export interface DocumentLifecyclePayload {
   sessionId: string;
   stageSlug: string;
@@ -930,8 +952,11 @@ export interface JobNotificationBase {
   step_key: string;
 }
 
-export interface PlannerStartedPayload extends DocumentLifecyclePayload {
+/** PLAN jobs may omit document_key and modelId; override base so they are optional. */
+export interface PlannerStartedPayload extends Omit<DocumentLifecyclePayload, 'document_key' | 'modelId'> {
   type: 'planner_started';
+  document_key?: string;
+  modelId?: string;
 }
 
 export interface PlannerCompletedPayload extends JobNotificationBase {
@@ -952,10 +977,11 @@ export interface DocumentCompletedPayload extends DocumentLifecyclePayload {
   type: 'document_completed';
 }
 
-/** EXECUTE job payload: modelId required, document_key optional. */
-export interface ExecutePayload extends JobNotificationBase {
+/** EXECUTE job payload: modelId required, document_key and step_key optional. */
+export interface ExecutePayload extends Omit<JobNotificationBase, 'step_key'> {
   modelId: string;
   document_key?: string;
+  step_key?: string;
 }
 
 export interface ExecuteStartedPayload extends ExecutePayload {
@@ -1005,6 +1031,7 @@ ContributionGenerationStartedPayload
 | ContributionGenerationFailedPayload 
 | ContributionGenerationContinuedPayload
 | ContributionGenerationCompletePayload
+| ContributionGenerationPausedNsfPayload
 | PlannerStartedPayload
 | PlannerCompletedPayload
 | DocumentStartedPayload
@@ -1070,6 +1097,8 @@ export interface DialecticApiClient {
   getStageDocumentFeedback(payload: GetStageDocumentFeedbackPayload): Promise<ApiResponse<StageDocumentFeedback[]>>;
   submitStageDocumentFeedback(payload: SubmitStageDocumentFeedbackPayload): Promise<ApiResponse<{ success: boolean }>>;
   listStageDocuments(payload: ListStageDocumentsPayload): Promise<ApiResponse<ListStageDocumentsResponse>>;
+  resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
+  regenerateDocument(payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>>;
 }
 
 
@@ -1143,6 +1172,27 @@ export interface StageProgressEntry {
 export interface GetAllStageProgressResponse {
   dagProgress: DagProgressDto;
   stages: StageProgressEntry[];
+}
+
+export interface ResumePausedNsfJobsPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+}
+
+export interface ResumePausedNsfJobsResponse {
+  resumedCount: number;
+}
+
+export interface RegenerateDocumentPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+  documents: Array<{ documentKey: string; modelId: string }>;
+}
+
+export interface RegenerateDocumentResponse {
+  jobIds: string[];
 }
 
 export interface ContributionContentSignedUrlResponse {
@@ -1278,6 +1328,12 @@ export type DialecticServiceActionPayload = {
 } | {
   action: 'getAllStageProgress';
   payload: GetAllStageProgressPayload;
+} | {
+  action: 'resumePausedNsfJobs';
+  payload: ResumePausedNsfJobsPayload;
+} | {
+  action: 'regenerateDocument';
+  payload: RegenerateDocumentPayload;
 }
 
 export interface DialecticServiceResponsePayload {

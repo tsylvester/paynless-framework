@@ -40,6 +40,13 @@ export type RenderDocumentResult = {
   renderedBytes: Uint8Array;
 };
 
+/** One downloaded chunk's text for the concatenate-then-sanitize/parse pipeline in renderDocument. */
+export type DownloadedChunkText = {
+  chunkId: string;
+  text: string;
+  rawJsonPath: string;
+};
+
 export interface DocumentRendererDeps {
   downloadFromStorage: DownloadFromStorageFn;
   fileManager: IFileManager;

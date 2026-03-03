@@ -4,7 +4,7 @@ import {
     assertExists,
     assertRejects,
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
-import { stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
+import { stub, spy } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 import { Database, Tables } from '../types_db.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
@@ -198,26 +198,24 @@ Deno.test('should not enqueue RENDER job for header_context output type', async 
     // Act
     await executeModelCallAndSave(params);
 
-    // Assert: No RENDER job should be inserted because header_context is not a markdown document
+    // Assert: Target — non-markdown output types must not enqueue RENDER
     const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
     if (insertCalls) {
-        // Filter for RENDER job inserts only
         const renderInserts = insertCalls.callsArgs.filter((callArg) => {
             const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
             return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
         });
-        assertEquals(renderInserts.length, 0, 'Should not enqueue RENDER job for non-markdown output type like header_context');
+        assertEquals(renderInserts.length, 0, 'Target: non-markdown output type must not enqueue RENDER');
     } else {
-        // If no inserts at all, that's also correct (no RENDER job enqueued)
-        assert(true, 'No RENDER job enqueued for header_context output type');
+        assert(true, 'Target: no RENDER job enqueued for non-markdown output type');
     }
 
     clearAllStubs?.();
 });
 
-Deno.test('should enqueue RENDER job for markdown document output type', async () => {
-    // Arrange: Mock a job with output_type: 'business_case' and a stage where business_case
-    // is defined as a markdown document in recipe steps
+Deno.test('should enqueue RENDER job for markdown document output type (single complete chunk)', async () => {
+    // Arrange: Target — single complete chunk (finish_reason stop, no continuation). Markdown output must enqueue one RENDER job.
+    // Mock output_type: 'business_case' with stage where business_case is a markdown document in recipe steps.
     const mockStage: Tables<'dialectic_stages'> = {
         id: 'stage-1',
         slug: DialecticStageSlug.Thesis,
@@ -332,17 +330,16 @@ Deno.test('should enqueue RENDER job for markdown document output type', async (
     // Act
     await executeModelCallAndSave(params);
 
-    // Assert: A RENDER job should be inserted with correct payload
+    // Assert: Target — single complete chunk (needsContinuation false) with markdown output must enqueue exactly one RENDER job
     const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
     assertExists(insertCalls, 'Expected to track insert calls for dialectic_generation_jobs');
 
-    // Filter for RENDER job inserts only
     const renderInserts = insertCalls.callsArgs.filter((callArg) => {
         const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
 
-    assertEquals(renderInserts.length, 1, 'Should enqueue exactly one RENDER job for markdown document output type');
+    assertEquals(renderInserts.length, 1, 'Target: single complete chunk with markdown output must enqueue exactly one RENDER job');
 
     const insertedArg = renderInserts[0];
     const inserted = Array.isArray(insertedArg) ? (insertedArg[0]) : (insertedArg);
@@ -367,10 +364,9 @@ Deno.test('should enqueue RENDER job for markdown document output type', async (
     clearAllStubs?.();
 });
 
-Deno.test('should enqueue RENDER job on every chunk completion, not just final completion', async () => {
-    // Arrange: Mock a continuation job (with target_contribution_id set in job payload)
-    // that produces markdown (output_type: 'business_case')
-    // Mock the AI response with finish_reason: 'length' (indicating continuation needed)
+Deno.test('should NOT enqueue RENDER job for intermediate continuation chunk when needsContinuation is true', async () => {
+    // Arrange: Mock a continuation job (continueUntilComplete: true, finish_reason: 'length')
+    // so needsContinuation is true. RENDER must only run on the final chunk, not on intermediate chunks.
     const mockStage: Tables<'dialectic_stages'> = {
         id: 'stage-1',
         slug: DialecticStageSlug.Thesis,
@@ -486,42 +482,127 @@ Deno.test('should enqueue RENDER job on every chunk completion, not just final c
     // Act
     await executeModelCallAndSave(params);
 
-    // Assert: A RENDER job should be enqueued even though needsContinuation is true
-    // This proves rendering happens on every chunk, not just final completion
+    // Assert: Target — intermediate continuation chunk (needsContinuation true) must not enqueue RENDER
     const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
     assertExists(insertCalls, 'Expected to track insert calls for dialectic_generation_jobs');
 
-    // Filter for RENDER job inserts only
     const renderInserts = insertCalls.callsArgs.filter((callArg) => {
         const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
 
-    assertEquals(renderInserts.length, 1, 'Should enqueue RENDER job on chunk completion even when continuation is needed');
+    assertEquals(renderInserts.length, 0, 'Target: intermediate continuation chunk (needsContinuation true) must not enqueue RENDER');
 
-    const insertedArg = renderInserts[0];
-    const inserted = Array.isArray(insertedArg) ? (insertedArg[0]) : (insertedArg);
+    clearAllStubs?.();
+});
 
-    assert(isRecord(inserted), 'Inserted payload must be an object');
+Deno.test('intermediate continuation chunk with invalid JSON fragment must skip sanitize/parse (no retry)', async () => {
+    // Target: decide intermediate before sanitize/parse; run sanitize/parse only when not intermediate.
+    // If we ran parse on this chunk we would retry (malformed JSON). Assert retryJob not called and no RENDER.
+    const mockStage: Tables<'dialectic_stages'> = {
+        id: 'stage-1',
+        slug: DialecticStageSlug.Thesis,
+        display_name: 'Test Stage',
+        description: null,
+        default_system_prompt_id: null,
+        recipe_template_id: 'template-1',
+        active_recipe_instance_id: 'instance-1',
+        expected_output_template_ids: [],
+        created_at: new Date().toISOString(),
+    };
 
-    // Verify it's a RENDER job
-    assertEquals(inserted['job_type'], 'RENDER', 'RENDER job must have job_type: RENDER');
+    const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
+        id: 'instance-1',
+        stage_id: 'stage-1',
+        template_id: 'template-1',
+        is_cloned: false,
+        cloned_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
 
-    // Parent must associate to the just-completed EXECUTE job
-    assertEquals(inserted['parent_job_id'], job.id, 'Parent job id must point to completed EXECUTE job');
+    const mockStep: Tables<'dialectic_recipe_template_steps'> = {
+        id: 'step-1',
+        template_id: 'template-1',
+        step_number: 1,
+        step_key: 'execute_business_case',
+        step_slug: 'execute-business-case',
+        step_name: 'Execute Business Case',
+        step_description: null,
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        prompt_template_id: null,
+        output_type: 'business_case',
+        granularity_strategy: 'per_source_document',
+        inputs_required: [],
+        inputs_relevance: [],
+        outputs_required: {
+            files_to_generate: [{ from_document_key: 'business_case', template_filename: 'thesis_business_case.md' }],
+        },
+        parallel_group: null,
+        branch_key: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
 
-    // Payload must include required renderer identity fields
-    const pl = inserted['payload'];
-    assert(isRecord(pl), 'Inserted payload.payload must be an object');
-    assertEquals(pl['documentIdentity'], 'doc-root-xyz', 'Payload must include documentIdentity derived from document_relationships[thesis]');
-    
-    // For continuation chunks, sourceContributionId must be THIS chunk's contribution.id, not the root's ID
-    // The saved contribution has id = mockContribution.id (this chunk's ID)
-    // documentIdentity is 'doc-root-xyz' (the root's ID from document_relationships)
-    // They should NOT be equal for continuation chunks
-    assert('sourceContributionId' in pl, 'RENDER job payload must include sourceContributionId field');
-    assertEquals(pl['sourceContributionId'], mockContribution.id, 'sourceContributionId must be this continuation chunk\'s contribution.id, not the root\'s ID');
-    assert(pl['sourceContributionId'] !== pl['documentIdentity'], 'For continuation chunks, sourceContributionId (this chunk\'s ID) must NOT equal documentIdentity (root\'s ID)');
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+        'dialectic_stages': { select: { data: [mockStage], error: null } },
+        'dialectic_stage_recipe_instances': { select: { data: [mockInstance], error: null } },
+        'dialectic_recipe_template_steps': { select: { data: [mockStep], error: null } },
+        'dialectic_generation_jobs': { insert: { data: [mockRenderJob], error: null } },
+    });
+
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const documentRelationships: DocumentRelationships = { [DialecticStageSlug.Thesis]: 'doc-root-xyz' };
+    const savedWithIdentity: DialecticContributionRow = { ...mockContribution, document_relationships: documentRelationships };
+    deps.fileManager.setUploadAndRegisterFileResponse(savedWithIdentity, null);
+
+    const retryJobSpy = spy(deps, 'retryJob');
+    stubShouldEnqueueRenderJobForMarkdown(deps);
+
+    // Invalid JSON fragment — would throw if we ran JSON.parse; intermediate chunk must skip parse
+    const invalidJsonFragment = '{"content": "incomplete';
+    stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
+        createMockUnifiedAIResponse({
+            content: invalidJsonFragment,
+            contentType: 'application/json',
+            inputTokens: 10,
+            outputTokens: 5,
+            processingTimeMs: 50,
+            rawProviderResponse: { finish_reason: 'length' },
+        })
+    ));
+
+    const continuationPayload: DialecticExecuteJobPayload = {
+        ...testPayload,
+        output_type: FileType.business_case,
+        document_key: 'business_case',
+        target_contribution_id: 'contrib-root-123',
+        continueUntilComplete: true,
+        continuation_count: 1,
+        stageSlug: DialecticStageSlug.Thesis,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            [DialecticStageSlug.Thesis]: 'doc-root-xyz',
+        },
+    };
+
+    const job = createMockJob(continuationPayload);
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+    await executeModelCallAndSave(params);
+
+    assertEquals(retryJobSpy.calls.length, 0, 'Target: intermediate chunk must skip sanitize/parse so invalid JSON fragment must not trigger retry');
+
+    const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertCalls, 'Expected to track insert calls for dialectic_generation_jobs');
+    const renderInserts = insertCalls.callsArgs.filter((callArg) => {
+        const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
+        return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
+    });
+    assertEquals(renderInserts.length, 0, 'Target: intermediate continuation chunk must not enqueue RENDER');
 
     clearAllStubs?.();
 });
@@ -636,7 +717,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
     };
     deps.fileManager.setUploadAndRegisterFileResponse(savedWithIdentity, null);
 
-    // This test asserts a RENDER job is enqueued; force the markdown rendering decision path.
+    // Target: single complete chunk (needsContinuation false) with markdown output enqueues one RENDER job.
     stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
@@ -650,7 +731,6 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
         })
     ));
 
-    // Use business_case with document_key set to 'business_case'
     const businessCasePayload: DialecticExecuteJobPayload = {
         ...testPayload,
         output_type: FileType.business_case,
@@ -668,7 +748,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
     // Act
     await executeModelCallAndSave(params);
 
-    // Assert: RENDER job payload must include documentKey with value from validatedDocumentKey
+    // Assert: Target — RENDER job payload must include documentKey from validatedDocumentKey
     const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
     assertExists(insertCalls, 'Expected to track insert calls for dialectic_generation_jobs');
 
@@ -677,7 +757,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
 
-    assertEquals(renderInserts.length, 1, 'Should enqueue exactly one RENDER job');
+    assertEquals(renderInserts.length, 1, 'Target: single complete chunk with markdown output must enqueue exactly one RENDER job');
 
     const insertedArg: unknown = renderInserts[0];
     const insertedUnknown: unknown = Array.isArray(insertedArg) ? insertedArg[0] : insertedArg;
@@ -829,7 +909,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload contains all required fi
     };
     deps.fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
 
-    // This test asserts a RENDER job is enqueued; force the markdown rendering decision path.
+    // Target: single complete chunk (needsContinuation false) with markdown output enqueues one RENDER job.
     stubShouldEnqueueRenderJobForMarkdown(deps);
 
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
@@ -859,7 +939,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload contains all required fi
     // Act
     await executeModelCallAndSave(params);
 
-    // Assert: RENDER job payload must contain all 7 required fields
+    // Assert: Target — RENDER job payload must contain all required fields when single complete chunk enqueues RENDER
     const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
     assertExists(insertCalls, 'Expected to track insert calls for dialectic_generation_jobs');
 
@@ -868,7 +948,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload contains all required fi
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
 
-    assertEquals(renderInserts.length, 1, 'Should enqueue exactly one RENDER job');
+    assertEquals(renderInserts.length, 1, 'Target: single complete chunk with markdown output must enqueue exactly one RENDER job');
 
     const insertedArg: unknown = renderInserts[0];
     const insertedUnknown: unknown = Array.isArray(insertedArg) ? insertedArg[0] : insertedArg;
@@ -1078,7 +1158,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload sourceContributionId mus
     // Act
     await executeModelCallAndSave(params);
 
-    // Assert: RENDER job payload must have sourceContributionId set to the ACTUAL contribution.id,
+    // Assert: Target — RENDER job payload must have sourceContributionId set to the ACTUAL contribution.id
     // NOT the semantic identifier from document_relationships
     const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
     assertExists(insertCalls, 'Expected to track insert calls for dialectic_generation_jobs');
@@ -1088,7 +1168,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload sourceContributionId mus
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
 
-    assertEquals(renderInserts.length, 1, 'Should enqueue exactly one RENDER job');
+    assertEquals(renderInserts.length, 1, 'Target: single complete chunk with markdown output must enqueue exactly one RENDER job');
 
     const insertedArg: unknown = renderInserts[0];
     const insertedUnknown: unknown = Array.isArray(insertedArg) ? insertedArg[0] : insertedArg;
@@ -1180,6 +1260,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload sourceContributionId mus
 });
 
 Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunks render complete document and replace original', async () => {
+    // Target: each final chunk (needsContinuation false) enqueues one RENDER job. Root and continuation both use finish_reason stop and continueUntilComplete false.
     // This test proves that:
     // 1. Root chunk creates a RENDER job with correct payload (sourceContributionId === documentIdentity)
     // 2. Continuation chunk creates a RENDER job with correct payload (sourceContributionId !== documentIdentity)
@@ -1343,7 +1424,7 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
     
-    assertEquals(rootRenderInserts.length, 1, 'Should enqueue RENDER job for root chunk');
+    assertEquals(rootRenderInserts.length, 1, 'Target: root chunk as final chunk (needsContinuation false) must enqueue exactly one RENDER job');
     
     const rootInserted = Array.isArray(rootRenderInserts[0]) ? rootRenderInserts[0][0] : rootRenderInserts[0];
     assert(isRecord(rootInserted), 'Root inserted payload must be an object');
@@ -1403,8 +1484,8 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
     
-    // Should have 2 RENDER jobs total (one for root, one for continuation)
-    assertEquals(continuationRenderInserts.length, 2, 'Should have RENDER jobs for both root and continuation chunks');
+    // Target: each final chunk (needsContinuation false) enqueues one RENDER job; root and continuation each completed as final
+    assertEquals(continuationRenderInserts.length, 2, 'Target: root and continuation as final chunks must each enqueue one RENDER job (total 2)');
     
     // Get the continuation chunk's RENDER job (the second one)
     const continuationInserted = Array.isArray(continuationRenderInserts[1]) ? continuationRenderInserts[1][0] : continuationRenderInserts[1];
@@ -1560,7 +1641,7 @@ Deno.test('executeModelCallAndSave - enqueues RENDER job with ALL required paylo
     // Act
     await executeModelCallAndSave(params);
 
-    // Assert: RENDER job insert includes payload with ALL 8 required fields
+    // Assert: Target — RENDER job insert includes payload with ALL required fields when single complete chunk enqueues RENDER
     const insertCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
     assertExists(insertCalls, 'Expected to track insert calls for dialectic_generation_jobs');
 
@@ -1569,7 +1650,7 @@ Deno.test('executeModelCallAndSave - enqueues RENDER job with ALL required paylo
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
 
-    assertEquals(renderInserts.length, 1, 'Should enqueue exactly one RENDER job');
+    assertEquals(renderInserts.length, 1, 'Target: single complete chunk with markdown output must enqueue exactly one RENDER job');
 
     const insertedArg: unknown = renderInserts[0];
     const insertedUnknown: unknown = Array.isArray(insertedArg) ? insertedArg[0] : insertedArg;
@@ -1797,7 +1878,7 @@ Deno.test('executeModelCallAndSave - throws error when parent job payload lacks 
             const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
             return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
         });
-        assertEquals(renderInserts.length, 0, 'Should not enqueue RENDER job when user_jwt is missing');
+        assertEquals(renderInserts.length, 0, 'Target: must not enqueue RENDER when user_jwt is missing');
     }
 
     clearAllStubs?.();
@@ -1922,7 +2003,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload user_jwt matches parent 
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
 
-    assertEquals(renderInserts.length, 1, 'Should enqueue exactly one RENDER job');
+    assertEquals(renderInserts.length, 1, 'Target: single complete chunk with markdown output must enqueue exactly one RENDER job');
 
     const insertedArg: unknown = renderInserts[0];
     const insertedUnknown: unknown = Array.isArray(insertedArg) ? insertedArg[0] : insertedArg;
@@ -2118,7 +2199,7 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
         const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
-    assertEquals(renderInserts.length, 1, 'Should enqueue exactly one RENDER job');
+    assertEquals(renderInserts.length, 1, 'Target: single complete chunk with markdown output must enqueue exactly one RENDER job');
 
     // Assert: RENDER job payload contains documentIdentity extracted from document_relationships[stageSlug] after initialization
     const insertedArg: unknown = renderInserts[0];
@@ -2271,7 +2352,7 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
         const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
-    assertEquals(renderInserts.length, 1, 'Should enqueue exactly one RENDER job');
+    assertEquals(renderInserts.length, 1, 'Target: single complete chunk with markdown output must enqueue exactly one RENDER job');
 
     // Assert: RENDER job payload contains documentIdentity extracted from document_relationships[stageSlug] after persistence
     const insertedArg: unknown = renderInserts[0];
@@ -2433,7 +2514,7 @@ Deno.test('extracts documentIdentity using stageSlug key specifically, not first
         const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
-    assertEquals(renderInserts.length, 1, 'Should enqueue exactly one RENDER job');
+    assertEquals(renderInserts.length, 1, 'Target: single complete chunk with markdown output must enqueue exactly one RENDER job');
 
     const insertedArg: unknown = renderInserts[0];
     const insertedUnknown: unknown = Array.isArray(insertedArg) ? insertedArg[0] : insertedArg;
@@ -2586,7 +2667,7 @@ Deno.test('throws error when document_relationships is null after persistence', 
             const inserted = Array.isArray(callArg) ? callArg[0] : callArg;
             return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
         });
-        assertEquals(renderInserts.length, 0, 'Should not enqueue RENDER job when document_relationships is null after persistence');
+        assertEquals(renderInserts.length, 0, 'Target: must not enqueue RENDER when document_relationships is null after persistence');
     }
 
     clearAllStubs?.();
@@ -2810,7 +2891,7 @@ Deno.test('skips RENDER job when shouldEnqueueRenderJob returns { shouldRender: 
         assertEquals(
             renderInserts.length,
             0,
-            'Should not enqueue RENDER job when shouldEnqueueRenderJob returns { shouldRender: false, reason: \'is_json\' }'
+            'Target: must not enqueue RENDER when shouldEnqueueRenderJob returns { shouldRender: false, reason: \'is_json\' }'
         );
     }
 
@@ -2999,7 +3080,7 @@ Deno.test('should query recipe step and extract template_filename for RENDER job
         return inserted && typeof inserted === 'object' && 'job_type' in inserted && inserted.job_type === 'RENDER';
     });
 
-    assertEquals(renderInserts.length, 1, 'Should enqueue exactly one RENDER job for markdown document output type');
+    assertEquals(renderInserts.length, 1, 'Target: single complete chunk with markdown output must enqueue exactly one RENDER job');
 
     const insertedArg = renderInserts[0];
     const inserted = Array.isArray(insertedArg) ? (insertedArg[0]) : (insertedArg);

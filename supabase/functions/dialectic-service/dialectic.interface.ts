@@ -515,6 +515,48 @@ type GetAllStageProgressAction = {
 	payload: GetAllStageProgressPayload;
 };
 
+export interface ResumePausedNsfJobsPayload {
+	sessionId: string;
+	stageSlug: string;
+	iterationNumber: number;
+}
+export interface ResumePausedNsfJobsResponse {
+	resumedCount: number;
+}
+
+export interface ResumePausedNsfJobsResult {
+	data?: ResumePausedNsfJobsResponse;
+	error?: ServiceError;
+	status?: number;
+}
+
+type ResumePausedNsfJobsAction = {
+	action: "resumePausedNsfJobs";
+	payload: ResumePausedNsfJobsPayload;
+};
+
+export interface RegenerateDocumentPayload {
+	sessionId: string;
+	stageSlug: string;
+	iterationNumber: number;
+	documents: Array<{ documentKey: string; modelId: string }>;
+}
+
+export interface RegenerateDocumentResponse {
+	jobIds: string[];
+}
+
+export interface RegenerateDocumentResult {
+	data?: RegenerateDocumentResponse;
+	error?: ServiceError;
+	status?: number;
+}
+
+type RegenerateDocumentAction = {
+	action: "regenerateDocument";
+	payload: RegenerateDocumentPayload;
+};
+
 // DAG progress computation — step ordering (topologicalSortSteps)
 export interface ProgressRecipeStep {
 	id: string;
@@ -620,6 +662,8 @@ export type DialecticServiceRequest =
 	| GetStageRecipeAction
 	| ListStageDocumentsAction
 	| GetAllStageProgressAction
+	| ResumePausedNsfJobsAction
+	| RegenerateDocumentAction
 	| GetStageDocumentFeedbackAction
 	| SubmitStageDocumentFeedbackAction;
 
@@ -674,7 +718,8 @@ export type UnifiedStageStatus =
 	| "not_started"
 	| "in_progress"
 	| "completed"
-	| "failed";
+	| "failed"
+	| "paused_nsf";
 
 export interface DagProgressDto {
 	completedStages: number;
@@ -1116,6 +1161,27 @@ export interface ResolveNextBlockerResult {
 	id: string;
 	job_type: JobType;
 	status: string;
+}
+
+/**
+ * Parameters for pauseJobsForNsf (NSF pause: failing job + active siblings, single notification).
+ */
+export interface PauseJobsForNsfParams {
+	failingJobId: string;
+	sessionId: string;
+	stageSlug: string;
+	iterationNumber: number;
+	projectId: string;
+	projectOwnerUserId: string;
+}
+
+/**
+ * Dependencies for pauseJobsForNsf.
+ */
+export interface PauseJobsForNsfDeps {
+	adminClient: SupabaseClient<Database>;
+	notificationService: NotificationServiceType;
+	logger: ILogger;
 }
 
 export interface PromptConstructionPayload {

@@ -36,6 +36,10 @@ import {
   SubmitStageDocumentFeedbackPayload,
   GetAllStageProgressPayload,
   GetAllStageProgressResult,
+  ResumePausedNsfJobsPayload,
+  ResumePausedNsfJobsResponse,
+  RegenerateDocumentPayload,
+  RegenerateDocumentResponse,
 } from "./dialectic.interface.ts";
 import { getStageRecipe } from "./getStageRecipe.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
@@ -79,6 +83,8 @@ import { handleUpdateSessionModels } from './updateSessionModels.ts';
 import { listStageDocuments } from './listStageDocuments.ts';
 import { submitStageDocumentFeedback, type SubmitStageDocumentFeedbackDeps } from './submitStageDocumentFeedback.ts';
 import { getAllStageProgress } from './getAllStageProgress.ts';
+import { handleResumePausedNsfJobs } from './resumePausedNsfJobs.ts';
+import { regenerateDocument } from './regenerateDocument.ts';
 import { topologicalSortSteps } from './topologicalSortSteps.ts';
 import { deriveStepStatuses } from './deriveStepStatuses.ts';
 import { computeExpectedCounts } from './computeExpectedCounts.ts';
@@ -195,6 +201,8 @@ export interface ActionHandlers {
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload, dbClient: SupabaseClient, deps: SubmitStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<DialecticFeedbackRow>>;
   getStageDocumentFeedback: (payload: GetStageDocumentFeedbackPayload, dbClient: SupabaseClient<Database>, deps: GetStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<GetStageDocumentFeedbackResponse>>;
   getAllStageProgress: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
+  resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: ResumePausedNsfJobsResponse; error?: ServiceError; status?: number }>;
+  regenerateDocument: (payload: RegenerateDocumentPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: RegenerateDocumentResponse; error?: ServiceError; status?: number }>;
 }
 
 export async function handleRequest(
@@ -273,6 +281,8 @@ export async function handleRequest(
         'submitStageDocumentFeedback',
         'getStageDocumentFeedback',
         'getAllStageProgress',
+        'resumePausedNsfJobs',
+        'regenerateDocument',
       ];
 
       let userForJson: User | null = null;
@@ -594,6 +604,28 @@ export async function handleRequest(
           }
           return createSuccessResponse(result.data, result.status || 200, req);
         }
+        case "resumePausedNsfJobs": {
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for resumePausedNsfJobs', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const payload: ResumePausedNsfJobsPayload = requestBody.payload;
+          const result = await handlers.resumePausedNsfJobs(payload, adminClient, userForJson);
+          if (result.error) {
+            return createErrorResponse(result.error.message, result.status, req, result.error);
+          }
+          return createSuccessResponse(result.data, result.status, req);
+        }
+        case "regenerateDocument": {
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for regenerateDocument', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const payload: RegenerateDocumentPayload = requestBody.payload;
+          const result = await handlers.regenerateDocument(payload, adminClient, userForJson);
+          if (result.error) {
+            return createErrorResponse(result.error.message, result.status, req, result.error);
+          }
+          return createSuccessResponse(result.data, result.status, req);
+        }
         default: {
           const errorMessage = `Unknown action for application/json.`;
           logger.warn(errorMessage, { action });
@@ -659,6 +691,8 @@ export const defaultHandlers: ActionHandlers = {
   submitStageDocumentFeedback,
   getStageDocumentFeedback,
   getAllStageProgress: handleGetAllStageProgress,
+  resumePausedNsfJobs: handleResumePausedNsfJobs,
+  regenerateDocument,
 };
 
 export function createDialecticServiceHandler(

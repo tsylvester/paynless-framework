@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 import {
   useDialecticStore,
   selectActiveContextSessionId,
-  selectIsStageReadyForSessionIteration,
   selectSortedStages,
   selectStageHasUnsavedChanges,
   selectUnifiedProjectProgress,
@@ -34,20 +33,6 @@ export const SubmitResponsesButton: React.FC = () => {
   const submitStageResponses = useDialecticStore((state) => state.submitStageResponses);
   const isSubmitting = useDialecticStore((state) => state.isSubmittingStageResponses);
   const submitError = useDialecticStore((state) => state.submitStageResponsesError);
-
-  const isStageReady = useDialecticStore((state) => {
-    const p = state.currentProjectDetail;
-    const s = state.activeSessionDetail;
-    const a = state.activeContextStage;
-    if (!p || !s || !a || typeof s.iteration_count !== 'number') return false;
-    return selectIsStageReadyForSessionIteration(
-      state,
-      p.id,
-      s.id,
-      a.slug,
-      s.iteration_count,
-    );
-  });
 
   const { activeStageDetail, hasUnsavedEdits, hasUnsavedFeedback } = useDialecticStore((state) => {
     const s = state.activeSessionDetail;
@@ -83,7 +68,7 @@ export const SubmitResponsesButton: React.FC = () => {
     activeStageDetail != null &&
     activeStageDetail.totalDocuments > 0 &&
     activeStageDetail.completedDocuments === activeStageDetail.totalDocuments;
-  const canShowButton = isStageReady && !isFinalStage;
+  const canShowButton = !isFinalStage;
   const shouldPulse = canShowButton && allDocumentsAvailable && !isSubmitting;
 
   const handleSubmit = async (): Promise<void> => {

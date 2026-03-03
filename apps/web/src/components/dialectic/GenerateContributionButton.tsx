@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
 	useDialecticStore,
@@ -6,10 +7,11 @@ import {
 	selectSessionById,
 	selectActiveStage,
 	selectIsStageReadyForSessionIteration,
+	selectUnifiedProjectProgress,
 	useWalletStore,
 	selectActiveChatWalletInfo,
 } from "@paynless/store";
-import { GenerateContributionsPayload, getDisplayName } from "@paynless/types";
+import { GenerateContributionsPayload, getDisplayName, STAGE_BALANCE_THRESHOLDS } from "@paynless/types";
 import { useAiStore } from "@paynless/store";
 import { toast } from "sonner";
 import { Loader2, RefreshCcw } from "lucide-react";
@@ -29,12 +31,23 @@ export const GenerateContributionButton: React.FC<
 		generatingSessions,
 		currentProjectDetail,
 		activeContextSessionId,
+		resumePausedNsfJobs,
 	} = useDialecticStore((state) => ({
 		generateContributions: state.generateContributions,
 		generatingSessions: state.generatingSessions,
 		currentProjectDetail: state.currentProjectDetail,
 		activeContextSessionId: state.activeContextSessionId,
+		resumePausedNsfJobs: state.resumePausedNsfJobs,
 	}));
+	const unifiedProgress = useDialecticStore((state) => {
+		const sid = state.activeContextSessionId;
+		if (!sid) return null;
+		try {
+			return selectUnifiedProjectProgress(state, sid);
+		} catch {
+			return null;
+		}
+	});
 	const continueUntilComplete = useAiStore(
 		(state) => state.continueUntilComplete,
 	);
@@ -76,6 +89,16 @@ export const GenerateContributionButton: React.FC<
 		: false;
 	const areAnyModelsSelected = selectedModels.length > 0;
 
+	const activeStageProgress = useMemo(
+		() => unifiedProgress?.stageDetails?.find((s) => s.stageSlug === activeStage?.slug),
+		[unifiedProgress, activeStage?.slug],
+	);
+	const hasPausedNsfJobs = activeStageProgress?.stageStatus === "paused_nsf";
+	const stageThreshold: number | undefined = activeStage ? STAGE_BALANCE_THRESHOLDS[activeStage.slug] : undefined;
+	const balanceMeetsThreshold =
+		stageThreshold !== undefined ? Number(activeWalletInfo.balance ?? 0) >= stageThreshold : false;
+	const isResumeMode = hasPausedNsfJobs && balanceMeetsThreshold;
+
 	// Final, correct logic based on user feedback
 	const contributionsForStageAndIterationExist = useMemo(() => {
 		if (!activeSession || !activeStage) return false;
@@ -109,6 +132,17 @@ export const GenerateContributionButton: React.FC<
 		}
 		const currentIterationNumber = activeSession.iteration_count;
 
+		if (isResumeMode) {
+			toast.success("Resuming generation...");
+			setDagDialogOpen(true);
+			await resumePausedNsfJobs({
+				sessionId: activeSession.id,
+				stageSlug: activeStage.slug,
+				iterationNumber: currentIterationNumber,
+			});
+			return;
+		}
+
 		toast.success("Contribution generation started!", {
 			description: "The AI is working. We will notify you when it is complete.",
 		});
@@ -133,14 +167,20 @@ export const GenerateContributionButton: React.FC<
 		}
 	};
 
-	// The button is only disabled if essential data is missing or a generation is in progress.
 	const isDisabled =
 		isSessionGenerating ||
 		!areAnyModelsSelected ||
 		!activeStage ||
 		!activeSession ||
 		!isStageReady ||
-		!isWalletReady;
+		!isWalletReady ||
+		!balanceMeetsThreshold;
+	const showBalanceCallout =
+		activeStage !== null &&
+		activeStage !== undefined &&
+		stageThreshold !== undefined &&
+		!balanceMeetsThreshold;
+
 	const getButtonText = () => {
 		if (isSessionGenerating)
 			return (
@@ -153,14 +193,34 @@ export const GenerateContributionButton: React.FC<
 		if (!activeStage || !activeSession) return "Stage Not Ready";
 		if (!isStageReady) return "Previous Stage Incomplete";
 		const displayName = getDisplayName(activeStage.slug);
+		if (hasPausedNsfJobs && !balanceMeetsThreshold) return "Add Funds to Resume";
+		if (hasPausedNsfJobs && balanceMeetsThreshold) return `Resume ${displayName}`;
+		if (!balanceMeetsThreshold) return "Insufficient Balance";
 		if (didGenerationFail) return `Retry ${displayName}`;
 		if (contributionsForStageAndIterationExist)
 			return `Regenerate ${displayName}`;
 		return `Generate ${displayName}`;
 	};
 
+	if (!stageThreshold) return null;
+	const formattedThreshold = new Intl.NumberFormat("en-US").format(stageThreshold);
+
 	return (
-		<>
+		<div className="relative inline-flex flex-col items-end">
+			{showBalanceCallout && (
+				<p
+					className="absolute bottom-full right-0 mb-1.5 z-10 max-w-[280px] rounded-md border border-primary/60 bg-primary/15 px-3 py-2 text-center text-xs font-medium text-primary shadow-md animate-pulse"
+					data-testid="generate-button-balance-callout"
+				>
+					<Link
+						to="/subscription"
+						className="font-semibold underline underline-offset-2 hover:no-underline"
+					>
+						Minimum {formattedThreshold} token balance for {getDisplayName(activeStage.slug)}{" "}
+
+					</Link>
+				</p>
+			)}
 			<Button
 				onClick={handleClick}
 				disabled={isDisabled}
@@ -181,6 +241,6 @@ export const GenerateContributionButton: React.FC<
 						iterationNumber={activeSession.iteration_count}
 					/>
 				)}
-		</>
+		</div>
 	);
 };

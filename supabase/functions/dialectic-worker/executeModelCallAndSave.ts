@@ -1101,15 +1101,14 @@ export async function executeModelCallAndSave(
 
     let shouldContinue = isDialecticContinueReason(resolvedFinish);
 
-    // When finish_reason indicates truncation and the job opts into continuation,
-    // skip sanitization and JSON parsing — the content is intentionally incomplete.
-    // Only the final chunk (finish_reason indicating completion) gets validated.
-    const skipSanitizeForContinuation = shouldContinue && !!job.payload.continueUntilComplete;
+    // Decide intermediate vs not before sanitize/parse. Run sanitize/parse only when the chunk
+    // is not an intermediate continuation chunk (single-complete and final paths still get validated).
+    const isIntermediateChunk = shouldContinue && !!job.payload.continueUntilComplete;
 
     let contentForStorage: string;
-    if (skipSanitizeForContinuation) {
+    if (isIntermediateChunk) {
         contentForStorage = aiResponse.content;
-        deps.logger.info(`[executeModelCallAndSave] Skipping sanitize/parse for continuation chunk (finish_reason: ${resolvedFinish})`, { jobId });
+        deps.logger.info(`[executeModelCallAndSave] Skipping sanitize/parse for intermediate continuation chunk (finish_reason: ${resolvedFinish})`, { jobId });
     } else {
         const sanitizationResult: JsonSanitizationResult = sanitizeJsonContent(aiResponse.content);
         
@@ -1176,7 +1175,9 @@ export async function executeModelCallAndSave(
             }
         }
     }
-    
+
+    const needsContinuation = job.payload.continueUntilComplete && shouldContinue;
+
     // This is the correct implementation. The semantic relationships are inherited
     // directly from the job payload. The structural link for continuations is
     // handled by the `target_contribution_id` field on the contribution record,
@@ -1501,25 +1502,28 @@ export async function executeModelCallAndSave(
         );
     }
 
-    // Conditionally enqueue RENDER job for markdown document outputs on every chunk completion
-    const { shouldRender, reason, details } = await deps.shouldEnqueueRenderJob(
-        { dbClient, logger: deps.logger },
-        { outputType: output_type, stageSlug }
-    );
+    let shouldRender = false;
+    if (!needsContinuation) {
+        // Conditionally enqueue RENDER job for markdown document outputs on every chunk completion
+        const renderDecision = await deps.shouldEnqueueRenderJob(
+            { dbClient, logger: deps.logger },
+            { outputType: output_type, stageSlug }
+        );
+        shouldRender = renderDecision.shouldRender;
 
-    // Handle error reasons: fail the EXECUTE job for transient/config errors
-    if (!shouldRender && ['stage_not_found', 'instance_not_found', 'steps_not_found', 'parse_error', 'query_error', 'no_active_recipe'].includes(reason)) {
-        deps.logger.error('[executeModelCallAndSave] Failed to determine if RENDER job required due to query/config error', { reason, details, outputType: output_type, stageSlug });
-        throw new Error(`Cannot determine render requirement: ${reason}${details ? ` - ${details}` : ''}`);
-    }
+        // Handle error reasons: fail the EXECUTE job for transient/config errors
+        if (!renderDecision.shouldRender && ['stage_not_found', 'instance_not_found', 'steps_not_found', 'parse_error', 'query_error', 'no_active_recipe'].includes(renderDecision.reason)) {
+            deps.logger.error('[executeModelCallAndSave] Failed to determine if RENDER job required due to query/config error', { reason: renderDecision.reason, details: renderDecision.details, outputType: output_type, stageSlug });
+            throw new Error(`Cannot determine render requirement: ${renderDecision.reason}${renderDecision.details ? ` - ${renderDecision.details}` : ''}`);
+        }
 
-    // Log successful skip for JSON outputs (normal flow, not an error)
-    if (!shouldRender && reason === 'is_json') {
-        deps.logger.info('[executeModelCallAndSave] Skipping RENDER job for JSON output', { outputType: output_type });
-    }
+        // Log successful skip for JSON outputs (normal flow, not an error)
+        if (!renderDecision.shouldRender && renderDecision.reason === 'is_json') {
+            deps.logger.info('[executeModelCallAndSave] Skipping RENDER job for JSON output', { outputType: output_type });
+        }
 
-    // Proceed with RENDER job creation only for markdown documents
-    if (shouldRender && reason === 'is_markdown') {
+        // Proceed with RENDER job creation only for markdown documents
+        if (renderDecision.shouldRender && renderDecision.reason === 'is_markdown') {
         deps.logger.info('[executeModelCallAndSave] Preparing to enqueue RENDER job', {
             jobId,
             output_type,
@@ -1749,6 +1753,7 @@ export async function executeModelCallAndSave(
             deps.logger.info('[executeModelCallAndSave] Enqueued RENDER job', { parent_job_id: jobId, render_job_id: newId });
         }
     }
+    }
 
     if (typeof promptConstructionPayload.source_prompt_resource_id === 'string' && promptConstructionPayload.source_prompt_resource_id.trim().length > 0) {
         const { error: promptLinkUpdateError } = await dbClient
@@ -1785,8 +1790,6 @@ export async function executeModelCallAndSave(
             document_key: job.payload.document_key,
         }, projectOwnerUserId);
     }
-    
-    const needsContinuation = job.payload.continueUntilComplete && shouldContinue;
 
     const modelProcessingResult: ModelProcessingResult = { 
         modelId: model_id, 

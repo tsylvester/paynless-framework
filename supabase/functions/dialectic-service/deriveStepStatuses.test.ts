@@ -353,4 +353,99 @@ Deno.test("deriveStepStatuses", async (t) => {
 		assertEquals(resultPerModel.get("step_per_model"), "completed");
 		assertEquals(resultAllToOne.get("step_all_to_one"), "completed");
 	});
+
+	await t.step("step with all jobs paused_nsf → status paused_nsf", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_paused", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_paused"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_nsf", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_paused"), "paused_nsf");
+	});
+
+	await t.step("step with paused_nsf and completed jobs → status paused_nsf (paused takes priority over completed)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_mixed", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_mixed"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_nsf", execPayload("e1"), null),
+			job("j2", "EXECUTE", "completed", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_mixed"), "paused_nsf");
+	});
+
+	await t.step("step with paused_nsf and active jobs (pending) → status in_progress (active takes priority over paused)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_mixed_active", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_mixed_active"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_nsf", execPayload("e1"), null),
+			job("j2", "EXECUTE", "pending", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_mixed_active"), "in_progress");
+	});
+
+	await t.step("step with paused_nsf and failed jobs → status paused_nsf (paused takes priority over failed)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_mixed_fail", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_mixed_fail"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_nsf", execPayload("e1"), null),
+			job("j2", "EXECUTE", "failed", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_mixed_fail"), "paused_nsf");
+	});
+
+	await t.step("step with one superseded job and one completed job → step status is completed (superseded job is invisible)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_superseded_completed", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_superseded_completed"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "superseded", execPayload("e1"), null),
+			job("j2", "EXECUTE", "completed", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_superseded_completed"), "completed");
+	});
+
+	await t.step("step with one superseded job and one pending job → step status is in_progress (active clone is visible)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_superseded_pending", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_superseded_pending"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "superseded", execPayload("e1"), null),
+			job("j2", "EXECUTE", "pending", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_superseded_pending"), "in_progress");
+	});
+
+	await t.step("step with only superseded jobs and no other jobs → step status is not_started (all evidence invisible)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_superseded_only", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_superseded_only"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "superseded", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_superseded_only"), "not_started");
+	});
+
+	await t.step("step with one superseded job, one failed job, and one completed job → step status is failed (the non-superseded failed job still counts)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_superseded_failed_completed", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_superseded_failed_completed"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "superseded", execPayload("e1"), null),
+			job("j2", "EXECUTE", "failed", execPayload("e1"), null),
+			job("j3", "EXECUTE", "completed", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_superseded_failed_completed"), "failed");
+	});
 });
