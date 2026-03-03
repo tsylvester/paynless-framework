@@ -1450,7 +1450,28 @@ describe('StageRunChecklist', () => {
             expect(regenerateButton).toHaveClass('bg-destructive');
         });
 
-        it('not started document row shows colored status dot only, no regenerate button (nothing to redo)', () => {
+        it('when stage has not been run, not_started document shows status dot only, no regenerate button', () => {
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+            setDialecticStateValues({
+                activeContextSessionId: sessionId,
+                activeStageSlug: recipe.stageSlug,
+                activeSessionDetail: baseSession,
+                currentProcessTemplate: buildProcessTemplateForStage(recipe.stageSlug),
+                recipesByStageSlug: { [recipe.stageSlug]: recipe },
+                stageRunProgress: {},
+            });
+
+            act(() => {
+                render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+            });
+
+            const row = screen.getByTestId('document-synthesis_document_rendered');
+            expect(within(row).queryByRole('button', { name: /regenerate|redo/i })).not.toBeInTheDocument();
+            expect(within(row).getByTestId('document-not-started-icon')).toBeInTheDocument();
+        });
+
+        it('when stage has been run, document not_started (amber) shows regenerate button so user can fix error state', () => {
             const recipe = createRecipe([buildRenderStep()]);
             selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
             const documents: StageRunDocuments = {
@@ -1468,8 +1489,8 @@ describe('StageRunChecklist', () => {
             });
 
             const row = screen.getByTestId('document-synthesis_document_rendered');
-            expect(within(row).queryByRole('button', { name: /regenerate|redo/i })).not.toBeInTheDocument();
-            expect(within(row).getByTestId('document-not-started-icon')).toBeInTheDocument();
+            expect(within(row).getByRole('button', { name: /regenerate|redo/i })).toBeInTheDocument();
+            expect(within(row).getByRole('button', { name: /regenerate|redo/i })).toHaveClass('bg-amber-400');
         });
 
         it('stuck document row (continuing or generating but not completed or failed) shows regenerate button so user can redo', () => {
