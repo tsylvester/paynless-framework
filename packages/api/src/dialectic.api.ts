@@ -36,6 +36,8 @@ import type {
     ListStageDocumentsResponse,
     GetAllStageProgressPayload,
     GetAllStageProgressResponse,
+    ResumePausedNsfJobsPayload,
+    ResumePausedNsfJobsResponse,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -679,6 +681,20 @@ export class DialecticApiClient {
                 status: 0,
             };
         }
+    }
+
+    async resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>> {
+        logger.info('Resuming paused NSF jobs', { ...payload });
+        const response = await this.apiClient.post<ResumePausedNsfJobsResponse, DialecticServiceActionPayload>(
+            'dialectic-service',
+            { action: 'resumePausedNsfJobs', payload }
+        );
+        if (response.error) {
+            logger.error('Error resuming paused NSF jobs:', { error: response.error, ...payload });
+        } else {
+            logger.info('Successfully resumed paused NSF jobs', { ...payload });
+        }
+        return response;
     }
 
     /**

@@ -373,48 +373,48 @@ A user cannot begin a set of work when they have NSF. If a user reaches NSF whil
     *   `[✅]`   The routing case, handler signature, and `defaultHandlers` entry must follow the existing patterns exactly
 
 ### Node 8
-*   `[ ]`   [API] packages/api/src/`dialectic.api` **Add `resumePausedNsfJobs` method to `DialecticApiClient` interface and implementation**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Add a `resumePausedNsfJobs` method to the `DialecticApiClient` interface in `packages/types/src/dialectic.types.ts` and the `DialecticApiClientImpl` class in `packages/api/src/dialectic.api.ts` so that the frontend store can call the backend resume handler through the established API layer
-    *   `[ ]`   Add `ResumePausedNsfJobsPayload` and `ResumePausedNsfJobsResponse` frontend types
-  *   `[ ]`   `role`
-    *   `[ ]`   Port — API layer bridge between the frontend store and the backend edge function
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic API client — extends the existing standardized interface for frontend-to-backend communication
-    *   `[ ]`   Boundary: receives typed payload from store → sends `POST { action: 'resumePausedNsfJobs', payload }` to `dialectic-service` → returns typed response
-  *   `[ ]`   `deps`
-    *   `[ ]`   Node 7 (resume handler) — the `dialectic-service` edge function must have the `resumePausedNsfJobs` routing case before this API method can successfully call it
-    *   `[ ]`   `this.apiClient.post` — existing infrastructure for sending typed POST requests to edge functions
-    *   `[ ]`   `DialecticServiceActionPayload` — existing generic type used by `apiClient.post` for the request body shape
-    *   `[ ]`   No reverse dependency introduced — this is consumed by the dialectic store (Node 11)
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `apiClient.post<TResponse, TPayload>(edgeFunctionName, payload)` — the standard method for calling edge functions, used by `getAllStageProgress` (line 659), `generateContributions` (line 521), and all other API methods
-    *   `[ ]`   `DialecticApiClient` interface (dialectic.types.ts line 1043) — the interface that the store depends on
-  *   `[ ]`   interface/`dialectic.types.ts`
-    *   `[ ]`   `ResumePausedNsfJobsPayload` — `{ sessionId: string; stageSlug: string; iterationNumber: number }` — matches the backend `ResumePausedNsfJobsPayload` in `dialectic.interface.ts`
-    *   `[ ]`   `ResumePausedNsfJobsResponse` — `{ resumedCount: number }` — matches the backend response
-    *   `[ ]`   Add `resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>;` to the `DialecticApiClient` interface (line 1043)
-  *   `[ ]`   unit/`dialectic.api.test.ts`
-    *   `[ ]`   Test: `resumePausedNsfJobs` calls `apiClient.post` with `action: 'resumePausedNsfJobs'` and the correct payload
-    *   `[ ]`   Test: on success, returns `{ data: { resumedCount: N }, status: 200 }`
-    *   `[ ]`   Test: on error, returns `{ error: { message: '...' }, status: 500 }`
-  *   `[ ]`   `construction`
-    *   `[ ]`   No new class — method added to existing `DialecticApiClientImpl`
-  *   `[ ]`   `dialectic.api.ts`
-    *   `[ ]`   Add import of `ResumePausedNsfJobsPayload`, `ResumePausedNsfJobsResponse` from `@paynless/types` (add to existing import block)
-    *   `[ ]`   Add method following the `getAllStageProgress` pattern (line 656):
-      *   `[ ]`   `async resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>`
-      *   `[ ]`   Body: `const response = await this.apiClient.post<ResumePausedNsfJobsResponse, DialecticServiceActionPayload>('dialectic-service', { action: 'resumePausedNsfJobs', payload });`
-      *   `[ ]`   Error logging and return following the `getAllStageProgress` pattern
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: port (API client)
-    *   `[ ]`   Dependencies face inward: depends on `apiClient` (infra) for HTTP communication
-    *   `[ ]`   Provides face outward: consumed by the dialectic store (Node 11) via `api.dialectic().resumePausedNsfJobs(payload)`
-  *   `[ ]`   `requirements`
-    *   `[ ]`   The API method must follow the same pattern as `getAllStageProgress` and `generateContributions` — `POST` to `dialectic-service` with `action` and `payload`
-    *   `[ ]`   The frontend payload and response types must mirror the backend types
-    *   `[ ]`   The method must be declared on the `DialecticApiClient` interface so the store depends on the interface, not the implementation
-    *   `[ ]`   Error handling must follow the existing pattern — log errors, return `ApiResponse` with error details
+*   `[✅]`   [API] packages/api/src/`dialectic.api` **Add `resumePausedNsfJobs` method to `DialecticApiClient` interface and implementation**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add a `resumePausedNsfJobs` method to the `DialecticApiClient` interface in `packages/types/src/dialectic.types.ts` and the `DialecticApiClientImpl` class in `packages/api/src/dialectic.api.ts` so that the frontend store can call the backend resume handler through the established API layer
+    *   `[✅]`   Add `ResumePausedNsfJobsPayload` and `ResumePausedNsfJobsResponse` frontend types
+  *   `[✅]`   `role`
+    *   `[✅]`   Port — API layer bridge between the frontend store and the backend edge function
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic API client — extends the existing standardized interface for frontend-to-backend communication
+    *   `[✅]`   Boundary: receives typed payload from store → sends `POST { action: 'resumePausedNsfJobs', payload }` to `dialectic-service` → returns typed response
+  *   `[✅]`   `deps`
+    *   `[✅]`   Node 7 (resume handler) — the `dialectic-service` edge function must have the `resumePausedNsfJobs` routing case before this API method can successfully call it
+    *   `[✅]`   `this.apiClient.post` — existing infrastructure for sending typed POST requests to edge functions
+    *   `[✅]`   `DialecticServiceActionPayload` — existing generic type used by `apiClient.post` for the request body shape
+    *   `[✅]`   No reverse dependency introduced — this is consumed by the dialectic store (Node 11)
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `apiClient.post<TResponse, TPayload>(edgeFunctionName, payload)` — the standard method for calling edge functions, used by `getAllStageProgress` (line 659), `generateContributions` (line 521), and all other API methods
+    *   `[✅]`   `DialecticApiClient` interface (dialectic.types.ts line 1043) — the interface that the store depends on
+  *   `[✅]`   interface/`dialectic.types.ts`
+    *   `[✅]`   `ResumePausedNsfJobsPayload` — `{ sessionId: string; stageSlug: string; iterationNumber: number }` — matches the backend `ResumePausedNsfJobsPayload` in `dialectic.interface.ts`
+    *   `[✅]`   `ResumePausedNsfJobsResponse` — `{ resumedCount: number }` — matches the backend response
+    *   `[✅]`   Add `resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>;` to the `DialecticApiClient` interface (line 1043)
+  *   `[✅]`   unit/`dialectic.api.test.ts`
+    *   `[✅]`   Test: `resumePausedNsfJobs` calls `apiClient.post` with `action: 'resumePausedNsfJobs'` and the correct payload
+    *   `[✅]`   Test: on success, returns `{ data: { resumedCount: N }, status: 200 }`
+    *   `[✅]`   Test: on error, returns `{ error: { message: '...' }, status: 500 }`
+  *   `[✅]`   `construction`
+    *   `[✅]`   No new class — method added to existing `DialecticApiClientImpl`
+  *   `[✅]`   `dialectic.api.ts`
+    *   `[✅]`   Add import of `ResumePausedNsfJobsPayload`, `ResumePausedNsfJobsResponse` from `@paynless/types` (add to existing import block)
+    *   `[✅]`   Add method following the `getAllStageProgress` pattern (line 656):
+      *   `[✅]`   `async resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>`
+      *   `[✅]`   Body: `const response = await this.apiClient.post<ResumePausedNsfJobsResponse, DialecticServiceActionPayload>('dialectic-service', { action: 'resumePausedNsfJobs', payload });`
+      *   `[✅]`   Error logging and return following the `getAllStageProgress` pattern
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: port (API client)
+    *   `[✅]`   Dependencies face inward: depends on `apiClient` (infra) for HTTP communication
+    *   `[✅]`   Provides face outward: consumed by the dialectic store (Node 11) via `api.dialectic().resumePausedNsfJobs(payload)`
+  *   `[✅]`   `requirements`
+    *   `[✅]`   The API method must follow the same pattern as `getAllStageProgress` and `generateContributions` — `POST` to `dialectic-service` with `action` and `payload`
+    *   `[✅]`   The frontend payload and response types must mirror the backend types
+    *   `[✅]`   The method must be declared on the `DialecticApiClient` interface so the store depends on the interface, not the implementation
+    *   `[✅]`   Error handling must follow the existing pattern — log errors, return `ApiResponse` with error details
   *   `[ ]`   **Commit** `feat(be,api) dialectic-service resume handler, routing, and API client method for NSF job resume`
     *   `[ ]`   New handler: `resumePausedNsfJobs.ts` in `dialectic-service/`
     *   `[ ]`   Modified: `dialectic.interface.ts` — new payload, response, and action types

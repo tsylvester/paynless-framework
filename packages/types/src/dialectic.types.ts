@@ -1074,6 +1074,7 @@ export interface DialecticApiClient {
   getStageDocumentFeedback(payload: GetStageDocumentFeedbackPayload): Promise<ApiResponse<StageDocumentFeedback[]>>;
   submitStageDocumentFeedback(payload: SubmitStageDocumentFeedbackPayload): Promise<ApiResponse<{ success: boolean }>>;
   listStageDocuments(payload: ListStageDocumentsPayload): Promise<ApiResponse<ListStageDocumentsResponse>>;
+  resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
 }
 
 
@@ -1147,6 +1148,16 @@ export interface StageProgressEntry {
 export interface GetAllStageProgressResponse {
   dagProgress: DagProgressDto;
   stages: StageProgressEntry[];
+}
+
+export interface ResumePausedNsfJobsPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+}
+
+export interface ResumePausedNsfJobsResponse {
+  resumedCount: number;
 }
 
 export interface ContributionContentSignedUrlResponse {
@@ -1282,6 +1293,9 @@ export type DialecticServiceActionPayload = {
 } | {
   action: 'getAllStageProgress';
   payload: GetAllStageProgressPayload;
+} | {
+  action: 'resumePausedNsfJobs';
+  payload: ResumePausedNsfJobsPayload;
 }
 
 export interface DialecticServiceResponsePayload {
