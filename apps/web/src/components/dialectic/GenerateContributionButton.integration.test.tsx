@@ -15,13 +15,14 @@ import type {
   UnifiedProjectStatus,
   SelectedModels,
 } from '@paynless/types';
-import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
+import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR, STAGE_BALANCE_THRESHOLDS } from '@paynless/types';
 import { GenerateContributionButton } from './GenerateContributionButton';
 import {
   initialDialecticStateValues,
   initializeMockDialecticState,
   setDialecticStateValues,
   getDialecticStoreState,
+  mockResumePausedNsfJobs,
 } from '../../mocks/dialecticStore.mock';
 import { selectActiveChatWalletInfo } from '../../mocks/walletStore.mock';
 
@@ -192,14 +193,110 @@ describe('GenerateContributionButton integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     initializeMockDialecticState();
+    const thesisMinBalance = STAGE_BALANCE_THRESHOLDS['thesis'];
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
       status: 'ok',
       type: 'personal',
       walletId: 'wallet-1',
       orgId: null,
-      balance: '100',
+      balance: String(thesisMinBalance),
       isLoadingPrimaryWallet: false,
     });
+  });
+
+  it('render with progress stageStatus paused_nsf and low balance → button shows "Add Funds to Resume" and is disabled', () => {
+    const steps: DialecticStageRecipeStep[] = [
+      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+    ];
+    const recipe = buildRecipe(steps, []);
+    const progress = buildProgressSnapshot({ plan: 'paused_nsf' }, {});
+    setStoreForButton(recipe, progress);
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'wallet-1',
+      orgId: null,
+      balance: '0',
+      isLoadingPrimaryWallet: false,
+    });
+
+    render(<GenerateContributionButton />);
+
+    const button = screen.getByRole('button', { name: /Add Funds to Resume/i });
+    expect(button).toBeInTheDocument();
+    expect(button).toBeDisabled();
+  });
+
+  it('render with progress stageStatus paused_nsf and sufficient balance → button shows "Resume Proposal" and is enabled → click → resumePausedNsfJobs called with correct params', async () => {
+    const steps: DialecticStageRecipeStep[] = [
+      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+    ];
+    const recipe = buildRecipe(steps, []);
+    const progress = buildProgressSnapshot({ plan: 'paused_nsf' }, {});
+    setStoreForButton(recipe, progress);
+    const thesisMinBalance = STAGE_BALANCE_THRESHOLDS['thesis'];
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'wallet-1',
+      orgId: null,
+      balance: String(thesisMinBalance),
+      isLoadingPrimaryWallet: false,
+    });
+
+    const user = userEvent.setup();
+    render(<GenerateContributionButton />);
+
+    const button = screen.getByRole('button', { name: /Resume Proposal/i });
+    expect(button).toBeInTheDocument();
+    expect(button).toBeEnabled();
+
+    await user.click(button);
+
+    expect(mockResumePausedNsfJobs).toHaveBeenCalledTimes(1);
+    expect(mockResumePausedNsfJobs).toHaveBeenCalledWith({
+      sessionId,
+      stageSlug,
+      iterationNumber,
+    });
+  });
+
+  it('render with progress showing no paused_nsf and low balance → button shows "Insufficient Balance" and is disabled', () => {
+    const steps: DialecticStageRecipeStep[] = [
+      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+    ];
+    const recipe = buildRecipe(steps, []);
+    const progress = buildProgressSnapshot({ plan: 'not_started' }, {});
+    setStoreForButton(recipe, progress);
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'wallet-1',
+      orgId: null,
+      balance: '0',
+      isLoadingPrimaryWallet: false,
+    });
+
+    render(<GenerateContributionButton />);
+
+    const button = screen.getByRole('button', { name: /Insufficient Balance/i });
+    expect(button).toBeInTheDocument();
+    expect(button).toBeDisabled();
+  });
+
+  it('render with progress showing no paused_nsf and sufficient balance → button shows "Generate Proposal" and is enabled', () => {
+    const steps: DialecticStageRecipeStep[] = [
+      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+    ];
+    const recipe = buildRecipe(steps, []);
+    const progress = buildProgressSnapshot({ plan: 'not_started' }, {});
+    setStoreForButton(recipe, progress);
+
+    render(<GenerateContributionButton />);
+
+    const button = screen.getByRole('button', { name: /Generate Proposal/i });
+    expect(button).toBeInTheDocument();
+    expect(button).toBeEnabled();
   });
 
   it('click generate → dialog opens → store gets stageRunProgress update with rendered document → dialog auto-closes', async () => {

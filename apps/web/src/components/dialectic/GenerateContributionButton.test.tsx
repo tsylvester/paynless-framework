@@ -17,6 +17,7 @@ import type {
   SelectedModels,
   StageDAGProgressDialogProps,
 } from '@paynless/types';
+import { STAGE_BALANCE_THRESHOLDS } from '@paynless/types';
 
 // Import utilities from the actual mock file
 import { 
@@ -233,13 +234,14 @@ describe('GenerateContributionButton', () => {
     vi.mocked(toast.success).mockClear();
     vi.mocked(toast.error).mockClear();
 
-    // Set a default "wallet ready" state for all tests; individual tests can override
+    // Set a default "wallet ready" state with balance meeting thesis threshold; individual tests can override
+    const thesisMinBalance = STAGE_BALANCE_THRESHOLDS['thesis'];
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
       status: 'ok',
       type: 'personal',
       walletId: 'default-wallet-id',
       orgId: null,
-      balance: '1000',
+      balance: String(thesisMinBalance),
       isLoadingPrimaryWallet: false,
     });
   });
@@ -574,12 +576,13 @@ describe('GenerateContributionButton', () => {
 
   it('passes walletId in payload to generateContributions when wallet is ready', async () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const thesisMinBalance = STAGE_BALANCE_THRESHOLDS['thesis'];
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
       status: 'ok',
       type: 'personal',
       walletId: 'wallet-123',
       orgId: null,
-      balance: '100',
+      balance: String(thesisMinBalance),
       isLoadingPrimaryWallet: false,
     });
 
@@ -601,6 +604,7 @@ describe('GenerateContributionButton', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
 
     // Selector returns ok only when ctx === 'personal'; otherwise loading
+    const thesisMinBalance = STAGE_BALANCE_THRESHOLDS['thesis'];
     vi.mocked(selectActiveChatWalletInfo).mockImplementation((state, ctx) => {
       void state;
       if (ctx === 'personal') {
@@ -609,7 +613,7 @@ describe('GenerateContributionButton', () => {
           type: 'personal',
           walletId: 'personal-wallet',
           orgId: null,
-          balance: '100',
+          balance: String(thesisMinBalance),
           isLoadingPrimaryWallet: false,
         };
       }

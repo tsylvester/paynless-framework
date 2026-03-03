@@ -119,6 +119,7 @@ export const selectCurrentProcessTemplate = (state: DialecticStateValues): Diale
 export const selectOverlay = vi.fn();
 export const setFocusedStageDocument = vi.fn();
 export const submitStageDocumentFeedback = vi.fn();
+export const _handleContributionGenerationPausedNsf = vi.fn();
 
 export const selectFocusedStageDocument = (
   state: DialecticStateValues,
@@ -184,6 +185,7 @@ const defaultUnifiedProgress: UnifiedProjectProgress = {
   currentStage: null,
   projectStatus: 'not_started',
   stageDetails: [],
+  hydrationReady: false,
 };
 
 export const selectUnifiedProjectProgress: Mock<
@@ -313,6 +315,8 @@ export const selectStageProgressSummary = (
 // Define and export the mock for the new thunk
 export const mockActivateProjectAndSessionContextForDeepLink = vi.fn().mockResolvedValue(undefined);
 export const mockFetchAndSetCurrentSessionDetails = vi.fn().mockResolvedValue(undefined);
+
+export const mockResumePausedNsfJobs = vi.fn().mockResolvedValue({ data: { resumedCount: 0 }, error: undefined, status: 200 });
 
 // Mock Session (used in some action mocks)
 const mockSession: DialecticSession = {
@@ -516,6 +520,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       resetSelectedModels: vi.fn(() => set({ selectedModels: [] })),
       fetchInitialPromptContent: vi.fn().mockResolvedValue(undefined),
       generateContributions: vi.fn().mockResolvedValue({ data: { message: 'ok', contributions: [] }, error: undefined, status: 200 }),
+      resumePausedNsfJobs: mockResumePausedNsfJobs,
       submitStageResponses: vi.fn().mockResolvedValue({ data: { message: 'ok', userFeedbackStoragePath: '/path', nextStageSeedPromptStoragePath: '/path', updatedSession: mockSession }, error: undefined, status: 200 }),
       setSubmittingStageResponses: vi.fn((isLoading: boolean) => set({ isSubmittingStageResponses: isLoading })),
       setSubmitStageResponsesError: vi.fn((error: ApiError | null) => set({ submitStageResponsesError: error })),
@@ -633,6 +638,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       _handleContributionGenerationContinued: vi.fn(),
       _handleProgressUpdate: vi.fn(),
       _handleContributionGenerationComplete: vi.fn(),
+      _handleContributionGenerationPausedNsf: vi.fn(),
       _handlePlannerStarted: vi.fn(),
       _handlePlannerCompleted: vi.fn(),
       _handleDocumentStarted: vi.fn(),

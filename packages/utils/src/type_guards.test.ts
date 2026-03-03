@@ -150,6 +150,7 @@ describe('isChatContextPreferences', () => {
 describe('isDialecticLifecycleEventType', () => {
     it('should return true for valid dialectic event types', () => {
         expect(isDialecticLifecycleEventType('contribution_generation_started')).toBe(true);
+        expect(isDialecticLifecycleEventType('contribution_generation_paused_nsf')).toBe(true);
         expect(isDialecticLifecycleEventType('dialectic_contribution_received')).toBe(true);
         expect(isDialecticLifecycleEventType('planner_started')).toBe(true);
         expect(isDialecticLifecycleEventType('document_started')).toBe(true);

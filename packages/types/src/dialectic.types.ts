@@ -35,6 +35,15 @@ export function getDisplayName(slug: string): string {
   return DialecticStages[slug];
 }
 
+/** Per-stage minimum wallet balance (token count) required before generating. Values from product owner. */
+export const STAGE_BALANCE_THRESHOLDS: Record<string, number> = {
+  thesis: 200_000,
+  antithesis: 400_000,
+  synthesis: 1_000_000,
+  parenthesis: 250_000,
+  paralysis: 250_000,
+};
+
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
 
 export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'] & {
@@ -565,14 +574,14 @@ export interface JobProgressEntry {
 export type StepJobProgress = Record<string, JobProgressEntry>;
 
 export interface StageRunProgressSnapshot {
-  stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed'>;
+  stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed' | 'paused_nsf'>;
   /** Keyed by StageRunDocumentKey (documentKey:modelId). One document key can have N descriptors. */
   documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
   jobProgress: StepJobProgress;
   progress: { completedSteps: number; totalSteps: number; failedSteps: number };
 }
 
-export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
+export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed' | 'paused_nsf';
 
 export interface StepProgressDetail {
   stepKey: string;
@@ -713,6 +722,8 @@ export interface DialecticActions {
 
   // Action for generating contributions
   generateContributions: (payload: GenerateContributionsPayload) => Promise<ApiResponse<GenerateContributionsResponse>>;
+
+  resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload) => Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
   
   // Actions for submitting stage responses and preparing next seed (plan 1.2.Y / 1.5.6.4)
   setSubmittingStageResponses: (isSubmitting: boolean) => void;
@@ -768,6 +779,7 @@ export interface DialecticActions {
   _handleRenderStarted: (event: RenderStartedPayload) => void;
   _handleRenderCompleted: (event: RenderCompletedPayload) => void;
   _handleJobFailed: (event: JobFailedPayload) => void;
+  _handleContributionGenerationPausedNsf: (event: ContributionGenerationPausedNsfPayload) => void;
   
   
   reset: () => void;
@@ -832,6 +844,7 @@ export type DialecticNotificationTypes =
   | 'contribution_generation_failed'
   | 'contribution_generation_complete'
   | 'contribution_generation_continued'
+  | 'contribution_generation_paused_nsf'
   | 'planner_started'
   | 'planner_completed'
   | 'document_started'
@@ -908,6 +921,14 @@ export interface ContributionGenerationCompletePayload {
   type: 'contribution_generation_complete';
   sessionId: string;
   projectId: string;
+}
+
+export interface ContributionGenerationPausedNsfPayload {
+  type: 'contribution_generation_paused_nsf';
+  sessionId: string;
+  projectId: string;
+  stageSlug: string;
+  iterationNumber: number;
 }
 
 export interface DocumentLifecyclePayload {
@@ -1009,6 +1030,7 @@ ContributionGenerationStartedPayload
 | ContributionGenerationFailedPayload 
 | ContributionGenerationContinuedPayload
 | ContributionGenerationCompletePayload
+| ContributionGenerationPausedNsfPayload
 | PlannerStartedPayload
 | PlannerCompletedPayload
 | DocumentStartedPayload

@@ -212,7 +212,8 @@ export function isDialecticLifecycleEventType(x: unknown): x is DialecticNotific
       || suffix === 'retrying'
       || suffix === 'failed'
       || suffix === 'complete'
-      || suffix === 'continued';
+      || suffix === 'continued'
+      || suffix === 'paused_nsf';
   }
 
   const dcPrefix = 'dialectic_contribution_';

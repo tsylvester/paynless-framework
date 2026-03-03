@@ -754,6 +754,87 @@ describe('notificationStore', () => {
                 expect(addNotificationSpy).not.toHaveBeenCalled();
                 addNotificationSpy.mockRestore();
             });
+
+            it('should route contribution_generation_paused_nsf events to the dialectic store with correct payload', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                const pausedNsfNotification: Notification = {
+                    ...baseDocumentEvent,
+                    id: 'uuid-paused-nsf',
+                    type: 'contribution_generation_paused_nsf',
+                    data: {
+                        type: 'contribution_generation_paused_nsf',
+                        sessionId: 'x',
+                        projectId: 'y',
+                        stageSlug: 'thesis',
+                        iterationNumber: 1,
+                    },
+                };
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(pausedNsfNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'contribution_generation_paused_nsf',
+                    sessionId: 'x',
+                    projectId: 'y',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                });
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
+            it('should not forward contribution_generation_paused_nsf when data is missing sessionId, stageSlug, or iterationNumber', () => {
+                mockHandleDialecticLifecycleEvent.mockClear();
+                const notification: Notification = {
+                    ...baseDocumentEvent,
+                    id: 'uuid-paused-nsf-invalid',
+                    type: 'contribution_generation_paused_nsf',
+                    data: {
+                        type: 'contribution_generation_paused_nsf',
+                        projectId: 'y',
+                        stageSlug: 'thesis',
+                        // missing sessionId and iterationNumber
+                    },
+                };
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(notification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).not.toHaveBeenCalled();
+                expect(mockLogger.warn).toHaveBeenCalledWith(
+                    "[NotificationStore] Internal event 'contribution_generation_paused_nsf' received, but its data payload did not match the expected format.",
+                    { data: notification.data }
+                );
+            });
+
+            it('should not forward contribution_generation_paused_nsf when data is missing projectId', () => {
+                mockHandleDialecticLifecycleEvent.mockClear();
+                const notification: Notification = {
+                    ...baseDocumentEvent,
+                    id: 'uuid-paused-nsf-no-project',
+                    type: 'contribution_generation_paused_nsf',
+                    data: {
+                        type: 'contribution_generation_paused_nsf',
+                        sessionId: 'x',
+                        stageSlug: 'thesis',
+                        iterationNumber: 1,
+                        // missing projectId
+                    },
+                };
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(notification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).not.toHaveBeenCalled();
+                expect(mockLogger.warn).toHaveBeenCalledWith(
+                    "[NotificationStore] Internal event 'contribution_generation_paused_nsf' received, but its data payload did not match the expected format.",
+                    { data: notification.data }
+                );
+            });
         });
 
         describe('markNotificationRead', () => {

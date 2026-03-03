@@ -33,6 +33,8 @@ import type {
     ListStageDocumentsResponse,
     GetAllStageProgressPayload,
     GetAllStageProgressResponse,
+    ResumePausedNsfJobsPayload,
+    ResumePausedNsfJobsResponse,
 } from '@paynless/types'; 
 
 // --- Dialectic Client Mock Setup ---
@@ -64,6 +66,7 @@ export type MockDialecticApiClient = {
     submitStageDocumentFeedback: ReturnType<typeof vi.fn<[payload: SubmitStageDocumentFeedbackPayload], Promise<ApiResponse<{ success: boolean }>>>>;
     listStageDocuments: ReturnType<typeof vi.fn<[payload: ListStageDocumentsPayload], Promise<ApiResponse<ListStageDocumentsResponse>>>>;
     getAllStageProgress: ReturnType<typeof vi.fn<[payload: GetAllStageProgressPayload], Promise<ApiResponse<GetAllStageProgressResponse>>>>;
+    resumePausedNsfJobs: ReturnType<typeof vi.fn<[payload: ResumePausedNsfJobsPayload], Promise<ApiResponse<ResumePausedNsfJobsResponse>>>>;
 };
 
 // Factory function to create a new mock instance
@@ -96,6 +99,7 @@ export function createMockDialecticClient(): MockDialecticApiClient {
         submitStageDocumentFeedback: vi.fn<[SubmitStageDocumentFeedbackPayload], Promise<ApiResponse<{ success: boolean }>>>(),
         listStageDocuments: vi.fn<[ListStageDocumentsPayload], Promise<ApiResponse<ListStageDocumentsResponse>>>(),
         getAllStageProgress: vi.fn<[GetAllStageProgressPayload], Promise<ApiResponse<GetAllStageProgressResponse>>>(),
+        resumePausedNsfJobs: vi.fn<[ResumePausedNsfJobsPayload], Promise<ApiResponse<ResumePausedNsfJobsResponse>>>(),
     };
 }
 

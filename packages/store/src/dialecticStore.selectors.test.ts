@@ -609,6 +609,7 @@ describe('Dialectic Store Selectors', () => {
                         outputs_required: [{ document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' }],
                     },
                 ],
+                edges: [],
             };
             const jobProgressEntry: JobProgressEntry = {
                 totalJobs: 3,
@@ -884,6 +885,7 @@ describe('Dialectic Store Selectors', () => {
             ],
           },
         ],
+        edges: [],
       };
 
       const progressState: DialecticStateValues = {
@@ -993,6 +995,7 @@ describe('Dialectic Store Selectors', () => {
             ],
           },
         ],
+        edges: [],
       };
 
       const progressState: DialecticStateValues = {
@@ -1103,7 +1106,8 @@ describe('Dialectic Store Selectors', () => {
             ],
           },
         ],
-      };
+        edges: [],
+        };
 
       const progressState: DialecticStateValues = {
         ...initialDialecticStateValues,
@@ -1236,6 +1240,7 @@ describe('Dialectic Store Selectors', () => {
             ],
           },
         ],
+        edges: [],
       };
 
       const progressState: DialecticStateValues = {
@@ -1558,6 +1563,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
     const requiredSeedPromptRecipe: DialecticStageRecipe = {
         stageSlug,
         instanceId: 'instance-1',
+        edges: [],
         steps: [
             {
                 id: 'step-seed',
@@ -2189,6 +2195,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
         const recipeRequiringDocument: DialecticStageRecipe = {
             stageSlug: targetStageSlug,
             instanceId: 'instance-2',
+            edges: [],
             steps: [
                 {
                     id: 'step-require-doc',

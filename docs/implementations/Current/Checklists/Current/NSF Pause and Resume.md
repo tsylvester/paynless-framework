@@ -415,307 +415,700 @@ A user cannot begin a set of work when they have NSF. If a user reaches NSF whil
     *   `[✅]`   The frontend payload and response types must mirror the backend types
     *   `[✅]`   The method must be declared on the `DialecticApiClient` interface so the store depends on the interface, not the implementation
     *   `[✅]`   Error handling must follow the existing pattern — log errors, return `ApiResponse` with error details
-  *   `[ ]`   **Commit** `feat(be,api) dialectic-service resume handler, routing, and API client method for NSF job resume`
-    *   `[ ]`   New handler: `resumePausedNsfJobs.ts` in `dialectic-service/`
-    *   `[ ]`   Modified: `dialectic.interface.ts` — new payload, response, and action types
-    *   `[ ]`   Modified: `index.ts` — routing case, `ActionHandlers` interface, `defaultHandlers` entry
-    *   `[ ]`   New frontend types: `ResumePausedNsfJobsPayload`, `ResumePausedNsfJobsResponse` in `dialectic.types.ts`
-    *   `[ ]`   Modified: `DialecticApiClient` interface and `DialecticApiClientImpl` — new `resumePausedNsfJobs` method
+  *   `[✅]`   **Commit** `feat(be,api) dialectic-service resume handler, routing, and API client method for NSF job resume`
+    *   `[✅]`   New handler: `resumePausedNsfJobs.ts` in `dialectic-service/`
+    *   `[✅]`   Modified: `dialectic.interface.ts` — new payload, response, and action types
+    *   `[✅]`   Modified: `index.ts` — routing case, `ActionHandlers` interface, `defaultHandlers` entry
+    *   `[✅]`   New frontend types: `ResumePausedNsfJobsPayload`, `ResumePausedNsfJobsResponse` in `dialectic.types.ts`
+    *   `[✅]`   Modified: `DialecticApiClient` interface and `DialecticApiClientImpl` — new `resumePausedNsfJobs` method
 
 ### Node 9
-*   `[ ]`   [FE] packages/utils/src/`type_guards` **Recognize `contribution_generation_paused_nsf` in `isDialecticLifecycleEventType` and add event type string to frontend types**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Add `'contribution_generation_paused_nsf'` to the `DialecticNotificationTypes` string union in `packages/types/src/dialectic.types.ts` so the frontend type system recognizes the new event
-    *   `[ ]`   Update `isDialecticLifecycleEventType` in `packages/utils/src/type_guards.ts` to accept the `'paused_nsf'` suffix on the `contribution_generation_` prefix, so notifications arriving via Realtime are correctly identified and routed to the lifecycle event pipeline in `notificationStore`
-  *   `[ ]`   `role`
-    *   `[ ]`   Port — type validation gate between incoming Realtime notifications and the dialectic lifecycle event handler
-  *   `[ ]`   `module`
-    *   `[ ]`   Type guard — `isDialecticLifecycleEventType` is the gatekeeper at `notificationStore.ts` line 70; if it returns `false`, the notification is silently dropped and never reaches `_handleDialecticLifecycleEvent`
-    *   `[ ]`   Boundary: validates a string is a known dialectic event type
-  *   `[ ]`   `deps`
-    *   `[ ]`   `DialecticNotificationTypes` from `@paynless/types` — the string union that the guard narrows to; must include `'contribution_generation_paused_nsf'` before the guard can match it
-    *   `[ ]`   No reverse dependency introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   The guard function is pure — no injected dependencies, no side effects
-    *   `[ ]`   Confirm no concrete imports from higher or lateral layers
-  *   `[ ]`   interface/`dialectic.types.ts`
-    *   `[ ]`   Add `'contribution_generation_paused_nsf'` to the `DialecticNotificationTypes` string union (line 827) — this is the type-level representation of the event string
-  *   `[ ]`   interface/tests/`type_guards.test.ts`
-    *   `[ ]`   Contract: `isDialecticLifecycleEventType('contribution_generation_paused_nsf')` must return `true` — add to the existing `'should return true for valid dialectic event types'` test block (line 151)
-  *   `[ ]`   unit/`type_guards.test.ts`
-    *   `[ ]`   Test: `isDialecticLifecycleEventType('contribution_generation_paused_nsf')` returns `true` (add assertion to existing valid-types test at line 151)
-  *   `[ ]`   `construction`
-    *   `[ ]`   No new functions or objects — modification to an existing guard function
-  *   `[ ]`   `type_guards.ts`
-    *   `[ ]`   In the `contribution_generation_` prefix suffix check (line 210–215), add `|| suffix === 'paused_nsf'` to the return expression
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: port (shared utility)
-    *   `[ ]`   Dependencies face inward: depends on `DialecticNotificationTypes` (type-only, domain)
-    *   `[ ]`   Provides face outward: consumed by `notificationStore.ts` (Node 10) at line 70 to gate lifecycle event routing
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `isDialecticLifecycleEventType('contribution_generation_paused_nsf')` must return `true` so the notification store routes the event
-    *   `[ ]`   All existing type guard tests must continue to pass — no regression on existing event types
-    *   `[ ]`   `DialecticNotificationTypes` must include the new string literal so TypeScript's type narrowing works correctly downstream
+*   `[✅]`   [FE] packages/utils/src/`type_guards` **Recognize `contribution_generation_paused_nsf` in `isDialecticLifecycleEventType` and add event type string to frontend types**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add `'contribution_generation_paused_nsf'` to the `DialecticNotificationTypes` string union in `packages/types/src/dialectic.types.ts` so the frontend type system recognizes the new event
+    *   `[✅]`   Update `isDialecticLifecycleEventType` in `packages/utils/src/type_guards.ts` to accept the `'paused_nsf'` suffix on the `contribution_generation_` prefix, so notifications arriving via Realtime are correctly identified and routed to the lifecycle event pipeline in `notificationStore`
+  *   `[✅]`   `role`
+    *   `[✅]`   Port — type validation gate between incoming Realtime notifications and the dialectic lifecycle event handler
+  *   `[✅]`   `module`
+    *   `[✅]`   Type guard — `isDialecticLifecycleEventType` is the gatekeeper at `notificationStore.ts` line 70; if it returns `false`, the notification is silently dropped and never reaches `_handleDialecticLifecycleEvent`
+    *   `[✅]`   Boundary: validates a string is a known dialectic event type
+  *   `[✅]`   `deps`
+    *   `[✅]`   `DialecticNotificationTypes` from `@paynless/types` — the string union that the guard narrows to; must include `'contribution_generation_paused_nsf'` before the guard can match it
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   The guard function is pure — no injected dependencies, no side effects
+    *   `[✅]`   Confirm no concrete imports from higher or lateral layers
+  *   `[✅]`   interface/`dialectic.types.ts`
+    *   `[✅]`   Add `'contribution_generation_paused_nsf'` to the `DialecticNotificationTypes` string union (line 827) — this is the type-level representation of the event string
+  *   `[✅]`   interface/tests/`type_guards.test.ts`
+    *   `[✅]`   Contract: `isDialecticLifecycleEventType('contribution_generation_paused_nsf')` must return `true` — add to the existing `'should return true for valid dialectic event types'` test block (line 151)
+  *   `[✅]`   unit/`type_guards.test.ts`
+    *   `[✅]`   Test: `isDialecticLifecycleEventType('contribution_generation_paused_nsf')` returns `true` (add assertion to existing valid-types test at line 151)
+  *   `[✅]`   `construction`
+    *   `[✅]`   No new functions or objects — modification to an existing guard function
+  *   `[✅]`   `type_guards.ts`
+    *   `[✅]`   In the `contribution_generation_` prefix suffix check (line 210–215), add `|| suffix === 'paused_nsf'` to the return expression
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: port (shared utility)
+    *   `[✅]`   Dependencies face inward: depends on `DialecticNotificationTypes` (type-only, domain)
+    *   `[✅]`   Provides face outward: consumed by `notificationStore.ts` (Node 10) at line 70 to gate lifecycle event routing
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `isDialecticLifecycleEventType('contribution_generation_paused_nsf')` must return `true` so the notification store routes the event
+    *   `[✅]`   All existing type guard tests must continue to pass — no regression on existing event types
+    *   `[✅]`   `DialecticNotificationTypes` must include the new string literal so TypeScript's type narrowing works correctly downstream
 
 ### Node 10
-*   `[ ]`   [STORE] packages/store/src/`notificationStore` **Route `contribution_generation_paused_nsf` notifications to dialectic store lifecycle handler**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Add a `ContributionGenerationPausedNsfPayload` interface to the frontend type system in `packages/types/src/dialectic.types.ts` and add it to the `DialecticLifecycleEvent` union so the notification store can construct and forward the typed event
-    *   `[ ]`   Add a `case 'contribution_generation_paused_nsf'` to the payload extraction switch in `handleIncomingNotification` (line 289) so that incoming NSF pause notifications are extracted, validated, and forwarded to `_handleDialecticLifecycleEvent`
-  *   `[ ]`   `role`
-    *   `[ ]`   Application — notification routing bridge between Supabase Realtime and the dialectic store
-  *   `[ ]`   `module`
-    *   `[ ]`   Notification store — the `handleIncomingNotification` method's switch statement (lines 289–529) performs per-type payload extraction for all lifecycle events
-    *   `[ ]`   Boundary: receives a `Notification` from Realtime, extracts typed fields from `notification.data`, constructs a `DialecticLifecycleEvent`, forwards to `_handleDialecticLifecycleEvent`
-  *   `[ ]`   `deps`
-    *   `[ ]`   Node 9 (type guard) — `isDialecticLifecycleEventType` must recognize `'contribution_generation_paused_nsf'` before this case is reachable; `DialecticNotificationTypes` must include the string
-    *   `[ ]`   `DialecticLifecycleEvent` from `@paynless/types` — must include `ContributionGenerationPausedNsfPayload` so the constructed event can be assigned to `eventPayload`
-    *   `[ ]`   `useDialecticStore.getState()._handleDialecticLifecycleEvent` — existing consumer, no change
-    *   `[ ]`   No reverse dependency introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `notification.data`: `NotificationData | null` — the raw JSONB payload from the notifications table row
-    *   `[ ]`   `notification.type`: `string` — already narrowed to `DialecticNotificationTypes` by the `isDialecticLifecycleEventType` check at line 70
-    *   `[ ]`   Confirm no concrete imports from higher or lateral layers
-  *   `[ ]`   interface/`dialectic.types.ts`
-    *   `[ ]`   `ContributionGenerationPausedNsfPayload` — `{ type: 'contribution_generation_paused_nsf'; sessionId: string; projectId: string; stageSlug: string; iterationNumber: number }` — mirrors the backend payload shape from `notification.service.types.ts` (Node 2), follows the existing frontend payload pattern (e.g., `ContributionGenerationCompletePayload` at line 906)
-    *   `[ ]`   Add `ContributionGenerationPausedNsfPayload` to the `DialecticLifecycleEvent` union (line 1004)
-  *   `[ ]`   unit/`notificationStore.test.ts` (or existing test file for notification store)
-    *   `[ ]`   Test: when `handleIncomingNotification` receives a notification with `type: 'contribution_generation_paused_nsf'`, `is_internal_event: true`, and `data: { type: 'contribution_generation_paused_nsf', sessionId: 'x', projectId: 'y', stageSlug: 'thesis', iterationNumber: 1 }`, the dialectic store's `_handleDialecticLifecycleEvent` is called with a correctly shaped `ContributionGenerationPausedNsfPayload`
-    *   `[ ]`   Test: when `data` is missing `sessionId`, `stageSlug`, or `iterationNumber`, the event is NOT forwarded — `eventPayload` remains `null` and a warning is logged
-    *   `[ ]`   Test: when `data` is missing `projectId`, the event is NOT forwarded
-  *   `[ ]`   `construction`
-    *   `[ ]`   No new functions or components — modification to the existing `switch (type)` block in `handleIncomingNotification`
-  *   `[ ]`   `notificationStore.ts`
-    *   `[ ]`   Add `case 'contribution_generation_paused_nsf':` to the switch block (after the `contribution_generation_complete` case at line 325), with field extraction and validation following the existing pattern:
-      *   `[ ]`   Guard: `typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string' && typeof data['stageSlug'] === 'string' && typeof data['iterationNumber'] === 'number'`
-      *   `[ ]`   Construct payload: `eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'], stageSlug: data['stageSlug'], iterationNumber: data['iterationNumber'] }`
-      *   `[ ]`   `break;`
-    *   `[ ]`   The existing forwarding logic at line 531 (`if (eventPayload) { useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventPayload); }`) handles the rest — no additional changes needed
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: application (state management / notification routing)
-    *   `[ ]`   Dependencies face inward: consumes `DialecticLifecycleEvent` (types), `isDialecticLifecycleEventType` (port)
-    *   `[ ]`   Provides face outward: forwards constructed events to `dialecticStore._handleDialecticLifecycleEvent` (Node 11)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `contribution_generation_paused_nsf` notifications must be extracted, validated, and forwarded to `_handleDialecticLifecycleEvent` using the same pattern as all other lifecycle events
-    *   `[ ]`   Invalid payloads (missing required fields) must be logged and dropped — not forwarded with partial data
-    *   `[ ]`   All existing notification routing must continue to work — no regression on existing event types
-    *   `[ ]`   The `ContributionGenerationPausedNsfPayload` frontend type must mirror the backend type shape from `notification.service.types.ts`
+*   `[✅]`   [STORE] packages/store/src/`notificationStore` **Route `contribution_generation_paused_nsf` notifications to dialectic store lifecycle handler**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add a `ContributionGenerationPausedNsfPayload` interface to the frontend type system in `packages/types/src/dialectic.types.ts` and add it to the `DialecticLifecycleEvent` union so the notification store can construct and forward the typed event
+    *   `[✅]`   Add a `case 'contribution_generation_paused_nsf'` to the payload extraction switch in `handleIncomingNotification` (line 289) so that incoming NSF pause notifications are extracted, validated, and forwarded to `_handleDialecticLifecycleEvent`
+  *   `[✅]`   `role`
+    *   `[✅]`   Application — notification routing bridge between Supabase Realtime and the dialectic store
+  *   `[✅]`   `module`
+    *   `[✅]`   Notification store — the `handleIncomingNotification` method's switch statement (lines 289–529) performs per-type payload extraction for all lifecycle events
+    *   `[✅]`   Boundary: receives a `Notification` from Realtime, extracts typed fields from `notification.data`, constructs a `DialecticLifecycleEvent`, forwards to `_handleDialecticLifecycleEvent`
+  *   `[✅]`   `deps`
+    *   `[✅]`   Node 9 (type guard) — `isDialecticLifecycleEventType` must recognize `'contribution_generation_paused_nsf'` before this case is reachable; `DialecticNotificationTypes` must include the string
+    *   `[✅]`   `DialecticLifecycleEvent` from `@paynless/types` — must include `ContributionGenerationPausedNsfPayload` so the constructed event can be assigned to `eventPayload`
+    *   `[✅]`   `useDialecticStore.getState()._handleDialecticLifecycleEvent` — existing consumer, no change
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `notification.data`: `NotificationData | null` — the raw JSONB payload from the notifications table row
+    *   `[✅]`   `notification.type`: `string` — already narrowed to `DialecticNotificationTypes` by the `isDialecticLifecycleEventType` check at line 70
+    *   `[✅]`   Confirm no concrete imports from higher or lateral layers
+  *   `[✅]`   interface/`dialectic.types.ts`
+    *   `[✅]`   `ContributionGenerationPausedNsfPayload` — `{ type: 'contribution_generation_paused_nsf'; sessionId: string; projectId: string; stageSlug: string; iterationNumber: number }` — mirrors the backend payload shape from `notification.service.types.ts` (Node 2), follows the existing frontend payload pattern (e.g., `ContributionGenerationCompletePayload` at line 906)
+    *   `[✅]`   Add `ContributionGenerationPausedNsfPayload` to the `DialecticLifecycleEvent` union (line 1004)
+  *   `[✅]`   unit/`notificationStore.test.ts` (or existing test file for notification store)
+    *   `[✅]`   Test: when `handleIncomingNotification` receives a notification with `type: 'contribution_generation_paused_nsf'`, `is_internal_event: true`, and `data: { type: 'contribution_generation_paused_nsf', sessionId: 'x', projectId: 'y', stageSlug: 'thesis', iterationNumber: 1 }`, the dialectic store's `_handleDialecticLifecycleEvent` is called with a correctly shaped `ContributionGenerationPausedNsfPayload`
+    *   `[✅]`   Test: when `data` is missing `sessionId`, `stageSlug`, or `iterationNumber`, the event is NOT forwarded — `eventPayload` remains `null` and a warning is logged
+    *   `[✅]`   Test: when `data` is missing `projectId`, the event is NOT forwarded
+  *   `[✅]`   `construction`
+    *   `[✅]`   No new functions or components — modification to the existing `switch (type)` block in `handleIncomingNotification`
+  *   `[✅]`   `notificationStore.ts`
+    *   `[✅]`   Add `case 'contribution_generation_paused_nsf':` to the switch block (after the `contribution_generation_complete` case at line 325), with field extraction and validation following the existing pattern:
+      *   `[✅]`   Guard: `typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string' && typeof data['stageSlug'] === 'string' && typeof data['iterationNumber'] === 'number'`
+      *   `[✅]`   Construct payload: `eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'], stageSlug: data['stageSlug'], iterationNumber: data['iterationNumber'] }`
+      *   `[✅]`   `break;`
+    *   `[✅]`   The existing forwarding logic at line 531 (`if (eventPayload) { useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventPayload); }`) handles the rest — no additional changes needed
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: application (state management / notification routing)
+    *   `[✅]`   Dependencies face inward: consumes `DialecticLifecycleEvent` (types), `isDialecticLifecycleEventType` (port)
+    *   `[✅]`   Provides face outward: forwards constructed events to `dialecticStore._handleDialecticLifecycleEvent` (Node 11)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `contribution_generation_paused_nsf` notifications must be extracted, validated, and forwarded to `_handleDialecticLifecycleEvent` using the same pattern as all other lifecycle events
+    *   `[✅]`   Invalid payloads (missing required fields) must be logged and dropped — not forwarded with partial data
+    *   `[✅]`   All existing notification routing must continue to work — no regression on existing event types
+    *   `[✅]`   The `ContributionGenerationPausedNsfPayload` frontend type must mirror the backend type shape from `notification.service.types.ts`
 
 ### Node 11
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore` **NSF pause notification handler, resume action via API layer, and progress re-hydration trigger**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Handle the `contribution_generation_paused_nsf` lifecycle event (routed by `notificationStore` via Node 10) by clearing `generatingSessions` for the affected session and triggering `hydrateAllStageProgress` so the progress tracker durably reflects the `paused_nsf` state — NO ephemeral in-memory `nsfPausedContext` state
-    *   `[ ]`   Provide a `resumePausedNsfJobs` action that calls `api.dialectic().resumePausedNsfJobs(payload)` (Node 8) and triggers `hydrateAllStageProgress` on success so the progress tracker refreshes to show resumed jobs
-    *   `[ ]`   The source of truth for whether jobs are paused is the progress tracker (via `selectUnifiedProjectProgress` → `paused_nsf` stage/step status from Nodes 5–6), NOT ephemeral store state
-  *   `[ ]`   `role`
-    *   `[ ]`   State management — bridges backend notifications to progress re-hydration and provides the resume action via the API layer
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic store — extends the existing `_handleDialecticLifecycleEvent` router and adds the resume action
-    *   `[ ]`   Boundary: receives lifecycle event → clears generating state → re-hydrates progress; receives resume action from UI → calls API → re-hydrates progress
-  *   `[ ]`   `deps`
-    *   `[ ]`   Node 8 (API layer) — `api.dialectic().resumePausedNsfJobs` must exist so the store can call the backend through the API layer
-    *   `[ ]`   Node 10 (notificationStore) — must route the notification and forward the constructed `ContributionGenerationPausedNsfPayload` to `_handleDialecticLifecycleEvent`
-    *   `[ ]`   Existing `_handleDialecticLifecycleEvent` router (line 1481) — must add a new `case` for `'contribution_generation_paused_nsf'`
-    *   `[ ]`   Existing `generatingSessions` state — the pause handler must clear the affected session so the button transitions from "Generating..." to the paused state
-    *   `[ ]`   Existing `hydrateAllStageProgress` action (line 2707) — called to refresh progress data from the backend after pause/resume events
-    *   `[ ]`   `api` — the API client instance, available via the store's existing infrastructure pattern (same as `generateContributions` at line 1906)
-    *   `[ ]`   No reverse dependency — the store is consumed by UI components and selectors (Nodes 12–14)
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `api.dialectic().resumePausedNsfJobs`: from `@paynless/api` via the store's existing API infrastructure (same pattern as `api.dialectic().generateContributions` at line 1906)
-    *   `[ ]`   `ContributionGenerationPausedNsfPayload`: from `@paynless/types` (added in Node 10)
-    *   `[ ]`   `hydrateAllStageProgress`: existing store action at line 2707
-    *   `[ ]`   Existing store state shape: `generatingSessions`, `contributionGenerationStatus`, `generatingForStageSlug`
-  *   `[ ]`   interface/`dialectic.types.ts`
-    *   `[ ]`   Add `resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload) => Promise<ApiResponse<ResumePausedNsfJobsResponse>>` to `DialecticActions` (line 665) — uses the same `ResumePausedNsfJobsPayload` and `ResumePausedNsfJobsResponse` types defined in Node 8
-    *   `[ ]`   Add `_handleContributionGenerationPausedNsf: (event: ContributionGenerationPausedNsfPayload) => void` to `DialecticActions` (line 755, alongside existing private handlers)
-    *   `[ ]`   NO `nsfPausedContext` in `DialecticStateValues` — the paused state is read from the progress tracker via selectors (Node 12)
-  *   `[ ]`   unit/`dialecticStore.nsf.test.ts`
-    *   `[ ]`   Test: `_handleContributionGenerationPausedNsf` clears the affected session from `generatingSessions` and resets `contributionGenerationStatus` and `generatingForStageSlug`
-    *   `[ ]`   Test: `_handleContributionGenerationPausedNsf` calls `hydrateAllStageProgress` with `{ sessionId, iterationNumber, userId, projectId }` from the payload so the progress tracker refreshes to show `paused_nsf`
-    *   `[ ]`   Test: `_handleDialecticLifecycleEvent` routes `type: 'contribution_generation_paused_nsf'` to `_handleContributionGenerationPausedNsf`
-    *   `[ ]`   Test: `resumePausedNsfJobs` calls `api.dialectic().resumePausedNsfJobs(payload)` with correct `{ sessionId, stageSlug, iterationNumber }`
-    *   `[ ]`   Test: on successful API response, `resumePausedNsfJobs` calls `hydrateAllStageProgress` to refresh progress data
-    *   `[ ]`   Test: on API failure, `resumePausedNsfJobs` shows a toast error and does NOT call `hydrateAllStageProgress`
-    *   `[ ]`   Test: on API failure, user can retry — the action does not leave the store in a broken state
-  *   `[ ]`   `construction`
-    *   `[ ]`   `_handleContributionGenerationPausedNsf` is a private handler method, not directly callable from outside the store
-    *   `[ ]`   `resumePausedNsfJobs` is a public action exposed on the store interface
-    *   `[ ]`   NO `nsfPausedContext` state variable — paused state is derived from the progress tracker
-  *   `[ ]`   `dialecticStore.ts`
-    *   `[ ]`   Add `_handleContributionGenerationPausedNsf(payload: ContributionGenerationPausedNsfPayload)` handler:
-      *   `[ ]`   Clear the session from `generatingSessions`: `set(state => { state.contributionGenerationStatus = 'idle'; state.generatingForStageSlug = null; })`
-      *   `[ ]`   Trigger progress re-hydration: `get().hydrateAllStageProgress({ sessionId: payload.sessionId, iterationNumber: payload.iterationNumber, userId: get().currentProjectDetail?.user_id ?? '', projectId: payload.projectId })`
-    *   `[ ]`   Add routing case in `_handleDialecticLifecycleEvent` (line 1484): when `type` is `'contribution_generation_paused_nsf'`, call `handlers._handleContributionGenerationPausedNsf(payload)`
-    *   `[ ]`   Add `resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload)` action:
-      *   `[ ]`   Call `api.dialectic().resumePausedNsfJobs(payload)` — NOT `supabase.rpc()` directly
-      *   `[ ]`   On success: call `get().hydrateAllStageProgress(...)` to refresh progress, return the API response
-      *   `[ ]`   On failure: show toast error, return the API error response — progress tracker still shows `paused_nsf` so the user can retry
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: application (state management)
-    *   `[ ]`   Dependencies face inward: consumes API layer (`api.dialectic()`) and types — does NOT depend on Supabase client directly for resume
-    *   `[ ]`   Provides face outward: consumed by UI components (Nodes 13–14) and selectors (Node 12)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `contribution_generation_paused_nsf` lifecycle event must be routed to the correct handler via the existing `_handleDialecticLifecycleEvent` switch
-    *   `[ ]`   The pause handler must clear `generatingSessions` / `contributionGenerationStatus` / `generatingForStageSlug` so the UI button exits "Generating..." state
-    *   `[ ]`   The pause handler must trigger `hydrateAllStageProgress` so the progress tracker fetches fresh data showing `paused_nsf` step/stage statuses — this is the durable hydration mechanism
-    *   `[ ]`   The resume action must call through the API layer: store → `api.dialectic().resumePausedNsfJobs()` → edge function → RPC — NOT directly to `supabase.rpc()`
-    *   `[ ]`   After successful resume, `hydrateAllStageProgress` must be called to refresh progress — the progress tracker is the source of truth for UI state transitions
-    *   `[ ]`   Resume failure must leave the progress tracker unchanged (still showing `paused_nsf`) — the user can retry
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore` **NSF pause notification handler, resume action via API layer, and progress re-hydration trigger**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Handle the `contribution_generation_paused_nsf` lifecycle event (routed by `notificationStore` via Node 10) by clearing `generatingSessions` for the affected session and triggering `hydrateAllStageProgress` so the progress tracker durably reflects the `paused_nsf` state — NO ephemeral in-memory `nsfPausedContext` state
+    *   `[✅]`   Provide a `resumePausedNsfJobs` action that calls `api.dialectic().resumePausedNsfJobs(payload)` (Node 8) and triggers `hydrateAllStageProgress` on success so the progress tracker refreshes to show resumed jobs
+    *   `[✅]`   The source of truth for whether jobs are paused is the progress tracker (via `selectUnifiedProjectProgress` → `paused_nsf` stage/step status from Nodes 5–6), NOT ephemeral store state
+  *   `[✅]`   `role`
+    *   `[✅]`   State management — bridges backend notifications to progress re-hydration and provides the resume action via the API layer
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic store — extends the existing `_handleDialecticLifecycleEvent` router and adds the resume action
+    *   `[✅]`   Boundary: receives lifecycle event → clears generating state → re-hydrates progress; receives resume action from UI → calls API → re-hydrates progress
+  *   `[✅]`   `deps`
+    *   `[✅]`   Node 8 (API layer) — `api.dialectic().resumePausedNsfJobs` must exist so the store can call the backend through the API layer
+    *   `[✅]`   Node 10 (notificationStore) — must route the notification and forward the constructed `ContributionGenerationPausedNsfPayload` to `_handleDialecticLifecycleEvent`
+    *   `[✅]`   Existing `_handleDialecticLifecycleEvent` router (line 1481) — must add a new `case` for `'contribution_generation_paused_nsf'`
+    *   `[✅]`   Existing `generatingSessions` state — the pause handler must clear the affected session so the button transitions from "Generating..." to the paused state
+    *   `[✅]`   Existing `hydrateAllStageProgress` action (line 2707) — called to refresh progress data from the backend after pause/resume events
+    *   `[✅]`   `api` — the API client instance, available via the store's existing infrastructure pattern (same as `generateContributions` at line 1906)
+    *   `[✅]`   No reverse dependency — the store is consumed by UI components and selectors (Nodes 12–14)
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `api.dialectic().resumePausedNsfJobs`: from `@paynless/api` via the store's existing API infrastructure (same pattern as `api.dialectic().generateContributions` at line 1906)
+    *   `[✅]`   `ContributionGenerationPausedNsfPayload`: from `@paynless/types` (added in Node 10)
+    *   `[✅]`   `hydrateAllStageProgress`: existing store action at line 2707
+    *   `[✅]`   Existing store state shape: `generatingSessions`, `contributionGenerationStatus`, `generatingForStageSlug`
+  *   `[✅]`   interface/`dialectic.types.ts`
+    *   `[✅]`   Add `resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload) => Promise<ApiResponse<ResumePausedNsfJobsResponse>>` to `DialecticActions` (line 665) — uses the same `ResumePausedNsfJobsPayload` and `ResumePausedNsfJobsResponse` types defined in Node 8
+    *   `[✅]`   Add `_handleContributionGenerationPausedNsf: (event: ContributionGenerationPausedNsfPayload) => void` to `DialecticActions` (line 755, alongside existing private handlers)
+    *   `[✅]`   NO `nsfPausedContext` in `DialecticStateValues` — the paused state is read from the progress tracker via selectors (Node 12)
+  *   `[✅]`   unit/`dialecticStore.nsf.test.ts`
+    *   `[✅]`   Test: `_handleContributionGenerationPausedNsf` clears the affected session from `generatingSessions` and resets `contributionGenerationStatus` and `generatingForStageSlug`
+    *   `[✅]`   Test: `_handleContributionGenerationPausedNsf` calls `hydrateAllStageProgress` with `{ sessionId, iterationNumber, userId, projectId }` from the payload so the progress tracker refreshes to show `paused_nsf`
+    *   `[✅]`   Test: `_handleDialecticLifecycleEvent` routes `type: 'contribution_generation_paused_nsf'` to `_handleContributionGenerationPausedNsf`
+    *   `[✅]`   Test: `resumePausedNsfJobs` calls `api.dialectic().resumePausedNsfJobs(payload)` with correct `{ sessionId, stageSlug, iterationNumber }`
+    *   `[✅]`   Test: on successful API response, `resumePausedNsfJobs` calls `hydrateAllStageProgress` to refresh progress data
+    *   `[✅]`   Test: on API failure, `resumePausedNsfJobs` shows a toast error and does NOT call `hydrateAllStageProgress`
+    *   `[✅]`   Test: on API failure, user can retry — the action does not leave the store in a broken state
+  *   `[✅]`   `construction`
+    *   `[✅]`   `_handleContributionGenerationPausedNsf` is a private handler method, not directly callable from outside the store
+    *   `[✅]`   `resumePausedNsfJobs` is a public action exposed on the store interface
+    *   `[✅]`   NO `nsfPausedContext` state variable — paused state is derived from the progress tracker
+  *   `[✅]`   `dialecticStore.ts`
+    *   `[✅]`   Add `_handleContributionGenerationPausedNsf(payload: ContributionGenerationPausedNsfPayload)` handler:
+      *   `[✅]`   Clear the session from `generatingSessions`: `set(state => { state.contributionGenerationStatus = 'idle'; state.generatingForStageSlug = null; })`
+      *   `[✅]`   Trigger progress re-hydration: `get().hydrateAllStageProgress({ sessionId: payload.sessionId, iterationNumber: payload.iterationNumber, userId: get().currentProjectDetail?.user_id ?? '', projectId: payload.projectId })`
+    *   `[✅]`   Add routing case in `_handleDialecticLifecycleEvent` (line 1484): when `type` is `'contribution_generation_paused_nsf'`, call `handlers._handleContributionGenerationPausedNsf(payload)`
+    *   `[✅]`   Add `resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload)` action:
+      *   `[✅]`   Call `api.dialectic().resumePausedNsfJobs(payload)` — NOT `supabase.rpc()` directly
+      *   `[✅]`   On success: call `get().hydrateAllStageProgress(...)` to refresh progress, return the API response
+      *   `[✅]`   On failure: show toast error, return the API error response — progress tracker still shows `paused_nsf` so the user can retry
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: application (state management)
+    *   `[✅]`   Dependencies face inward: consumes API layer (`api.dialectic()`) and types — does NOT depend on Supabase client directly for resume
+    *   `[✅]`   Provides face outward: consumed by UI components (Nodes 13–14) and selectors (Node 12)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `contribution_generation_paused_nsf` lifecycle event must be routed to the correct handler via the existing `_handleDialecticLifecycleEvent` switch
+    *   `[✅]`   The pause handler must clear `generatingSessions` / `contributionGenerationStatus` / `generatingForStageSlug` so the UI button exits "Generating..." state
+    *   `[✅]`   The pause handler must trigger `hydrateAllStageProgress` so the progress tracker fetches fresh data showing `paused_nsf` step/stage statuses — this is the durable hydration mechanism
+    *   `[✅]`   The resume action must call through the API layer: store → `api.dialectic().resumePausedNsfJobs()` → edge function → RPC — NOT directly to `supabase.rpc()`
+    *   `[✅]`   After successful resume, `hydrateAllStageProgress` must be called to refresh progress — the progress tracker is the source of truth for UI state transitions
+    *   `[✅]`   Resume failure must leave the progress tracker unchanged (still showing `paused_nsf`) — the user can retry
 
 ### Node 12
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore.selectors` **Handle `paused_nsf` in `selectUnifiedProjectProgress` and add `paused_nsf` to `UnifiedProjectStatus`**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Add `'paused_nsf'` to the `UnifiedProjectStatus` type union in `packages/types/src/dialectic.types.ts` so the frontend progress display system can represent paused steps and stages
-    *   `[ ]`   Update the step status mapping in `selectUnifiedProjectProgress` (line 870) to map `'paused_nsf'` raw step status to `'paused_nsf'` `UnifiedProjectStatus` — currently unmapped statuses default to `'not_started'`, which would silently hide the paused state
-    *   `[ ]`   Update the stage status derivation in `selectUnifiedProjectProgress` to set `stageStatus` to `'paused_nsf'` when any step is paused and none have failed
-  *   `[ ]`   `role`
-    *   `[ ]`   Application — progress data transformation layer between raw backend progress and UI display
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic store selectors — extends `selectUnifiedProjectProgress` to handle the new status
-    *   `[ ]`   Boundary: receives raw step statuses from hydrated progress → transforms to `UnifiedProjectStatus` values for UI consumption
-  *   `[ ]`   `deps`
-    *   `[ ]`   Nodes 5–6 (backend progress) — the backend must return `paused_nsf` as a valid step/stage status before the selector encounters it
-    *   `[ ]`   Node 11 (store) — `hydrateAllStageProgress` must have been triggered so the store contains fresh progress data with `paused_nsf` statuses
-    *   `[ ]`   `UnifiedProjectStatus` type (dialectic.types.ts line 575) — must be extended with `'paused_nsf'`
-    *   `[ ]`   No reverse dependency introduced — consumed by UI components (Nodes 13–14)
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `selectUnifiedProjectProgress` (line 803): the main progress selector that transforms raw step statuses into `UnifiedProjectStatus` values
-    *   `[ ]`   Step status mapping (line 870): `raw === 'failed' ? 'failed' : raw === 'completed' ? 'completed' : raw === 'in_progress' || raw === 'waiting_for_children' ? 'in_progress' : 'not_started'` — does not handle `paused_nsf`
-    *   `[ ]`   Stage status derivation (line 876): `if (stepStatus === 'failed') stageStatus = 'failed';` — does not handle `paused_nsf`
-  *   `[ ]`   interface/`dialectic.types.ts`
-    *   `[ ]`   Add `'paused_nsf'` to `UnifiedProjectStatus` (line 575): `'not_started' | 'in_progress' | 'completed' | 'failed' | 'paused_nsf'`
-  *   `[ ]`   unit/`dialecticStore.selectors.test.ts`
-    *   `[ ]`   Test: when a step's raw status is `'paused_nsf'`, `selectUnifiedProjectProgress` maps it to `UnifiedProjectStatus` `'paused_nsf'`
-    *   `[ ]`   Test: when any step is `'paused_nsf'` and none are `'failed'`, the stage status is `'paused_nsf'`
-    *   `[ ]`   Test: when a step is `'paused_nsf'` and another is `'failed'`, the stage status is `'failed'` (failure takes priority)
-    *   `[ ]`   Test: existing `'in_progress'`, `'completed'`, `'failed'`, `'not_started'` step/stage mappings continue to work unchanged
-  *   `[ ]`   `construction`
-    *   `[ ]`   No new functions — modifications to existing `selectUnifiedProjectProgress` selector
-  *   `[ ]`   `dialecticStore.selectors.ts`
-    *   `[ ]`   Update step status mapping (line 870): add `raw === 'paused_nsf' ? 'paused_nsf'` to the ternary chain — `raw === 'failed' ? 'failed' : raw === 'completed' ? 'completed' : raw === 'in_progress' || raw === 'waiting_for_children' ? 'in_progress' : raw === 'paused_nsf' ? 'paused_nsf' : 'not_started'`
-    *   `[ ]`   Update stage status derivation (line 876): add `paused_nsf` check after `failed`: `if (stepStatus === 'failed') stageStatus = 'failed'; else if (stepStatus === 'paused_nsf' && stageStatus !== 'failed') stageStatus = 'paused_nsf';`
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: application (state derivation)
-    *   `[ ]`   Dependencies face inward: consumes hydrated progress data (store state) and `UnifiedProjectStatus` type (domain)
-    *   `[ ]`   Provides face outward: consumed by `StageDAGProgressDialog` (Node 13) and `GenerateContributionButton` (Node 14) via the selector
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `paused_nsf` raw step status must map to `paused_nsf` `UnifiedProjectStatus` — NOT `not_started`, NOT `failed`
-    *   `[ ]`   `paused_nsf` stage status must be set when any step is paused and no steps have failed
-    *   `[ ]`   `failed` still takes priority over `paused_nsf` at the stage level
-    *   `[ ]`   All existing status mappings must be preserved
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore.selectors` **Handle `paused_nsf` in `selectUnifiedProjectProgress` and add `paused_nsf` to `UnifiedProjectStatus`**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add `'paused_nsf'` to the `UnifiedProjectStatus` type union in `packages/types/src/dialectic.types.ts` so the frontend progress display system can represent paused steps and stages
+    *   `[✅]`   Update the step status mapping in `selectUnifiedProjectProgress` (line 870) to map `'paused_nsf'` raw step status to `'paused_nsf'` `UnifiedProjectStatus` — currently unmapped statuses default to `'not_started'`, which would silently hide the paused state
+    *   `[✅]`   Update the stage status derivation in `selectUnifiedProjectProgress` to set `stageStatus` to `'paused_nsf'` when any step is paused and none have failed
+  *   `[✅]`   `role`
+    *   `[✅]`   Application — progress data transformation layer between raw backend progress and UI display
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic store selectors — extends `selectUnifiedProjectProgress` to handle the new status
+    *   `[✅]`   Boundary: receives raw step statuses from hydrated progress → transforms to `UnifiedProjectStatus` values for UI consumption
+  *   `[✅]`   `deps`
+    *   `[✅]`   Nodes 5–6 (backend progress) — the backend must return `paused_nsf` as a valid step/stage status before the selector encounters it
+    *   `[✅]`   Node 11 (store) — `hydrateAllStageProgress` must have been triggered so the store contains fresh progress data with `paused_nsf` statuses
+    *   `[✅]`   `UnifiedProjectStatus` type (dialectic.types.ts line 575) — must be extended with `'paused_nsf'`
+    *   `[✅]`   No reverse dependency introduced — consumed by UI components (Nodes 13–14)
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `selectUnifiedProjectProgress` (line 803): the main progress selector that transforms raw step statuses into `UnifiedProjectStatus` values
+    *   `[✅]`   Step status mapping (line 870): `raw === 'failed' ? 'failed' : raw === 'completed' ? 'completed' : raw === 'in_progress' || raw === 'waiting_for_children' ? 'in_progress' : 'not_started'` — does not handle `paused_nsf`
+    *   `[✅]`   Stage status derivation (line 876): `if (stepStatus === 'failed') stageStatus = 'failed';` — does not handle `paused_nsf`
+  *   `[✅]`   interface/`dialectic.types.ts`
+    *   `[✅]`   Add `'paused_nsf'` to `UnifiedProjectStatus` (line 575): `'not_started' | 'in_progress' | 'completed' | 'failed' | 'paused_nsf'`
+  *   `[✅]`   unit/`dialecticStore.selectors.test.ts`
+    *   `[✅]`   Test: when a step's raw status is `'paused_nsf'`, `selectUnifiedProjectProgress` maps it to `UnifiedProjectStatus` `'paused_nsf'`
+    *   `[✅]`   Test: when any step is `'paused_nsf'` and none are `'failed'`, the stage status is `'paused_nsf'`
+    *   `[✅]`   Test: when a step is `'paused_nsf'` and another is `'failed'`, the stage status is `'failed'` (failure takes priority)
+    *   `[✅]`   Test: existing `'in_progress'`, `'completed'`, `'failed'`, `'not_started'` step/stage mappings continue to work unchanged
+  *   `[✅]`   `construction`
+    *   `[✅]`   No new functions — modifications to existing `selectUnifiedProjectProgress` selector
+  *   `[✅]`   `dialecticStore.selectors.ts`
+    *   `[✅]`   Update step status mapping (line 870): add `raw === 'paused_nsf' ? 'paused_nsf'` to the ternary chain — `raw === 'failed' ? 'failed' : raw === 'completed' ? 'completed' : raw === 'in_progress' || raw === 'waiting_for_children' ? 'in_progress' : raw === 'paused_nsf' ? 'paused_nsf' : 'not_started'`
+    *   `[✅]`   Update stage status derivation (line 876): add `paused_nsf` check after `failed`: `if (stepStatus === 'failed') stageStatus = 'failed'; else if (stepStatus === 'paused_nsf' && stageStatus !== 'failed') stageStatus = 'paused_nsf';`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: application (state derivation)
+    *   `[✅]`   Dependencies face inward: consumes hydrated progress data (store state) and `UnifiedProjectStatus` type (domain)
+    *   `[✅]`   Provides face outward: consumed by `StageDAGProgressDialog` (Node 13) and `GenerateContributionButton` (Node 14) via the selector
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `paused_nsf` raw step status must map to `paused_nsf` `UnifiedProjectStatus` — NOT `not_started`, NOT `failed`
+    *   `[✅]`   `paused_nsf` stage status must be set when any step is paused and no steps have failed
+    *   `[✅]`   `failed` still takes priority over `paused_nsf` at the stage level
+    *   `[✅]`   All existing status mappings must be preserved
 
 ### Node 13
-*   `[ ]`   [UI] apps/web/src/components/dialectic/`StageDAGProgressDialog` **Add `paused_nsf` color to `STATUS_FILL` map**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Add a `paused_nsf` entry to the `STATUS_FILL` record (line 15) so that DAG nodes with `paused_nsf` status render with a distinct visual color instead of falling back to `undefined`
-  *   `[ ]`   `role`
-    *   `[ ]`   UI / presentation — visual mapping for the new status in the DAG progress display
-  *   `[ ]`   `module`
-    *   `[ ]`   DAG progress dialog — extends the status-to-color mapping
-    *   `[ ]`   Boundary: receives `UnifiedProjectStatus` per step → maps to fill color for SVG rendering
-  *   `[ ]`   `deps`
-    *   `[ ]`   Node 12 (selectors) — `selectUnifiedProjectProgress` must return `paused_nsf` as a valid `UnifiedProjectStatus` for steps/stages before this color is used
-    *   `[ ]`   `UnifiedProjectStatus` from `@paynless/types` — must include `'paused_nsf'` (added in Node 12)
-    *   `[ ]`   No reverse dependency — this is a leaf UI component
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `STATUS_FILL` record (line 15): `Record<UnifiedProjectStatus, string>` — maps each status to a hex color
-    *   `[ ]`   Once `UnifiedProjectStatus` includes `paused_nsf`, TypeScript will enforce a compile error until `STATUS_FILL` has a matching entry
-  *   `[ ]`   unit/`StageDAGProgressDialog.test.ts`
-    *   `[ ]`   Test: when a step has status `paused_nsf`, the rendered DAG node uses the `paused_nsf` fill color (amber/orange: `'#f97316'`)
-  *   `[ ]`   `construction`
-    *   `[ ]`   No new components — single-line addition to the existing `STATUS_FILL` record
-  *   `[ ]`   `StageDAGProgressDialog.tsx`
-    *   `[ ]`   Add `paused_nsf: '#f97316',` to the `STATUS_FILL` record (line 15, after `failed: '#ef4444'`) — orange to visually distinguish from yellow (`in_progress`) and red (`failed`), signaling "attention needed but recoverable"
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Layer: UI / presentation
-    *   `[ ]`   Dependencies face inward: consumes `UnifiedProjectStatus` type
-    *   `[ ]`   No outward-facing provides — leaf component
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `paused_nsf` must have a distinct color from `in_progress` (yellow) and `failed` (red) — orange (`#f97316`) conveys "needs attention but recoverable"
-    *   `[ ]`   TypeScript must compile without error — `STATUS_FILL` must be exhaustive for all `UnifiedProjectStatus` values
+*   `[✅]`   [UI] apps/web/src/components/dialectic/`StageDAGProgressDialog` **Add `paused_nsf` color to `STATUS_FILL` map**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add a `paused_nsf` entry to the `STATUS_FILL` record (line 15) so that DAG nodes with `paused_nsf` status render with a distinct visual color instead of falling back to `undefined`
+  *   `[✅]`   `role`
+    *   `[✅]`   UI / presentation — visual mapping for the new status in the DAG progress display
+  *   `[✅]`   `module`
+    *   `[✅]`   DAG progress dialog — extends the status-to-color mapping
+    *   `[✅]`   Boundary: receives `UnifiedProjectStatus` per step → maps to fill color for SVG rendering
+  *   `[✅]`   `deps`
+    *   `[✅]`   Node 12 (selectors) — `selectUnifiedProjectProgress` must return `paused_nsf` as a valid `UnifiedProjectStatus` for steps/stages before this color is used
+    *   `[✅]`   `UnifiedProjectStatus` from `@paynless/types` — must include `'paused_nsf'` (added in Node 12)
+    *   `[✅]`   No reverse dependency — this is a leaf UI component
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `STATUS_FILL` record (line 15): `Record<UnifiedProjectStatus, string>` — maps each status to a hex color
+    *   `[✅]`   Once `UnifiedProjectStatus` includes `paused_nsf`, TypeScript will enforce a compile error until `STATUS_FILL` has a matching entry
+  *   `[✅]`   unit/`StageDAGProgressDialog.test.ts`
+    *   `[✅]`   Test: when a step has status `paused_nsf`, the rendered DAG node uses the `paused_nsf` fill color (amber/orange: `'#f97316'`)
+  *   `[✅]`   `construction`
+    *   `[✅]`   No new components — single-line addition to the existing `STATUS_FILL` record
+  *   `[✅]`   `StageDAGProgressDialog.tsx`
+    *   `[✅]`   Add `paused_nsf: '#f97316',` to the `STATUS_FILL` record (line 15, after `failed: '#ef4444'`) — orange to visually distinguish from yellow (`in_progress`) and red (`failed`), signaling "attention needed but recoverable"
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: UI / presentation
+    *   `[✅]`   Dependencies face inward: consumes `UnifiedProjectStatus` type
+    *   `[✅]`   No outward-facing provides — leaf component
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `paused_nsf` must have a distinct color from `in_progress` (yellow) and `failed` (red) — orange (`#f97316`) conveys "needs attention but recoverable"
+    *   `[✅]`   TypeScript must compile without error — `STATUS_FILL` must be exhaustive for all `UnifiedProjectStatus` values
 
 ### Node 14
-*   `[ ]`   [UI] apps/web/src/components/dialectic/`GenerateContributionButton` **Per-stage balance threshold gate, paused-NSF detection from progress tracker, and resume-via-same-button UX**
+*   `[✅]`   [UI] apps/web/src/components/dialectic/`GenerateContributionButton` **Per-stage balance threshold gate, paused-NSF detection from progress tracker, and resume-via-same-button UX**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add a per-stage balance threshold check that disables the Generate button when the user's wallet balance is below the minimum required for the active stage — this is the UX gate, the first line of defense against NSF
+    *   `[✅]`   Detect when jobs are paused due to NSF by reading `stageStatus === 'paused_nsf'` from `selectUnifiedProjectProgress` (Node 12) — NOT from ephemeral in-memory state — and adjust the button to show "Add Funds to Resume" (disabled, balance too low) or "Resume {stageName}" (enabled, balance sufficient)
+    *   `[✅]`   When the user clicks "Resume", call `resumePausedNsfJobs` from the store (Node 11) instead of `generateContributions` — same button, different action based on progress-derived context
+  *   `[✅]`   `role`
+    *   `[✅]`   UI / presentation — the user-facing control for initiating, gating, and resuming dialectic generation
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic contribution generation UI — extends the existing `GenerateContributionButton` component
+    *   `[✅]`   Boundary: reads wallet balance + progress selector → renders button with appropriate text/disabled state → dispatches generate or resume action on click
+  *   `[✅]`   `deps`
+    *   `[✅]`   Node 11 (store) — `resumePausedNsfJobs` action must exist on the dialectic store
+    *   `[✅]`   Node 12 (selectors) — `selectUnifiedProjectProgress` must return `stageStatus: 'paused_nsf'` for paused stages — this is the source of truth for detecting the paused state
+    *   `[✅]`   `selectUnifiedProjectProgress` from `@paynless/store` (already imported at line 3) — provides `stagesDetail[].stageStatus` which may be `'paused_nsf'`
+    *   `[✅]`   `useWalletStore` / `selectActiveChatWalletInfo` (already imported, line 9–10) — the `activeWalletInfo` object must include a `balance` field. **Discovery potential**: verify the wallet info type includes a numeric `balance` property; if not, this requires a type extension in the wallet store which would be a separate node.
+    *   `[✅]`   `useDialecticStore` (already imported) — used for `resumePausedNsfJobs` action
+    *   `[✅]`   `@paynless/types` — for `getDisplayName` (already imported) and `STAGE_BALANCE_THRESHOLDS` constant (new)
+    *   `[✅]`   No reverse dependency — this is a leaf UI component
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `activeWalletInfo.balance`: `number` — current wallet token balance
+    *   `[✅]`   `selectUnifiedProjectProgress(state)`: returns `UnifiedProjectProgress` — `stagesDetail[].stageStatus` is checked for `'paused_nsf'` to detect the paused state for the active stage
+    *   `[✅]`   `resumePausedNsfJobs`: action from dialectic store (Node 11)
+    *   `[✅]`   `activeStage.slug`: `string` — used to look up threshold and match against progress data
+    *   `[✅]`   `STAGE_BALANCE_THRESHOLDS`: `Record<string, number>` — per-stage minimum balance constants
+  *   `[✅]`   interface/`dialectic.types.ts`
+    *   `[✅]`   `STAGE_BALANCE_THRESHOLDS` constant in `@paynless/types`: `{ thesis: 200000, antithesis: 400000, synthesis: 1000000, parenthesis: 250000, paralysis: 250000 }` — values provided by product owner based on observed stage token costs. Keyed by stage slug string.
+    *   `[✅]`   Verify `activeWalletInfo` type includes a numeric `balance` field — if missing, this is a **discovery** requiring a type/selector extension in the wallet store (separate node)
+  *   `[✅]`   unit/`GenerateContributionButton.nsf.test.ts`
+    *   `[✅]`   Test: when `activeWalletInfo.balance` is below `STAGE_BALANCE_THRESHOLDS[activeStage.slug]` and active stage is NOT `paused_nsf`, button is disabled and shows "Insufficient Balance"
+    *   `[✅]`   Test: when `activeWalletInfo.balance` meets threshold and active stage is NOT `paused_nsf`, button is enabled and shows "Generate {displayName}" (existing behavior preserved)
+    *   `[✅]`   Test: when active stage `stageStatus === 'paused_nsf'` (from progress selector) AND balance is below threshold, button is disabled and shows "Add Funds to Resume"
+    *   `[✅]`   Test: when active stage `stageStatus === 'paused_nsf'` (from progress selector) AND balance meets threshold, button is enabled and shows "Resume {displayName}"
+    *   `[✅]`   Test: clicking "Resume {displayName}" calls `resumePausedNsfJobs` with `{ sessionId, stageSlug, iterationNumber }` derived from the active session/stage context — NOT `generateContributions`
+    *   `[✅]`   Test: clicking "Generate {displayName}" calls `generateContributions` — NOT `resumePausedNsfJobs` — existing behavior preserved
+    *   `[✅]`   Test: clicking "Resume" opens the `StageDAGProgressDialog` so the user can monitor resumed generation
+    *   `[✅]`   Test: button state priority order is correct — `isSessionGenerating` > `!areAnyModelsSelected` > `!isWalletReady` > `!activeStage/!activeSession` > `!isStageReady` > `hasPausedNsf && !balanceMeetsThreshold` > `hasPausedNsf && balanceMeetsThreshold` > `!balanceMeetsThreshold` > `didGenerationFail` > `contributionsExist` > default
+  *   `[✅]`   `construction`
+    *   `[✅]`   No new component — all changes within the existing `GenerateContributionButton` component
+    *   `[✅]`   New store subscriptions: `selectUnifiedProjectProgress` (already imported), `resumePausedNsfJobs` action
+    *   `[✅]`   New derived state: `balanceMeetsThreshold` (boolean), `hasPausedNsfJobs` (boolean — derived from progress selector, NOT ephemeral state), `isResumeMode` (boolean)
+  *   `[✅]`   `GenerateContributionButton.tsx`
+    *   `[✅]`   Import `STAGE_BALANCE_THRESHOLDS` from `@paynless/types`
+    *   `[✅]`   Add store action: `const resumePausedNsfJobs = useDialecticStore((state) => state.resumePausedNsfJobs);`
+    *   `[✅]`   Read progress: `const unifiedProgress = useDialecticStore(selectUnifiedProjectProgress);` (selector already imported)
+    *   `[✅]`   Compute `hasPausedNsfJobs`: derive from progress selector — `const activeStageProgress = unifiedProgress?.stagesDetail?.find(s => s.stageSlug === activeStage?.slug); const hasPausedNsfJobs = activeStageProgress?.stageStatus === 'paused_nsf';` — this is durable, survives refresh/navigation because it comes from hydrated backend data
+    *   `[✅]`   Compute `balanceMeetsThreshold`: `const stageThreshold = activeStage ? STAGE_BALANCE_THRESHOLDS[activeStage.slug] ?? 0 : 0; const balanceMeetsThreshold = (activeWalletInfo.balance ?? 0) >= stageThreshold;`
+    *   `[✅]`   Compute `isResumeMode`: `const isResumeMode = hasPausedNsfJobs && balanceMeetsThreshold;`
+    *   `[✅]`   Update `isDisabled` (line 137): add `(hasPausedNsfJobs && !balanceMeetsThreshold)` for paused-but-broke, and `(!hasPausedNsfJobs && !balanceMeetsThreshold)` for the UX gate. The full disabled expression becomes: `isSessionGenerating || !areAnyModelsSelected || !activeStage || !activeSession || !isStageReady || !isWalletReady || (hasPausedNsfJobs && !balanceMeetsThreshold) || (!hasPausedNsfJobs && !balanceMeetsThreshold && !isResumeMode)`
+    *   `[✅]`   Update `getButtonText` (line 144): insert new cases BEFORE the existing `didGenerationFail` check (line 156), AFTER the `!isStageReady` check (line 154): `if (hasPausedNsfJobs && !balanceMeetsThreshold) return "Add Funds to Resume";` then `if (hasPausedNsfJobs && balanceMeetsThreshold) return \`Resume ${displayName}\`;` then `if (!balanceMeetsThreshold) return "Insufficient Balance";`
+    *   `[✅]`   Update `handleClick` (line 96): after the existing guard clause (lines 97–109), before the existing payload construction (line 119), insert: `if (isResumeMode && activeStage && activeSession) { toast.success("Resuming generation..."); setDagDialogOpen(true); await resumePausedNsfJobs({ sessionId: activeSession.id, stageSlug: activeStage.slug, iterationNumber: currentIterationNumber }); return; }`
+  *   `[✅]`   integration/`GenerateContributionButton.integration.test.ts`
+    *   `[✅]`   Test: render with progress showing `stageStatus: 'paused_nsf'` and low balance → button shows "Add Funds to Resume" and is disabled
+    *   `[✅]`   Test: render with progress showing `stageStatus: 'paused_nsf'` and sufficient balance → button shows "Resume {stageName}" and is enabled → click → verify `resumePausedNsfJobs` called with correct params
+    *   `[✅]`   Test: render with progress showing no `paused_nsf` and low balance → button shows "Insufficient Balance" and is disabled
+    *   `[✅]`   Test: render with progress showing no `paused_nsf` and sufficient balance → button shows "Generate {stageName}" and is enabled (existing behavior preserved)
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Layer: UI / presentation
+    *   `[✅]`   Dependencies face inward: consumes store (selectors, actions) and types (constants)
+    *   `[✅]`   No outward-facing provides — this is a leaf component
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Paused state detection MUST come from `selectUnifiedProjectProgress` → `stageStatus === 'paused_nsf'` — this is durable across refresh, navigation, and tab close because it is hydrated from the backend on mount via `useStageRunProgressHydration`
+    *   `[✅]`   The Generate button must be disabled when wallet balance is below the per-stage threshold, showing "Insufficient Balance" — UX gate preventing users from starting generations they cannot afford
+    *   `[✅]`   When NSF pause is active and balance is insufficient, button shows "Add Funds to Resume" (disabled) — directing the user toward the payment resolution path
+    *   `[✅]`   When NSF pause is active and balance is sufficient, button shows "Resume {displayName}" (enabled) — the user clicks the SAME button they originally used to Generate
+    *   `[✅]`   Clicking "Resume" calls `resumePausedNsfJobs` (NOT `generateContributions`) — this restores original job statuses via the API → edge function → RPC path and the DAG resumes naturally through existing trigger infrastructure
+    *   `[✅]`   The DAG progress dialog must open on resume click so the user can monitor resumed generation
+    *   `[✅]`   All existing button states and behaviors must be preserved — new states are inserted into the priority chain without disrupting existing logic
+    *   `[✅]`   Balance thresholds: thesis=200,000 / antithesis=400,000 / synthesis=1,000,000 / parenthesis=250,000 / paralysis=250,000
+    *   `[✅]`   **Frontend NSF workflow note**: The full UX flow (catch NSF notification → redirect to payment portal → catch return → enable Resume) is a known future requirement but is NOT in scope for this node. This node implements the button states and resume action only. The notification-to-portal redirect flow will be a separate checklist item.
+  *   `[✅]`   **Commit** `feat(ui,store) apps/web + packages/store + packages/utils + packages/types NSF protection with durable progress-based pause detection, API-layer resume, frontend notification pipeline, per-stage balance gate, and single-notification UX flow`
+    *   `[✅]`   New frontend types: `ContributionGenerationPausedNsfPayload`, `STAGE_BALANCE_THRESHOLDS`, `ResumePausedNsfJobsPayload`, `ResumePausedNsfJobsResponse` in `packages/types/src/dialectic.types.ts`
+    *   `[✅]`   Updated: `DialecticNotificationTypes` union, `DialecticLifecycleEvent` union, `UnifiedProjectStatus`, `DialecticActions` in `packages/types/src/dialectic.types.ts`
+    *   `[✅]`   Updated: `isDialecticLifecycleEventType` in `packages/utils/src/type_guards.ts` — recognizes `paused_nsf` suffix
+    *   `[✅]`   Updated: `notificationStore.ts` — new `case 'contribution_generation_paused_nsf'` for payload extraction and routing
+    *   `[✅]`   Updated: `dialecticStore.ts` — `_handleContributionGenerationPausedNsf` handler with progress re-hydration, `resumePausedNsfJobs` action via API layer
+    *   `[✅]`   Updated: `dialecticStore.selectors.ts` — `paused_nsf` handling in `selectUnifiedProjectProgress`
+    *   `[✅]`   Modified: `StageDAGProgressDialog.tsx` — `paused_nsf` color in `STATUS_FILL`
+    *   `[✅]`   Modified: `GenerateContributionButton.tsx` — balance threshold gate, progress-based paused NSF detection, resume-via-same-button UX
+    *   `[✅]`   New tests: type guard tests, notification store routing tests, dialectic store NSF handler/action tests, selector paused_nsf mapping tests, DAG dialog color test, button state transition tests
+
+## Regenerate Individual Document
+
+### Problem Statement
+
+Users cannot regenerate a single failed (or unsatisfactory) document without re-running the entire stage. If one document out of many fails, the user must regenerate all documents for that stage, losing the ones that succeeded. Users also want the ability to "roll the dice" on a document they already have a valid version of.
+
+### Objectives
+
+1. Allow a user to regenerate a specific document for specific model(s) without regenerating sibling documents or inputs.
+2. Present the regeneration action per-document in the stage run checklist, with model selection when multiple models are in use.
+3. Gate regeneration to the session's current stage only — documents from completed stages cannot be regenerated (future: branching/iteration).
+4. Mark the original job as `superseded` so progress tracking correctly reflects the new job's status, not the old failure.
+5. The cloned job is picked up by the existing worker pipeline (trigger on `INSERT ... WHERE status = 'pending'`) with zero changes to the worker.
+
+### Expected Outcome
+
+A user clicks a regenerate button on any document in the stage run checklist, selects which model(s) to regenerate for, and the system clones the original EXECUTE job(s), marks the originals as `superseded`, and inserts the clones as `pending`. The existing worker, RENDER pipeline, notification system, and progress hydration handle the rest. The progress tracker correctly ignores `superseded` jobs and reflects the new job's lifecycle.
+
+### Design Decisions
+
+- **Clone EXECUTE, not PLAN**: The EXECUTE job payload is self-contained (`model_id`, `prompt_template_id`, `output_type`, `canonicalPathParams`, `inputs`, `planner_metadata`). No re-planning is needed.
+- **`parent_job_id: null`** on clones: Prevents interference with the original PLAN job's completion tracking in `handle_job_completion()`.
+- **`superseded` status**: A new terminal status that `deriveStepStatuses` skips entirely, so the old failed job doesn't pollute step status when the clone succeeds.
+- **Active-stage-only gate**: `generateContributions` already validates `session.current_stage.slug === payload.stageSlug`. The regenerate handler applies the same validation.
+- **Model selection dialog**: The checklist already computes `perModelLabels` with per-model status. Failed/not-started models are pre-checked; completed models are unchecked (user must actively opt in).
+
+*   `[ ]`   [DB] supabase/migrations **`superseded` job status for regenerated document jobs**
   *   `[ ]`   `objective`
-    *   `[ ]`   Add a per-stage balance threshold check that disables the Generate button when the user's wallet balance is below the minimum required for the active stage — this is the UX gate, the first line of defense against NSF
-    *   `[ ]`   Detect when jobs are paused due to NSF by reading `stageStatus === 'paused_nsf'` from `selectUnifiedProjectProgress` (Node 12) — NOT from ephemeral in-memory state — and adjust the button to show "Add Funds to Resume" (disabled, balance too low) or "Resume {stageName}" (enabled, balance sufficient)
-    *   `[ ]`   When the user clicks "Resume", call `resumePausedNsfJobs` from the store (Node 11) instead of `generateContributions` — same button, different action based on progress-derived context
+    *   `[ ]`   Introduce the `superseded` terminal job status so that original jobs replaced by a regeneration clone are marked as replaced rather than remaining `failed`
+    *   `[ ]`   Ensure `superseded` IS treated as a terminal status by `handle_job_completion()` — it should not wake parent jobs or prerequisite chains
+    *   `[ ]`   Ensure `superseded` does NOT appear in worker-invoking trigger WHEN clauses (`on_job_status_change`, `on_new_job_created`) — the worker must never be invoked for superseded jobs
+    *   `[ ]`   Ensure `superseded` is excluded from the NSF pause function `resume_paused_nsf_jobs` — superseded jobs must not be resumed
   *   `[ ]`   `role`
-    *   `[ ]`   UI / presentation — the user-facing control for initiating, gating, and resuming dialectic generation
+    *   `[ ]`   Infrastructure — database schema and trigger layer
   *   `[ ]`   `module`
-    *   `[ ]`   Dialectic contribution generation UI — extends the existing `GenerateContributionButton` component
-    *   `[ ]`   Boundary: reads wallet balance + progress selector → renders button with appropriate text/disabled state → dispatches generate or resume action on click
+    *   `[ ]`   Dialectic generation job state machine — extends the terminal status set
+    *   `[ ]`   Boundary: defines the `superseded` status semantics within the existing trigger and completion infrastructure
   *   `[ ]`   `deps`
-    *   `[ ]`   Node 11 (store) — `resumePausedNsfJobs` action must exist on the dialectic store
-    *   `[ ]`   Node 12 (selectors) — `selectUnifiedProjectProgress` must return `stageStatus: 'paused_nsf'` for paused stages — this is the source of truth for detecting the paused state
-    *   `[ ]`   `selectUnifiedProjectProgress` from `@paynless/store` (already imported at line 3) — provides `stagesDetail[].stageStatus` which may be `'paused_nsf'`
-    *   `[ ]`   `useWalletStore` / `selectActiveChatWalletInfo` (already imported, line 9–10) — the `activeWalletInfo` object must include a `balance` field. **Discovery potential**: verify the wallet info type includes a numeric `balance` property; if not, this requires a type extension in the wallet store which would be a separate node.
-    *   `[ ]`   `useDialecticStore` (already imported) — used for `resumePausedNsfJobs` action
-    *   `[ ]`   `@paynless/types` — for `getDisplayName` (already imported) and `STAGE_BALANCE_THRESHOLDS` constant (new)
-    *   `[ ]`   No reverse dependency — this is a leaf UI component
+    *   `[ ]`   `handle_job_completion()` function (defined in `supabase/migrations/20260109165706_state_machine_fix.sql` line 180) — must include `superseded` in the terminal status check at line 204: `IF NEW.status NOT IN ('completed', 'failed', 'retry_loop_failed')` → add `'superseded'`
+    *   `[ ]`   `on_job_status_change` trigger (defined in `supabase/migrations/20260109165706_state_machine_fix.sql` line 165) — WHEN clause must NOT include `superseded`
+    *   `[ ]`   `on_new_job_created` trigger (defined in `supabase/migrations/20260220213950_conditional_on_new_job_created.sql` line 15) — WHEN clause must NOT include `superseded`
+    *   `[ ]`   `resume_paused_nsf_jobs` RPC (defined in `supabase/migrations/20260302193405_nsf_pause_resume.sql`) — WHERE clause must exclude `superseded` jobs
+    *   `[ ]`   No reverse dependency introduced — this migration only extends existing infrastructure
   *   `[ ]`   `context_slice`
-    *   `[ ]`   `activeWalletInfo.balance`: `number` — current wallet token balance
-    *   `[ ]`   `selectUnifiedProjectProgress(state)`: returns `UnifiedProjectProgress` — `stagesDetail[].stageStatus` is checked for `'paused_nsf'` to detect the paused state for the active stage
-    *   `[ ]`   `resumePausedNsfJobs`: action from dialectic store (Node 11)
-    *   `[ ]`   `activeStage.slug`: `string` — used to look up threshold and match against progress data
-    *   `[ ]`   `STAGE_BALANCE_THRESHOLDS`: `Record<string, number>` — per-stage minimum balance constants
-  *   `[ ]`   interface/`dialectic.types.ts`
-    *   `[ ]`   `STAGE_BALANCE_THRESHOLDS` constant in `@paynless/types`: `{ thesis: 200000, antithesis: 400000, synthesis: 1000000, parenthesis: 250000, paralysis: 250000 }` — values provided by product owner based on observed stage token costs. Keyed by stage slug string.
-    *   `[ ]`   Verify `activeWalletInfo` type includes a numeric `balance` field — if missing, this is a **discovery** requiring a type/selector extension in the wallet store (separate node)
-  *   `[ ]`   unit/`GenerateContributionButton.nsf.test.ts`
-    *   `[ ]`   Test: when `activeWalletInfo.balance` is below `STAGE_BALANCE_THRESHOLDS[activeStage.slug]` and active stage is NOT `paused_nsf`, button is disabled and shows "Insufficient Balance"
-    *   `[ ]`   Test: when `activeWalletInfo.balance` meets threshold and active stage is NOT `paused_nsf`, button is enabled and shows "Generate {displayName}" (existing behavior preserved)
-    *   `[ ]`   Test: when active stage `stageStatus === 'paused_nsf'` (from progress selector) AND balance is below threshold, button is disabled and shows "Add Funds to Resume"
-    *   `[ ]`   Test: when active stage `stageStatus === 'paused_nsf'` (from progress selector) AND balance meets threshold, button is enabled and shows "Resume {displayName}"
-    *   `[ ]`   Test: clicking "Resume {displayName}" calls `resumePausedNsfJobs` with `{ sessionId, stageSlug, iterationNumber }` derived from the active session/stage context — NOT `generateContributions`
-    *   `[ ]`   Test: clicking "Generate {displayName}" calls `generateContributions` — NOT `resumePausedNsfJobs` — existing behavior preserved
-    *   `[ ]`   Test: clicking "Resume" opens the `StageDAGProgressDialog` so the user can monitor resumed generation
-    *   `[ ]`   Test: button state priority order is correct — `isSessionGenerating` > `!areAnyModelsSelected` > `!isWalletReady` > `!activeStage/!activeSession` > `!isStageReady` > `hasPausedNsf && !balanceMeetsThreshold` > `hasPausedNsf && balanceMeetsThreshold` > `!balanceMeetsThreshold` > `didGenerationFail` > `contributionsExist` > default
+    *   `[ ]`   Requires access to `dialectic_generation_jobs` table status values and existing trigger/function definitions
+  *   `[ ]`   interface/`migration SQL`
+    *   `[ ]`   `superseded` added to the terminal status set in `handle_job_completion()` line 204
+    *   `[ ]`   `superseded` added to the terminal status set in `handle_job_completion()` line 209 (re-trigger guard)
+    *   `[ ]`   Sibling terminal count query in `handle_job_completion()` must include `superseded` in its terminal status list
   *   `[ ]`   `construction`
-    *   `[ ]`   No new component — all changes within the existing `GenerateContributionButton` component
-    *   `[ ]`   New store subscriptions: `selectUnifiedProjectProgress` (already imported), `resumePausedNsfJobs` action
-    *   `[ ]`   New derived state: `balanceMeetsThreshold` (boolean), `hasPausedNsfJobs` (boolean — derived from progress selector, NOT ephemeral state), `isResumeMode` (boolean)
-  *   `[ ]`   `GenerateContributionButton.tsx`
-    *   `[ ]`   Import `STAGE_BALANCE_THRESHOLDS` from `@paynless/types`
-    *   `[ ]`   Add store action: `const resumePausedNsfJobs = useDialecticStore((state) => state.resumePausedNsfJobs);`
-    *   `[ ]`   Read progress: `const unifiedProgress = useDialecticStore(selectUnifiedProjectProgress);` (selector already imported)
-    *   `[ ]`   Compute `hasPausedNsfJobs`: derive from progress selector — `const activeStageProgress = unifiedProgress?.stagesDetail?.find(s => s.stageSlug === activeStage?.slug); const hasPausedNsfJobs = activeStageProgress?.stageStatus === 'paused_nsf';` — this is durable, survives refresh/navigation because it comes from hydrated backend data
-    *   `[ ]`   Compute `balanceMeetsThreshold`: `const stageThreshold = activeStage ? STAGE_BALANCE_THRESHOLDS[activeStage.slug] ?? 0 : 0; const balanceMeetsThreshold = (activeWalletInfo.balance ?? 0) >= stageThreshold;`
-    *   `[ ]`   Compute `isResumeMode`: `const isResumeMode = hasPausedNsfJobs && balanceMeetsThreshold;`
-    *   `[ ]`   Update `isDisabled` (line 137): add `(hasPausedNsfJobs && !balanceMeetsThreshold)` for paused-but-broke, and `(!hasPausedNsfJobs && !balanceMeetsThreshold)` for the UX gate. The full disabled expression becomes: `isSessionGenerating || !areAnyModelsSelected || !activeStage || !activeSession || !isStageReady || !isWalletReady || (hasPausedNsfJobs && !balanceMeetsThreshold) || (!hasPausedNsfJobs && !balanceMeetsThreshold && !isResumeMode)`
-    *   `[ ]`   Update `getButtonText` (line 144): insert new cases BEFORE the existing `didGenerationFail` check (line 156), AFTER the `!isStageReady` check (line 154): `if (hasPausedNsfJobs && !balanceMeetsThreshold) return "Add Funds to Resume";` then `if (hasPausedNsfJobs && balanceMeetsThreshold) return \`Resume ${displayName}\`;` then `if (!balanceMeetsThreshold) return "Insufficient Balance";`
-    *   `[ ]`   Update `handleClick` (line 96): after the existing guard clause (lines 97–109), before the existing payload construction (line 119), insert: `if (isResumeMode && activeStage && activeSession) { toast.success("Resuming generation..."); setDagDialogOpen(true); await resumePausedNsfJobs({ sessionId: activeSession.id, stageSlug: activeStage.slug, iterationNumber: currentIterationNumber }); return; }`
-  *   `[ ]`   integration/`GenerateContributionButton.integration.test.ts`
-    *   `[ ]`   Test: render with progress showing `stageStatus: 'paused_nsf'` and low balance → button shows "Add Funds to Resume" and is disabled
-    *   `[ ]`   Test: render with progress showing `stageStatus: 'paused_nsf'` and sufficient balance → button shows "Resume {stageName}" and is enabled → click → verify `resumePausedNsfJobs` called with correct params
-    *   `[ ]`   Test: render with progress showing no `paused_nsf` and low balance → button shows "Insufficient Balance" and is disabled
-    *   `[ ]`   Test: render with progress showing no `paused_nsf` and sufficient balance → button shows "Generate {stageName}" and is enabled (existing behavior preserved)
+    *   `[ ]`   Single migration file with `CREATE OR REPLACE FUNCTION` for `handle_job_completion()` incorporating `superseded`
+    *   `[ ]`   No trigger recreation needed — existing WHEN clauses already exclude unlisted statuses
+  *   `[ ]`   `directionality`
+    *   `[ ]`   Layer: infrastructure (database)
+    *   `[ ]`   Dependencies face inward: modifies only the job state machine
+    *   `[ ]`   Provides face outward: consumed by the worker trigger system and the `regenerateDocument` handler
+  *   `[ ]`   `requirements`
+    *   `[ ]`   `superseded` must be terminal: `handle_job_completion()` must fire for it (to unblock any prerequisite chains if needed) and must not re-trigger on already-terminal rows
+    *   `[ ]`   `superseded` must not invoke the worker: triggers must not include it in their WHEN clauses
+    *   `[ ]`   `superseded` must not be resumed by `resume_paused_nsf_jobs`
+    *   `[ ]`   Existing terminal statuses (`completed`, `failed`, `retry_loop_failed`) must continue to work identically
+
+*   `[ ]`   [BE] dialectic-service/`deriveStepStatuses` **Skip `superseded` jobs in step status derivation**
+  *   `[ ]`   `objective`
+    *   `[ ]`   Ensure `superseded` jobs are completely invisible to progress tracking — they must not contribute to any step status flag (`hasActive`, `hasCompleted`, `hasFailed`, `hasPausedNsf`)
+    *   `[ ]`   The cloned replacement job's status is the only one that matters for the step
+  *   `[ ]`   `role`
+    *   `[ ]`   Backend logic — progress derivation
+  *   `[ ]`   `module`
+    *   `[ ]`   Dialectic service — step status derivation within `getAllStageProgress`
+    *   `[ ]`   Boundary: receives jobs array → produces step status map; `superseded` jobs must be filtered out before status aggregation
+  *   `[ ]`   `deps`
+    *   `[ ]`   DB migration node (above) — `superseded` status must exist in the database
+    *   `[ ]`   Existing `ACTIVE_STATUSES`, `FAILED_STATUSES`, `PAUSED_NSF_STATUSES` sets in `deriveStepStatuses.ts`
+    *   `[ ]`   No reverse dependency introduced
+  *   `[ ]`   `context_slice`
+    *   `[ ]`   `deriveStepStatuses` function at `supabase/functions/dialectic-service/deriveStepStatuses.ts`
+    *   `[ ]`   Job `status` field — must recognize `superseded` as a skip condition
+  *   `[ ]`   interface/`dialectic.interface.ts`
+    *   `[ ]`   No interface changes required — `UnifiedStageStatus` does not need a `superseded` value because superseded jobs produce no status; they are skipped
+  *   `[ ]`   unit/`deriveStepStatuses.test.ts`
+    *   `[ ]`   Test: a step with one `superseded` job and one `completed` job → step status is `completed` (superseded job is invisible)
+    *   `[ ]`   Test: a step with one `superseded` job and one `pending` job → step status is `in_progress` (active clone is visible)
+    *   `[ ]`   Test: a step with only `superseded` jobs and no other jobs → step status is `not_started` (all evidence invisible)
+    *   `[ ]`   Test: a step with one `superseded` job, one `failed` job, and one `completed` job → step status is `failed` (the non-superseded failed job still counts)
+  *   `[ ]`   `construction`
+    *   `[ ]`   Add `const SUPERSEDED_STATUSES: Set<string> = new Set(["superseded"]);` alongside existing status sets
+    *   `[ ]`   Add skip condition at line 57 (after RENDER skip, after continuation skip): `if (SUPERSEDED_STATUSES.has(job.status)) continue;`
+  *   `[ ]`   `deriveStepStatuses.ts`
+    *   `[ ]`   Add `SUPERSEDED_STATUSES` constant
+    *   `[ ]`   Add `continue` guard for superseded jobs in the job iteration loop
+  *   `[ ]`   `directionality`
+    *   `[ ]`   Layer: backend logic (service)
+    *   `[ ]`   Dependencies face inward: reads job status values defined by DB migration
+    *   `[ ]`   Provides face outward: consumed by `getAllStageProgress` → frontend progress hydration
+  *   `[ ]`   `requirements`
+    *   `[ ]`   `superseded` jobs must not set any status flag (`hasActive`, `hasCompleted`, `hasFailed`, `hasPausedNsf`)
+    *   `[ ]`   All existing status derivation behavior must be preserved for non-superseded jobs
+    *   `[ ]`   A step with only superseded jobs and no successors must show `not_started`
+
+*   `[ ]`   [BE] dialectic-service/`regenerateDocument` **Clone failed/completed EXECUTE jobs as new `pending` jobs for targeted document regeneration**
+  *   `[ ]`   `objective`
+    *   `[ ]`   Accept a request specifying session, stage, iteration, and a list of `{ jobId, modelId }` pairs identifying which EXECUTE jobs to regenerate
+    *   `[ ]`   Validate that the stage matches the session's current stage (active-stage-only gate)
+    *   `[ ]`   Validate that each referenced job belongs to the correct session/stage/iteration and is an EXECUTE job
+    *   `[ ]`   Mark each original job as `superseded`
+    *   `[ ]`   Clone each original job's row: copy `payload`, `stage_slug`, `iteration_number`, `session_id`, `user_id`, `max_retries`, `job_type`; set `status: 'pending'`, `attempt_count: 0`, `parent_job_id: null`, `prerequisite_job_id: null`, `started_at: null`, `completed_at: null`, `results: null`, `error_details: null`, `target_contribution_id: null`
+    *   `[ ]`   Insert the cloned row — the existing `on_new_job_created` trigger fires and the worker picks it up
+    *   `[ ]`   Return the array of new job IDs
+  *   `[ ]`   `role`
+    *   `[ ]`   Backend logic — edge function handler for document regeneration
+  *   `[ ]`   `module`
+    *   `[ ]`   Dialectic service — new handler function within the `dialectic-service` edge function
+    *   `[ ]`   Boundary: receives validated request → marks originals superseded → inserts cloned jobs → returns new job IDs
+  *   `[ ]`   `deps`
+    *   `[ ]`   DB migration node — `superseded` status must exist
+    *   `[ ]`   `dialectic_generation_jobs` table — read original job, update to `superseded`, insert clone
+    *   `[ ]`   `dialectic_sessions` table — validate `current_stage_id` matches requested `stageSlug`
+    *   `[ ]`   `dialectic_stages` table — resolve `current_stage_id` to slug
+    *   `[ ]`   Supabase admin client — for DB operations
+    *   `[ ]`   Authenticated user — for authorization (job's `user_id` must match requesting user)
+    *   `[ ]`   No reverse dependency introduced
+  *   `[ ]`   `context_slice`
+    *   `[ ]`   `dbClient: SupabaseClient` — admin client for DB reads/writes
+    *   `[ ]`   `user: User` — authenticated user from request
+    *   `[ ]`   `payload: RegenerateDocumentPayload` — `{ sessionId, stageSlug, iterationNumber, jobs: Array<{ jobId: string; modelId: string }> }`
+  *   `[ ]`   interface/`dialectic.interface.ts`
+    *   `[ ]`   `RegenerateDocumentPayload`: `{ sessionId: string; stageSlug: string; iterationNumber: number; jobs: Array<{ jobId: string; modelId: string }> }`
+    *   `[ ]`   `RegenerateDocumentResponse`: `{ jobIds: string[] }`
+    *   `[ ]`   `RegenerateDocumentAction`: `{ action: 'regenerateDocument'; payload: RegenerateDocumentPayload }`
+    *   `[ ]`   Add `RegenerateDocumentAction` to the `DialecticServiceRequest` union
+    *   `[ ]`   Add `regenerateDocument` to `ActionHandlers` interface
+  *   `[ ]`   interface/tests/`regenerateDocument.interface.test.ts`
+    *   `[ ]`   Test: `RegenerateDocumentPayload` requires `sessionId`, `stageSlug`, `iterationNumber`, and `jobs` array
+    *   `[ ]`   Test: `RegenerateDocumentResponse` has `jobIds` string array
+  *   `[ ]`   interface/guards/`regenerateDocument.interface.guards.ts`
+    *   `[ ]`   `isRegenerateDocumentPayload(value: unknown): value is RegenerateDocumentPayload` — validates all required fields and jobs array structure
+  *   `[ ]`   unit/`regenerateDocument.test.ts`
+    *   `[ ]`   Test: valid request with one job → original marked `superseded`, clone inserted as `pending` with correct payload copy, returns new job ID
+    *   `[ ]`   Test: valid request with multiple jobs → all originals marked `superseded`, all clones inserted, returns array of new job IDs
+    *   `[ ]`   Test: stage mismatch (requested stage ≠ session's current stage) → returns 400 error, no jobs modified
+    *   `[ ]`   Test: job not found → returns 404 error
+    *   `[ ]`   Test: job belongs to different session → returns 403 error
+    *   `[ ]`   Test: job is not an EXECUTE job → returns 400 error
+    *   `[ ]`   Test: user does not own the job → returns 403 error
+    *   `[ ]`   Test: cloned job has `parent_job_id: null`, `prerequisite_job_id: null`, `attempt_count: 0`, `status: 'pending'`
+    *   `[ ]`   Test: cloned job preserves original's `payload`, `stage_slug`, `iteration_number`, `session_id`, `job_type`, `max_retries`
+  *   `[ ]`   `construction`
+    *   `[ ]`   Single exported async function `regenerateDocument(dbClient, payload, user)`
+    *   `[ ]`   Returns `{ success: boolean; data?: RegenerateDocumentResponse; error?: { message: string; status?: number } }`
+    *   `[ ]`   No DI beyond `dbClient` and `user` — this is a thin data-copy operation
+  *   `[ ]`   `regenerateDocument.ts`
+    *   `[ ]`   Validate payload fields
+    *   `[ ]`   Fetch session and verify `current_stage.slug === payload.stageSlug`
+    *   `[ ]`   For each job in `payload.jobs`:
+      *   `[ ]`   Fetch original job by ID
+      *   `[ ]`   Validate ownership (`user_id === user.id`), session match, stage match, iteration match, `job_type === 'EXECUTE'`
+      *   `[ ]`   Update original job: `SET status = 'superseded'`
+      *   `[ ]`   Insert clone row with fields copied from original, reset fields as specified in objective
+    *   `[ ]`   Return `{ success: true, data: { jobIds } }`
+  *   `[ ]`   `directionality`
+    *   `[ ]`   Layer: backend logic (service handler)
+    *   `[ ]`   Dependencies face inward: reads/writes `dialectic_generation_jobs`, reads `dialectic_sessions` and `dialectic_stages`
+    *   `[ ]`   Provides face outward: consumed by `dialectic-service/index.ts` router
+  *   `[ ]`   `requirements`
+    *   `[ ]`   Original job must be marked `superseded` BEFORE clone is inserted to prevent race conditions with progress tracking
+    *   `[ ]`   Clone must have `parent_job_id: null` to prevent interference with original PLAN completion tracking
+    *   `[ ]`   Clone must have `prerequisite_job_id: null` — the document's prerequisites are already met (they were met when the original ran)
+    *   `[ ]`   Active-stage-only gate: reject requests where `stageSlug` does not match `session.current_stage.slug`
+    *   `[ ]`   The clone's `payload` must be an exact copy of the original's `payload` — the worker uses payload fields to determine what to generate and where to store results
+
+*   `[ ]`   [BE] dialectic-service/`index` **Route `regenerateDocument` action to handler**
+  *   `[ ]`   `objective`
+    *   `[ ]`   Add `regenerateDocument` as a routable action in the dialectic-service edge function entry point
+    *   `[ ]`   Wire the action to the `regenerateDocument` handler with authentication required
+  *   `[ ]`   `role`
+    *   `[ ]`   Infrastructure — edge function router
+  *   `[ ]`   `module`
+    *   `[ ]`   Dialectic service entry point — action dispatch
+    *   `[ ]`   Boundary: receives HTTP request → authenticates → routes to handler → returns response
+  *   `[ ]`   `deps`
+    *   `[ ]`   `regenerateDocument` handler (node above) — must exist as an importable function
+    *   `[ ]`   `RegenerateDocumentPayload` type from `dialectic.interface.ts`
+    *   `[ ]`   Existing `ActionHandlers` interface — must include `regenerateDocument` (added in the handler node's interface section)
+    *   `[ ]`   Existing `actionsRequiringAuth` array — must include `'regenerateDocument'`
+    *   `[ ]`   Existing `DialecticServiceRequest` union — must include `RegenerateDocumentAction` (added in the handler node's interface section)
+  *   `[ ]`   `context_slice`
+    *   `[ ]`   `handlers.regenerateDocument` — the handler function
+    *   `[ ]`   `adminClient` — passed to handler as `dbClient`
+    *   `[ ]`   `userForJson` — authenticated user
+    *   `[ ]`   `requestBody.payload` — typed as `RegenerateDocumentPayload`
+  *   `[ ]`   unit/`index.test.ts`
+    *   `[ ]`   Test: `regenerateDocument` action routes to handler with correct arguments
+    *   `[ ]`   Test: `regenerateDocument` action without authentication returns 401
+    *   `[ ]`   Test: handler success → returns 200 with `{ jobIds }` response
+    *   `[ ]`   Test: handler error → returns error status with error message
+  *   `[ ]`   `construction`
+    *   `[ ]`   Import `regenerateDocument` from `./regenerateDocument.ts`
+    *   `[ ]`   Add `'regenerateDocument'` to `actionsRequiringAuth` array
+    *   `[ ]`   Add `case "regenerateDocument"` to the action switch with standard auth guard pattern
+    *   `[ ]`   Wire `regenerateDocument` into `defaultHandlers` object
+  *   `[ ]`   `index.ts`
+    *   `[ ]`   Add import for `regenerateDocument` handler
+    *   `[ ]`   Add `'regenerateDocument'` to `actionsRequiringAuth` array (line 269)
+    *   `[ ]`   Add case block in switch statement (before `default:` case, after `resumePausedNsfJobs` case at line 602)
+    *   `[ ]`   Add `regenerateDocument` to `defaultHandlers` object
+  *   `[ ]`   `directionality`
+    *   `[ ]`   Layer: infrastructure (edge function entry point)
+    *   `[ ]`   Dependencies face inward: imports handler function, uses types from interface
+    *   `[ ]`   Provides face outward: HTTP endpoint consumed by API client
+  *   `[ ]`   `requirements`
+    *   `[ ]`   Authentication is required — unauthenticated requests return 401
+    *   `[ ]`   Handler receives `adminClient` (not `userClient`) as `dbClient` — consistent with other handlers like `resumePausedNsfJobs`
+    *   `[ ]`   Follows exact same routing pattern as `resumePausedNsfJobs` case block
+
+*   `[ ]`   [API] packages/api/`dialectic.api` **`regenerateDocument` API client method**
+  *   `[ ]`   `objective`
+    *   `[ ]`   Add a `regenerateDocument` method to `DialecticApiClient` that calls the `dialectic-service` edge function with action `'regenerateDocument'`
+    *   `[ ]`   Follow the same pattern as `resumePausedNsfJobs` method
+  *   `[ ]`   `role`
+    *   `[ ]`   API client — typed HTTP adapter for the edge function
+  *   `[ ]`   `module`
+    *   `[ ]`   `@paynless/api` — dialectic API client class
+    *   `[ ]`   Boundary: accepts typed payload → posts to edge function → returns typed response
+  *   `[ ]`   `deps`
+    *   `[ ]`   Edge function router node (above) — `regenerateDocument` action must be routable
+    *   `[ ]`   `apiClient.post` — existing HTTP post method on the base API client
+    *   `[ ]`   No reverse dependency introduced
+  *   `[ ]`   `context_slice`
+    *   `[ ]`   `this.apiClient.post<RegenerateDocumentResponse, DialecticServiceActionPayload>('dialectic-service', { action: 'regenerateDocument', payload })`
+  *   `[ ]`   interface/`dialectic.types.ts`
+    *   `[ ]`   `RegenerateDocumentPayload`: `{ sessionId: string; stageSlug: string; iterationNumber: number; jobs: Array<{ jobId: string; modelId: string }> }` — mirrors the backend interface
+    *   `[ ]`   `RegenerateDocumentResponse`: `{ jobIds: string[] }`
+  *   `[ ]`   interface/tests/`dialectic.types.test.ts`
+    *   `[ ]`   Test: `RegenerateDocumentPayload` shape contract
+    *   `[ ]`   Test: `RegenerateDocumentResponse` shape contract
+  *   `[ ]`   interface/guards/`type_guards.ts`
+    *   `[ ]`   `isRegenerateDocumentPayload(value: unknown): value is RegenerateDocumentPayload` — if needed by consumers
+    *   `[ ]`   `isRegenerateDocumentResponse(value: unknown): value is RegenerateDocumentResponse`
+  *   `[ ]`   unit/`dialectic.api.test.ts`
+    *   `[ ]`   Test: `regenerateDocument` calls `apiClient.post` with `{ action: 'regenerateDocument', payload }` and correct typing
+    *   `[ ]`   Test: successful response returns `{ data: { jobIds: [...] }, error: null }`
+    *   `[ ]`   Test: error response returns `{ data: null, error: { message, status } }`
+  *   `[ ]`   `construction`
+    *   `[ ]`   New `async regenerateDocument(payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>>` method on `DialecticApiClient`
+    *   `[ ]`   Follows identical pattern to `resumePausedNsfJobs` method at line 686
+  *   `[ ]`   `dialectic.api.ts`
+    *   `[ ]`   Add import for `RegenerateDocumentPayload`, `RegenerateDocumentResponse` from types
+    *   `[ ]`   Add `regenerateDocument` method to `DialecticApiClient` class
+  *   `[ ]`   `dialectic.api.mock.ts`
+    *   `[ ]`   Add `regenerateDocument` mock method returning default success response
+  *   `[ ]`   `directionality`
+    *   `[ ]`   Layer: adapter (API client)
+    *   `[ ]`   Dependencies face inward: uses types from `@paynless/types`, posts to edge function
+    *   `[ ]`   Provides face outward: consumed by `@paynless/store` dialectic store action
+  *   `[ ]`   `requirements`
+    *   `[ ]`   Must follow the same pattern as `resumePausedNsfJobs` — post to `dialectic-service` with typed action payload
+    *   `[ ]`   Must return `ApiResponse<RegenerateDocumentResponse>` with standard error handling
+    *   `[ ]`   Mock must be updated for store tests
+
+*   `[ ]`   [STORE] packages/store/`dialecticStore` **`regenerateDocument` action with progress re-hydration**
+  *   `[ ]`   `objective`
+    *   `[ ]`   Provide a `regenerateDocument` store action that calls `api.dialectic().regenerateDocument(payload)` and triggers progress re-hydration so the UI reflects the new job's lifecycle
+    *   `[ ]`   Track the new job IDs in `generatingSessions` so the generating state is correctly reflected
+    *   `[ ]`   Set `generatingForStageSlug` so the checklist shows generating spinners for the affected documents
+  *   `[ ]`   `role`
+    *   `[ ]`   State management — bridges UI action to API call and progress refresh
+  *   `[ ]`   `module`
+    *   `[ ]`   Dialectic store — extends existing actions
+    *   `[ ]`   Boundary: receives regenerate action from UI → calls API → tracks jobs → re-hydrates progress
+  *   `[ ]`   `deps`
+    *   `[ ]`   API client node (above) — `api.dialectic().regenerateDocument` must exist
+    *   `[ ]`   Existing `hydrateAllStageProgress` action — called after successful API response to refresh progress data
+    *   `[ ]`   Existing `generatingSessions` state — tracks active job IDs per session
+    *   `[ ]`   Existing `generatingForStageSlug` state — identifies which stage is actively generating
+    *   `[ ]`   Existing `contributionGenerationStatus` state — set to `'generating'` during regeneration
+    *   `[ ]`   `api` — the API client instance, available via the store's existing infrastructure pattern (same as `generateContributions` at line 1906)
+    *   `[ ]`   No reverse dependency introduced — the store is consumed by UI components
+  *   `[ ]`   `context_slice`
+    *   `[ ]`   `api.dialectic().regenerateDocument`: from `@paynless/api` via the store's existing API infrastructure
+    *   `[ ]`   `RegenerateDocumentPayload`, `RegenerateDocumentResponse`: from `@paynless/types`
+    *   `[ ]`   `hydrateAllStageProgress`: existing store action
+    *   `[ ]`   Existing store state: `generatingSessions`, `contributionGenerationStatus`, `generatingForStageSlug`
+  *   `[ ]`   interface/`dialectic.types.ts`
+    *   `[ ]`   Add `regenerateDocument: (payload: RegenerateDocumentPayload) => Promise<ApiResponse<RegenerateDocumentResponse>>` to `DialecticActions` (alongside existing actions like `generateContributions`)
+  *   `[ ]`   unit/`dialecticStore.regenerateDocument.test.ts`
+    *   `[ ]`   Test: `regenerateDocument` calls `api.dialectic().regenerateDocument(payload)` with correct `{ sessionId, stageSlug, iterationNumber, jobs }`
+    *   `[ ]`   Test: on successful API response, `regenerateDocument` adds returned job IDs to `generatingSessions[sessionId]`
+    *   `[ ]`   Test: on successful API response, `regenerateDocument` sets `contributionGenerationStatus` to `'generating'` and `generatingForStageSlug` to `payload.stageSlug`
+    *   `[ ]`   Test: on successful API response, `regenerateDocument` calls `hydrateAllStageProgress` to refresh progress data
+    *   `[ ]`   Test: on API failure, `regenerateDocument` does NOT modify `generatingSessions` or `contributionGenerationStatus`
+    *   `[ ]`   Test: on API failure, `regenerateDocument` returns the error response
+  *   `[ ]`   `construction`
+    *   `[ ]`   `regenerateDocument` is a public action exposed on the store interface
+    *   `[ ]`   Follows the same pattern as `generateContributions` for job tracking and status management
+  *   `[ ]`   `dialecticStore.ts`
+    *   `[ ]`   Add `regenerateDocument(payload: RegenerateDocumentPayload)` action:
+      *   `[ ]`   Set `contributionGenerationStatus = 'generating'`, `generatingForStageSlug = payload.stageSlug`
+      *   `[ ]`   Call `api.dialectic().regenerateDocument(payload)`
+      *   `[ ]`   On success: add returned `jobIds` to `generatingSessions[payload.sessionId]`, call `get().hydrateAllStageProgress(...)`, return response
+      *   `[ ]`   On failure: reset `contributionGenerationStatus = 'idle'`, reset `generatingForStageSlug = null`, return error response
+  *   `[ ]`   `directionality`
+    *   `[ ]`   Layer: application (state management)
+    *   `[ ]`   Dependencies face inward: consumes API layer (`api.dialectic()`) and types
+    *   `[ ]`   Provides face outward: consumed by UI component (StageRunChecklist regenerate button)
+  *   `[ ]`   `requirements`
+    *   `[ ]`   The action must call through the API layer: store → `api.dialectic().regenerateDocument()` → edge function — NOT directly to Supabase
+    *   `[ ]`   After successful regeneration, `hydrateAllStageProgress` must be called to refresh progress — the progress tracker is the source of truth for UI state transitions
+    *   `[ ]`   Job IDs must be tracked in `generatingSessions` so lifecycle events from the worker are correctly processed by existing `_handleDialecticLifecycleEvent` handlers
+    *   `[ ]`   `generatingForStageSlug` must be set so the StageRunChecklist shows generating spinners for affected documents
+
+*   `[ ]`   [UI] apps/web/`StageRunChecklist` **Per-document regenerate button with model selection dialog**
+  *   `[ ]`   `objective`
+    *   `[ ]`   Replace the static status circle indicators with clickable icon-buttons that trigger document regeneration
+    *   `[ ]`   Color the icon-button based on document status: green for completed, red for failed, amber for not started — preserving the existing visual language
+    *   `[ ]`   Keep the `Loader2` spinner for `generating`/`continuing` states as non-clickable (cannot regenerate mid-generation)
+    *   `[ ]`   On click, show a model-selection confirmation dialog listing all models for that document with checkboxes
+    *   `[ ]`   Pre-check models whose status is `Failed` or `Not started`; leave `Completed` models unchecked (user must actively opt in to re-roll a successful document)
+    *   `[ ]`   Disable the regenerate button when the document's stage is not the session's current stage
+    *   `[ ]`   On confirmation, call the `regenerateDocument` store action with the selected `{ jobId, modelId }` pairs
+  *   `[ ]`   `role`
+    *   `[ ]`   UI / presentation — user-facing regeneration trigger
+  *   `[ ]`   `module`
+    *   `[ ]`   Dialectic UI — StageRunChecklist component within the stage sidebar
+    *   `[ ]`   Boundary: reads document status from store selectors → presents regeneration UI → dispatches store action
+  *   `[ ]`   `deps`
+    *   `[ ]`   Store node (above) — `regenerateDocument` action must exist on the store
+    *   `[ ]`   `RegenerateDocumentPayload` type from `@paynless/types`
+    *   `[ ]`   Existing `perModelLabels` computed in `computeStageRunChecklistData` — provides `modelId`, `displayName`, `statusLabel` per model per document
+    *   `[ ]`   Existing `StageDocumentRow` type — provides `entry` (with `documentKey`, `status`, `jobId`, `stepKey`) and `perModelLabels`
+    *   `[ ]`   Existing store selectors: `selectActiveContextSessionId`, `selectActiveStageSlug`
+    *   `[ ]`   Session's `current_stage_id` — to determine if the document's stage is the active stage (for the gate)
+    *   `[ ]`   `useDialecticStore` — for accessing store state and actions
+    *   `[ ]`   No reverse dependency introduced — leaf component
+  *   `[ ]`   `context_slice`
+    *   `[ ]`   `regenerateDocument: state.regenerateDocument` — store action
+    *   `[ ]`   `activeSessionDetail` — for `current_stage_id` and `iteration_count`
+    *   `[ ]`   `activeStageSlug` — to determine if the current stage matches the session's current stage
+    *   `[ ]`   `perModelLabels` — already computed per document row, provides model status for pre-checking
+    *   `[ ]`   `entry.jobId` — the original EXECUTE job ID per model (needed for the payload)
+    *   `[ ]`   Note: `entry.jobId` in `StageDocumentEntry` currently holds the first rendered entry's job ID, which is a RENDER job ID, not an EXECUTE job ID. The dialog needs the EXECUTE job ID. This may require enriching `perModelLabels` or `StageDocumentEntry` with per-model EXECUTE job IDs from `stageRunProgress` descriptors.
+  *   `[ ]`   interface/`StageRunChecklist types`
+    *   `[ ]`   Extend `PerModelLabel` to include `jobId: string | null` — the EXECUTE job ID for that model's document, sourced from the rendered document descriptor's `job_id` field (which tracks the EXECUTE job, not the RENDER job)
+    *   `[ ]`   `RegenerateDocumentDialogProps`: `{ open: boolean; documentKey: string; stageSlug: string; perModelLabels: PerModelLabel[]; onConfirm: (selectedJobs: Array<{ jobId: string; modelId: string }>) => void; onCancel: () => void }`
+  *   `[ ]`   unit/`StageRunChecklist.test.tsx`
+    *   `[ ]`   Test: completed document renders green clickable icon-button (not static circle)
+    *   `[ ]`   Test: failed document renders red clickable icon-button
+    *   `[ ]`   Test: not-started document renders amber clickable icon-button
+    *   `[ ]`   Test: generating document renders non-clickable spinner (existing behavior preserved)
+    *   `[ ]`   Test: clicking icon-button opens model selection dialog with correct model list
+    *   `[ ]`   Test: dialog pre-checks failed models, leaves completed models unchecked
+    *   `[ ]`   Test: confirming dialog with selected models calls `regenerateDocument` with correct payload
+    *   `[ ]`   Test: icon-button is disabled when document's stage ≠ session's current stage
+    *   `[ ]`   Test: canceling dialog does not call `regenerateDocument`
+  *   `[ ]`   `construction`
+    *   `[ ]`   `RegenerateDocumentDialog` — small inline component or extracted component for the model selection confirmation
+    *   `[ ]`   Replace `<span>` circle elements with `<button>` icon-buttons retaining the same color classes
+    *   `[ ]`   Add state for dialog open/close and selected document context
+    *   `[ ]`   Wire dialog confirm to `regenerateDocument` store action
+  *   `[ ]`   `StageRunChecklist.tsx`
+    *   `[ ]`   Add `regenerateDocument` from store to component's store subscription
+    *   `[ ]`   Add `activeSessionDetail` to determine current stage for the gate
+    *   `[ ]`   Add state: `regenerateDialogOpen`, `regenerateDialogContext` (documentKey, stageSlug, perModelLabels)
+    *   `[ ]`   Replace static `<span>` circles (lines 538-554) with `<button>` elements that open the dialog on click
+    *   `[ ]`   Preserve `Loader2` spinner for generating/continuing states as non-clickable
+    *   `[ ]`   Implement `RegenerateDocumentDialog` with checkboxes per model, pre-fill logic, confirm/cancel
+    *   `[ ]`   Enrich `perModelLabels` computation (in `computeStageRunChecklistData`) to include the EXECUTE `jobId` per model by reading from `stageRunProgress` document descriptors
+    *   `[ ]`   On confirm: construct `RegenerateDocumentPayload` and call `regenerateDocument`
   *   `[ ]`   `directionality`
     *   `[ ]`   Layer: UI / presentation
-    *   `[ ]`   Dependencies face inward: consumes store (selectors, actions) and types (constants)
+    *   `[ ]`   Dependencies face inward: consumes store (selectors, actions) and types
     *   `[ ]`   No outward-facing provides — this is a leaf component
   *   `[ ]`   `requirements`
-    *   `[ ]`   Paused state detection MUST come from `selectUnifiedProjectProgress` → `stageStatus === 'paused_nsf'` — this is durable across refresh, navigation, and tab close because it is hydrated from the backend on mount via `useStageRunProgressHydration`
-    *   `[ ]`   The Generate button must be disabled when wallet balance is below the per-stage threshold, showing "Insufficient Balance" — UX gate preventing users from starting generations they cannot afford
-    *   `[ ]`   When NSF pause is active and balance is insufficient, button shows "Add Funds to Resume" (disabled) — directing the user toward the payment resolution path
-    *   `[ ]`   When NSF pause is active and balance is sufficient, button shows "Resume {displayName}" (enabled) — the user clicks the SAME button they originally used to Generate
-    *   `[ ]`   Clicking "Resume" calls `resumePausedNsfJobs` (NOT `generateContributions`) — this restores original job statuses via the API → edge function → RPC path and the DAG resumes naturally through existing trigger infrastructure
-    *   `[ ]`   The DAG progress dialog must open on resume click so the user can monitor resumed generation
-    *   `[ ]`   All existing button states and behaviors must be preserved — new states are inserted into the priority chain without disrupting existing logic
-    *   `[ ]`   Balance thresholds: thesis=200,000 / antithesis=400,000 / synthesis=1,000,000 / parenthesis=250,000 / paralysis=250,000
-    *   `[ ]`   **Frontend NSF workflow note**: The full UX flow (catch NSF notification → redirect to payment portal → catch return → enable Resume) is a known future requirement but is NOT in scope for this node. This node implements the button states and resume action only. The notification-to-portal redirect flow will be a separate checklist item.
-  *   `[ ]`   **Commit** `feat(ui,store) apps/web + packages/store + packages/utils + packages/types NSF protection with durable progress-based pause detection, API-layer resume, frontend notification pipeline, per-stage balance gate, and single-notification UX flow`
-    *   `[ ]`   New frontend types: `ContributionGenerationPausedNsfPayload`, `STAGE_BALANCE_THRESHOLDS`, `ResumePausedNsfJobsPayload`, `ResumePausedNsfJobsResponse` in `packages/types/src/dialectic.types.ts`
-    *   `[ ]`   Updated: `DialecticNotificationTypes` union, `DialecticLifecycleEvent` union, `UnifiedProjectStatus`, `DialecticActions` in `packages/types/src/dialectic.types.ts`
-    *   `[ ]`   Updated: `isDialecticLifecycleEventType` in `packages/utils/src/type_guards.ts` — recognizes `paused_nsf` suffix
-    *   `[ ]`   Updated: `notificationStore.ts` — new `case 'contribution_generation_paused_nsf'` for payload extraction and routing
-    *   `[ ]`   Updated: `dialecticStore.ts` — `_handleContributionGenerationPausedNsf` handler with progress re-hydration, `resumePausedNsfJobs` action via API layer
-    *   `[ ]`   Updated: `dialecticStore.selectors.ts` — `paused_nsf` handling in `selectUnifiedProjectProgress`
-    *   `[ ]`   Modified: `StageDAGProgressDialog.tsx` — `paused_nsf` color in `STATUS_FILL`
-    *   `[ ]`   Modified: `GenerateContributionButton.tsx` — balance threshold gate, progress-based paused NSF detection, resume-via-same-button UX
-    *   `[ ]`   New tests: type guard tests, notification store routing tests, dialectic store NSF handler/action tests, selector paused_nsf mapping tests, DAG dialog color test, button state transition tests
+    *   `[ ]`   Visual language must be preserved: green = completed, red = failed, amber = not started, blue spinner = generating
+    *   `[ ]`   The regenerate button must be visually distinguishable as clickable (not just a colored dot) — an icon-button with the status color
+    *   `[ ]`   The model selection dialog must pre-check only failed/not-started models — completed models require active user opt-in
+    *   `[ ]`   Active-stage-only gate: the button is disabled (or hidden) for documents on stages that are not the session's current stage
+    *   `[ ]`   The dialog must show model display names (not IDs) — these are already available in `perModelLabels.displayName`
+    *   `[ ]`   If only one model is selected for the session, skip the dialog and regenerate directly (single-model fast path)
+    *   `[ ]`   The user must be able to cancel without side effects
+  *   `[ ]`   **Commit** `feat(be,api,store,ui) Regenerate individual documents — superseded job status, EXECUTE job cloning, API client, store action, and per-document regenerate button with model selection`
+    *   `[ ]`   New migration: `superseded` terminal job status in `handle_job_completion()`
+    *   `[ ]`   Updated: `deriveStepStatuses.ts` — skip `superseded` jobs in status derivation
+    *   `[ ]`   New handler: `regenerateDocument.ts` in `dialectic-service` — clone EXECUTE jobs, mark originals superseded
+    *   `[ ]`   Updated: `dialectic-service/index.ts` — route `regenerateDocument` action
+    *   `[ ]`   Updated: `dialectic.interface.ts` — `RegenerateDocumentPayload`, `RegenerateDocumentResponse`, `RegenerateDocumentAction`, `ActionHandlers`
+    *   `[ ]`   New API method: `regenerateDocument()` in `packages/api/src/dialectic.api.ts`
+    *   `[ ]`   Updated: `dialectic.api.mock.ts` — mock for `regenerateDocument`
+    *   `[ ]`   New frontend types: `RegenerateDocumentPayload`, `RegenerateDocumentResponse` in `packages/types/src/dialectic.types.ts`
+    *   `[ ]`   Updated: `DialecticActions` in `packages/types/src/dialectic.types.ts` — `regenerateDocument` action signature
+    *   `[ ]`   New store action: `regenerateDocument` in `packages/store/src/dialecticStore.ts`
+    *   `[ ]`   Updated: `StageRunChecklist.tsx` — per-document regenerate icon-buttons, model selection dialog, active-stage gate
+    *   `[ ]`   New tests: migration validation, `deriveStepStatuses` superseded tests, `regenerateDocument` handler unit tests, API client tests, store action tests, StageRunChecklist UI tests
 
-    
 # ToDo
 
     - Regenerate individual specific documents on demand without regenerating inputs or other sibling documents 
@@ -786,3 +1179,7 @@ A user cannot begin a set of work when they have NSF. If a user reaches NSF whil
    - DynamicProgressBar uses formal names instead of friendly names
    - SessionContributionsDisplayCard uses formal names instead of friendly names 
    - SessionInfoCard uses formal names instead of friendly names 
+
+   - Move "Generate" button into StageRunCard left hand side where the icons are 
+
+    - The full UX flow (catch NSF notification → redirect to payment portal → catch return → enable Resume) is a known future requirement but is NOT in scope for this node. This node implements the button states and resume action only. The notification-to-portal redirect flow will be a separate checklist item.

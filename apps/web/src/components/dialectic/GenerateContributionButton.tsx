@@ -6,10 +6,11 @@ import {
 	selectSessionById,
 	selectActiveStage,
 	selectIsStageReadyForSessionIteration,
+	selectUnifiedProjectProgress,
 	useWalletStore,
 	selectActiveChatWalletInfo,
 } from "@paynless/store";
-import { GenerateContributionsPayload, getDisplayName } from "@paynless/types";
+import { GenerateContributionsPayload, getDisplayName, STAGE_BALANCE_THRESHOLDS } from "@paynless/types";
 import { useAiStore } from "@paynless/store";
 import { toast } from "sonner";
 import { Loader2, RefreshCcw } from "lucide-react";
@@ -29,12 +30,23 @@ export const GenerateContributionButton: React.FC<
 		generatingSessions,
 		currentProjectDetail,
 		activeContextSessionId,
+		resumePausedNsfJobs,
 	} = useDialecticStore((state) => ({
 		generateContributions: state.generateContributions,
 		generatingSessions: state.generatingSessions,
 		currentProjectDetail: state.currentProjectDetail,
 		activeContextSessionId: state.activeContextSessionId,
+		resumePausedNsfJobs: state.resumePausedNsfJobs,
 	}));
+	const unifiedProgress = useDialecticStore((state) => {
+		const sid = state.activeContextSessionId;
+		if (!sid) return null;
+		try {
+			return selectUnifiedProjectProgress(state, sid);
+		} catch {
+			return null;
+		}
+	});
 	const continueUntilComplete = useAiStore(
 		(state) => state.continueUntilComplete,
 	);
@@ -76,6 +88,16 @@ export const GenerateContributionButton: React.FC<
 		: false;
 	const areAnyModelsSelected = selectedModels.length > 0;
 
+	const activeStageProgress = useMemo(
+		() => unifiedProgress?.stageDetails?.find((s) => s.stageSlug === activeStage?.slug),
+		[unifiedProgress, activeStage?.slug],
+	);
+	const hasPausedNsfJobs = activeStageProgress?.stageStatus === "paused_nsf";
+	const stageThreshold: number | undefined = activeStage ? STAGE_BALANCE_THRESHOLDS[activeStage.slug] : undefined;
+	const balanceMeetsThreshold =
+		stageThreshold !== undefined ? Number(activeWalletInfo.balance ?? 0) >= stageThreshold : false;
+	const isResumeMode = hasPausedNsfJobs && balanceMeetsThreshold;
+
 	// Final, correct logic based on user feedback
 	const contributionsForStageAndIterationExist = useMemo(() => {
 		if (!activeSession || !activeStage) return false;
@@ -109,6 +131,17 @@ export const GenerateContributionButton: React.FC<
 		}
 		const currentIterationNumber = activeSession.iteration_count;
 
+		if (isResumeMode) {
+			toast.success("Resuming generation...");
+			setDagDialogOpen(true);
+			await resumePausedNsfJobs({
+				sessionId: activeSession.id,
+				stageSlug: activeStage.slug,
+				iterationNumber: currentIterationNumber,
+			});
+			return;
+		}
+
 		toast.success("Contribution generation started!", {
 			description: "The AI is working. We will notify you when it is complete.",
 		});
@@ -133,14 +166,14 @@ export const GenerateContributionButton: React.FC<
 		}
 	};
 
-	// The button is only disabled if essential data is missing or a generation is in progress.
 	const isDisabled =
 		isSessionGenerating ||
 		!areAnyModelsSelected ||
 		!activeStage ||
 		!activeSession ||
 		!isStageReady ||
-		!isWalletReady;
+		!isWalletReady ||
+		!balanceMeetsThreshold;
 	const getButtonText = () => {
 		if (isSessionGenerating)
 			return (
@@ -153,6 +186,9 @@ export const GenerateContributionButton: React.FC<
 		if (!activeStage || !activeSession) return "Stage Not Ready";
 		if (!isStageReady) return "Previous Stage Incomplete";
 		const displayName = getDisplayName(activeStage.slug);
+		if (hasPausedNsfJobs && !balanceMeetsThreshold) return "Add Funds to Resume";
+		if (hasPausedNsfJobs && balanceMeetsThreshold) return `Resume ${displayName}`;
+		if (!balanceMeetsThreshold) return "Insufficient Balance";
 		if (didGenerationFail) return `Retry ${displayName}`;
 		if (contributionsForStageAndIterationExist)
 			return `Regenerate ${displayName}`;

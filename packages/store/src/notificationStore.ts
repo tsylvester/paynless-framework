@@ -323,6 +323,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                                 eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'] };
                             }
                             break;
+                        case 'contribution_generation_paused_nsf':
+                            if (typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string' && typeof data['stageSlug'] === 'string' && typeof data['iterationNumber'] === 'number') {
+                                eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'], stageSlug: data['stageSlug'], iterationNumber: data['iterationNumber'] };
+                            }
+                            break;
                         case 'planner_started':
                             if (
                                 typeof data['sessionId'] === 'string' &&
