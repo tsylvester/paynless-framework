@@ -227,7 +227,7 @@ export async function regenerateDocument(
       completed_at: null,
       results: null,
       error_details: null,
-      target_contribution_id: null,
+      target_contribution_id: typeof job.target_contribution_id === "string" ? job.target_contribution_id : null,
       is_test_job: job.is_test_job,
     };
 
