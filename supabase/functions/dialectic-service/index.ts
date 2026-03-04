@@ -40,6 +40,7 @@ import {
   ResumePausedNsfJobsResponse,
   RegenerateDocumentPayload,
   RegenerateDocumentResponse,
+  RegenerateDocumentFn,
 } from "./dialectic.interface.ts";
 import { getStageRecipe } from "./getStageRecipe.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
@@ -203,7 +204,7 @@ export interface ActionHandlers {
   getStageDocumentFeedback: (payload: GetStageDocumentFeedbackPayload, dbClient: SupabaseClient<Database>, deps: GetStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<GetStageDocumentFeedbackResponse>>;
   getAllStageProgress: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
   resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: ResumePausedNsfJobsResponse; error?: ServiceError; status?: number }>;
-  regenerateDocument: (payload: RegenerateDocumentPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: RegenerateDocumentResponse; error?: ServiceError; status?: number }>;
+  regenerateDocument: RegenerateDocumentFn;
 }
 
 export async function handleRequest(
@@ -621,7 +622,10 @@ export async function handleRequest(
             return createErrorResponse('User not authenticated for regenerateDocument', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
           }
           const payload: RegenerateDocumentPayload = requestBody.payload;
-          const result = await handlers.regenerateDocument(payload, adminClient, userForJson);
+          if (!authToken) {
+            return createErrorResponse('Authentication token is required for regenerateDocument', 401, req, { message: 'Authentication token is required', status: 401, code: 'AUTH_TOKEN_MISSING' });
+          }
+          const result = await handlers.regenerateDocument(payload, { user: userForJson, authToken: authToken }, { dbClient: adminClient as SupabaseClient<Database>, logger });
           if (result.error) {
             return createErrorResponse(result.error.message, result.status, req, result.error);
           }

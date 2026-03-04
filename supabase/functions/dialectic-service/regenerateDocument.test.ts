@@ -10,11 +10,14 @@ import {
 } from "https://deno.land/std@0.208.0/testing/bdd.ts";
 import type { SupabaseClient, User } from "npm:@supabase/supabase-js";
 import type {
+  RegenerateDocumentDeps,
+  RegenerateDocumentParams,
   RegenerateDocumentPayload,
   RegenerateDocumentResponse,
   RegenerateDocumentResult,
 } from "./dialectic.interface.ts";
 import { regenerateDocument } from "./regenerateDocument.ts";
+import { logger } from "../_shared/logger.ts";
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
@@ -22,6 +25,7 @@ import {
   type MockQueryBuilderState,
 } from "../_shared/supabase.mock.ts";
 import { isRecord } from "../_shared/utils/type-guards/type_guards.common.ts";
+import type { Database } from "../types_db.ts";
 
 function getMockUser(id: string): User {
   return {
@@ -41,6 +45,7 @@ const jobId1 = "job-id-1";
 const jobId2 = "job-id-2";
 const cloneId1 = "clone-id-1";
 const cloneId2 = "clone-id-2";
+const authToken = "test-auth-token";
 
 interface MockJobRow {
   id: string;
@@ -151,8 +156,8 @@ describe("regenerateDocument", () => {
 
     const result: RegenerateDocumentResult = await regenerateDocument(
       payload,
-      mockSetup.client as unknown as SupabaseClient,
-      user,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
     );
 
     assertEquals(result.status, 200);
@@ -224,8 +229,8 @@ describe("regenerateDocument", () => {
 
     const result: RegenerateDocumentResult = await regenerateDocument(
       payload,
-      mockSetup.client as unknown as SupabaseClient,
-      user,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
     );
 
     assertEquals(result.status, 200);
@@ -259,8 +264,8 @@ describe("regenerateDocument", () => {
 
     const result: RegenerateDocumentResult = await regenerateDocument(
       payload,
-      mockSetup.client as unknown as SupabaseClient,
-      user,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
     );
 
     assertEquals(result.status, 400);
@@ -298,8 +303,8 @@ describe("regenerateDocument", () => {
 
     const result: RegenerateDocumentResult = await regenerateDocument(
       payload,
-      mockSetup.client as unknown as SupabaseClient,
-      user,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
     );
 
     assertEquals(result.status, 404);
@@ -347,8 +352,8 @@ describe("regenerateDocument", () => {
 
     const result: RegenerateDocumentResult = await regenerateDocument(
       payload,
-      mockSetup.client as unknown as SupabaseClient,
-      user,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
     );
 
     assertEquals(result.status, 403);
@@ -394,8 +399,8 @@ describe("regenerateDocument", () => {
 
     const result: RegenerateDocumentResult = await regenerateDocument(
       payload,
-      mockSetup.client as unknown as SupabaseClient,
-      user,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
     );
 
     assertEquals(result.status, 400);
@@ -442,8 +447,8 @@ describe("regenerateDocument", () => {
 
     const result: RegenerateDocumentResult = await regenerateDocument(
       payload,
-      mockSetup.client as unknown as SupabaseClient,
-      user,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
     );
 
     assertEquals(result.status, 403);
@@ -504,8 +509,8 @@ describe("regenerateDocument", () => {
 
     await regenerateDocument(
       payload,
-      mockSetup.client as unknown as SupabaseClient,
-      user,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
     );
 
     assertExists(capturedInsert);
@@ -572,17 +577,79 @@ describe("regenerateDocument", () => {
 
     await regenerateDocument(
       payload,
-      mockSetup.client as unknown as SupabaseClient,
-      user,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
     );
 
     assertExists(capturedInsert);
     assert(isRecord(capturedInsert), "insert data must be a record");
-    assertEquals(capturedInsert["payload"], originalPayload);
+    assertEquals(capturedInsert["payload"], { ...originalPayload, user_jwt: authToken });
     assertEquals(capturedInsert["stage_slug"], originalJob.stage_slug);
     assertEquals(capturedInsert["iteration_number"], originalJob.iteration_number);
     assertEquals(capturedInsert["session_id"], originalJob.session_id);
     assertEquals(capturedInsert["job_type"], originalJob.job_type);
     assertEquals(capturedInsert["max_retries"], originalJob.max_retries);
+  });
+
+  it("clone payload includes user_jwt from provided authToken so trigger can invoke worker", async () => {
+    const providedToken = "bearer-token-for-trigger";
+    const originalJob: MockJobRow = createMockJobRow({
+      id: jobId1,
+      payload: { document_key: "business_case", model_id: "model-1" },
+    });
+    let capturedInsert: object | unknown[] | null = null;
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        dialectic_sessions: {
+          select: {
+            data: [{ id: sessionId, current_stage: { slug: stageSlug } }],
+            error: null,
+            count: 1,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+        dialectic_generation_jobs: {
+          select: async (state: MockQueryBuilderState) => {
+            const docId = getDocIdentityFromSelectState(state);
+            if (docId && docId.documentKey === "business_case" && docId.modelId === "model-1") {
+              return { data: [originalJob], error: null, count: 1, status: 200, statusText: "OK" };
+            }
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          },
+          update: { data: [], error: null, count: 1, status: 200, statusText: "OK" },
+          insert: async (state: MockQueryBuilderState) => {
+            capturedInsert = state.insertData;
+            return {
+              data: [{ ...state.insertData, id: cloneId1 }],
+              error: null,
+              count: 1,
+              status: 201,
+              statusText: "Created",
+            };
+          },
+        },
+      },
+    };
+    mockSetup = createMockSupabaseClient(userId, config);
+    const payload: RegenerateDocumentPayload = {
+      sessionId,
+      stageSlug,
+      iterationNumber,
+      documents: [{ documentKey: "business_case", modelId: "model-1" }],
+    };
+    const user: User = getMockUser(userId);
+
+    await regenerateDocument(
+      payload,
+      { user, authToken: providedToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
+    );
+
+    assertExists(capturedInsert);
+    assert(isRecord(capturedInsert), "insert data must be a record");
+    const clonePayload: unknown = capturedInsert["payload"];
+    assert(isRecord(clonePayload), "clone payload must be a record");
+    assertEquals(clonePayload["user_jwt"], providedToken);
   });
 });
