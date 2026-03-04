@@ -26,6 +26,9 @@ export function buildJobProgressDtos(
 		const modelId: string | null =
 			isRecord(payload) && typeof payload.model_id === "string" ? payload.model_id : null;
 
+		const modelName: string | null =
+			isRecord(payload) && typeof payload.model_slug === "string" ? payload.model_slug : null;
+
 		const documentKey: string | null =
 			isRecord(payload) && typeof payload.documentKey === "string" ? payload.documentKey : null;
 
@@ -35,6 +38,7 @@ export function buildJobProgressDtos(
 			jobType: job.job_type,
 			stepKey,
 			modelId,
+			modelName,
 			documentKey,
 			parentJobId: job.parent_job_id,
 			createdAt: job.created_at,

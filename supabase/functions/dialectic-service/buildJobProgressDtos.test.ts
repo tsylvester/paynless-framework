@@ -85,6 +85,19 @@ Deno.test("buildJobProgressDtos", async (t) => {
 		assertEquals(dtos[0].modelId, "model-abc");
 	});
 
+	await t.step("job with model_slug in payload produces DTO with correct modelName", () => {
+		const stepIdToStepKey: Map<string, string> = new Map<string, string>();
+		const payload: Json = { model_slug: "model-xyz" };
+		const jobs: DialecticJobRow[] = [
+			jobRow("job-1", "EXECUTE", "completed", payload),
+		];
+		const params: BuildJobProgressDtosParams = { jobs, stepIdToStepKey };
+		const result: Map<string, JobProgressDto[]> = buildJobProgressDtos(deps, params);
+		const dtos: JobProgressDto[] = result.get("thesis") ?? [];
+		assertEquals(dtos.length, 1);
+		assertEquals(dtos[0].modelName, "model-xyz");
+	});
+
 	await t.step("job with documentKey in payload produces DTO with correct documentKey", () => {
 		const stepIdToStepKey: Map<string, string> = new Map<string, string>();
 		const payload: Json = { documentKey: "business_case" };

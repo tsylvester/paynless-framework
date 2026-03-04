@@ -1172,6 +1172,7 @@ export interface JobProgressDto {
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  modelName: string | null;
 }
 
 export interface StageProgressEntry {

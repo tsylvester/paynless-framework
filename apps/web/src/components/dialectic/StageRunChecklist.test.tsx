@@ -9,6 +9,7 @@ import type {
     DialecticStage,
     DialecticProcessTemplate,
     DialecticContribution,
+    JobProgressDto,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 
@@ -267,6 +268,7 @@ const createRecipe = (steps: RecipeSteps, slug: string = stageSlug, instanceId =
 const createProgressEntry = (
     statuses: StepStatuses,
     docs: StageRunDocuments,
+    jobs: JobProgressDto[] = [],
 ): StageRunProgressEntry => ({
     stepStatuses: statuses,
     documents: docs,
@@ -276,7 +278,36 @@ const createProgressEntry = (
         totalSteps: 0,
         failedSteps: 0,
     },
+    jobs,
 });
+
+function buildJobProgressDto(overrides: {
+    id?: string;
+    status: string;
+    jobType?: 'PLAN' | 'EXECUTE' | 'RENDER' | null;
+    stepKey?: string | null;
+    modelId: string | null;
+    documentKey: string | null;
+    parentJobId?: string | null;
+    createdAt?: string;
+    startedAt?: string | null;
+    completedAt?: string | null;
+    modelName?: string | null;
+}): JobProgressDto {
+    return {
+        id: overrides.id ?? 'job-1',
+        status: overrides.status,
+        jobType: overrides.jobType ?? 'RENDER',
+        stepKey: overrides.stepKey ?? 'render_document',
+        modelId: overrides.modelId,
+        documentKey: overrides.documentKey,
+        parentJobId: overrides.parentJobId ?? null,
+        createdAt: overrides.createdAt ?? '2025-01-01T00:00:00.000Z',
+        startedAt: overrides.startedAt ?? null,
+        completedAt: overrides.completedAt ?? null,
+        modelName: overrides.modelName ?? null,
+    };
+}
 
 function buildProcessTemplateForStage(slug: string): DialecticProcessTemplate {
     const stage: DialecticStage = {
@@ -485,7 +516,15 @@ describe('StageRunChecklist', () => {
             },
         };
 
-        const progressEntry = createProgressEntry(stepStatuses, documents);
+        const progressEntry = createProgressEntry(stepStatuses, documents, [
+            buildJobProgressDto({
+                id: 'job-render',
+                status: 'processing',
+                modelId: modelIdA,
+                documentKey: 'synthesis_document_rendered',
+                modelName: 'Model A',
+            }),
+        ]);
         setChecklistState(recipe, progressEntry);
 
         const onDocumentSelect = vi.fn();
@@ -778,7 +817,15 @@ describe('StageRunChecklist', () => {
             },
         };
 
-        const progressEntry = createProgressEntry({ render_document: 'completed' }, documents);
+        const progressEntry = createProgressEntry({ render_document: 'completed' }, documents, [
+            buildJobProgressDto({
+                id: 'job-render',
+                status: 'completed',
+                modelId: modelIdA,
+                documentKey: 'synthesis_document_rendered',
+                modelName: 'Model A',
+            }),
+        ]);
         setChecklistState(recipe, progressEntry);
 
         act(() => {
@@ -1248,7 +1295,15 @@ describe('StageRunChecklist', () => {
                     lastRenderAtIso: '2025-01-01T00:00:00.000Z',
                 },
             };
-            setChecklistState(recipe, createProgressEntry(stepStatuses, documents));
+            setChecklistState(recipe, createProgressEntry(stepStatuses, documents, [
+                buildJobProgressDto({
+                    id: 'job-1',
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model A',
+                }),
+            ]));
 
             act(() => {
             render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
@@ -1291,7 +1346,22 @@ describe('StageRunChecklist', () => {
                     stepKey: 'render_document',
                 },
             };
-            setChecklistState(recipe, createProgressEntry({ render_document: 'in_progress' }, documents));
+            setChecklistState(recipe, createProgressEntry({ render_document: 'in_progress' }, documents, [
+                buildJobProgressDto({
+                    id: 'job-1',
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model A',
+                }),
+                buildJobProgressDto({
+                    id: 'job-2',
+                    status: 'completed',
+                    modelId: modelIdB,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model B',
+                }),
+            ]));
 
             act(() => {
                 render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
@@ -1332,7 +1402,22 @@ describe('StageRunChecklist', () => {
                     stepKey: 'render_document',
                 },
             };
-            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents));
+            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents, [
+                buildJobProgressDto({
+                    id: 'job-1',
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model A',
+                }),
+                buildJobProgressDto({
+                    id: 'job-2',
+                    status: 'completed',
+                    modelId: 'model-b',
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model B',
+                }),
+            ]));
 
             act(() => {
                 render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
@@ -1366,7 +1451,15 @@ describe('StageRunChecklist', () => {
                     lastRenderAtIso: '2025-01-01T00:00:00.000Z',
                 },
             };
-            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents));
+            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents, [
+                buildJobProgressDto({
+                    id: 'job-1',
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model A',
+                }),
+            ]));
 
             const onDocumentSelect = vi.fn();
             act(() => {
@@ -1412,7 +1505,15 @@ describe('StageRunChecklist', () => {
                     lastRenderAtIso: '2025-01-01T00:00:00.000Z',
                 },
             };
-            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents));
+            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents, [
+                buildJobProgressDto({
+                    id: 'job-render',
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model A',
+                }),
+            ]));
 
             act(() => {
                 render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
@@ -1439,7 +1540,15 @@ describe('StageRunChecklist', () => {
                     lastRenderAtIso: '2025-01-01T00:00:00.000Z',
                 },
             };
-            setChecklistState(recipe, createProgressEntry({ render_document: 'failed' }, documents));
+            setChecklistState(recipe, createProgressEntry({ render_document: 'failed' }, documents, [
+                buildJobProgressDto({
+                    id: 'job-failed',
+                    status: 'failed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model A',
+                }),
+            ]));
 
             act(() => {
                 render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
@@ -1471,26 +1580,112 @@ describe('StageRunChecklist', () => {
             expect(within(row).getByTestId('document-not-started-icon')).toBeInTheDocument();
         });
 
-        it('when stage has been run, document not_started (amber) shows regenerate button so user can fix error state', () => {
+        it('when stage has been run, document with no progress entry shows regenerate button and dialog lists session contribution models', () => {
             const recipe = createRecipe([buildRenderStep()]);
             selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
-            const documents: StageRunDocuments = {
-                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
-                    descriptorType: 'planned',
-                    status: 'not_started',
-                    stepKey: 'render_document',
-                    modelId: modelIdA,
-                },
-            };
-            setChecklistState(recipe, createProgressEntry({ render_document: 'not_started' }, documents));
+            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, {}));
 
             act(() => {
                 render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
             });
 
             const row = screen.getByTestId('document-synthesis_document_rendered');
-            expect(within(row).getByRole('button', { name: /regenerate|redo/i })).toBeInTheDocument();
-            expect(within(row).getByRole('button', { name: /regenerate|redo/i })).toHaveClass('bg-amber-400');
+            const regenerateButton = within(row).getByRole('button', { name: /regenerate|redo/i });
+            act(() => {
+                fireEvent.click(regenerateButton);
+            });
+
+            const dialog = screen.getByRole('dialog');
+            expect(dialog).toBeInTheDocument();
+            expect(within(dialog).getByText('Model A')).toBeInTheDocument();
+            expect(within(dialog).getByText('Model B')).toBeInTheDocument();
+            expect(within(dialog).getByText('Model C')).toBeInTheDocument();
+        });
+
+        it('regenerate dialog shows all targeted models (session contributions) and pre-selects only missing (targeted minus succeeded)', () => {
+            const modelIdB = 'model-b';
+            const modelIdC = 'model-c';
+            const succeededModelIds: string[] = [modelIdA, modelIdB];
+            const missingModelId: string = modelIdC;
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+            const documents: StageRunDocuments = {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
+                    status: 'completed',
+                    job_id: 'job-a',
+                    latestRenderedResourceId: 'res-a',
+                    modelId: modelIdA,
+                    versionHash: 'h-a',
+                    lastRenderedResourceId: 'res-a',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdB)]: {
+                    status: 'completed',
+                    job_id: 'job-b',
+                    latestRenderedResourceId: 'res-b',
+                    modelId: modelIdB,
+                    versionHash: 'h-b',
+                    lastRenderedResourceId: 'res-b',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            };
+            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents, [
+                buildJobProgressDto({
+                    id: 'job-a',
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model A',
+                }),
+                buildJobProgressDto({
+                    id: 'job-b',
+                    status: 'completed',
+                    modelId: modelIdB,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model B',
+                }),
+                buildJobProgressDto({
+                    id: 'job-c',
+                    status: 'pending',
+                    modelId: modelIdC,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model C',
+                }),
+            ]));
+
+            act(() => {
+                render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+            });
+
+            const row = screen.getByTestId('document-synthesis_document_rendered');
+            const regenerateButton = within(row).getByRole('button', { name: /regenerate|redo/i });
+            act(() => {
+                fireEvent.click(regenerateButton);
+            });
+
+            const dialog = screen.getByRole('dialog');
+            expect(within(dialog).getByText('Model A')).toBeInTheDocument();
+            expect(within(dialog).getByText('Model B')).toBeInTheDocument();
+            expect(within(dialog).getByText('Model C')).toBeInTheDocument();
+
+            const displayNameByModelId: Record<string, string> = {
+                [modelIdA]: 'Model A',
+                [modelIdB]: 'Model B',
+                [modelIdC]: 'Model C',
+            };
+            const checkboxForModel = (name: string): HTMLElement | null => {
+                const label = within(dialog).getByText(name).closest('label');
+                if (label === null) return null;
+                return within(label).getByRole('checkbox');
+            };
+            for (const id of succeededModelIds) {
+                const cb = checkboxForModel(displayNameByModelId[id]);
+                if (cb === null) throw new Error(`Expected checkbox for succeeded model ${id}`);
+                expect(cb.getAttribute('aria-checked')).toBe('false');
+            }
+            const missingCheckbox = checkboxForModel(displayNameByModelId[missingModelId]);
+            if (missingCheckbox === null) throw new Error(`Expected checkbox for missing model ${missingModelId}`);
+            expect(missingCheckbox.getAttribute('aria-checked')).toBe('true');
         });
 
         it('stuck document row (continuing or generating but not completed or failed) shows regenerate button so user can redo', () => {
@@ -1507,7 +1702,15 @@ describe('StageRunChecklist', () => {
                     lastRenderAtIso: '2025-01-01T00:00:00.000Z',
                 },
             };
-            setChecklistState(recipe, createProgressEntry({ render_document: 'in_progress' }, documents));
+            setChecklistState(recipe, createProgressEntry({ render_document: 'in_progress' }, documents, [
+                buildJobProgressDto({
+                    id: 'job-render',
+                    status: 'processing',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model A',
+                }),
+            ]));
 
             act(() => {
                 render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
@@ -1533,7 +1736,15 @@ describe('StageRunChecklist', () => {
                     lastRenderAtIso: '2025-01-01T00:00:00.000Z',
                 },
             };
-            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents));
+            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents, [
+                buildJobProgressDto({
+                    id: 'job-render',
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model A',
+                }),
+            ]));
 
             act(() => {
                 render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
@@ -1615,7 +1826,22 @@ describe('StageRunChecklist', () => {
                     lastRenderAtIso: '2025-01-01T00:00:00.000Z',
                 },
             };
-            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents));
+            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents, [
+                buildJobProgressDto({
+                    id: 'job-1',
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model A',
+                }),
+                buildJobProgressDto({
+                    id: 'job-2',
+                    status: 'completed',
+                    modelId: 'model-b',
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model B',
+                }),
+            ]));
 
             act(() => {
                 render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
@@ -1647,6 +1873,15 @@ describe('StageRunChecklist', () => {
                     [progressKey]: createProgressEntry(
                         { render_document: 'not_started' },
                         {},
+                        [
+                            buildJobProgressDto({
+                                id: 'job-other',
+                                status: 'completed',
+                                modelId: modelIdA,
+                                documentKey: 'other_document_key',
+                                modelName: 'Model A',
+                            }),
+                        ],
                     ),
                 },
             });
@@ -1688,7 +1923,22 @@ describe('StageRunChecklist', () => {
                     lastRenderAtIso: '2025-01-01T00:00:00.000Z',
                 },
             };
-            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents));
+            setChecklistState(recipe, createProgressEntry({ render_document: 'completed' }, documents, [
+                buildJobProgressDto({
+                    id: 'job-1',
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model A',
+                }),
+                buildJobProgressDto({
+                    id: 'job-2',
+                    status: 'completed',
+                    modelId: 'model-b',
+                    documentKey: 'synthesis_document_rendered',
+                    modelName: 'Model B',
+                }),
+            ]));
 
             act(() => {
                 render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
@@ -1735,6 +1985,15 @@ describe('StageRunChecklist', () => {
                                 lastRenderAtIso: '2025-01-01T00:00:00.000Z',
                             },
                         },
+                        [
+                            buildJobProgressDto({
+                                id: 'job-render',
+                                status: 'completed',
+                                modelId: modelIdA,
+                                documentKey: 'synthesis_document_rendered',
+                                modelName: 'Model A',
+                            }),
+                        ],
                     ),
                 },
             });
@@ -1785,6 +2044,15 @@ describe('StageRunChecklist', () => {
                                 lastRenderAtIso: '2025-01-01T00:00:00.000Z',
                             },
                         },
+                        [
+                            buildJobProgressDto({
+                                id: 'job-render',
+                                status: 'completed',
+                                modelId: modelIdA,
+                                documentKey: 'synthesis_document_rendered',
+                                modelName: 'Model A',
+                            }),
+                        ],
                     ),
                 },
             });
@@ -1801,6 +2069,142 @@ describe('StageRunChecklist', () => {
 
             const row = screen.getByTestId('document-synthesis_document_rendered');
             expect(within(row).queryByRole('button', { name: /regenerate|redo/i })).not.toBeInTheDocument();
+            expect(within(row).getByTestId('document-completed-icon')).toBeInTheDocument();
+        });
+    });
+
+    describe('jobs-derived model list and display names', () => {
+        it('model with failed job (no contribution) appears in perModelLabels with status Failed', () => {
+            const modelIdD = 'model-d';
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+            const sessionWithTwoContributions: DialecticSession = {
+                ...baseSession,
+                dialectic_contributions: (baseSession.dialectic_contributions ?? []).filter(
+                    (c) => c.model_id !== 'model-c',
+                ),
+            };
+            const progressEntry = createProgressEntry(
+                { render_document: 'failed' },
+                {},
+                [
+                    buildJobProgressDto({
+                        id: 'job-d-failed',
+                        status: 'failed',
+                        modelId: modelIdD,
+                        documentKey: 'synthesis_document_rendered',
+                        modelName: 'Model D',
+                    }),
+                    buildJobProgressDto({
+                        id: 'job-a-completed',
+                        status: 'completed',
+                        modelId: modelIdA,
+                        documentKey: 'synthesis_document_rendered',
+                        modelName: 'Model A',
+                    }),
+                ],
+            );
+            setChecklistState(recipe, progressEntry, {
+                activeSessionDetail: sessionWithTwoContributions,
+            });
+
+            act(() => {
+                render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+            });
+
+            const row = screen.getByTestId('document-synthesis_document_rendered');
+            const regenerateButton = within(row).getByRole('button', { name: /regenerate|redo/i });
+            act(() => {
+                fireEvent.click(regenerateButton);
+            });
+
+            const dialog = screen.getByRole('dialog');
+            expect(within(dialog).getByText('Model D')).toBeInTheDocument();
+            expect(within(dialog).getByText(/Failed/)).toBeInTheDocument();
+        });
+
+        it('redo dialog shows correct model names from jobs data', () => {
+            const modelIdX = 'model-x';
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+            const sessionWithoutModelX: DialecticSession = {
+                ...baseSession,
+                dialectic_contributions: (baseSession.dialectic_contributions ?? []).filter(
+                    (c) => c.model_id !== modelIdX,
+                ),
+            };
+            const progressEntry = createProgressEntry(
+                { render_document: 'in_progress' },
+                {},
+                [
+                    buildJobProgressDto({
+                        id: 'job-x',
+                        status: 'processing',
+                        modelId: modelIdX,
+                        documentKey: 'synthesis_document_rendered',
+                        modelName: 'From Jobs Display Name',
+                    }),
+                    buildJobProgressDto({
+                        id: 'job-a',
+                        status: 'completed',
+                        modelId: modelIdA,
+                        documentKey: 'synthesis_document_rendered',
+                        modelName: 'Model A',
+                    }),
+                ],
+            );
+            setChecklistState(recipe, progressEntry, {
+                activeSessionDetail: sessionWithoutModelX,
+            });
+
+            act(() => {
+                render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+            });
+
+            const row = screen.getByTestId('document-synthesis_document_rendered');
+            const regenerateButton = within(row).getByRole('button', { name: /regenerate|redo/i });
+            act(() => {
+                fireEvent.click(regenerateButton);
+            });
+
+            const dialog = screen.getByRole('dialog');
+            expect(within(dialog).getByText('From Jobs Display Name')).toBeInTheDocument();
+        });
+
+        it('model that completed shows Completed status from document descriptor', () => {
+            const recipe = createRecipe([buildRenderStep()]);
+            selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+            const documents: StageRunDocuments = {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
+                    status: 'completed',
+                    job_id: 'job-render',
+                    latestRenderedResourceId: 'resource-render',
+                    modelId: modelIdA,
+                    versionHash: 'hash-render',
+                    lastRenderedResourceId: 'resource-render',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            };
+            const progressEntry = createProgressEntry(
+                { render_document: 'completed' },
+                documents,
+                [
+                    buildJobProgressDto({
+                        id: 'job-render',
+                        status: 'completed',
+                        modelId: modelIdA,
+                        documentKey: 'synthesis_document_rendered',
+                        modelName: 'Model A',
+                    }),
+                ],
+            );
+            setChecklistState(recipe, progressEntry);
+
+            act(() => {
+                render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+            });
+
+            const row = screen.getByTestId('document-synthesis_document_rendered');
             expect(within(row).getByTestId('document-completed-icon')).toBeInTheDocument();
         });
     });

@@ -341,6 +341,7 @@ export const emptyStageRunProgressSnapshot: StageRunProgressSnapshot = {
   stepStatuses: {},
   jobProgress: {},
   progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+  jobs: [],
 };
 
 /** Minimal recipe for mock/tests; includes edges: [] per DialecticStageRecipe. */
@@ -744,6 +745,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
         },
       ),
       resetSubmitStageDocumentFeedbackError: vi.fn(() => set({ submitStageDocumentFeedbackError: null })),
+      regenerateDocument: vi.fn().mockResolvedValue({ data: { jobIds: [] }, error: undefined, status: 200 }),
     };
   }),
 );

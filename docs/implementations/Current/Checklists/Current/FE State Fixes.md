@@ -473,6 +473,110 @@ The BE sends ALL individual jobs for each stage AND the recipe edges for each st
         *   `[✅]`   Added BE tests for job DTO extraction and response enrichment
         *   `[✅]`   Added FE tests for job hydration and derived progress counters
 
+*   `[✅]`   dialectic-service/buildJobProgressDtos **[BE] Add `modelName` to `JobProgressDto`, extract `model_slug` from payload**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Add `modelName: string | null` to `JobProgressDto` so every downstream consumer receives the model's display name with no extra query
+        *   `[✅]`   Extract `payload.model_slug` alongside existing `payload.model_id` extraction
+    *   `[✅]`   `role`
+        *   `[✅]`   Infrastructure — BE DTO construction for stage progress pipeline
+    *   `[✅]`   `module`
+        *   `[✅]`   dialectic-service job progress DTO builder
+    *   `[✅]`   `deps`
+        *   `[✅]`   `dialectic.interface.ts` — `JobProgressDto`, `BuildJobProgressDtosParams`, `BuildJobProgressDtosDeps`
+        *   `[✅]`   No new dependencies introduced; `model_slug` already exists on `GenerateContributionsPayload` → `DialecticBaseJobPayload` and is written to every job payload at creation time
+    *   `[✅]`   `dialectic.interface.ts`
+        *   `[✅]`   Add `modelName: string | null` to `JobProgressDto` (after `modelId`)
+    *   `[✅]`   `buildJobProgressDtos.test.ts`
+        *   `[✅]`   Test that `modelName` is extracted from `payload.model_slug` when present
+        *   `[✅]`   Test that `modelName` is `null` when `payload.model_slug` is absent
+        *   `[✅]`   Update existing test fixtures to include `modelName` field
+    *   `[✅]`   `buildJobProgressDtos.ts`
+        *   `[✅]`   Extract `payload.model_slug` as `modelName` using same `isRecord` pattern as `model_id` extraction (line 26-27)
+        *   `[✅]`   Add `modelName` to DTO construction (line 32-43)
+    *   `[✅]`   `requirements`
+        *   `[✅]`   `modelName` populated from `payload.model_slug` for every job that carries it
+        *   `[✅]`   `modelName` is `null` when `model_slug` is absent
+        *   `[✅]`   Fixture propagation: `getAllStageProgress.test.ts` and `index.test.ts` may need `modelName: null` added to `JobProgressDto` fixtures
+
+*   `[✅]`   store/dialecticStore.selectors **[STORE] Fix `selectUnifiedProjectProgress` document counting so numerator never exceeds denominator**
+    *   `[✅]`   `objective`
+        *   `[✅]`   A document counts as complete only when ALL expected models have completed it
+        *   `[✅]`   Use `progress.jobs` to determine expected model set per document key
+        *   `[✅]`   Numerator must never exceed denominator
+    *   `[✅]`   `role`
+        *   `[✅]`   App — state selectors consumed by StageTabCard for progress display
+    *   `[✅]`   `module`
+        *   `[✅]`   dialecticStore selectors, specifically `selectUnifiedProjectProgress` lines 898-910
+    *   `[✅]`   `deps`
+        *   `[✅]`   `@paynless/types` — `JobProgressDto`, `StageRunProgressSnapshot`, `STAGE_RUN_DOCUMENT_KEY_SEPARATOR`
+        *   `[✅]`   No new dependencies; `progress.jobs` is already stored during hydration
+    *   `[✅]`   types/`dialectic.types.ts`
+        *   `[✅]`   Add `modelName: string | null` to `JobProgressDto` (after `modelId`, line 1169)
+    *   `[✅]`   `dialecticStore.selectors.test.ts`
+        *   `[✅]`   Test: 2 models both complete same document → `completedDocuments` = 1, `totalDocuments` = 1
+        *   `[✅]`   Test: 2 models, only 1 completes → `completedDocuments` = 0, `totalDocuments` = 1
+        *   `[✅]`   Test: 0 jobs for a document key → document not counted as complete
+        *   `[✅]`   Update existing fixtures to include `modelName: null` on `JobProgressDto` objects
+    *   `[✅]`   `dialecticStore.selectors.ts`
+        *   `[✅]`   Replace per-descriptor counting (lines 901-910) with per-document-key grouped evaluation
+        *   `[✅]`   For each valid markdown key, filter `progress.jobs` by `documentKey` to collect expected `modelId` set
+        *   `[✅]`   Count document as complete only when every expected model has a `completed` descriptor in `progress.documents`
+    *   `[✅]`   `requirements`
+        *   `[✅]`   StageTabCard displays correct ratio (e.g. 0/1 when 1 of 2 models completes, 1/1 when both complete)
+        *   `[✅]`   Fixture propagation: `dialecticStore.documents.test.ts` and `dialecticStore.test.ts` need `modelName: null` on `JobProgressDto` fixtures
+
+*   `[✅]`   web/dialectic/StageRunChecklist **[UI] Source model IDs and names from `progress.jobs` instead of contributions**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Replace `contributionModelIds` loop with model IDs from `stageProgress.jobs` so failed/incomplete models appear in the checklist and redo dialog
+        *   `[✅]`   Use `job.modelName` for display labels; fall back to contribution name or model catalog
+    *   `[✅]`   `role`
+        *   `[✅]`   UI — document checklist with per-model status and regenerate action
+    *   `[✅]`   `module`
+        *   `[✅]`   `computeStageRunChecklistData` in StageRunChecklist, specifically the `contributionModelIds` loop (lines 254-304)
+    *   `[✅]`   `deps`
+        *   `[✅]`   `@paynless/types` — `JobProgressDto`, `StageRunProgressSnapshot`, `STAGE_RUN_DOCUMENT_KEY_SEPARATOR`
+        *   `[✅]`   `@paynless/store` — `selectStageRunProgress`, `selectStageDocumentChecklist`
+        *   `[✅]`   No new dependencies; `stageProgress.jobs` already available in store
+    *   `[✅]`   `StageRunChecklist.test.tsx`
+        *   `[✅]`   Test: model with failed job (no contribution) appears in `perModelLabels` with status `Failed`
+        *   `[✅]`   Test: redo dialog shows correct model names from jobs data
+        *   `[✅]`   Test: model that completed shows `Completed` status from document descriptor
+        *   `[✅]`   Update existing test fixtures to include `jobs` array with `modelName` on `StageRunProgressSnapshot`
+    *   `[✅]`   `StageRunChecklist.tsx`
+        *   `[✅]`   In `computeStageRunChecklistData`: for each `documentKey`, filter `stageProgress.jobs` to collect model IDs with that `documentKey`
+        *   `[✅]`   Build `perModelLabels` from jobs-derived model IDs instead of `contributionModelIds`
+        *   `[✅]`   Use `job.modelName` for display name; fall back to `modelNameByModelId` (contributions) then model catalog
+        *   `[✅]`   Remove dead `modelIdsByDocumentKey` and `progressDocumentKeys` variables (lines 214-243) or repurpose
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Redo dialog shows all models assigned to produce a document, including failed ones, by display name
+        *   `[✅]`   Models that never produced a contribution are visible and selectable for regeneration
+
+*   `[✅]`   web/dialectic/GeneratedContributionCard **[UI] Replace crash-inducing throws with graceful degradation**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Replace `throw new Error` in `modelName` memo (line 181) with fallback to `stageRunProgress.jobs` then model catalog
+        *   `[✅]`   Replace `throw new Error` in `documentCreatedAtIso` memo (line 487) with `return null` when document resource state is absent
+        *   `[✅]`   Component must not crash when a model is assigned but has not yet produced output
+    *   `[✅]`   `role`
+        *   `[✅]`   UI — individual model document viewer with edit and feedback
+    *   `[✅]`   `module`
+        *   `[✅]`   GeneratedContributionCard, specifically `modelName` memo (lines 149-186) and `documentCreatedAtIso` memo (lines 465-511)
+    *   `[✅]`   `deps`
+        *   `[✅]`   `@paynless/store` — `selectStageRunProgress` (already imported)
+        *   `[✅]`   `@paynless/types` — `JobProgressDto` (already available via `StageRunProgressSnapshot`)
+        *   `[✅]`   No new dependencies
+    *   `[✅]`   `GeneratedContributionCard.tsx`
+        *   `[✅]`   `modelName` memo: when contribution-based lookup returns no name, search `stageRunProgress.jobs` for matching `modelId` and use `modelName`; final fallback to model catalog or truncated ID
+        *   `[✅]`   `documentCreatedAtIso` memo: when `sourceContributionId` is missing and `isDraftLoading` is false, `return null` instead of throwing — the existing "RENDER job has not completed yet" alert (lines 658-667) already handles this UI state
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Page does not crash when 2 of 3 models have completed and user focuses the document
+        *   `[✅]`   Model name displays for all models, including those that have only jobs (no contributions)
+        *   `[✅]`   Documents without rendered resources show the "not yet available" alert instead of crashing
+    *   `[✅]`   **Commit** `fix: complete model visibility in progress tracking and document views`
+        *   `[✅]`   BE: `modelName` added to `JobProgressDto`, extracted from `payload.model_slug`
+        *   `[✅]`   STORE: `selectUnifiedProjectProgress` counts documents complete only when all models finish
+        *   `[✅]`   UI: StageRunChecklist sources model IDs from jobs, enabling redo for failed models
+        *   `[✅]`   UI: GeneratedContributionCard no longer crashes on partially-complete document sets
+
 # ToDo
 
 - New user sign in banner doesn't display, throws console error  
@@ -481,8 +585,6 @@ The BE sends ALL individual jobs for each stage AND the recipe edges for each st
 - Generating spinner stays present until page refresh 
 -- Needs to react to actual progress 
 -- Stop the spinner when a condition changes 
-
-- Checklist does not correctly find documents when multiple agents are chosen 
 
 - Refactor EMCAS to break apart the functions, segment out the tests
 -- Move gatherArtifacts call to processSimpleJob
@@ -528,52 +630,10 @@ AND/OR
 
 - Move "Generate" button into StageRunCard left hand side where the icons are 
 
-- The full UX flow (catch NSF notification → redirect to payment portal → catch return → enable Resume) is a known future requirement but is NOT in scope for this node. This node implements the button states and resume action only. The notification-to-portal redirect flow will be a separate checklist item.
-
 504 Gateway Timeout on back end  
 - Not failed, not running 
 - Sometimes eventually resolves
 
-Legal numbering in prompt 
-- Remove 
-- Impairs finding keys for rendering
-
-DAG SVG maps on document keys, not on steps
-- Doesn't show non-document steps
-- Doesn't link steps correctly 
-
-StageTabCard 
-- denominator based on absolute document count
-- numerator on relative document count
-- both should be absolute
-
-StageRunChecklist redo model ID problem 
-- Doesn't show redo for the exact target case that needs it
-- Computes models from model response list, documentModelIds
-- But a model that didn't reply isn't in the response list 
-- The contributionModelIds value is dynamic so it may not match what was requested 
-- If you key off of documentModelIds you can't list the doc you need
-- If you key off contributionModelIds you might have the wrong model
--- This also makes redo available inappropriately for every stage 
-- You "could" compare the models from other documents but there's no guarantee the model you need finished any document
-- Core problem: FE doesn't know which models were "supposed" to produce documents, so it doesn't know which one hasn't to ask for a redo 
-
-User error when generation is partially complete and they renavigate during processing 
-Error: [selectUnifiedProjectProgress] Progress required for stage: thesis
-at selectUnifiedProjectProgress (http://localhost:5173/@fs/Users/wes/Sites/paynless-framework/packages/store/src/dialecticStore.selectors.ts:603:13)
-at http://localhost:5173/src/components/dialectic/StageTabCard.tsx:238:33
-at memoizedSelector (http://localhost:5173/node_modules/.vite/deps/zustand.js?v=002239bd:114:32)
-at http://localhost:5173/node_modules/.vite/deps/zustand.js?v=002239bd:134:24
-at updateSyncExternalStore (http://localhost:5173/node_modules/.vite/deps/chunk-LZYMYQ3D.js?v=002239bd:18796:30)
-at Object.useSyncExternalStore (http://localhost:5173/node_modules/.vite/deps/chunk-LZYMYQ3D.js?v=002239bd:19659:22)
-at useSyncExternalStore (http://localhost:5173/node_modules/.vite/deps/chunk-DXHSK7E4.js?v=002239bd:1405:29)
-at exports.useSyncExternalStoreWithSelector (http://localhost:5173/node_modules/.vite/deps/zustand.js?v=002239bd:143:21)
-at useStore (http://localhost:5173/node_modules/.vite/deps/zustand.js?v=002239bd:220:17)
-at useBoundStore (http://localhost:5173/node_modules/.vite/deps/zustand.js?v=002239bd:237:51)
-
-GeneratedContributionCard throws missing lastRenderedSourceId when 
-- multiple models are called to build documents 
-- Some but not all have returned a document
-- The user tries to focus on the partially complete set of documents
-- The model that hasn't returned yet doesn't have lastRenderedSourceId, so entire thing throws
-- Sub an empty object in this case.  
+Update/fix style_guide_markdown and domain_specific_prompt_overlays.overlay_values
+- Remove numbering, indentation, categories, etc from style_guide_markdown
+- Update overlay_values 

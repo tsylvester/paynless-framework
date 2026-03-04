@@ -1802,6 +1802,7 @@ withSupabaseEnv("handleRequest - getAllStageProgress", async (t) => {
             jobType: "PLAN",
             stepKey: "step-1",
             modelId: "model-1",
+            modelName: "model-1",
             documentKey: null,
             parentJobId: null,
             createdAt: "",

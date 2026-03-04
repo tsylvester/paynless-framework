@@ -737,6 +737,7 @@ export interface JobProgressDto {
 	jobType: JobType | null;
 	stepKey: string | null;
 	modelId: string | null;
+	modelName: string | null;
 	documentKey: string | null;
 	parentJobId: string | null;
 	createdAt: string;

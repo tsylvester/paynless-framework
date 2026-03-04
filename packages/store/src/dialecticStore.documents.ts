@@ -1764,9 +1764,10 @@ export const hydrateAllStageProgressLogic = async (
 				failedSteps: entry.progress.failedSteps,
 			};
 
-			progress.jobs = entry.jobs;
+			const jobs = Array.isArray(entry.jobs) ? entry.jobs : [];
+			progress.jobs = jobs;
 
-			for (const job of entry.jobs) {
+			for (const job of jobs) {
 				if (job.stepKey === null) continue;
 				const jobEntry = ensureJobProgressEntry(progress, job.stepKey);
 				jobEntry.totalJobs += 1;
