@@ -1,14 +1,17 @@
-import type { SupabaseClient, User } from "npm:@supabase/supabase-js";
+
 import type {
   RegenerateDocumentPayload,
   RegenerateDocumentResponse,
   RegenerateDocumentResult,
+  RegenerateDocumentFn,
+  RegenerateDocumentParams,
+  RegenerateDocumentDeps,
+  DialecticJobRow,
 } from "./dialectic.interface.ts";
-import type { TablesInsert } from "../types_db.ts";
+import type { TablesInsert, TablesUpdate } from "../types_db.ts";
 import type { ServiceError } from "../_shared/types.ts";
-import { logger } from "../_shared/logger.ts";
 import { isRecord } from "../_shared/utils/type-guards/type_guards.common.ts";
-import { DialecticJobRow } from "./dialectic.interface.ts";
+import type { PostgrestSingleResponse } from "npm:@supabase/supabase-js";
 
 function isValidRegeneratePayload(
   value: unknown,
@@ -31,11 +34,12 @@ function isValidRegeneratePayload(
   return true;
 }
 
-export async function regenerateDocument(
+export const regenerateDocument: RegenerateDocumentFn = async (
   payload: RegenerateDocumentPayload,
-  dbClient: SupabaseClient,
-  user: User | null,
-): Promise<RegenerateDocumentResult> {
+  params: RegenerateDocumentParams,
+  deps: RegenerateDocumentDeps,
+): Promise<RegenerateDocumentResult> => {
+  const { user, authToken } = params;
   if (!user) {
     const error: ServiceError = {
       message: "User not authenticated",
@@ -44,6 +48,15 @@ export async function regenerateDocument(
     };
     return { status: 401, error };
   }
+  if (!authToken) {
+    const error: ServiceError = {
+      message: "Authentication token is required",
+      status: 401,
+      code: "AUTH_TOKEN_MISSING",
+    };
+    return { status: 401, error };
+  }
+  const { dbClient, logger } = deps;
 
   if (!isValidRegeneratePayload(payload)) {
     const error: ServiceError = {
@@ -54,7 +67,7 @@ export async function regenerateDocument(
     return { status: 400, error };
   }
 
-  const { data: sessionData, error: sessionError } = await dbClient
+  const { data: sessionData, error: sessionError } = await deps.dbClient
     .from("dialectic_sessions")
     .select("id, current_stage:current_stage_id(slug)")
     .eq("id", payload.sessionId)
@@ -181,7 +194,7 @@ export async function regenerateDocument(
       .from("dialectic_generation_jobs")
       .update({ status: "superseded" })
       .eq("id", job.id)
-      .then((r) => r.error);
+      .then((r: PostgrestSingleResponse<null | TablesUpdate<"dialectic_generation_jobs">>) => r.error);
 
     if (updateError) {
       logger.error("regenerateDocument: failed to mark job superseded", {
@@ -198,12 +211,13 @@ export async function regenerateDocument(
       return { status: 500, error };
     }
 
+    const clonePayload = Object.assign({}, job.payload, { user_jwt: params.authToken });
     const cloneRow: TablesInsert<"dialectic_generation_jobs"> = {
       session_id: job.session_id,
       user_id: job.user_id,
       stage_slug: job.stage_slug,
       iteration_number: job.iteration_number,
-      payload: job.payload,
+      payload: clonePayload,
       status: "pending",
       attempt_count: 0,
       max_retries: job.max_retries,
@@ -214,7 +228,7 @@ export async function regenerateDocument(
       completed_at: null,
       results: null,
       error_details: null,
-      target_contribution_id: null,
+      target_contribution_id: typeof job.target_contribution_id === "string" ? job.target_contribution_id : null,
       is_test_job: job.is_test_job,
     };
 
