@@ -429,7 +429,7 @@ Deno.test("getStageRecipe - includes PLAN job step with 'header_context' output_
   assertEquals(result.data.steps[0].job_type, "PLAN");
 });
 
-Deno.test("getStageRecipe - rejects invalid 'rendered_document' output_type (not a ModelContributionFileType)", async () => {
+Deno.test("getStageRecipe - includes RENDER step with rendered_document output_type in response", async () => {
   const stageSlug = "thesis";
   const instanceId = "instance-rendered-doc";
 
@@ -437,13 +437,13 @@ Deno.test("getStageRecipe - rejects invalid 'rendered_document' output_type (not
     {
       id: "step-rendered-doc",
       instance_id: instanceId,
-      step_key: "thesis_generate_doc",
-      step_slug: "generate-doc",
-      step_name: "Generate Document",
+      step_key: "thesis_render_doc",
+      step_slug: "render-doc",
+      step_name: "Render Document",
       execution_order: 1,
       parallel_group: null,
       branch_key: null,
-      job_type: "EXECUTE",
+      job_type: "RENDER",
       prompt_type: "Turn",
       prompt_template_id: "pt-doc",
       output_type: "rendered_document",
@@ -487,12 +487,15 @@ Deno.test("getStageRecipe - rejects invalid 'rendered_document' output_type (not
 
   const result = await getStageRecipe({ stageSlug }, mockSupabase.client as unknown as SupabaseClient<Database>);
 
-  assertEquals(result.status, 500);
-  assertExists(result.error);
-  // Error should indicate that output_type is not a valid ModelContributionFileType
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  assertEquals(result.data.steps.length, 1);
+  assertEquals(result.data.steps[0].step_key, "thesis_render_doc");
+  assertEquals(result.data.steps[0].output_type, "rendered_document");
+  assertEquals(result.data.steps[0].job_type, "RENDER");
 });
 
-Deno.test("getStageRecipe - filters out EXECUTE step with backend-only 'assembled_document_json' output_type", async () => {
+Deno.test("getStageRecipe - includes both EXECUTE steps (assembled_document_json and product_requirements)", async () => {
   const stageSlug = "synthesis";
   const instanceId = "instance-assembled-doc";
 
@@ -601,11 +604,11 @@ Deno.test("getStageRecipe - filters out EXECUTE step with backend-only 'assemble
 
   assertEquals(result.status, 200);
   assertExists(result.data);
-  // Backend-only EXECUTE step with 'assembled_document_json' should be filtered out
-  // Only the renderable step with 'product_requirements' should appear in the DTO
-  assertEquals(result.data.steps.length, 1);
-  assertEquals(result.data.steps[0].step_key, "synthesis_render_product_requirements");
-  assertEquals(result.data.steps[0].output_type, "product_requirements");
+  assertEquals(result.data.steps.length, 2);
+  assertEquals(result.data.steps[0].step_key, "synthesis_pairwise_business_case");
+  assertEquals(result.data.steps[0].output_type, "assembled_document_json");
+  assertEquals(result.data.steps[1].step_key, "synthesis_render_product_requirements");
+  assertEquals(result.data.steps[1].output_type, "product_requirements");
 });
 
 Deno.test("getStageRecipe - successful response includes edges array with correct from_step_id and to_step_id", async () => {
@@ -845,4 +848,288 @@ Deno.test("getStageRecipe - edge rows with missing or invalid from_step_id or to
   assertEquals(validEdges.length, 1);
   assertEquals(validEdges[0].from_step_id, stepIdValid);
   assertEquals(validEdges[0].to_step_id, "step-other-valid");
+});
+
+Deno.test("getStageRecipe - RENDER step with output_type rendered_document and job_type RENDER is included with correct DTO fields", async () => {
+  const stageSlug = "thesis";
+  const instanceId = "instance-render-step";
+  const rawSteps = [
+    {
+      id: "step-render-id",
+      instance_id: instanceId,
+      step_key: "thesis_render_final",
+      step_slug: "render-final",
+      step_name: "Render Final Document",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "RENDER",
+      prompt_type: "Turn",
+      prompt_template_id: "pt-render",
+      output_type: "rendered_document",
+      granularity_strategy: "per_source_document",
+      inputs_required: [{ type: "document", slug: "thesis", document_key: "business_case", required: true }],
+      inputs_relevance: [{ document_key: "business_case", relevance: 1.0 }],
+      outputs_required: {
+        documents: [
+          {
+            document_key: "business_case",
+            template_filename: "thesis_business_case.md",
+            artifact_class: "rendered_document",
+            file_type: "markdown",
+          },
+        ],
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: "",
+    },
+  ];
+  const mockSupabase = createMockSupabaseClient(undefined, {
+    genericMockResults: {
+      dialectic_stages: {
+        select: {
+          data: [{ id: "stage-id", slug: stageSlug, active_recipe_instance_id: instanceId }],
+          error: null,
+        },
+      },
+      dialectic_stage_recipe_steps: {
+        select: { data: rawSteps, error: null },
+      },
+    },
+  });
+  const result = await getStageRecipe({ stageSlug }, mockSupabase.client as unknown as SupabaseClient<Database>);
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  assertEquals(result.data.steps.length, 1);
+  assertEquals(result.data.steps[0].step_key, "thesis_render_final");
+  assertEquals(result.data.steps[0].output_type, "rendered_document");
+  assertEquals(result.data.steps[0].job_type, "RENDER");
+  assertEquals(result.data.steps[0].step_slug, "render-final");
+  assertEquals(result.data.steps[0].step_name, "Render Final Document");
+  assertEquals(result.data.steps[0].execution_order, 1);
+  assertEquals(result.data.steps[0].granularity_strategy, "per_source_document");
+});
+
+Deno.test("getStageRecipe - mixed recipe returns all four step types (PLAN header_context, EXECUTE assembled_document_json, EXECUTE business_case, RENDER rendered_document) sorted with all edges", async () => {
+  const stageSlug = "synthesis";
+  const instanceId = "instance-mixed";
+  const idPlan = "step-plan-id";
+  const idAssembled = "step-assembled-id";
+  const idDoc = "step-doc-id";
+  const idRender = "step-render-id";
+  const rawSteps = [
+    {
+      id: idPlan,
+      instance_id: instanceId,
+      step_key: "plan_header",
+      step_slug: "plan-header",
+      step_name: "Plan Header",
+      execution_order: 0,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "PLAN",
+      prompt_type: "Planner",
+      prompt_template_id: "pt-planner",
+      output_type: "header_context",
+      granularity_strategy: "all_to_one",
+      inputs_required: [{ type: "seed_prompt", document_key: "seed_prompt", required: true }],
+      inputs_relevance: [],
+      outputs_required: {
+        header_context_artifact: {
+          type: "header_context",
+          document_key: "header_context",
+          artifact_class: "header_context",
+          file_type: "json",
+        },
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: "",
+    },
+    {
+      id: idAssembled,
+      instance_id: instanceId,
+      step_key: "pairwise_assembled",
+      step_slug: "pairwise-assembled",
+      step_name: "Pairwise Assembled",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: "pt-pairwise",
+      output_type: "assembled_document_json",
+      granularity_strategy: "per_source_document",
+      inputs_required: [{ type: "header_context", slug: "synthesis", document_key: "header_context", required: true }],
+      inputs_relevance: [],
+      outputs_required: {
+        documents: [{ document_key: "synthesis_document_business_case", artifact_class: "assembled_document_json", file_type: "json" }],
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: "",
+    },
+    {
+      id: idDoc,
+      instance_id: instanceId,
+      step_key: "doc_business_case",
+      step_slug: "doc-business-case",
+      step_name: "Document Business Case",
+      execution_order: 2,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: "pt-doc",
+      output_type: "business_case",
+      granularity_strategy: "all_to_one",
+      inputs_required: [{ type: "header_context", slug: "synthesis", document_key: "header_context", required: true }],
+      inputs_relevance: [],
+      outputs_required: {
+        documents: [{ document_key: "business_case", template_filename: "business_case.md", artifact_class: "rendered_document", file_type: "markdown" }],
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: "",
+    },
+    {
+      id: idRender,
+      instance_id: instanceId,
+      step_key: "render_final",
+      step_slug: "render-final",
+      step_name: "Render Final",
+      execution_order: 3,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "RENDER",
+      prompt_type: "Turn",
+      prompt_template_id: "pt-render",
+      output_type: "rendered_document",
+      granularity_strategy: "per_source_document",
+      inputs_required: [{ type: "document", slug: "synthesis", document_key: "business_case", required: true }],
+      inputs_relevance: [],
+      outputs_required: {
+        documents: [{ document_key: "business_case", template_filename: "final.md", artifact_class: "rendered_document", file_type: "markdown" }],
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: "",
+    },
+  ];
+  const rawEdges = [
+    { from_step_id: idPlan, to_step_id: idAssembled },
+    { from_step_id: idAssembled, to_step_id: idDoc },
+    { from_step_id: idDoc, to_step_id: idRender },
+  ];
+  const mockSupabase = createMockSupabaseClient(undefined, {
+    genericMockResults: {
+      dialectic_stages: {
+        select: {
+          data: [{ id: "stage-id", slug: stageSlug, active_recipe_instance_id: instanceId }],
+          error: null,
+        },
+      },
+      dialectic_stage_recipe_steps: {
+        select: { data: rawSteps, error: null },
+      },
+      dialectic_stage_recipe_edges: {
+        select: { data: rawEdges, error: null },
+      },
+    },
+  });
+  const result = await getStageRecipe({ stageSlug }, mockSupabase.client as unknown as SupabaseClient<Database>);
+  assertEquals(result.status, 200);
+  assertExists(result.data);
+  assertEquals(result.data.steps.length, 4);
+  assertEquals(result.data.steps[0].step_key, "plan_header");
+  assertEquals(result.data.steps[0].output_type, "header_context");
+  assertEquals(result.data.steps[1].step_key, "pairwise_assembled");
+  assertEquals(result.data.steps[1].output_type, "assembled_document_json");
+  assertEquals(result.data.steps[2].step_key, "doc_business_case");
+  assertEquals(result.data.steps[2].output_type, "business_case");
+  assertEquals(result.data.steps[3].step_key, "render_final");
+  assertEquals(result.data.steps[3].output_type, "rendered_document");
+  assertEquals(result.data.edges.length, 3);
+  assertEquals(result.data.edges[0].from_step_id, idPlan);
+  assertEquals(result.data.edges[0].to_step_id, idAssembled);
+  assertEquals(result.data.edges[1].from_step_id, idAssembled);
+  assertEquals(result.data.edges[1].to_step_id, idDoc);
+  assertEquals(result.data.edges[2].from_step_id, idDoc);
+  assertEquals(result.data.edges[2].to_step_id, idRender);
+});
+
+Deno.test("getStageRecipe - invalid output_type (not a valid FileType) returns 500", async () => {
+  const stageSlug = "thesis";
+  const instanceId = "instance-invalid-type";
+  const rawSteps = [
+    {
+      id: "step-invalid",
+      instance_id: instanceId,
+      step_key: "step_bogus",
+      step_slug: "bogus",
+      step_name: "Bogus Step",
+      execution_order: 1,
+      parallel_group: null,
+      branch_key: null,
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      prompt_template_id: "pt-1",
+      output_type: "totally_bogus_type",
+      granularity_strategy: "per_source_document",
+      inputs_required: [{ type: "header_context", slug: "thesis", document_key: "header_context", required: true }],
+      inputs_relevance: [],
+      outputs_required: { documents: [] },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_skipped: false,
+      config_override: {},
+      object_filter: {},
+      output_overrides: {},
+      template_step_id: null,
+      step_description: "",
+    },
+  ];
+  const mockSupabase = createMockSupabaseClient(undefined, {
+    genericMockResults: {
+      dialectic_stages: {
+        select: {
+          data: [{ id: "stage-id", slug: stageSlug, active_recipe_instance_id: instanceId }],
+          error: null,
+        },
+      },
+      dialectic_stage_recipe_steps: {
+        select: { data: rawSteps, error: null },
+      },
+    },
+  });
+  const result = await getStageRecipe({ stageSlug }, mockSupabase.client as unknown as SupabaseClient<Database>);
+  assertEquals(result.status, 500);
+  assertExists(result.error);
+  assertExists(result.error.message);
 });

@@ -223,9 +223,9 @@ export type PromptTemplate = Omit<SystemPromptsRow, 'variables_required'> & {
 
 // Stage Recipe Contracts (Frontend)
 export type RecipeJobType = 'PLAN' | 'EXECUTE' | 'RENDER';
-export type RecipePromptType = 'Planner' | 'Turn';
-export type RecipeOutputType = 'header_context' | 'assembled_document_json' | 'rendered_document';
-export type RecipeGranularity = 'all_to_one' | 'per_source_document' | 'one_to_many' | 'many_to_one';
+export type RecipePromptType = 'Seed' | 'Planner' | 'Turn' | 'Continuation';
+export type RecipeOutputType = string;
+export type RecipeGranularity = 'all_to_one' | 'per_source_document' | 'one_to_many' | 'many_to_one' | 'pairwise_by_origin' | 'per_source_group' | 'per_source_document_by_lineage' | 'per_model';
 
 export interface InputRequirement {
   type: 'seed_prompt' | 'document' | 'header_context' | 'feedback';

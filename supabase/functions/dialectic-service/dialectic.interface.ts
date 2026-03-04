@@ -209,7 +209,7 @@ export interface StageRecipeStepDto {
 	job_type: JobType;
 	prompt_type: PromptType;
 	prompt_template_id?: string | null;
-	output_type: ModelContributionFileTypes; // All ModelContributionFileTypes (including backend-only types like header_context for PLAN steps)
+	output_type: FileType; // All FileTypes (including backend-only types like header_context for PLAN steps)
 	granularity_strategy: GranularityStrategy;
 	inputs_required: InputRule[];
 	inputs_relevance?: RelevanceRule[];

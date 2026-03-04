@@ -13,31 +13,35 @@ import type {
 const NODE_W = 180;
 const NODE_H = 44;
 
-function step(
-  overrides: {
-    id: string;
-    step_key: string;
-    step_name: string;
-    job_type: 'PLAN' | 'EXECUTE' | 'RENDER';
-    execution_order: number;
-  }
-): DialecticStageRecipeStep {
-  return {
-    id: overrides.id,
-    step_key: overrides.step_key,
-    step_slug: overrides.step_key,
-    step_name: overrides.step_name,
-    execution_order: overrides.execution_order,
-    job_type: overrides.job_type,
-    prompt_type: 'Planner',
-    output_type: 'header_context',
-    granularity_strategy: 'all_to_one',
-    inputs_required: [],
-  };
+const canonicalStep: DialecticStageRecipeStep = {
+  id: 'canonical-id',
+  step_key: 'canonical_key',
+  step_slug: 'canonical_key',
+  step_name: 'Canonical',
+  execution_order: 0,
+  parallel_group: null,
+  branch_key: null,
+  job_type: 'PLAN',
+  prompt_type: 'Planner',
+  prompt_template_id: null,
+  output_type: 'header_context',
+  granularity_strategy: 'all_to_one',
+  inputs_required: [],
+  inputs_relevance: [],
+  outputs_required: [],
+};
+
+function buildStep(overrides: Partial<DialecticStageRecipeStep>): DialecticStageRecipeStep {
+  return { ...canonicalStep, ...overrides };
 }
 
-function edge(fromId: string, toId: string): DialecticRecipeEdge {
-  return { from_step_id: fromId, to_step_id: toId };
+const canonicalEdge: DialecticRecipeEdge = {
+  from_step_id: 'from-id',
+  to_step_id: 'to-id',
+};
+
+function buildEdge(overrides: Partial<DialecticRecipeEdge>): DialecticRecipeEdge {
+  return { ...canonicalEdge, ...overrides };
 }
 
 describe('computeDAGLayout', () => {
@@ -52,7 +56,7 @@ describe('computeDAGLayout', () => {
 
   it('places single node at origin with no edges and width/height equal to single node dimensions', () => {
     const steps: DialecticStageRecipeStep[] = [
-      step({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
     const params: DAGLayoutParams = { steps, edges: [], nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
@@ -68,11 +72,11 @@ describe('computeDAGLayout', () => {
 
   it('places linear chain A→B→C in three successive layers with two edges', () => {
     const steps: DialecticStageRecipeStep[] = [
-      step({ id: 'a', step_key: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
-      step({ id: 'b', step_key: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
-      step({ id: 'c', step_key: 'c', step_name: 'C', job_type: 'RENDER', execution_order: 2 }),
+      buildStep({ id: 'a', step_key: 'a', step_slug: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 'b', step_key: 'b', step_slug: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
+      buildStep({ id: 'c', step_key: 'c', step_slug: 'c', step_name: 'C', job_type: 'EXECUTE', execution_order: 2 }),
     ];
-    const edges: DialecticRecipeEdge[] = [edge('a', 'b'), edge('b', 'c')];
+    const edges: DialecticRecipeEdge[] = [buildEdge({ from_step_id: 'a', to_step_id: 'b' }), buildEdge({ from_step_id: 'b', to_step_id: 'c' })];
     const params: DAGLayoutParams = { steps, edges, nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     expect(result.nodes).toHaveLength(3);
@@ -83,17 +87,17 @@ describe('computeDAGLayout', () => {
     expect(result.edges).toHaveLength(2);
   });
 
-  it('places fan-out PLAN→(EXEC1, EXEC2, EXEC3) with PLAN in layer 0 and three EXECs in layer 1 stacked vertically', () => {
+  it('places fan-out with step (job_type PLAN) in layer 0 and three steps (job_type EXECUTE) in layer 1 stacked vertically', () => {
     const steps: DialecticStageRecipeStep[] = [
-      step({ id: 'plan', step_key: 'plan', step_name: 'PLAN', job_type: 'PLAN', execution_order: 0 }),
-      step({ id: 'e1', step_key: 'e1', step_name: 'EXEC1', job_type: 'EXECUTE', execution_order: 1 }),
-      step({ id: 'e2', step_key: 'e2', step_name: 'EXEC2', job_type: 'EXECUTE', execution_order: 2 }),
-      step({ id: 'e3', step_key: 'e3', step_name: 'EXEC3', job_type: 'EXECUTE', execution_order: 3 }),
+      buildStep({ id: 'plan', step_key: 'plan', step_slug: 'plan', step_name: 'PLAN', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 'e1', step_key: 'e1', step_slug: 'e1', step_name: 'EXEC1', job_type: 'EXECUTE', execution_order: 1 }),
+      buildStep({ id: 'e2', step_key: 'e2', step_slug: 'e2', step_name: 'EXEC2', job_type: 'EXECUTE', execution_order: 2 }),
+      buildStep({ id: 'e3', step_key: 'e3', step_slug: 'e3', step_name: 'EXEC3', job_type: 'EXECUTE', execution_order: 3 }),
     ];
     const edges: DialecticRecipeEdge[] = [
-      edge('plan', 'e1'),
-      edge('plan', 'e2'),
-      edge('plan', 'e3'),
+      buildEdge({ from_step_id: 'plan', to_step_id: 'e1' }),
+      buildEdge({ from_step_id: 'plan', to_step_id: 'e2' }),
+      buildEdge({ from_step_id: 'plan', to_step_id: 'e3' }),
     ];
     const params: DAGLayoutParams = { steps, edges, nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
@@ -110,16 +114,16 @@ describe('computeDAGLayout', () => {
 
   it('places diamond A→B, A→C, B→D, C→D with A in layer 0, B/C in layer 1, D in layer 2', () => {
     const steps: DialecticStageRecipeStep[] = [
-      step({ id: 'a', step_key: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
-      step({ id: 'b', step_key: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
-      step({ id: 'c', step_key: 'c', step_name: 'C', job_type: 'EXECUTE', execution_order: 2 }),
-      step({ id: 'd', step_key: 'd', step_name: 'D', job_type: 'RENDER', execution_order: 3 }),
+      buildStep({ id: 'a', step_key: 'a', step_slug: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 'b', step_key: 'b', step_slug: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
+      buildStep({ id: 'c', step_key: 'c', step_slug: 'c', step_name: 'C', job_type: 'EXECUTE', execution_order: 2 }),
+      buildStep({ id: 'd', step_key: 'd', step_slug: 'd', step_name: 'D', job_type: 'EXECUTE', execution_order: 3 }),
     ];
     const edges: DialecticRecipeEdge[] = [
-      edge('a', 'b'),
-      edge('a', 'c'),
-      edge('b', 'd'),
-      edge('c', 'd'),
+      buildEdge({ from_step_id: 'a', to_step_id: 'b' }),
+      buildEdge({ from_step_id: 'a', to_step_id: 'c' }),
+      buildEdge({ from_step_id: 'b', to_step_id: 'd' }),
+      buildEdge({ from_step_id: 'c', to_step_id: 'd' }),
     ];
     const params: DAGLayoutParams = { steps, edges, nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
@@ -134,10 +138,10 @@ describe('computeDAGLayout', () => {
 
   it('gives all node positions non-negative x and y', () => {
     const steps: DialecticStageRecipeStep[] = [
-      step({ id: 'a', step_key: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
-      step({ id: 'b', step_key: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
+      buildStep({ id: 'a', step_key: 'a', step_slug: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 'b', step_key: 'b', step_slug: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
     ];
-    const params: DAGLayoutParams = { steps, edges: [edge('a', 'b')], nodeWidth: NODE_W, nodeHeight: NODE_H };
+    const params: DAGLayoutParams = { steps, edges: [buildEdge({ from_step_id: 'a', to_step_id: 'b' })], nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     for (const node of result.nodes) {
       expect(node.x).toBeGreaterThanOrEqual(0);
@@ -147,11 +151,11 @@ describe('computeDAGLayout', () => {
 
   it('assigns the same x coordinate to nodes in the same layer', () => {
     const steps: DialecticStageRecipeStep[] = [
-      step({ id: 'plan', step_key: 'plan', step_name: 'PLAN', job_type: 'PLAN', execution_order: 0 }),
-      step({ id: 'e1', step_key: 'e1', step_name: 'E1', job_type: 'EXECUTE', execution_order: 1 }),
-      step({ id: 'e2', step_key: 'e2', step_name: 'E2', job_type: 'EXECUTE', execution_order: 2 }),
+      buildStep({ id: 'plan', step_key: 'plan', step_slug: 'plan', step_name: 'PLAN', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 'e1', step_key: 'e1', step_slug: 'e1', step_name: 'E1', job_type: 'EXECUTE', execution_order: 1 }),
+      buildStep({ id: 'e2', step_key: 'e2', step_slug: 'e2', step_name: 'E2', job_type: 'EXECUTE', execution_order: 2 }),
     ];
-    const params: DAGLayoutParams = { steps, edges: [edge('plan', 'e1'), edge('plan', 'e2')], nodeWidth: NODE_W, nodeHeight: NODE_H };
+    const params: DAGLayoutParams = { steps, edges: [buildEdge({ from_step_id: 'plan', to_step_id: 'e1' }), buildEdge({ from_step_id: 'plan', to_step_id: 'e2' })], nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     const layer1 = result.nodes.filter((n) => n.layer === 1);
     expect(layer1).toHaveLength(2);
@@ -160,11 +164,11 @@ describe('computeDAGLayout', () => {
 
   it('assigns distinct y within the same layer so no two nodes overlap', () => {
     const steps: DialecticStageRecipeStep[] = [
-      step({ id: 'plan', step_key: 'plan', step_name: 'PLAN', job_type: 'PLAN', execution_order: 0 }),
-      step({ id: 'e1', step_key: 'e1', step_name: 'E1', job_type: 'EXECUTE', execution_order: 1 }),
-      step({ id: 'e2', step_key: 'e2', step_name: 'E2', job_type: 'EXECUTE', execution_order: 2 }),
+      buildStep({ id: 'plan', step_key: 'plan', step_slug: 'plan', step_name: 'PLAN', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 'e1', step_key: 'e1', step_slug: 'e1', step_name: 'E1', job_type: 'EXECUTE', execution_order: 1 }),
+      buildStep({ id: 'e2', step_key: 'e2', step_slug: 'e2', step_name: 'E2', job_type: 'EXECUTE', execution_order: 2 }),
     ];
-    const params: DAGLayoutParams = { steps, edges: [edge('plan', 'e1'), edge('plan', 'e2')], nodeWidth: NODE_W, nodeHeight: NODE_H };
+    const params: DAGLayoutParams = { steps, edges: [buildEdge({ from_step_id: 'plan', to_step_id: 'e1' }), buildEdge({ from_step_id: 'plan', to_step_id: 'e2' })], nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     const layer1 = result.nodes.filter((n) => n.layer === 1);
     const yValues = layer1.map((n) => n.y);
@@ -173,10 +177,10 @@ describe('computeDAGLayout', () => {
 
   it('sets edge fromX/fromY to right-center of source node and toX/toY to left-center of target node (horizontal)', () => {
     const steps: DialecticStageRecipeStep[] = [
-      step({ id: 'a', step_key: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
-      step({ id: 'b', step_key: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
+      buildStep({ id: 'a', step_key: 'a', step_slug: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 'b', step_key: 'b', step_slug: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
     ];
-    const params: DAGLayoutParams = { steps, edges: [edge('a', 'b')], nodeWidth: NODE_W, nodeHeight: NODE_H };
+    const params: DAGLayoutParams = { steps, edges: [buildEdge({ from_step_id: 'a', to_step_id: 'b' })], nodeWidth: NODE_W, nodeHeight: NODE_H };
     const result: DAGLayoutResult = computeDAGLayout(params);
     expect(result.edges).toHaveLength(1);
     const nodeByKey = new Map(result.nodes.map((n) => [n.stepKey, n]));
@@ -193,11 +197,11 @@ describe('computeDAGLayout', () => {
 
   describe('viewport: layout reacts to window size, scales to fit, prefers largest dimension', () => {
     const linearSteps: DialecticStageRecipeStep[] = [
-      step({ id: 'a', step_key: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
-      step({ id: 'b', step_key: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
-      step({ id: 'c', step_key: 'c', step_name: 'C', job_type: 'RENDER', execution_order: 2 }),
+      buildStep({ id: 'a', step_key: 'a', step_slug: 'a', step_name: 'A', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 'b', step_key: 'b', step_slug: 'b', step_name: 'B', job_type: 'EXECUTE', execution_order: 1 }),
+      buildStep({ id: 'c', step_key: 'c', step_slug: 'c', step_name: 'C', job_type: 'EXECUTE', execution_order: 2 }),
     ];
-    const linearEdges: DialecticRecipeEdge[] = [edge('a', 'b'), edge('b', 'c')];
+    const linearEdges: DialecticRecipeEdge[] = [buildEdge({ from_step_id: 'a', to_step_id: 'b' }), buildEdge({ from_step_id: 'b', to_step_id: 'c' })];
 
     it('uses horizontal layout when viewport is wider than tall (largest dimension is width)', () => {
       const viewport: DAGViewport = { width: 800, height: 400 };
@@ -262,5 +266,29 @@ describe('computeDAGLayout', () => {
       expect(new Set(wideLayerXs).size).toBeGreaterThan(1);
       expect(new Set(tallLayerYs).size).toBeGreaterThan(1);
     });
+  });
+
+  it('lays out full DAG so all steps get positions, structure parses, edges walk correctly, and EXECUTE step that produces RENDER byproduct is reachable', () => {
+    const steps: DialecticStageRecipeStep[] = [
+      buildStep({ id: 'plan', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0, output_type: 'header_context' }),
+      buildStep({ id: 'exec1', step_key: 'exec1', step_slug: 'exec1', step_name: 'Assemble', job_type: 'EXECUTE', execution_order: 1, output_type: 'assembled_document_json', granularity_strategy: 'per_source_document' }),
+      buildStep({ id: 'exec2', step_key: 'exec2', step_slug: 'exec2', step_name: 'Document', job_type: 'EXECUTE', execution_order: 2, output_type: 'business_case' }),
+    ];
+    const edges: DialecticRecipeEdge[] = [
+      buildEdge({ from_step_id: 'plan', to_step_id: 'exec1' }),
+      buildEdge({ from_step_id: 'exec1', to_step_id: 'exec2' }),
+    ];
+    const params: DAGLayoutParams = { steps, edges, nodeWidth: NODE_W, nodeHeight: NODE_H };
+    const result: DAGLayoutResult = computeDAGLayout(params);
+    expect(result.nodes).toHaveLength(3);
+    expect(result.edges).toHaveLength(2);
+    const byKey = new Map(result.nodes.map((n) => [n.stepKey, n]));
+    expect(byKey.get('plan')?.layer).toBe(0);
+    expect(byKey.get('exec1')?.layer).toBe(1);
+    expect(byKey.get('exec2')?.layer).toBe(2);
+    expect(byKey.get('plan')?.x).toBeGreaterThanOrEqual(0);
+    expect(byKey.get('plan')?.y).toBeGreaterThanOrEqual(0);
+    expect(byKey.get('exec2')?.x).toBeGreaterThanOrEqual(0);
+    expect(byKey.get('exec2')?.y).toBeGreaterThanOrEqual(0);
   });
 });
