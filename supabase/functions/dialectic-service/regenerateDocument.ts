@@ -6,11 +6,11 @@ import type {
   RegenerateDocumentFn,
   RegenerateDocumentParams,
   RegenerateDocumentDeps,
+  DialecticJobRow,
 } from "./dialectic.interface.ts";
 import type { TablesInsert, TablesUpdate } from "../types_db.ts";
 import type { ServiceError } from "../_shared/types.ts";
 import { isRecord } from "../_shared/utils/type-guards/type_guards.common.ts";
-import { isDialecticJobRow } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
 import type { PostgrestSingleResponse } from "npm:@supabase/supabase-js";
 
 function isValidRegeneratePayload(
@@ -161,20 +161,7 @@ export const regenerateDocument: RegenerateDocumentFn = async (
       return { status: 404, error };
     }
 
-    if (!isDialecticJobRow(jobData)) {
-      logger.error("regenerateDocument: job row shape invalid", {
-        documentKey: docRef.documentKey,
-        modelId: docRef.modelId,
-      });
-      const error: ServiceError = {
-        message: "Invalid job data",
-        status: 500,
-        code: "DB_ERROR",
-      };
-      return { status: 500, error };
-    }
-
-    const job = jobData;
+    const job: DialecticJobRow = jobData;
 
     if (job.session_id !== payload.sessionId) {
       const error: ServiceError = {
