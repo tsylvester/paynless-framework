@@ -23,6 +23,7 @@ import type {
 	EditedDocumentResource,
 	GetAllStageProgressPayload,
 	GetAllStageProgressResponse,
+	JobProgressDto,
 	PlannerStartedPayload,
 	PlannerCompletedPayload,
 	ExecuteStartedPayload,
@@ -301,6 +302,8 @@ describe('hydrateAllStageProgressLogic', () => {
 							latestRenderedResourceId: 'res-thesis-a',
 						},
 					],
+					jobs: [],
+					edges: [],
 				},
 				{
 					stageSlug: 'antithesis',
@@ -317,6 +320,8 @@ describe('hydrateAllStageProgressLogic', () => {
 							latestRenderedResourceId: 'res-antithesis-b',
 						},
 					],
+					jobs: [],
+					edges: [],
 				},
 			],
 		};
@@ -360,6 +365,8 @@ describe('hydrateAllStageProgressLogic', () => {
 							latestRenderedResourceId: 'res-1',
 						},
 					],
+					jobs: [],
+					edges: [],
 				},
 			],
 		};
@@ -416,6 +423,8 @@ describe('hydrateAllStageProgressLogic', () => {
 							latestRenderedResourceId: 'res-b',
 						},
 					],
+					jobs: [],
+					edges: [],
 				},
 			],
 		};
@@ -542,6 +551,8 @@ describe('hydrateAllStageProgressLogic', () => {
 							latestRenderedResourceId: 'res-a',
 						},
 					],
+					jobs: [],
+					edges: [],
 				},
 			],
 		};
@@ -584,6 +595,8 @@ describe('hydrateAllStageProgressLogic', () => {
 							latestRenderedResourceId: 'res-1',
 						},
 					],
+					jobs: [],
+					edges: [],
 				},
 			],
 		};
@@ -634,6 +647,8 @@ describe('hydrateAllStageProgressLogic', () => {
 							latestRenderedResourceId: 'res-1',
 						},
 					],
+					jobs: [],
+					edges: [],
 				},
 			],
 		};
@@ -659,6 +674,417 @@ describe('hydrateAllStageProgressLogic', () => {
 			step_a: 'completed',
 			step_b: 'in_progress',
 		});
+	});
+
+	it('stores jobs array from response in stageRunProgress[progressKey].jobs with all fields correct', async () => {
+		const progressKey = `${sessionId}:thesis:${iterationNumber}`;
+		const job1: JobProgressDto = {
+			id: 'job-1',
+			status: 'completed',
+			jobType: 'PLAN',
+			stepKey: 'plan_step',
+			modelId: null,
+			documentKey: null,
+			parentJobId: null,
+			createdAt: '2025-01-01T00:00:00Z',
+			startedAt: '2025-01-01T00:00:01Z',
+			completedAt: '2025-01-01T00:00:02Z',
+		};
+		const job2: JobProgressDto = {
+			id: 'job-2',
+			status: 'processing',
+			jobType: 'EXECUTE',
+			stepKey: 'execute_step',
+			modelId: 'model-a',
+			documentKey: 'business_case',
+			parentJobId: 'job-1',
+			createdAt: '2025-01-01T00:00:03Z',
+			startedAt: '2025-01-01T00:00:04Z',
+			completedAt: null,
+		};
+		const mockResponse: GetAllStageProgressResponse = {
+			dagProgress: { completedStages: 0, totalStages: 1 },
+			stages: [
+				{
+					stageSlug: 'thesis',
+					status: 'in_progress',
+					modelCount: 1,
+					progress: { completedSteps: 0, totalSteps: 2, failedSteps: 0 },
+					steps: [],
+					documents: [],
+					jobs: [job1, job2],
+					edges: [],
+				},
+			],
+		};
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.jobs).toHaveLength(2);
+		expect(progress.jobs[0]).toEqual(job1);
+		expect(progress.jobs[1]).toEqual(job2);
+	});
+
+	it('stores ALL job types (PLAN, EXECUTE, RENDER) in progress.jobs', async () => {
+		const progressKey = `${sessionId}:thesis:${iterationNumber}`;
+		const planJob: JobProgressDto = {
+			id: 'plan-1',
+			status: 'completed',
+			jobType: 'PLAN',
+			stepKey: 'plan_step',
+			modelId: null,
+			documentKey: null,
+			parentJobId: null,
+			createdAt: '',
+			startedAt: null,
+			completedAt: null,
+		};
+		const executeJob: JobProgressDto = {
+			id: 'exec-1',
+			status: 'completed',
+			jobType: 'EXECUTE',
+			stepKey: 'execute_step',
+			modelId: 'model-1',
+			documentKey: 'doc-key',
+			parentJobId: null,
+			createdAt: '',
+			startedAt: null,
+			completedAt: null,
+		};
+		const renderJob: JobProgressDto = {
+			id: 'render-1',
+			status: 'completed',
+			jobType: 'RENDER',
+			stepKey: 'render_step',
+			modelId: 'model-1',
+			documentKey: 'doc-key',
+			parentJobId: null,
+			createdAt: '',
+			startedAt: null,
+			completedAt: null,
+		};
+		const mockResponse: GetAllStageProgressResponse = {
+			dagProgress: { completedStages: 1, totalStages: 1 },
+			stages: [
+				{
+					stageSlug: 'thesis',
+					status: 'completed',
+					modelCount: 1,
+					progress: { completedSteps: 3, totalSteps: 3, failedSteps: 0 },
+					steps: [],
+					documents: [],
+					jobs: [planJob, executeJob, renderJob],
+					edges: [],
+				},
+			],
+		};
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.jobs).toHaveLength(3);
+		const jobTypes = progress.jobs.map((j: JobProgressDto) => j.jobType);
+		expect(jobTypes).toContain('PLAN');
+		expect(jobTypes).toContain('EXECUTE');
+		expect(jobTypes).toContain('RENDER');
+	});
+
+	it('populates jobProgress[stepKey] totalJobs, completedJobs, inProgressJobs, failedJobs from hydrated jobs', async () => {
+		const progressKey = `${sessionId}:thesis:${iterationNumber}`;
+		const jobs: JobProgressDto[] = [
+			{
+				id: 'j1',
+				status: 'completed',
+				jobType: 'EXECUTE',
+				stepKey: 'step_a',
+				modelId: 'm1',
+				documentKey: null,
+				parentJobId: null,
+				createdAt: '',
+				startedAt: null,
+				completedAt: null,
+			},
+			{
+				id: 'j2',
+				status: 'processing',
+				jobType: 'EXECUTE',
+				stepKey: 'step_a',
+				modelId: 'm2',
+				documentKey: null,
+				parentJobId: null,
+				createdAt: '',
+				startedAt: null,
+				completedAt: null,
+			},
+			{
+				id: 'j3',
+				status: 'failed',
+				jobType: 'EXECUTE',
+				stepKey: 'step_a',
+				modelId: 'm3',
+				documentKey: null,
+				parentJobId: null,
+				createdAt: '',
+				startedAt: null,
+				completedAt: null,
+			},
+		];
+		const mockResponse: GetAllStageProgressResponse = {
+			dagProgress: { completedStages: 0, totalStages: 1 },
+			stages: [
+				{
+					stageSlug: 'thesis',
+					status: 'in_progress',
+					modelCount: 3,
+					progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 },
+					steps: [],
+					documents: [],
+					jobs,
+					edges: [],
+				},
+			],
+		};
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.jobProgress['step_a']).toBeDefined();
+		expect(progress.jobProgress['step_a'].totalJobs).toBe(3);
+		expect(progress.jobProgress['step_a'].completedJobs).toBe(1);
+		expect(progress.jobProgress['step_a'].inProgressJobs).toBe(1);
+		expect(progress.jobProgress['step_a'].failedJobs).toBe(1);
+	});
+
+	it('populates jobProgress[stepKey].modelJobStatuses[modelId] from hydrated jobs', async () => {
+		const progressKey = `${sessionId}:thesis:${iterationNumber}`;
+		const jobs: JobProgressDto[] = [
+			{
+				id: 'j1',
+				status: 'completed',
+				jobType: 'RENDER',
+				stepKey: 'render_step',
+				modelId: 'model-completed',
+				documentKey: 'doc1',
+				parentJobId: null,
+				createdAt: '',
+				startedAt: null,
+				completedAt: null,
+			},
+			{
+				id: 'j2',
+				status: 'failed',
+				jobType: 'RENDER',
+				stepKey: 'render_step',
+				modelId: 'model-failed',
+				documentKey: 'doc2',
+				parentJobId: null,
+				createdAt: '',
+				startedAt: null,
+				completedAt: null,
+			},
+		];
+		const mockResponse: GetAllStageProgressResponse = {
+			dagProgress: { completedStages: 0, totalStages: 1 },
+			stages: [
+				{
+					stageSlug: 'thesis',
+					status: 'in_progress',
+					modelCount: 2,
+					progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 },
+					steps: [],
+					documents: [],
+					jobs,
+					edges: [],
+				},
+			],
+		};
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.jobProgress['render_step'].modelJobStatuses?.['model-completed']).toBe('completed');
+		expect(progress.jobProgress['render_step'].modelJobStatuses?.['model-failed']).toBe('failed');
+	});
+
+	it('populates stageRunProgress[progressKey].jobs from hydration so data survives simulated page reload', async () => {
+		const progressKey = `${sessionId}:thesis:${iterationNumber}`;
+		const jobs: JobProgressDto[] = [
+			{
+				id: 'reload-job-1',
+				status: 'completed',
+				jobType: 'EXECUTE',
+				stepKey: 'step_x',
+				modelId: 'model-1',
+				documentKey: 'doc-x',
+				parentJobId: null,
+				createdAt: '',
+				startedAt: null,
+				completedAt: null,
+			},
+		];
+		const mockResponse: GetAllStageProgressResponse = {
+			dagProgress: { completedStages: 1, totalStages: 1 },
+			stages: [
+				{
+					stageSlug: 'thesis',
+					status: 'completed',
+					modelCount: 1,
+					progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+					steps: [],
+					documents: [],
+					jobs,
+					edges: [],
+				},
+			],
+		};
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.jobs).toHaveLength(1);
+		expect(progress.jobs[0].id).toBe('reload-job-1');
+	});
+
+	it('leaves stepStatuses and documents hydration unchanged when jobs are present', async () => {
+		const progressKey = `${sessionId}:thesis:${iterationNumber}`;
+		const mockResponse: GetAllStageProgressResponse = {
+			dagProgress: { completedStages: 1, totalStages: 1 },
+			stages: [
+				{
+					stageSlug: 'thesis',
+					status: 'completed',
+					modelCount: 1,
+					progress: { completedSteps: 2, totalSteps: 2, failedSteps: 0 },
+					steps: [
+						{ stepKey: 's1', status: 'completed' },
+						{ stepKey: 's2', status: 'completed' },
+					],
+					documents: [
+						{
+							documentKey: 'doc_key',
+							modelId: 'model_id',
+							status: 'completed',
+							jobId: 'job-1',
+							latestRenderedResourceId: 'res-1',
+						},
+					],
+					jobs: [
+						{
+							id: 'job-1',
+							status: 'completed',
+							jobType: 'RENDER',
+							stepKey: 's2',
+							modelId: 'model_id',
+							documentKey: 'doc_key',
+							parentJobId: null,
+							createdAt: '',
+							startedAt: null,
+							completedAt: null,
+						},
+					],
+					edges: [],
+				},
+			],
+		};
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateAllStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.stepStatuses).toEqual({ s1: 'completed', s2: 'completed' });
+		expect(progress.progress).toEqual({ completedSteps: 2, totalSteps: 2, failedSteps: 0 });
+		expect(progress.documents[stageRunDocKey('doc_key', 'model_id')]).toEqual(
+			expect.objectContaining({
+				modelId: 'model_id',
+				latestRenderedResourceId: 'res-1',
+				job_id: 'job-1',
+			}),
+		);
+		expect(progress.jobs).toHaveLength(1);
 	});
 });
 
@@ -724,6 +1150,7 @@ describe('Dialectic store document refresh behaviour', () => {
 					stepStatuses: {},
 					jobProgress: {},
 					progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+					jobs: [],
 				},
 			},
 			recipesByStageSlug: {
@@ -796,6 +1223,7 @@ describe('Dialectic store document refresh behaviour', () => {
 					stepStatuses: {},
 					jobProgress: {},
 					progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+					jobs: [],
 				},
 			},
 			recipesByStageSlug: {
@@ -875,6 +1303,7 @@ describe('Dialectic store document refresh behaviour', () => {
 				stepStatuses: {},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -954,6 +1383,7 @@ describe('Dialectic store document refresh behaviour', () => {
 				stepStatuses: {},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 			state.recipesByStageSlug[compositeKey.stageSlug] = mockRecipe;
 		});
@@ -1291,6 +1721,7 @@ describe('Dialectic store document clear focused stage document', () => {
 					stepStatuses: {},
 					jobProgress: {},
 					progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+					jobs: [],
 				},
 			},
 		});
@@ -1756,6 +2187,7 @@ describe('handleJobFailedLogic', () => {
 				},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -1854,6 +2286,7 @@ describe('handleJobFailedLogic', () => {
 				},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -1966,6 +2399,7 @@ describe('handleDocumentStartedLogic', () => {
 				stepStatuses: {},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -2059,6 +2493,7 @@ describe('handleDocumentCompletedLogic', () => {
 				},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -2143,6 +2578,7 @@ describe('handleDocumentCompletedLogic', () => {
 				},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -2247,6 +2683,7 @@ describe('handleDocumentCompletedLogic', () => {
 				},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -2348,6 +2785,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 				stepStatuses: {},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -2456,6 +2894,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 				stepStatuses: {},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -2554,6 +2993,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 				stepStatuses: {},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -2651,6 +3091,7 @@ describe('Step 51.b: document_started and document_completed tracking issues', (
 				stepStatuses: {},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -2768,6 +3209,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 				},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -2820,6 +3262,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 				},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -2872,6 +3315,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 				},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -2923,6 +3367,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 				},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -3041,6 +3486,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 				},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -3097,6 +3543,7 @@ describe('handleRenderCompletedLogic without stepKey', () => {
 				},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -3662,7 +4109,7 @@ describe('progress.documents composite key (documentKey:modelId)', () => {
 
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = mockRecipe;
-			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
+			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, jobs: [], progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
 		});
 
 		const event: DocumentStartedPayload = {
@@ -3730,6 +4177,7 @@ describe('progress.documents composite key (documentKey:modelId)', () => {
 				stepStatuses: { execute_step: 'in_progress' },
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -3800,6 +4248,7 @@ describe('progress.documents composite key (documentKey:modelId)', () => {
 				stepStatuses: { execute_step: 'in_progress' },
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -3869,6 +4318,7 @@ describe('progress.documents composite key (documentKey:modelId)', () => {
 				stepStatuses: { execute_step: 'in_progress' },
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -3946,7 +4396,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 	it('handlePlannerStartedLogic initializes jobProgress[step_key] with totalJobs=1, inProgressJobs=1, completedJobs=0, failedJobs=0', () => {
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = plannerRecipe;
-			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
+			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, jobs: [], progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
 		});
 
 		const event: PlannerStartedPayload = {
@@ -3986,6 +4436,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 					},
 				},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -4012,7 +4463,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 	it('handleExecuteStartedLogic increments jobProgress[step_key].totalJobs and inProgressJobs, adds modelId to modelJobStatuses with in_progress', () => {
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = plannerRecipe;
-			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
+			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, jobs: [], progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
 		});
 
 		const event: ExecuteStartedPayload = {
@@ -4038,7 +4489,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 	it('handleExecuteStartedLogic updates totalJobs and inProgressJobs when modelId is omitted; modelJobStatuses remains unset', () => {
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = plannerRecipe;
-			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
+			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, jobs: [], progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
 		});
 
 		const event: ExecuteStartedPayload = {
@@ -4076,6 +4527,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 					},
 				},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -4125,6 +4577,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 					},
 				},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -4176,6 +4629,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 					},
 				},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		});
 
@@ -4203,7 +4657,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 	it('jobProgress persists across multiple notifications for same step_key and accumulates correctly', () => {
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = plannerRecipe;
-			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
+			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, jobs: [], progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
 		});
 
 		const execStarted1: ExecuteStartedPayload = {
@@ -4241,7 +4695,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = plannerRecipe;
 			state.selectedModels = [{ id: 'model-z', displayName: 'Model Z' }];
-			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
+			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, jobs: [], progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
 		});
 
 		const execStarted: ExecuteStartedPayload = {
@@ -4276,6 +4730,8 @@ describe('jobProgress tracking in stageRunProgress', () => {
 						{ stepKey: 'execute_step', status: 'in_progress' },
 					],
 					documents: [],
+					jobs: [],
+					edges: [],
 				},
 			],
 		};

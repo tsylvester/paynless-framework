@@ -209,7 +209,7 @@ export interface StageRecipeStepDto {
 	job_type: JobType;
 	prompt_type: PromptType;
 	prompt_template_id?: string | null;
-	output_type: ModelContributionFileTypes; // All ModelContributionFileTypes (including backend-only types like header_context for PLAN steps)
+	output_type: FileType; // All FileTypes (including backend-only types like header_context for PLAN steps)
 	granularity_strategy: GranularityStrategy;
 	inputs_required: InputRule[];
 	inputs_relevance?: RelevanceRule[];
@@ -731,6 +731,27 @@ export interface StepProgressDto {
 	status: UnifiedStageStatus;
 }
 
+export interface JobProgressDto {
+	id: string;
+	status: string;
+	jobType: JobType | null;
+	stepKey: string | null;
+	modelId: string | null;
+	modelName: string | null;
+	documentKey: string | null;
+	parentJobId: string | null;
+	createdAt: string;
+	startedAt: string | null;
+	completedAt: string | null;
+}
+
+export interface BuildJobProgressDtosDeps {}
+
+export interface BuildJobProgressDtosParams {
+	jobs: DialecticJobRow[];
+	stepIdToStepKey: Map<string, string>;
+}
+
 export interface StageProgressEntry {
 	stageSlug: string;
 	status: UnifiedStageStatus;
@@ -738,6 +759,8 @@ export interface StageProgressEntry {
 	progress: { completedSteps: number; totalSteps: number; failedSteps: number };
 	steps: StepProgressDto[];
 	documents: StageDocumentDescriptorDto[];
+	jobs: JobProgressDto[];
+	edges: ProgressRecipeEdge[];
 }
 
 export interface GetAllStageProgressResponse {
@@ -764,6 +787,10 @@ export interface GetAllStageProgressDeps {
 		deps: BuildDocumentDescriptorsDeps,
 		params: BuildDocumentDescriptorsParams,
 	) => Map<string, StageDocumentDescriptorDto[]>;
+	buildJobProgressDtos: (
+		deps: BuildJobProgressDtosDeps,
+		params: BuildJobProgressDtosParams,
+	) => Map<string, JobProgressDto[]>;
 }
 
 export interface GetAllStageProgressParams {

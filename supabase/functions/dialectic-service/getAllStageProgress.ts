@@ -8,6 +8,7 @@ import {
   GetAllStageProgressResult,
   GetAllStageProgressResponse,
   GranularityStrategy,
+  JobProgressDto,
   PriorStageContext,
   ProgressRecipeStep,
   ProgressRecipeEdge,
@@ -712,6 +713,11 @@ export async function getAllStageProgress(
     },
   );
 
+  const jobsByStageSlug: Map<string, JobProgressDto[]> = deps.buildJobProgressDtos(
+    {},
+    { jobs: jobsData, stepIdToStepKey },
+  );
+
   const computeExpectedCountsDeps = { topologicalSortSteps: deps.topologicalSortSteps };
 
   const stageIdToEntry: Map<string, StageProgressEntry> = new Map<string, StageProgressEntry>();
@@ -731,6 +737,7 @@ export async function getAllStageProgress(
     if (stageDocsMaybe) {
       stageDocs.push(...stageDocsMaybe);
     }
+    const stageJobDtos: JobProgressDto[] = jobsByStageSlug.get(stageSlug) ?? [];
 
     if (!instanceId) {
       const error = { message: `Stage active recipe instance not found for stage: ${stageSlug}`, status: 500 };
@@ -873,6 +880,8 @@ export async function getAllStageProgress(
         progress: { completedSteps, totalSteps, failedSteps },
         steps: stepDtos,
         documents: stageDocs,
+        jobs: stageJobDtos,
+        edges,
       });
     } else {
       stageIdToEntry.set(stageId, {
@@ -882,6 +891,8 @@ export async function getAllStageProgress(
         progress: { completedSteps, totalSteps, failedSteps },
         steps: stepDtos,
         documents: stageDocs,
+        jobs: stageJobDtos,
+        edges,
       });
     }
   }

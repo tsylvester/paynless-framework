@@ -223,9 +223,9 @@ export type PromptTemplate = Omit<SystemPromptsRow, 'variables_required'> & {
 
 // Stage Recipe Contracts (Frontend)
 export type RecipeJobType = 'PLAN' | 'EXECUTE' | 'RENDER';
-export type RecipePromptType = 'Planner' | 'Turn';
-export type RecipeOutputType = 'header_context' | 'assembled_document_json' | 'rendered_document';
-export type RecipeGranularity = 'all_to_one' | 'per_source_document' | 'one_to_many' | 'many_to_one';
+export type RecipePromptType = 'Seed' | 'Planner' | 'Turn' | 'Continuation';
+export type RecipeOutputType = string;
+export type RecipeGranularity = 'all_to_one' | 'per_source_document' | 'one_to_many' | 'many_to_one' | 'pairwise_by_origin' | 'per_source_group' | 'per_source_document_by_lineage' | 'per_model';
 
 export interface InputRequirement {
   type: 'seed_prompt' | 'document' | 'header_context' | 'feedback';
@@ -579,6 +579,7 @@ export interface StageRunProgressSnapshot {
   documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
   jobProgress: StepJobProgress;
   progress: { completedSteps: number; totalSteps: number; failedSteps: number };
+  jobs: JobProgressDto[];
 }
 
 export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed' | 'paused_nsf';
@@ -1160,6 +1161,20 @@ export interface StepProgressDto {
   status: UnifiedProjectStatus;
 }
 
+export interface JobProgressDto {
+  id: string;
+  status: string;
+  jobType: RecipeJobType | null;
+  stepKey: string | null;
+  modelId: string | null;
+  documentKey: string | null;
+  parentJobId: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  modelName: string | null;
+}
+
 export interface StageProgressEntry {
   stageSlug: string;
   status: UnifiedProjectStatus;
@@ -1167,6 +1182,8 @@ export interface StageProgressEntry {
   progress: { completedSteps: number; totalSteps: number; failedSteps: number };
   steps: StepProgressDto[];
   documents: StageDocumentChecklistEntry[];
+  jobs: JobProgressDto[];
+  edges: DialecticRecipeEdge[];
 }
 
 export interface GetAllStageProgressResponse {

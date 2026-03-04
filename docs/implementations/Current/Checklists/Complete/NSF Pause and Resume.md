@@ -1111,57 +1111,105 @@ A user clicks a regenerate button on any document in the stage run checklist, se
 
 # ToDo
 
-    - New user sign in banner doesn't display, throws console error  
-    -- Chase, diagnose, fix 
+- New user sign in banner doesn't display, throws console error  
+-- Chase, diagnose, fix 
 
-   - Generating spinner stays present until page refresh 
-   -- Needs to react to actual progress 
-   -- Stop the spinner when a condition changes 
+- Generating spinner stays present until page refresh 
+-- Needs to react to actual progress 
+-- Stop the spinner when a condition changes 
 
-   - Checklist does not correctly find documents when multiple agents are chosen 
+- Checklist does not correctly find documents when multiple agents are chosen 
 
-   - Refactor EMCAS to break apart the functions, segment out the tests
-   -- Move gatherArtifacts call to processSimpleJob
-   -- Decide where to measure & RAG
+- Refactor EMCAS to break apart the functions, segment out the tests
+-- Move gatherArtifacts call to processSimpleJob
+-- Decide where to measure & RAG
 
-   - Switch to stream-to-buffer instead of chunking
-   -- This lets us render the buffer in real time to show document progress 
+- Switch to stream-to-buffer instead of chunking
+-- This lets us render the buffer in real time to show document progress 
 
-   - Build test fixtures for major function groups 
-   -- Provide standard mock factories and objects 
-      
-   - Support user-provided API keys for their preferred providers 
+- Build test fixtures for major function groups 
+-- Provide standard mock factories and objects 
+  
+- Support user-provided API keys for their preferred providers 
 
-   - Regenerate existing document from user feedback & edits 
+- Regenerate existing document from user feedback & edits 
 
-   - Have an additional user input panel where they user can build their own hybrid versions from the ones provided 
-   AND/OR
-   - Let the user pick/rate their preferred version and drop the others 
+- Have an additional user input panel where they user can build their own hybrid versions from the ones provided 
+AND/OR
+- Let the user pick/rate their preferred version and drop the others 
 
-   - Use a gentle color schema to differentiate model outputs visually / at a glance 
+- Use a gentle color schema to differentiate model outputs visually / at a glance 
 
-   - When doc loads for the first time, position at top 
+- When doc loads for the first time, position at top 
 
-   - Search across documents for key terms 
+- Search across documents for key terms 
 
-   - Collect user satisfaction evaluation after each generation "How would you feel if you couldn't use this again?" 
+- Collect user satisfaction evaluation after each generation "How would you feel if you couldn't use this again?" 
 
-   - Add optional outputs for selected stages
-   -- A "landing page" output for the proposal stage
-   --- Landing page
-   --- Hero banner
-   --- Call to action
-   --- Email sign up 
-   -- A "financial analysis" output for the "refinement" stage
-   --- 1/3/5 year 
-   --- Conservative / base / aggressive
-   --- IS, BS, CF 
-   -- A "generate next set of work" for the implementation stage 
+- Add optional outputs for selected stages
+-- A "landing page" output for the proposal stage
+--- Landing page
+--- Hero banner
+--- Call to action
+--- Email sign up 
+-- A "financial analysis" output for the "refinement" stage
+--- 1/3/5 year 
+--- Conservative / base / aggressive
+--- IS, BS, CF 
+-- A "generate next set of work" for the implementation stage 
 
-   - DynamicProgressBar uses formal names instead of friendly names
-   - SessionContributionsDisplayCard uses formal names instead of friendly names 
-   - SessionInfoCard uses formal names instead of friendly names 
+- DynamicProgressBar uses formal names instead of friendly names
+- SessionContributionsDisplayCard uses formal names instead of friendly names 
+- SessionInfoCard uses formal names instead of friendly names 
 
-   - Move "Generate" button into StageRunCard left hand side where the icons are 
+- Move "Generate" button into StageRunCard left hand side where the icons are 
 
-    - The full UX flow (catch NSF notification → redirect to payment portal → catch return → enable Resume) is a known future requirement but is NOT in scope for this node. This node implements the button states and resume action only. The notification-to-portal redirect flow will be a separate checklist item.
+- The full UX flow (catch NSF notification → redirect to payment portal → catch return → enable Resume) is a known future requirement but is NOT in scope for this node. This node implements the button states and resume action only. The notification-to-portal redirect flow will be a separate checklist item.
+
+504 Gateway Timeout on back end  
+- Not failed, not running 
+- Sometimes eventually resolves
+
+Legal numbering in prompt 
+- Remove 
+- Impairs finding keys for rendering
+
+DAG SVG maps on document keys, not on steps
+- Doesn't show non-document steps
+- Doesn't link steps correctly 
+
+StageTabCard 
+- denominator based on absolute document count
+- numerator on relative document count
+- both should be absolute
+
+StageRunChecklist redo
+- Doesn't show redo for the exact target case that needs it
+- Computes models from model response list 
+- But a model that didn't reply isn't in the response list 
+- The selected_models values may not match what was requested 
+- If you key off of models that responded you can't list the doc you need
+- If you key off selected_models you might have the wrong model
+-- This also makes redo available inappropriately for every stage 
+- You "could" compare the models from other documents but there's no guarantee the model you need finished any document
+- Core problem: FE doesn't know which models were "supposed" to produce documents, so it doesn't know which one hasn't to ask for a redo 
+
+User error when generation is partially complete and they renavigate during processing 
+Error: [selectUnifiedProjectProgress] Progress required for stage: thesis
+at selectUnifiedProjectProgress (http://localhost:5173/@fs/Users/wes/Sites/paynless-framework/packages/store/src/dialecticStore.selectors.ts:603:13)
+at http://localhost:5173/src/components/dialectic/StageTabCard.tsx:238:33
+at memoizedSelector (http://localhost:5173/node_modules/.vite/deps/zustand.js?v=002239bd:114:32)
+at http://localhost:5173/node_modules/.vite/deps/zustand.js?v=002239bd:134:24
+at updateSyncExternalStore (http://localhost:5173/node_modules/.vite/deps/chunk-LZYMYQ3D.js?v=002239bd:18796:30)
+at Object.useSyncExternalStore (http://localhost:5173/node_modules/.vite/deps/chunk-LZYMYQ3D.js?v=002239bd:19659:22)
+at useSyncExternalStore (http://localhost:5173/node_modules/.vite/deps/chunk-DXHSK7E4.js?v=002239bd:1405:29)
+at exports.useSyncExternalStoreWithSelector (http://localhost:5173/node_modules/.vite/deps/zustand.js?v=002239bd:143:21)
+at useStore (http://localhost:5173/node_modules/.vite/deps/zustand.js?v=002239bd:220:17)
+at useBoundStore (http://localhost:5173/node_modules/.vite/deps/zustand.js?v=002239bd:237:51)
+
+GeneratedContributionCard throws missing lastRenderedSourceId when 
+- multiple models are called to build documents 
+- Some but not all have returned a document
+- The user tries to focus on the partially complete set of documents
+- The model that hasn't returned yet doesn't have lastRenderedSourceId, so entire thing throws
+- Sub an empty object in this case.  

@@ -150,40 +150,43 @@ export const GeneratedContributionCard: React.FC<
 		if (!hasStageContext) {
 			return "";
 		}
-		if (!activeSessionDetail) {
+		if (activeSessionDetail) {
+			const contributions = activeSessionDetail.dialectic_contributions ?? [];
+			const nameByModelId = new Map<string, string>();
+			contributions.forEach((contribution) => {
+				const contributionModelId = contribution.model_id;
+				const contributionModelName = contribution.model_name;
+				if (
+					typeof contributionModelId !== "string" ||
+					contributionModelId.trim().length === 0 ||
+					typeof contributionModelName !== "string" ||
+					contributionModelName.trim().length === 0
+				) {
+					return;
+				}
+				const existing = nameByModelId.get(contributionModelId);
+				if (existing && existing !== contributionModelName) {
+					throw new Error(
+						`GeneratedContributionCard invariant violation: conflicting model_name values for modelId "${contributionModelId}" ("${existing}" vs "${contributionModelName}")`,
+					);
+				}
+				nameByModelId.set(contributionModelId, contributionModelName);
+			});
+			const name = nameByModelId.get(modelId);
+			if (name) {
+				return name;
+			}
+		}
+		const job = stageRunProgress?.jobs?.find((j) => j.modelId === modelId);
+		const fromJob =
+			job?.modelName != null && job.modelName.trim().length > 0 ? job.modelName : null;
+		if (fromJob === null) {
 			throw new Error(
-				`GeneratedContributionCard invariant violation: activeSessionDetail missing for modelId "${modelId}"`,
+				`GeneratedContributionCard: no model name in dialectic_contributions or stageRunProgress.jobs for modelId "${modelId}"`,
 			);
 		}
-		const contributions = activeSessionDetail.dialectic_contributions ?? [];
-		const nameByModelId = new Map<string, string>();
-		contributions.forEach((contribution) => {
-			const contributionModelId = contribution.model_id;
-			const contributionModelName = contribution.model_name;
-			if (
-				typeof contributionModelId !== "string" ||
-				contributionModelId.trim().length === 0 ||
-				typeof contributionModelName !== "string" ||
-				contributionModelName.trim().length === 0
-			) {
-				return;
-			}
-			const existing = nameByModelId.get(contributionModelId);
-			if (existing && existing !== contributionModelName) {
-				throw new Error(
-					`GeneratedContributionCard invariant violation: conflicting model_name values for modelId "${contributionModelId}" ("${existing}" vs "${contributionModelName}")`,
-				);
-			}
-			nameByModelId.set(contributionModelId, contributionModelName);
-		});
-		const name = nameByModelId.get(modelId);
-		if (!name) {
-			throw new Error(
-				`GeneratedContributionCard invariant violation: missing dialectic_contributions model_name for modelId "${modelId}"`,
-			);
-		}
-		return name;
-	}, [activeSessionDetail, hasStageContext, modelId]);
+		return fromJob;
+	}, [activeSessionDetail, hasStageContext, modelId, stageRunProgress]);
 
 	const validMarkdownDocumentKeys = useDialecticStore((state) => {
 		if (!stageSlug) {
@@ -484,9 +487,7 @@ export const GeneratedContributionCard: React.FC<
 			if (isDraftLoading) {
 				return null;
 			}
-			throw new Error(
-				`GeneratedContributionCard invariant violation: missing sourceContributionId for selected document (modelId "${modelId}", documentKey "${selectedDocumentKey}")`,
-			);
+			return null;
 		}
 		const contributions = activeSessionDetail.dialectic_contributions ?? [];
 		const sourceContribution = contributions.find(
@@ -496,9 +497,7 @@ export const GeneratedContributionCard: React.FC<
 			if (isDraftLoading) {
 				return null;
 			}
-			throw new Error(
-				`GeneratedContributionCard invariant violation: source contribution "${sourceContributionId}" not found in activeSessionDetail.dialectic_contributions (modelId "${modelId}", documentKey "${selectedDocumentKey}")`,
-			);
+			return null;
 		}
 		return sourceContribution.created_at;
 	}, [
