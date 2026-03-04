@@ -43,6 +43,8 @@ import {
   RegenerateDocumentResult,
   StartSessionSuccessResponse,
   DialecticProcessTemplate,
+  RegenerateDocumentParams,
+  RegenerateDocumentDeps,
 } from "./dialectic.interface.ts";
 import type { DomainDescriptor } from "./listAvailableDomains.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
@@ -129,7 +131,7 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
   getStageRecipe?: (...args: unknown[]) => Promise<{ data?: unknown; error?: { message: string }; status?: number }>;
   getAllStageProgress?: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
   resumePausedNsfJobs?: (payload: ResumePausedNsfJobsPayload, dbClient: SupabaseClient, user: User) => Promise<ResumePausedNsfJobsResult>;
-  regenerateDocument?: (payload: RegenerateDocumentPayload, dbClient: SupabaseClient, user: User) => Promise<RegenerateDocumentResult>;
+  regenerateDocument?: (payload: RegenerateDocumentPayload, params: RegenerateDocumentParams, deps: RegenerateDocumentDeps) => Promise<RegenerateDocumentResult>;
 }): ActionHandlers => {
     return {
         createProject: overrides?.createProject || (() => Promise.resolve({ data: { id: 'mock-project-id', user_id: 'mock-user-id', project_name: 'mock-project-name', initial_user_prompt: 'mock-initial-user-prompt', selected_domain_id: 'mock-domain-id', repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, user_domain_overlay_values: null }, status: 201 })),
@@ -1968,7 +1970,7 @@ withSupabaseEnv("handleRequest - regenerateDocument", async (t) => {
     });
 
     await t.step("should pass correct payload, dbClient, and user to regenerateDocument handler", async () => {
-        const regenerateSpy = spy((_p: RegenerateDocumentPayload, _db: SupabaseClient, _u: User): Promise<RegenerateDocumentResult> =>
+        const regenerateSpy = spy((_p: RegenerateDocumentPayload, _params: RegenerateDocumentParams, _deps: RegenerateDocumentDeps): Promise<RegenerateDocumentResult> =>
             Promise.resolve({ data: { jobIds: [] }, status: 200 }));
         const mockHandlers = createMockHandlers({ regenerateDocument: regenerateSpy });
 
@@ -1988,8 +1990,14 @@ withSupabaseEnv("handleRequest - regenerateDocument", async (t) => {
 
         assertEquals(regenerateSpy.calls.length, 1);
         assertEquals(regenerateSpy.calls[0].args[0], payload);
-        assert((regenerateSpy.calls[0].args[1]) === (mockAdminClient as unknown), "handler should receive adminClient as dbClient");
-        assertEquals(regenerateSpy.calls[0].args[2].id, mockUser.id);
+        const params = regenerateSpy.calls[0].args[1];
+        assert(isRecord(params) && "user" in params && "authToken" in params, "handler should receive params with user and authToken");
+        assertEquals(params.user?.id, mockUser.id);
+        assertEquals(params.authToken, mockToken);
+        const deps = regenerateSpy.calls[0].args[2];
+        assert(isRecord(deps) && "dbClient" in deps && "logger" in deps, "handler should receive deps with dbClient and logger");
+        assert(deps.dbClient === (mockAdminClient as unknown as SupabaseClient<Database>), "handler should receive adminClient as dbClient");
+        assertExists(deps.logger);
     });
 
     await t.step("should return 401 if not authenticated", async () => {

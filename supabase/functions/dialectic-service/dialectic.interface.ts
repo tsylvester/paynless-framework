@@ -552,6 +552,22 @@ export interface RegenerateDocumentResult {
 	status?: number;
 }
 
+export interface RegenerateDocumentDeps {
+	dbClient: SupabaseClient<Database>;
+	logger: ILogger;
+}
+
+export interface RegenerateDocumentParams {
+	user: User;
+	authToken: string;
+}
+
+export type RegenerateDocumentFn = (
+	payload: RegenerateDocumentPayload,
+	params: RegenerateDocumentParams,
+	deps: RegenerateDocumentDeps,
+) => Promise<RegenerateDocumentResult>;
+
 type RegenerateDocumentAction = {
 	action: "regenerateDocument";
 	payload: RegenerateDocumentPayload;
