@@ -12,6 +12,7 @@ import {
   DialecticStateValues,
   StageDocumentContentState,
   STAGE_RUN_DOCUMENT_KEY_SEPARATOR,
+  JobProgressDto,
 } from '@paynless/types';
 
 // --- MOCKS ---
@@ -255,6 +256,7 @@ const defaultTestRecipe: DialecticStageRecipe = {
       ],
     },
   ],
+  edges: [],
 };
 
 const buildDialecticContribution = (payload: {
@@ -302,6 +304,8 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
   contribution?: DialecticContribution | null;
   sourceContributionId?: string | null;
   resourceType?: string | null;
+  progressJobs?: JobProgressDto[];
+  documentsOverride?: Partial<Record<string, StageRunDocumentDescriptor>>;
 }) => {
   const {
     focusedDocument = null,
@@ -312,6 +316,8 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
     contribution = null,
     sourceContributionId,
     resourceType = null,
+    progressJobs,
+    documentsOverride,
     ...stateOverrides
   } = overrides;
 
@@ -319,11 +325,14 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
   const getDescriptorKey = (docKey: string, mId: string) => 
     `${docKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${mId}`;
 
-  const documents = {
+  const documents: Record<string, StageRunDocumentDescriptor> = {
     [getDescriptorKey(docA1Key, modelA)]: docA1,
     [getDescriptorKey(docA2Key, modelA)]: docA2,
     [getDescriptorKey(docB1Key, modelB)]: docB1,
   };
+  if (documentsOverride) {
+    Object.assign(documents, documentsOverride);
+  }
 
   const compositeKey = focusedDocument 
     ? getStageDocumentKey({
@@ -418,7 +427,7 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
         created_at: '2023-01-01T00:00:00Z',
         updated_at: '2023-01-01T00:00:00Z',
       }),
-      dialectic_contributions: contributionList,
+      dialectic_contributions: activeSessionDetailOverride?.dialectic_contributions ?? contributionList,
     },
     modelCatalog: [
       { id: modelA, model_name: 'Model Alpha', provider_name: 'OpenAI', api_identifier: 'openai', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [] },
@@ -429,6 +438,8 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
         stepStatuses: {},
         documents: documents,
         jobProgress: {},
+        progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+        jobs: progressJobs ?? [],
       },
     },
     stageDocumentContent: contentState,
@@ -736,6 +747,101 @@ describe('GeneratedContributionCard', () => {
       expect(screen.queryByText(jobId)).not.toBeInTheDocument();
       expect(screen.queryByText(/Latest Render:/i)).not.toBeInTheDocument();
       expect(screen.queryByText(latestRenderedResourceId)).not.toBeInTheDocument();
+    });
+
+    it('displays model name from stageRunProgress.jobs when dialectic_contributions has no entry for that modelId', async () => {
+      const nameFromJob = 'From Job Beta';
+      setupStore({
+        focusedDocument: { modelId: modelB, documentKey: docB1Key },
+        content: 'Document B1 baseline',
+        focusedStageDocument: {
+          [buildFocusKey(modelB)]: { modelId: modelB, documentKey: docB1Key },
+        },
+        activeSessionDetail: {
+          id: mockSessionId,
+          project_id: mockProjectId,
+          session_description: 'Mock Session',
+          user_input_reference_url: null,
+          iteration_count: iterationNumber,
+          selected_models: [{ id: modelA, displayName: 'Model Alpha' }, { id: modelB, displayName: 'Model Beta' }],
+          status: 'active',
+          associated_chat_id: null,
+          current_stage_id: mockStageSlug,
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z',
+          dialectic_contributions: [
+            buildDialecticContribution({
+              id: `contrib-${modelA}`,
+              modelId: modelA,
+              modelName: 'Model Alpha',
+              createdAtIso: '2023-01-01T00:00:00Z',
+              updatedAtIso: '2023-01-01T00:00:00Z',
+            }),
+          ],
+        },
+        progressJobs: [
+          {
+            id: 'job-b1',
+            status: 'completed',
+            jobType: 'EXECUTE',
+            stepKey: 'step_doc_b1',
+            modelId: modelB,
+            documentKey: docB1Key,
+            parentJobId: null,
+            createdAt: '2023-01-01T00:00:00Z',
+            startedAt: '2023-01-01T00:00:00Z',
+            completedAt: '2023-01-01T00:00:00Z',
+            modelName: nameFromJob,
+          },
+        ],
+      });
+
+      render(<GeneratedContributionCard modelId={modelB} />);
+
+      expect(await screen.findByText(new RegExp(nameFromJob, 'i'))).toBeInTheDocument();
+      expect(screen.getByText(/doc-b1/i)).toBeInTheDocument();
+    });
+
+    it('does not throw when document resource state is absent and shows RENDER job has not completed yet', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA2Key },
+        content: '',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA2Key },
+        },
+        sourceContributionId: null,
+        documentsOverride: {
+          [`${docA2Key}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelA}`]: { ...docA2, latestRenderedResourceId: '' },
+        },
+        activeSessionDetail: {
+          id: mockSessionId,
+          project_id: mockProjectId,
+          session_description: 'Mock Session',
+          user_input_reference_url: null,
+          iteration_count: iterationNumber,
+          selected_models: [{ id: modelA, displayName: 'Model Alpha' }],
+          status: 'active',
+          associated_chat_id: null,
+          current_stage_id: mockStageSlug,
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z',
+          dialectic_contributions: [
+            buildDialecticContribution({
+              id: `contrib-${modelA}`,
+              modelId: modelA,
+              modelName: 'Model Alpha',
+              createdAtIso: '2023-01-01T00:00:00Z',
+              updatedAtIso: '2023-01-01T00:00:00Z',
+            }),
+          ],
+        },
+      });
+
+      expect(() => {
+        render(<GeneratedContributionCard modelId={modelA} />);
+      }).not.toThrow();
+
+      expect(await screen.findByText(/RENDER job has not completed yet/i)).toBeInTheDocument();
     });
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useDialecticStore, useAuthStore, selectSortedStages } from '@paynless/store';
+import { useDialecticStore, useAuthStore, selectSortedStages, selectUnifiedProjectProgress } from '@paynless/store';
 
 export const useStageRunProgressHydration = (): void => {
     const user = useAuthStore((state) => state.user);
@@ -9,6 +9,15 @@ export const useStageRunProgressHydration = (): void => {
     const recipesByStageSlug = useDialecticStore((state) => state.recipesByStageSlug);
     const progressHydrationStatus = useDialecticStore((state) => state.progressHydrationStatus);
     const sortedStages = useDialecticStore(selectSortedStages);
+    const hydrationReady = useDialecticStore((state) => {
+        const sid = state.activeContextSessionId;
+        if (!sid) return false;
+        try {
+            return selectUnifiedProjectProgress(state, sid).hydrationReady;
+        } catch {
+            return false;
+        }
+    });
     const fetchStageRecipe = useDialecticStore((state) => state.fetchStageRecipe);
     const ensureRecipeForActiveStage = useDialecticStore((state) => state.ensureRecipeForActiveStage);
     const hydrateAllStageProgress = useDialecticStore((state) => state.hydrateAllStageProgress);
@@ -22,7 +31,10 @@ export const useStageRunProgressHydration = (): void => {
         const iterationNumber = activeSessionDetail.iteration_count;
         const runKey = `${activeContextSessionId}:${iterationNumber}`;
         const status = progressHydrationStatus[runKey];
-        if (status === 'success' || status === 'pending') {
+        if (status === 'pending') {
+            return;
+        }
+        if (status === 'success' && hydrationReady) {
             return;
         }
         const userId = user.id;
@@ -67,6 +79,7 @@ export const useStageRunProgressHydration = (): void => {
         activeSessionDetail,
         sortedStages,
         progressHydrationStatus,
+        hydrationReady,
         fetchStageRecipe,
         ensureRecipeForActiveStage,
         hydrateAllStageProgress,

@@ -2770,10 +2770,11 @@ export const useDialecticStore = create<DialecticStore>()(
           stepStatuses[step.step_key] = 'not_started';
         }
         state.stageRunProgress[progressKey] = {
-          documents: {},
-          stepStatuses,
-          jobProgress: {},
-          progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+			documents: {},
+			stepStatuses,
+			jobProgress: {},
+			progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+			jobs: [],
         };
         return;
       }

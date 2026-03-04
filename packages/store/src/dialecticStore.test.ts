@@ -936,6 +936,8 @@ describe('useDialecticStore', () => {
                     progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
                     steps: [],
                     documents: [],
+                    jobs: [],
+                    edges: [],
                 },
             ],
         };
@@ -1625,6 +1627,7 @@ describe('useDialecticStore', () => {
                         stepStatuses: {},
                         jobProgress: {},
                         progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+                        jobs: [],
                     },
                 },
             });

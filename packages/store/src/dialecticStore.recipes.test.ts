@@ -78,6 +78,55 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
     }
   };
 
+  const stepDocumentExecute: DialecticStageRecipeStep = {
+    id: 'step-doc',
+    step_key: 'doc_key',
+    step_slug: 'doc-slug',
+    step_name: 'Document',
+    execution_order: 3,
+    parallel_group: 3,
+    branch_key: 'branch_doc',
+    job_type: 'EXECUTE',
+    prompt_type: 'Turn',
+    prompt_template_id: 'pt-doc',
+    output_type: 'business_case',
+    granularity_strategy: 'all_to_one',
+    inputs_required: [{ type: 'document', document_key: 'header_context', required: true, slug: 'header_context' }],
+    inputs_relevance: [],
+    outputs_required: [{ document_key: 'business_case', artifact_class: 'assembled_json', file_type: 'json' }],
+  };
+  const stepRender: DialecticStageRecipeStep = {
+    id: 'step-render',
+    step_key: 'render_key',
+    step_slug: 'render-slug',
+    step_name: 'Render',
+    execution_order: 4,
+    parallel_group: 4,
+    branch_key: 'branch_render',
+    job_type: 'RENDER',
+    prompt_type: 'Turn',
+    prompt_template_id: 'pt-render',
+    output_type: 'rendered_document',
+    granularity_strategy: 'all_to_one',
+    inputs_required: [{ type: 'document', document_key: 'business_case', required: true, slug: 'business_case' }],
+    inputs_relevance: [],
+    outputs_required: [{ document_key: 'rendered', artifact_class: 'rendered_document', file_type: 'markdown' }],
+  };
+  const fourStepEdges: DialecticRecipeEdge[] = [
+    { from_step_id: stepA.id, to_step_id: stepB.id },
+    { from_step_id: stepB.id, to_step_id: stepDocumentExecute.id },
+    { from_step_id: stepDocumentExecute.id, to_step_id: stepRender.id },
+  ];
+  const fourStepRecipeResponse: ApiResponse<DialecticStageRecipe> = {
+    status: 200,
+    data: {
+      stageSlug,
+      instanceId: 'instance-123',
+      steps: [stepA, stepB, stepDocumentExecute, stepRender],
+      edges: fourStepEdges,
+    },
+  };
+
   beforeEach(() => {
     resetApiMock();
     useDialecticStore.getState()._resetForTesting?.();
@@ -94,6 +143,24 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       expect(state.recipesByStageSlug[stageSlug]?.stageSlug).toBe(stageSlug);
       expect(state.recipesByStageSlug[stageSlug]?.steps.length).toBe(2);
       expect(state.recipesByStageSlug[stageSlug]?.edges).toEqual(recipeEdges);
+    });
+
+    it('stores recipe containing PLAN, intermediate EXECUTE, document EXECUTE, and RENDER steps', async () => {
+      api.dialectic().fetchStageRecipe.mockResolvedValue(fourStepRecipeResponse);
+      await useDialecticStore.getState().fetchStageRecipe(stageSlug);
+
+      const state = useDialecticStore.getState();
+      const stored = state.recipesByStageSlug[stageSlug];
+      expect(stored).toBeDefined();
+      expect(stored?.steps.length).toBe(4);
+      const planStep = stored?.steps.find(s => s.job_type === 'PLAN');
+      const intermediateExecute = stored?.steps.find(s => s.output_type === 'assembled_document_json');
+      const documentExecute = stored?.steps.find(s => s.output_type === 'business_case');
+      const renderStep = stored?.steps.find(s => s.job_type === 'RENDER' && s.output_type === 'rendered_document');
+      expect(planStep).toBeDefined();
+      expect(intermediateExecute).toBeDefined();
+      expect(documentExecute).toBeDefined();
+      expect(renderStep).toBeDefined();
     });
   });
 
@@ -143,6 +210,48 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       if (!key) throw new Error('progressKey should be defined');
       expect(state.stageRunProgress[key].stepStatuses['a_key']).toBe('completed');
       expect(state.stageRunProgress[key].stepStatuses['b_key']).toBe('not_started');
+    });
+
+    it('creates stepStatuses entries for ALL step types (PLAN, intermediate EXECUTE, document EXECUTE, RENDER)', async () => {
+      api.dialectic().fetchStageRecipe.mockResolvedValue(fourStepRecipeResponse);
+      await useDialecticStore.getState().fetchStageRecipe(stageSlug);
+      await useDialecticStore.getState().ensureRecipeForActiveStage(sessionId, stageSlug, iterationNumber);
+
+      const state = useDialecticStore.getState();
+      const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+      const progress = state.stageRunProgress[progressKey];
+      expect(progress).toBeDefined();
+      expect(progress?.stepStatuses['a_key']).toBe('not_started');
+      expect(progress?.stepStatuses['b_key']).toBe('not_started');
+      expect(progress?.stepStatuses['doc_key']).toBe('not_started');
+      expect(progress?.stepStatuses['render_key']).toBe('not_started');
+    });
+
+    it('idempotent path adds missing step keys for newly-visible step types without resetting existing values', async () => {
+      api.dialectic().fetchStageRecipe.mockResolvedValue(fourStepRecipeResponse);
+      await useDialecticStore.getState().fetchStageRecipe(stageSlug);
+      await useDialecticStore.getState().ensureRecipeForActiveStage(sessionId, stageSlug, iterationNumber);
+
+      const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+      useDialecticStore.setState((state) => {
+        const progress = state.stageRunProgress[progressKey];
+        if (progress) {
+          progress.stepStatuses['a_key'] = 'completed';
+          progress.stepStatuses['b_key'] = 'in_progress';
+          delete progress.stepStatuses['doc_key'];
+          delete progress.stepStatuses['render_key'];
+        }
+      });
+
+      await useDialecticStore.getState().ensureRecipeForActiveStage(sessionId, stageSlug, iterationNumber);
+
+      const state = useDialecticStore.getState();
+      const progress = state.stageRunProgress[progressKey];
+      expect(progress).toBeDefined();
+      expect(progress?.stepStatuses['a_key']).toBe('completed');
+      expect(progress?.stepStatuses['b_key']).toBe('in_progress');
+      expect(progress?.stepStatuses['doc_key']).toBe('not_started');
+      expect(progress?.stepStatuses['render_key']).toBe('not_started');
     });
   });
 

@@ -7,8 +7,6 @@ import type {
   StageRunChecklistProps,
 } from '@paynless/types';
 import type { DialecticStageRecipeStep } from '@paynless/types';
-import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
-
 import {
   useDialecticStore,
   selectActiveContextSessionId,
@@ -212,35 +210,27 @@ function computeStageRunChecklistData(
         : undefined;
 
     const modelIdsByDocumentKey = new Map<string, string[]>();
-    const progressDocumentKeys = new Set<string>();
-
-    if (stageProgress) {
-      Object.entries(stageProgress.documents).forEach(([compositeKey, descriptor]) => {
-        if (!descriptor || typeof descriptor.modelId !== 'string' || descriptor.modelId.length === 0) {
-          return;
-        }
-
-        const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
-        const logicalDocumentKey = compositeKey.includes(sep)
-          ? compositeKey.slice(0, compositeKey.indexOf(sep))
-          : compositeKey;
-
-        // Documents are markdown-only and recipe-defined. Ignore all non-markdown artifacts.
-        if (!validMarkdownDocumentKeys.has(logicalDocumentKey)) {
-          return;
-        }
-
-        progressDocumentKeys.add(logicalDocumentKey);
-
-        const existing = modelIdsByDocumentKey.get(logicalDocumentKey);
-        if (existing) {
-          if (!existing.includes(descriptor.modelId)) {
-            existing.push(descriptor.modelId);
+    if (stageProgress?.jobs) {
+      for (const job of stageProgress.jobs) {
+        const docKey = job.documentKey;
+        const modelId = job.modelId;
+        if (
+          docKey != null &&
+          docKey.length > 0 &&
+          modelId != null &&
+          modelId.length > 0 &&
+          validMarkdownDocumentKeys.has(docKey)
+        ) {
+          const existing = modelIdsByDocumentKey.get(docKey);
+          if (existing) {
+            if (!existing.includes(modelId)) {
+              existing.push(modelId);
+            }
+          } else {
+            modelIdsByDocumentKey.set(docKey, [modelId]);
           }
-        } else {
-          modelIdsByDocumentKey.set(logicalDocumentKey, [descriptor.modelId]);
         }
-      });
+      }
     }
 
     const descriptors = getMarkdownDocumentDescriptors(steps, validMarkdownDocumentKeys);
@@ -252,17 +242,40 @@ function computeStageRunChecklistData(
     const allDocumentKeys: string[] = [...producedDocumentKeys];
     const documentRows: StageDocumentRow[] = [];
 
+    function jobStatusToLabel(status: string): string {
+      if (status === 'completed') return 'Completed';
+      if (status === 'failed') return 'Failed';
+      if (
+        status === 'processing' ||
+        status === 'retrying' ||
+        status === 'waiting_for_children'
+      ) {
+        return 'Generating';
+      }
+      if (status === 'pending' || status === 'waiting_for_prerequisite') return 'Not started';
+      return 'Continuing';
+    }
+
     allDocumentKeys.forEach((documentKey) => {
-      const stepKey = stepKeyByDocumentKey.get(documentKey) ?? '';
-      const documentModelIds = modelIdsByDocumentKey.get(documentKey) ?? [];
+      const stepKey = stepKeyByDocumentKey.get(documentKey);
       let completedCount = 0;
       let hasFailed = false;
       let hasContinuing = false;
       let firstRenderedEntry: StageDocumentEntry | null = null;
       const perModelLabels: PerModelLabel[] = [];
 
-      if (progressKey && documentModelIds.length > 0) {
-        for (const mid of documentModelIds) {
+      const modelIdsFromJobs = modelIdsByDocumentKey.get(documentKey) ?? [];
+      const contributionModelIds: string[] = Array.from(modelNameByModelId.keys());
+      const hasNoJobsForStage = (stageProgress?.jobs?.length ?? 0) === 0;
+      const modelIdsForDoc =
+        modelIdsFromJobs.length > 0
+          ? modelIdsFromJobs
+          : hasNoJobsForStage
+            ? contributionModelIds
+            : [];
+
+      if (progressKey) {
+        for (const mid of modelIdsForDoc) {
           const checklist = selectStageDocumentChecklist(state, progressKey, mid);
           const checklistEntry = checklist.find((e) => e.documentKey === documentKey);
           let statusLabel: string;
@@ -290,21 +303,31 @@ function computeStageRunChecklistData(
               firstRenderedEntry = checklistEntry;
             }
           } else {
-            statusLabel = 'Missing status';
+            const jobsForModel =
+              stageProgress?.jobs.filter(
+                (j) => j.documentKey === documentKey && j.modelId === mid,
+              ) ?? [];
+            const job = jobsForModel[0];
+            statusLabel = job != null ? jobStatusToLabel(job.status) : 'Missing status';
           }
 
-          // Canonical model display labels come from already-produced contributions in the active session.
-          const displayName = modelNameByModelId.get(mid);
-          if (!displayName) {
-            throw new Error(
-              `StageRunChecklist invariant violation: missing dialectic_contributions model_name for modelId "${mid}" (stage "${stage.slug}", documentKey "${documentKey}")`,
-            );
-          }
+          const jobsForModel =
+            stageProgress?.jobs.filter(
+              (j) => j.documentKey === documentKey && j.modelId === mid,
+            ) ?? [];
+          const job = jobsForModel[0];
+          const nameFromJob =
+            job?.modelName != null && job.modelName.trim().length > 0
+              ? job.modelName
+              : null;
+          const nameFromContrib = modelNameByModelId.get(mid) ?? null;
+          const displayName = nameFromJob ?? nameFromContrib ?? mid;
+
           perModelLabels.push({ modelId: mid, displayName, statusLabel });
         }
       }
 
-      const totalModels = documentModelIds.length;
+      const totalModels = modelIdsForDoc.length;
       // If no per-model progress yet but the stage is actively generating, treat as generating
       const isStageGenerating = generatingStageSlug === stage.slug;
       const consolidatedLabel =
@@ -330,6 +353,8 @@ function computeStageRunChecklistData(
               ? 'generating'
               : 'not_started';
 
+      const stepKeyResolved: string = stepKey ?? '';
+
       const entry: StageDocumentEntry =
         derivedStatus !== 'not_started' && firstRenderedEntry != null && 'jobId' in firstRenderedEntry
           ? {
@@ -339,7 +364,7 @@ function computeStageRunChecklistData(
               jobId: firstRenderedEntry.jobId,
               latestRenderedResourceId: firstRenderedEntry.latestRenderedResourceId,
               modelId: firstRenderedEntry.modelId,
-              stepKey,
+              stepKey: stepKeyResolved,
             }
           : {
               descriptorType: 'planned',
@@ -348,10 +373,10 @@ function computeStageRunChecklistData(
               jobId: null,
               latestRenderedResourceId: null,
               modelId: null,
-              stepKey,
+              stepKey: stepKeyResolved,
             };
 
-      documentRows.push({ entry, stepKey, consolidatedLabel, perModelLabels });
+      documentRows.push({ entry, stepKey: stepKeyResolved, consolidatedLabel, perModelLabels });
     });
 
     documentRows.sort((a, b) => a.entry.documentKey.localeCompare(b.entry.documentKey));

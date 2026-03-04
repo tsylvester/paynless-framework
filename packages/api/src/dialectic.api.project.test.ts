@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DialecticApiClient } from './dialectic.api';
+import { mockApiClient } from './mocks/apiClient.mock';
 import { 
     ApiResponse, 
     ApiError,
@@ -17,6 +18,8 @@ import {
     GetProjectResourceContentResponse,
     DialecticProcessTemplate,
     DialecticStageRecipe,
+    DialecticStageRecipeStep,
+    DialecticRecipeEdge,
     SuccessResponse,
 } from '@paynless/types';
 
@@ -470,6 +473,7 @@ describe('DialecticApiClient', () => {
             fileName: 'prompt.md',
             mimeType: 'text/markdown',
             content: '## Initial Project Prompt\n\nThis is the detailed content of the project resource file.',
+            resourceType: null,
         };
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
@@ -758,6 +762,7 @@ describe('DialecticApiClient', () => {
                 data: {
                     stageSlug,
                     instanceId: 'instance-123',
+                    edges: [],
                     // Two steps intentionally out of order to assert ordering in returned payload
                     steps: [
                         {
@@ -849,6 +854,182 @@ describe('DialecticApiClient', () => {
             expect(result.status).toBe(404);
             expect(result.error?.message).toBe('Stage not found');
             expect(result.data).toBeUndefined();
+        });
+
+        it('returns all four step types (PLAN, intermediate EXECUTE, document EXECUTE, RENDER) sorted by execution_order then step_key', async () => {
+            const planStep: DialecticStageRecipeStep = {
+                id: 'step-plan',
+                step_key: 'plan_key',
+                step_slug: 'plan-slug',
+                step_name: 'Plan',
+                execution_order: 1,
+                job_type: 'PLAN',
+                prompt_type: 'Planner',
+                output_type: 'header_context',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [{ type: 'seed_prompt', slug: 'seed_prompt', document_key: 'seed_prompt', required: true }],
+            };
+            const intermediateExecuteStep: DialecticStageRecipeStep = {
+                id: 'step-intermediate',
+                step_key: 'intermediate_key',
+                step_slug: 'intermediate-slug',
+                step_name: 'Assemble',
+                execution_order: 2,
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                output_type: 'assembled_document_json',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [{ type: 'document', slug: 'header_ctx', document_key: 'header_ctx', required: true }],
+            };
+            const documentExecuteStep: DialecticStageRecipeStep = {
+                id: 'step-doc',
+                step_key: 'doc_key',
+                step_slug: 'doc-slug',
+                step_name: 'Business case',
+                execution_order: 3,
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                output_type: 'business_case',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [{ type: 'document', slug: 'feature_spec', document_key: 'feature_spec', required: true }],
+            };
+            const renderStep: DialecticStageRecipeStep = {
+                id: 'step-render',
+                step_key: 'render_key',
+                step_slug: 'render-slug',
+                step_name: 'Render',
+                execution_order: 4,
+                job_type: 'RENDER',
+                prompt_type: 'Turn',
+                output_type: 'rendered_document',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [{ type: 'document', slug: 'business_case', document_key: 'business_case', required: true }],
+            };
+            const backendResponse: SuccessResponse<DialecticStageRecipe> = {
+                status: 200,
+                data: {
+                    stageSlug,
+                    instanceId: 'instance-123',
+                    steps: [renderStep, documentExecuteStep, planStep, intermediateExecuteStep],
+                    edges: [
+                        { from_step_id: 'step-plan', to_step_id: 'step-intermediate' },
+                        { from_step_id: 'step-intermediate', to_step_id: 'step-doc' },
+                        { from_step_id: 'step-doc', to_step_id: 'step-render' },
+                    ],
+                },
+            };
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(backendResponse);
+            const client = new DialecticApiClient(mockApiClient);
+
+            const result = await client.fetchStageRecipe(stageSlug);
+
+            expect(result.status).toBe(200);
+            expect(result.data?.steps).toHaveLength(4);
+            expect(result.data?.steps[0].step_key).toBe('plan_key');
+            expect(result.data?.steps[1].step_key).toBe('intermediate_key');
+            expect(result.data?.steps[2].step_key).toBe('doc_key');
+            expect(result.data?.steps[3].step_key).toBe('render_key');
+            expect(result.data?.steps[0].job_type).toBe('PLAN');
+            expect(result.data?.steps[1].output_type).toBe('assembled_document_json');
+            expect(result.data?.steps[2].output_type).toBe('business_case');
+            expect(result.data?.steps[3].job_type).toBe('RENDER');
+        });
+
+        it('passes through widened type values (output_type, prompt_type, granularity_strategy) without transformation or loss', async () => {
+            const step: DialecticStageRecipeStep = {
+                id: 'step-1',
+                step_key: 'step_key',
+                step_slug: 'step-slug',
+                step_name: 'Step',
+                execution_order: 1,
+                job_type: 'EXECUTE',
+                prompt_type: 'Continuation',
+                output_type: 'business_case',
+                granularity_strategy: 'pairwise_by_origin',
+                inputs_required: [{ type: 'document', slug: 'doc', document_key: 'doc', required: true }],
+            };
+            const backendResponse: SuccessResponse<DialecticStageRecipe> = {
+                status: 200,
+                data: {
+                    stageSlug,
+                    instanceId: 'inst-1',
+                    steps: [step],
+                    edges: [],
+                },
+            };
+            dialecticApiClient.fetchStageRecipe.mockResolvedValueOnce(backendResponse);
+
+            const result = await dialecticApiClient.fetchStageRecipe(stageSlug);
+
+            expect(result.status).toBe(200);
+            expect(result.data?.steps[0].output_type).toBe('business_case');
+            expect(result.data?.steps[0].prompt_type).toBe('Continuation');
+            expect(result.data?.steps[0].granularity_strategy).toBe('pairwise_by_origin');
+        });
+
+        it('preserves edges array intact alongside sorted steps', async () => {
+            const edges: DialecticRecipeEdge[] = [
+                { from_step_id: 'step-a', to_step_id: 'step-b' },
+                { from_step_id: 'step-b', to_step_id: 'step-c' },
+            ];
+            const stepA: DialecticStageRecipeStep = {
+                id: 'step-a',
+                step_key: 'a_key',
+                step_slug: 'a-slug',
+                step_name: 'A',
+                execution_order: 2,
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                output_type: 'business_case',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [],
+            };
+            const stepB: DialecticStageRecipeStep = {
+                id: 'step-b',
+                step_key: 'b_key',
+                step_slug: 'b-slug',
+                step_name: 'B',
+                execution_order: 1,
+                job_type: 'PLAN',
+                prompt_type: 'Planner',
+                output_type: 'header_context',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [],
+            };
+            const stepC: DialecticStageRecipeStep = {
+                id: 'step-c',
+                step_key: 'c_key',
+                step_slug: 'c-slug',
+                step_name: 'C',
+                execution_order: 3,
+                job_type: 'RENDER',
+                prompt_type: 'Turn',
+                output_type: 'rendered_document',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [],
+            };
+            const backendResponse: SuccessResponse<DialecticStageRecipe> = {
+                status: 200,
+                data: {
+                    stageSlug,
+                    instanceId: 'inst-1',
+                    steps: [stepA, stepB, stepC],
+                    edges,
+                },
+            };
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(backendResponse);
+            const client = new DialecticApiClient(mockApiClient);
+
+            const result = await client.fetchStageRecipe(stageSlug);
+
+            expect(result.status).toBe(200);
+            expect(result.data?.edges).toBeDefined();
+            expect(result.data?.edges).toHaveLength(2);
+            expect(result.data?.edges?.[0]).toEqual({ from_step_id: 'step-a', to_step_id: 'step-b' });
+            expect(result.data?.edges?.[1]).toEqual({ from_step_id: 'step-b', to_step_id: 'step-c' });
+            expect(result.data?.steps[0].step_key).toBe('b_key');
+            expect(result.data?.steps[1].step_key).toBe('a_key');
+            expect(result.data?.steps[2].step_key).toBe('c_key');
         });
     });
 

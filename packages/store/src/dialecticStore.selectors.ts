@@ -809,10 +809,9 @@ export const selectUnifiedProjectProgress = (
     const totalStages = stages.length;
     const session = selectSessionById(state, sessionId);
 
-    const hasProgressForSession = Object.keys(state.stageRunProgress).some((k) => k.startsWith(`${sessionId}:`));
-    const hydrationReady = Boolean(template && hasProgressForSession);
-
     if (totalStages === 0) {
+        const hasProgressForSession = Object.keys(state.stageRunProgress).some((k) => k.startsWith(`${sessionId}:`));
+        const hydrationReady = Boolean(template && hasProgressForSession);
         return {
             totalStages: 0,
             completedStages: 0,
@@ -842,6 +841,7 @@ export const selectUnifiedProjectProgress = (
     const stageDetails: StageProgressDetail[] = [];
     let projectStatus: UnifiedProjectStatus = 'not_started';
     let completedStagesCount = 0;
+    let allStagesHadProgress = true;
 
     const iterationNumberVal = session.iteration_count;
     if (iterationNumberVal == null || typeof iterationNumberVal !== 'number') {
@@ -850,20 +850,37 @@ export const selectUnifiedProjectProgress = (
     for (const stage of stages) {
         const stageSlug = stage.slug;
         const recipe = state.recipesByStageSlug[stageSlug];
-        if (!recipe) {
-            throw new Error(`[selectUnifiedProjectProgress] Recipe required for stage: ${stageSlug}`);
-        }
         const progress = selectStageRunProgress(state, sessionId, stageSlug, iterationNumberVal);
-        if (!progress) {
-            throw new Error(`[selectUnifiedProjectProgress] Progress required for stage: ${stageSlug}`);
-        }
-        const stepStatuses = progress.stepStatuses;
 
+        if (!recipe || !progress) {
+            allStagesHadProgress = false;
+            const stepsDetail: StepProgressDetail[] = recipe
+                ? recipe.steps.map((recipeStep: DialecticStageRecipeStep) => ({
+                    stepKey: recipeStep.step_key,
+                    stepName: recipeStep.step_name,
+                    status: 'not_started' as UnifiedProjectStatus,
+                }))
+                : [];
+            const totalStepsForStage = recipe ? recipe.steps.length : 0;
+            const totalDocumentsForStage = recipe ? selectValidMarkdownDocumentKeys(state, stageSlug).size : 0;
+            stageDetails.push({
+                stageSlug,
+                totalSteps: totalStepsForStage,
+                completedSteps: 0,
+                totalDocuments: totalDocumentsForStage,
+                completedDocuments: 0,
+                failedSteps: 0,
+                stagePercentage: 0,
+                stepsDetail,
+                stageStatus: 'not_started',
+            });
+            continue;
+        }
+
+        const stepStatuses = progress.stepStatuses;
         const stepsDetail: StepProgressDetail[] = [];
         let stageStatus: UnifiedProjectStatus = 'not_started';
 
-        // Iterate recipe steps — the recipe is the structural source of truth.
-        // Progress data may contain extra keys from execution; those are not steps.
         for (const recipeStep of recipe.steps) {
             const stepKey = recipeStep.step_key;
             const raw = stepStatuses[stepKey];
@@ -898,13 +915,28 @@ export const selectUnifiedProjectProgress = (
         const validMarkdownKeys = selectValidMarkdownDocumentKeys(state, stageSlug);
         const documentEntries = progress.documents;
         const totalDocumentsForStage = validMarkdownKeys.size;
+        const jobs = progress.jobs ?? [];
         let completedDocumentsForStage = 0;
-        for (const compositeKey of Object.keys(documentEntries)) {
-            if (!validMarkdownKeys.has(extractLogicalDocumentKeyFromComposite(compositeKey))) {
+        for (const documentKey of validMarkdownKeys) {
+            const expectedModelIds = new Set<string>();
+            for (const job of jobs) {
+                if (job.documentKey === documentKey && job.modelId != null) {
+                    expectedModelIds.add(job.modelId);
+                }
+            }
+            if (expectedModelIds.size === 0) {
                 continue;
             }
-            const documentDescriptor = documentEntries[compositeKey];
-            if (documentDescriptor && documentDescriptor.status === 'completed') {
+            let allComplete = true;
+            for (const modelId of expectedModelIds) {
+                const compositeKey = `${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`;
+                const descriptor = documentEntries[compositeKey];
+                if (!descriptor || descriptor.status !== 'completed') {
+                    allComplete = false;
+                    break;
+                }
+            }
+            if (allComplete) {
                 completedDocumentsForStage += 1;
             }
         }
@@ -925,6 +957,8 @@ export const selectUnifiedProjectProgress = (
         if (stageStatus === 'failed') projectStatus = 'failed';
         else if (stageStatus === 'in_progress' && projectStatus !== 'failed') projectStatus = 'in_progress';
     }
+
+    const hydrationReady = Boolean(template && allStagesHadProgress);
 
     if (projectStatus === 'not_started' && completedStagesCount === totalStages) projectStatus = 'completed';
     else if (projectStatus === 'not_started' && completedStagesCount > 0 && completedStagesCount < totalStages) projectStatus = 'in_progress';

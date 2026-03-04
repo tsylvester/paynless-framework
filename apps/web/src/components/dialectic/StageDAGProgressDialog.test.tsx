@@ -36,27 +36,35 @@ const stageSlug = 'thesis';
 const sessionId = 'session-1';
 const iterationNumber = 1;
 
-function buildStep(
-  overrides: {
-    id: string;
-    step_key: string;
-    step_name: string;
-    job_type: 'PLAN' | 'EXECUTE' | 'RENDER';
-    execution_order: number;
-  }
-): DialecticStageRecipeStep {
-  return {
-    id: overrides.id,
-    step_key: overrides.step_key,
-    step_slug: overrides.step_key,
-    step_name: overrides.step_name,
-    execution_order: overrides.execution_order,
-    job_type: overrides.job_type,
-    prompt_type: 'Planner',
-    output_type: 'header_context',
-    granularity_strategy: 'all_to_one',
-    inputs_required: [],
-  };
+const canonicalStep: DialecticStageRecipeStep = {
+  id: 'canonical-id',
+  step_key: 'canonical_key',
+  step_slug: 'canonical_key',
+  step_name: 'Canonical',
+  execution_order: 0,
+  parallel_group: null,
+  branch_key: null,
+  job_type: 'PLAN',
+  prompt_type: 'Planner',
+  prompt_template_id: null,
+  output_type: 'header_context',
+  granularity_strategy: 'all_to_one',
+  inputs_required: [],
+  inputs_relevance: [],
+  outputs_required: [],
+};
+
+function buildStep(overrides: Partial<DialecticStageRecipeStep>): DialecticStageRecipeStep {
+  return { ...canonicalStep, ...overrides };
+}
+
+const canonicalEdge: DialecticRecipeEdge = {
+  from_step_id: 'from-id',
+  to_step_id: 'to-id',
+};
+
+function buildEdge(overrides: Partial<DialecticRecipeEdge>): DialecticRecipeEdge {
+  return { ...canonicalEdge, ...overrides };
 }
 
 function buildRecipe(
@@ -175,7 +183,7 @@ describe('StageDAGProgressDialog', () => {
 
   it('renders Dialog when open is true', () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
     const recipe = buildRecipe(steps, []);
     setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'not_started' }));
@@ -187,7 +195,7 @@ describe('StageDAGProgressDialog', () => {
 
   it('does not render dialog content when open is false', () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
     const recipe = buildRecipe(steps, []);
     setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'not_started' }));
@@ -199,10 +207,10 @@ describe('StageDAGProgressDialog', () => {
 
   it('renders an SVG element containing node rects for each step in the recipe', () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
-      buildStep({ id: 's2', step_key: 'exec', step_name: 'Execute', job_type: 'EXECUTE', execution_order: 1 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's2', step_key: 'exec', step_slug: 'exec', step_name: 'Execute', job_type: 'EXECUTE', execution_order: 1 }),
     ];
-    const recipe = buildRecipe(steps, [{ from_step_id: 's1', to_step_id: 's2' }]);
+    const recipe = buildRecipe(steps, [buildEdge({ from_step_id: 's1', to_step_id: 's2' })]);
     setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'not_started', exec: 'not_started' }));
 
     render(<StageDAGProgressDialog {...defaultProps} />);
@@ -215,10 +223,10 @@ describe('StageDAGProgressDialog', () => {
 
   it('renders edge lines between connected nodes', () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
-      buildStep({ id: 's2', step_key: 'exec', step_name: 'Execute', job_type: 'EXECUTE', execution_order: 1 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's2', step_key: 'exec', step_slug: 'exec', step_name: 'Execute', job_type: 'EXECUTE', execution_order: 1 }),
     ];
-    const recipe = buildRecipe(steps, [{ from_step_id: 's1', to_step_id: 's2' }]);
+    const recipe = buildRecipe(steps, [buildEdge({ from_step_id: 's1', to_step_id: 's2' })]);
     setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'not_started', exec: 'not_started' }));
 
     render(<StageDAGProgressDialog {...defaultProps} />);
@@ -233,7 +241,7 @@ describe('StageDAGProgressDialog', () => {
 
   it('node for a not_started step has grey fill', () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
     const recipe = buildRecipe(steps, []);
     setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'not_started' }));
@@ -248,7 +256,7 @@ describe('StageDAGProgressDialog', () => {
 
   it('node for a completed step has green fill', () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
     const recipe = buildRecipe(steps, []);
     setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'completed' }));
@@ -263,7 +271,7 @@ describe('StageDAGProgressDialog', () => {
 
   it('node for a failed step has red fill', () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
     const recipe = buildRecipe(steps, []);
     setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'failed' }));
@@ -278,7 +286,7 @@ describe('StageDAGProgressDialog', () => {
 
   it('node for an in_progress step has amber fill with pulse animation class', () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
     const recipe = buildRecipe(steps, []);
     setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'in_progress' }));
@@ -294,7 +302,7 @@ describe('StageDAGProgressDialog', () => {
 
   it('node for a paused_nsf step has orange fill', () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
     const recipe = buildRecipe(steps, []);
     setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'paused_nsf' }));
@@ -309,7 +317,7 @@ describe('StageDAGProgressDialog', () => {
 
   it('each node displays step_name text label', () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan step', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan step', job_type: 'PLAN', execution_order: 0 }),
     ];
     const recipe = buildRecipe(steps, []);
     setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'not_started' }));
@@ -321,7 +329,7 @@ describe('StageDAGProgressDialog', () => {
 
   it('auto-close: when stageRunProgress documents include a rendered and completed descriptor, onOpenChange(false) is called', async () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
     const recipe = buildRecipe(steps, []);
     const completedDescriptor: StageRenderedDocumentDescriptor = {
@@ -349,7 +357,7 @@ describe('StageDAGProgressDialog', () => {
 
   it('manual dismiss: clicking close button calls onOpenChange(false)', () => {
     const steps: DialecticStageRecipeStep[] = [
-      buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
     const recipe = buildRecipe(steps, []);
     setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'not_started' }));
@@ -370,5 +378,93 @@ describe('StageDAGProgressDialog', () => {
     render(<StageDAGProgressDialog {...defaultProps} />);
 
     expect(screen.getByText('No recipe data available')).toBeInTheDocument();
+  });
+
+  it('dialog renders with complete recipe (PLAN, intermediate EXECUTE, document EXECUTE steps with connecting edges) — SVG contains one rect per step and one line per edge', () => {
+    const steps: DialecticStageRecipeStep[] = [
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's2', step_key: 'exec_int', step_slug: 'exec_int', step_name: 'Intermediate', job_type: 'EXECUTE', execution_order: 1, output_type: 'header_context' }),
+      buildStep({ id: 's3', step_key: 'exec_doc', step_slug: 'exec_doc', step_name: 'Document', job_type: 'EXECUTE', execution_order: 2, output_type: 'markdown' }),
+    ];
+    const edges: DialecticRecipeEdge[] = [
+      buildEdge({ from_step_id: 's1', to_step_id: 's2' }),
+      buildEdge({ from_step_id: 's2', to_step_id: 's3' }),
+    ];
+    const recipe = buildRecipe(steps, edges);
+    setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'not_started', exec_int: 'not_started', exec_doc: 'not_started' }));
+
+    render(<StageDAGProgressDialog {...defaultProps} />);
+
+    const svg = document.querySelector('svg');
+    expect(svg).toBeInTheDocument();
+    const rects = svg?.querySelectorAll('rect') ?? [];
+    expect(rects.length).toBe(3);
+    const lines = svg?.querySelectorAll('line') ?? [];
+    expect(lines.length).toBe(2);
+  });
+
+  it('each step type receives correct status color from statusByStepKey — PLAN in_progress amber, EXECUTE not_started gray', () => {
+    const steps: DialecticStageRecipeStep[] = [
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's2', step_key: 'exec', step_slug: 'exec', step_name: 'Execute', job_type: 'EXECUTE', execution_order: 1 }),
+    ];
+    const recipe = buildRecipe(steps, [buildEdge({ from_step_id: 's1', to_step_id: 's2' })]);
+    setStoreForDialog(recipe, buildProgressSnapshot({ plan: 'in_progress', exec: 'not_started' }));
+
+    render(<StageDAGProgressDialog {...defaultProps} />);
+
+    const svg = document.querySelector('svg');
+    expect(svg).toBeInTheDocument();
+    const rects = svg?.querySelectorAll('rect') ?? [];
+    expect(rects.length).toBe(2);
+    expect(rects[0].getAttribute('fill')).toMatch(/#f59e0b/i);
+    expect(rects[1].getAttribute('fill')).toMatch(/#9ca3af/i);
+  });
+
+  it('auto-close fires when rendered document descriptor appears in documents — unaffected by presence of PLAN and EXECUTE steps in recipe', async () => {
+    const steps: DialecticStageRecipeStep[] = [
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's2', step_key: 'exec', step_slug: 'exec', step_name: 'Execute', job_type: 'EXECUTE', execution_order: 1 }),
+    ];
+    const recipe = buildRecipe(steps, [buildEdge({ from_step_id: 's1', to_step_id: 's2' })]);
+    const completedDescriptor: StageRenderedDocumentDescriptor = {
+      status: 'completed',
+      job_id: 'job-1',
+      latestRenderedResourceId: 'res-1',
+      modelId: 'model-1',
+      versionHash: 'v1',
+      lastRenderedResourceId: 'res-1',
+      lastRenderAtIso: new Date().toISOString(),
+    };
+    const documents: Record<string, StageRenderedDocumentDescriptor> = {
+      [makeDocumentKey('doc-1', 'model-1')]: completedDescriptor,
+    };
+    const progress = buildProgressSnapshot({ plan: 'completed', exec: 'completed' }, documents);
+    setStoreForDialog(recipe, progress);
+
+    const onOpenChange = vi.fn();
+    render(<StageDAGProgressDialog {...defaultProps} onOpenChange={onOpenChange} />);
+
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it('dialog does NOT auto-close when only PLAN or EXECUTE steps are completed but no rendered document exists', async () => {
+    const steps: DialecticStageRecipeStep[] = [
+      buildStep({ id: 's1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
+      buildStep({ id: 's2', step_key: 'exec', step_slug: 'exec', step_name: 'Execute', job_type: 'EXECUTE', execution_order: 1 }),
+    ];
+    const recipe = buildRecipe(steps, [buildEdge({ from_step_id: 's1', to_step_id: 's2' })]);
+    const progress = buildProgressSnapshot({ plan: 'completed', exec: 'completed' });
+    setStoreForDialog(recipe, progress);
+
+    const onOpenChange = vi.fn();
+    render(<StageDAGProgressDialog {...defaultProps} onOpenChange={onOpenChange} />);
+
+    await waitFor(() => {
+      expect(document.querySelector('svg')).toBeInTheDocument();
+    });
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 });

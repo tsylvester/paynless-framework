@@ -77,6 +77,7 @@ import type {
     UnifiedProjectProgress,
     SelectedModels,
     JobProgressEntry,
+    JobProgressDto,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 
@@ -719,6 +720,7 @@ describe('selectUnifiedProjectProgress', () => {
         documents: {},
         jobProgress: {},
         progress: { totalSteps: 0, completedSteps: 0, failedSteps: 0 },
+        jobs: [],
     };
 
     it('returns hydrationReady false when currentProcessTemplate is null', () => {
@@ -732,6 +734,7 @@ describe('selectUnifiedProjectProgress', () => {
                     documents: {},
                     jobProgress: {},
                     progress: { totalSteps: 1, completedSteps: 1, failedSteps: 0 },
+                    jobs: [],
                 },
             },
         };
@@ -739,16 +742,37 @@ describe('selectUnifiedProjectProgress', () => {
         expect(result.hydrationReady).toBe(false);
     });
 
-    it('throws when stageRunProgress has no entries for the session (demand valid data)', () => {
+    it('returns result with hydrationReady false and synthetic not_started for missing stage (partial progress / renavigation)', () => {
+        const recipeA: DialecticStageRecipe = {
+            stageSlug: 'stage-a',
+            instanceId: 'inst-a',
+            steps: [{ id: 's1', step_key: 'step_1', step_slug: 's1', step_name: 'Step 1', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [] }],
+            edges: [],
+        };
         const state: DialecticStateValues = {
             ...initialDialecticStateValues,
             currentProjectDetail: projectWithSession,
             currentProcessTemplate: template,
-            stageRunProgress: {},
+            recipesByStageSlug: { 'stage-a': recipeA, 'stage-b': recipeB },
+            stageRunProgress: {
+                [progressKeyForStage('stage-b')]: progressB,
+            },
         };
-        expect(() => selectUnifiedProjectProgress(state, sessionId)).toThrow(
-            /\[selectUnifiedProjectProgress\] (Recipe|Progress) required for stage/
-        );
+        const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+        expect(result.hydrationReady).toBe(false);
+        expect(result.stageDetails).toHaveLength(2);
+        const detailA = result.stageDetails.find((d) => d.stageSlug === 'stage-a');
+        const detailB = result.stageDetails.find((d) => d.stageSlug === 'stage-b');
+        expect(detailA).toBeDefined();
+        expect(detailB).toBeDefined();
+        expect(detailA?.stageStatus).toBe('not_started');
+        expect(detailA?.stagePercentage).toBe(0);
+        expect(detailA?.totalSteps).toBe(1);
+        expect(detailA?.completedSteps).toBe(0);
+        expect(detailA?.stepsDetail).toHaveLength(1);
+        expect(detailA?.stepsDetail[0].status).toBe('not_started');
+        expect(detailB?.totalSteps).toBe(0);
+        expect(result.currentStageSlug).toBe('stage-a');
     });
 
     it('returns hydrationReady true when process template and progress snapshots are present', () => {
@@ -763,6 +787,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { totalSteps: 1, completedSteps: 0, failedSteps: 0 },
+            jobs: [],
         };
         const state: DialecticStateValues = {
             ...initialDialecticStateValues,
@@ -792,6 +817,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { totalSteps: 5, completedSteps: 1, failedSteps: 0 },
+            jobs: [],
         };
         const state: DialecticStateValues = {
             ...initialDialecticStateValues,
@@ -824,6 +850,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { totalSteps: 2, completedSteps: 2, failedSteps: 0 },
+            jobs: [],
         };
         const state: DialecticStateValues = {
             ...initialDialecticStateValues,
@@ -855,6 +882,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { totalSteps: 1, completedSteps: 1, failedSteps: 3 },
+            jobs: [],
         };
         const state: DialecticStateValues = {
             ...initialDialecticStateValues,
@@ -887,6 +915,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { totalSteps: 2, completedSteps: 1, failedSteps: 0 },
+            jobs: [],
         };
         const state: DialecticStateValues = {
             ...initialDialecticStateValues,
@@ -922,6 +951,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { totalSteps: 1, completedSteps: 1, failedSteps: 0 },
+            jobs: [],
         };
         const state: DialecticStateValues = {
             ...initialDialecticStateValues,
@@ -943,6 +973,32 @@ describe('selectUnifiedProjectProgress', () => {
     it('computes completedDocumentsForStage from progress.documents entries with status completed', () => {
         const docKey1 = `doc_a${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}model-1`;
         const docKey2 = `doc_b${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}model-1`;
+        const jobDocA: JobProgressDto = {
+            id: 'job-1',
+            status: 'completed',
+            jobType: 'EXECUTE',
+            stepKey: 'step_1',
+            modelId: 'model-1',
+            documentKey: 'doc_a',
+            parentJobId: null,
+            createdAt: '',
+            startedAt: null,
+            completedAt: null,
+            modelName: null,
+        };
+        const jobDocB: JobProgressDto = {
+            id: 'job-2',
+            status: 'processing',
+            jobType: 'EXECUTE',
+            stepKey: 'step_1',
+            modelId: 'model-1',
+            documentKey: 'doc_b',
+            parentJobId: null,
+            createdAt: '',
+            startedAt: null,
+            completedAt: null,
+            modelName: null,
+        };
         const recipeA: DialecticStageRecipe = {
             stageSlug: 'stage-a',
             instanceId: 'inst-1',
@@ -976,6 +1032,7 @@ describe('selectUnifiedProjectProgress', () => {
                 },
             },
             jobProgress: {},
+            jobs: [jobDocA, jobDocB],
             progress: { totalSteps: 1, completedSteps: 1, failedSteps: 0 },
         };
         const state: DialecticStateValues = {
@@ -1030,6 +1087,7 @@ describe('selectUnifiedProjectProgress', () => {
                 },
             },
             jobProgress: {},
+            jobs: [],
             progress: { totalSteps: 1, completedSteps: 1, failedSteps: 0 },
         };
         const state: DialecticStateValues = {
@@ -1046,6 +1104,208 @@ describe('selectUnifiedProjectProgress', () => {
         const stageADetail = result.stageDetails.find((d) => d.stageSlug === 'stage-a');
         expect(stageADetail).toBeDefined();
         expect(stageADetail?.totalDocuments).toBe(2);
+    });
+
+    it('2 models both complete same document → completedDocuments 1, totalDocuments 1', () => {
+        const docKey = 'doc_a';
+        const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+        const composite1 = `${docKey}${sep}model-1`;
+        const composite2 = `${docKey}${sep}model-2`;
+        const job1: JobProgressDto = {
+            id: 'j1',
+            status: 'completed',
+            jobType: 'EXECUTE',
+            stepKey: 'step_1',
+            modelId: 'model-1',
+            documentKey: docKey,
+            parentJobId: null,
+            createdAt: '',
+            startedAt: null,
+            completedAt: null,
+            modelName: null,
+        };
+        const job2: JobProgressDto = {
+            id: 'j2',
+            status: 'completed',
+            jobType: 'EXECUTE',
+            stepKey: 'step_1',
+            modelId: 'model-2',
+            documentKey: docKey,
+            parentJobId: null,
+            createdAt: '',
+            startedAt: null,
+            completedAt: null,
+            modelName: null,
+        };
+        const recipeA: DialecticStageRecipe = {
+            stageSlug: 'stage-a',
+            instanceId: 'inst-1',
+            steps: [
+                { id: 's1', step_key: 'step_1', step_slug: 's1', step_name: 'Step 1', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: docKey, artifact_class: 'rendered_document', file_type: 'markdown' }] },
+            ],
+            edges: [],
+        };
+        const progressA: StageRunProgressSnapshot = {
+            stepStatuses: { step_1: 'completed' },
+            documents: {
+                [composite1]: {
+                    descriptorType: 'rendered',
+                    status: 'completed',
+                    job_id: 'j1',
+                    latestRenderedResourceId: 'res-1',
+                    modelId: 'model-1',
+                    versionHash: 'h1',
+                    lastRenderedResourceId: 'res-1',
+                    lastRenderAtIso: new Date().toISOString(),
+                },
+                [composite2]: {
+                    descriptorType: 'rendered',
+                    status: 'completed',
+                    job_id: 'j2',
+                    latestRenderedResourceId: 'res-2',
+                    modelId: 'model-2',
+                    versionHash: 'h2',
+                    lastRenderedResourceId: 'res-2',
+                    lastRenderAtIso: new Date().toISOString(),
+                },
+            },
+            jobProgress: {},
+            jobs: [job1, job2],
+            progress: { totalSteps: 1, completedSteps: 1, failedSteps: 0 },
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithSession,
+            currentProcessTemplate: template,
+            recipesByStageSlug: { 'stage-a': recipeA, 'stage-b': recipeB },
+            stageRunProgress: {
+                [progressKeyForStage('stage-a')]: progressA,
+                [progressKeyForStage('stage-b')]: progressB,
+            },
+        };
+        const result = selectUnifiedProjectProgress(state, sessionId);
+        const stageADetail = result.stageDetails.find((d) => d.stageSlug === 'stage-a');
+        expect(stageADetail).toBeDefined();
+        expect(stageADetail?.completedDocuments).toBe(1);
+        expect(stageADetail?.totalDocuments).toBe(1);
+    });
+
+    it('2 models, only 1 completes → completedDocuments 0, totalDocuments 1', () => {
+        const docKey = 'doc_a';
+        const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+        const composite1 = `${docKey}${sep}model-1`;
+        const composite2 = `${docKey}${sep}model-2`;
+        const job1: JobProgressDto = {
+            id: 'j1',
+            status: 'completed',
+            jobType: 'EXECUTE',
+            stepKey: 'step_1',
+            modelId: 'model-1',
+            documentKey: docKey,
+            parentJobId: null,
+            createdAt: '',
+            startedAt: null,
+            completedAt: null,
+            modelName: null,
+        };
+        const job2: JobProgressDto = {
+            id: 'j2',
+            status: 'processing',
+            jobType: 'EXECUTE',
+            stepKey: 'step_1',
+            modelId: 'model-2',
+            documentKey: docKey,
+            parentJobId: null,
+            createdAt: '',
+            startedAt: null,
+            completedAt: null,
+            modelName: null,
+        };
+        const recipeA: DialecticStageRecipe = {
+            stageSlug: 'stage-a',
+            instanceId: 'inst-1',
+            steps: [
+                { id: 's1', step_key: 'step_1', step_slug: 's1', step_name: 'Step 1', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: docKey, artifact_class: 'rendered_document', file_type: 'markdown' }] },
+            ],
+            edges: [],
+        };
+        const progressA: StageRunProgressSnapshot = {
+            stepStatuses: { step_1: 'in_progress' },
+            documents: {
+                [composite1]: {
+                    descriptorType: 'rendered',
+                    status: 'completed',
+                    job_id: 'j1',
+                    latestRenderedResourceId: 'res-1',
+                    modelId: 'model-1',
+                    versionHash: 'h1',
+                    lastRenderedResourceId: 'res-1',
+                    lastRenderAtIso: new Date().toISOString(),
+                },
+                [composite2]: {
+                    descriptorType: 'rendered',
+                    status: 'generating',
+                    job_id: 'j2',
+                    latestRenderedResourceId: 'res-2',
+                    modelId: 'model-2',
+                    versionHash: 'h2',
+                    lastRenderedResourceId: 'res-2',
+                    lastRenderAtIso: new Date().toISOString(),
+                },
+            },
+            jobProgress: {},
+            jobs: [job1, job2],
+            progress: { totalSteps: 1, completedSteps: 0, failedSteps: 0 },
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithSession,
+            currentProcessTemplate: template,
+            recipesByStageSlug: { 'stage-a': recipeA, 'stage-b': recipeB },
+            stageRunProgress: {
+                [progressKeyForStage('stage-a')]: progressA,
+                [progressKeyForStage('stage-b')]: progressB,
+            },
+        };
+        const result = selectUnifiedProjectProgress(state, sessionId);
+        const stageADetail = result.stageDetails.find((d) => d.stageSlug === 'stage-a');
+        expect(stageADetail).toBeDefined();
+        expect(stageADetail?.completedDocuments).toBe(0);
+        expect(stageADetail?.totalDocuments).toBe(1);
+    });
+
+    it('0 jobs for a document key → document not counted as complete', () => {
+        const docKey = 'doc_a';
+        const recipeA: DialecticStageRecipe = {
+            stageSlug: 'stage-a',
+            instanceId: 'inst-1',
+            steps: [
+                { id: 's1', step_key: 'step_1', step_slug: 's1', step_name: 'Step 1', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: docKey, artifact_class: 'rendered_document', file_type: 'markdown' }] },
+            ],
+            edges: [],
+        };
+        const progressA: StageRunProgressSnapshot = {
+            stepStatuses: { step_1: 'not_started' },
+            documents: {},
+            jobProgress: {},
+            jobs: [],
+            progress: { totalSteps: 1, completedSteps: 0, failedSteps: 0 },
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithSession,
+            currentProcessTemplate: template,
+            recipesByStageSlug: { 'stage-a': recipeA, 'stage-b': recipeB },
+            stageRunProgress: {
+                [progressKeyForStage('stage-a')]: progressA,
+                [progressKeyForStage('stage-b')]: progressB,
+            },
+        };
+        const result = selectUnifiedProjectProgress(state, sessionId);
+        const stageADetail = result.stageDetails.find((d) => d.stageSlug === 'stage-a');
+        expect(stageADetail).toBeDefined();
+        expect(stageADetail?.totalDocuments).toBe(1);
+        expect(stageADetail?.completedDocuments).toBe(0);
     });
 });
 

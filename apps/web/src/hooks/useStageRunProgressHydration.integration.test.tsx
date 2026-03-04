@@ -139,6 +139,7 @@ const initialStageRunProgress: Record<string, StageRunProgressSnapshot> = {
         stepStatuses: { document_step: 'not_started' },
         jobProgress: {},
         progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 },
+        jobs: [],
     },
 };
 
@@ -165,6 +166,22 @@ vi.mock('@paynless/api', async () => {
                         stepKey: 'document_step',
                     },
                 ],
+                jobs: [
+                    {
+                        id: 'job-1',
+                        status: 'completed',
+                        jobType: 'EXECUTE',
+                        stepKey: 'document_step',
+                        modelId: 'model-1',
+                        documentKey: 'business_case',
+                        parentJobId: null,
+                        createdAt: new Date().toISOString(),
+                        startedAt: new Date().toISOString(),
+                        completedAt: new Date().toISOString(),
+                        modelName: 'Model 1',
+                    },
+                ],
+                edges: [],
             },
         ],
     };

@@ -14,8 +14,7 @@ import {
 } from "./dialectic.interface.ts";
 import { isInputRule, isRelevanceRule, isOutputRule } from "../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
 import { isRecord } from "../_shared/utils/type-guards/type_guards.common.ts";
-import type { ModelContributionFileTypes } from "../_shared/types/file_manager.types.ts";
-import { isModelContributionFileType, isFileType, isOutputType } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isFileType } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 export async function getStageRecipe(
   payload: { stageSlug: string },
@@ -110,33 +109,10 @@ export async function getStageRecipe(
     if (!isGranularity(s.granularity_strategy)) return { status: 500, error: { message: `Invalid granularity_strategy for step_key=${s.step_key}: ${String(s.granularity_strategy)}` } };
     const granularity: GranularityStrategy = s.granularity_strategy;
 
-    // Validate output_type: must be a ModelContributionFileType, and if renderable, include in DTO
+    // Validate output_type: must be a valid FileType (data integrity)
     const rawType = String(s.output_type);
-    
-    // First check if it's a valid FileType at all (if not, this is a data integrity error)
     if (!isFileType(rawType)) {
       return { status: 500, error: { message: `Invalid output_type for step_key=${s.step_key}: ${rawType} is not a valid FileType` } };
-    }
-    
-    // If it's a valid FileType but not a ModelContributionFileType, handle based on type
-    if (!isModelContributionFileType(rawType)) {
-      // 'rendered_document' for EXECUTE jobs is a data integrity error (migrations should have fixed this)
-      // This should cause an error, not be filtered out silently
-      if (rawType === 'rendered_document' && jobType === 'EXECUTE') {
-        return { status: 500, error: { message: `Invalid output_type for step_key=${s.step_key}: ${rawType} is not a ModelContributionFileType` } };
-      }
-      // Other backend-only types (like assembled_document_json) should be filtered out silently
-      // These are legitimate intermediate types that should not appear in the frontend DTO
-      console.error(`[getStageRecipe] Filtering out step with backend-only output_type for step_key=${s.step_key}: ${rawType} is not a ModelContributionFileType (backend-only type)`);
-      continue;
-    }
-    
-    // At this point, rawType is validated as a ModelContributionFileType
-    const mappedOutputType: ModelContributionFileTypes = rawType;
-
-    // EXECUTE steps with backend-only output (e.g. assembled_document_json) are not shown in the frontend DTO
-    if (jobType === "EXECUTE" && !isOutputType(mappedOutputType)) {
-      continue;
     }
 
     // Validate arrays and elements
@@ -215,7 +191,7 @@ export async function getStageRecipe(
       job_type: jobType,
       prompt_type: promptType,
       prompt_template_id: promptTemplateId,
-      output_type: mappedOutputType,
+      output_type: rawType,
       granularity_strategy: granularity,
       inputs_required: inputsRequired,
       inputs_relevance: inputsRelevance,

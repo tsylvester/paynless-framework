@@ -5,8 +5,10 @@ import type {
     DialecticSession,
     DialecticStage,
     DialecticProcessTemplate,
+    DialecticProject,
     User,
     GetAllStageProgressResponse,
+    StageRunProgressSnapshot,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 
@@ -117,6 +119,27 @@ describe('useStageRunProgressHydration', () => {
         thesis: recipeThesis,
     };
 
+    const recipeSynthesis: typeof emptyDialecticStageRecipe = {
+        ...emptyDialecticStageRecipe,
+        stageSlug: 'synthesis',
+        instanceId: 'inst-synthesis',
+    };
+
+    const recipesForTemplateTwoStages: Record<string, typeof emptyDialecticStageRecipe> = {
+        thesis: recipeThesis,
+        synthesis: recipeSynthesis,
+    };
+
+    const synthesisProgressKey = `${sessionId}:synthesis:${iterationNumber}`;
+
+    const emptyProgressSnapshot: StageRunProgressSnapshot = {
+        documents: {},
+        stepStatuses: {},
+        jobProgress: {},
+        progress: { totalSteps: 0, completedSteps: 0, failedSteps: 0 },
+        jobs: [],
+    };
+
     const validGetAllStageProgressResponse: GetAllStageProgressResponse = {
         dagProgress: { completedStages: 1, totalStages: 1 },
         stages: [
@@ -135,6 +158,8 @@ describe('useStageRunProgressHydration', () => {
                         status: 'completed',
                     },
                 ],
+                edges: [],
+                jobs: [],
             },
         ],
     };
@@ -286,6 +311,55 @@ describe('useStageRunProgressHydration', () => {
 
         await waitFor(() => {
             expect(hydrateAllStageProgressMock).not.toHaveBeenCalled();
+        });
+    });
+
+    it('re-triggers hydration when progressHydrationStatus[runKey] is success but stageRunProgress is partial (missing stage)', async () => {
+        const session: DialecticSession = {
+            ...createSession(),
+            current_stage_id: stageThesis.id,
+        };
+        const project: DialecticProject = {
+            id: projectId,
+            user_id: userId,
+            project_name: 'Test',
+            initial_user_prompt: null,
+            selected_domain_id: '',
+            dialectic_domains: { name: 'Domain' },
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            status: 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            dialectic_sessions: [session],
+            resources: [],
+            process_template_id: templateTwoStages.id,
+            dialectic_process_templates: templateTwoStages,
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
+        };
+        setDialecticStateValues({
+            currentProjectDetail: project,
+            activeContextSessionId: sessionId,
+            activeSessionDetail: session,
+            currentProcessTemplate: templateTwoStages,
+            recipesByStageSlug: recipesForTemplateTwoStages,
+            stageRunProgress: { [synthesisProgressKey]: emptyProgressSnapshot },
+            progressHydrationStatus: { [runKey]: 'success' },
+        });
+
+        const hydrateAllStageProgressMock = getDialecticStoreActionMock('hydrateAllStageProgress');
+
+        renderHook(() => useStageRunProgressHydration());
+
+        await waitFor(() => {
+            expect(hydrateAllStageProgressMock).toHaveBeenCalled();
         });
     });
 
