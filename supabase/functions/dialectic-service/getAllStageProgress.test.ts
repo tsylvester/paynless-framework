@@ -27,6 +27,7 @@ import {
   GetAllStageProgressParams,
   GetAllStageProgressResponse,
   GetAllStageProgressResult,
+  JobProgressDto,
   ProgressRecipeEdge,
   StageProgressEntry,
   StepProgressDto,
@@ -34,6 +35,7 @@ import {
 import { computeExpectedCounts } from "./computeExpectedCounts.ts";
 import { deriveStepStatuses } from "./deriveStepStatuses.ts";
 import { buildDocumentDescriptors } from "./buildDocumentDescriptors.ts";
+import { buildJobProgressDtos } from "./buildJobProgressDtos.ts";
 import { topologicalSortSteps } from "./topologicalSortSteps.ts";
 import { FileType } from "../_shared/types/file_manager.types.ts";
 import {
@@ -192,6 +194,7 @@ function createGetAllStageProgressDeps(
     deriveStepStatuses,
     computeExpectedCounts,
     buildDocumentDescriptors,
+    buildJobProgressDtos,
   };
 }
 
@@ -1875,4 +1878,417 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
       restoreFetch();
     }
   });
+});
+
+Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with correct fields and all job types/statuses, stages[].edges match recipe", async (t) => {
+  const stageId: string = "stage-jobs-edges-id";
+  const instanceId: string = "instance-jobs-edges-id";
+  const templateId: string = "template-jobs-edges-id";
+  const modelId: string = "model-1";
+  const planStepId: string = "step-plan-je";
+  const executeStepId: string = "step-execute-je";
+  const renderStepId: string = "step-render-je";
+
+  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
+    buildClonedStepRow(planStepId, instanceId, "plan", "PLAN", "all_to_one"),
+    buildClonedStepRow(executeStepId, instanceId, "execute", "EXECUTE", "per_model"),
+    buildClonedStepRow(renderStepId, instanceId, "render", "RENDER", "all_to_one"),
+  ];
+
+  const iso: string = new Date().toISOString();
+  const edges: Tables<"dialectic_stage_recipe_edges">[] = [
+    { id: "edge-je-1", created_at: iso, instance_id: instanceId, from_step_id: planStepId, to_step_id: executeStepId },
+    { id: "edge-je-2", created_at: iso, instance_id: instanceId, from_step_id: executeStepId, to_step_id: renderStepId },
+  ];
+
+  const jobs: DialecticJobRow[] = [
+    {
+      id: "job-plan-pending",
+      created_at: "2025-01-01T00:00:00Z",
+      session_id: basePayload.sessionId,
+      stage_slug: THESIS_STAGE_SLUG,
+      iteration_number: basePayload.iterationNumber,
+      status: "pending",
+      payload: { sessionId: basePayload.sessionId, projectId: basePayload.projectId, model_id: modelId, planner_metadata: { recipe_step_id: planStepId, stage_slug: THESIS_STAGE_SLUG } },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "PLAN",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-execute-completed",
+      created_at: "2025-01-01T00:01:00Z",
+      session_id: basePayload.sessionId,
+      stage_slug: THESIS_STAGE_SLUG,
+      iteration_number: basePayload.iterationNumber,
+      status: "completed",
+      payload: { sessionId: basePayload.sessionId, projectId: basePayload.projectId, model_id: modelId, documentKey: "doc-1", planner_metadata: { recipe_step_id: executeStepId, stage_slug: THESIS_STAGE_SLUG } },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: "job-plan-pending",
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: "2025-01-01T00:01:00Z",
+      completed_at: "2025-01-01T00:02:00Z",
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-render-failed",
+      created_at: "2025-01-01T00:02:00Z",
+      session_id: basePayload.sessionId,
+      stage_slug: THESIS_STAGE_SLUG,
+      iteration_number: basePayload.iterationNumber,
+      status: "failed",
+      payload: { sessionId: basePayload.sessionId, projectId: basePayload.projectId, model_id: modelId, planner_metadata: { recipe_step_id: renderStepId, stage_slug: THESIS_STAGE_SLUG } },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "RENDER",
+      parent_job_id: "job-execute-completed",
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: "2025-01-01T00:02:00Z",
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+    {
+      id: "job-execute-paused_nsf",
+      created_at: "2025-01-01T00:03:00Z",
+      session_id: basePayload.sessionId,
+      stage_slug: THESIS_STAGE_SLUG,
+      iteration_number: basePayload.iterationNumber,
+      status: "paused_nsf",
+      payload: { sessionId: basePayload.sessionId, projectId: basePayload.projectId, model_id: modelId, documentKey: "doc-2", planner_metadata: { recipe_step_id: executeStepId, stage_slug: THESIS_STAGE_SLUG } },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: null,
+      results: null,
+      error_details: null,
+    },
+  ];
+
+  const sessionRow: Tables<"dialectic_sessions"> = {
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: [modelId],
+    associated_chat_id: null,
+    created_at: iso,
+    current_stage_id: stageId,
+    iteration_count: 1,
+    session_description: null,
+    status: "active",
+    updated_at: iso,
+    user_input_reference_url: null,
+  };
+  const projectRow: Tables<"dialectic_projects"> = {
+    id: basePayload.projectId,
+    process_template_id: "process-tpl-1",
+    created_at: iso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: iso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+  };
+  const transitions: DialecticStageTransition[] = [
+    { id: "trans-je-1", process_template_id: "process-tpl-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
+  ];
+  const templateStages: DialecticStage[] = [
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+  ];
+  const stages: DialecticStage[] = [
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+  ];
+  const instances: DialecticStageRecipeInstance[] = [
+    { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
+  ];
+
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+  mockFetch([
+    new Response(JSON.stringify(sessionRow), { status: 200, headers }),
+    new Response(JSON.stringify(projectRow), { status: 200, headers }),
+    new Response(JSON.stringify(transitions), { status: 200, headers }),
+    new Response(JSON.stringify(templateStages), { status: 200, headers }),
+    new Response(JSON.stringify(jobs), { status: 200, headers }),
+    new Response(JSON.stringify(stages), { status: 200, headers }),
+    new Response(JSON.stringify(instances), { status: 200, headers }),
+    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
+    new Response(JSON.stringify(edges), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+  ]);
+
+  const dbClient: SupabaseClient<Database> = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const params: GetAllStageProgressParams = { payload: basePayload };
+    const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    if (!result.data) throw new Error("result.data missing");
+    const data: GetAllStageProgressResponse = result.data;
+    const entry: StageProgressEntry | undefined = data.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+    assertExists(entry);
+    if (!entry) throw new Error("entry missing");
+
+    await t.step("response stages[].jobs contains JobProgressDto[] with correct fields (id, status, jobType, stepKey, modelId, documentKey, parentJobId, createdAt, startedAt, completedAt)", () => {
+      assert(Array.isArray(entry.jobs));
+      assertEquals(entry.jobs.length, jobs.length);
+      const first: JobProgressDto | undefined = entry.jobs[0];
+      assertExists(first);
+      if (!first) return;
+      assertEquals(typeof first.id, "string");
+      assertEquals(typeof first.status, "string");
+      assert(first.jobType === null || ["PLAN", "EXECUTE", "RENDER"].includes(first.jobType));
+      assert(first.stepKey === null || typeof first.stepKey === "string");
+      assert(first.modelId === null || typeof first.modelId === "string");
+      assert(first.documentKey === null || typeof first.documentKey === "string");
+      assert(first.parentJobId === null || typeof first.parentJobId === "string");
+      assertEquals(typeof first.createdAt, "string");
+      assert(first.startedAt === null || typeof first.startedAt === "string");
+      assert(first.completedAt === null || typeof first.completedAt === "string");
+    });
+
+    await t.step("stages[].jobs includes ALL job types (PLAN, EXECUTE, RENDER)", () => {
+      const jobTypes: string[] = entry.jobs.reduce<string[]>((acc: string[], j: JobProgressDto) => {
+        if (j.jobType !== null) acc.push(j.jobType);
+        return acc;
+      }, []);
+      const types: Set<string> = new Set<string>(jobTypes);
+      assert(types.has("PLAN"));
+      assert(types.has("EXECUTE"));
+      assert(types.has("RENDER"));
+    });
+
+    await t.step("stages[].jobs includes jobs in ALL statuses (pending, completed, failed, paused_nsf)", () => {
+      const statuses: Set<string> = new Set<string>(entry.jobs.map((j: JobProgressDto) => j.status));
+      assert(statuses.has("pending"));
+      assert(statuses.has("completed"));
+      assert(statuses.has("failed"));
+      assert(statuses.has("paused_nsf"));
+    });
+
+    await t.step("response stages[].edges contains ProgressRecipeEdge[] matching the recipe edges for that stage", () => {
+      assert(Array.isArray(entry.edges));
+      assertEquals(entry.edges.length, edges.length);
+      for (const e of entry.edges) {
+        assertEquals(typeof e.from_step_id, "string");
+        assertEquals(typeof e.to_step_id, "string");
+      }
+    });
+
+    await t.step("existing steps and documents fields are unchanged (additive only)", () => {
+      assertEquals(entry.steps.length, recipeSteps.length);
+      assert(Array.isArray(entry.documents));
+    });
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress: stage with no jobs returns empty jobs: [] array", async (t) => {
+  const stageId: string = "stage-no-jobs-id";
+  const instanceId: string = "instance-no-jobs-id";
+  const templateId: string = "template-no-jobs-id";
+  const stepId: string = "step-single";
+  const iso: string = new Date().toISOString();
+  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
+    buildClonedStepRow(stepId, instanceId, "single", "PLAN", "all_to_one"),
+  ];
+  const edges: Tables<"dialectic_stage_recipe_edges">[] = [];
+  const jobs: DialecticJobRow[] = [];
+
+  const sessionRow: Tables<"dialectic_sessions"> = {
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: ["model-1"],
+    associated_chat_id: null,
+    created_at: iso,
+    current_stage_id: stageId,
+    iteration_count: 1,
+    session_description: null,
+    status: "active",
+    updated_at: iso,
+    user_input_reference_url: null,
+  };
+  const projectRow: Tables<"dialectic_projects"> = {
+    id: basePayload.projectId,
+    process_template_id: "process-tpl-1",
+    created_at: iso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: iso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+  };
+  const transitions: DialecticStageTransition[] = [
+    { id: "trans-nojobs-1", process_template_id: "process-tpl-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
+  ];
+  const templateStages: DialecticStage[] = [
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+  ];
+  const stages: DialecticStage[] = [
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+  ];
+  const instances: DialecticStageRecipeInstance[] = [
+    { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
+  ];
+
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+  mockFetch([
+    new Response(JSON.stringify(sessionRow), { status: 200, headers }),
+    new Response(JSON.stringify(projectRow), { status: 200, headers }),
+    new Response(JSON.stringify(transitions), { status: 200, headers }),
+    new Response(JSON.stringify(templateStages), { status: 200, headers }),
+    new Response(JSON.stringify(jobs), { status: 200, headers }),
+    new Response(JSON.stringify(stages), { status: 200, headers }),
+    new Response(JSON.stringify(instances), { status: 200, headers }),
+    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
+    new Response(JSON.stringify(edges), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+  ]);
+
+  const dbClient: SupabaseClient<Database> = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const params: GetAllStageProgressParams = { payload: basePayload };
+    const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    const entry: StageProgressEntry | undefined = result.data!.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+    assertExists(entry);
+    await t.step("stage with no jobs returns jobs: [] (not null, not omitted)", () => {
+      assert(Array.isArray(entry!.jobs));
+      assertEquals(entry!.jobs.length, 0);
+    });
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress: stage with no edges returns empty edges: [] array", async (t) => {
+  const stageId: string = "stage-no-edges-id";
+  const instanceId: string = "instance-no-edges-id";
+  const templateId: string = "template-no-edges-id";
+  const stepId: string = "step-single-ne";
+  const iso: string = new Date().toISOString();
+  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
+    buildClonedStepRow(stepId, instanceId, "single", "PLAN", "all_to_one"),
+  ];
+  const edges: Tables<"dialectic_stage_recipe_edges">[] = [];
+  const jobs: DialecticJobRow[] = [];
+
+  const sessionRow: Tables<"dialectic_sessions"> = {
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: ["model-1"],
+    associated_chat_id: null,
+    created_at: iso,
+    current_stage_id: stageId,
+    iteration_count: 1,
+    session_description: null,
+    status: "active",
+    updated_at: iso,
+    user_input_reference_url: null,
+  };
+  const projectRow: Tables<"dialectic_projects"> = {
+    id: basePayload.projectId,
+    process_template_id: "process-tpl-1",
+    created_at: iso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: iso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+  };
+  const transitions: DialecticStageTransition[] = [
+    { id: "trans-noedges-1", process_template_id: "process-tpl-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
+  ];
+  const templateStages: DialecticStage[] = [
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+  ];
+  const stages: DialecticStage[] = [
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+  ];
+  const instances: DialecticStageRecipeInstance[] = [
+    { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
+  ];
+
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+  mockFetch([
+    new Response(JSON.stringify(sessionRow), { status: 200, headers }),
+    new Response(JSON.stringify(projectRow), { status: 200, headers }),
+    new Response(JSON.stringify(transitions), { status: 200, headers }),
+    new Response(JSON.stringify(templateStages), { status: 200, headers }),
+    new Response(JSON.stringify(jobs), { status: 200, headers }),
+    new Response(JSON.stringify(stages), { status: 200, headers }),
+    new Response(JSON.stringify(instances), { status: 200, headers }),
+    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
+    new Response(JSON.stringify(edges), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+  ]);
+
+  const dbClient: SupabaseClient<Database> = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+
+  try {
+    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const params: GetAllStageProgressParams = { payload: basePayload };
+    const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    const entry: StageProgressEntry | undefined = result.data!.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+    assertExists(entry);
+    await t.step("stage with no edges returns edges: [] (not null, not omitted)", () => {
+      assert(Array.isArray(entry!.edges));
+      assertEquals(entry!.edges.length, 0);
+    });
+  } finally {
+    restoreFetch();
+  }
 });

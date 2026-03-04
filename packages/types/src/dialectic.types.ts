@@ -579,6 +579,7 @@ export interface StageRunProgressSnapshot {
   documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
   jobProgress: StepJobProgress;
   progress: { completedSteps: number; totalSteps: number; failedSteps: number };
+  jobs: JobProgressDto[];
 }
 
 export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed' | 'paused_nsf';
@@ -1160,6 +1161,19 @@ export interface StepProgressDto {
   status: UnifiedProjectStatus;
 }
 
+export interface JobProgressDto {
+  id: string;
+  status: string;
+  jobType: RecipeJobType | null;
+  stepKey: string | null;
+  modelId: string | null;
+  documentKey: string | null;
+  parentJobId: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 export interface StageProgressEntry {
   stageSlug: string;
   status: UnifiedProjectStatus;
@@ -1167,6 +1181,8 @@ export interface StageProgressEntry {
   progress: { completedSteps: number; totalSteps: number; failedSteps: number };
   steps: StepProgressDto[];
   documents: StageDocumentChecklistEntry[];
+  jobs: JobProgressDto[];
+  edges: DialecticRecipeEdge[];
 }
 
 export interface GetAllStageProgressResponse {

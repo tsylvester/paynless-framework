@@ -240,6 +240,239 @@ The BE sends ALL steps and ALL edges for the active recipe instance. The FE type
         *   `[✅]`   Updated BE tests to assert all step types included
         *   `[✅]`   Added FE tests across API client, store, layout engine, and dialog verifying complete recipe flows through every link in the chain
 
+## Chain 2: Complete Stage Progress — Return all jobs and edges
+
+### Problem
+`getAllStageProgress.ts` fetches ALL jobs from `dialectic_generation_jobs` (line 187-206). `deriveStepStatuses` reduces these to one `UnifiedStageStatus` per step key, discarding individual jobs. `buildDocumentDescriptors` emits only completed RENDER jobs as document descriptors — this is correct for documents. The response type `StageProgressEntry` carries `steps: StepProgressDto[]` (flat `{stepKey, status}`) and `documents: StageDocumentDescriptorDto[]` (only completed RENDER docs). Edges are computed internally (lines 482-535) but not included in the response. Individual jobs are fetched but reduced to aggregated step statuses. The FE receives aggregated step-level statuses and rendered document descriptors only — no individual job data, no edges from the progress endpoint, no model assignments per job.
+
+`hydrateAllStageProgressLogic` (line 1673) writes `stepStatuses[stepKey]` and rendered document descriptors. The `jobProgress` and `modelJobStatuses` fields in `StageRunProgressSnapshot` are only populated by realtime notification handlers during live execution and are lost on page refresh.
+
+### Objective
+The BE sends ALL individual jobs for each stage AND the recipe edges for each stage in the `getAllStageProgress` response. The FE receives, validates, and stores the complete job data. On page load (hydration), the store contains every job for every step so the FE knows exactly where the user is on the map, what work has been completed, and what remains. `jobProgress` and `modelJobStatuses` are derived from the hydrated jobs so they survive page refresh.
+
+### Expected Outcome
+`stageRunProgress[progressKey].jobs` contains every `JobProgressDto` for the stage. `stageRunProgress[progressKey].jobProgress` and `modelJobStatuses` are populated from the hydrated jobs, not just from realtime. Downstream consumers have a complete, correct data source for model assignments, per-job statuses, and step-level progress regardless of whether the data arrived via hydration or realtime.
+
+### Passthrough verification
+- `dialectic.api.ts:getAllStageProgress` (line 660) — posts to `dialectic-service` with `action: 'getAllStageProgress'`, deserializes JSON response typed as `GetAllStageProgressResponse`, no filtering, no transformation, no type-dependent branching, passthrough confirmed, no code change required, inherits corrected types via updated FE `StageProgressEntry` and `GetAllStageProgressResponse`
+- `DialecticApiClient` interface in `dialectic.types.ts` (lines 1066-1102) — `getAllStageProgress` is implemented on the API class (line 660) but NOT declared on the `DialecticApiClient` interface; this is a pre-existing gap not introduced by or addressed by this chain fix
+
+---
+
+*   `[✅]`   `supabase/functions/dialectic-service/buildJobProgressDtos` **[BE] New: Extract individual job progress DTOs from raw job rows**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Create a new function that transforms raw `DialecticJobRow[]` into `JobProgressDto[]` grouped by `stageSlug`
+        *   `[✅]`   Extract `stepKey` from `payload.planner_metadata.recipe_step_id` via `stepIdToStepKey` lookup
+        *   `[✅]`   Extract `modelId` from `payload.model_id`
+        *   `[✅]`   Extract `documentKey` from `payload.documentKey` (null when absent)
+        *   `[✅]`   Include ALL job types (PLAN, EXECUTE, RENDER) — no filtering by `job_type`
+        *   `[✅]`   Include ALL job statuses (pending, processing, completed, failed, paused_nsf, superseded, retrying, waiting_for_prerequisite, waiting_for_children) — no filtering by `status`
+        *   `[✅]`   No defaults, fallbacks, or data healing
+    *   `[✅]`   `role`
+        *   `[✅]`   Domain: pure transformation — raw DB rows → typed DTOs
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic service — job progress DTO construction
+        *   `[✅]`   Bounded context: `DialecticJobRow[]` + `stepIdToStepKey` → `Map<string, JobProgressDto[]>` keyed by stageSlug
+    *   `[✅]`   `deps`
+        *   `[✅]`   `dialectic.interface.ts` (domain) — provides `DialecticJobRow`, `JobProgressDto`, `BuildJobProgressDtosDeps`, `BuildJobProgressDtosParams` — inward dependency
+        *   `[✅]`   `type_guards.common.ts` (app) — provides `isRecord` for payload extraction — inward dependency
+        *   `[✅]`   `type_guards.dialectic.ts` (app) — provides `isPlannerMetadata` for `planner_metadata` extraction — inward dependency
+        *   `[✅]`   No reverse dependency introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   `jobs: DialecticJobRow[]` — all raw job rows for the session/iteration
+        *   `[✅]`   `stepIdToStepKey: Map<string, string>` — recipe step ID → step key mapping
+        *   `[✅]`   Return type: `Map<string, JobProgressDto[]>` — keyed by `stageSlug`
+        *   `[✅]`   No concrete imports from higher or lateral layers
+    *   `[✅]`   interface/`dialectic.interface.ts`
+        *   `[✅]`   Add `JobProgressDto` interface:
+            *   `[✅]`   `id: string` — job identifier
+            *   `[✅]`   `status: string` — current job status (pending, processing, completed, failed, paused_nsf, superseded, retrying, etc.)
+            *   `[✅]`   `jobType: JobType | null` — PLAN, EXECUTE, or RENDER (nullable per DB schema)
+            *   `[✅]`   `stepKey: string | null` — derived from `payload.planner_metadata.recipe_step_id` via `stepIdToStepKey`; null when payload lacks planner_metadata
+            *   `[✅]`   `modelId: string | null` — from `payload.model_id`; null when absent (e.g. some PLAN jobs)
+            *   `[✅]`   `documentKey: string | null` — from `payload.documentKey`; null when absent (e.g. PLAN jobs, some EXECUTE jobs)
+            *   `[✅]`   `parentJobId: string | null` — from `parent_job_id` column
+            *   `[✅]`   `createdAt: string` — ISO timestamp
+            *   `[✅]`   `startedAt: string | null` — ISO timestamp or null
+            *   `[✅]`   `completedAt: string | null` — ISO timestamp or null
+        *   `[✅]`   Add `BuildJobProgressDtosDeps` interface (empty — pure function, no external deps)
+        *   `[✅]`   Add `BuildJobProgressDtosParams` interface:
+            *   `[✅]`   `jobs: DialecticJobRow[]`
+            *   `[✅]`   `stepIdToStepKey: Map<string, string>`
+    *   `[✅]`   unit/`buildJobProgressDtos.test.ts`
+        *   `[✅]`   Test: job with complete `planner_metadata.recipe_step_id` in payload produces DTO with correct `stepKey` from `stepIdToStepKey` lookup
+        *   `[✅]`   Test: job with `model_id` in payload produces DTO with correct `modelId`
+        *   `[✅]`   Test: job with `documentKey` in payload produces DTO with correct `documentKey`
+        *   `[✅]`   Test: job without `planner_metadata` produces DTO with `stepKey: null`
+        *   `[✅]`   Test: job without `model_id` produces DTO with `modelId: null`
+        *   `[✅]`   Test: job without `documentKey` produces DTO with `documentKey: null`
+        *   `[✅]`   Test: PLAN job (job_type='PLAN') is included in output — not filtered
+        *   `[✅]`   Test: EXECUTE job (job_type='EXECUTE') is included in output — not filtered
+        *   `[✅]`   Test: RENDER job (job_type='RENDER') is included in output — not filtered
+        *   `[✅]`   Test: job with status 'failed' is included — not filtered by status
+        *   `[✅]`   Test: job with status 'superseded' is included — not filtered by status
+        *   `[✅]`   Test: job with status 'paused_nsf' is included — not filtered by status
+        *   `[✅]`   Test: multiple jobs across two `stage_slug` values are grouped correctly in the returned `Map<string, JobProgressDto[]>`
+        *   `[✅]`   Test: `parentJobId` is correctly mapped from `parent_job_id` column
+        *   `[✅]`   Test: `createdAt`, `startedAt`, `completedAt` are correctly mapped from DB columns
+        *   `[✅]`   Test: empty jobs array produces empty map
+    *   `[✅]`   `construction`
+        *   `[✅]`   Each `JobProgressDto` is constructed as a complete object from extracted fields — no partial construction, no spreading raw DB rows
+        *   `[✅]`   Payload field extraction uses `isRecord` and `isPlannerMetadata` guards — no casting
+        *   `[✅]`   No factory changes, no defaults, no backfilling
+    *   `[✅]`   `buildJobProgressDtos.ts`
+        *   `[✅]`   Iterate all jobs in `params.jobs`
+        *   `[✅]`   For each job: extract `stepKey` by reading `payload.planner_metadata.recipe_step_id` (guarded by `isRecord` + `isPlannerMetadata`) then looking up in `params.stepIdToStepKey`; null if extraction fails
+        *   `[✅]`   For each job: extract `modelId` from `payload.model_id` (guarded by `isRecord`); null if absent
+        *   `[✅]`   For each job: extract `documentKey` from `payload.documentKey` (guarded by `isRecord`); null if absent
+        *   `[✅]`   Construct complete `JobProgressDto` with all fields from DB columns and extracted payload fields
+        *   `[✅]`   Group into `Map<string, JobProgressDto[]>` keyed by `job.stage_slug`
+        *   `[✅]`   Return the map
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: domain (pure transformation)
+        *   `[✅]`   Dependencies inward-facing (types, guards)
+        *   `[✅]`   Provides outward-facing (consumed by `getAllStageProgress`)
+    *   `[✅]`   `requirements`
+        *   `[✅]`   ALL jobs included regardless of `job_type` or `status`
+        *   `[✅]`   `stepKey` correctly derived from payload planner_metadata via stepIdToStepKey lookup
+        *   `[✅]`   `modelId` correctly extracted from payload
+        *   `[✅]`   `documentKey` correctly extracted from payload
+        *   `[✅]`   Jobs grouped by `stageSlug` in returned map
+        *   `[✅]`   No defaults, fallbacks, or data healing
+        *   `[✅]`   Tests prove every job type, every status, and every payload shape is handled
+
+*   `[✅]`   `supabase/functions/dialectic-service/getAllStageProgress` **[BE] Return complete job data and edges in stage progress response**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Add `jobs: JobProgressDto[]` field to `StageProgressEntry` response for each stage
+        *   `[✅]`   Add `edges: ProgressRecipeEdge[]` field to `StageProgressEntry` response for each stage
+        *   `[✅]`   Call `buildJobProgressDtos` (injected dependency) to produce job DTOs from fetched jobs
+        *   `[✅]`   Include the per-stage edges already computed internally (lines 482-535) in the response
+        *   `[✅]`   Update `GetAllStageProgressDeps` to accept `buildJobProgressDtos` as injected dependency
+        *   `[✅]`   No existing fields removed or modified — additive only
+    *   `[✅]`   `role`
+        *   `[✅]`   Adapter: reads from DB, validates, produces DTO response for the API layer
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic service — stage progress retrieval
+        *   `[✅]`   Bounded context: DB jobs + recipe structure → `GetAllStageProgressResponse` with complete job data and edges
+    *   `[✅]`   `deps`
+        *   `[✅]`   `dialectic.interface.ts` (domain) — provides `StageProgressEntry`, `JobProgressDto`, `ProgressRecipeEdge`, `GetAllStageProgressDeps`, `BuildJobProgressDtosDeps`, `BuildJobProgressDtosParams` — inward dependency
+        *   `[✅]`   `buildJobProgressDtos.ts` (domain) — injected via `GetAllStageProgressDeps.buildJobProgressDtos` — inward dependency
+        *   `[✅]`   `deriveStepStatuses.ts` (domain) — existing injected dependency, unchanged — inward dependency
+        *   `[✅]`   `buildDocumentDescriptors.ts` (domain) — existing injected dependency, unchanged — inward dependency
+        *   `[✅]`   No reverse dependency introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   `GetAllStageProgressDeps` — add `buildJobProgressDtos` field
+        *   `[✅]`   `StageProgressEntry` — add `jobs: JobProgressDto[]` and `edges: ProgressRecipeEdge[]`
+        *   `[✅]`   Return type: `GetAllStageProgressResult` (unchanged shape, enriched content)
+        *   `[✅]`   No concrete imports from higher or lateral layers
+    *   `[✅]`   interface/`dialectic.interface.ts`
+        *   `[✅]`   Update `StageProgressEntry`: add `jobs: JobProgressDto[]` field
+        *   `[✅]`   Update `StageProgressEntry`: add `edges: ProgressRecipeEdge[]` field
+        *   `[✅]`   Update `GetAllStageProgressDeps`: add `buildJobProgressDtos: (deps: BuildJobProgressDtosDeps, params: BuildJobProgressDtosParams) => Map<string, JobProgressDto[]>` field
+    *   `[✅]`   unit/`getAllStageProgress.test.ts`
+        *   `[✅]`   ADD test: response `stages[].jobs` contains `JobProgressDto[]` with correct fields derived from raw job rows — `id`, `status`, `jobType`, `stepKey`, `modelId`, `documentKey`, `parentJobId`, `createdAt`, `startedAt`, `completedAt`
+        *   `[✅]`   ADD test: `stages[].jobs` includes ALL job types (PLAN, EXECUTE, RENDER) — not just RENDER
+        *   `[✅]`   ADD test: `stages[].jobs` includes jobs in ALL statuses (pending, completed, failed, paused_nsf) — not just completed
+        *   `[✅]`   ADD test: response `stages[].edges` contains `ProgressRecipeEdge[]` matching the recipe edges for that stage
+        *   `[✅]`   ADD test: stage with no jobs returns empty `jobs: []` array (not null, not omitted)
+        *   `[✅]`   ADD test: stage with no edges returns empty `edges: []` array (not null, not omitted)
+        *   `[✅]`   ADD test: existing `steps` and `documents` fields are unchanged in the response — additive only
+        *   `[✅]`   UPDATE existing tests: mock `buildJobProgressDtos` in `GetAllStageProgressDeps` alongside existing mocked deps
+        *   `[✅]`   RETAIN all existing tests
+    *   `[✅]`   `construction`
+        *   `[✅]`   `StageProgressEntry` objects constructed with all fields including new `jobs` and `edges`
+        *   `[✅]`   No partial construction, no optional fields on `StageProgressEntry`
+    *   `[✅]`   `getAllStageProgress.ts`
+        *   `[✅]`   Call `deps.buildJobProgressDtos({}, { jobs: jobsData, stepIdToStepKey })` once before the stage loop (follows existing `deps.buildDocumentDescriptors` pattern at line 705)
+        *   `[✅]`   In the stage loop: retrieve per-stage jobs from the returned map using `stageSlug` key (follows existing `documentsByStageSlug.get(stageSlug)` pattern at line 730)
+        *   `[✅]`   In the stage loop: include the already-computed `edges` array for each stage in the `StageProgressEntry` (the `edges` variable at line 752-775 is already available in scope)
+        *   `[✅]`   Add `jobs: stageJobDtos` and `edges: edges` to both `StageProgressEntry` construction sites (lines 869-876 and 878-886)
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: adapter (database → DTO)
+        *   `[✅]`   Dependencies inward-facing; provides outward-facing
+    *   `[✅]`   `requirements`
+        *   `[✅]`   `StageProgressEntry` contains `jobs: JobProgressDto[]` for every stage
+        *   `[✅]`   `StageProgressEntry` contains `edges: ProgressRecipeEdge[]` for every stage
+        *   `[✅]`   `buildJobProgressDtos` injected via `GetAllStageProgressDeps`
+        *   `[✅]`   Existing `steps` and `documents` fields unchanged
+        *   `[✅]`   No defaults, fallbacks, or data healing
+        *   `[✅]`   Tests prove complete job data and edges flow through the response
+
+*   `[✅]`   `packages/store/src/dialecticStore.documents` **[STORE] Hydrate complete job data into FE store from progress response**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Update FE types to match enriched BE response: add `JobProgressDto` type, add `jobs` and `edges` to FE `StageProgressEntry`, add `jobs` to `StageRunProgressSnapshot`
+        *   `[✅]`   Update `hydrateAllStageProgressLogic` to store `entry.jobs` into `stageRunProgress[progressKey].jobs`
+        *   `[✅]`   Derive `jobProgress` counters and `modelJobStatuses` from the hydrated jobs array so they survive page refresh (currently only populated by realtime handlers)
+        *   `[✅]`   No defaults, fallbacks, or data healing
+    *   `[✅]`   `role`
+        *   `[✅]`   App: state management — stores complete job data from progress hydration
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic store — progress hydration
+        *   `[✅]`   Bounded context: API response → `stageRunProgress[progressKey].jobs`, `stageRunProgress[progressKey].jobProgress`
+    *   `[✅]`   `deps`
+        *   `[✅]`   `@paynless/types` (domain) — provides `StageProgressEntry`, `StageRunProgressSnapshot`, `JobProgressDto`, `JobProgressEntry`, `StepJobProgress` — inward dependency
+        *   `[✅]`   `@paynless/api` (adapter) — provides `dialectic().getAllStageProgress()` — inward dependency
+        *   `[✅]`   No reverse dependency introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   `stageRunProgress: Record<string, StageRunProgressSnapshot>` — job data storage
+        *   `[✅]`   `StageRunProgressSnapshot.jobs: JobProgressDto[]` — new field for complete job data
+        *   `[✅]`   `StageRunProgressSnapshot.jobProgress: StepJobProgress` — existing field, now populated from hydration
+        *   `[✅]`   No concrete imports from higher or lateral layers
+    *   `[✅]`   interface/`dialectic.types.ts`
+        *   `[✅]`   Add `JobProgressDto` interface (FE mirror of BE DTO):
+            *   `[✅]`   `id: string`
+            *   `[✅]`   `status: string`
+            *   `[✅]`   `jobType: RecipeJobType | null`
+            *   `[✅]`   `stepKey: string | null`
+            *   `[✅]`   `modelId: string | null`
+            *   `[✅]`   `documentKey: string | null`
+            *   `[✅]`   `parentJobId: string | null`
+            *   `[✅]`   `createdAt: string`
+            *   `[✅]`   `startedAt: string | null`
+            *   `[✅]`   `completedAt: string | null`
+        *   `[✅]`   Update `StageProgressEntry` (line 1163): add `jobs: JobProgressDto[]` field
+        *   `[✅]`   Update `StageProgressEntry` (line 1163): add `edges: DialecticRecipeEdge[]` field
+        *   `[✅]`   Update `StageRunProgressSnapshot` (line 576): add `jobs: JobProgressDto[]` field
+    *   `[✅]`   unit/`dialecticStore.documents.test.ts`
+        *   `[✅]`   ADD test: `hydrateAllStageProgressLogic` stores `jobs` array from response in `stageRunProgress[progressKey].jobs` — verify all jobs present, all fields correct
+        *   `[✅]`   ADD test: `hydrateAllStageProgressLogic` stores ALL job types (PLAN, EXECUTE, RENDER) — not just RENDER or completed
+        *   `[✅]`   ADD test: `hydrateAllStageProgressLogic` populates `jobProgress[stepKey].totalJobs`, `completedJobs`, `inProgressJobs`, `failedJobs` derived from the hydrated jobs array for each step
+        *   `[✅]`   ADD test: `hydrateAllStageProgressLogic` populates `jobProgress[stepKey].modelJobStatuses[modelId]` derived from the hydrated jobs — a model with a completed job shows `'completed'`, a model with a failed job shows `'failed'`
+        *   `[✅]`   ADD test: on simulated page reload, `stageRunProgress[progressKey].jobs` is populated from hydration (not empty as it would be with realtime-only population)
+        *   `[✅]`   ADD test: existing `stepStatuses` and `documents` hydration logic is unchanged — additive only
+        *   `[✅]`   RETAIN all existing tests
+    *   `[✅]`   `construction`
+        *   `[✅]`   `StageRunProgressSnapshot` initialized with `jobs: []` (empty array, not null) when creating a new snapshot
+        *   `[✅]`   `jobProgress` derived from `entry.jobs` by grouping jobs by `stepKey` and counting by status — replaces the empty-on-hydration gap
+        *   `[✅]`   `modelJobStatuses` derived from `entry.jobs` by grouping jobs by `stepKey` then `modelId` — replaces the empty-on-hydration gap
+    *   `[✅]`   `dialecticStore.documents.ts`
+        *   `[✅]`   In `hydrateAllStageProgressLogic` stage loop (after line 1744): assign `progress.jobs = entry.jobs`
+        *   `[✅]`   In `hydrateAllStageProgressLogic` stage loop: derive `jobProgress` from `entry.jobs` — for each job with a non-null `stepKey`, group by `stepKey`, count `totalJobs`, `completedJobs` (status === 'completed'), `inProgressJobs` (status in ACTIVE_STATUSES), `failedJobs` (status in FAILED_STATUSES)
+        *   `[✅]`   In `hydrateAllStageProgressLogic` stage loop: derive `modelJobStatuses` from `entry.jobs` — for each job with non-null `stepKey` and non-null `modelId`, set `modelJobStatuses[modelId]` to the job's mapped status
+        *   `[✅]`   Update `StageRunProgressSnapshot` initialization (line 1726-1731): add `jobs: []` to the initial snapshot construction
+        *   `[✅]`   Update mock in `dialectic.api.mock.ts`: add `jobs: []` and `edges: []` to mock `StageProgressEntry` responses so existing tests compile
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: app (state management)
+        *   `[✅]`   Dependencies inward-facing; provides outward-facing
+    *   `[✅]`   `requirements`
+        *   `[✅]`   FE `JobProgressDto` matches BE shape exactly
+        *   `[✅]`   FE `StageProgressEntry` has `jobs` and `edges` fields
+        *   `[✅]`   `StageRunProgressSnapshot` has `jobs` field
+        *   `[✅]`   `hydrateAllStageProgressLogic` stores complete job data
+        *   `[✅]`   `hydrateAllStageProgressLogic` derives `jobProgress` and `modelJobStatuses` from jobs
+        *   `[✅]`   Data survives page refresh via hydration
+        *   `[✅]`   Existing hydration logic for `stepStatuses` and `documents` unchanged
+        *   `[✅]`   Tests prove complete job data flows through hydration into the store
+    *   `[✅]`   **Commit** `fix(dialectic): return and hydrate complete job data in progress pipeline (Chain 2)`
+        *   `[✅]`   Added `JobProgressDto` to BE `dialectic.interface.ts` and FE `dialectic.types.ts`
+        *   `[✅]`   Added `buildJobProgressDtos.ts` — extracts individual job DTOs from raw job rows
+        *   `[✅]`   Updated `StageProgressEntry` on both BE and FE with `jobs: JobProgressDto[]` and `edges: ProgressRecipeEdge[]`
+        *   `[✅]`   Updated `getAllStageProgress.ts` to call `buildJobProgressDtos` and include edges in response
+        *   `[✅]`   Updated `StageRunProgressSnapshot` with `jobs: JobProgressDto[]` field
+        *   `[✅]`   Updated `hydrateAllStageProgressLogic` to store jobs and derive `jobProgress`/`modelJobStatuses` from hydrated jobs
+        *   `[✅]`   Added BE tests for job DTO extraction and response enrichment
+        *   `[✅]`   Added FE tests for job hydration and derived progress counters
+
 # ToDo
 
 - New user sign in banner doesn't display, throws console error  

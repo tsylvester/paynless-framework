@@ -90,6 +90,25 @@ function isStepStatus(value: string): value is StageRunProgressSnapshot['stepSta
 export const getStageRunDocumentKey = (documentKey: string, modelId: string): string =>
 	`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`;
 
+const ACTIVE_JOB_STATUSES: readonly string[] = [
+	'pending',
+	'processing',
+	'retrying',
+	'waiting_for_prerequisite',
+	'waiting_for_children',
+];
+
+const FAILED_JOB_STATUSES: readonly string[] = ['failed', 'paused_nsf', 'superseded'];
+
+function jobStatusToDisplayStatus(
+	status: string,
+): 'pending' | 'in_progress' | 'completed' | 'failed' {
+	if (status === 'completed') return 'completed';
+	if (FAILED_JOB_STATUSES.includes(status)) return 'failed';
+	if (status === 'pending') return 'pending';
+	return 'in_progress';
+}
+
 const ensureJobProgressEntry = (
 	progress: Draft<StageRunProgressSnapshot>,
 	stepKey: string,
@@ -1638,6 +1657,7 @@ export const hydrateStageProgressLogic = async (
 				stepStatuses: {},
 				jobProgress: {},
 				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			};
 		}
 
@@ -1728,6 +1748,7 @@ export const hydrateAllStageProgressLogic = async (
 					stepStatuses: {},
 					jobProgress: {},
 					progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+					jobs: [],
 				};
 			}
 
@@ -1742,6 +1763,27 @@ export const hydrateAllStageProgressLogic = async (
 				totalSteps: entry.progress.totalSteps,
 				failedSteps: entry.progress.failedSteps,
 			};
+
+			progress.jobs = entry.jobs;
+
+			for (const job of entry.jobs) {
+				if (job.stepKey === null) continue;
+				const jobEntry = ensureJobProgressEntry(progress, job.stepKey);
+				jobEntry.totalJobs += 1;
+				if (job.status === 'completed') {
+					jobEntry.completedJobs += 1;
+				} else if (FAILED_JOB_STATUSES.includes(job.status)) {
+					jobEntry.failedJobs += 1;
+				} else if (ACTIVE_JOB_STATUSES.includes(job.status)) {
+					jobEntry.inProgressJobs += 1;
+				}
+				if (job.modelId !== null) {
+					if (!jobEntry.modelJobStatuses) {
+						jobEntry.modelJobStatuses = {};
+					}
+					jobEntry.modelJobStatuses[job.modelId] = jobStatusToDisplayStatus(job.status);
+				}
+			}
 
 			for (const doc of entry.documents) {
 				if (!isStageRenderedDocumentChecklistEntry(doc)) continue;

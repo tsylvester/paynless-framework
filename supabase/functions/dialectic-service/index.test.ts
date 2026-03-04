@@ -33,6 +33,8 @@ import {
   GetStageDocumentFeedbackResponse,
   GetAllStageProgressPayload,
   GetAllStageProgressResult,
+  JobProgressDto,
+  StageProgressEntry,
   ResumePausedNsfJobsPayload,
   ResumePausedNsfJobsResponse,
   ResumePausedNsfJobsResult,
@@ -1792,6 +1794,60 @@ withSupabaseEnv("handleRequest - getAllStageProgress", async (t) => {
         assertEquals(response.status, 401);
         assertEquals(getAllStageProgressSpy.calls.length, 0);
     });
+
+    await t.step("should return stages with jobs and edges when handler returns them (buildJobProgressDtos / getAllStageProgress contract)", async () => {
+        const jobDto: JobProgressDto = {
+            id: "job-1",
+            status: "completed",
+            jobType: "PLAN",
+            stepKey: "step-1",
+            modelId: "model-1",
+            documentKey: null,
+            parentJobId: null,
+            createdAt: "",
+            startedAt: null,
+            completedAt: "",
+        };
+        const stageWithJobsAndEdges: StageProgressEntry = {
+            stageSlug: "thesis",
+            status: "in_progress",
+            modelCount: 1,
+            progress: { completedSteps: 1, totalSteps: 2, failedSteps: 0 },
+            steps: [{ stepKey: "step-1", status: "completed" }, { stepKey: "step-2", status: "not_started" }],
+            documents: [],
+            jobs: [jobDto],
+            edges: [{ from_step_id: "step-1", to_step_id: "step-2" }],
+        };
+        const getAllStageProgressSpy = spy(() => Promise.resolve({
+            data: { dagProgress: { completedStages: 0, totalStages: 1 }, stages: [stageWithJobsAndEdges] },
+            status: 200,
+        }));
+        const mockHandlers = createMockHandlers({ getAllStageProgress: getAllStageProgressSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("getAllStageProgress", payload, mockToken);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 200);
+        const body = await response.json();
+        assertExists(body.stages);
+        assertEquals(body.stages.length, 1);
+        assert(Array.isArray(body.stages[0].jobs), "stage must include jobs array");
+        assert(Array.isArray(body.stages[0].edges), "stage must include edges array");
+        assertEquals(body.stages[0].jobs.length, 1);
+        assertEquals(body.stages[0].edges.length, 1);
+        assertEquals(getAllStageProgressSpy.calls.length, 1);
+    });
 });
 
 withSupabaseEnv("handleRequest - resumePausedNsfJobs", async (t) => {
@@ -1880,7 +1936,7 @@ withSupabaseEnv("handleRequest - regenerateDocument", async (t) => {
         sessionId: 'sess-regen-123',
         stageSlug: 'thesis',
         iterationNumber: 1,
-        jobs: [{ jobId: 'job-1', modelId: 'model-1' }],
+        documents: [{ documentKey: 'doc-1', modelId: 'model-1' }],
     };
 
     await t.step("should route action 'regenerateDocument' to handler and return 200 with jobIds", async () => {

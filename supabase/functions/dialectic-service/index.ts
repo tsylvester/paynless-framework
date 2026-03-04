@@ -89,6 +89,7 @@ import { topologicalSortSteps } from './topologicalSortSteps.ts';
 import { deriveStepStatuses } from './deriveStepStatuses.ts';
 import { computeExpectedCounts } from './computeExpectedCounts.ts';
 import { buildDocumentDescriptors } from './buildDocumentDescriptors.ts';
+import { buildJobProgressDtos } from './buildJobProgressDtos.ts';
 import { getStageDocumentFeedback } from './getStageDocumentFeedback.ts';
 import { callUnifiedAIModel } from './callModel.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
@@ -662,6 +663,7 @@ async function handleGetAllStageProgress(
     deriveStepStatuses,
     computeExpectedCounts,
     buildDocumentDescriptors,
+    buildJobProgressDtos,
   };
   return getAllStageProgress(deps, { payload });
 }
