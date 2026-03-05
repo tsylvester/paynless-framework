@@ -65,160 +65,160 @@ Users click "Create Project" once and land on a session page with default models
     *   `[✅]`   Seed data updated with default generation model flag
     *   `[✅]`   `types_db.ts` regenerated to reflect new column
 
-*   `[ ]`   [BE] supabase/functions/dialectic-service/startSession **Type alignment `selectedModelIds` → `selectedModels` and response construction fix**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Change `StartSessionPayload.selectedModelIds: string[]` to `selectedModels: SelectedModels[]` in the backend type to match the frontend `StartSessionPayload`
-    *   `[ ]`   Update all related backend type references: `DialecticBaseJobPayload` Omit key cleanup, `JobInsert.payload.selectedModelIds` → `selectedModels`
-    *   `[ ]`   Fix broken response construction in `startSession.ts` that sets `displayName` to raw UUID instead of actual model name
-    *   `[ ]`   Ensure `SelectedModels` type is consistent end-to-end: `{ id: string; displayName: string }`
-    *   `[ ]`   Update all type guards that validate `selectedModelIds` to validate `selectedModels: SelectedModels[]`
-    *   `[ ]`   Update all backend test files that construct payloads with `selectedModelIds`
-  *   `[ ]`   `role`
-    *   `[ ]`   Backend adapter — edge function handler for session creation
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic service: session lifecycle — `startSession` handler
-    *   `[ ]`   Boundary: receives `StartSessionPayload` from API adapter, inserts session to database, returns session response with `selected_models`
-  *   `[ ]`   `deps`
-    *   `[ ]`   `dialectic.interface.ts` — `StartSessionPayload`, `DialecticBaseJobPayload`, `JobInsert` (edited in this node as support files)
-    *   `[ ]`   `type_guards.dialectic.ts` — `isDialecticJobPayload` guard validates `selectedModelIds` (edited in this node)
-    *   `[ ]`   `SelectedModels` type from `packages/types/src/dialectic.types.ts` — `{ id: string; displayName: string }` (pre-existing, unchanged)
-    *   `[ ]`   Supabase client for DB operations (existing, unchanged)
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `StartSessionPayload.selectedModels: SelectedModels[]` — full model objects with `id` and `displayName`
-    *   `[ ]`   DB column `selected_model_ids: UUID[]` — stores only `id` values extracted from `SelectedModels[]`
-    *   `[ ]`   Response field `selected_models: SelectedModels[]` — passes through payload objects directly (no reconstruction from UUIDs)
-    *   `[ ]`   No concrete imports from higher or lateral layers
-  *   `[ ]`   interface/`dialectic.interface.ts`
-    *   `[ ]`   `StartSessionPayload` (line ~619): rename `selectedModelIds: string[]` to `selectedModels: SelectedModels[]`
-    *   `[ ]`   Import `SelectedModels` from `packages/types/src/dialectic.types.ts` or define locally to match `{ id: string; displayName: string }`
-    *   `[ ]`   `DialecticBaseJobPayload` (line ~1078): clean up `Omit<GenerateContributionsPayload, "selectedModelIds" | "chatId">` — remove `"selectedModelIds"` from the Omit since `GenerateContributionsPayload` does not have this field (the Omit is currently a no-op for that key)
-    *   `[ ]`   `JobInsert` (line ~1985): change `selectedModelIds?: string[]` to `selectedModels?: SelectedModels[]`
-  *   `[ ]`   interface/tests/`type_guards.dialectic.test.ts`
-    *   `[ ]`   Update `isDialecticJobPayload` tests that validate `selectedModelIds` to validate `selectedModels: SelectedModels[]`
-    *   `[ ]`   Test valid `SelectedModels[]` — array of `{ id: string; displayName: string }` passes guard
-    *   `[ ]`   Test invalid shapes fail guard: missing `id`, missing `displayName`, wrong types, non-array
-    *   `[ ]`   Update test at line ~878: `'should return true for a valid job payload with selectedModelIds'` → update field name and value shape
-    *   `[ ]`   Update test at line ~887: `'should return false when selectedModelIds is not an array of strings'` → update for `SelectedModels[]` shape validation
-    *   `[ ]`   Update tests at lines ~904, ~1068, ~1089 that construct payloads with `selectedModelIds`
-  *   `[ ]`   interface/guards/`type_guards.dialectic.ts`
-    *   `[ ]`   Update `isDialecticJobPayload` guard (line ~957): change from validating `selectedModelIds` as `string[]` to validating `selectedModels` as `SelectedModels[]`
-    *   `[ ]`   Guard must verify: `'selectedModels' in payload`, `Array.isArray(payload.selectedModels)`, each element has `id: string` and `displayName: string`
-  *   `[ ]`   unit/`startSession.happy.test.ts`
-    *   `[ ]`   Update all `StartSessionPayload` constructions: `selectedModelIds: ["model-1"]` → `selectedModels: [{ id: "model-1", displayName: "Model One" }]` (at lines ~37, ~196, ~362, ~416)
-    *   `[ ]`   Update assertions that expect `displayName: id` (UUID as display name) to expect the correct display name passed in the payload
-    *   `[ ]`   Verify session response contains complete `SelectedModels[]` objects passed through from payload
-  *   `[ ]`   unit/`startSession.errors.test.ts`
-    *   `[ ]`   Update all `StartSessionPayload` constructions: `selectedModelIds` → `selectedModels: SelectedModels[]` (at lines ~32, ~48, ~70, ~117, ~170, ~224, ~302, ~304)
-  *   `[ ]`   `construction`
-    *   `[ ]`   `startSession` handler destructures `selectedModels` from request body payload (currently destructures `selectedModelIds` at line ~41)
-    *   `[ ]`   For DB insert: `selected_model_ids` column receives `selectedModels.map(m => m.id)` or `[]` if empty
-    *   `[ ]`   For response: `selected_models` uses `selectedModels` from payload directly — eliminates broken `ids.map((id) => ({ id, displayName: id }))` reconstruction
-  *   `[ ]`   `startSession.ts`
-    *   `[ ]`   Destructure `selectedModels` instead of `selectedModelIds` from payload (line ~41)
-    *   `[ ]`   DB insert (line ~288): change `selected_model_ids: selectedModelIds ?? []` to `selected_model_ids: selectedModels.map(m => m.id)`
-    *   `[ ]`   Response construction (lines ~329–334): replace `ids.map((id) => ({ id, displayName: id }))` with direct use of `selectedModels` from payload
-  *   `[ ]`   integration/`index.test.ts`
-    *   `[ ]`   Update `startSession` test payloads (lines ~558, ~582): `selectedModelIds: ['model-1']` → `selectedModels: [{ id: 'model-1', displayName: 'Model One' }]`
-    *   `[ ]`   Update `updateSessionModels` test payload (line ~966): `selectedModelIds: ['model-a', 'model-b']` → `selectedModels: [{ id: 'model-a', displayName: 'Model A' }, { id: 'model-b', displayName: 'Model B' }]`
-  *   `[ ]`   unit/`generateContribution.test.ts` (conditional review)
-    *   `[ ]`   Review test at line ~437: `"generateContributions - Validation: Fails if selectedModelIds is empty or missing"` — this tests DB-level validation using `selected_model_ids: []` (DB column name, correct)
-    *   `[ ]`   If test constructs `JobInsert` or `DialecticBaseJobPayload` objects with `selectedModelIds`, update to `selectedModels: SelectedModels[]`
-    *   `[ ]`   DB column mock references (`selected_model_ids`) are unchanged — that is the DB column name
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Backend adapter layer
-    *   `[ ]`   Dependencies inward: `dialectic.interface.ts` types, database types, `SelectedModels` from `packages/types`
-    *   `[ ]`   Provides outward: session creation handler to edge function router
-  *   `[ ]`   `requirements`
-    *   `[ ]`   All `selectedModelIds` references in `dialectic.interface.ts` replaced with `selectedModels: SelectedModels[]`
-    *   `[ ]`   `DialecticBaseJobPayload` Omit key cleaned up (removed non-existent `"selectedModelIds"`)
-    *   `[ ]`   `JobInsert` payload type updated to `selectedModels?: SelectedModels[]`
-    *   `[ ]`   `startSession.ts` extracts IDs for DB column, passes full `SelectedModels[]` in response
-    *   `[ ]`   Broken `displayName: id` (UUID as display name) pattern is eliminated
-    *   `[ ]`   Type guard `isDialecticJobPayload` validates `selectedModels: SelectedModels[]` shape
-    *   `[ ]`   All backend test files updated with correct payload shapes and assertions
-    *   `[ ]`   `index.test.ts` updated for both `startSession` and `updateSessionModels` test payloads
+*   `[✅]`   [BE] supabase/functions/dialectic-service/startSession **Type alignment `selectedModelIds` → `selectedModels` and response construction fix**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Change `StartSessionPayload.selectedModelIds: string[]` to `selectedModels: SelectedModels[]` in the backend type to match the frontend `StartSessionPayload`
+    *   `[✅]`   Update all related backend type references: `DialecticBaseJobPayload` Omit key cleanup, `JobInsert.payload.selectedModelIds` → `selectedModels`
+    *   `[✅]`   Fix broken response construction in `startSession.ts` that sets `displayName` to raw UUID instead of actual model name
+    *   `[✅]`   Ensure `SelectedModels` type is consistent end-to-end: `{ id: string; displayName: string }`
+    *   `[✅]`   Update all type guards that validate `selectedModelIds` to validate `selectedModels: SelectedModels[]`
+    *   `[✅]`   Update all backend test files that construct payloads with `selectedModelIds`
+  *   `[✅]`   `role`
+    *   `[✅]`   Backend adapter — edge function handler for session creation
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic service: session lifecycle — `startSession` handler
+    *   `[✅]`   Boundary: receives `StartSessionPayload` from API adapter, inserts session to database, returns session response with `selected_models`
+  *   `[✅]`   `deps`
+    *   `[✅]`   `dialectic.interface.ts` — `StartSessionPayload`, `DialecticBaseJobPayload`, `JobInsert` (edited in this node as support files)
+    *   `[✅]`   `type_guards.dialectic.ts` — `isDialecticJobPayload` guard validates `selectedModelIds` (edited in this node)
+    *   `[✅]`   `SelectedModels` type from `packages/types/src/dialectic.types.ts` — `{ id: string; displayName: string }` (pre-existing, unchanged)
+    *   `[✅]`   Supabase client for DB operations (existing, unchanged)
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `StartSessionPayload.selectedModels: SelectedModels[]` — full model objects with `id` and `displayName`
+    *   `[✅]`   DB column `selected_model_ids: UUID[]` — stores only `id` values extracted from `SelectedModels[]`
+    *   `[✅]`   Response field `selected_models: SelectedModels[]` — passes through payload objects directly (no reconstruction from UUIDs)
+    *   `[✅]`   No concrete imports from higher or lateral layers
+  *   `[✅]`   interface/`dialectic.interface.ts`
+    *   `[✅]`   `StartSessionPayload` (line ~619): rename `selectedModelIds: string[]` to `selectedModels: SelectedModels[]`
+    *   `[✅]`   Define `SelectedModels` as `{ id: string; displayName: string }`
+    *   `[✅]`   `DialecticBaseJobPayload` (line ~1078): clean up `Omit<GenerateContributionsPayload, "selectedModelIds" | "chatId">` — remove `"selectedModelIds"` from the Omit since `GenerateContributionsPayload` does not have this field (the Omit is currently a no-op for that key)
+    *   `[✅]`   `JobInsert` (line ~1985): change `selectedModelIds?: string[]` to `selectedModels?: SelectedModels[]`
+  *   `[✅]`   interface/tests/`type_guards.dialectic.test.ts`
+    *   `[✅]`   Update `isDialecticJobPayload` tests that validate `selectedModelIds` to validate `selectedModels: SelectedModels[]`
+    *   `[✅]`   Test valid `SelectedModels[]` — array of `{ id: string; displayName: string }` passes guard
+    *   `[✅]`   Test invalid shapes fail guard: missing `id`, missing `displayName`, wrong types, non-array
+    *   `[✅]`   Update test at line ~878: `'should return true for a valid job payload with selectedModelIds'` → update field name and value shape
+    *   `[✅]`   Update test at line ~887: `'should return false when selectedModelIds is not an array of strings'` → update for `SelectedModels[]` shape validation
+    *   `[✅]`   Update tests at lines ~904, ~1068, ~1089 that construct payloads with `selectedModelIds`
+  *   `[✅]`   interface/guards/`type_guards.dialectic.ts`
+    *   `[✅]`   Update `isDialecticJobPayload` guard (line ~957): change from validating `selectedModelIds` as `string[]` to validating `selectedModels` as `SelectedModels[]`
+    *   `[✅]`   Guard must verify: `'selectedModels' in payload`, `Array.isArray(payload.selectedModels)`, each element has `id: string` and `displayName: string`
+  *   `[✅]`   unit/`startSession.happy.test.ts`
+    *   `[✅]`   Update all `StartSessionPayload` constructions: `selectedModelIds: ["model-1"]` → `selectedModels: [{ id: "model-1", displayName: "Model One" }]` (at lines ~37, ~196, ~362, ~416)
+    *   `[✅]`   Update assertions that expect `displayName: id` (UUID as display name) to expect the correct display name passed in the payload
+    *   `[✅]`   Verify session response contains complete `SelectedModels[]` objects passed through from payload
+  *   `[✅]`   unit/`startSession.errors.test.ts`
+    *   `[✅]`   Update all `StartSessionPayload` constructions: `selectedModelIds` → `selectedModels: SelectedModels[]` (at lines ~32, ~48, ~70, ~117, ~170, ~224, ~302, ~304)
+  *   `[✅]`   `construction`
+    *   `[✅]`   `startSession` handler destructures `selectedModels` from request body payload (currently destructures `selectedModelIds` at line ~41)
+    *   `[✅]`   For DB insert: `selected_model_ids` column receives `selectedModels.map(m => m.id)` or `[]` if empty
+    *   `[✅]`   For response: `selected_models` uses `selectedModels` from payload directly — eliminates broken `ids.map((id) => ({ id, displayName: id }))` reconstruction
+  *   `[✅]`   `startSession.ts`
+    *   `[✅]`   Destructure `selectedModels` instead of `selectedModelIds` from payload (line ~41)
+    *   `[✅]`   DB insert (line ~288): change `selected_model_ids: selectedModelIds ?? []` to `selected_model_ids: selectedModels.map(m => m.id)`
+    *   `[✅]`   Response construction (lines ~329–334): replace `ids.map((id) => ({ id, displayName: id }))` with direct use of `selectedModels` from payload
+  *   `[✅]`   integration/`index.test.ts`
+    *   `[✅]`   Update `startSession` test payloads (lines ~558, ~582): `selectedModelIds: ['model-1']` → `selectedModels: [{ id: 'model-1', displayName: 'Model One' }]`
+    *   `[✅]`   Update `updateSessionModels` test payload (line ~966): `selectedModelIds: ['model-a', 'model-b']` → `selectedModels: [{ id: 'model-a', displayName: 'Model A' }, { id: 'model-b', displayName: 'Model B' }]`
+  *   `[✅]`   unit/`generateContribution.test.ts` (conditional review)
+    *   `[✅]`   Review test at line ~437: `"generateContributions - Validation: Fails if selectedModelIds is empty or missing"` — this tests DB-level validation using `selected_model_ids: []` (DB column name, correct)
+    *   `[✅]`   If test constructs `JobInsert` or `DialecticBaseJobPayload` objects with `selectedModelIds`, update to `selectedModels: SelectedModels[]`
+    *   `[✅]`   DB column mock references (`selected_model_ids`) are unchanged — that is the DB column name
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Backend adapter layer
+    *   `[✅]`   Dependencies inward: `dialectic.interface.ts` types, database types, `SelectedModels` from `packages/types`
+    *   `[✅]`   Provides outward: session creation handler to edge function router
+  *   `[✅]`   `requirements`
+    *   `[✅]`   All `selectedModelIds` references in `dialectic.interface.ts` replaced with `selectedModels: SelectedModels[]`
+    *   `[✅]`   `DialecticBaseJobPayload` Omit key cleaned up (removed non-existent `"selectedModelIds"`)
+    *   `[✅]`   `JobInsert` payload type updated to `selectedModels?: SelectedModels[]`
+    *   `[✅]`   `startSession.ts` extracts IDs for DB column, passes full `SelectedModels[]` in response
+    *   `[✅]`   Broken `displayName: id` (UUID as display name) pattern is eliminated
+    *   `[✅]`   Type guard `isDialecticJobPayload` validates `selectedModels: SelectedModels[]` shape
+    *   `[✅]`   All backend test files updated with correct payload shapes and assertions
+    *   `[✅]`   `index.test.ts` updated for both `startSession` and `updateSessionModels` test payloads
 
-*   `[ ]`   [BE] supabase/functions/dialectic-service/updateSessionModels + getSessionDetails **Verify existing type alignment and display name lookup**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Verify `updateSessionModels.ts` already uses `selectedModels: SelectedModels[]` (confirmed: source destructures `selectedModels` from `UpdateSessionModelsPayload`, maps to `selected_model_ids` for DB)
-    *   `[ ]`   Verify `UpdateSessionModelsPayload` in `dialectic.interface.ts` already has `selectedModels: SelectedModels[]` (confirmed at line ~886)
-    *   `[ ]`   Verify `getSessionDetails.ts` already correctly reconstructs `SelectedModels[]` by querying `ai_providers` for display names (confirmed: queries `ai_providers` for `id` and `name`, builds `displayNameById` map)
-    *   `[ ]`   Document verification results — no source changes expected
-  *   `[ ]`   `role`
-    *   `[ ]`   Backend adapter — verification of existing alignment in adjacent handlers
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic service: `updateSessionModels` handler — session model update
-    *   `[ ]`   Dialectic service: `getSessionDetails` handler — session detail retrieval with `ai_providers` name lookup
-  *   `[ ]`   `deps`
-    *   `[ ]`   `dialectic.interface.ts` — `UpdateSessionModelsPayload` (already aligned in prior verification)
-    *   `[ ]`   `ai_providers` table — source of display names for `getSessionDetails` lookup
-    *   `[ ]`   `SelectedModels` type (consistent end-to-end)
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `updateSessionModels.ts`: receives `selectedModels: SelectedModels[]`, maps `selectedModels.map(model => model.id)` for DB update
-    *   `[ ]`   `getSessionDetails.ts`: reads `selected_model_ids` from DB, queries `ai_providers` for `name`, constructs `SelectedModels[]` with `{ id, displayName: provider.name }`
-  *   `[ ]`   `updateSessionModels.ts` — read and verify
-    *   `[ ]`   Confirm source destructures `selectedModels` from `UpdateSessionModelsPayload` (line ~12)
-    *   `[ ]`   Confirm DB update uses `selectedModels.map(model => model.id)` (line ~54)
-    *   `[ ]`   If already correct: document as verified, no changes needed
-    *   `[ ]`   If incorrect: stop, report discovery, propose fix as separate node
-  *   `[ ]`   `getSessionDetails.ts` — read and verify
-    *   `[ ]`   Confirm `selected_model_ids` from DB are mapped via `ai_providers` lookup for display names (lines ~146–201)
-    *   `[ ]`   Confirm `SelectedModels[]` is constructed with `{ id, displayName: provider.name }`, not `{ id, displayName: id }`
-    *   `[ ]`   Confirm edge case handling: model ID in `selected_model_ids` not found in `ai_providers`
-    *   `[ ]`   If already correct: document as verified, no changes needed
-    *   `[ ]`   If incorrect: stop, report discovery, propose fix as separate node
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Backend adapter layer
-    *   `[ ]`   Dependencies inward: `dialectic.interface.ts` types, `ai_providers` table
-    *   `[ ]`   Provides outward: session update and detail handlers to edge function router
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `updateSessionModels.ts` confirmed to use `selectedModels: SelectedModels[]` — no source changes
-    *   `[ ]`   `UpdateSessionModelsPayload` confirmed to have `selectedModels: SelectedModels[]` — no type changes
-    *   `[ ]`   `getSessionDetails.ts` confirmed to look up display names from `ai_providers` — no source changes
-    *   `[ ]`   If verification reveals unexpected issues, halt and report before proceeding
-    *   `[ ]`   Exempt from TDD — verification-only node, no code changes expected
+*   `[✅]`   [BE] supabase/functions/dialectic-service/updateSessionModels + getSessionDetails **Verify existing type alignment and display name lookup**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Verify `updateSessionModels.ts` already uses `selectedModels: SelectedModels[]` (confirmed: source destructures `selectedModels` from `UpdateSessionModelsPayload`, maps to `selected_model_ids` for DB)
+    *   `[✅]`   Verify `UpdateSessionModelsPayload` in `dialectic.interface.ts` already has `selectedModels: SelectedModels[]` (confirmed at line ~886)
+    *   `[✅]`   Verify `getSessionDetails.ts` already correctly reconstructs `SelectedModels[]` by querying `ai_providers` for display names (confirmed: queries `ai_providers` for `id` and `name`, builds `displayNameById` map)
+    *   `[✅]`   Document verification results — no source changes expected
+  *   `[✅]`   `role`
+    *   `[✅]`   Backend adapter — verification of existing alignment in adjacent handlers
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic service: `updateSessionModels` handler — session model update
+    *   `[✅]`   Dialectic service: `getSessionDetails` handler — session detail retrieval with `ai_providers` name lookup
+  *   `[✅]`   `deps`
+    *   `[✅]`   `dialectic.interface.ts` — `UpdateSessionModelsPayload` (already aligned in prior verification)
+    *   `[✅]`   `ai_providers` table — source of display names for `getSessionDetails` lookup
+    *   `[✅]`   `SelectedModels` type (consistent end-to-end)
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `updateSessionModels.ts`: receives `selectedModels: SelectedModels[]`, maps `selectedModels.map(model => model.id)` for DB update
+    *   `[✅]`   `getSessionDetails.ts`: reads `selected_model_ids` from DB, queries `ai_providers` for `name`, constructs `SelectedModels[]` with `{ id, displayName: provider.name }`
+  *   `[✅]`   `updateSessionModels.ts` — read and verify
+    *   `[✅]`   Confirm source destructures `selectedModels` from `UpdateSessionModelsPayload` (line ~12)
+    *   `[✅]`   Confirm DB update uses `selectedModels.map(model => model.id)` (line ~54)
+    *   `[✅]`   If already correct: document as verified, no changes needed
+    *   `[✅]`   If incorrect: stop, report discovery, propose fix as separate node
+  *   `[✅]`   `getSessionDetails.ts` — read and verify
+    *   `[✅]`   Confirm `selected_model_ids` from DB are mapped via `ai_providers` lookup for display names (lines ~146–201)
+    *   `[✅]`   Confirm `SelectedModels[]` is constructed with `{ id, displayName: provider.name }`, not `{ id, displayName: id }`
+    *   `[✅]`   Confirm edge case handling: model ID in `selected_model_ids` not found in `ai_providers`
+    *   `[✅]`   If already correct: document as verified, no changes needed
+    *   `[✅]`   If incorrect: stop, report discovery, propose fix as separate node
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Backend adapter layer
+    *   `[✅]`   Dependencies inward: `dialectic.interface.ts` types, `ai_providers` table
+    *   `[✅]`   Provides outward: session update and detail handlers to edge function router
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `updateSessionModels.ts` confirmed to use `selectedModels: SelectedModels[]` — no source changes
+    *   `[✅]`   `UpdateSessionModelsPayload` confirmed to have `selectedModels: SelectedModels[]` — no type changes
+    *   `[✅]`   `getSessionDetails.ts` confirmed to look up display names from `ai_providers` — no source changes
+    *   `[✅]`   If verification reveals unexpected issues, halt and report before proceeding
+    *   `[✅]`   Exempt from TDD — verification-only node, no code changes expected
 
-*   `[ ]`   [UI] apps/web/src/pages/DialecticProjectDetailsPage **Fix `selectedModelIds` → `selectedModels` in `handleStartNewSession`**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Change `selectedModelIds: []` to `selectedModels: []` in `handleStartNewSession` (line ~60) to conform to the frontend `StartSessionPayload` type
-    *   `[ ]`   This is a pre-existing type violation: the code sends `selectedModelIds` which matched the old backend but violates the frontend `StartSessionPayload.selectedModels: SelectedModels[]`
-  *   `[ ]`   `role`
-    *   `[ ]`   Frontend page component — project detail with manual session creation
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic project details: manual "Start New Session" flow
-    *   `[ ]`   Boundary: constructs `StartSessionPayload`, calls `startDialecticSession` store action, navigates to session page
-  *   `[ ]`   `deps`
-    *   `[ ]`   `StartSessionPayload` type from `packages/types/src/dialectic.types.ts` — `selectedModels: SelectedModels[]` (pre-existing, unchanged)
-    *   `[ ]`   `startDialecticSession` store action (existing, unchanged)
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `handleStartNewSession` passes `selectedModels: []` (empty array, typed as `SelectedModels[]`)
-    *   `[ ]`   No concrete imports from higher or lateral layers
-  *   `[ ]`   unit/`DialecticProjectDetailsPage.test.tsx`
-    *   `[ ]`   Update assertion at line ~244: `selectedModelIds: []` → `selectedModels: []`
-    *   `[ ]`   Verify `handleStartNewSession` calls `startDialecticSession` with correct `StartSessionPayload` shape
-  *   `[ ]`   `construction`
-    *   `[ ]`   `handleStartNewSession` constructs payload with `{ projectId, selectedModels: [], stageSlug }`
-  *   `[ ]`   `DialecticProjectDetailsPage.tsx`
-    *   `[ ]`   `handleStartNewSession` (line ~60): change `selectedModelIds: []` to `selectedModels: []`
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Frontend page layer
-    *   `[ ]`   Dependencies inward: `StartSessionPayload` type, store actions
-    *   `[ ]`   Provides outward: user interaction surface for manual session creation
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `handleStartNewSession` payload conforms to `StartSessionPayload` with `selectedModels: SelectedModels[]`
-    *   `[ ]`   Existing manual "Start New Session" flow works unchanged
-    *   `[ ]`   Test assertions updated and passing
-  *   `[ ]`   **Commit** `fix: align selectedModels type end-to-end and fix startSession display name reconstruction`
-    *   `[ ]`   `dialectic.interface.ts` — `StartSessionPayload.selectedModelIds` → `selectedModels: SelectedModels[]`, `DialecticBaseJobPayload` Omit cleanup, `JobInsert` type fix
-    *   `[ ]`   `type_guards.dialectic.ts` — `isDialecticJobPayload` guard updated for `selectedModels: SelectedModels[]`
-    *   `[ ]`   `startSession.ts` — destructure `selectedModels`, fix DB insert mapping, fix response construction
-    *   `[ ]`   `updateSessionModels.ts` — verified already aligned, no changes
-    *   `[ ]`   `getSessionDetails.ts` — verified display name lookup already correct, no changes
-    *   `[ ]`   `DialecticProjectDetailsPage.tsx` — `selectedModelIds: []` → `selectedModels: []`
-    *   `[ ]`   All related test files updated: `startSession.happy.test.ts`, `startSession.errors.test.ts`, `type_guards.dialectic.test.ts`, `index.test.ts`, `DialecticProjectDetailsPage.test.tsx`, `generateContribution.test.ts` (conditional)
+*   `[✅]`   [UI] apps/web/src/pages/DialecticProjectDetailsPage **Fix `selectedModelIds` → `selectedModels` in `handleStartNewSession`**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Change `selectedModelIds: []` to `selectedModels: []` in `handleStartNewSession` (line ~60) to conform to the frontend `StartSessionPayload` type
+    *   `[✅]`   This is a pre-existing type violation: the code sends `selectedModelIds` which matched the old backend but violates the frontend `StartSessionPayload.selectedModels: SelectedModels[]`
+  *   `[✅]`   `role`
+    *   `[✅]`   Frontend page component — project detail with manual session creation
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic project details: manual "Start New Session" flow
+    *   `[✅]`   Boundary: constructs `StartSessionPayload`, calls `startDialecticSession` store action, navigates to session page
+  *   `[✅]`   `deps`
+    *   `[✅]`   `StartSessionPayload` type from `packages/types/src/dialectic.types.ts` — `selectedModels: SelectedModels[]` (pre-existing, unchanged)
+    *   `[✅]`   `startDialecticSession` store action (existing, unchanged)
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `handleStartNewSession` passes `selectedModels: []` (empty array, typed as `SelectedModels[]`)
+    *   `[✅]`   No concrete imports from higher or lateral layers
+  *   `[✅]`   unit/`DialecticProjectDetailsPage.test.tsx`
+    *   `[✅]`   Update assertion at line ~244: `selectedModelIds: []` → `selectedModels: []`
+    *   `[✅]`   Verify `handleStartNewSession` calls `startDialecticSession` with correct `StartSessionPayload` shape
+  *   `[✅]`   `construction`
+    *   `[✅]`   `handleStartNewSession` constructs payload with `{ projectId, selectedModels: [], stageSlug }`
+  *   `[✅]`   `DialecticProjectDetailsPage.tsx`
+    *   `[✅]`   `handleStartNewSession` (line ~60): change `selectedModelIds: []` to `selectedModels: []`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Frontend page layer
+    *   `[✅]`   Dependencies inward: `StartSessionPayload` type, store actions
+    *   `[✅]`   Provides outward: user interaction surface for manual session creation
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `handleStartNewSession` payload conforms to `StartSessionPayload` with `selectedModels: SelectedModels[]`
+    *   `[✅]`   Existing manual "Start New Session" flow works unchanged
+    *   `[✅]`   Test assertions updated and passing
+  *   `[✅]`   **Commit** `fix: align selectedModels type end-to-end and fix startSession display name reconstruction`
+    *   `[✅]`   `dialectic.interface.ts` — `StartSessionPayload.selectedModelIds` → `selectedModels: SelectedModels[]`, `DialecticBaseJobPayload` Omit cleanup, `JobInsert` type fix
+    *   `[✅]`   `type_guards.dialectic.ts` — `isDialecticJobPayload` guard updated for `selectedModels: SelectedModels[]`
+    *   `[✅]`   `startSession.ts` — destructure `selectedModels`, fix DB insert mapping, fix response construction
+    *   `[✅]`   `updateSessionModels.ts` — verified already aligned, no changes
+    *   `[✅]`   `getSessionDetails.ts` — verified display name lookup already correct, no changes
+    *   `[✅]`   `DialecticProjectDetailsPage.tsx` — `selectedModelIds: []` → `selectedModels: []`
+    *   `[✅]`   All related test files updated: `startSession.happy.test.ts`, `startSession.errors.test.ts`, `type_guards.dialectic.test.ts`, `index.test.ts`, `DialecticProjectDetailsPage.test.tsx`, `generateContribution.test.ts` (conditional)
 
 ## Phase 2: Auto-Start Feature
 

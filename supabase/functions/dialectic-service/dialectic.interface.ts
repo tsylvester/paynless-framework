@@ -878,7 +878,7 @@ export interface ExportProjectPayload {
 export interface StartSessionPayload {
 	projectId: string;
 	sessionDescription?: string | null;
-	selectedModelIds: string[];
+	selectedModels: SelectedModels[];
 	originatingChatId?: string | null;
 	stageSlug?: string;
 }
@@ -1075,7 +1075,7 @@ export interface DialecticStepPlannerMetadata {
  * The base payload containing information common to all job types.
  */
 export interface DialecticBaseJobPayload
-	extends Omit<GenerateContributionsPayload, "selectedModelIds" | "chatId"> {
+	extends Omit<GenerateContributionsPayload, "chatId"> {
 	model_id: string; // Individual model ID for this specific job
 	sourceContributionId?: string | null;
 }
@@ -1982,7 +1982,7 @@ export type ExportProjectResponse = ExportProjectSuccess | ExportProjectFailure;
 export type JobInsert = {
 	payload: {
 		model_id: string;
-		selectedModelIds?: string[];
+		selectedModels?: SelectedModels[];
 		[key: string]: unknown;
 	};
 	[key: string]: unknown;

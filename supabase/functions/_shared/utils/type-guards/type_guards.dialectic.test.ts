@@ -50,7 +50,6 @@ import {
     isObjectWithOptionalId,
     isArrayWithOptionalId,
     isSelectAnchorResult,
-    isJobProgressEntry,
 } from './type_guards.dialectic.ts';
 import { 
     BranchKey, 
@@ -83,7 +82,6 @@ import {
     DialecticRenderJobPayload,
     SelectAnchorResult,
     SourceDocument,
-    JobProgressEntry,
     HeaderContext,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
@@ -875,20 +873,20 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
        assert(!isDialecticJobPayload(payload));
    });
 
-    await t.step('should return true for a valid job payload with selectedModelIds', () => {
+    await t.step('should return true for a valid job payload with selectedModels', () => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
-            selectedModelIds: ['model-1', 'model-2'],
+            selectedModels: [{ id: 'model-1', displayName: 'Model One' }, { id: 'model-2', displayName: 'Model Two' }],
         };
         assert(isDialecticJobPayload(payload));
     });
 
-    await t.step('should return false when selectedModelIds is not an array of strings', () => {
+    await t.step('should return false when selectedModels is not an array of SelectedModels', () => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
-            selectedModelIds: ['model-1', 123],
+            selectedModels: [{ id: 'model-1', displayName: 'Model One' }, { id: 'model-2', displayName: 123 }],
         };
         assert(!isDialecticJobPayload(payload));
     });
@@ -901,7 +899,7 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
         assert(!isDialecticJobPayload(payload));
     });
 
-    await t.step('should return false when both model_id and selectedModelIds are missing', () => {
+    await t.step('should return false when both model_id and selectedModels are missing', () => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
@@ -1065,7 +1063,7 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
                 user_id: 'user-1',
                 stage_slug: 'thesis',
                 iteration_number: 1,
-                payload: { sessionId: 'session-1', projectId: 'project-1', selectedModelIds: ['model-1'] },
+                payload: { sessionId: 'session-1', projectId: 'project-1', selectedModels: [{ id: 'model-1', displayName: 'Model One' }] },
                 status: 'pending',
                 attempt_count: 0,
                 max_retries: 3,
@@ -1086,7 +1084,7 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
                 user_id: 'user-2',
                 stage_slug: 'antithesis',
                 iteration_number: 1,
-                payload: { sessionId: 'session-2', projectId: 'project-2', selectedModelIds: ['model-2'] },
+                payload: { sessionId: 'session-2', projectId: 'project-2', selectedModels: [{ id: 'model-2', displayName: 'Model Two' }] },
                 status: 'completed',
                 attempt_count: 1,
                 max_retries: 3,
@@ -3914,46 +3912,3 @@ Deno.test('Type Guard: isSelectAnchorResult', async (t) => {
         assert(!isSelectAnchorResult(result));
     });
 });
-
-Deno.test('Type Guard: isJobProgressEntry', async (t) => {
-    await t.step('returns true for valid JobProgressEntry with all required fields', () => {
-        const value: JobProgressEntry = {
-            totalJobs: 2,
-            completedJobs: 1,
-            inProgressJobs: 1,
-            failedJobs: 0,
-        };
-        assert(isJobProgressEntry(value));
-    });
-
-    await t.step('returns false when totalJobs is missing or not a number', () => {
-        assert(!isJobProgressEntry({ completedJobs: 0, inProgressJobs: 0, failedJobs: 0 }));
-        assert(!isJobProgressEntry({ totalJobs: '1', completedJobs: 0, inProgressJobs: 0, failedJobs: 0 }));
-        assert(!isJobProgressEntry({ totalJobs: null, completedJobs: 0, inProgressJobs: 0, failedJobs: 0 }));
-    });
-
-    await t.step('returns true when optional modelJobStatuses is present with valid status values', () => {
-        const value: JobProgressEntry = {
-            totalJobs: 2,
-            completedJobs: 1,
-            inProgressJobs: 1,
-            failedJobs: 0,
-            modelJobStatuses: { 'model-a': 'completed', 'model-b': 'in_progress' },
-        };
-        assert(isJobProgressEntry(value));
-    });
-
-    await t.step('returns false when modelJobStatuses contains invalid status value', () => {
-        const value = {
-            totalJobs: 2,
-            completedJobs: 1,
-            inProgressJobs: 1,
-            failedJobs: 0,
-            modelJobStatuses: { 'model-a': 'invalid_status' },
-        };
-        assert(!isJobProgressEntry(value));
-    });
-});
-
-
-

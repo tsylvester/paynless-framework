@@ -39,7 +39,6 @@ import {
   ResumePausedNsfJobsPayload,
   ResumePausedNsfJobsResponse,
   RegenerateDocumentPayload,
-  RegenerateDocumentResponse,
   RegenerateDocumentFn,
 } from "./dialectic.interface.ts";
 import { getStageRecipe } from "./getStageRecipe.ts";
