@@ -162,6 +162,7 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
         getAllStageProgress: overrides?.getAllStageProgress || (() => Promise.resolve({ data: { dagProgress: { completedStages: 0, totalStages: 0 }, stages: [] }, status: 200 })),
         resumePausedNsfJobs: overrides?.resumePausedNsfJobs || (() => Promise.resolve({ data: { resumedCount: 0 }, status: 200 })),
         regenerateDocument: overrides?.regenerateDocument || (() => Promise.resolve({ data: { jobIds: [] }, status: 200 })),
+        listModelCatalog: overrides?.listModelCatalog || (() => Promise.resolve({ data: [] })),
         ...overrides,
     };
 };

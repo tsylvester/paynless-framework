@@ -15,8 +15,10 @@ import type {
   ApiResponse,
   CreateProjectPayload,
   CreateProjectAutoStartResult,
+  DialecticProcessTemplate,
   DialecticProject,
   DialecticStage,
+  DialecticStageRecipe,
   DialecticSession,
   StartSessionSuccessResponse,
   AssembledPrompt,
@@ -38,6 +40,21 @@ vi.mock('@paynless/api', async (importOriginal) => {
 });
 
 import { resetApiMock, getMockDialecticClient, type MockDialecticApiClient } from '@paynless/api/mocks';
+
+function processTemplateWithStages(stages: DialecticStage[]): DialecticProcessTemplate {
+  return {
+    id: 'pt-1',
+    name: 'Standard',
+    description: null,
+    created_at: '2023-01-01T00:00:00.000Z',
+    starting_stage_id: stages[0]?.id ?? 'stage-1',
+    stages,
+  };
+}
+
+function minimalStageRecipe(stageSlug: string): DialecticStageRecipe {
+  return { stageSlug, instanceId: 'inst-1', steps: [], edges: [] };
+}
 
 function projectWithStages(projectId: string, stages: DialecticStage[]): DialecticProject {
   const base: DialecticProject = {
@@ -149,6 +166,31 @@ describe('useDialecticStore', () => {
     const sessionId = 'sess-auto-1';
     const stageSlug = 'thesis';
 
+    const oneStage: DialecticStage[] = [
+      {
+        slug: stageSlug,
+        display_name: 'Thesis',
+        expected_output_template_ids: [],
+        id: 'stage-1',
+        recipe_template_id: null,
+        created_at: '2023-01-01T00:00:00.000Z',
+        default_system_prompt_id: null,
+        description: null,
+        active_recipe_instance_id: null,
+      },
+    ];
+
+    beforeEach(() => {
+      mockDialecticApi.fetchProcessTemplate.mockResolvedValue({
+        data: processTemplateWithStages(oneStage),
+        status: 200,
+      });
+      mockDialecticApi.fetchStageRecipe.mockResolvedValue({
+        data: minimalStageRecipe(stageSlug),
+        status: 200,
+      });
+    });
+
     it('calls fetchAIModelCatalog if modelCatalog is empty and not loading, waits for completion before proceeding', async () => {
       useDialecticStore.setState({ ...initialDialecticStateValues, modelCatalog: [], isLoadingModelCatalog: false });
       mockDialecticApi.listModelCatalog.mockResolvedValue({ data: [], status: 200 });
@@ -248,7 +290,7 @@ describe('useDialecticStore', () => {
       expect(mockDialecticApi.getProjectDetails).toHaveBeenCalledWith(projectId);
     });
 
-    it('derives initial stage slug from currentProjectDetail.dialectic_process_templates.stages[0].slug', async () => {
+    it('derives initial stage slug from currentProcessTemplate.stages[0].slug', async () => {
       useDialecticStore.setState({
         ...initialDialecticStateValues,
         modelCatalog: [catalogEntry({ id: 'm1', is_default_generation: true, is_active: true })],
@@ -398,6 +440,10 @@ describe('useDialecticStore', () => {
       });
       const projectNoStages = projectWithStages(projectId, []);
       mockDialecticApi.getProjectDetails.mockResolvedValue({ data: projectNoStages, status: 200 });
+      mockDialecticApi.fetchProcessTemplate.mockResolvedValue({
+        data: processTemplateWithStages([]),
+        status: 200,
+      });
 
       const { createProjectAndAutoStart } = useDialecticStore.getState();
       const result: CreateProjectAutoStartResult = await createProjectAndAutoStart(payload);
@@ -563,7 +609,7 @@ describe('useDialecticStore', () => {
           iterationNumber: 1,
           continueUntilComplete: true,
           walletId: 'wallet-1',
-        } as Partial<GenerateContributionsPayload>),
+        }),
       );
     });
 

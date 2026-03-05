@@ -81,6 +81,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   const [projectNameManuallySet, setProjectNameManuallySet] = useState<boolean>(false);
   const [configureManually, setConfigureManually] = useState<boolean>(false);
   const [startGeneration, setStartGeneration] = useState<boolean>(true);
+  const [catalogFetchTriggered, setCatalogFetchTriggered] = useState<boolean>(false);
   const navigate = useNavigate();
 
   const {
@@ -285,6 +286,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
 
   useEffect(() => {
     fetchAIModelCatalog();
+    setCatalogFetchTriggered(true);
   }, [fetchAIModelCatalog]);
 
   useEffect(() => {
@@ -293,6 +295,8 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     const lowBalance = Number(walletInfo.balance ?? '0') < STAGE_BALANCE_THRESHOLDS['thesis'];
     if (noDefaults || lowBalance) {
       setStartGeneration(false);
+    } else {
+      setStartGeneration(true);
     }
   }, [configureManually, isLoadingModelCatalog, defaultModels.length, walletInfo.balance]);
 
@@ -357,8 +361,21 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     }
   };
 
+  const catalogReady = catalogFetchTriggered && !isLoadingModelCatalog;
+
+  if (!catalogReady) {
+    return (
+      <Card className={containerClassName} data-testid="create-dialectic-project-form">
+        <CardContent className="flex items-center justify-center p-8">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span className="ml-2 text-sm">Loading models…</span>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
-    <Card className={containerClassName}> 
+    <Card className={containerClassName} data-testid="create-dialectic-project-form">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <CardContent className="space-y-6">
           {creationError && (
@@ -366,35 +383,6 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
               <AlertTitle>Creation Failed</AlertTitle>
               <AlertDescription>{creationError.message}</AlertDescription>
             </Alert>
-          )}
-
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="configure-manually"
-              checked={configureManually}
-              onCheckedChange={(checked) => setConfigureManually(checked === true)}
-            />
-            <label htmlFor="configure-manually" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-              Configure Manually
-            </label>
-          </div>
-
-          {!configureManually && (
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="start-generation"
-                  checked={startGeneration}
-                  onCheckedChange={(checked) => setStartGeneration(checked === true)}
-                />
-                <label htmlFor="start-generation" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  Start Generation
-                </label>
-              </div>
-              {autoUncheckReason !== null && (
-                <p className="text-sm text-muted-foreground">{autoUncheckReason}</p>
-              )}
-            </div>
           )}
 
           <div className="space-y-2 relative"> 
@@ -459,8 +447,37 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
           </div>
           
         </CardContent>
-        <CardFooter>
-          <Button type="submit" disabled={isCreating || isAutoStarting} className="w-full data-testid='create-project-button'">
+        <CardFooter className="flex flex-row items-center justify-between gap-4">
+          <div className="flex flex-col gap-2 shrink-0">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="configure-manually"
+                checked={configureManually}
+                onCheckedChange={(checked) => setConfigureManually(checked === true)}
+              />
+              <label htmlFor="configure-manually" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                Config
+              </label>
+            </div>
+            {!configureManually && (
+              <>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="start-generation"
+                    checked={startGeneration}
+                    onCheckedChange={(checked) => setStartGeneration(checked === true)}
+                  />
+                  <label htmlFor="start-generation" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    Autostart
+                  </label>
+                </div>
+                {autoUncheckReason !== null && (
+                  <p className="text-sm text-muted-foreground">{autoUncheckReason}</p>
+                )}
+              </>
+            )}
+          </div>
+          <Button type="submit" disabled={isCreating || isAutoStarting} className="shrink-0 flex-1 min-w-0 data-testid='create-project-button'">
             {isAutoStarting && autoStartStep ? (
               <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {autoStartStep}</>
             ) : isCreating ? (

@@ -809,7 +809,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			if (!currentProjectDetail) {
 				return { projectId, sessionId: null, hasDefaultModels: false };
 			}
-			const template = currentProjectDetail.dialectic_process_templates;
+			const template = get().currentProcessTemplate;
 			if (!template) {
 				const err: ApiError = { message: 'Project has no template', code: 'NO_TEMPLATE' };
 				set({ autoStartError: err });
@@ -821,7 +821,18 @@ export const useDialecticStore = create<DialecticStore>()(
 				set({ autoStartError: err });
 				return { projectId, sessionId: null, hasDefaultModels: false, error: err };
 			}
-			const stageSlug: string = stages[0].slug;
+			if (!template.starting_stage_id) {
+				const err: ApiError = { message: 'Template has no starting stage', code: 'NO_STARTING_STAGE' };
+				set({ autoStartError: err });
+				return { projectId, sessionId: null, hasDefaultModels: false, error: err };
+			}
+			const firstStage = stages.find((s) => s.id === template.starting_stage_id);
+			if (!firstStage) {
+				const err: ApiError = { message: 'Starting stage not found in template stages', code: 'STARTING_STAGE_NOT_FOUND' };
+				set({ autoStartError: err });
+				return { projectId, sessionId: null, hasDefaultModels: false, error: err };
+			}
+			const stageSlug: string = firstStage.slug;
 			const defaultModels = selectDefaultGenerationModels(get());
 			if (defaultModels.length === 0) {
 				return { projectId, sessionId: null, hasDefaultModels: false };

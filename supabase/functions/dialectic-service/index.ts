@@ -40,6 +40,7 @@ import {
   ResumePausedNsfJobsResponse,
   RegenerateDocumentPayload,
   RegenerateDocumentFn,
+  AIModelCatalogEntry,
 } from "./dialectic.interface.ts";
 import { getStageRecipe } from "./getStageRecipe.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
@@ -77,6 +78,7 @@ import { saveContributionEdit } from './saveContributionEdit.ts';
 import { submitStageResponses } from './submitStageResponses.ts';
 import { downloadFromStorage, deleteFromStorage, createSignedUrlForPath } from '../_shared/supabase_storage_utils.ts';
 import { listDomains, type DialecticDomain } from './listDomains.ts';
+import { listModelCatalog } from './listModelCatalog.ts';
 import { fetchProcessTemplate } from './fetchProcessTemplate.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { handleUpdateSessionModels } from './updateSessionModels.ts';
@@ -195,6 +197,7 @@ export interface ActionHandlers {
   saveContributionEdit: SaveContributionEditFn;
   submitStageResponses: (payload: SubmitStageResponsesPayload, dbClient: SupabaseClient, user: User, dependencies: SubmitStageResponsesDependencies) => Promise<{ data?: SubmitStageResponsesResponse; error?: ServiceError; status?: number }>;
   listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
+  listModelCatalog: (dbClient: SupabaseClient) => Promise<{ data?: AIModelCatalogEntry[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
   updateSessionModels: (dbClient: SupabaseClient, payload: UpdateSessionModelsPayload, userId: string) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
   getStageRecipe: (payload: { stageSlug: string }, dbClient: SupabaseClient) => Promise<{ data?: StageRecipeResponse; error?: ServiceError; status?: number }>;
@@ -272,12 +275,13 @@ export async function handleRequest(
       logger.info('JSON request received', { action, payloadExists: 'payload' in requestBody });
 
       const actionsRequiringAuth = [
-        'listProjects', 'getProjectDetails', 'updateProjectDomain', 
+        'listProjects', 'getProjectDetails', 'updateProjectDomain',
         'startSession', 'generateContributions', 'getContributionContentSignedUrl',
         'deleteProject', 'cloneProject', 'exportProject', 'getProjectResourceContent',
         'saveContributionEdit', 'submitStageResponses', 'fetchProcessTemplate',
         'updateSessionModels',
         'getSessionDetails',
+        'listModelCatalog',
         'listStageDocuments',
         'submitStageDocumentFeedback',
         'getStageDocumentFeedback',
@@ -321,6 +325,19 @@ export async function handleRequest(
               return createErrorResponse(error.message, error.status, req, error);
             }
             return createSuccessResponse(data, 200, req);
+        }
+        case "listModelCatalog": {
+            try {
+              const { data, error } = await handlers.listModelCatalog(adminClient);
+              if (error) {
+                return createErrorResponse(error.message, error.status ?? 500, req, error);
+              }
+              return createSuccessResponse(data ?? [], 200, req);
+            } catch (err) {
+              const message = err instanceof Error ? err.message : "List model catalog failed.";
+              logger.error("[listModelCatalog] Unexpected error.", { error: message, err });
+              return createErrorResponse(message, 500, req, err);
+            }
         }
         case "fetchProcessTemplate": {
           const payload: FetchProcessTemplatePayload = requestBody.payload;
@@ -689,6 +706,7 @@ export const defaultHandlers: ActionHandlers = {
   saveContributionEdit,
   submitStageResponses,
   listDomains,
+  listModelCatalog,
   fetchProcessTemplate,
   updateSessionModels: handleUpdateSessionModels,
   getStageRecipe,

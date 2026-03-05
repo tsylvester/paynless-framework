@@ -253,7 +253,7 @@ describe('CreateDialecticProjectForm', () => {
     
     renderForm();
 
-    await user.click(screen.getByRole('checkbox', { name: /Configure Manually/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Config/i }));
 
     const submitButton = screen.getByRole('button', { name: /Create Project/i });
     await user.click(submitButton);
@@ -306,7 +306,7 @@ describe('CreateDialecticProjectForm', () => {
     
     renderForm();
 
-    await user.click(screen.getByRole('checkbox', { name: /Configure Manually/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Config/i }));
 
     await user.type(screen.getByPlaceholderText(projectNamePlaceholder), testData.projectName);
     act(() => {
@@ -366,7 +366,7 @@ describe('CreateDialecticProjectForm', () => {
 
     renderForm();
 
-    await user.click(screen.getByRole('checkbox', { name: /Configure Manually/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Config/i }));
 
     // Simulate file upload via the TextInputArea's onFileLoad prop
     await act(async () => {

@@ -190,35 +190,35 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
   it('renders "Configure Manually" checkbox unchecked by default', () => {
     renderForm();
-    const configureManually = screen.getByRole('checkbox', { name: /Configure Manually/i });
+    const configureManually = screen.getByRole('checkbox', { name: /Config/i });
     expect(configureManually).toBeInTheDocument();
     expect(configureManually).not.toBeChecked();
   });
 
-  it('renders "Start Generation" checkbox checked by default when "Configure Manually" is unchecked', () => {
+  it('renders "Autostart" checkbox checked by default when "Configure Manually" is unchecked', () => {
     renderForm();
-    const startGeneration = screen.getByRole('checkbox', { name: /Start Generation/i });
+    const startGeneration = screen.getByRole('checkbox', { name: /Autostart/i });
     expect(startGeneration).toBeInTheDocument();
     expect(startGeneration).toBeChecked();
   });
 
-  it('hides or disables "Start Generation" when "Configure Manually" is checked', async () => {
+  it('hides or disables "Autostart" when "Config" is checked', async () => {
     const user = userEvent.setup();
     renderForm();
-    const configureManually = screen.getByRole('checkbox', { name: /Configure Manually/i });
+    const configureManually = screen.getByRole('checkbox', { name: /Config/i });
     await user.click(configureManually);
-    const startGeneration = screen.queryByRole('checkbox', { name: /Start Generation/i });
+    const startGeneration = screen.queryByRole('checkbox', { name: /Autostart/i });
     expect(configureManually).toBeChecked();
     expect(startGeneration).not.toBeInTheDocument();
   });
 
-  it('submit with "Configure Manually" checked calls createDialecticProject and navigates to project page', async () => {
+  it('submit with "Config" checked calls createDialecticProject and navigates to project page', async () => {
     const user = userEvent.setup();
     const mockProjectRow: DialecticProjectRow = buildMinimalDialecticProjectRow({ id: 'proj-manual', project_name: 'Manual' });
     vi.mocked(getDialecticStoreActionMock('createDialecticProject')).mockResolvedValueOnce({ data: mockProjectRow, status: 200 });
 
     renderForm();
-    await user.click(screen.getByRole('checkbox', { name: /Configure Manually/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Config/i }));
     await user.click(screen.getByRole('button', { name: /Create Project/i }));
 
     await waitFor(() => {
@@ -230,7 +230,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     });
   });
 
-  it('submit with "Configure Manually" unchecked calls createProjectAndAutoStart', async () => {
+  it('submit with "Config" unchecked calls createProjectAndAutoStart', async () => {
     const user = userEvent.setup();
     const result: CreateProjectAutoStartResult = { projectId: 'proj-auto', sessionId: 'sess-1', hasDefaultModels: true };
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
@@ -257,13 +257,13 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     });
   });
 
-  it('successful auto-start with "Start Generation" checked navigates with state autoStartGeneration true', async () => {
+  it('successful auto-start with "Autostart" checked navigates with state autoStartGeneration true', async () => {
     const user = userEvent.setup();
     const result: CreateProjectAutoStartResult = { projectId: 'proj-auto', sessionId: 'sess-1', hasDefaultModels: true };
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
 
     renderForm();
-    const startGeneration = screen.getByRole('checkbox', { name: /Start Generation/i });
+    const startGeneration = screen.getByRole('checkbox', { name: /Autostart/i });
     expect(startGeneration).toBeChecked();
     await user.click(screen.getByRole('button', { name: /Create Project/i }));
 
@@ -272,13 +272,13 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     });
   });
 
-  it('successful auto-start with "Start Generation" unchecked navigates without auto-start state', async () => {
+  it('successful auto-start with "Autostart" unchecked navigates without auto-start state', async () => {
     const user = userEvent.setup();
     const result: CreateProjectAutoStartResult = { projectId: 'proj-auto', sessionId: 'sess-1', hasDefaultModels: true };
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
 
     renderForm();
-    await user.click(screen.getByRole('checkbox', { name: /Start Generation/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
     await user.click(screen.getByRole('button', { name: /Create Project/i }));
 
     await waitFor(() => {
@@ -302,7 +302,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     });
   });
 
-  it('auto-unchecks "Start Generation" when no default models available and shows explanatory text', async () => {
+  it('auto-unchecks "Autostart" when no default models available and shows explanatory text', async () => {
     const catalogNoDefaults: AIModelCatalogEntry[] = [
       buildMinimalAIModelCatalogEntry({ id: 'm1', model_name: 'Model 1', is_default_generation: false, is_active: true }),
     ];
@@ -314,13 +314,13 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
     renderForm();
     await waitFor(() => {
-      const startGeneration = screen.getByRole('checkbox', { name: /Start Generation/i });
+      const startGeneration = screen.getByRole('checkbox', { name: /Autostart/i });
       expect(startGeneration).not.toBeChecked();
     });
     expect(screen.getByText(/No default models available/i)).toBeInTheDocument();
   });
 
-  it('auto-unchecks "Start Generation" when wallet balance below thesis threshold and shows explanatory text', async () => {
+  it('auto-unchecks "Autostart" when wallet balance below thesis threshold and shows explanatory text', async () => {
     const lowBalance: ActiveChatWalletInfo = {
       ...defaultWalletInfo,
       balance: String(STAGE_BALANCE_THRESHOLDS['thesis'] - 1),
@@ -334,7 +334,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
     renderForm();
     await waitFor(() => {
-      const startGeneration = screen.getByRole('checkbox', { name: /Start Generation/i });
+      const startGeneration = screen.getByRole('checkbox', { name: /Autostart/i });
       expect(startGeneration).not.toBeChecked();
     });
     expect(screen.getByText(/Wallet balance too low for auto-start/i)).toBeInTheDocument();

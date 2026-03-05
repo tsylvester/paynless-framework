@@ -303,6 +303,7 @@ export interface AIModelCatalogEntry {
 	is_active: boolean;
 	created_at: string;
 	updated_at: string;
+	is_default_generation: boolean;
 }
 
 // Defines the structured contribution object used within the service and for API responses,
@@ -414,6 +415,7 @@ type ListAvailableDomainsAction = {
 	payload?: { stageAssociation?: string };
 }; // Optional payload
 type ListDomainsAction = { action: "listDomains" };
+type ListModelCatalogAction = { action: "listModelCatalog" };
 
 // Actions WITH a payload
 type UpdateProjectDomainAction = {
@@ -660,6 +662,7 @@ export type DialecticServiceRequest =
 	| ListProjectsAction
 	| ListAvailableDomainsAction
 	| ListDomainsAction
+	| ListModelCatalogAction
 	| UpdateProjectDomainAction
 	| GetProjectDetailsAction
 	| StartSessionAction
