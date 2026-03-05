@@ -10,6 +10,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DialecticSession, DialecticProject, ApiError } from "@paynless/types";
+import { useStartContributionGeneration } from "@/hooks/useStartContributionGeneration";
 
 // New Component Imports
 import { SessionInfoCard } from "../components/dialectic/SessionInfoCard";
@@ -46,8 +47,10 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 	) as DialecticProject | null;
 	const activeStageSlug = useDialecticStore(selectActiveStageSlug);
 	const sortedStages = useDialecticStore(selectSortedStages);
-	const autoStartGeneration = useDialecticStore((state) => state.autoStartGeneration);
+	const setShouldOpenDagProgress = useDialecticStore((state) => state.setShouldOpenDagProgress);
 	const selectedModels = useDialecticStore(selectSelectedModels);
+
+	const { startContributionGeneration, activeStage: hookActiveStage } = useStartContributionGeneration();
 
 	// Loading and error states from store
 	const isLoadingProject = useDialecticStore(
@@ -88,11 +91,11 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 
 	useEffect(() => {
 		if (!location.state?.autoStartGeneration || autoStartAttemptedRef.current) return;
-		if (!activeSessionDetail || !currentProjectDetail || !activeContextSessionId || selectedModels.length === 0) return;
+		if (!activeSessionDetail || !currentProjectDetail || !activeContextSessionId || selectedModels.length === 0 || !hookActiveStage) return;
 		autoStartAttemptedRef.current = true;
 		(async () => {
 			try {
-				await autoStartGeneration();
+				await startContributionGeneration(() => setShouldOpenDagProgress(true));
 			} catch {
 				// User remains on session page; can retry via Generate button.
 			} finally {
@@ -106,8 +109,10 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 		currentProjectDetail,
 		activeContextSessionId,
 		selectedModels,
-		autoStartGeneration,
+		startContributionGeneration,
+		setShouldOpenDagProgress,
 		navigate,
+		hookActiveStage,
 	]);
 
 	const isLoading = isLoadingProject || isLoadingSession;

@@ -188,37 +188,114 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     );
   };
 
-  it('renders "Configure Manually" checkbox unchecked by default', () => {
+  it('renders single setup-mode control in Autostart state (checked) by default', () => {
     renderForm();
-    const configureManually = screen.getByRole('checkbox', { name: /Config/i });
-    expect(configureManually).toBeInTheDocument();
-    expect(configureManually).not.toBeChecked();
+    const control = screen.getByRole('checkbox', { name: /Autostart/i });
+    expect(control).toBeInTheDocument();
+    expect(control).toBeChecked();
   });
 
-  it('renders "Autostart" checkbox checked by default when "Configure Manually" is unchecked', () => {
-    renderForm();
-    const startGeneration = screen.getByRole('checkbox', { name: /Autostart/i });
-    expect(startGeneration).toBeInTheDocument();
-    expect(startGeneration).toBeChecked();
-  });
-
-  it('hides or disables "Autostart" when "Config" is checked', async () => {
+  it('on hover, shows explainer text for all three states (Autostart, Autoconfig, Manual) so user knows what each does without iterating', async () => {
     const user = userEvent.setup();
     renderForm();
-    const configureManually = screen.getByRole('checkbox', { name: /Config/i });
-    await user.click(configureManually);
-    const startGeneration = screen.queryByRole('checkbox', { name: /Autostart/i });
-    expect(configureManually).toBeChecked();
-    expect(startGeneration).not.toBeInTheDocument();
+    const control = screen.getByRole('checkbox', { name: /Autostart/i });
+    await user.hover(control);
+    await waitFor(() => {
+      const explainerContent =
+        document.querySelector('[data-slot="tooltip-content"]') ??
+        (control.getAttribute('title') ? { textContent: control.getAttribute('title') } : null);
+      expect(explainerContent).toBeTruthy();
+      const text = explainerContent?.textContent ?? '';
+      expect(text).toMatch(/Autostart/i);
+      expect(text).toMatch(/Autoconfig/i);
+      expect(text).toMatch(/Manual/i);
+      expect(text.length).toBeGreaterThan(50);
+    });
   });
 
-  it('submit with "Config" checked calls createDialecticProject and navigates to project page', async () => {
+  it('explainer text describes Autostart (auto session and start generation)', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const control = screen.getByRole('checkbox', { name: /Autostart/i });
+    await user.hover(control);
+    await waitFor(() => {
+      const explainerContent =
+        document.querySelector('[data-slot="tooltip-content"]') ??
+        (control.getAttribute('title') ? { textContent: control.getAttribute('title') } : null);
+      const text = explainerContent?.textContent ?? '';
+      expect(text).toMatch(/Autostart/i);
+      expect(text).toMatch(/session|start|automatically/i);
+    });
+  });
+
+  it('explainer text describes Autoconfig (auto session, user starts generation)', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const control = screen.getByRole('checkbox', { name: /Autostart/i });
+    await user.hover(control);
+    await waitFor(() => {
+      const explainerContent =
+        document.querySelector('[data-slot="tooltip-content"]') ??
+        (control.getAttribute('title') ? { textContent: control.getAttribute('title') } : null);
+      const text = explainerContent?.textContent ?? '';
+      expect(text).toMatch(/Autoconfig/i);
+      expect(text).toMatch(/default|model|start|when/i);
+    });
+  });
+
+  it('explainer text describes Manual (create project only, user creates session)', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const control = screen.getByRole('checkbox', { name: /Autostart/i });
+    await user.hover(control);
+    await waitFor(() => {
+      const explainerContent =
+        document.querySelector('[data-slot="tooltip-content"]') ??
+        (control.getAttribute('title') ? { textContent: control.getAttribute('title') } : null);
+      const text = explainerContent?.textContent ?? '';
+      expect(text).toMatch(/Manual/i);
+      expect(text).toMatch(/project only|create.*session|manual/i);
+    });
+  });
+
+  it('first click cycles setup mode from Autostart to Autoconfig (half-checked)', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
+    const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
+    expect(control).toBeInTheDocument();
+    expect(control).toHaveAttribute('aria-checked', 'mixed');
+  });
+
+  it('second click cycles setup mode from Autoconfig to Manual (unchecked)', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+    const control = screen.getByRole('checkbox', { name: /Manual/i });
+    expect(control).toBeInTheDocument();
+    expect(control).not.toBeChecked();
+  });
+
+  it('third click cycles setup mode from Manual back to Autostart', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Manual/i }));
+    const control = screen.getByRole('checkbox', { name: /Autostart/i });
+    expect(control).toBeInTheDocument();
+    expect(control).toBeChecked();
+  });
+
+  it('submit with Manual mode calls createDialecticProject and navigates to project page', async () => {
     const user = userEvent.setup();
     const mockProjectRow: DialecticProjectRow = buildMinimalDialecticProjectRow({ id: 'proj-manual', project_name: 'Manual' });
     vi.mocked(getDialecticStoreActionMock('createDialecticProject')).mockResolvedValueOnce({ data: mockProjectRow, status: 200 });
 
     renderForm();
-    await user.click(screen.getByRole('checkbox', { name: /Config/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
     await user.click(screen.getByRole('button', { name: /Create Project/i }));
 
     await waitFor(() => {
@@ -230,7 +307,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     });
   });
 
-  it('submit with "Config" unchecked calls createProjectAndAutoStart', async () => {
+  it('submit with Autostart mode (default) calls createProjectAndAutoStart', async () => {
     const user = userEvent.setup();
     const result: CreateProjectAutoStartResult = { projectId: 'proj-auto', sessionId: 'sess-1', hasDefaultModels: true };
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
@@ -257,14 +334,14 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     });
   });
 
-  it('successful auto-start with "Autostart" checked navigates with state autoStartGeneration true', async () => {
+  it('successful auto-start with Autostart mode navigates with state autoStartGeneration true', async () => {
     const user = userEvent.setup();
     const result: CreateProjectAutoStartResult = { projectId: 'proj-auto', sessionId: 'sess-1', hasDefaultModels: true };
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
 
     renderForm();
-    const startGeneration = screen.getByRole('checkbox', { name: /Autostart/i });
-    expect(startGeneration).toBeChecked();
+    const control = screen.getByRole('checkbox', { name: /Autostart/i });
+    expect(control).toBeChecked();
     await user.click(screen.getByRole('button', { name: /Create Project/i }));
 
     await waitFor(() => {
@@ -272,7 +349,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     });
   });
 
-  it('successful auto-start with "Autostart" unchecked navigates without auto-start state', async () => {
+  it('successful auto-start with Autoconfig mode navigates without auto-start state', async () => {
     const user = userEvent.setup();
     const result: CreateProjectAutoStartResult = { projectId: 'proj-auto', sessionId: 'sess-1', hasDefaultModels: true };
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
@@ -302,7 +379,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     });
   });
 
-  it('auto-unchecks "Autostart" when no default models available and shows explanatory text', async () => {
+  it('defaults to Autoconfig (half-checked) when no default models available and shows explanatory text', async () => {
     const catalogNoDefaults: AIModelCatalogEntry[] = [
       buildMinimalAIModelCatalogEntry({ id: 'm1', model_name: 'Model 1', is_default_generation: false, is_active: true }),
     ];
@@ -314,13 +391,13 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
     renderForm();
     await waitFor(() => {
-      const startGeneration = screen.getByRole('checkbox', { name: /Autostart/i });
-      expect(startGeneration).not.toBeChecked();
+      const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
+      expect(control).toHaveAttribute('aria-checked', 'mixed');
     });
     expect(screen.getByText(/No default models available/i)).toBeInTheDocument();
   });
 
-  it('auto-unchecks "Autostart" when wallet balance below thesis threshold and shows explanatory text', async () => {
+  it('defaults to Autoconfig (half-checked) when wallet balance below thesis threshold and shows explanatory text', async () => {
     const lowBalance: ActiveChatWalletInfo = {
       ...defaultWalletInfo,
       balance: String(STAGE_BALANCE_THRESHOLDS['thesis'] - 1),
@@ -334,8 +411,8 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
     renderForm();
     await waitFor(() => {
-      const startGeneration = screen.getByRole('checkbox', { name: /Autostart/i });
-      expect(startGeneration).not.toBeChecked();
+      const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
+      expect(control).toHaveAttribute('aria-checked', 'mixed');
     });
     expect(screen.getByText(/Wallet balance too low for auto-start/i)).toBeInTheDocument();
   });

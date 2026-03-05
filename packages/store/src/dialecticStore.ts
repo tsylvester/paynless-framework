@@ -54,7 +54,6 @@ import {
   type RegenerateDocumentResponse,
   StartSessionSuccessResponse,
   type CreateProjectAutoStartResult,
-  STAGE_BALANCE_THRESHOLDS,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useAuthStore } from './authStore';
@@ -214,6 +213,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	autoStartStep: null,
 	isAutoStarting: false,
 	autoStartError: null,
+	shouldOpenDagProgress: false,
 };
 
 export type DialecticState = DialecticStateValues & DialecticStore;
@@ -858,50 +858,7 @@ export const useDialecticStore = create<DialecticStore>()(
 		}
 	},
 
-	autoStartGeneration: async (): Promise<{ success: boolean; error?: string }> => {
-		const activeContextSessionId = get().activeContextSessionId;
-		const currentProjectDetail = get().currentProjectDetail;
-		const selectedModels = get().selectedModels;
-		const activeContextStage = get().activeContextStage;
-		const stageSlugForPayload = activeContextStage?.slug;
-		const activeSessionDetail = get().activeSessionDetail;
-
-		if (!selectedModels || selectedModels.length === 0) {
-			return { success: false, error: 'No models selected' };
-		}
-		if (!stageSlugForPayload) {
-			return { success: false, error: 'No active stage' };
-		}
-		const walletState = useWalletStore.getState();
-		const walletInfo = selectActiveChatWalletInfo(walletState, null);
-		if (walletInfo.status !== 'ok') {
-			return { success: false, error: 'Wallet not ready' };
-		}
-		if (!walletInfo.walletId) {
-			return { success: false, error: 'No wallet available' };
-		}
-		const threshold = STAGE_BALANCE_THRESHOLDS[stageSlugForPayload];
-		const balanceNum = Number(walletInfo.balance);
-		if (threshold !== undefined && balanceNum < threshold) {
-			return { success: false, error: 'Wallet balance too low' };
-		}
-		if (!currentProjectDetail || !activeSessionDetail) {
-			return { success: false, error: 'Missing project or session context' };
-		}
-		if (!activeContextSessionId) {
-			return { success: false, error: 'No active session ID' };
-		}
-		const payload: GenerateContributionsPayload = {
-			sessionId: activeContextSessionId,
-			projectId: currentProjectDetail.id,
-			stageSlug: stageSlugForPayload,
-			iterationNumber: activeSessionDetail.iteration_count,
-			continueUntilComplete: true,
-			walletId: walletInfo.walletId,
-		};
-		const result = await get().generateContributions(payload);
-		return { success: !!result.data, error: result.error?.message };
-	},
+	setShouldOpenDagProgress: (open) => set({ shouldOpenDagProgress: open }),
 
 	fetchAIModelCatalog: async () => {
 		set({ isLoadingModelCatalog: true, modelCatalogError: null });
@@ -2670,12 +2627,12 @@ export const useDialecticStore = create<DialecticStore>()(
         logger.info(`[DialecticStore] Proceeding to fetch session details for ${sessionId}.`);
         await get().fetchAndSetCurrentSessionDetails(sessionId);
 
-        const finalProjectDetail = get().currentProjectDetail;
-        if (finalProjectDetail && finalProjectDetail.dialectic_process_templates?.stages?.length) {
-            const firstStageSlug = finalProjectDetail.dialectic_process_templates.stages[0].slug;
-            logger.info(`[DialecticStore] Setting initial active stage for deep link: ${firstStageSlug}`);
-            get().setActiveStage(firstStageSlug);
-        }
+        const template = get().currentProcessTemplate;
+        if (!template?.stages?.length || !template.starting_stage_id) return;
+        const firstStage = template.stages.find((s) => s.id === template.starting_stage_id);
+        if (!firstStage) return;
+        logger.info(`[DialecticStore] Setting initial active stage for deep link: ${firstStage.slug}`);
+        get().setActiveStage(firstStage.slug);
     }
   },
 

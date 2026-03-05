@@ -176,6 +176,14 @@ vi.mock('./StageDAGProgressDialog', async () => {
   return { StageDAGProgressDialog: mockImpl };
 });
 
+function renderWithRouter(ui: React.ReactElement) {
+  return render(ui, {
+    wrapper: ({ children }: { children: React.ReactNode }) => (
+      <MemoryRouter>{children}</MemoryRouter>
+    ),
+  });
+}
+
 describe('GenerateContributionButton NSF', () => {
   const sessionId = 'test-session-id';
   const projectId = 'test-project-id';
@@ -227,11 +235,7 @@ describe('GenerateContributionButton NSF', () => {
     });
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
 
-    render(
-      <MemoryRouter>
-        <GenerateContributionButton />
-      </MemoryRouter>
-    );
+    renderWithRouter(<GenerateContributionButton />);
 
     expect(screen.getByRole('button')).toBeDisabled();
     expect(screen.getByRole('button')).toHaveTextContent(/Insufficient Balance/i);
@@ -248,11 +252,7 @@ describe('GenerateContributionButton NSF', () => {
     });
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
 
-    render(
-      <MemoryRouter>
-        <GenerateContributionButton />
-      </MemoryRouter>
-    );
+    renderWithRouter(<GenerateContributionButton />);
 
     const callout = screen.getByTestId('generate-button-balance-callout');
     expect(callout).toBeInTheDocument();
@@ -272,11 +272,7 @@ describe('GenerateContributionButton NSF', () => {
     });
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
 
-    render(
-      <MemoryRouter>
-        <GenerateContributionButton />
-      </MemoryRouter>
-    );
+    renderWithRouter(<GenerateContributionButton />);
 
     const callout = screen.getByTestId('generate-button-balance-callout');
     expect(callout).toBeInTheDocument();
@@ -296,11 +292,7 @@ describe('GenerateContributionButton NSF', () => {
     });
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
 
-    render(
-      <MemoryRouter>
-        <GenerateContributionButton />
-      </MemoryRouter>
-    );
+    renderWithRouter(<GenerateContributionButton />);
 
     expect(screen.queryByTestId('generate-button-balance-callout')).not.toBeInTheDocument();
   });
@@ -316,13 +308,13 @@ describe('GenerateContributionButton NSF', () => {
     });
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     expect(screen.getByRole('button')).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeInTheDocument();
   });
 
-  it('when active stage stageStatus is paused_nsf and balance is below threshold, button is disabled and shows "Add Funds to Resume"', () => {
+  it('when active stage stageStatus is paused_nsf and balance is below threshold, button is disabled and shows "Resume" so user knows they are resuming', () => {
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
       status: 'ok',
       type: 'personal',
@@ -333,14 +325,10 @@ describe('GenerateContributionButton NSF', () => {
     });
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
 
-    render(
-      <MemoryRouter>
-        <GenerateContributionButton />
-      </MemoryRouter>
-    );
+    renderWithRouter(<GenerateContributionButton />);
 
     expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByRole('button')).toHaveTextContent(/Add Funds to Resume/i);
+    expect(screen.getByRole('button')).toHaveTextContent(/Resume Proposal/i);
   });
 
   it('when active stage stageStatus is paused_nsf and balance meets threshold, button is enabled and shows "Resume {displayName}"', () => {
@@ -354,7 +342,7 @@ describe('GenerateContributionButton NSF', () => {
     });
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     expect(screen.getByRole('button')).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeInTheDocument();
@@ -372,7 +360,7 @@ describe('GenerateContributionButton NSF', () => {
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
 
     const user = userEvent.setup();
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     const button = screen.getByRole('button', { name: /Resume Proposal/i });
     await user.click(button);
@@ -407,7 +395,7 @@ describe('GenerateContributionButton NSF', () => {
     });
 
     const user = userEvent.setup();
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     const button = screen.getByRole('button', { name: /Generate Proposal/i });
     await user.click(button);
@@ -431,7 +419,7 @@ describe('GenerateContributionButton NSF', () => {
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
 
     const user = userEvent.setup();
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
 
@@ -458,7 +446,7 @@ describe('GenerateContributionButton NSF', () => {
       generatingSessions: { [sessionId]: ['job-1'] },
     });
 
-    render(<GenerateContributionButton />);
+    renderWithRouter(<GenerateContributionButton />);
 
     expect(screen.getByRole('button')).toBeDisabled();
     expect(screen.getByRole('button')).toHaveTextContent(/Generating.../i);

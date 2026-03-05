@@ -9,6 +9,7 @@ import {
   selectSelectedModels,
   getDialecticStoreActionMock,
 } from '../mocks/dialecticStore.mock';
+import type { StartContributionGenerationResult } from '@paynless/types';
 import type {
   DialecticProject,
   DialecticSession,
@@ -27,6 +28,18 @@ vi.mock('@paynless/store', async () => {
     ...actualMock,
   };
 });
+
+const mockStartContributionGeneration = vi.fn<
+  [onOpenDagProgress?: () => void],
+  Promise<StartContributionGenerationResult>
+>().mockResolvedValue({ success: true });
+const mockUseStartContributionGeneration = vi.fn().mockReturnValue({
+  startContributionGeneration: mockStartContributionGeneration,
+});
+
+vi.mock('@/hooks/useStartContributionGeneration', () => ({
+  useStartContributionGeneration: () => mockUseStartContributionGeneration(),
+}));
 
 // Mock useParams and useNavigate
 const mockUseParams = vi.fn();
@@ -136,6 +149,10 @@ const mockOtherSession: DialecticSession = {
 
 const sessionPagePath = '/dialectic/:projectId/session/:sessionId';
 
+function isVoidFn(u: unknown): u is () => void {
+  return typeof u === 'function';
+}
+
 const renderWithRouter = (
   {
     route = `/dialectic/${mockProjectId}/session/${mockSessionId}`,
@@ -162,6 +179,8 @@ describe('DialecticSessionDetailsPage', () => {
     resetDialecticStoreMock();
     mockUseParams.mockClear();
     mockActivateProjectAndSessionContextForDeepLink.mockClear();
+    mockStartContributionGeneration.mockClear();
+    mockStartContributionGeneration.mockResolvedValue({ success: true });
     vi.mocked(useNavigate).mockReturnValue(mockNavigate);
   });
 
@@ -247,13 +266,7 @@ describe('DialecticSessionDetailsPage', () => {
     renderWithRouter({});
 
     await waitFor(() => {
-      if (mockSession.session_description) {
-        expect(screen.getByTestId('mock-session-info-card')).toHaveTextContent(mockSession.session_description);
-      } else {
-        // Handle the case where session_description is null, if necessary,
-        // or assert that the component handles it gracefully.
-        // For now, we just ensure the test doesn't crash.
-      }
+      expect(screen.getByTestId('mock-session-info-card')).toHaveTextContent('Test Session Description');
     });
     
     expect(screen.getByTestId('mock-stage-tab-card')).toBeInTheDocument();
@@ -299,6 +312,13 @@ describe('DialecticSessionDetailsPage', () => {
   });
 
   describe('auto-start generation effect', () => {
+    beforeEach(() => {
+      mockUseStartContributionGeneration.mockReturnValue({
+        startContributionGeneration: mockStartContributionGeneration,
+        activeStage: mockStages[0],
+      });
+    });
+
     const fullContextState = {
       activeContextProjectId: mockProjectId,
       activeContextSessionId: mockSessionId,
@@ -312,7 +332,7 @@ describe('DialecticSessionDetailsPage', () => {
 
     const defaultModels: SelectedModels[] = [{ id: 'model-1', displayName: 'Model One' }];
 
-    it('fires autoStartGeneration when location.state.autoStartGeneration is true and all context is loaded', async () => {
+    it('fires startContributionGeneration when location.state.autoStartGeneration is true and all context is loaded', async () => {
       mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
       setDialecticStateValues(fullContextState);
       selectSelectedModels.mockReturnValue(defaultModels);
@@ -320,7 +340,7 @@ describe('DialecticSessionDetailsPage', () => {
       renderWithRouter({ locationState: { autoStartGeneration: true } });
 
       await waitFor(() => {
-        expect(getDialecticStoreActionMock('autoStartGeneration')).toHaveBeenCalledTimes(1);
+        expect(mockStartContributionGeneration).toHaveBeenCalledTimes(1);
       });
       expect(mockNavigate).toHaveBeenCalledWith(
         `/dialectic/${mockProjectId}/session/${mockSessionId}`,
@@ -328,7 +348,7 @@ describe('DialecticSessionDetailsPage', () => {
       );
     });
 
-    it('does NOT fire autoStartGeneration when location.state.autoStartGeneration is absent', async () => {
+    it('does NOT fire startContributionGeneration when location.state.autoStartGeneration is absent', async () => {
       mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
       setDialecticStateValues(fullContextState);
       selectSelectedModels.mockReturnValue(defaultModels);
@@ -338,10 +358,10 @@ describe('DialecticSessionDetailsPage', () => {
       await waitFor(() => {
         expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
       });
-      expect(getDialecticStoreActionMock('autoStartGeneration')).not.toHaveBeenCalled();
+      expect(mockStartContributionGeneration).not.toHaveBeenCalled();
     });
 
-    it('does NOT fire autoStartGeneration when location.state.autoStartGeneration is false', async () => {
+    it('does NOT fire startContributionGeneration when location.state.autoStartGeneration is false', async () => {
       mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
       setDialecticStateValues(fullContextState);
       selectSelectedModels.mockReturnValue(defaultModels);
@@ -351,10 +371,10 @@ describe('DialecticSessionDetailsPage', () => {
       await waitFor(() => {
         expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
       });
-      expect(getDialecticStoreActionMock('autoStartGeneration')).not.toHaveBeenCalled();
+      expect(mockStartContributionGeneration).not.toHaveBeenCalled();
     });
 
-    it('fires autoStartGeneration exactly once (ref guard prevents repeat calls)', async () => {
+    it('fires startContributionGeneration exactly once (ref guard prevents repeat calls)', async () => {
       mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
       setDialecticStateValues(fullContextState);
       selectSelectedModels.mockReturnValue(defaultModels);
@@ -362,7 +382,7 @@ describe('DialecticSessionDetailsPage', () => {
       renderWithRouter({ locationState: { autoStartGeneration: true } });
 
       await waitFor(() => {
-        expect(getDialecticStoreActionMock('autoStartGeneration')).toHaveBeenCalledTimes(1);
+        expect(mockStartContributionGeneration).toHaveBeenCalledTimes(1);
       });
       await waitFor(() => {
         expect(mockNavigate).toHaveBeenCalledWith(
@@ -370,7 +390,7 @@ describe('DialecticSessionDetailsPage', () => {
           { replace: true, state: {} },
         );
       });
-      expect(getDialecticStoreActionMock('autoStartGeneration')).toHaveBeenCalledTimes(1);
+      expect(mockStartContributionGeneration).toHaveBeenCalledTimes(1);
     });
 
     it('calls navigate with replace true and cleared state after auto-start attempt', async () => {
@@ -392,7 +412,7 @@ describe('DialecticSessionDetailsPage', () => {
       mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
       setDialecticStateValues(fullContextState);
       selectSelectedModels.mockReturnValue(defaultModels);
-      vi.mocked(getDialecticStoreActionMock('autoStartGeneration')).mockRejectedValueOnce(new Error('Generation failed'));
+      mockStartContributionGeneration.mockRejectedValueOnce(new Error('Generation failed'));
 
       renderWithRouter({ locationState: { autoStartGeneration: true } });
 
@@ -409,7 +429,7 @@ describe('DialecticSessionDetailsPage', () => {
       expect(screen.getByTestId('mock-session-contributions-display-card')).toBeInTheDocument();
     });
 
-    it('does NOT fire autoStartGeneration when context is not yet loaded (selectedModels empty)', async () => {
+    it('does NOT fire startContributionGeneration when context is not yet loaded (selectedModels empty)', async () => {
       mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
       setDialecticStateValues(fullContextState);
       selectSelectedModels.mockReturnValue([]);
@@ -419,7 +439,27 @@ describe('DialecticSessionDetailsPage', () => {
       await waitFor(() => {
         expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
       });
-      expect(getDialecticStoreActionMock('autoStartGeneration')).not.toHaveBeenCalled();
+      expect(mockStartContributionGeneration).not.toHaveBeenCalled();
+    });
+
+    it('passes onOpenDagProgress callback that calls setShouldOpenDagProgress(true)', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues(fullContextState);
+      selectSelectedModels.mockReturnValue(defaultModels);
+      const setShouldOpenDagProgress = getDialecticStoreActionMock('setShouldOpenDagProgress');
+
+      renderWithRouter({ locationState: { autoStartGeneration: true } });
+
+      await waitFor(() => {
+        expect(mockStartContributionGeneration).toHaveBeenCalledTimes(1);
+      });
+      const firstCallArgs = mockStartContributionGeneration.mock.calls[0];
+      expect(firstCallArgs).toBeDefined();
+      const onOpenDagProgress = firstCallArgs[0];
+      expect(isVoidFn(onOpenDagProgress)).toBe(true);
+      if (!isVoidFn(onOpenDagProgress)) return;
+      onOpenDagProgress();
+      expect(setShouldOpenDagProgress).toHaveBeenCalledWith(true);
     });
   });
 }); 

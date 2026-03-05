@@ -431,6 +431,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   autoStartStep: null,
   isAutoStarting: false,
   autoStartError: null,
+  shouldOpenDagProgress: false,
 };
 
 // 2. Helper function to create a new mock store instance
@@ -501,7 +502,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       updateSessionModels: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
       fetchAIModelCatalog: vi.fn().mockResolvedValue(undefined),
       createProjectAndAutoStart: vi.fn().mockResolvedValue({ projectId: '', sessionId: null, hasDefaultModels: false }),
-      autoStartGeneration: vi.fn().mockResolvedValue({ success: false, error: undefined }),
+      setShouldOpenDagProgress: vi.fn((open: boolean) => set({ shouldOpenDagProgress: open })),
       fetchContributionContent: vi.fn().mockImplementation(async (contributionId: string) => {
           // This is a base mock. Tests should provide specific implementations if needed,
           // especially for updating contributionContentCache via `set`.

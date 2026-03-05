@@ -207,6 +207,7 @@ describe('useDialecticStore', () => {
                         description: null,
                         strengths: null,
                         weaknesses: null,
+                        is_default_generation: true,
                     },
                     {
                         id: 'model-b',
@@ -223,6 +224,7 @@ describe('useDialecticStore', () => {
                         description: null,
                         strengths: null,
                         weaknesses: null,
+                        is_default_generation: true,
                     },
                     {
                         id: 'model-c',
@@ -239,6 +241,7 @@ describe('useDialecticStore', () => {
                         description: null,
                         strengths: null,
                         weaknesses: null,
+                        is_default_generation: true,
                     },
                 ],
             });
@@ -302,6 +305,7 @@ describe('useDialecticStore', () => {
                         description: null,
                         strengths: null,
                         weaknesses: null,
+                        is_default_generation: true,
                     },
                 ],
             });
@@ -1420,8 +1424,8 @@ describe('useDialecticStore', () => {
         };
 
         const mockModelCatalog: AIModelCatalogEntry[] = [
-            { id: 'model-1', model_name: 'Test Model 1', provider_name: 'Provider A', api_identifier: 'm1', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null },
-            { id: 'model-2', model_name: 'Test Model 2', provider_name: 'Provider B', api_identifier: 'm2', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null },
+            { id: 'model-1', model_name: 'Test Model 1', provider_name: 'Provider A', api_identifier: 'm1', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null, is_default_generation: true },
+            { id: 'model-2', model_name: 'Test Model 2', provider_name: 'Provider B', api_identifier: 'm2', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null, is_default_generation: true },
         ];
 
 
@@ -1775,6 +1779,11 @@ describe('useDialecticStore', () => {
             // Mock the template fetch that is triggered by getting project details
             getMockDialecticClient().fetchProcessTemplate.mockResolvedValue({
                 data: mockProject.dialectic_process_templates ?? undefined,
+                status: 200,
+            });
+            // fetchProcessTemplate then fetches recipes for each stage; mock so it completes and sets currentProcessTemplate
+            getMockDialecticClient().fetchStageRecipe.mockResolvedValue({
+                data: { stageSlug: 'thesis', instanceId: 'inst-1', steps: [], edges: [] },
                 status: 200,
             });
             getMockDialecticClient().updateSessionModels.mockResolvedValue({

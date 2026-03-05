@@ -18,6 +18,7 @@ import { DomainSelector } from '@/components/dialectic/DomainSelector';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
@@ -43,6 +44,13 @@ const createProjectFormSchema = z.object({
 });
 
 type CreateProjectFormValues = z.infer<typeof createProjectFormSchema>;
+
+type SetupMode = 'autostart' | 'autoconfig' | 'manual';
+
+const SETUP_MODE_EXPLAINER =
+  'Autostart: Create project, open a session with default models, and start generation automatically.\n\n' +
+  'Autoconfig: Create project and open a session with default models; you choose when to start generation.\n\n' +
+  'Manual: Create project only; you create the session, pick models, and start when you\'re ready.';
 
 interface CreateDialecticProjectFormProps {
   defaultProjectName?: string;
@@ -309,6 +317,28 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
           : null
       : null;
 
+  const setupMode: SetupMode = configureManually
+    ? 'manual'
+    : startGeneration
+      ? 'autostart'
+      : 'autoconfig';
+
+  const cycleSetupMode = useCallback(() => {
+    if (setupMode === 'autostart') {
+      setStartGeneration(false);
+    } else if (setupMode === 'autoconfig') {
+      setConfigureManually(true);
+    } else {
+      setConfigureManually(false);
+      setStartGeneration(true);
+    }
+  }, [setupMode]);
+
+  const setupModeLabel = setupMode === 'autostart' ? 'Autostart' : setupMode === 'autoconfig' ? 'Autoconfig' : 'Manual';
+
+  const setupModeChecked =
+    setupMode === 'autostart' ? true : setupMode === 'autoconfig' ? ('indeterminate' as const) : false;
+
   const onSubmit = async (data: CreateProjectFormValues) => {
     logger.info('Submitting form with data', data);
 
@@ -448,33 +478,30 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
           
         </CardContent>
         <CardFooter className="flex flex-row items-center justify-between gap-4">
-          <div className="flex flex-col gap-2 shrink-0">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="configure-manually"
-                checked={configureManually}
-                onCheckedChange={(checked) => setConfigureManually(checked === true)}
-              />
-              <label htmlFor="configure-manually" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                Config
-              </label>
-            </div>
-            {!configureManually && (
-              <>
-                <div className="flex items-center space-x-2">
+          <div className="flex flex-col gap-2 shrink-0 min-w-[7.5rem]">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center space-x-2" data-testid="create-project-setup-mode">
                   <Checkbox
-                    id="start-generation"
-                    checked={startGeneration}
-                    onCheckedChange={(checked) => setStartGeneration(checked === true)}
+                    id="create-project-setup-mode-checkbox"
+                    checked={setupModeChecked}
+                    onCheckedChange={cycleSetupMode}
+                    aria-label={setupModeLabel}
                   />
-                  <label htmlFor="start-generation" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                    Autostart
+                  <label
+                    htmlFor="create-project-setup-mode-checkbox"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    {setupModeLabel}
                   </label>
                 </div>
-                {autoUncheckReason !== null && (
-                  <p className="text-sm text-muted-foreground">{autoUncheckReason}</p>
-                )}
-              </>
+              </TooltipTrigger>
+              <TooltipContent sideOffset={4} className="w-80 min-w-80 max-w-80 whitespace-pre-line">
+                {SETUP_MODE_EXPLAINER}
+              </TooltipContent>
+            </Tooltip>
+            {!configureManually && !startGeneration && autoUncheckReason !== null && (
+              <p className="text-sm text-muted-foreground">{autoUncheckReason}</p>
             )}
           </div>
           <Button type="submit" disabled={isCreating || isAutoStarting} className="shrink-0 flex-1 min-w-0 data-testid='create-project-button'">

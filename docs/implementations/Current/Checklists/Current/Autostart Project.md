@@ -551,6 +551,295 @@ Users click "Create Project" once and land on a session page with default models
     *   `[✅]`   `apps/web/src/pages/DialecticSessionDetailsPage.tsx` — auto-start effect with `useLocation`, `useRef` guard, `autoStartGeneration` call, flag cleanup via `navigate`
     *   `[✅]`   All related test files updated and new tests added: `dialecticStore.selectors.test.ts`, `dialecticStore.autostart.test.ts` (or existing session test file), `CreateDialecticProjectForm.test.tsx`, `DialecticSessionDetailsPage.test.tsx`
 
+## Phase 3: Unified Contribution Generation Control Flow
+
+*   `[✅]`   [UI] apps/web/src/hooks/useStartContributionGeneration **Create unified start-generation hook**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Create a React hook that is the single source of truth for starting or resuming contribution generation
+    *   `[✅]`   Centralizes all logic currently duplicated between `GenerateContributionButton.handleClick` (lines 119–168) and `dialecticStore.autoStartGeneration` (lines 861–904): precondition guards, resume vs generate decision, toast feedback, `onOpenDagProgress` callback invocation, and payload construction
+    *   `[✅]`   Autostart never hits `isStageReady` or resume conditions (brand new projects), but the hook must handle them because the manual button path requires them
+    *   `[✅]`   The hook reads reactively from `useDialecticStore`, `useWalletStore`, `useAiStore`; callers supply an `onOpenDagProgress?: () => void` callback; the hook does not own or know about dialog state
+  *   `[✅]`   `role`
+    *   `[✅]`   Application layer — React hook bridging store state to a unified generation action for UI consumers
+  *   `[✅]`   `module`
+    *   `[✅]`   Contribution generation orchestration: guard evaluation, resume/generate branching, user feedback
+    *   `[✅]`   Boundary: reads store state via Zustand selectors, calls store actions (`generateContributions`, `resumePausedNsfJobs`), invokes caller-supplied callback, shows toasts via `sonner`
+  *   `[✅]`   `deps`
+    *   `[✅]`   `useDialecticStore` from `@paynless/store` — `generateContributions`, `resumePausedNsfJobs`, `generatingSessions`, `currentProjectDetail`, `activeContextSessionId` (existing, app layer)
+    *   `[✅]`   `selectActiveStage`, `selectSessionById`, `selectIsStageReadyForSessionIteration`, `selectUnifiedProjectProgress`, `selectSelectedModels` from `@paynless/store` — existing selectors (app layer)
+    *   `[✅]`   `useWalletStore`, `selectActiveChatWalletInfo` from `@paynless/store` — wallet state for balance and readiness checks (app layer, lateral, justified for wallet precondition)
+    *   `[✅]`   `useAiStore` from `@paynless/store` — `continueUntilComplete`, `newChatContext` (app layer, lateral)
+    *   `[✅]`   `STAGE_BALANCE_THRESHOLDS`, `GenerateContributionsPayload`, `getDisplayName` from `@paynless/types` — domain types and utilities
+    *   `[✅]`   `toast` from `sonner` — user feedback (infrastructure)
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   From `useDialecticStore`: `generateContributions`, `resumePausedNsfJobs`, `generatingSessions`, `currentProjectDetail`, `activeContextSessionId` (reactive selectors)
+    *   `[✅]`   From `useDialecticStore` selectors: `selectActiveStage` → `DialecticStage | null`, `selectSessionById` → `DialecticSession | null`, `selectIsStageReadyForSessionIteration` → `boolean`, `selectUnifiedProjectProgress` → unified progress object, `selectSelectedModels` → `SelectedModels[]`
+    *   `[✅]`   From `useWalletStore`: `selectActiveChatWalletInfo(state, newChatContext)` → `{ status, walletId, balance }`
+    *   `[✅]`   From `useAiStore`: `continueUntilComplete: boolean`, `newChatContext: string | null`
+    *   `[✅]`   Output: `startContributionGeneration(onOpenDagProgress?)` function plus derived guard state values
+    *   `[✅]`   Injection shape: interface only — all store interactions via Zustand hooks and selectors; `onOpenDagProgress` is a plain callback
+    *   `[✅]`   No concrete imports from higher or lateral layers beyond store hooks
+  *   `[✅]`   interface/`packages/types/src/dialectic.types.ts`
+    *   `[✅]`   Add `StartContributionGenerationResult`: `{ success: boolean; error?: string }`
+    *   `[✅]`   Add `UseStartContributionGenerationReturn` with fields:
+      *   `startContributionGeneration: (onOpenDagProgress?: () => void) => Promise<StartContributionGenerationResult>`
+      *   `isDisabled: boolean`
+      *   `isResumeMode: boolean`
+      *   `isSessionGenerating: boolean`
+      *   `isWalletReady: boolean`
+      *   `isStageReady: boolean`
+      *   `balanceMeetsThreshold: boolean`
+      *   `areAnyModelsSelected: boolean`
+      *   `hasPausedNsfJobs: boolean`
+      *   `didGenerationFail: boolean`
+      *   `contributionsForStageAndIterationExist: boolean`
+      *   `showBalanceCallout: boolean`
+      *   `activeStage: DialecticStage | null`
+      *   `activeSession: DialecticSession | null`
+      *   `stageThreshold: number | undefined`
+  *   `[✅]`   unit/`apps/web/src/hooks/useStartContributionGeneration.test.ts`
+    *   `[✅]`   Test: returns `{ success: false, error }` and shows error toast when `activeSession` is null
+    *   `[✅]`   Test: returns `{ success: false, error }` and shows error toast when `activeSession.iteration_count` is not a number
+    *   `[✅]`   Test: returns `{ success: false, error }` and shows error toast when `currentProjectDetail` is null
+    *   `[✅]`   Test: returns `{ success: false, error }` and shows error toast when `activeStage` is null
+    *   `[✅]`   Test: returns `{ success: false, error }` and shows error toast when `activeContextSessionId` is null
+    *   `[✅]`   Test: returns `{ success: false, error }` and shows error toast when `isWalletReady` is false
+    *   `[✅]`   Test: when `isResumeMode` is true, shows `"Resuming generation..."` toast, calls `onOpenDagProgress` callback, calls `resumePausedNsfJobs` with `{ sessionId, stageSlug, iterationNumber }`
+    *   `[✅]`   Test: when `isResumeMode` is false, shows `"Contribution generation started!"` toast with description, calls `onOpenDagProgress` callback, calls `generateContributions` with correct `GenerateContributionsPayload`
+    *   `[✅]`   Test: payload uses `continueUntilComplete` from `useAiStore` (not hardcoded `true`)
+    *   `[✅]`   Test: payload uses `walletId` from `selectActiveChatWalletInfo`
+    *   `[✅]`   Test: returns `{ success: true }` when `generateContributions` succeeds
+    *   `[✅]`   Test: returns `{ success: false, error }` and shows error toast when `generateContributions` throws
+    *   `[✅]`   Test: `onOpenDagProgress` callback is optional — no error when not provided
+    *   `[✅]`   Test: `isDisabled` is `true` when any guard fails (`isSessionGenerating`, `!areAnyModelsSelected`, `!activeStage`, `!activeSession`, `!isStageReady`, `!isWalletReady`, `!balanceMeetsThreshold`)
+    *   `[✅]`   Test: `isDisabled` is `false` when all guards pass
+    *   `[✅]`   Test: `isResumeMode` is `true` only when `hasPausedNsfJobs && balanceMeetsThreshold`
+    *   `[✅]`   Test: derived state values correctly reflect store state (each derived field tested with known inputs)
+  *   `[✅]`   `construction`
+    *   `[✅]`   Hook reads all state from stores using existing selectors — matches `GenerateContributionButton`'s current reads (lines 28–100)
+    *   `[✅]`   Computes derived values via `useMemo`: `isWalletReady`, `balanceMeetsThreshold`, `isStageReady`, `isSessionGenerating`, `hasPausedNsfJobs`, `isResumeMode`, `contributionsForStageAndIterationExist`, `didGenerationFail`, `isDisabled`, `showBalanceCallout`, `stageThreshold`, `activeStage`, `activeSession`
+    *   `[✅]`   `startContributionGeneration(onOpenDagProgress?)` via `useCallback`:
+      *   Step 1: guard checks — `activeSession`, `typeof iteration_count === 'number'`, `currentProjectDetail`, `activeStage`, `activeContextSessionId`, `isWalletReady`; on failure: `toast.error(...)`, return `{ success: false, error }`
+      *   Step 2 (resume): if `isResumeMode`: `toast.success("Resuming generation...")`, `onOpenDagProgress?.()`, `await resumePausedNsfJobs({ sessionId, stageSlug, iterationNumber })`, return `{ success: true }`
+      *   Step 3 (generate): `toast.success("Contribution generation started!", { description: "..." })`, `onOpenDagProgress?.()`, build `GenerateContributionsPayload` with `continueUntilComplete` from `useAiStore`, `await generateContributions(payload)`, return based on result
+      *   Step 4 (catch): `toast.error(message)`, return `{ success: false, error }`
+    *   `[✅]`   Returns `UseStartContributionGenerationReturn` object
+  *   `[✅]`   `useStartContributionGeneration.ts`
+    *   `[✅]`   Single export: `useStartContributionGeneration` hook
+    *   `[✅]`   Reads from `useDialecticStore`, `useWalletStore`, `useAiStore` via existing Zustand hooks
+    *   `[✅]`   Computes all derived state as described in construction
+    *   `[✅]`   Returns typed `UseStartContributionGenerationReturn`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Application layer (React hook)
+    *   `[✅]`   Dependencies inward: store hooks and selectors (app layer), types (domain layer), `sonner` (infrastructure)
+    *   `[✅]`   Provides outward: unified generation function + derived state to `GenerateContributionButton` and `DialecticSessionDetailsPage`
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Hook is the single implementation of "how we start/resume and what we show"
+    *   `[✅]`   Guard set is superset of both existing paths: `activeSession`, `iteration_count`, `currentProjectDetail`, `activeStage`, `activeContextSessionId`, `isWalletReady` (runtime), plus `isStageReady`, `balanceMeetsThreshold`, `isSessionGenerating`, `areAnyModelsSelected` (via `isDisabled`)
+    *   `[✅]`   Resume path: `hasPausedNsfJobs && balanceMeetsThreshold` → `resumePausedNsfJobs`
+    *   `[✅]`   Generate path: builds `GenerateContributionsPayload` with `continueUntilComplete` from `useAiStore` (not hardcoded `true`)
+    *   `[✅]`   Toasts: identical messages to current button click handler
+    *   `[✅]`   `onOpenDagProgress` callback invoked before async operation begins (matches current button behavior)
+    *   `[✅]`   Return type fully typed as `UseStartContributionGenerationReturn`
+    *   `[✅]`   All new tests pass
+    *   `[✅]`   No existing files changed in this node
+
+*   `[✅]`   [STORE] packages/store/src/dialecticStore **Add `shouldOpenDagProgress` state, remove `autoStartGeneration`**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add `shouldOpenDagProgress: boolean` state and `setShouldOpenDagProgress` setter to the dialectic store, enabling the autostart path to signal `GenerateContributionButton` to open its DAG dialog
+    *   `[✅]`   Remove `autoStartGeneration` action from the store — its logic has been moved to the `useStartContributionGeneration` hook (Node 1)
+    *   `[✅]`   Update types interface and tests accordingly
+  *   `[✅]`   `role`
+    *   `[✅]`   Application layer — state management for cross-component DAG dialog signaling and removal of deprecated action
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic store: DAG progress dialog signal + `autoStartGeneration` removal
+    *   `[✅]`   Boundary: `shouldOpenDagProgress` is set by autostart caller (page), read by `GenerateContributionButton` (component)
+  *   `[✅]`   `deps`
+    *   `[✅]`   `DialecticStateValues` from `packages/types/src/dialectic.types.ts` — edited in this node to add `shouldOpenDagProgress` (domain layer)
+    *   `[✅]`   `DialecticActions` or store actions interface from `packages/types/src/dialectic.types.ts` — edited in this node to add `setShouldOpenDagProgress` and remove `autoStartGeneration` (domain layer)
+    *   `[✅]`   `initialDialecticStateValues` from `packages/types/src/dialectic.types.ts` — edited in this node to add `shouldOpenDagProgress: false` (domain layer)
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   New state: `shouldOpenDagProgress: boolean` (default `false`)
+    *   `[✅]`   New action: `setShouldOpenDagProgress(open: boolean)` — sets `shouldOpenDagProgress`
+    *   `[✅]`   Removed action: `autoStartGeneration` — logic moved to hook
+    *   `[✅]`   No concrete imports from higher or lateral layers
+  *   `[✅]`   interface/`packages/types/src/dialectic.types.ts`
+    *   `[✅]`   Add `shouldOpenDagProgress: boolean` to `DialecticStateValues`
+    *   `[✅]`   Add `shouldOpenDagProgress: false` to `initialDialecticStateValues`
+    *   `[✅]`   Add `setShouldOpenDagProgress: (open: boolean) => void` to store actions interface
+    *   `[✅]`   Remove `autoStartGeneration: () => Promise<{ success: boolean; error?: string }>` from store actions interface
+  *   `[✅]`   unit/`packages/store/src/dialecticStore.autostart.test.ts`
+    *   `[✅]`   Remove all `autoStartGeneration` tests (logic now tested in `useStartContributionGeneration.test.ts`):
+      *   Remove: builds `GenerateContributionsPayload` correctly from store state
+      *   Remove: calls `generateContributions` with the built payload
+      *   Remove: returns descriptive error when `selectedModels` is empty
+      *   Remove: returns descriptive error when active stage is not set
+      *   Remove: returns descriptive error when `walletInfo.status !== 'ok'`
+      *   Remove: returns descriptive error when `walletInfo.walletId` is falsy
+      *   Remove: returns descriptive error when balance below threshold
+      *   Remove: returns success when all preconditions met
+      *   Remove: returns error when `generateContributions` fails
+    *   `[✅]`   Add: `shouldOpenDagProgress` initializes as `false`
+    *   `[✅]`   Add: `setShouldOpenDagProgress(true)` sets `shouldOpenDagProgress` to `true`
+    *   `[✅]`   Add: `setShouldOpenDagProgress(false)` sets `shouldOpenDagProgress` to `false`
+    *   `[✅]`   Keep all `createProjectAndAutoStart` tests unchanged
+  *   `[✅]`   `construction`
+    *   `[✅]`   Add `shouldOpenDagProgress: false` in state initialization
+    *   `[✅]`   Add `setShouldOpenDagProgress: (open) => set({ shouldOpenDagProgress: open })` action
+    *   `[✅]`   Delete `autoStartGeneration` action entirely (lines 861–904)
+    *   `[✅]`   Remove imports that were only used by `autoStartGeneration` (if any become unused)
+  *   `[✅]`   `dialecticStore.ts`
+    *   `[✅]`   Add `shouldOpenDagProgress: false` in state initialization
+    *   `[✅]`   Add `setShouldOpenDagProgress` action
+    *   `[✅]`   Remove `autoStartGeneration` action (lines 861–904)
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Application layer (store)
+    *   `[✅]`   Dependencies inward: types from `@paynless/types`
+    *   `[✅]`   Provides outward: `shouldOpenDagProgress` state + `setShouldOpenDagProgress` setter to `GenerateContributionButton` (subscriber) and `DialecticSessionDetailsPage` (setter via callback)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `shouldOpenDagProgress` is `false` by default
+    *   `[✅]`   `setShouldOpenDagProgress` correctly sets the flag
+    *   `[✅]`   `autoStartGeneration` is completely removed from store implementation and types interface
+    *   `[✅]`   `createProjectAndAutoStart` is NOT modified (it does not call `autoStartGeneration`)
+    *   `[✅]`   All `autoStartGeneration` tests removed; `shouldOpenDagProgress` tests added
+    *   `[✅]`   All `createProjectAndAutoStart` tests continue to pass
+    *   `[✅]`   Temporary compile error in `DialecticSessionDetailsPage.tsx` (references removed `autoStartGeneration`) — resolved in Node 4
+
+*   `[✅]`   [UI] apps/web/src/components/dialectic/GenerateContributionButton **Refactor to use unified hook**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Replace inline guard, payload construction, and toast logic in `handleClick` with a single call to `useStartContributionGeneration` hook
+    *   `[✅]`   Subscribe to `shouldOpenDagProgress` from the store so the DAG dialog opens when the autostart path signals it
+    *   `[✅]`   Use hook's derived state for button disabled state, button text, and balance callout — eliminates duplicate computation
+    *   `[✅]`   Remove direct store reads and selectors that are now encapsulated by the hook
+  *   `[✅]`   `role`
+    *   `[✅]`   Frontend component — contribution generation trigger with visual feedback and DAG progress dialog
+  *   `[✅]`   `module`
+    *   `[✅]`   `GenerateContributionButton`: button rendering, disabled state, click handling, DAG dialog management
+    *   `[✅]`   Boundary: calls hook's `startContributionGeneration`, subscribes to store's `shouldOpenDagProgress`, renders `StageDAGProgressDialog`
+  *   `[✅]`   `deps`
+    *   `[✅]`   `useStartContributionGeneration` from `apps/web/src/hooks/useStartContributionGeneration` — new hook from Node 1 (app layer)
+    *   `[✅]`   `useDialecticStore` from `@paynless/store` — `shouldOpenDagProgress`, `setShouldOpenDagProgress`, `activeContextSessionId` (app layer, state from Node 2)
+    *   `[✅]`   `StageDAGProgressDialog` from `./StageDAGProgressDialog` — existing dialog component (UI layer)
+    *   `[✅]`   `getDisplayName` from `@paynless/types` — existing utility for button text (domain layer)
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   From hook: `startContributionGeneration`, `isDisabled`, `isResumeMode`, `isSessionGenerating`, `isWalletReady`, `isStageReady`, `balanceMeetsThreshold`, `areAnyModelsSelected`, `hasPausedNsfJobs`, `didGenerationFail`, `contributionsForStageAndIterationExist`, `showBalanceCallout`, `activeStage`, `activeSession`, `stageThreshold`
+    *   `[✅]`   From store: `shouldOpenDagProgress`, `setShouldOpenDagProgress`, `activeContextSessionId`
+    *   `[✅]`   Local state: `dagDialogOpen` (`useState<boolean>`)
+    *   `[✅]`   No concrete imports from higher or lateral layers
+  *   `[✅]`   unit/ (locate existing `GenerateContributionButton` test file, or create `GenerateContributionButton.test.tsx`)
+    *   `[✅]`   Test: `handleClick` calls hook's `startContributionGeneration` with an `onOpenDagProgress` callback
+    *   `[✅]`   Test: `onOpenDagProgress` callback sets `dagDialogOpen` to `true`
+    *   `[✅]`   Test: when `shouldOpenDagProgress` becomes `true`, `dagDialogOpen` is set to `true` and `setShouldOpenDagProgress(false)` is called to clear the signal
+    *   `[✅]`   Test: `isDisabled` prop on button reflects hook's `isDisabled` value
+    *   `[✅]`   Test: button text still computed correctly from hook's derived state values (`isSessionGenerating`, `areAnyModelsSelected`, `isWalletReady`, `isStageReady`, `hasPausedNsfJobs`, `balanceMeetsThreshold`, `isResumeMode`, `didGenerationFail`, `contributionsForStageAndIterationExist`)
+    *   `[✅]`   Test: `StageDAGProgressDialog` renders with correct props when `dagDialogOpen` is `true`
+    *   `[✅]`   Test: balance callout renders when `showBalanceCallout` is `true` from hook
+    *   `[✅]`   Test: component returns `null` when `stageThreshold` is falsy (existing behavior preserved)
+    *   `[✅]`   Remove tests that directly assert on `generateContributions`/`resumePausedNsfJobs` calls (now tested in hook's test file)
+  *   `[✅]`   `construction`
+    *   `[✅]`   Import `useStartContributionGeneration` from hooks file
+    *   `[✅]`   Destructure all needed values from hook
+    *   `[✅]`   Remove direct store reads now encapsulated by hook: `selectActiveStage`, `selectSessionById`, `selectIsStageReadyForSessionIteration`, `selectUnifiedProjectProgress`, `selectSelectedModels`, `selectActiveChatWalletInfo`, `continueUntilComplete`, `newChatContext`, `generateContributions`, `resumePausedNsfJobs`, `generatingSessions`, `currentProjectDetail`
+    *   `[✅]`   Keep `useDialecticStore` reads for: `shouldOpenDagProgress`, `setShouldOpenDagProgress`, `activeContextSessionId` (needed for `StageDAGProgressDialog` conditional render and props)
+    *   `[✅]`   Add `useEffect` watching `shouldOpenDagProgress`: when `true`, call `setDagDialogOpen(true)` then `setShouldOpenDagProgress(false)`
+    *   `[✅]`   Simplify `handleClick` to: `startContributionGeneration(() => setDagDialogOpen(true))`
+    *   `[✅]`   `getButtonText` uses hook's derived state values
+    *   `[✅]`   `isDisabled` from hook
+    *   `[✅]`   `showBalanceCallout` from hook
+  *   `[✅]`   `GenerateContributionButton.tsx`
+    *   `[✅]`   Replace bulk of `@paynless/store` imports with hook import
+    *   `[✅]`   Remove inline guard/payload/toast logic from `handleClick` (lines 119–168)
+    *   `[✅]`   Add `shouldOpenDagProgress` effect for external dialog open signal
+    *   `[✅]`   Simplify `handleClick` to single hook function call
+    *   `[✅]`   Keep local `dagDialogOpen` state for dialog
+    *   `[✅]`   Keep `StageDAGProgressDialog` render
+    *   `[✅]`   Keep `getButtonText` function (now sourced from hook's derived state)
+    *   `[✅]`   Keep balance callout render (now sourced from hook)
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Frontend component layer
+    *   `[✅]`   Dependencies inward: hook (app layer), store state (app layer), dialog component (UI layer), types (domain layer)
+    *   `[✅]`   Provides outward: button UI surface for manual generation trigger and DAG dialog rendering
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `handleClick` is a one-liner calling hook's `startContributionGeneration` with dialog callback
+    *   `[✅]`   No inline guard checks, payload construction, or toast calls in the component
+    *   `[✅]`   `shouldOpenDagProgress` effect opens dialog when set by autostart and clears the flag
+    *   `[✅]`   Button disabled state and text derived from hook's returned values
+    *   `[✅]`   `StageDAGProgressDialog` controlled by local `dagDialogOpen` state (set by click callback or `shouldOpenDagProgress` effect)
+    *   `[✅]`   Existing visual behavior preserved: same button text, same disable conditions, same toast messages, same dialog
+    *   `[✅]`   All updated tests pass
+
+*   `[ ]`   [UI] apps/web/src/pages/DialecticSessionDetailsPage **Refactor autostart to use unified hook**
+  *   `[ ]`   `objective`
+    *   `[ ]`   Replace autostart effect's call to store's `autoStartGeneration` with hook's `startContributionGeneration`
+    *   `[ ]`   Pass `onOpenDagProgress` callback that sets `shouldOpenDagProgress` in store, enabling the button's DAG dialog to open on autostart
+    *   `[ ]`   Remove `autoStartGeneration` import from store — resolves compile error introduced in Node 2
+  *   `[ ]`   `role`
+    *   `[ ]`   Frontend page component — session detail view with optional one-time autostart trigger
+  *   `[ ]`   `module`
+    *   `[ ]`   Dialectic session details: autostart effect on first load from automated `CreateDialecticProjectForm` flow
+    *   `[ ]`   Boundary: reads `location.state`, calls hook's `startContributionGeneration`, clears navigation state
+  *   `[ ]`   `deps`
+    *   `[ ]`   `useStartContributionGeneration` from `apps/web/src/hooks/useStartContributionGeneration` — new hook from Node 1 (app layer)
+    *   `[ ]`   `useDialecticStore` from `@paynless/store` — `setShouldOpenDagProgress` (app layer, from Node 2), `selectSelectedModels` (existing selector)
+    *   `[ ]`   `useLocation`, `useNavigate` from `react-router-dom` — for `location.state` and flag cleanup (existing imports)
+    *   `[ ]`   `useRef` from React — for single-fire guard (existing import)
+    *   `[ ]`   Store state: `activeSessionDetail`, `currentProjectDetail`, `activeContextSessionId` — existing reads via `useDialecticStore`
+    *   `[ ]`   Confirm no reverse dependency is introduced
+  *   `[ ]`   `context_slice`
+    *   `[ ]`   From hook: `startContributionGeneration`
+    *   `[ ]`   From store: `setShouldOpenDagProgress`, `activeSessionDetail`, `currentProjectDetail`, `activeContextSessionId`, `selectedModels`
+    *   `[ ]`   From `react-router-dom`: `location.state?.autoStartGeneration`, `navigate`
+    *   `[ ]`   Local: `autoStartAttemptedRef` (`useRef<boolean>`)
+    *   `[ ]`   No concrete imports from higher or lateral layers
+  *   `[ ]`   unit/`apps/web/src/pages/DialecticSessionDetailsPage.test.tsx` (locate existing test file)
+    *   `[ ]`   Update: autostart effect calls hook's `startContributionGeneration` (not store's `autoStartGeneration`)
+    *   `[ ]`   Update: autostart passes `onOpenDagProgress` callback that calls `setShouldOpenDagProgress(true)`
+    *   `[ ]`   Update: verify `autoStartGeneration` import from store is removed
+    *   `[ ]`   Keep: autostart fires exactly once (ref guard prevents double-fire)
+    *   `[ ]`   Keep: `navigate` called with `{ replace: true, state: {} }` to clear flag after attempt
+    *   `[ ]`   Keep: page remains functional after autostart failure (session detail renders, Generate button available)
+    *   `[ ]`   Keep: autostart does not fire when context is not loaded (`activeSessionDetail`, `selectedModels`, etc.)
+    *   `[ ]`   Existing tests continue to pass (tests without `location.state.autoStartGeneration` do not trigger autostart)
+  *   `[ ]`   `construction`
+    *   `[ ]`   Import `useStartContributionGeneration` from hooks file
+    *   `[ ]`   Destructure `startContributionGeneration` from hook
+    *   `[ ]`   Read `setShouldOpenDagProgress` from `useDialecticStore`
+    *   `[ ]`   Remove `autoStartGeneration` from `useDialecticStore` read (line 49)
+    *   `[ ]`   Update autostart `useEffect` (lines 89–111):
+      *   Replace: `await autoStartGeneration()`
+      *   With: `await startContributionGeneration(() => setShouldOpenDagProgress(true))`
+    *   `[ ]`   All other page logic unchanged
+  *   `[ ]`   `DialecticSessionDetailsPage.tsx`
+    *   `[ ]`   Add import: `useStartContributionGeneration` from hooks
+    *   `[ ]`   Add `useDialecticStore` read: `setShouldOpenDagProgress`
+    *   `[ ]`   Remove `useDialecticStore` read: `autoStartGeneration` (line 49)
+    *   `[ ]`   Update autostart effect body to use hook's function with `onOpenDagProgress` callback
+    *   `[ ]`   No changes to render logic, other effects, or component structure
+  *   `[ ]`   `directionality`
+    *   `[ ]`   Frontend page layer
+    *   `[ ]`   Dependencies inward: hook (app layer), store state and actions (app layer), `react-router-dom` hooks (infrastructure)
+    *   `[ ]`   Provides outward: session detail view with one-time autostart capability
+  *   `[ ]`   `requirements`
+    *   `[ ]`   Autostart effect uses hook's `startContributionGeneration` — no duplicate guard, payload, or toast logic
+    *   `[ ]`   `onOpenDagProgress` callback signals button's DAG dialog via `setShouldOpenDagProgress(true)`
+    *   `[ ]`   Compile error from Node 2 resolved (`autoStartGeneration` reference removed)
+    *   `[ ]`   Ref guard and flag cleanup preserved unchanged
+    *   `[ ]`   Page render and behavior unchanged when autostart flag is not set
+    *   `[ ]`   All updated and existing tests pass
+  *   `[ ]`   **Commit** `refactor: unify contribution generation into single hook, remove duplicate autoStartGeneration`
+    *   `[ ]`   `packages/types/src/dialectic.types.ts` — added `StartContributionGenerationResult`, `UseStartContributionGenerationReturn`, `shouldOpenDagProgress`, `setShouldOpenDagProgress`; removed `autoStartGeneration` from store actions interface
+    *   `[ ]`   `apps/web/src/hooks/useStartContributionGeneration.ts` — new hook centralizing guards, resume/generate, toasts, callback
+    *   `[ ]`   `apps/web/src/hooks/useStartContributionGeneration.test.ts` — unit tests for all hook behaviors
+    *   `[ ]`   `packages/store/src/dialecticStore.ts` — added `shouldOpenDagProgress` state and setter, removed `autoStartGeneration` action
+    *   `[ ]`   `packages/store/src/dialecticStore.autostart.test.ts` — removed `autoStartGeneration` tests, added `shouldOpenDagProgress` tests
+    *   `[ ]`   `apps/web/src/components/dialectic/GenerateContributionButton.tsx` — refactored to use hook, subscribe to `shouldOpenDagProgress`
+    *   `[ ]`   `GenerateContributionButton` test file — updated tests for hook integration
+    *   `[ ]`   `apps/web/src/pages/DialecticSessionDetailsPage.tsx` — refactored autostart to use hook
+    *   `[ ]`   `DialecticSessionDetailsPage` test file — updated tests for hook integration
+
 # ToDo
 
 - New user sign in banner doesn't display, throws console error  
@@ -617,3 +906,17 @@ Reloading page auto-advances stage, preventing edits & feedback from being submi
 GeneratedContributionCard tries to display header_context, which it should never even acknowledge since it's not a document and isn't available to the FE 
 
 StageDAGProgressDialog does not color nodes correctly, probably relies on explicit hydration instead of dynamic hydration from notifications
+
+Set Free accounts to Gemini Flash only 
+- Claude & ChatGPT only for paid
+- Paying customers get BYOK (heavy lift)
+- 
+
+Info eye on hover to explain each stage and document 
+- What is the purpose
+- What do you get
+- ELIF, give the user engagement 
+
+Fix Export button 
+
+Add explicit "Pause" condition that sets all jobs to "paused" and can be restarted. 

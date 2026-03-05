@@ -456,6 +456,7 @@ export interface DialecticStateValues {
   autoStartStep: string | null;
   isAutoStarting: boolean;
   autoStartError: ApiError | null;
+  shouldOpenDagProgress: boolean;
 }
 
 export type StageRunProgressEntry = NonNullable<DialecticStateValues['stageRunProgress'][string]>;
@@ -691,7 +692,7 @@ export interface DialecticActions {
   updateSessionModels: (payload: UpdateSessionModelsPayload) => Promise<ApiResponse<DialecticSession>>;
   fetchAIModelCatalog: () => Promise<void>;
   createProjectAndAutoStart: (payload: CreateProjectPayload) => Promise<CreateProjectAutoStartResult>;
-  autoStartGeneration: () => Promise<{ success: boolean; error?: string }>;
+  setShouldOpenDagProgress: (open: boolean) => void;
 
   fetchContributionContent: (contributionId: string) => Promise<void>;
 
@@ -1129,6 +1130,29 @@ export interface GenerateContributionsPayload {
   iterationNumber: number;
   continueUntilComplete: boolean;
   walletId: string;
+}
+
+export interface StartContributionGenerationResult {
+  success: boolean;
+  error?: string;
+}
+
+export interface UseStartContributionGenerationReturn {
+  startContributionGeneration: (onOpenDagProgress?: () => void) => Promise<StartContributionGenerationResult>;
+  isDisabled: boolean;
+  isResumeMode: boolean;
+  isSessionGenerating: boolean;
+  isWalletReady: boolean;
+  isStageReady: boolean;
+  balanceMeetsThreshold: boolean;
+  areAnyModelsSelected: boolean;
+  hasPausedNsfJobs: boolean;
+  didGenerationFail: boolean;
+  contributionsForStageAndIterationExist: boolean;
+  showBalanceCallout: boolean;
+  activeStage: DialecticStage | null;
+  activeSession: DialecticSession | null;
+  stageThreshold: number | undefined;
 }
 
 export interface FailedAttemptError {
