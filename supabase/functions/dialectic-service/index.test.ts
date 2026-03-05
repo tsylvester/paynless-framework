@@ -42,6 +42,8 @@ import {
   RegenerateDocumentResponse,
   RegenerateDocumentResult,
   StartSessionSuccessResponse,
+  StartSessionPayload,
+  UpdateSessionModelsPayload,
   DialecticProcessTemplate,
   RegenerateDocumentParams,
   RegenerateDocumentDeps,
@@ -160,6 +162,7 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
         getAllStageProgress: overrides?.getAllStageProgress || (() => Promise.resolve({ data: { dagProgress: { completedStages: 0, totalStages: 0 }, stages: [] }, status: 200 })),
         resumePausedNsfJobs: overrides?.resumePausedNsfJobs || (() => Promise.resolve({ data: { resumedCount: 0 }, status: 200 })),
         regenerateDocument: overrides?.regenerateDocument || (() => Promise.resolve({ data: { jobIds: [] }, status: 200 })),
+        listModelCatalog: overrides?.listModelCatalog || (() => Promise.resolve({ data: [] })),
         ...overrides,
     };
 };
@@ -791,7 +794,7 @@ withSupabaseEnv("handleRequest - startSession", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const payload = { projectId, sessionDescription: 'New session', selectedModelIds: ['model-1'] };
+        const payload: StartSessionPayload = { projectId, sessionDescription: 'New session', selectedModels: [{ id: 'model-1', displayName: 'Model One' }] };
         const req = createJsonRequest("startSession", payload, mockToken);
         const response = await handleRequest(
           req,
@@ -817,7 +820,7 @@ withSupabaseEnv("handleRequest - startSession", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const payload = { projectId, selectedModelIds: ['model-1'] };
+        const payload: StartSessionPayload = { projectId, selectedModels: [{ id: 'model-1', displayName: 'Model One' }] };
         const req = createJsonRequest("startSession", payload, mockToken);
         const response = await handleRequest(
           req,
@@ -1326,7 +1329,7 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         updated_at: new Date().toISOString(),
     };
 
-    const payload = { sessionId: mockSessionId, selectedModelIds: ['model-a', 'model-b'] };
+    const payload: UpdateSessionModelsPayload = { sessionId: mockSessionId, selectedModels: [{ id: 'model-a', displayName: 'Model A' }, { id: 'model-b', displayName: 'Model B' }] };
 
     await t.step("should call updateSessionModels and return 200 on success", async () => {
         const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
@@ -1396,7 +1399,7 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const incompletePayload = { selectedModelIds: ['model-a', 'model-b'] }; // Missing sessionId
+        const incompletePayload: UpdateSessionModelsPayload = { selectedModels: [{ id: 'model-a', displayName: 'Model A' }, { id: 'model-b', displayName: 'Model B' }] } as UpdateSessionModelsPayload; // Missing sessionId
         const req = createJsonRequest("updateSessionModels", incompletePayload, mockToken);
         const reqClone = req.clone(); // Clone the request
 
@@ -1412,7 +1415,7 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         assertEquals(specificErrorSpy.calls.length, 1); // The mock handler was called
     });
 
-     await t.step("should return 400 if selectedModelIds is missing from payload", async () => {
+     await t.step("should return 400 if selectedModels is missing from payload", async () => {
         const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
         const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy });
         
@@ -1422,17 +1425,17 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const incompletePayload = { sessionId: mockSessionId }; // Missing selectedModelIds
+        const incompletePayload: UpdateSessionModelsPayload = { sessionId: mockSessionId } as UpdateSessionModelsPayload  ; // Missing selectedModels
         const req = createJsonRequest("updateSessionModels", incompletePayload, mockToken);
         
-        const specificErrorSpy = spy(() => Promise.resolve({ error: {message: "selectedModelIds is required", status: 400, code: "MISSING_PARAM"}, status: 400 }));
+        const specificErrorSpy = spy(() => Promise.resolve({ error: {message: "selectedModels is required", status: 400, code: "MISSING_PARAM"}, status: 400 }));
         const specificMockHandlers = createMockHandlers({ updateSessionModels: specificErrorSpy });
         
         const specificResponse = await handleRequest(req, specificMockHandlers, mockUserClient as any, mockAdminClient as any);
         
         assertEquals(specificResponse.status, 400);
         const body = await specificResponse.json();
-        assertEquals(body.error, "selectedModelIds is required");
+        assertEquals(body.error, "selectedModels is required");
         assertEquals(specificErrorSpy.calls.length, 1); 
     });
 }); 

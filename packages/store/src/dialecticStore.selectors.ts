@@ -106,6 +106,14 @@ export const selectIsLoadingModelCatalog = (state: DialecticStateValues): boolea
 // Selector for any error related to fetching the model catalog
 export const selectModelCatalogError = (state: DialecticStateValues): ApiError | null => state.modelCatalogError;
 
+// Selector for default generation models (is_default_generation and is_active), mapped to SelectedModels
+export const selectDefaultGenerationModels = (state: DialecticStateValues): SelectedModels[] => {
+  const catalog: AIModelCatalogEntry[] = state.modelCatalog ?? [];
+  return catalog
+    .filter((m) => m.is_default_generation === true && m.is_active === true)
+    .map((m) => ({ id: m.id, displayName: m.model_name }));
+};
+
 // Selector for the action status of creating a project
 export const selectIsCreatingProject = (state: DialecticStateValues): boolean => state.isCreatingProject;
 

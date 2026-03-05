@@ -202,6 +202,7 @@ export interface AIModelCatalogEntry {
     is_active: boolean;
     created_at: string;
     updated_at: string;
+    is_default_generation: boolean;
 }
 
 export interface PromptTemplateVariable {
@@ -451,6 +452,11 @@ export interface DialecticStateValues {
 	isInitializingFeedbackDraft: boolean;
 	initializeFeedbackDraftError: ApiError | null;
   activeSeedPrompt: AssembledPrompt | null;
+
+  autoStartStep: string | null;
+  isAutoStarting: boolean;
+  autoStartError: ApiError | null;
+  shouldOpenDagProgress: boolean;
 }
 
 export type StageRunProgressEntry = NonNullable<DialecticStateValues['stageRunProgress'][string]>;
@@ -685,6 +691,8 @@ export interface DialecticActions {
   startDialecticSession: (payload: StartSessionPayload) => Promise<ApiResponse<StartSessionSuccessResponse>>;
   updateSessionModels: (payload: UpdateSessionModelsPayload) => Promise<ApiResponse<DialecticSession>>;
   fetchAIModelCatalog: () => Promise<void>;
+  createProjectAndAutoStart: (payload: CreateProjectPayload) => Promise<CreateProjectAutoStartResult>;
+  setShouldOpenDagProgress: (open: boolean) => void;
 
   fetchContributionContent: (contributionId: string) => Promise<void>;
 
@@ -1107,6 +1115,14 @@ export interface ExportProjectResponse {
   export_url: string;
   file_name: string;
 }
+
+export interface CreateProjectAutoStartResult {
+  projectId: string;
+  sessionId: string | null;
+  hasDefaultModels: boolean;
+  error?: ApiError;
+}
+
 export interface GenerateContributionsPayload {
   sessionId: string;
   projectId: string;
@@ -1114,6 +1130,29 @@ export interface GenerateContributionsPayload {
   iterationNumber: number;
   continueUntilComplete: boolean;
   walletId: string;
+}
+
+export interface StartContributionGenerationResult {
+  success: boolean;
+  error?: string;
+}
+
+export interface UseStartContributionGenerationReturn {
+  startContributionGeneration: (onOpenDagProgress?: () => void) => Promise<StartContributionGenerationResult>;
+  isDisabled: boolean;
+  isResumeMode: boolean;
+  isSessionGenerating: boolean;
+  isWalletReady: boolean;
+  isStageReady: boolean;
+  balanceMeetsThreshold: boolean;
+  areAnyModelsSelected: boolean;
+  hasPausedNsfJobs: boolean;
+  didGenerationFail: boolean;
+  contributionsForStageAndIterationExist: boolean;
+  showBalanceCallout: boolean;
+  activeStage: DialecticStage | null;
+  activeSession: DialecticSession | null;
+  stageThreshold: number | undefined;
 }
 
 export interface FailedAttemptError {

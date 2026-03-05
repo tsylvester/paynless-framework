@@ -323,7 +323,15 @@ export type FileRecord =
  * without losing detail or requiring casts.
  */
 export type FileManagerError = PostgrestError | StorageError | ServiceError;
-  
+
+/**
+ * Result shape of dialectic_contributions insert().select().single() for retry handling.
+ */
+export type ContributionInsertResult = {
+  data: Database['public']['Tables']['dialectic_contributions']['Row'] | null;
+  error: unknown;
+};
+
 export type FileManagerResponse = 
   | { record: FileRecord; error: null }
   | { record: null; error: FileManagerError };

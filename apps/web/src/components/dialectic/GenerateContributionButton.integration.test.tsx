@@ -214,7 +214,7 @@ describe('GenerateContributionButton integration', () => {
     });
   });
 
-  it('render with progress stageStatus paused_nsf and low balance → button shows "Add Funds to Resume" and is disabled', () => {
+  it('render with progress stageStatus paused_nsf and low balance → button shows "Resume Proposal" and is disabled', () => {
     const steps: DialecticStageRecipeStep[] = [
       buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
@@ -232,7 +232,7 @@ describe('GenerateContributionButton integration', () => {
 
     renderWithRouter(<GenerateContributionButton />);
 
-    const button = screen.getByRole('button', { name: /Add Funds to Resume/i });
+    const button = screen.getByRole('button', { name: /Resume Proposal/i });
     expect(button).toBeInTheDocument();
     expect(button).toBeDisabled();
   });

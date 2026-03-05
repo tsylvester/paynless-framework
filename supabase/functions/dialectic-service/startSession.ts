@@ -38,7 +38,7 @@ export async function startSession(
 
     log.info(`[startSession] Function started for user ${user.id} with payload projectId: ${payload.projectId}`);
 
-    const { projectId, originatingChatId, selectedModelIds, sessionDescription } = payload;
+    const { projectId, originatingChatId, selectedModels, sessionDescription } = payload;
     const userId = user.id;
 
     const { data: project, error: projectError } = await dbClient
@@ -285,7 +285,7 @@ export async function startSession(
             current_stage_id: initialStageId,
             status: initialSessionStatus,
             iteration_count: 1,
-            selected_model_ids: selectedModelIds ?? [],
+            selected_model_ids: selectedModels.map(m => m.id),
             session_description: sessionDescription ?? `Session for ${project.project_name} - ${initialStageName}`,
             associated_chat_id: originatingChatId,
         })
@@ -326,12 +326,10 @@ export async function startSession(
         }
         
         // Construct the success response by combining the session record and the assembled prompt.
-        const ids: string[] = newSessionRecord.selected_model_ids ?? [];
-        const selected_models: SelectedModels[] = ids.map((id) => ({ id, displayName: id }));
         const { selected_model_ids: _dropped, ...sessionFields } = newSessionRecord;
         const successResponse: StartSessionSuccessResponse = {
             ...sessionFields,
-            selected_models,
+            selected_models: selectedModels,
             seedPrompt: assembledSeedPrompt,
         };
 

@@ -634,6 +634,13 @@ AND/OR
 - Not failed, not running 
 - Sometimes eventually resolves
 
-Update/fix style_guide_markdown and domain_specific_prompt_overlays.overlay_values
-- Remove numbering, indentation, categories, etc from style_guide_markdown
-- Update overlay_values 
+n/n Done only hydrates on page refresh, not dynamic
+
+Reloading page auto-advances stage, preventing edits & feedback from being submitted 
+- But SessionInfoCard and GeneratedContributionsCard still think it's in a prior stage 
+- SubmitResponses is never active even when a stage is completed, likely because it's auto-incrementing 
+
+GeneratedContributionCard tries to display header_context, which it should never even acknowledge since it's not a document and isn't available to the FE 
+
+StageDAGProgressDialog does not color nodes correctly, probably relies on explicit hydration instead of dynamic hydration from notifications
+
