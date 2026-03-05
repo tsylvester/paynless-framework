@@ -917,6 +917,4 @@ Info eye on hover to explain each stage and document
 - What do you get
 - ELIF, give the user engagement 
 
-Fix Export button 
-
 Add explicit "Pause" condition that sets all jobs to "paused" and can be restarted. 
