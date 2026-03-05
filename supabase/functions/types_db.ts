@@ -43,6 +43,7 @@ export type Database = {
           id: string
           is_active: boolean
           is_default_embedding: boolean
+          is_default_generation: boolean
           is_enabled: boolean
           name: string
           provider: string | null
@@ -56,6 +57,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_default_embedding?: boolean
+          is_default_generation?: boolean
           is_enabled?: boolean
           name: string
           provider?: string | null
@@ -69,6 +71,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_default_embedding?: boolean
+          is_default_generation?: boolean
           is_enabled?: boolean
           name?: string
           provider?: string | null
@@ -2316,6 +2319,14 @@ export type Database = {
           timestamp: string
           payment_transaction_id: string
         }[]
+      }
+      resume_paused_nsf_jobs: {
+        Args: {
+          p_session_id: string
+          p_stage_slug: string
+          p_iteration_number: number
+        }
+        Returns: number
       }
       rollback_transaction: {
         Args: Record<PropertyKey, never>
