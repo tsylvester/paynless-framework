@@ -28,7 +28,7 @@ const MOCK_USER: User = {
 };
 
 Deno.test("startSession - Error: Project not found", async () => {
-    const payload: StartSessionPayload = { projectId: "non-existent-project-id", selectedModelIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: "non-existent-project-id", selectedModels: [{ id: "model-abc", displayName: "Model ABC" }] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: {
@@ -45,7 +45,7 @@ Deno.test("startSession - Error: Project not found", async () => {
 
 Deno.test("startSession - Error: Project is missing a process_template_id", async () => {
     const mockProjectId = "project-no-template-id";
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: {
@@ -67,7 +67,7 @@ Deno.test("startSession - Error: Project is missing a process_template_id", asyn
 
 Deno.test("startSession - Error: Process template is missing a starting_stage_id", async () => {
     const mockProjectId = "project-no-entry-point";
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: {
@@ -113,7 +113,7 @@ Deno.test("startSession - Error: Process template is missing a starting_stage_id
 
 Deno.test("startSession - Error: Initial stage has no associated system prompt", async () => {
     const mockProjectId = "project-no-prompt";
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' }, selected_domain_id: 'd-1' }], error: null, status: 200, statusText: 'ok' }) },
@@ -164,7 +164,7 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
 
 Deno.test("startSession - Error: Database error on session insertion", async () => {
     const mockProjectId = "project-insert-fail";
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' }, selected_domain_id: 'd-1' }], error: null, status: 200, statusText: 'ok' }) },
@@ -219,7 +219,7 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
 Deno.test("startSession - Error: Fails to assemble seed prompt and cleans up session", async () => {
     const mockProjectId = "project-assembly-fail";
     const mockNewSessionId = "session-to-be-deleted-on-assembly-failure";
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }] };
     
     const mockAssembler = new MockPromptAssembler();
     
@@ -301,7 +301,7 @@ Deno.test("startSession - Error: Fails to assemble seed prompt and cleans up ses
 
 Deno.test("startSession - Error: Missing overlays should fail fast", async () => {
     const mockProjectId = "project-overlays-missing";
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }] };
 
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {

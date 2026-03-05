@@ -43,6 +43,7 @@ import {
     ContentToInclude,
     SelectAnchorResult,
     SourceDocument,
+    SelectedModels,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { isFileType } from './type_guards.file_manager.ts';
@@ -935,6 +936,17 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     return true;
 }
 
+function isSelectedModel(value: unknown): value is SelectedModels {
+    if (!isPlainObject(value)) return false;
+    if (!('id' in value)) return false;
+    const id: unknown = value.id;
+    if (typeof id !== 'string') return false;
+    if (!('displayName' in value)) return false;
+    const displayName: unknown = value.displayName;
+    if (typeof displayName !== 'string') return false;
+    return true;
+}
+
 /**
  * A type guard that checks if a JSON object conforms to the DialecticJobPayload interface.
  * It extends the validation for GenerateContributionsPayload by also checking for an optional prompt.
@@ -954,11 +966,11 @@ export function isDialecticJobPayload(payload: unknown): payload is DialecticJob
     const hasProjectId = 'projectId' in payload && typeof payload.projectId === 'string';
     
     const hasModelId = 'model_id' in payload && typeof payload.model_id === 'string';
-    const hasSelectedModelIds = 'selectedModelIds' in payload && 
-                              Array.isArray(payload.selectedModelIds) && 
-                              payload.selectedModelIds.every(id => typeof id === 'string');
+    const hasSelectedModels = 'selectedModels' in payload &&
+        Array.isArray(payload.selectedModels) &&
+        payload.selectedModels.every(isSelectedModel);
 
-    if (!hasSessionId || !hasProjectId || (!hasModelId && !hasSelectedModelIds)) {
+    if (!hasSessionId || !hasProjectId || (!hasModelId && !hasSelectedModels)) {
         return false;
     }
 
@@ -973,8 +985,8 @@ export function isDialecticJobPayload(payload: unknown): payload is DialecticJob
     // Ensure that if other properties exist, they are of the correct type.
     // This part is crucial for robust validation beyond the required fields.
     const allowedKeys: (keyof DialecticJobPayload)[] = [
-        'sessionId', 'projectId', 'model_id', 'stageSlug', 
-        'iterationNumber', 'walletId', 'continueUntilComplete', 'maxRetries', 
+        'sessionId', 'projectId', 'model_id', 'stageSlug',
+        'iterationNumber', 'walletId', 'continueUntilComplete', 'maxRetries',
         'continuation_count', 'target_contribution_id', 'model_slug'
     ];
 

@@ -26,8 +26,10 @@ import {
   ResourceUploadContext,
   UploadContext,
   ContributionMetadata,
+  ContributionInsertResult,
   FileManagerError,
   FileManagerResponse,
+  FileRecord,
   IFileManager,
   DocumentRelated,
 
@@ -50,6 +52,59 @@ import { ILogger } from '../types.ts'
 
 
 const MAX_UPLOAD_ATTEMPTS = 5; // Max attempts for filename collision resolution
+const MAX_TRANSIENT_RETRIES = 3; // Retries for transient storage/API errors (must match file_manager.errors.test.ts)
+
+function getErrorMessage(error: unknown): string | null {
+  if (error instanceof Error) return error.message;
+  if (!isRecord(error)) return null;
+  const m: unknown = error['message'];
+  if (typeof m !== 'string') return null;
+  return m;
+}
+
+function getErrorCode(error: unknown): string | null {
+  if (!isRecord(error)) return null;
+  const c: unknown = error['code'];
+  if (typeof c !== 'string') return null;
+  return c;
+}
+
+function getErrorStatusCode(error: unknown): number | string | null {
+  if (!isRecord(error)) return null;
+  const s: unknown = error['statusCode'];
+  if (typeof s !== 'number' && typeof s !== 'string') return null;
+  return s;
+}
+
+function isTransientMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('bad gateway') ||
+    lower.includes('gateway timeout') ||
+    lower.includes('service unavailable') ||
+    lower.includes('fetch failed') ||
+    lower.includes('econnreset') ||
+    lower.includes('etimedout') ||
+    lower.includes('timeout') ||
+    /\b502\b/.test(lower) ||
+    /\b503\b/.test(lower) ||
+    /\b504\b/.test(lower)
+  );
+}
+
+function isTransientStorageOrApiError(error: unknown): boolean {
+  const message: string | null = getErrorMessage(error);
+  if (message !== null && isTransientMessage(message)) return true;
+  const code: string | null = getErrorCode(error);
+  if (code !== null && (code === '502' || code === '503' || code === '504')) return true;
+  const statusCode: number | string | null = getErrorStatusCode(error);
+  if (statusCode !== null && (statusCode === 502 || statusCode === 503 || statusCode === 504 || statusCode === '502' || statusCode === '503' || statusCode === '504')) return true;
+  return false;
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * The FileManagerService provides a unified API for all file operations
@@ -149,45 +204,68 @@ export class FileManagerService implements IFileManager {
         const contentPreview = getContentPreview(context.fileContent);
         console.log(`[FileManagerService] UPLOAD_ATTEMPT [BEFORE] attemptCount=${currentAttemptCount}, isContinuation=${attemptPathContext.isContinuation ?? false}, turnIndex=${attemptPathContext.turnIndex ?? 'undefined'}, fullPathForUpload=${fullPathForUpload}, fileContentLength=${contentPreview.length}, fileContentFirst50=${JSON.stringify(contentPreview.first50)}, fileContentLast50=${JSON.stringify(contentPreview.last50)}`);
 
-        const uploadResult = await this.supabase.storage
-          .from(this.storageBucket)
-          .upload(fullPathForUpload, context.fileContent, {
-            contentType: context.mimeType,
-            upsert: false, 
-          });
+        let lastUploadError: FileManagerError | null = null;
+        for (let transientAttempt = 0; transientAttempt <= MAX_TRANSIENT_RETRIES; transientAttempt++) {
+          if (transientAttempt > 0) {
+            const backoffMs = 1000 * Math.pow(2, transientAttempt - 1);
+            this.logger.info(`[FileManagerService] Transient upload error, retry ${transientAttempt}/${MAX_TRANSIENT_RETRIES} after ${backoffMs}ms`);
+            await sleepMs(backoffMs);
+          }
+          const uploadResult = await this.supabase.storage
+            .from(this.storageBucket)
+            .upload(fullPathForUpload, context.fileContent, {
+              contentType: context.mimeType,
+              upsert: false,
+            });
+          mainUploadError = uploadResult.error;
 
-        mainUploadError = uploadResult.error;
+          // 14.b.ii: Log after upload attempt
+          const isCollisionError = mainUploadError && mainUploadError.message &&
+            (mainUploadError.message.includes('The resource already exists') ||
+              ('statusCode' in mainUploadError && mainUploadError.statusCode === '409'));
+          const uploadSucceeded = !mainUploadError;
+          console.log(`[FileManagerService] UPLOAD_ATTEMPT [AFTER] attemptCount=${currentAttemptCount}, fullPathForUpload=${fullPathForUpload}, uploadSucceeded=${uploadSucceeded}, isCollisionError=${isCollisionError}, errorMessage=${mainUploadError ? JSON.stringify(mainUploadError.message) : 'null'}`);
 
-        // 14.b.ii: Log after upload attempt
-        const isCollisionError = mainUploadError && mainUploadError.message && 
-          (mainUploadError.message.includes('The resource already exists') || 
-            ('statusCode' in mainUploadError && mainUploadError.statusCode === '409'));
-        const uploadSucceeded = !mainUploadError;
-        console.log(`[FileManagerService] UPLOAD_ATTEMPT [AFTER] attemptCount=${currentAttemptCount}, fullPathForUpload=${fullPathForUpload}, uploadSucceeded=${uploadSucceeded}, isCollisionError=${isCollisionError}, errorMessage=${mainUploadError ? JSON.stringify(mainUploadError.message) : 'null'}`);
+          if (mainUploadError) {
+            console.error(`[FileManagerService] Storage upload failed for path ${fullPathForUpload}. Error:`, JSON.stringify(mainUploadError, null, 2));
+          }
 
-        if (mainUploadError) {
-          console.error(`[FileManagerService] Storage upload failed for path ${fullPathForUpload}. Error:`, JSON.stringify(mainUploadError, null, 2));
+          if (!mainUploadError) {
+            finalMainContentFilePath = pathParts.storagePath;
+            finalFileName = pathParts.fileName;
+            lastUploadError = null;
+            break;
+          }
+          if (isCollisionError) {
+            lastUploadError = mainUploadError;
+            break;
+          }
+          if (!isTransientStorageOrApiError(mainUploadError)) {
+            lastUploadError = mainUploadError;
+            break;
+          }
+          lastUploadError = mainUploadError;
         }
+        mainUploadError = lastUploadError;
 
         if (!mainUploadError) {
-          finalMainContentFilePath = pathParts.storagePath; // Directory path
-          finalFileName = pathParts.fileName;          // Filename
-          break; 
-        } else if (mainUploadError.message && 
-                  (mainUploadError.message.includes('The resource already exists') || 
-                    ('statusCode' in mainUploadError && mainUploadError.statusCode === '409')
-                  )
-                  ) {
+          break;
+        }
+        const collisionMsg: string | null = getErrorMessage(mainUploadError);
+        const collisionStatus: number | string | null = getErrorStatusCode(mainUploadError);
+        const isCollisionErrorFinal: boolean =
+          collisionMsg !== null && collisionMsg.includes('The resource already exists') ||
+          collisionStatus === 409 || collisionStatus === '409';
+        if (isCollisionErrorFinal) {
           if (currentAttemptCount === MAX_UPLOAD_ATTEMPTS - 1) {
             mainUploadError = {
               message: `Failed to upload file after ${MAX_UPLOAD_ATTEMPTS} attempts due to filename collisions.`,
             };
             break;
           }
-          continue; 
-        } else {
-          break;
+          continue;
         }
+        break;
       }
 
       // 14.b.iii: Log after loop completes
@@ -196,16 +274,24 @@ export class FileManagerService implements IFileManager {
     } else {
       const pathParts = this.constructStoragePath(pathContextForStorage);
       const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
-      finalMainContentFilePath = pathParts.storagePath; // Directory path
-      finalFileName = pathParts.fileName;          // Filename
+      finalMainContentFilePath = pathParts.storagePath;
+      finalFileName = pathParts.fileName;
 
-      const { error } = await this.supabase.storage
-        .from(this.storageBucket)
-        .upload(fullPathForUpload, context.fileContent, {
-          contentType: context.mimeType,
-          upsert: true, 
-        });
-      mainUploadError = error;
+      for (let transientAttempt = 0; transientAttempt <= MAX_TRANSIENT_RETRIES; transientAttempt++) {
+        if (transientAttempt > 0) {
+          const backoffMs = 1000 * Math.pow(2, transientAttempt - 1);
+          this.logger.info(`[FileManagerService] Transient upload error (non-model), retry ${transientAttempt}/${MAX_TRANSIENT_RETRIES} after ${backoffMs}ms`);
+          await sleepMs(backoffMs);
+        }
+        const { error } = await this.supabase.storage
+          .from(this.storageBucket)
+          .upload(fullPathForUpload, context.fileContent, {
+            contentType: context.mimeType,
+            upsert: true,
+          });
+        mainUploadError = error;
+        if (!mainUploadError || !isTransientStorageOrApiError(mainUploadError)) break;
+      }
     }
 
     if (mainUploadError) {
@@ -335,15 +421,29 @@ export class FileManagerService implements IFileManager {
           is_latest_edit: meta.isLatestEdit ?? true,
           original_model_contribution_id: meta.originalModelContributionId,
         }
-        const { data: newRecord, error: insertError } = await this.supabase
-          .from(targetTable)
-          .insert(recordData)
-          .select()
-          .single();
-        
-        if (insertError) {
-          throw insertError;
+        let insertResult: ContributionInsertResult = { data: null, error: null };
+        for (let transientAttempt = 0; transientAttempt <= MAX_TRANSIENT_RETRIES; transientAttempt++) {
+          if (transientAttempt > 0) {
+            const backoffMs = 1000 * Math.pow(2, transientAttempt - 1);
+            this.logger.info(`[FileManagerService] Transient insert error (dialectic_contributions), retry ${transientAttempt}/${MAX_TRANSIENT_RETRIES} after ${backoffMs}ms`);
+            await sleepMs(backoffMs);
+          }
+          const oneResult: ContributionInsertResult = await this.supabase
+            .from(targetTable)
+            .insert(recordData)
+            .select()
+            .single();
+          insertResult = oneResult;
+          if (!insertResult.error) break;
+          if (!isTransientStorageOrApiError(insertResult.error)) break;
         }
+        if (insertResult.error) {
+          throw insertResult.error;
+        }
+        if (insertResult.data === null) {
+          throw new Error('Insert dialectic_contributions returned success but no row.');
+        }
+        const newRecord: FileRecord = insertResult.data;
         // If this contribution references a parent via target_contribution_id, mark the parent as not latest
         if (typeof meta.target_contribution_id === 'string' && meta.target_contribution_id.length > 0) {
           try {

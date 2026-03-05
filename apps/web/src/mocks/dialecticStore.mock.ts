@@ -111,6 +111,7 @@ export const selectSortedStages = (state: DialecticStateValues): DialecticStage[
 
 export const selectActiveContextStage = (state: DialecticStateValues): DialecticStage | null => state.activeContextStage;
 export const selectSelectedModels = vi.fn<[DialecticStateValues], SelectedModels[]>().mockReturnValue([]);
+export const selectDefaultGenerationModels = vi.fn<[DialecticStateValues], SelectedModels[]>().mockReturnValue([]);
 export const selectActiveContextProjectId = (state: DialecticStateValues): string | null => state.activeContextProjectId;
 export const selectActiveContextSessionId = (state: DialecticStateValues): string | null => state.activeContextSessionId;
 export const selectActiveStageSlug = (state: DialecticStateValues): string | null => state.activeStageSlug;
@@ -427,6 +428,10 @@ export const initialDialecticStateValues: DialecticStateValues = {
   activeSeedPrompt: null,
   isInitializingFeedbackDraft: false,
   initializeFeedbackDraftError: null,
+  autoStartStep: null,
+  isAutoStarting: false,
+  autoStartError: null,
+  shouldOpenDagProgress: false,
 };
 
 // 2. Helper function to create a new mock store instance
@@ -496,6 +501,8 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       startDialecticSession: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
       updateSessionModels: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
       fetchAIModelCatalog: vi.fn().mockResolvedValue(undefined),
+      createProjectAndAutoStart: vi.fn().mockResolvedValue({ projectId: '', sessionId: null, hasDefaultModels: false }),
+      setShouldOpenDagProgress: vi.fn((open: boolean) => set({ shouldOpenDagProgress: open })),
       fetchContributionContent: vi.fn().mockImplementation(async (contributionId: string) => {
           // This is a base mock. Tests should provide specific implementations if needed,
           // especially for updating contributionContentCache via `set`.
@@ -801,6 +808,7 @@ export const initializeMockDialecticState = (initialStateOverrides?: Partial<Dia
   selectFeedbackForStageIteration.mockClear().mockReturnValue(null);
   selectStageHasUnsavedChanges.mockClear().mockReturnValue({ hasUnsavedEdits: false, hasUnsavedFeedback: false });
   selectSelectedModels.mockClear().mockReturnValue([]);
+  selectDefaultGenerationModels.mockClear().mockReturnValue([]);
   selectOverlay.mockClear();
 
   // Resetting specific action mocks (ensure all relevant actions are included if needed for global mock state)

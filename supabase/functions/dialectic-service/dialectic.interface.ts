@@ -303,6 +303,7 @@ export interface AIModelCatalogEntry {
 	is_active: boolean;
 	created_at: string;
 	updated_at: string;
+	is_default_generation: boolean;
 }
 
 // Defines the structured contribution object used within the service and for API responses,
@@ -414,6 +415,7 @@ type ListAvailableDomainsAction = {
 	payload?: { stageAssociation?: string };
 }; // Optional payload
 type ListDomainsAction = { action: "listDomains" };
+type ListModelCatalogAction = { action: "listModelCatalog" };
 
 // Actions WITH a payload
 type UpdateProjectDomainAction = {
@@ -660,6 +662,7 @@ export type DialecticServiceRequest =
 	| ListProjectsAction
 	| ListAvailableDomainsAction
 	| ListDomainsAction
+	| ListModelCatalogAction
 	| UpdateProjectDomainAction
 	| GetProjectDetailsAction
 	| StartSessionAction
@@ -878,7 +881,7 @@ export interface ExportProjectPayload {
 export interface StartSessionPayload {
 	projectId: string;
 	sessionDescription?: string | null;
-	selectedModelIds: string[];
+	selectedModels: SelectedModels[];
 	originatingChatId?: string | null;
 	stageSlug?: string;
 }
@@ -1075,7 +1078,7 @@ export interface DialecticStepPlannerMetadata {
  * The base payload containing information common to all job types.
  */
 export interface DialecticBaseJobPayload
-	extends Omit<GenerateContributionsPayload, "selectedModelIds" | "chatId"> {
+	extends Omit<GenerateContributionsPayload, "chatId"> {
 	model_id: string; // Individual model ID for this specific job
 	sourceContributionId?: string | null;
 }
@@ -1982,7 +1985,7 @@ export type ExportProjectResponse = ExportProjectSuccess | ExportProjectFailure;
 export type JobInsert = {
 	payload: {
 		model_id: string;
-		selectedModelIds?: string[];
+		selectedModels?: SelectedModels[];
 		[key: string]: unknown;
 	};
 	[key: string]: unknown;

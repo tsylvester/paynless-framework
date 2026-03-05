@@ -86,8 +86,8 @@ export async function generateContributions(
         }
         // --- End Context Validation ---
 
-        const selectedModelIds = sessionData?.selected_model_ids;
-        if (!selectedModelIds || selectedModelIds.length === 0) {
+        const sessionModelIds = sessionData?.selected_model_ids;
+        if (!sessionModelIds || sessionModelIds.length === 0) {
             logger.warn("[generateContributions] The session has no selected models. Cannot create jobs.", { sessionId });
             return { success: false, error: { message: "The session has no selected models. Please select at least one model.", status: 400 } };
         }
@@ -122,7 +122,7 @@ export async function generateContributions(
 
         // 3. Calculate total steps from the recipe
         const jobIds: string[] = [];
-        for (const modelId of selectedModelIds) {
+        for (const modelId of sessionModelIds) {
             // Fetch model name from ai_providers table
             const { data: modelData, error: modelError } = await dbClient
                 .from("ai_providers")

@@ -1,22 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import {
-	useDialecticStore,
-	selectSelectedModels,
-	selectSessionById,
-	selectActiveStage,
-	selectIsStageReadyForSessionIteration,
-	selectUnifiedProjectProgress,
-	useWalletStore,
-	selectActiveChatWalletInfo,
-} from "@paynless/store";
-import { GenerateContributionsPayload, getDisplayName, STAGE_BALANCE_THRESHOLDS } from "@paynless/types";
-import { useAiStore } from "@paynless/store";
-import { toast } from "sonner";
+import { useDialecticStore } from "@paynless/store";
+import { getDisplayName } from "@paynless/types";
 import { Loader2, RefreshCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StageDAGProgressDialog } from "./StageDAGProgressDialog";
+import { useStartContributionGeneration } from "@/hooks/useStartContributionGeneration";
 
 interface GenerateContributionButtonProps {
 	className?: string;
@@ -25,163 +15,47 @@ interface GenerateContributionButtonProps {
 export const GenerateContributionButton: React.FC<
 	GenerateContributionButtonProps
 > = ({ className }) => {
-	const store = useDialecticStore();
 	const {
-		generateContributions,
-		generatingSessions,
-		currentProjectDetail,
-		activeContextSessionId,
-		resumePausedNsfJobs,
-	} = useDialecticStore((state) => ({
-		generateContributions: state.generateContributions,
-		generatingSessions: state.generatingSessions,
-		currentProjectDetail: state.currentProjectDetail,
-		activeContextSessionId: state.activeContextSessionId,
-		resumePausedNsfJobs: state.resumePausedNsfJobs,
-	}));
-	const unifiedProgress = useDialecticStore((state) => {
-		const sid = state.activeContextSessionId;
-		if (!sid) return null;
-		try {
-			return selectUnifiedProjectProgress(state, sid);
-		} catch {
-			return null;
-		}
-	});
-	const continueUntilComplete = useAiStore(
-		(state) => state.continueUntilComplete,
-	);
+		startContributionGeneration,
+		isDisabled,
+		isSessionGenerating,
+		isWalletReady,
+		isStageReady,
+		balanceMeetsThreshold,
+		areAnyModelsSelected,
+		hasPausedNsfJobs,
+		didGenerationFail,
+		contributionsForStageAndIterationExist,
+		showBalanceCallout,
+		activeStage,
+		activeSession,
+		stageThreshold,
+	} = useStartContributionGeneration();
 
-	// Get active wallet info (reactive to chat context)
-	const newChatContext = useAiStore((state) => state.newChatContext);
-	const activeWalletInfo = useWalletStore((state) =>
-		selectActiveChatWalletInfo(state, newChatContext),
+	const shouldOpenDagProgress = useDialecticStore(
+		(state) => state.shouldOpenDagProgress,
 	);
-	const isWalletReady =
-		activeWalletInfo.status === "ok" && activeWalletInfo.walletId;
-
-	const selectedModels = useDialecticStore(selectSelectedModels);
-	const activeStage = useMemo(() => selectActiveStage(store), [store]);
-	const activeSession = useMemo(
-		() =>
-			activeContextSessionId
-				? selectSessionById(store, activeContextSessionId)
-				: null,
-		[store, activeContextSessionId],
+	const setShouldOpenDagProgress = useDialecticStore(
+		(state) => state.setShouldOpenDagProgress,
+	);
+	const activeContextSessionId = useDialecticStore(
+		(state) => state.activeContextSessionId,
 	);
 
 	const [dagDialogOpen, setDagDialogOpen] = useState(false);
 
-	const isStageReady = useDialecticStore((state) =>
-		currentProjectDetail && activeSession && activeStage
-			? selectIsStageReadyForSessionIteration(
-					state,
-					currentProjectDetail.id,
-					activeSession.id,
-					activeStage.slug,
-					activeSession.iteration_count,
-				)
-			: false,
-	);
-
-	const isSessionGenerating = activeContextSessionId
-		? generatingSessions[activeContextSessionId]?.length > 0
-		: false;
-	const areAnyModelsSelected = selectedModels.length > 0;
-
-	const activeStageProgress = useMemo(
-		() => unifiedProgress?.stageDetails?.find((s) => s.stageSlug === activeStage?.slug),
-		[unifiedProgress, activeStage?.slug],
-	);
-	const hasPausedNsfJobs = activeStageProgress?.stageStatus === "paused_nsf";
-	const stageThreshold: number | undefined = activeStage ? STAGE_BALANCE_THRESHOLDS[activeStage.slug] : undefined;
-	const balanceMeetsThreshold =
-		stageThreshold !== undefined ? Number(activeWalletInfo.balance ?? 0) >= stageThreshold : false;
-	const isResumeMode = hasPausedNsfJobs && balanceMeetsThreshold;
-
-	// Final, correct logic based on user feedback
-	const contributionsForStageAndIterationExist = useMemo(() => {
-		if (!activeSession || !activeStage) return false;
-		return activeSession.dialectic_contributions?.some(
-			(c) =>
-				c.stage === activeStage.slug &&
-				c.iteration_number === activeSession.iteration_count,
-		);
-	}, [activeSession, activeStage]);
-
-	const didGenerationFail = useMemo(() => {
-		if (!activeSession || !activeStage) return false;
-		// As per plan (12.b), the status for a failed stage is dynamic.
-		const failedStatus = `${activeStage.slug}_generation_failed`;
-		return activeSession.status === failedStatus;
-	}, [activeSession, activeStage]);
-
-	const handleClick = async () => {
-		if (
-			!activeSession ||
-			typeof activeSession.iteration_count !== "number" ||
-			!currentProjectDetail ||
-			!activeStage ||
-			!activeContextSessionId ||
-			!isWalletReady
-		) {
-			toast.error(
-				"Could not determine the required context. Please ensure a project, session, stage, and wallet are active.",
-			);
-			return;
-		}
-		const currentIterationNumber = activeSession.iteration_count;
-
-		if (isResumeMode) {
-			toast.success("Resuming generation...");
+	useEffect(() => {
+		if (shouldOpenDagProgress) {
 			setDagDialogOpen(true);
-			await resumePausedNsfJobs({
-				sessionId: activeSession.id,
-				stageSlug: activeStage.slug,
-				iterationNumber: currentIterationNumber,
-			});
-			return;
+			setShouldOpenDagProgress(false);
 		}
+	}, [shouldOpenDagProgress, setShouldOpenDagProgress]);
 
-		toast.success("Contribution generation started!", {
-			description: "The AI is working. We will notify you when it is complete.",
-		});
-
-		setDagDialogOpen(true);
-
-		try {
-			const payload: GenerateContributionsPayload = {
-				sessionId: activeContextSessionId,
-				projectId: currentProjectDetail.id,
-				stageSlug: activeStage.slug,
-				iterationNumber: currentIterationNumber,
-				continueUntilComplete,
-				walletId: activeWalletInfo.walletId as string,
-			};
-			await generateContributions(payload);
-		} catch (e: unknown) {
-			const errorMessage =
-				(e as Error)?.message ||
-				`An unexpected error occurred while starting the generation process.`;
-			toast.error(errorMessage);
-		}
+	const handleClick = () => {
+		startContributionGeneration(() => setDagDialogOpen(true));
 	};
 
-	const isDisabled =
-		isSessionGenerating ||
-		!areAnyModelsSelected ||
-		!activeStage ||
-		!activeSession ||
-		!isStageReady ||
-		!isWalletReady ||
-		!balanceMeetsThreshold;
-	const showBalanceCallout =
-		activeStage !== null &&
-		activeStage !== undefined &&
-		stageThreshold !== undefined &&
-		!balanceMeetsThreshold;
-
-	const getButtonText = () => {
+	const getButtonText = (): React.ReactNode => {
 		if (isSessionGenerating)
 			return (
 				<>
@@ -193,8 +67,7 @@ export const GenerateContributionButton: React.FC<
 		if (!activeStage || !activeSession) return "Stage Not Ready";
 		if (!isStageReady) return "Previous Stage Incomplete";
 		const displayName = getDisplayName(activeStage.slug);
-		if (hasPausedNsfJobs && !balanceMeetsThreshold) return "Add Funds to Resume";
-		if (hasPausedNsfJobs && balanceMeetsThreshold) return `Resume ${displayName}`;
+		if (hasPausedNsfJobs) return `Resume ${displayName}`;
 		if (!balanceMeetsThreshold) return "Insufficient Balance";
 		if (didGenerationFail) return `Retry ${displayName}`;
 		if (contributionsForStageAndIterationExist)
@@ -202,12 +75,12 @@ export const GenerateContributionButton: React.FC<
 		return `Generate ${displayName}`;
 	};
 
-	if (!stageThreshold) return null;
+	if (stageThreshold === undefined || stageThreshold === null) return null;
 	const formattedThreshold = new Intl.NumberFormat("en-US").format(stageThreshold);
 
 	return (
 		<div className="relative inline-flex flex-col items-end">
-			{showBalanceCallout && (
+			{showBalanceCallout && activeStage && (
 				<p
 					className="absolute bottom-full right-0 mb-1.5 z-10 max-w-[280px] rounded-md border border-primary/60 bg-primary/15 px-3 py-2 text-center text-xs font-medium text-primary shadow-md animate-pulse"
 					data-testid="generate-button-balance-callout"
@@ -217,7 +90,6 @@ export const GenerateContributionButton: React.FC<
 						className="font-semibold underline underline-offset-2 hover:no-underline"
 					>
 						Minimum {formattedThreshold} token balance for {getDisplayName(activeStage.slug)}{" "}
-
 					</Link>
 				</p>
 			)}
@@ -226,13 +98,14 @@ export const GenerateContributionButton: React.FC<
 				disabled={isDisabled}
 				variant="outline"
 				className={cn(className)}
-				data-testid={`generate-${activeStage?.slug || "unknown"}-button`}
+				data-testid={`generate-${activeStage?.slug ?? "unknown"}-button`}
 			>
 				<RefreshCcw /> {getButtonText()}
 			</Button>
 			{activeStage &&
 				activeSession &&
-				activeContextSessionId && (
+				activeContextSessionId !== null &&
+				activeContextSessionId !== undefined && (
 					<StageDAGProgressDialog
 						open={dagDialogOpen}
 						onOpenChange={setDagDialogOpen}

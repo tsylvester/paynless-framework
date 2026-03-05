@@ -4,12 +4,13 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 
-import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
-import type { 
-    DialecticStore, 
-    DialecticProject, 
-    ApiError, 
-    DialecticDomain,
+import { useDialecticStore, initialDialecticStateValues, selectActiveChatWalletInfo } from '@paynless/store';
+import type {
+  DialecticStore,
+  DialecticProject,
+  ApiError,
+  DialecticDomain,
+  AIModelCatalogEntry,
 } from '@paynless/types';
 import { usePlatform } from '@paynless/platform';
 import type { CapabilitiesContextValue, PlatformCapabilities } from '@paynless/types';
@@ -23,12 +24,15 @@ I want it to record dates from my to-do list, schedule when it needs to be compl
 
 It should be a web app with user accounts, built in typescript with next.js and shadcn components.`;
 
-// Mock @paynless/store
+// Mock @paynless/store — use wallet store mock so real Zustand subscriptions don't keep process alive
 vi.mock('@paynless/store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@paynless/store')>();
+  const walletStoreMock = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStore.mock');
   return {
     ...actual,
     useDialecticStore: vi.fn(),
+    useWalletStore: walletStoreMock.useWalletStore,
+    selectActiveChatWalletInfo: walletStoreMock.selectActiveChatWalletInfo,
   };
 });
 
@@ -145,6 +149,26 @@ const createMockPlatformContext = (overrides?: Partial<PlatformCapabilities>): C
   };
 };
 
+const modelCatalogWithDefault: AIModelCatalogEntry[] = [
+  {
+    id: 'dft',
+    provider_name: 'Provider',
+    model_name: 'Default',
+    api_identifier: 'dft',
+    description: null,
+    strengths: null,
+    weaknesses: null,
+    context_window_tokens: null,
+    input_token_cost_usd_millionths: null,
+    output_token_cost_usd_millionths: null,
+    max_output_tokens: null,
+    is_active: true,
+    created_at: '',
+    updated_at: '',
+    is_default_generation: true,
+  },
+];
+
 describe('CreateDialecticProjectForm', () => {
   let mockStore: DialecticStore;
   const mockOnProjectCreated = vi.fn();
@@ -152,6 +176,16 @@ describe('CreateDialecticProjectForm', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    const { initializeMockWalletStore } = await import('@/mocks/walletStore.mock');
+    initializeMockWalletStore();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'test-wallet',
+      orgId: null,
+      balance: '300000',
+      isLoadingPrimaryWallet: false,
+    });
     mockStore = createMockStoreState({});
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
     const defaultPlatformContext = createMockPlatformContext();
@@ -232,14 +266,17 @@ describe('CreateDialecticProjectForm', () => {
   it('submits with placeholder values when form fields are empty', async () => {
     const user = userEvent.setup();
     const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
-    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain });
+    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain, modelCatalog: modelCatalogWithDefault });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-    
+
     const mockSuccessfulProject: DialecticProject = { id: 'new-proj-123', project_name: projectNamePlaceholder } as DialecticProject;
     mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
-    
+
     renderForm();
-            
+
+    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+
     const submitButton = screen.getByRole('button', { name: /Create Project/i });
     await user.click(submitButton);
 
@@ -262,9 +299,9 @@ describe('CreateDialecticProjectForm', () => {
     const user = userEvent.setup();
     const testData = { projectName: 'Test Project', initialUserPrompt: 'Test Prompt' };
     const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
-    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain });
+    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain, modelCatalog: modelCatalogWithDefault });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-    
+
     const mockSuccessfulProject: DialecticProject = {
       id: 'new-proj-123',
       user_id: 'user-xyz',
@@ -288,14 +325,17 @@ describe('CreateDialecticProjectForm', () => {
       saveContributionEditError: null,
     };
     mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
-    
+
     renderForm();
+
+    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
 
     await user.type(screen.getByPlaceholderText(projectNamePlaceholder), testData.projectName);
     act(() => {
       capturedTextInputAreaProps.onChange?.(testData.initialUserPrompt);
     });
-            
+
     const submitButton = screen.getByRole('button', { name: /Create Project/i });
     await user.click(submitButton);
 
@@ -344,10 +384,13 @@ describe('CreateDialecticProjectForm', () => {
     mockCreateDialecticProject.mockResolvedValueOnce({ data: mockCreatedProject, error: null });
 
     const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
-    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain });
+    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain, modelCatalog: modelCatalogWithDefault });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
 
     renderForm();
+
+    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
 
     // Simulate file upload via the TextInputArea's onFileLoad prop
     await act(async () => {
