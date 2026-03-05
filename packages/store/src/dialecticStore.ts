@@ -53,12 +53,15 @@ import {
   type RegenerateDocumentPayload,
   type RegenerateDocumentResponse,
   StartSessionSuccessResponse,
+  type CreateProjectAutoStartResult,
+  STAGE_BALANCE_THRESHOLDS,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useAuthStore } from './authStore';
 import { useWalletStore } from './walletStore';
 import { useAiStore } from './aiStore';
 import { selectActiveChatWalletInfo } from './walletStore.selectors';
+import { selectDefaultGenerationModels } from './dialecticStore.selectors';
 import { isAssembledPrompt, logger } from '@paynless/utils';
 import {
 	ensureStageDocumentContentLogic,
@@ -207,6 +210,10 @@ export const initialDialecticStateValues: DialecticStateValues = {
 
 	isInitializingFeedbackDraft: false,
 	initializeFeedbackDraftError: null,
+
+	autoStartStep: null,
+	isAutoStarting: false,
+	autoStartError: null,
 };
 
 export type DialecticState = DialecticStateValues & DialecticStore;
@@ -779,6 +786,110 @@ export const useDialecticStore = create<DialecticStore>()(
 			set({ isStartingSession: false, startSessionError: networkError });
 			return { error: networkError, status: 0 };
 		}
+	},
+
+	createProjectAndAutoStart: async (payload: CreateProjectPayload): Promise<CreateProjectAutoStartResult> => {
+		set({ isAutoStarting: true, autoStartError: null, autoStartStep: null });
+		try {
+			if (get().modelCatalog.length === 0 && !get().isLoadingModelCatalog) {
+				set({ autoStartStep: 'Loading models…' });
+				await get().fetchAIModelCatalog();
+			}
+			set({ autoStartStep: 'Creating project…' });
+			const createResult = await get().createDialecticProject(payload);
+			if (!createResult.data) {
+				const err = createResult.error;
+				set({ autoStartError: err });
+				return { projectId: '', sessionId: null, hasDefaultModels: false, error: err };
+			}
+			const projectId: string = createResult.data.id;
+			set({ autoStartStep: 'Loading project details…' });
+			await get().fetchDialecticProjectDetails(projectId);
+			const currentProjectDetail = get().currentProjectDetail;
+			if (!currentProjectDetail) {
+				return { projectId, sessionId: null, hasDefaultModels: false };
+			}
+			const template = currentProjectDetail.dialectic_process_templates;
+			if (!template) {
+				const err: ApiError = { message: 'Project has no template', code: 'NO_TEMPLATE' };
+				set({ autoStartError: err });
+				return { projectId, sessionId: null, hasDefaultModels: false, error: err };
+			}
+			const stages = template.stages;
+			if (!stages || stages.length === 0) {
+				const err: ApiError = { message: 'Project has no stages', code: 'NO_STAGES' };
+				set({ autoStartError: err });
+				return { projectId, sessionId: null, hasDefaultModels: false, error: err };
+			}
+			const stageSlug: string = stages[0].slug;
+			const defaultModels = selectDefaultGenerationModels(get());
+			if (defaultModels.length === 0) {
+				return { projectId, sessionId: null, hasDefaultModels: false };
+			}
+			set({ autoStartStep: 'Starting session…' });
+			const sessionResult = await get().startDialecticSession({
+				projectId,
+				stageSlug,
+				selectedModels: defaultModels,
+			});
+			if (!sessionResult.data) {
+				const err = sessionResult.error ?? { message: 'Start session failed', code: 'UNKNOWN' };
+				set({ autoStartError: err });
+				return { projectId, sessionId: null, hasDefaultModels: false, error: err };
+			}
+			return {
+				projectId,
+				sessionId: sessionResult.data.id,
+				hasDefaultModels: true,
+			};
+		} finally {
+			set({ isAutoStarting: false, autoStartStep: null });
+		}
+	},
+
+	autoStartGeneration: async (): Promise<{ success: boolean; error?: string }> => {
+		const activeContextSessionId = get().activeContextSessionId;
+		const currentProjectDetail = get().currentProjectDetail;
+		const selectedModels = get().selectedModels;
+		const activeContextStage = get().activeContextStage;
+		const stageSlugForPayload = activeContextStage?.slug;
+		const activeSessionDetail = get().activeSessionDetail;
+
+		if (!selectedModels || selectedModels.length === 0) {
+			return { success: false, error: 'No models selected' };
+		}
+		if (!stageSlugForPayload) {
+			return { success: false, error: 'No active stage' };
+		}
+		const walletState = useWalletStore.getState();
+		const walletInfo = selectActiveChatWalletInfo(walletState, null);
+		if (walletInfo.status !== 'ok') {
+			return { success: false, error: 'Wallet not ready' };
+		}
+		if (!walletInfo.walletId) {
+			return { success: false, error: 'No wallet available' };
+		}
+		const threshold = STAGE_BALANCE_THRESHOLDS[stageSlugForPayload];
+		const balanceNum = Number(walletInfo.balance);
+		if (threshold !== undefined && balanceNum < threshold) {
+			return { success: false, error: 'Wallet balance too low' };
+		}
+		if (!currentProjectDetail || !activeSessionDetail) {
+			return { success: false, error: 'Missing project or session context' };
+		}
+		if (!activeContextSessionId) {
+			return { success: false, error: 'No active session ID' };
+		}
+		const payload: GenerateContributionsPayload = {
+			sessionId: activeContextSessionId,
+			projectId: currentProjectDetail.id,
+			stageSlug: stageSlugForPayload,
+			iterationNumber: activeSessionDetail.iteration_count,
+			continueUntilComplete: true,
+			walletId: walletInfo.walletId,
+		};
+		const result = await get().generateContributions(payload);
+		return { success: !!result.data, error: result.error?.message };
 	},
 
 	fetchAIModelCatalog: async () => {

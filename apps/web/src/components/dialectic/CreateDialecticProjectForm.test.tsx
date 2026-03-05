@@ -4,7 +4,7 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 
-import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
+import { useDialecticStore, initialDialecticStateValues, selectActiveChatWalletInfo } from '@paynless/store';
 import type { 
     DialecticStore, 
     DialecticProject, 
@@ -23,12 +23,15 @@ I want it to record dates from my to-do list, schedule when it needs to be compl
 
 It should be a web app with user accounts, built in typescript with next.js and shadcn components.`;
 
-// Mock @paynless/store
+// Mock @paynless/store — use wallet store mock so real Zustand subscriptions don't keep process alive
 vi.mock('@paynless/store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@paynless/store')>();
+  const walletStoreMock = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStore.mock');
   return {
     ...actual,
     useDialecticStore: vi.fn(),
+    useWalletStore: walletStoreMock.useWalletStore,
+    selectActiveChatWalletInfo: walletStoreMock.selectActiveChatWalletInfo,
   };
 });
 
@@ -152,6 +155,16 @@ describe('CreateDialecticProjectForm', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    const { initializeMockWalletStore } = await import('@/mocks/walletStore.mock');
+    initializeMockWalletStore();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'test-wallet',
+      orgId: null,
+      balance: '300000',
+      isLoadingPrimaryWallet: false,
+    });
     mockStore = createMockStoreState({});
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
     const defaultPlatformContext = createMockPlatformContext();
@@ -239,7 +252,9 @@ describe('CreateDialecticProjectForm', () => {
     mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
     
     renderForm();
-            
+
+    await user.click(screen.getByRole('checkbox', { name: /Configure Manually/i }));
+
     const submitButton = screen.getByRole('button', { name: /Create Project/i });
     await user.click(submitButton);
 
@@ -291,11 +306,13 @@ describe('CreateDialecticProjectForm', () => {
     
     renderForm();
 
+    await user.click(screen.getByRole('checkbox', { name: /Configure Manually/i }));
+
     await user.type(screen.getByPlaceholderText(projectNamePlaceholder), testData.projectName);
     act(() => {
       capturedTextInputAreaProps.onChange?.(testData.initialUserPrompt);
     });
-            
+
     const submitButton = screen.getByRole('button', { name: /Create Project/i });
     await user.click(submitButton);
 
@@ -348,6 +365,8 @@ describe('CreateDialecticProjectForm', () => {
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
 
     renderForm();
+
+    await user.click(screen.getByRole('checkbox', { name: /Configure Manually/i }));
 
     // Simulate file upload via the TextInputArea's onFileLoad prop
     await act(async () => {

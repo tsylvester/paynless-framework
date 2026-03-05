@@ -1,20 +1,23 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import { logger } from '@paynless/utils';
 import { useNavigate } from 'react-router-dom';
-import { 
-  useDialecticStore, 
+import {
+  useDialecticStore,
+  useWalletStore,
   selectIsCreatingProject,
   selectCreateProjectError,
   selectSelectedDomain,
   selectDomains,
+  selectDefaultGenerationModels,
+  selectActiveChatWalletInfo,
 } from '@paynless/store';
 import { DomainSelector } from '@/components/dialectic/DomainSelector';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
@@ -23,6 +26,9 @@ import { TextInputArea } from '@/components/common/TextInputArea';
 import { usePlatform } from '@paynless/platform';
 import { platformEventEmitter, type PlatformEvents, type FileDropPayload } from '@paynless/platform';
 import type { CreateProjectPayload } from '@paynless/types';
+import { STAGE_BALANCE_THRESHOLDS } from '@paynless/types';
+import { toast } from 'sonner';
+import { z } from 'zod';
 
 const projectNamePlaceholder = "A Notepad App with To Do lists";
 const initialUserPromptPlaceholder = `I want to create a notepad app with a to-do list, reminders, and event scheduling. It should say hello world, tell me the date, and then list all of my tasks and notes.
@@ -54,17 +60,27 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   containerClassName = 'max-w-3xl mx-auto'
 }) => {
   const createDialecticProject = useDialecticStore((state) => state.createDialecticProject);
+  const createProjectAndAutoStart = useDialecticStore((state) => state.createProjectAndAutoStart);
+  const fetchAIModelCatalog = useDialecticStore((state) => state.fetchAIModelCatalog);
   const isCreating = useDialecticStore(selectIsCreatingProject);
   const creationError = useDialecticStore(selectCreateProjectError);
   const selectedDomain = useDialecticStore(selectSelectedDomain);
   const domains = useDialecticStore(selectDomains);
+  const defaultModels = useDialecticStore(selectDefaultGenerationModels);
+  const autoStartStep = useDialecticStore((state) => state.autoStartStep);
+  const isAutoStarting = useDialecticStore((state) => state.isAutoStarting);
   const fetchDomains = useDialecticStore((state) => state.fetchDomains);
   const setSelectedDomain = useDialecticStore((state) => state.setSelectedDomain);
   const currentSelectedDomainOverlayId = useDialecticStore((state) => state.selectedDomainOverlayId);
   const resetCreateProjectError = useDialecticStore((state) => state.resetCreateProjectError);
+  const isLoadingModelCatalog = useDialecticStore((state) => state.isLoadingModelCatalog);
+
+  const walletInfo = useWalletStore((state) => selectActiveChatWalletInfo(state, null));
 
   const [promptFile, setPromptFile] = useState<File | null>(null);
   const [projectNameManuallySet, setProjectNameManuallySet] = useState<boolean>(false);
+  const [configureManually, setConfigureManually] = useState<boolean>(false);
+  const [startGeneration, setStartGeneration] = useState<boolean>(true);
   const navigate = useNavigate();
 
   const {
@@ -165,33 +181,36 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
 
   useEffect(() => {
     if (capabilities?.platform === 'web') {
-      const preventGlobalDragDrop = (e: DragEvent) => {
-        let targetElement = e.target as HTMLElement | null;
-        let isOverTextInputAreaDropZone = false;
-        while (targetElement) {
-            if (targetElement.matches('[data-testid$="-dropzone"]')) { 
-                isOverTextInputAreaDropZone = true;
-                break;
-            }
-            targetElement = targetElement.parentElement;
+      const eventTargetToElement = (target: EventTarget | null): Element | null => {
+        if (target instanceof Element) return target;
+        if (target instanceof Node) {
+          let node: Node | null = target;
+          while (node) {
+            if (node instanceof Element) return node;
+            node = node.parentNode;
+          }
         }
-        if (!isOverTextInputAreaDropZone) {
-            e.preventDefault();
+        return null;
+      };
+
+      const isOverDropzone = (target: EventTarget | null): boolean => {
+        let el: Element | null = eventTargetToElement(target);
+        while (el) {
+          if (el.matches('[data-testid$="-dropzone"]')) return true;
+          el = el.parentElement;
+        }
+        return false;
+      };
+
+      const preventGlobalDragDrop = (e: DragEvent) => {
+        if (!isOverDropzone(e.target)) {
+          e.preventDefault();
         }
       };
       const handleGlobalDrop = (e: DragEvent) => {
-        let targetElement = e.target as HTMLElement | null;
-        let isOverTextInputAreaDropZone = false;
-        while (targetElement) {
-           if (targetElement.matches('[data-testid$="-dropzone"]')) {
-                isOverTextInputAreaDropZone = true;
-                break;
-            }
-            targetElement = targetElement.parentElement;
-        }
-        if (!isOverTextInputAreaDropZone) {
-            e.preventDefault();
-            logger.warn("Global drop event prevented outside designated dropzone.");
+        if (!isOverDropzone(e.target)) {
+          e.preventDefault();
+          logger.warn("Global drop event prevented outside designated dropzone.");
         }
       };
 
@@ -202,30 +221,30 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
         window.removeEventListener('drop', handleGlobalDrop);
       };
     }
+    return;
   }, [capabilities?.platform]);
 
   useEffect(() => {
     if (capabilities?.platform === 'tauri' && platformEventEmitter && platformEventEmitter.on) {
-      const handler = (eventPayload: unknown) => {
-        const payload = eventPayload as Partial<FileDropPayload & { paths?: string[] }>;
+      const handler = (eventPayload: FileDropPayload) => {
+        const payload: FileDropPayload = eventPayload;
         logger.info('Desktop file drop event received', { payload });
 
-        const paths = payload?.paths;
-
-        if (Array.isArray(paths) && paths.length > 0) {
-          const filePath = paths[0];
+        if (Array.isArray(payload) && payload.length > 0) {
+          const filePath = payload[0];
           logger.info('File path from desktop drop', { filePath });
           alert(`File dropped (Desktop): ${filePath}. Auto-load needs platform specific file reading logic here.`);
         } else {
           logger.warn('Desktop file drop event received without valid paths.', { payload });
         }
       };
-      const eventName = 'file-drop' as keyof PlatformEvents;
-      platformEventEmitter.on(eventName, handler as (payload: unknown) => void);
+      const eventName: keyof PlatformEvents = 'file-drop';
+      platformEventEmitter.on(eventName, handler);
       return () => {
-        platformEventEmitter.off(eventName, handler as (payload: unknown) => void);
+        platformEventEmitter.off(eventName, handler);
       };
     }
+    return;
   }, [capabilities, handleFileLoadForPrompt]);
 
   useEffect(() => {
@@ -264,6 +283,28 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     }
   }, [selectedDomain, domains, setSelectedDomain]);
 
+  useEffect(() => {
+    fetchAIModelCatalog();
+  }, [fetchAIModelCatalog]);
+
+  useEffect(() => {
+    if (configureManually) return;
+    const noDefaults = !isLoadingModelCatalog && defaultModels.length === 0;
+    const lowBalance = Number(walletInfo.balance ?? '0') < STAGE_BALANCE_THRESHOLDS['thesis'];
+    if (noDefaults || lowBalance) {
+      setStartGeneration(false);
+    }
+  }, [configureManually, isLoadingModelCatalog, defaultModels.length, walletInfo.balance]);
+
+  const autoUncheckReason: string | null =
+    !configureManually && !startGeneration
+      ? !isLoadingModelCatalog && defaultModels.length === 0
+        ? 'No default models available'
+        : Number(walletInfo.balance ?? '0') < STAGE_BALANCE_THRESHOLDS['thesis']
+          ? 'Wallet balance too low for auto-start'
+          : null
+      : null;
+
   const onSubmit = async (data: CreateProjectFormValues) => {
     logger.info('Submitting form with data', data);
 
@@ -282,17 +323,37 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
       selectedDomainOverlayId: currentSelectedDomainOverlayId,
     };
 
-    try {
-      const response = await createDialecticProject(payload);
+    if (configureManually) {
+      try {
+        const response = await createDialecticProject(payload);
+        if (response.data) {
+          logger.info('Project created successfully, navigating.', { projectId: response.data.id });
+          navigate(`/dialectic/${response.data.id}`);
+        } else {
+          logger.error('Project creation failed', { error: response.error });
+        }
+      } catch (e) {
+        logger.error('Error submitting form', { error: e instanceof Error ? e.message : String(e) });
+      }
+      return;
+    }
 
-      if (response.data) {
-        logger.info('Project created successfully, navigating.', { projectId: response.data.id });
-        navigate(`/dialectic/${response.data.id}`);
+    try {
+      const result = await createProjectAndAutoStart(payload);
+      if (result.error) {
+        toast.error(result.error.message ?? 'Auto-start failed');
+        return;
+      }
+      if (result.sessionId !== null) {
+        navigate(`/dialectic/${result.projectId}/session/${result.sessionId}`, {
+          state: { autoStartGeneration: startGeneration && result.hasDefaultModels },
+        });
       } else {
-        logger.error('Project creation failed', { error: response.error });
+        navigate(`/dialectic/${result.projectId}`);
       }
     } catch (e) {
       logger.error('Error submitting form', { error: e instanceof Error ? e.message : String(e) });
+      toast.error(e instanceof Error ? e.message : 'Auto-start failed');
     }
   };
 
@@ -306,7 +367,35 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
               <AlertDescription>{creationError.message}</AlertDescription>
             </Alert>
           )}
-          
+
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="configure-manually"
+              checked={configureManually}
+              onCheckedChange={(checked) => setConfigureManually(checked === true)}
+            />
+            <label htmlFor="configure-manually" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+              Configure Manually
+            </label>
+          </div>
+
+          {!configureManually && (
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="start-generation"
+                  checked={startGeneration}
+                  onCheckedChange={(checked) => setStartGeneration(checked === true)}
+                />
+                <label htmlFor="start-generation" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  Start Generation
+                </label>
+              </div>
+              {autoUncheckReason !== null && (
+                <p className="text-sm text-muted-foreground">{autoUncheckReason}</p>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2 relative"> 
           {enableDomainSelection && (
@@ -352,7 +441,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
                   onChange={field.onChange}
                   rows={8} 
                   dataTestId="text-input-area-for-prompt"
-                  disabled={isCreating}
+                  disabled={isCreating || isAutoStarting}
                   textAreaClassName="relative z-10 bg-transparent w-full min-h-[168px] resize-y"
                   showPreviewToggle={true}
                   showFileUpload={true}
@@ -371,8 +460,10 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
           
         </CardContent>
         <CardFooter>
-          <Button type="submit" disabled={isCreating} className="w-full data-testid='create-project-button'">
-            {isCreating ? (
+          <Button type="submit" disabled={isCreating || isAutoStarting} className="w-full data-testid='create-project-button'">
+            {isAutoStarting && autoStartStep ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {autoStartStep}</>
+            ) : isCreating ? (
               <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating {submitButtonText}...</>
             ) : (
               submitButtonText

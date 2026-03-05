@@ -1,9 +1,10 @@
-import React, { useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import React, { useEffect, useRef } from "react";
+import { useParams, Link, useLocation, useNavigate } from "react-router-dom";
 import {
 	useDialecticStore,
 	selectSortedStages,
 	selectActiveStageSlug,
+	selectSelectedModels,
 } from "@paynless/store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,9 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 		projectId: string;
 		sessionId: string;
 	}>();
+	const location = useLocation();
+	const navigate = useNavigate();
+	const autoStartAttemptedRef = useRef<boolean>(false);
 
 	// Actions from store
 	const activateContextForDeepLink = useDialecticStore(
@@ -42,6 +46,8 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 	) as DialecticProject | null;
 	const activeStageSlug = useDialecticStore(selectActiveStageSlug);
 	const sortedStages = useDialecticStore(selectSortedStages);
+	const autoStartGeneration = useDialecticStore((state) => state.autoStartGeneration);
+	const selectedModels = useDialecticStore(selectSelectedModels);
 
 	// Loading and error states from store
 	const isLoadingProject = useDialecticStore(
@@ -79,6 +85,30 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 	useEffect(() => {
 		return () => {};
 	}, []);
+
+	useEffect(() => {
+		if (!location.state?.autoStartGeneration || autoStartAttemptedRef.current) return;
+		if (!activeSessionDetail || !currentProjectDetail || !activeContextSessionId || selectedModels.length === 0) return;
+		autoStartAttemptedRef.current = true;
+		(async () => {
+			try {
+				await autoStartGeneration();
+			} catch {
+				// User remains on session page; can retry via Generate button.
+			} finally {
+				navigate(location.pathname, { replace: true, state: {} });
+			}
+		})();
+	}, [
+		location.state,
+		location.pathname,
+		activeSessionDetail,
+		currentProjectDetail,
+		activeContextSessionId,
+		selectedModels,
+		autoStartGeneration,
+		navigate,
+	]);
 
 	const isLoading = isLoadingProject || isLoadingSession;
 

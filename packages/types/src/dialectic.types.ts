@@ -202,6 +202,7 @@ export interface AIModelCatalogEntry {
     is_active: boolean;
     created_at: string;
     updated_at: string;
+    is_default_generation: boolean;
 }
 
 export interface PromptTemplateVariable {
@@ -451,6 +452,10 @@ export interface DialecticStateValues {
 	isInitializingFeedbackDraft: boolean;
 	initializeFeedbackDraftError: ApiError | null;
   activeSeedPrompt: AssembledPrompt | null;
+
+  autoStartStep: string | null;
+  isAutoStarting: boolean;
+  autoStartError: ApiError | null;
 }
 
 export type StageRunProgressEntry = NonNullable<DialecticStateValues['stageRunProgress'][string]>;
@@ -685,6 +690,8 @@ export interface DialecticActions {
   startDialecticSession: (payload: StartSessionPayload) => Promise<ApiResponse<StartSessionSuccessResponse>>;
   updateSessionModels: (payload: UpdateSessionModelsPayload) => Promise<ApiResponse<DialecticSession>>;
   fetchAIModelCatalog: () => Promise<void>;
+  createProjectAndAutoStart: (payload: CreateProjectPayload) => Promise<CreateProjectAutoStartResult>;
+  autoStartGeneration: () => Promise<{ success: boolean; error?: string }>;
 
   fetchContributionContent: (contributionId: string) => Promise<void>;
 
@@ -1107,6 +1114,14 @@ export interface ExportProjectResponse {
   export_url: string;
   file_name: string;
 }
+
+export interface CreateProjectAutoStartResult {
+  projectId: string;
+  sessionId: string | null;
+  hasDefaultModels: boolean;
+  error?: ApiError;
+}
+
 export interface GenerateContributionsPayload {
   sessionId: string;
   projectId: string;
