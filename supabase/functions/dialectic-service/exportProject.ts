@@ -11,8 +11,7 @@ import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import {
     ZipWriter,
-    TextReader,
-    Uint8ArrayReader, // Use this if we have ArrayBuffer
+    Uint8ArrayReader,
     BlobWriter,
 } from "jsr:@zip-js/zip-js";
 // Removed direct import of storage functions
@@ -39,6 +38,96 @@ function slugify(text: string): string {
     if (!processedText) return 'untitled'; // Handle cases where all chars are removed
     return processedText;
 }
+/** Normalize path for zip entry: forward slashes only, no double slashes, no leading/trailing slash. */
+function normalizeZipEntryPath(path: string): string {
+    return path
+        .replace(/\\/g, '/')
+        .replace(/\/+/g, '/')
+        .replace(/^\//, '')
+        .replace(/\/$/, '');
+}
+
+async function addProjectFolderFromStorageToZip(
+    supabaseClient: SupabaseClient<Database>,
+    storageUtils: IStorageUtils,
+    bucket: string,
+    projectRootPrefix: string,
+    folderPath: string,
+    zipWriter: InstanceType<typeof ZipWriter>,
+    projectId: string,
+): Promise<ExportProjectResponse['error'] | null> {
+    const { data: items, error: listError } = await supabaseClient.storage
+        .from(bucket)
+        .list(folderPath, { limit: 1000 });
+
+    if (listError) {
+        logger.error('Failed to list project folder in storage.', { details: listError, projectId, path: folderPath });
+        return { message: 'Failed to list project folder for export.', status: 500, code: 'EXPORT_LIST_FAILED', details: listError.message };
+    }
+
+    if (!items || items.length === 0) {
+        return null;
+    }
+
+    const fileItems = items.filter((f) => f.id != null && typeof f.name === 'string' && f.name.length > 0 && !f.name.endsWith('/'));
+    const folderItems = items.filter((f) => f.id == null && typeof f.name === 'string' && f.name.length > 0);
+
+    if (fileItems.length > 0 || folderItems.length > 0) {
+        const currentDirEntry = normalizeZipEntryPath(folderPath) + '/';
+        await zipWriter.add(currentDirEntry, undefined, { directory: true });
+    }
+
+    for (const file of fileItems) {
+        const fullPath = folderPath ? `${folderPath}/${file.name}` : file.name;
+        const isRootZip = folderPath === projectRootPrefix && file.name.toLowerCase().endsWith('.zip');
+        if (isRootZip) {
+            continue;
+        }
+        try {
+            const { data: fileArrayBuffer, error: downloadError } = await storageUtils.downloadFromStorage(
+                supabaseClient,
+                bucket,
+                fullPath,
+            );
+            if (downloadError) {
+                logger.error('Failed to download file from storage for export. Halting export.', { details: downloadError, projectId, path: fullPath });
+                return { message: `Failed to download file for export: ${file.name}.`, status: 500, code: 'EXPORT_DOWNLOAD_FAILED', details: downloadError.message };
+            }
+            if (fileArrayBuffer && fileArrayBuffer.byteLength > 0) {
+                const entryPath = normalizeZipEntryPath(fullPath);
+                if (entryPath.length > 0) {
+                    const data = new Uint8Array(fileArrayBuffer);
+                    await zipWriter.add(entryPath, new Uint8ArrayReader(data), {
+                        uncompressedSize: data.length,
+                    });
+                    logger.info('Added file from storage to zip.', { projectId, path: entryPath });
+                }
+            }
+        } catch (err) {
+            logger.error('Catastrophic error downloading file from storage. Halting export.', { error: err, projectId, path: fullPath });
+            return { message: 'An unexpected error occurred while downloading a file.', status: 500, code: 'EXPORT_DOWNLOAD_UNHANDLED_ERROR', details: String(err) };
+        }
+    }
+
+    for (const folder of folderItems) {
+        const subPath = folderPath ? `${folderPath}/${folder.name}` : folder.name;
+        const subError = await addProjectFolderFromStorageToZip(
+            supabaseClient,
+            storageUtils,
+            bucket,
+            projectRootPrefix,
+            subPath,
+            zipWriter,
+            projectId,
+        );
+        if (subError) {
+            return subError;
+        }
+    }
+
+    return null;
+}
+
 // --- END: Helper Functions ---
 
 interface ProjectManifest {
@@ -245,107 +334,31 @@ export async function exportProject(
         }
         
         const blobWriter = new BlobWriter("application/zip");
-        const zipWriter = new ZipWriter(blobWriter);
+        const zipWriter = new ZipWriter(blobWriter, {
+            bufferedWrite: true,
+        });
 
-        const manifestString = JSON.stringify(manifest, null, 2);
-        await zipWriter.add('project_manifest.json', new TextReader(manifestString));
+        const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+        await zipWriter.add('project_manifest.json', new Uint8ArrayReader(manifestBytes), {
+            uncompressedSize: manifestBytes.length,
+        });
         logger.info('Added project_manifest.json to zip.', { projectId });
 
-        if (manifest.resources) {
-            for (const resource of manifest.resources) {
-                if (resource.mime_type === 'application/zip') {
-                    continue;
-                }
-                if (resource.storage_path && resource.file_name) {
-                    const currentResourceBucket = resource.storage_bucket || downloadBucketName;
-                    if (!currentResourceBucket) {
-                        logger.warn('Project resource is missing storage_bucket. Skipping file.', { resourceId: resource.id, fileName: resource.file_name });
-                        continue;
-                    }
-                    try {
-                        // Use downloadFromStorage from injected storageUtils
-                        const { data: fileArrayBuffer, error: downloadError } = await storageUtils.downloadFromStorage(
-                            supabaseClient,
-                            currentResourceBucket,
-                            `${resource.storage_path}/${resource.file_name}`
-                        );
-
-                        if (downloadError) {
-                            logger.error('Failed to download project resource for export. Halting export.', { details: downloadError, resourceId: resource.id, path: resource.storage_path });
-                            return { error: { message: `Failed to download a critical project resource: ${resource.file_name}.`, status: 500, code: 'EXPORT_DOWNLOAD_FAILED', details: downloadError.message } };
-                        } else if (fileArrayBuffer) {
-                            const canonicalPath = `${resource.storage_path}/${resource.file_name}`;
-                            await zipWriter.add(canonicalPath, new Uint8ArrayReader(new Uint8Array(fileArrayBuffer)));
-                            logger.info('Added project resource to zip.', { projectId, resourceId: resource.id, canonicalPath });
-                        }
-                    } catch (err) {
-                        logger.error('Catastrophic error downloading project resource. Halting export.', { error: err, resourceId: resource.id, path: resource.storage_path });
-                        return { error: { message: 'An unexpected error occurred while downloading a project resource.', status: 500, code: 'EXPORT_DOWNLOAD_UNHANDLED_ERROR', details: String(err) } };
-                    }
-                }
+        if (downloadBucketName) {
+            const listError = await addProjectFolderFromStorageToZip(
+                supabaseClient,
+                storageUtils,
+                downloadBucketName,
+                projectId,
+                projectId,
+                zipWriter,
+                projectId,
+            );
+            if (listError) {
+                return { error: listError };
             }
-        }
-
-        if (manifest.sessions) {
-            for (const session of manifest.sessions) {
-                for (const contribution of session.contributions) {
-                    // Add content file
-                    if (contribution.storage_path && contribution.id) {
-                        const currentContribBucket = contribution.storage_bucket || downloadBucketName;
-                         if (!currentContribBucket) {
-                            logger.warn('Contribution content is missing storage_bucket. Skipping file.', { contributionId: contribution.id, path: contribution.storage_path });
-                        } else {
-                            try {
-                                // Use downloadFromStorage from injected storageUtils
-                                const { data: contentArrayBuffer, error: downloadError } = await storageUtils.downloadFromStorage(
-                                    supabaseClient,
-                                    currentContribBucket,
-                                    `${contribution.storage_path}/${contribution.file_name}`
-                                );
-                                if (downloadError) {
-                                    logger.error('Failed to download contribution content for export. Halting export.', { details: downloadError, contributionId: contribution.id, path: contribution.storage_path });
-                                    return { error: { message: `Failed to download a critical contribution file: ${contribution.file_name}.`, status: 500, code: 'EXPORT_DOWNLOAD_FAILED', details: downloadError.message } };
-                                } else if (contentArrayBuffer) {
-                                    const canonicalPath = `${contribution.storage_path}/${contribution.file_name}`;
-                                    await zipWriter.add(canonicalPath, new Uint8ArrayReader(new Uint8Array(contentArrayBuffer)));
-                                    logger.info('Added contribution content to zip.', { projectId, sessionId: session.id, contributionId: contribution.id, canonicalPath });
-                                }
-                            } catch (err) {
-                                logger.error('Catastrophic error downloading contribution content. Halting export.', { error: err, contributionId: contribution.id, path: contribution.storage_path });
-                                return { error: { message: 'An unexpected error occurred while downloading contribution content.', status: 500, code: 'EXPORT_DOWNLOAD_UNHANDLED_ERROR', details: String(err) } };
-                            }
-                        }
-                    }
-
-                    // Add raw response file
-                    if (contribution.raw_response_storage_path && contribution.id) {
-                         const currentRawRespBucket = contribution.storage_bucket || downloadBucketName; // Assuming same bucket as content or the general download bucket
-                         if (!currentRawRespBucket) {
-                            logger.warn('Contribution raw response is missing storage_bucket. Skipping file.', { contributionId: contribution.id, path: contribution.raw_response_storage_path });
-                         } else {
-                            try {
-                                // Use downloadFromStorage from injected storageUtils
-                                const { data: rawResponseArrayBuffer, error: downloadError } = await storageUtils.downloadFromStorage(
-                                    supabaseClient,
-                                    currentRawRespBucket,
-                                    contribution.raw_response_storage_path
-                                );
-                                if (downloadError) {
-                                    logger.error('Failed to download contribution raw response for export. Halting export.', { details: downloadError, contributionId: contribution.id, path: contribution.raw_response_storage_path });
-                                    return { error: { message: `Failed to download a critical raw response file for contribution ${contribution.id}.`, status: 500, code: 'EXPORT_DOWNLOAD_FAILED', details: downloadError.message } };
-                                } else if (rawResponseArrayBuffer) {
-                                    const canonicalPath = contribution.raw_response_storage_path;
-                                    await zipWriter.add(canonicalPath, new Uint8ArrayReader(new Uint8Array(rawResponseArrayBuffer)));
-                                    logger.info('Added contribution raw response to zip.', { projectId, sessionId: session.id, contributionId: contribution.id, canonicalPath });
-                                }
-                            } catch (err) {
-                                 logger.error('Catastrophic error downloading contribution raw response. Halting export.', { error: err, contributionId: contribution.id, path: contribution.raw_response_storage_path });
-                                 return { error: { message: 'An unexpected error occurred while downloading a raw response file.', status: 500, code: 'EXPORT_DOWNLOAD_UNHANDLED_ERROR', details: String(err) } };
-                            }
-                        }
-                    }
-                }
-            }
+        } else {
+            logger.info('No bucket from resources; zip will contain manifest only.', { projectId });
         }
 
         const zipBlob = await zipWriter.close();

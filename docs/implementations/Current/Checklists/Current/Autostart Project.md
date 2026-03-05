@@ -771,74 +771,74 @@ Users click "Create Project" once and land on a session page with default models
     *   `[✅]`   Existing visual behavior preserved: same button text, same disable conditions, same toast messages, same dialog
     *   `[✅]`   All updated tests pass
 
-*   `[ ]`   [UI] apps/web/src/pages/DialecticSessionDetailsPage **Refactor autostart to use unified hook**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Replace autostart effect's call to store's `autoStartGeneration` with hook's `startContributionGeneration`
-    *   `[ ]`   Pass `onOpenDagProgress` callback that sets `shouldOpenDagProgress` in store, enabling the button's DAG dialog to open on autostart
-    *   `[ ]`   Remove `autoStartGeneration` import from store — resolves compile error introduced in Node 2
-  *   `[ ]`   `role`
-    *   `[ ]`   Frontend page component — session detail view with optional one-time autostart trigger
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic session details: autostart effect on first load from automated `CreateDialecticProjectForm` flow
-    *   `[ ]`   Boundary: reads `location.state`, calls hook's `startContributionGeneration`, clears navigation state
-  *   `[ ]`   `deps`
-    *   `[ ]`   `useStartContributionGeneration` from `apps/web/src/hooks/useStartContributionGeneration` — new hook from Node 1 (app layer)
-    *   `[ ]`   `useDialecticStore` from `@paynless/store` — `setShouldOpenDagProgress` (app layer, from Node 2), `selectSelectedModels` (existing selector)
-    *   `[ ]`   `useLocation`, `useNavigate` from `react-router-dom` — for `location.state` and flag cleanup (existing imports)
-    *   `[ ]`   `useRef` from React — for single-fire guard (existing import)
-    *   `[ ]`   Store state: `activeSessionDetail`, `currentProjectDetail`, `activeContextSessionId` — existing reads via `useDialecticStore`
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   From hook: `startContributionGeneration`
-    *   `[ ]`   From store: `setShouldOpenDagProgress`, `activeSessionDetail`, `currentProjectDetail`, `activeContextSessionId`, `selectedModels`
-    *   `[ ]`   From `react-router-dom`: `location.state?.autoStartGeneration`, `navigate`
-    *   `[ ]`   Local: `autoStartAttemptedRef` (`useRef<boolean>`)
-    *   `[ ]`   No concrete imports from higher or lateral layers
-  *   `[ ]`   unit/`apps/web/src/pages/DialecticSessionDetailsPage.test.tsx` (locate existing test file)
-    *   `[ ]`   Update: autostart effect calls hook's `startContributionGeneration` (not store's `autoStartGeneration`)
-    *   `[ ]`   Update: autostart passes `onOpenDagProgress` callback that calls `setShouldOpenDagProgress(true)`
-    *   `[ ]`   Update: verify `autoStartGeneration` import from store is removed
-    *   `[ ]`   Keep: autostart fires exactly once (ref guard prevents double-fire)
-    *   `[ ]`   Keep: `navigate` called with `{ replace: true, state: {} }` to clear flag after attempt
-    *   `[ ]`   Keep: page remains functional after autostart failure (session detail renders, Generate button available)
-    *   `[ ]`   Keep: autostart does not fire when context is not loaded (`activeSessionDetail`, `selectedModels`, etc.)
-    *   `[ ]`   Existing tests continue to pass (tests without `location.state.autoStartGeneration` do not trigger autostart)
-  *   `[ ]`   `construction`
-    *   `[ ]`   Import `useStartContributionGeneration` from hooks file
-    *   `[ ]`   Destructure `startContributionGeneration` from hook
-    *   `[ ]`   Read `setShouldOpenDagProgress` from `useDialecticStore`
-    *   `[ ]`   Remove `autoStartGeneration` from `useDialecticStore` read (line 49)
-    *   `[ ]`   Update autostart `useEffect` (lines 89–111):
+*   `[✅]`   [UI] apps/web/src/pages/DialecticSessionDetailsPage **Refactor autostart to use unified hook**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Replace autostart effect's call to store's `autoStartGeneration` with hook's `startContributionGeneration`
+    *   `[✅]`   Pass `onOpenDagProgress` callback that sets `shouldOpenDagProgress` in store, enabling the button's DAG dialog to open on autostart
+    *   `[✅]`   Remove `autoStartGeneration` import from store — resolves compile error introduced in Node 2
+  *   `[✅]`   `role`
+    *   `[✅]`   Frontend page component — session detail view with optional one-time autostart trigger
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic session details: autostart effect on first load from automated `CreateDialecticProjectForm` flow
+    *   `[✅]`   Boundary: reads `location.state`, calls hook's `startContributionGeneration`, clears navigation state
+  *   `[✅]`   `deps`
+    *   `[✅]`   `useStartContributionGeneration` from `apps/web/src/hooks/useStartContributionGeneration` — new hook from Node 1 (app layer)
+    *   `[✅]`   `useDialecticStore` from `@paynless/store` — `setShouldOpenDagProgress` (app layer, from Node 2), `selectSelectedModels` (existing selector)
+    *   `[✅]`   `useLocation`, `useNavigate` from `react-router-dom` — for `location.state` and flag cleanup (existing imports)
+    *   `[✅]`   `useRef` from React — for single-fire guard (existing import)
+    *   `[✅]`   Store state: `activeSessionDetail`, `currentProjectDetail`, `activeContextSessionId` — existing reads via `useDialecticStore`
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   From hook: `startContributionGeneration`
+    *   `[✅]`   From store: `setShouldOpenDagProgress`, `activeSessionDetail`, `currentProjectDetail`, `activeContextSessionId`, `selectedModels`
+    *   `[✅]`   From `react-router-dom`: `location.state?.autoStartGeneration`, `navigate`
+    *   `[✅]`   Local: `autoStartAttemptedRef` (`useRef<boolean>`)
+    *   `[✅]`   No concrete imports from higher or lateral layers
+  *   `[✅]`   unit/`apps/web/src/pages/DialecticSessionDetailsPage.test.tsx` (locate existing test file)
+    *   `[✅]`   Update: autostart effect calls hook's `startContributionGeneration` (not store's `autoStartGeneration`)
+    *   `[✅]`   Update: autostart passes `onOpenDagProgress` callback that calls `setShouldOpenDagProgress(true)`
+    *   `[✅]`   Update: verify `autoStartGeneration` import from store is removed
+    *   `[✅]`   Keep: autostart fires exactly once (ref guard prevents double-fire)
+    *   `[✅]`   Keep: `navigate` called with `{ replace: true, state: {} }` to clear flag after attempt
+    *   `[✅]`   Keep: page remains functional after autostart failure (session detail renders, Generate button available)
+    *   `[✅]`   Keep: autostart does not fire when context is not loaded (`activeSessionDetail`, `selectedModels`, etc.)
+    *   `[✅]`   Existing tests continue to pass (tests without `location.state.autoStartGeneration` do not trigger autostart)
+  *   `[✅]`   `construction`
+    *   `[✅]`   Import `useStartContributionGeneration` from hooks file
+    *   `[✅]`   Destructure `startContributionGeneration` from hook
+    *   `[✅]`   Read `setShouldOpenDagProgress` from `useDialecticStore`
+    *   `[✅]`   Remove `autoStartGeneration` from `useDialecticStore` read (line 49)
+    *   `[✅]`   Update autostart `useEffect` (lines 89–111):
       *   Replace: `await autoStartGeneration()`
       *   With: `await startContributionGeneration(() => setShouldOpenDagProgress(true))`
-    *   `[ ]`   All other page logic unchanged
-  *   `[ ]`   `DialecticSessionDetailsPage.tsx`
-    *   `[ ]`   Add import: `useStartContributionGeneration` from hooks
-    *   `[ ]`   Add `useDialecticStore` read: `setShouldOpenDagProgress`
-    *   `[ ]`   Remove `useDialecticStore` read: `autoStartGeneration` (line 49)
-    *   `[ ]`   Update autostart effect body to use hook's function with `onOpenDagProgress` callback
-    *   `[ ]`   No changes to render logic, other effects, or component structure
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Frontend page layer
-    *   `[ ]`   Dependencies inward: hook (app layer), store state and actions (app layer), `react-router-dom` hooks (infrastructure)
-    *   `[ ]`   Provides outward: session detail view with one-time autostart capability
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Autostart effect uses hook's `startContributionGeneration` — no duplicate guard, payload, or toast logic
-    *   `[ ]`   `onOpenDagProgress` callback signals button's DAG dialog via `setShouldOpenDagProgress(true)`
-    *   `[ ]`   Compile error from Node 2 resolved (`autoStartGeneration` reference removed)
-    *   `[ ]`   Ref guard and flag cleanup preserved unchanged
-    *   `[ ]`   Page render and behavior unchanged when autostart flag is not set
-    *   `[ ]`   All updated and existing tests pass
-  *   `[ ]`   **Commit** `refactor: unify contribution generation into single hook, remove duplicate autoStartGeneration`
-    *   `[ ]`   `packages/types/src/dialectic.types.ts` — added `StartContributionGenerationResult`, `UseStartContributionGenerationReturn`, `shouldOpenDagProgress`, `setShouldOpenDagProgress`; removed `autoStartGeneration` from store actions interface
-    *   `[ ]`   `apps/web/src/hooks/useStartContributionGeneration.ts` — new hook centralizing guards, resume/generate, toasts, callback
-    *   `[ ]`   `apps/web/src/hooks/useStartContributionGeneration.test.ts` — unit tests for all hook behaviors
-    *   `[ ]`   `packages/store/src/dialecticStore.ts` — added `shouldOpenDagProgress` state and setter, removed `autoStartGeneration` action
-    *   `[ ]`   `packages/store/src/dialecticStore.autostart.test.ts` — removed `autoStartGeneration` tests, added `shouldOpenDagProgress` tests
-    *   `[ ]`   `apps/web/src/components/dialectic/GenerateContributionButton.tsx` — refactored to use hook, subscribe to `shouldOpenDagProgress`
-    *   `[ ]`   `GenerateContributionButton` test file — updated tests for hook integration
-    *   `[ ]`   `apps/web/src/pages/DialecticSessionDetailsPage.tsx` — refactored autostart to use hook
-    *   `[ ]`   `DialecticSessionDetailsPage` test file — updated tests for hook integration
+    *   `[✅]`   All other page logic unchanged
+  *   `[✅]`   `DialecticSessionDetailsPage.tsx`
+    *   `[✅]`   Add import: `useStartContributionGeneration` from hooks
+    *   `[✅]`   Add `useDialecticStore` read: `setShouldOpenDagProgress`
+    *   `[✅]`   Remove `useDialecticStore` read: `autoStartGeneration` (line 49)
+    *   `[✅]`   Update autostart effect body to use hook's function with `onOpenDagProgress` callback
+    *   `[✅]`   No changes to render logic, other effects, or component structure
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Frontend page layer
+    *   `[✅]`   Dependencies inward: hook (app layer), store state and actions (app layer), `react-router-dom` hooks (infrastructure)
+    *   `[✅]`   Provides outward: session detail view with one-time autostart capability
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Autostart effect uses hook's `startContributionGeneration` — no duplicate guard, payload, or toast logic
+    *   `[✅]`   `onOpenDagProgress` callback signals button's DAG dialog via `setShouldOpenDagProgress(true)`
+    *   `[✅]`   Compile error from Node 2 resolved (`autoStartGeneration` reference removed)
+    *   `[✅]`   Ref guard and flag cleanup preserved unchanged
+    *   `[✅]`   Page render and behavior unchanged when autostart flag is not set
+    *   `[✅]`   All updated and existing tests pass
+  *   `[✅]`   **Commit** `refactor: unify contribution generation into single hook, remove duplicate autoStartGeneration`
+    *   `[✅]`   `packages/types/src/dialectic.types.ts` — added `StartContributionGenerationResult`, `UseStartContributionGenerationReturn`, `shouldOpenDagProgress`, `setShouldOpenDagProgress`; removed `autoStartGeneration` from store actions interface
+    *   `[✅]`   `apps/web/src/hooks/useStartContributionGeneration.ts` — new hook centralizing guards, resume/generate, toasts, callback
+    *   `[✅]`   `apps/web/src/hooks/useStartContributionGeneration.test.ts` — unit tests for all hook behaviors
+    *   `[✅]`   `packages/store/src/dialecticStore.ts` — added `shouldOpenDagProgress` state and setter, removed `autoStartGeneration` action
+    *   `[✅]`   `packages/store/src/dialecticStore.autostart.test.ts` — removed `autoStartGeneration` tests, added `shouldOpenDagProgress` tests
+    *   `[✅]`   `apps/web/src/components/dialectic/GenerateContributionButton.tsx` — refactored to use hook, subscribe to `shouldOpenDagProgress`
+    *   `[✅]`   `GenerateContributionButton` test file — updated tests for hook integration
+    *   `[✅]`   `apps/web/src/pages/DialecticSessionDetailsPage.tsx` — refactored autostart to use hook
+    *   `[✅]`   `DialecticSessionDetailsPage` test file — updated tests for hook integration
 
 # ToDo
 
