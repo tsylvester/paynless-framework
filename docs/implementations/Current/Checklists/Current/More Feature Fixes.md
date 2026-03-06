@@ -1010,7 +1010,7 @@
     *   `[ ]`   `apps/web/src/pages/DialecticProjectDetailsPage.tsx` — render repo settings and sync button
 
 ## Download Each Document
-- Add a "download" button to file view in GeneratedContributionsCard so that each file can be downloaded separately. 
+x Add a "download" button to file view in GeneratedContributionsCard so that each file can be downloaded separately. 
 - Add toggle for Export Project to export full project OR only export finished documents 
 
 ## Fix GeneratedContributionCard
@@ -1037,8 +1037,6 @@
 ## Highlight the chosen Chat or Project in the left sidebar 
 - Currently the sidebar gives no indication of which Chat or Project the user has focused
 - Outline and/or highlight the chosen Chat or Project in the left sidebar
-
-# ToDo
 
 ## New user sign in banner doesn't display, throws console error  
 - Chase, diagnose, fix 

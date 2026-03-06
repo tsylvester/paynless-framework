@@ -996,6 +996,9 @@ export const selectStageDocumentChecklist = (
     modelId: string
 ): StageDocumentChecklistEntry[] => {
     const documents = selectDocumentsForStageRun(state, progressKey);
+    const parts = progressKey.split(':');
+    const stageSlug = parts.length >= 3 ? parts[1] : null;
+    const validKeys = stageSlug ? selectValidMarkdownDocumentKeys(state, stageSlug) : null;
     const checklist: StageDocumentChecklistEntry[] = [];
 
     for (const compositeKey of Object.keys(documents)) {
@@ -1009,6 +1012,9 @@ export const selectStageDocumentChecklist = (
         }
 
         const documentKey = extractLogicalDocumentKeyFromComposite(compositeKey);
+        if (validKeys && !validKeys.has(documentKey)) {
+            continue;
+        }
 
         if (isPlannedDescriptor(descriptor)) {
             checklist.push({

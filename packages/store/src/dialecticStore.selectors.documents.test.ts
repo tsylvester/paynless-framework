@@ -51,6 +51,7 @@ import {
     selectValidMarkdownDocumentKeys,
     selectUnifiedProjectProgress,
     selectStageHasUnsavedChanges,
+    selectStageDocumentChecklist,
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type {
@@ -630,6 +631,112 @@ describe('selectValidMarkdownDocumentKeys', () => {
         expect(result.has('header_context_doc')).toBe(false);
     });
   });
+
+describe('selectStageDocumentChecklist', () => {
+    it('excludes header_context documents by filtering against selectValidMarkdownDocumentKeys', () => {
+        const sessionId = 'session-checklist-filter';
+        const stageSlug = 'header-markdown-stage';
+        const iterationNumber = 1;
+        const modelId = 'model-1';
+        const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+        const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+
+        const stageWithHeaderContextMarkdown: DialecticStageRecipe = {
+            stageSlug: 'header-markdown-stage',
+            instanceId: 'instance-header-markdown',
+            edges: [],
+            steps: [
+                {
+                    id: 'step-header-md',
+                    step_key: 'header_context_step',
+                    step_slug: 'header-context-step',
+                    step_name: 'Header Context Step',
+                    execution_order: 1,
+                    parallel_group: 1,
+                    branch_key: 'branch-1',
+                    job_type: 'PLAN',
+                    prompt_type: 'Planner',
+                    prompt_template_id: 'prompt-1',
+                    output_type: 'header_context',
+                    granularity_strategy: 'all_to_one',
+                    inputs_required: [],
+                    inputs_relevance: [],
+                    outputs_required: [
+                        {
+                            document_key: 'header_context_doc',
+                            artifact_class: 'header_context',
+                            file_type: 'markdown',
+                        },
+                    ],
+                },
+                {
+                    id: 'step-rendered',
+                    step_key: 'rendered_step',
+                    step_slug: 'rendered-step',
+                    step_name: 'Rendered Step',
+                    execution_order: 2,
+                    parallel_group: 2,
+                    branch_key: 'branch-2',
+                    job_type: 'EXECUTE',
+                    prompt_type: 'Turn',
+                    prompt_template_id: 'prompt-2',
+                    output_type: 'rendered_document',
+                    granularity_strategy: 'per_source_document',
+                    inputs_required: [],
+                    inputs_relevance: [],
+                    outputs_required: [
+                        {
+                            document_key: 'business_case',
+                            artifact_class: 'rendered_document',
+                            file_type: 'markdown',
+                        },
+                    ],
+                },
+            ],
+        };
+
+        const renderedDescriptor = {
+            descriptorType: 'rendered' as const,
+            status: 'completed' as const,
+            job_id: 'job-1',
+            latestRenderedResourceId: 'res-1',
+            modelId,
+            versionHash: 'hash-1',
+            lastRenderedResourceId: 'res-1',
+            lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+            stepKey: 'rendered_step',
+        };
+
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: {
+                [stageSlug]: stageWithHeaderContextMarkdown,
+            },
+            stageRunProgress: {
+                [progressKey]: {
+                    stepStatuses: { rendered_step: 'completed', header_context_step: 'completed' },
+                    documents: {
+                        [`business_case${sep}${modelId}`]: renderedDescriptor,
+                        [`header_context_doc${sep}${modelId}`]: {
+                            ...renderedDescriptor,
+                            job_id: 'job-2',
+                            latestRenderedResourceId: 'res-2',
+                        },
+                    },
+                    jobProgress: {},
+                    progress: { totalSteps: 2, completedSteps: 2, failedSteps: 0 },
+                    jobs: [],
+                },
+            },
+        };
+
+        const checklist = selectStageDocumentChecklist(state, progressKey, modelId);
+
+        expect(checklist).toHaveLength(1);
+        expect(checklist[0].documentKey).toBe('business_case');
+        expect(checklist.map((e) => e.documentKey)).not.toContain('header_context_doc');
+    });
+});
 
 describe('selectUnifiedProjectProgress', () => {
     const sessionId = 'session-unified-docs';
