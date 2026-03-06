@@ -5,8 +5,8 @@ import type {
 	SetFocusedStageDocumentPayload,
 	UnifiedProjectStatus,
 } from "@paynless/types";
-import { getDisplayName } from "@paynless/types";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
 	useDialecticStore,
 	selectSessionById,
@@ -18,7 +18,7 @@ import {
 	selectSelectedModels,
 } from "@paynless/store";
 import { StageRunChecklist } from "./StageRunChecklist";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Info } from "lucide-react";
 
 interface StageProgressSnapshotSummary {
 	totalDocuments: number;
@@ -38,6 +38,10 @@ interface StageCardProps {
 	checklist?: React.ReactNode;
 }
 
+function formatMinimumBalance(minimumBalance: number): string {
+	return `Minimum balance: ${minimumBalance.toLocaleString("en-US")} tokens`;
+}
+
 const StageCard: React.FC<StageCardProps> = ({
 	stage,
 	index,
@@ -47,8 +51,6 @@ const StageCard: React.FC<StageCardProps> = ({
 	progress,
 	checklist,
 }) => {
-	const displayName = getDisplayName(stage.slug);
-
 	if (!isContextReady) {
 		return (
 			<div
@@ -63,7 +65,7 @@ const StageCard: React.FC<StageCardProps> = ({
 					</span>
 				</div>
 				<div className="flex-1 min-w-0">
-					<div className="font-medium text-sm truncate">{displayName}</div>
+					<div className="font-medium text-sm truncate">{stage.display_name}</div>
 					<div className="text-xs text-muted-foreground">Not available</div>
 				</div>
 			</div>
@@ -83,7 +85,7 @@ const StageCard: React.FC<StageCardProps> = ({
 				onClick={onSelect}
 				role="tab"
 				aria-selected={isActive}
-				aria-controls={`stage-content-${displayName}`}
+				aria-controls={`stage-content-${stage.display_name}`}
 				tabIndex={isActive ? 0 : -1}
 			>
 				<div className="flex items-center justify-between gap-3 relative z-10">
@@ -112,8 +114,26 @@ const StageCard: React.FC<StageCardProps> = ({
 									: "text-muted-foreground group-hover:text-foreground",
 							)}
 						>
-							{displayName}
+							{stage.display_name}
 						</span>
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<span
+									data-testid={`stage-tooltip-trigger-${stage.slug}`}
+									className="inline-flex shrink-0 text-muted-foreground hover:text-foreground cursor-help"
+									onClick={(e: React.MouseEvent) => e.stopPropagation()}
+									role="img"
+									aria-label="Stage details"
+								>
+									<Info className="h-3.5 w-3.5" />
+								</span>
+							</TooltipTrigger>
+							<TooltipContent>
+								{stage.description ?? ""}
+								<br />
+								{formatMinimumBalance(stage.minimum_balance)}
+							</TooltipContent>
+						</Tooltip>
 					</div>
 					<span
 						data-testid={`stage-progress-label-${stage.slug}`}
@@ -211,7 +231,7 @@ export const StageTabCard: React.FC = () => {
 			}
 			hasInitializedStage.current = true;
 		}
-	}, [stages, activeStageSlug, setActiveStage]);
+	}, [stages, activeStageSlug, setActiveStage, activeSessionDetail]);
 
 	if (stages.length === 0) {
 		return (

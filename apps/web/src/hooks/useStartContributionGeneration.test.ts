@@ -18,7 +18,6 @@ import type {
   ActiveChatWalletInfo,
   AiState,
 } from '@paynless/types';
-import { STAGE_BALANCE_THRESHOLDS } from '@paynless/types';
 import {
   initializeMockDialecticState,
   getDialecticStoreState,
@@ -92,6 +91,7 @@ const mockThesisStage: DialecticStage = {
   expected_output_template_ids: [],
   recipe_template_id: null,
   active_recipe_instance_id: null,
+  minimum_balance: 100000,
 };
 
 const createMockSession = (
@@ -212,7 +212,7 @@ const defaultWalletInfo: ActiveChatWalletInfo = {
   type: 'personal',
   walletId: 'wallet-1',
   orgId: null,
-  balance: String(STAGE_BALANCE_THRESHOLDS['thesis']),
+  balance: String(mockThesisStage.minimum_balance),
   message: undefined,
   isLoadingPrimaryWallet: false,
 };
@@ -421,7 +421,7 @@ describe('useStartContributionGeneration', () => {
       type: 'personal',
       walletId: 'custom-wallet-id',
       orgId: null,
-      balance: String(STAGE_BALANCE_THRESHOLDS['thesis']),
+      balance: String(mockThesisStage.minimum_balance),
       message: undefined,
       isLoadingPrimaryWallet: false,
     };
@@ -512,7 +512,7 @@ describe('useStartContributionGeneration', () => {
     expect(result.current.activeStage).toEqual(mockThesisStage);
     expect(result.current.activeSession).not.toBeNull();
     expect(result.current.activeSession?.id).toBe('sess-1');
-    expect(result.current.stageThreshold).toBe(STAGE_BALANCE_THRESHOLDS['thesis']);
+    expect(result.current.stageThreshold).toBe(mockThesisStage.minimum_balance);
     expect(result.current.areAnyModelsSelected).toBe(true);
     expect(result.current.isWalletReady).toBe(true);
     expect(result.current.isStageReady).toBe(true);

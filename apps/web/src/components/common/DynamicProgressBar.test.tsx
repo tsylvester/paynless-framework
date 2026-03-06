@@ -1,8 +1,13 @@
 import { render, screen, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { UnifiedProjectProgress } from '@paynless/types';
+import type {
+  UnifiedProjectProgress,
+  DialecticStage,
+  DialecticProcessTemplate,
+} from '@paynless/types';
 import { DynamicProgressBar } from './DynamicProgressBar';
 import {
+  initializeMockDialecticState,
   resetDialecticStoreMock,
   selectUnifiedProjectProgress,
 } from '../../mocks/dialecticStore.mock';
@@ -17,6 +22,23 @@ const defaultProgress: UnifiedProjectProgress = {
   currentStage: null,
   projectStatus: 'not_started',
   stageDetails: [],
+  hydrationReady: true,
+};
+
+const defaultStages: DialecticStage[] = [
+  { id: '1', display_name: 'Thesis', slug: 'thesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, minimum_balance: 0 },
+  { id: '2', display_name: 'Antithesis', slug: 'antithesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, minimum_balance: 0 },
+  { id: '3', display_name: 'Synthesis', slug: 'synthesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, minimum_balance: 0 },
+  { id: '4', display_name: 'Paralysis', slug: 'paralysis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, minimum_balance: 0 },
+];
+const defaultProcessTemplate: DialecticProcessTemplate = {
+  id: 'p1',
+  name: 'Test Process',
+  starting_stage_id: null,
+  stages: defaultStages,
+  transitions: [],
+  created_at: '',
+  description: null,
 };
 
 describe('DynamicProgressBar', () => {
@@ -24,6 +46,7 @@ describe('DynamicProgressBar', () => {
 
   beforeEach(() => {
     resetDialecticStoreMock();
+    initializeMockDialecticState({ currentProcessTemplate: defaultProcessTemplate });
     selectUnifiedProjectProgress.mockReturnValue(defaultProgress);
   });
 
@@ -36,6 +59,7 @@ describe('DynamicProgressBar', () => {
       currentStage: null,
       projectStatus: 'not_started',
       stageDetails: [],
+      hydrationReady: true,
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -54,6 +78,7 @@ describe('DynamicProgressBar', () => {
       currentStage: null,
       projectStatus: 'in_progress',
       stageDetails: [],
+      hydrationReady: true,
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -62,7 +87,7 @@ describe('DynamicProgressBar', () => {
     expect(screen.getByText('40%')).toBeInTheDocument();
   });
 
-  it('renders current stage name from selectUnifiedProjectProgress.currentStageSlug', () => {
+  it('renders current stage display_name in progress bar label', () => {
     const progress: UnifiedProjectProgress = {
       totalStages: 5,
       completedStages: 1,
@@ -71,12 +96,13 @@ describe('DynamicProgressBar', () => {
       currentStage: null,
       projectStatus: 'in_progress',
       stageDetails: [],
+      hydrationReady: true,
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
     render(<DynamicProgressBar sessionId={sessionId} />);
 
-    expect(screen.getByText(/thesis/i)).toBeInTheDocument();
+    expect(screen.getByText(/Stage 1\/5: Thesis/)).toBeInTheDocument();
   });
 
   it('displays step detail (stage X/Y)', () => {
@@ -88,6 +114,7 @@ describe('DynamicProgressBar', () => {
       currentStage: null,
       projectStatus: 'in_progress',
       stageDetails: [],
+      hydrationReady: true,
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -106,6 +133,7 @@ describe('DynamicProgressBar', () => {
       currentStage: null,
       projectStatus: 'in_progress',
       stageDetails: [],
+      hydrationReady: true,
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -131,6 +159,7 @@ describe('DynamicProgressBar', () => {
       currentStage: null,
       projectStatus: 'in_progress',
       stageDetails: [],
+      hydrationReady: true,
     };
 
     act(() => {
@@ -158,6 +187,8 @@ describe('DynamicProgressBar', () => {
           failedSteps: 0,
           stagePercentage: 50,
           stageStatus: 'in_progress',
+          totalDocuments: 0,
+          completedDocuments: 0,
           stepsDetail: [
             {
               stepKey: 'plan',
@@ -172,6 +203,7 @@ describe('DynamicProgressBar', () => {
           ],
         },
       ],
+      hydrationReady: true,
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -197,6 +229,8 @@ describe('DynamicProgressBar', () => {
           failedSteps: 0,
           stagePercentage: 0,
           stageStatus: 'not_started',
+          totalDocuments: 0,
+          completedDocuments: 0,
           stepsDetail: [
             {
               stepKey: 'plan',
@@ -211,6 +245,7 @@ describe('DynamicProgressBar', () => {
           ],
         },
       ],
+      hydrationReady: true,
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -235,6 +270,8 @@ describe('DynamicProgressBar', () => {
           failedSteps: 0,
           stagePercentage: 100,
           stageStatus: 'completed',
+          totalDocuments: 0,
+          completedDocuments: 0,
           stepsDetail: [
             {
               stepKey: 'plan',
@@ -250,6 +287,8 @@ describe('DynamicProgressBar', () => {
           failedSteps: 0,
           stagePercentage: 100,
           stageStatus: 'completed',
+          totalDocuments: 0,
+          completedDocuments: 0,
           stepsDetail: [
             {
               stepKey: 'plan',
@@ -259,6 +298,7 @@ describe('DynamicProgressBar', () => {
           ],
         },
       ],
+      hydrationReady: true,
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -276,6 +316,7 @@ describe('DynamicProgressBar', () => {
       currentStage: null,
       projectStatus: 'in_progress',
       stageDetails: [],
+      hydrationReady: true,
     };
     selectUnifiedProjectProgress.mockReturnValue(progress);
 
@@ -284,4 +325,46 @@ describe('DynamicProgressBar', () => {
     expect(selectUnifiedProjectProgress).toHaveBeenCalled();
     expect(screen.getByText('0%')).toBeInTheDocument();
   });
+
+  it('shows stage display_name in progress bar label when stage is in sorted stages', () => {
+    const stage: DialecticStage = {
+      id: '1',
+      display_name: 'Review',
+      slug: 'antithesis',
+      created_at: '',
+      default_system_prompt_id: null,
+      description: null,
+      expected_output_template_ids: [],
+      recipe_template_id: null,
+      active_recipe_instance_id: null,
+      minimum_balance: 0,
+    };
+    const processTemplate: DialecticProcessTemplate = {
+      id: 'p1',
+      name: 'Test Process',
+      starting_stage_id: null,
+      stages: [stage],
+      transitions: [],
+      created_at: '',
+      description: null,
+    };
+    initializeMockDialecticState({ currentProcessTemplate: processTemplate });
+
+    const progress: UnifiedProjectProgress = {
+      totalStages: 5,
+      completedStages: 2,
+      currentStageSlug: 'antithesis',
+      overallPercentage: 40,
+      currentStage: null,
+      projectStatus: 'in_progress',
+      stageDetails: [],
+      hydrationReady: true,
+    };
+    selectUnifiedProjectProgress.mockReturnValue(progress);
+
+    render(<DynamicProgressBar sessionId={sessionId} />);
+
+    expect(screen.getByText(/Stage 2\/5: Review/)).toBeInTheDocument();
+  });
+
 });

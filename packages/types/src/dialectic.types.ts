@@ -10,40 +10,6 @@ export interface UpdateProjectDomainPayload {
 
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
-export enum DialecticStages {
-  thesis = 'Proposal',
-  antithesis = 'Review',
-  synthesis = 'Refinement',
-  parenthesis = 'Planning',
-  paralysis = 'Implementation',
-}
-
-export function isDialecticStageSlug(slug: string): slug is keyof typeof DialecticStages {
-  return (
-    slug === 'thesis' ||
-    slug === 'antithesis' ||
-    slug === 'synthesis' ||
-    slug === 'parenthesis' ||
-    slug === 'paralysis'
-  );
-}
-
-export function getDisplayName(slug: string): string {
-  if (!isDialecticStageSlug(slug)) {
-    throw new Error(`Unknown stage slug: ${slug}`);
-  }
-  return DialecticStages[slug];
-}
-
-/** Per-stage minimum wallet balance (token count) required before generating. Values from product owner. */
-export const STAGE_BALANCE_THRESHOLDS: Record<string, number> = {
-  thesis: 200_000,
-  antithesis: 400_000,
-  synthesis: 1_000_000,
-  parenthesis: 250_000,
-  paralysis: 250_000,
-};
-
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
 
 export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'] & {

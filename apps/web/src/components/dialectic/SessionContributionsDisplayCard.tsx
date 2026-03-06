@@ -40,22 +40,6 @@ import { Badge } from "@/components/ui/badge";
 import { GeneratedContributionCard } from "./GeneratedContributionCard";
 import { SubmitResponsesButton } from "./SubmitResponsesButton";
 
-// UI-only mapping of stage names
-const stageNameMap: Record<string, string> = {
-	thesis: "Proposal",
-	antithesis: "Review",
-	synthesis: "Refinement",
-	parenthesis: "Planning",
-	paralysis: "Implementation",
-};
-
-const getDisplayName = (stage: {
-	slug: string;
-	display_name: string;
-}): string => {
-	return stageNameMap[stage.slug] || stage.display_name;
-};
-
 const DocumentWorkspaceSkeleton: React.FC = () => (
 	<div className="bg-card rounded-2xl shadow-sm border border-border/50 p-8 animate-pulse">
 		<div className="space-y-6">
@@ -462,7 +446,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 			<div data-testid="card-header" className="space-y-2">
 				<div className="flex flex-wrap items-center justify-between gap-4">
 					<div className="space-y-1 min-w-[200px]">
-						<h2 className="text-xl font-medium tracking-tight">{getDisplayName(activeStage)}</h2>
+						<h2 className="text-xl font-medium tracking-tight">{activeStage.display_name}</h2>
 						<p className="text-sm text-muted-foreground leading-relaxed">{activeStage.description}</p>
 					</div>
 
