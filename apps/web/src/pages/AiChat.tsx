@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useAiStore, useOrganizationStore } from "@paynless/store";
 import { logger } from "@paynless/utils";
 import { analytics } from "@paynless/analytics";
@@ -13,10 +13,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus } from "lucide-react";
 import type { Chat } from "@paynless/types"; // Import Chat type
 import ErrorBoundary from "../components/common/ErrorBoundary"; // Added ErrorBoundary
+import { DomainSelector } from "@/components/dialectic/DomainSelector";
 
 export default function AiChatPage() {
 	const { chatId } = useParams<{ chatId?: string }>();
-	const navigate = useNavigate();
 
 	const {
 		loadAiConfig,
@@ -45,7 +45,7 @@ export default function AiChatPage() {
 	}));
 
 	// Organization Store data
-	const { currentOrganizationId: globalCurrentOrgId, userOrganizations } =
+	const { currentOrganizationId: globalCurrentOrgId } =
 		useOrganizationStore((state) => ({
 			currentOrganizationId: state.currentOrganizationId,
 			userOrganizations: state.userOrganizations,
@@ -201,6 +201,7 @@ export default function AiChatPage() {
 						<div className="h-4 w-px bg-border" />
 						<ModelSelector />
 						<PromptSelector />
+						<DomainSelector />
 					</div>
 
 					{/* Right side - Secondary controls */}

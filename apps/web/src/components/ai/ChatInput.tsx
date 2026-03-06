@@ -4,23 +4,22 @@ import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
 	useAiStore,
-	selectCurrentChatMessages,
+	selectSelectedChatMessages,
 	selectIsLoadingAiResponse,
 	selectAiError,
 	selectRewindTargetMessageId,
 	selectIsRewinding,
 } from "@paynless/store";
-import { ChatMessage } from "@paynless/types";
+import { ChatMessage, ChatRole, Messages } from "@paynless/types";
 import { logger } from "@paynless/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageSelectionControls } from "./MessageSelectionControls";
+import { CreateProjectFromChatButton } from "./CreateProjectFromChatButton";
 import { toast } from "sonner";
 import { useAIChatAffordabilityStatus } from "@/hooks/useAIChatAffordabilityStatus";
-import { AlertCircle, Info, Zap } from "lucide-react";
+import { AlertCircle, Info } from "lucide-react";
 import { ContinueUntilCompleteToggle } from "../common/ContinueUntilCompleteToggle";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 
 export interface ChatInputProps {
 	// No props for now, revised from previous attempt
@@ -32,7 +31,7 @@ const ChatInput: React.FC<ChatInputProps> = (
 	const navigate = useNavigate();
 	const location = useLocation();
 	const [inputMessage, setInputMessage] = useState(""); // Reverted to local state
-	const [isStreamingEnabled, setIsStreamingEnabled] = useState(true); // Streaming enabled by default
+	const [isStreamingEnabled] = useState(true); // Streaming enabled by default
 
 	// Actions from store
 	const {
@@ -49,7 +48,7 @@ const ChatInput: React.FC<ChatInputProps> = (
 	const aiError = useAiStore(selectAiError);
 	const rewindTargetMessageId = useAiStore(selectRewindTargetMessageId);
 	const isRewinding = useAiStore(selectIsRewinding);
-	const selectedMessages = useAiStore(selectCurrentChatMessages); // Moved to top level
+	const selectedMessages = useAiStore(selectSelectedChatMessages); // Moved to top level
 
 	// Simplified affordability check without token estimation
 	const { canAffordNext, lowBalanceWarning, currentBalance } =
@@ -87,8 +86,8 @@ const ChatInput: React.FC<ChatInputProps> = (
 		const { selectedProviderId, selectedPromptId } = useAiStore.getState();
 		// selectedMessages is now accessed from the top-level const
 
-		const contextMessages = selectedMessages.map((msg: ChatMessage) => ({
-			role: msg.role as "user" | "assistant" | "system", // Added type assertion
+		const contextMessages: Messages[] = selectedMessages.map((msg: ChatMessage): Messages => ({
+			role: msg.role === "user" ? ChatRole.USER : msg.role === "assistant" ? ChatRole.ASSISTANT : msg.role === "system" ? ChatRole.SYSTEM : ChatRole.USER,
 			content: msg.content,
 		}));
 
@@ -115,7 +114,7 @@ const ChatInput: React.FC<ChatInputProps> = (
 				// Use streaming for new messages (not rewind)
 				const eventSource = await sendStreamingMessage(
 					messageData,
-					(event) => {
+					() => {
 						// Handle streaming message events (optional)
 						logger.info("[ChatInput] Streaming chunk received");
 					},
@@ -265,6 +264,7 @@ const ChatInput: React.FC<ChatInputProps> = (
 					<div className="flex items-center space-x-4">
 						<MessageSelectionControls />
 						<ContinueUntilCompleteToggle />
+						<CreateProjectFromChatButton />
 					</div>
 				</div>
 			</div>
