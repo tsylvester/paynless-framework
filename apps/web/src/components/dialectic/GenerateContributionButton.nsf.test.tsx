@@ -15,6 +15,7 @@ import type {
   StageProgressDetail,
   UnifiedProjectProgress,
   StageDAGProgressDialogProps,
+  UseStartContributionGenerationReturn,
 } from '@paynless/types';
 import {
   initializeMockDialecticState,
@@ -26,19 +27,23 @@ import {
 import { selectActiveChatWalletInfo } from '@/mocks/walletStore.mock';
 import { selectIsStageReadyForSessionIteration } from '@paynless/store';
 
-/** Thesis minimum balance (matches STAGE_BALANCE_THRESHOLDS.thesis). Valid data for tests. */
-const THESIS_BALANCE_THRESHOLD = 200_000;
+const mockUseStartContributionGeneration = vi.fn<[], UseStartContributionGenerationReturn>();
+
+vi.mock('@/hooks/useStartContributionGeneration', () => ({
+  useStartContributionGeneration: () => mockUseStartContributionGeneration(),
+}));
 
 const mockThesisStage: DialecticStage = {
   id: 'stage-1',
   slug: 'thesis',
-  display_name: 'Thesis',
+  display_name: 'Proposal',
   description: 'Initial hypothesis generation',
   default_system_prompt_id: 'prompt-1',
   created_at: new Date().toISOString(),
   expected_output_template_ids: [],
   recipe_template_id: null,
   active_recipe_instance_id: null,
+  minimum_balance: 200000,
 };
 
 const oneSelectedModel: SelectedModels[] = [{ id: 'model-1', displayName: 'Model 1' }];
@@ -125,6 +130,30 @@ function buildUnifiedProgress(thesisStageStatus: 'paused_nsf' | 'not_started' | 
     projectStatus: thesisStageStatus,
     hydrationReady: true,
     stageDetails: [thesisDetail],
+  };
+}
+
+function getDefaultHookReturn(
+  overrides: Partial<UseStartContributionGenerationReturn> = {}
+): UseStartContributionGenerationReturn {
+  const defaultSession = createMockSession('test-session-id', 'test-project-id', 1);
+  return {
+    startContributionGeneration: vi.fn().mockResolvedValue({ success: true }),
+    isDisabled: false,
+    isResumeMode: false,
+    isSessionGenerating: false,
+    isWalletReady: true,
+    isStageReady: true,
+    balanceMeetsThreshold: true,
+    areAnyModelsSelected: true,
+    hasPausedNsfJobs: false,
+    didGenerationFail: false,
+    contributionsForStageAndIterationExist: false,
+    showBalanceCallout: false,
+    activeStage: mockThesisStage,
+    activeSession: defaultSession,
+    stageThreshold: mockThesisStage.minimum_balance,
+    ...overrides,
   };
 }
 
@@ -218,42 +247,28 @@ describe('GenerateContributionButton NSF', () => {
     vi.mocked(selectUnifiedProjectProgress).mockImplementation((_state: DialecticStateValues, sid: string) =>
       sid === sessionId ? buildUnifiedProgress('not_started') : buildUnifiedProgress('not_started')
     );
+
+    mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it('when activeWalletInfo.balance is below STAGE_BALANCE_THRESHOLDS[activeStage.slug] and active stage is NOT paused_nsf, button is disabled and shows "Insufficient Balance"', () => {
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-id',
-      orgId: null,
-      balance: String(THESIS_BALANCE_THRESHOLD - 1),
-      isLoadingPrimaryWallet: false,
-    });
-    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
-
+  it('when activeWalletInfo.balance is below stage minimum_balance and active stage is NOT paused_nsf, button is disabled and shows "Insufficient Balance"', () => {
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({ isDisabled: true, balanceMeetsThreshold: false })
+    );
     renderWithRouter(<GenerateContributionButton />);
-
     expect(screen.getByRole('button')).toBeDisabled();
     expect(screen.getByRole('button')).toHaveTextContent(/Insufficient Balance/i);
   });
 
   it('when balance is below threshold, balance callout is present with minimum tokens and stage name and links to /subscription', () => {
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-id',
-      orgId: null,
-      balance: String(THESIS_BALANCE_THRESHOLD - 1),
-      isLoadingPrimaryWallet: false,
-    });
-    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
-
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({ showBalanceCallout: true, balanceMeetsThreshold: false })
+    );
     renderWithRouter(<GenerateContributionButton />);
-
     const callout = screen.getByTestId('generate-button-balance-callout');
     expect(callout).toBeInTheDocument();
     expect(callout).toHaveTextContent(/Minimum.*200,000.*token balance.*Proposal/i);
@@ -262,18 +277,10 @@ describe('GenerateContributionButton NSF', () => {
   });
 
   it('when balance is below threshold and stage is paused_nsf, balance callout is present and links to /subscription', () => {
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-id',
-      orgId: null,
-      balance: '100000',
-      isLoadingPrimaryWallet: false,
-    });
-    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
-
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({ showBalanceCallout: true, balanceMeetsThreshold: false, hasPausedNsfJobs: true })
+    );
     renderWithRouter(<GenerateContributionButton />);
-
     const callout = screen.getByTestId('generate-button-balance-callout');
     expect(callout).toBeInTheDocument();
     expect(callout).toHaveTextContent(/Minimum.*200,000.*token balance.*Proposal/i);
@@ -282,89 +289,49 @@ describe('GenerateContributionButton NSF', () => {
   });
 
   it('when balance meets threshold, balance callout is not present', () => {
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-id',
-      orgId: null,
-      balance: String(THESIS_BALANCE_THRESHOLD),
-      isLoadingPrimaryWallet: false,
-    });
-    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
-
+    mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
     renderWithRouter(<GenerateContributionButton />);
-
     expect(screen.queryByTestId('generate-button-balance-callout')).not.toBeInTheDocument();
   });
 
   it('when activeWalletInfo.balance meets threshold and active stage is NOT paused_nsf, button is enabled and shows "Generate {displayName}"', () => {
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-id',
-      orgId: null,
-      balance: String(THESIS_BALANCE_THRESHOLD),
-      isLoadingPrimaryWallet: false,
-    });
-    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
-
+    mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
     renderWithRouter(<GenerateContributionButton />);
-
     expect(screen.getByRole('button')).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeInTheDocument();
   });
 
   it('when active stage stageStatus is paused_nsf and balance is below threshold, button is disabled and shows "Resume" so user knows they are resuming', () => {
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-id',
-      orgId: null,
-      balance: '100000',
-      isLoadingPrimaryWallet: false,
-    });
-    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
-
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({ isDisabled: true, hasPausedNsfJobs: true, balanceMeetsThreshold: false })
+    );
     renderWithRouter(<GenerateContributionButton />);
-
     expect(screen.getByRole('button')).toBeDisabled();
     expect(screen.getByRole('button')).toHaveTextContent(/Resume Proposal/i);
   });
 
   it('when active stage stageStatus is paused_nsf and balance meets threshold, button is enabled and shows "Resume {displayName}"', () => {
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-id',
-      orgId: null,
-      balance: String(THESIS_BALANCE_THRESHOLD),
-      isLoadingPrimaryWallet: false,
-    });
-    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
-
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({ isResumeMode: true, hasPausedNsfJobs: true, balanceMeetsThreshold: true })
+    );
     renderWithRouter(<GenerateContributionButton />);
-
     expect(screen.getByRole('button')).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeInTheDocument();
   });
 
   it('clicking "Resume {displayName}" calls resumePausedNsfJobs with sessionId, stageSlug, iterationNumber and does not call generateContributions', async () => {
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-id',
-      orgId: null,
-      balance: String(THESIS_BALANCE_THRESHOLD),
-      isLoadingPrimaryWallet: false,
+    const startContributionGeneration = vi.fn().mockImplementation((cb: (() => void) | undefined) => {
+      mockResumePausedNsfJobs({ sessionId, stageSlug: 'thesis', iterationNumber });
+      cb?.();
+      return Promise.resolve({ success: true });
     });
-    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
-
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({ isResumeMode: true, hasPausedNsfJobs: true, startContributionGeneration })
+    );
     const user = userEvent.setup();
     renderWithRouter(<GenerateContributionButton />);
-
     const button = screen.getByRole('button', { name: /Resume Proposal/i });
     await user.click(button);
-
     await waitFor(() => {
       expect(mockResumePausedNsfJobs).toHaveBeenCalledTimes(1);
       expect(mockResumePausedNsfJobs).toHaveBeenCalledWith({
@@ -373,81 +340,63 @@ describe('GenerateContributionButton NSF', () => {
         iterationNumber,
       });
     });
-
     expect(getDialecticStoreState().generateContributions).not.toHaveBeenCalled();
   });
 
   it('clicking "Generate {displayName}" calls generateContributions and does not call resumePausedNsfJobs', async () => {
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-id',
-      orgId: null,
-      balance: String(THESIS_BALANCE_THRESHOLD),
-      isLoadingPrimaryWallet: false,
-    });
-    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('not_started'));
-
     const store = getDialecticStoreState();
     vi.mocked(store.generateContributions).mockResolvedValue({
       data: { job_ids: [], sessionId, projectId, stage: 'thesis', iteration: 1, status: 'generating', successfulContributions: [], failedAttempts: [] },
       status: 202,
     });
-
+    const startContributionGeneration = vi.fn().mockImplementation((cb: (() => void) | undefined) => {
+      store.generateContributions({
+        sessionId,
+        projectId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        walletId: 'wallet-id',
+        continueUntilComplete: false,
+      });
+      cb?.();
+      return Promise.resolve({ success: true });
+    });
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({ startContributionGeneration })
+    );
     const user = userEvent.setup();
     renderWithRouter(<GenerateContributionButton />);
-
     const button = screen.getByRole('button', { name: /Generate Proposal/i });
     await user.click(button);
-
     await waitFor(() => {
       expect(store.generateContributions).toHaveBeenCalledTimes(1);
     });
-
     expect(mockResumePausedNsfJobs).not.toHaveBeenCalled();
   });
 
   it('clicking Resume opens StageDAGProgressDialog so user can monitor resumed generation', async () => {
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-id',
-      orgId: null,
-      balance: String(THESIS_BALANCE_THRESHOLD),
-      isLoadingPrimaryWallet: false,
+    const startContributionGeneration = vi.fn().mockImplementation((cb: (() => void) | undefined) => {
+      cb?.();
+      return Promise.resolve({ success: true });
     });
-    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
-
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({ isResumeMode: true, hasPausedNsfJobs: true, startContributionGeneration })
+    );
     const user = userEvent.setup();
     renderWithRouter(<GenerateContributionButton />);
-
     expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
-
     const button = screen.getByRole('button', { name: /Resume Proposal/i });
     await user.click(button);
-
     await waitFor(() => {
       expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
     });
   });
 
   it('button state priority: isSessionGenerating overrides paused_nsf and balance', () => {
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-id',
-      orgId: null,
-      balance: String(THESIS_BALANCE_THRESHOLD),
-      isLoadingPrimaryWallet: false,
-    });
-    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(buildUnifiedProgress('paused_nsf'));
-
-    setDialecticStateValues({
-      generatingSessions: { [sessionId]: ['job-1'] },
-    });
-
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({ isSessionGenerating: true, isDisabled: true })
+    );
     renderWithRouter(<GenerateContributionButton />);
-
     expect(screen.getByRole('button')).toBeDisabled();
     expect(screen.getByRole('button')).toHaveTextContent(/Generating.../i);
   });

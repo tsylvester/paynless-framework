@@ -49,8 +49,10 @@ import {
     selectStageDocumentResource,
     selectEditedDocumentByKey,
     selectValidMarkdownDocumentKeys,
+    selectDocumentDisplayMetadata,
     selectUnifiedProjectProgress,
     selectStageHasUnsavedChanges,
+    selectStageDocumentChecklist,
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type {
@@ -78,6 +80,7 @@ import type {
     SelectedModels,
     JobProgressEntry,
     JobProgressDto,
+    DocumentDisplayMetadata,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 
@@ -630,6 +633,112 @@ describe('selectValidMarkdownDocumentKeys', () => {
         expect(result.has('header_context_doc')).toBe(false);
     });
   });
+
+describe('selectStageDocumentChecklist', () => {
+    it('excludes header_context documents by filtering against selectValidMarkdownDocumentKeys', () => {
+        const sessionId = 'session-checklist-filter';
+        const stageSlug = 'header-markdown-stage';
+        const iterationNumber = 1;
+        const modelId = 'model-1';
+        const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+        const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+
+        const stageWithHeaderContextMarkdown: DialecticStageRecipe = {
+            stageSlug: 'header-markdown-stage',
+            instanceId: 'instance-header-markdown',
+            edges: [],
+            steps: [
+                {
+                    id: 'step-header-md',
+                    step_key: 'header_context_step',
+                    step_slug: 'header-context-step',
+                    step_name: 'Header Context Step',
+                    execution_order: 1,
+                    parallel_group: 1,
+                    branch_key: 'branch-1',
+                    job_type: 'PLAN',
+                    prompt_type: 'Planner',
+                    prompt_template_id: 'prompt-1',
+                    output_type: 'header_context',
+                    granularity_strategy: 'all_to_one',
+                    inputs_required: [],
+                    inputs_relevance: [],
+                    outputs_required: [
+                        {
+                            document_key: 'header_context_doc',
+                            artifact_class: 'header_context',
+                            file_type: 'markdown',
+                        },
+                    ],
+                },
+                {
+                    id: 'step-rendered',
+                    step_key: 'rendered_step',
+                    step_slug: 'rendered-step',
+                    step_name: 'Rendered Step',
+                    execution_order: 2,
+                    parallel_group: 2,
+                    branch_key: 'branch-2',
+                    job_type: 'EXECUTE',
+                    prompt_type: 'Turn',
+                    prompt_template_id: 'prompt-2',
+                    output_type: 'rendered_document',
+                    granularity_strategy: 'per_source_document',
+                    inputs_required: [],
+                    inputs_relevance: [],
+                    outputs_required: [
+                        {
+                            document_key: 'business_case',
+                            artifact_class: 'rendered_document',
+                            file_type: 'markdown',
+                        },
+                    ],
+                },
+            ],
+        };
+
+        const renderedDescriptor: StageRenderedDocumentDescriptor = {
+            descriptorType: 'rendered',
+            status: 'completed',
+            job_id: 'job-1',
+            latestRenderedResourceId: 'res-1',
+            modelId,
+            versionHash: 'hash-1',
+            lastRenderedResourceId: 'res-1',
+            lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+            stepKey: 'rendered_step',
+        };
+
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: {
+                [stageSlug]: stageWithHeaderContextMarkdown,
+            },
+            stageRunProgress: {
+                [progressKey]: {
+                    stepStatuses: { rendered_step: 'completed', header_context_step: 'completed' },
+                    documents: {
+                        [`business_case${sep}${modelId}`]: renderedDescriptor,
+                        [`header_context_doc${sep}${modelId}`]: {
+                            ...renderedDescriptor,
+                            job_id: 'job-2',
+                            latestRenderedResourceId: 'res-2',
+                        },
+                    },
+                    jobProgress: {},
+                    progress: { totalSteps: 2, completedSteps: 2, failedSteps: 0 },
+                    jobs: [],
+                },
+            },
+        };
+
+        const checklist = selectStageDocumentChecklist(state, progressKey, modelId);
+
+        expect(checklist).toHaveLength(1);
+        expect(checklist[0].documentKey).toBe('business_case');
+        expect(checklist.map((e) => e.documentKey)).not.toContain('header_context_doc');
+    });
+});
 
 describe('selectUnifiedProjectProgress', () => {
     const sessionId = 'session-unified-docs';
@@ -1306,6 +1415,257 @@ describe('selectUnifiedProjectProgress', () => {
         expect(stageADetail).toBeDefined();
         expect(stageADetail?.totalDocuments).toBe(1);
         expect(stageADetail?.completedDocuments).toBe(0);
+    });
+});
+
+describe('selectDocumentDisplayMetadata', () => {
+    const stageSlug = 'thesis';
+
+    it('returns empty map when no recipe steps exist', () => {
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: {},
+        };
+
+        const result = selectDocumentDisplayMetadata(state, 'nonexistent-stage');
+
+        expect(result).toBeInstanceOf(Map);
+        expect(result.size).toBe(0);
+    });
+
+    it('extracts display_name and description from document entries in outputs_required', () => {
+        const steps: DialecticStageRecipeStep[] = [
+            {
+                id: 'step-1',
+                step_key: 'step_1',
+                step_slug: 'step-1',
+                step_name: 'Step 1',
+                execution_order: 1,
+                parallel_group: 1,
+                branch_key: 'b1',
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                prompt_template_id: 'p1',
+                output_type: 'assembled_document_json',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'business_case',
+                        artifact_class: 'rendered_document',
+                        file_type: 'markdown',
+                        display_name: 'Business Case',
+                        description: 'A business case document.',
+                    },
+                ],
+            },
+        ];
+        const recipe: DialecticStageRecipe = {
+            stageSlug,
+            instanceId: 'inst-1',
+            steps,
+            edges: [],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: { [stageSlug]: recipe },
+        };
+
+        const result = selectDocumentDisplayMetadata(state, stageSlug);
+
+        expect(result.size).toBe(1);
+        const meta: DocumentDisplayMetadata | undefined = result.get('business_case');
+        expect(meta).toBeDefined();
+        expect(meta?.displayName).toBe('Business Case');
+        expect(meta?.description).toBe('A business case document.');
+    });
+
+    it('falls back to title-cased document_key when display_name is absent', () => {
+        const steps: DialecticStageRecipeStep[] = [
+            {
+                id: 'step-1',
+                step_key: 'step_1',
+                step_slug: 'step-1',
+                step_name: 'Step 1',
+                execution_order: 1,
+                parallel_group: 1,
+                branch_key: 'b1',
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                prompt_template_id: 'p1',
+                output_type: 'assembled_document_json',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'feature_spec',
+                        artifact_class: 'rendered_document',
+                        file_type: 'markdown',
+                    },
+                ],
+            },
+        ];
+        const recipe: DialecticStageRecipe = {
+            stageSlug,
+            instanceId: 'inst-1',
+            steps,
+            edges: [],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: { [stageSlug]: recipe },
+        };
+
+        const result = selectDocumentDisplayMetadata(state, stageSlug);
+
+        expect(result.size).toBe(1);
+        const meta: DocumentDisplayMetadata | undefined = result.get('feature_spec');
+        expect(meta).toBeDefined();
+        expect(meta?.displayName).toBe('Feature Spec');
+        expect(meta?.description).toBe('');
+    });
+
+    it('falls back to empty string when description is absent', () => {
+        const steps: DialecticStageRecipeStep[] = [
+            {
+                id: 'step-1',
+                step_key: 'step_1',
+                step_slug: 'step-1',
+                step_name: 'Step 1',
+                execution_order: 1,
+                parallel_group: 1,
+                branch_key: 'b1',
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                prompt_template_id: 'p1',
+                output_type: 'assembled_document_json',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'success_metrics',
+                        artifact_class: 'rendered_document',
+                        file_type: 'markdown',
+                        display_name: 'Success Metrics',
+                    },
+                ],
+            },
+        ];
+        const recipe: DialecticStageRecipe = {
+            stageSlug,
+            instanceId: 'inst-1',
+            steps,
+            edges: [],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: { [stageSlug]: recipe },
+        };
+
+        const result = selectDocumentDisplayMetadata(state, stageSlug);
+
+        expect(result.size).toBe(1);
+        const meta: DocumentDisplayMetadata | undefined = result.get('success_metrics');
+        expect(meta).toBeDefined();
+        expect(meta?.displayName).toBe('Success Metrics');
+        expect(meta?.description).toBe('');
+    });
+
+    it('ignores header_context output_type steps', () => {
+        const steps: DialecticStageRecipeStep[] = [
+            {
+                id: 'step-header',
+                step_key: 'header_step',
+                step_slug: 'header-step',
+                step_name: 'Header Step',
+                execution_order: 1,
+                parallel_group: 1,
+                branch_key: 'b1',
+                job_type: 'PLAN',
+                prompt_type: 'Planner',
+                prompt_template_id: 'p1',
+                output_type: 'header_context',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'header_doc',
+                        artifact_class: 'header_context',
+                        file_type: 'markdown',
+                        display_name: 'Header Doc',
+                        description: 'Should be excluded.',
+                    },
+                ],
+            },
+        ];
+        const recipe: DialecticStageRecipe = {
+            stageSlug: 'header-stage',
+            instanceId: 'inst-1',
+            steps,
+            edges: [],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: { 'header-stage': recipe },
+        };
+
+        const result = selectDocumentDisplayMetadata(state, 'header-stage');
+
+        expect(result.size).toBe(0);
+    });
+
+    it('handles string JSONB (unparsed) outputs_required', () => {
+        const stepWithStringOutputs: DialecticStageRecipeStep = {
+            id: 'step-1',
+            step_key: 'step_1',
+            step_slug: 'step-1',
+            step_name: 'Step 1',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            prompt_template_id: 'p1',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [
+                {
+                    document_key: 'technical_approach',
+                    artifact_class: 'rendered_document',
+                    file_type: 'markdown',
+                    display_name: 'Technical Approach',
+                    description: 'Technical approach document.',
+                },
+            ],
+        };
+        const stepWithStringOutputsUntyped: DialecticStageRecipeStep = {
+            ...stepWithStringOutputs,
+            outputs_required: JSON.stringify(stepWithStringOutputs.outputs_required),
+        };
+        const recipe: DialecticStageRecipe = {
+            stageSlug,
+            instanceId: 'inst-1',
+            steps: [stepWithStringOutputsUntyped],
+            edges: [],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: { [stageSlug]: recipe },
+        };
+
+        const result = selectDocumentDisplayMetadata(state, stageSlug);
+
+        expect(result.size).toBe(1);
+        const meta: DocumentDisplayMetadata | undefined = result.get('technical_approach');
+        expect(meta).toBeDefined();
+        expect(meta?.displayName).toBe('Technical Approach');
+        expect(meta?.description).toBe('Technical approach document.');
     });
 });
 

@@ -1343,6 +1343,7 @@ export type Database = {
           display_name: string
           expected_output_template_ids: string[]
           id: string
+          minimum_balance: number
           recipe_template_id: string | null
           slug: string
         }
@@ -1354,6 +1355,7 @@ export type Database = {
           display_name: string
           expected_output_template_ids?: string[]
           id?: string
+          minimum_balance?: number
           recipe_template_id?: string | null
           slug: string
         }
@@ -1365,6 +1367,7 @@ export type Database = {
           display_name?: string
           expected_output_template_ids?: string[]
           id?: string
+          minimum_balance?: number
           recipe_template_id?: string | null
           slug?: string
         }

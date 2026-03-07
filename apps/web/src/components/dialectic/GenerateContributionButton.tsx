@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useDialecticStore } from "@paynless/store";
-import { getDisplayName } from "@paynless/types";
 import { Loader2, RefreshCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StageDAGProgressDialog } from "./StageDAGProgressDialog";
@@ -66,7 +65,7 @@ export const GenerateContributionButton: React.FC<
 		if (!isWalletReady) return "Wallet Not Ready";
 		if (!activeStage || !activeSession) return "Stage Not Ready";
 		if (!isStageReady) return "Previous Stage Incomplete";
-		const displayName = getDisplayName(activeStage.slug);
+		const displayName = activeStage.display_name;
 		if (hasPausedNsfJobs) return `Resume ${displayName}`;
 		if (!balanceMeetsThreshold) return "Insufficient Balance";
 		if (didGenerationFail) return `Retry ${displayName}`;
@@ -89,7 +88,7 @@ export const GenerateContributionButton: React.FC<
 						to="/subscription"
 						className="font-semibold underline underline-offset-2 hover:no-underline"
 					>
-						Minimum {formattedThreshold} token balance for {getDisplayName(activeStage.slug)}{" "}
+						Minimum {formattedThreshold} token balance for {activeStage.display_name}{" "}
 					</Link>
 				</p>
 			)}

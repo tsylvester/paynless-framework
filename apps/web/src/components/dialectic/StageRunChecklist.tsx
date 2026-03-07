@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import type {
   DialecticStateValues,
   RegenerateDocumentPayload,
@@ -10,6 +10,7 @@ import type { DialecticStageRecipeStep } from '@paynless/types';
 import {
   useDialecticStore,
   selectActiveContextSessionId,
+  selectDocumentDisplayMetadata,
   selectStepList,
   selectStageRunProgress,
   selectStageDocumentChecklist,
@@ -19,7 +20,7 @@ import {
 
 import { isDocumentHighlighted } from '@paynless/utils';
 import { cn } from '@/lib/utils';
-import { RefreshCcw } from 'lucide-react';
+import { Info, RefreshCcw } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 type MarkdownDocumentDescriptor = {
   documentKey: string;
@@ -423,11 +425,15 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
   const checklistData = useDialecticStore((state) =>
     computeStageRunChecklistData(state, modelId),
   );
+  const documentDisplayMetadata = useDialecticStore((state) =>
+    selectDocumentDisplayMetadata(state, effectiveStageSlug ?? ''),
+  );
   const effectiveFocusedStageDocumentMap = focusedStageDocumentMap ?? {};
 
   const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
   const [regenerateDialogContext, setRegenerateDialogContext] = useState<RegenerateDialogContext | null>(null);
   const [regenerateSelectedModelIds, setRegenerateSelectedModelIds] = useState<Set<string>>(new Set());
+  const checklistRef = useRef<HTMLDivElement>(null);
 
   const handleDocumentSelectForStage = useCallback(
     (documentKey: string, stepKey: string, stageSlug: string, modelIds: string[]) => {
@@ -586,6 +592,7 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
 
   return (
     <div
+      ref={checklistRef}
       className="w-full flex flex-col gap-0 px-0"
       data-testid="stage-run-checklist-card"
     >
@@ -594,6 +601,17 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
         data-testid="stage-run-checklist-documents"
       >
         {stageData.documentRows.map(({ entry, stepKey, perModelLabels }) => {
+          const meta = documentDisplayMetadata.get(entry.documentKey);
+          const displayName: string =
+            meta?.displayName ??
+            entry.documentKey
+              .split('_')
+              .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ');
+          const description: string = meta?.description ?? '';
+          const displayNameWithBreaks: string = displayName.split('. ').join('.\n\n');
+          const descriptionWithBreaks: string = description.split('. ').join('.\n\n');
+
           const focusedModelIdsForStage: string[] =
             activeSessionId != null
               ? Object.keys(effectiveFocusedStageDocumentMap)
@@ -721,9 +739,32 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
                   aria-hidden
                 />
               )}
-              <span className="font-mono text-xs truncate">
-                {entry.documentKey}
-              </span>
+              <div className="flex flex-1 min-w-0 items-center gap-2">
+                <span className="min-w-0 flex-1 font-mono text-xs whitespace-pre-line break-words">
+                  {displayNameWithBreaks}
+                </span>
+                {description ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="ml-auto inline-flex shrink-0 text-muted-foreground hover:text-foreground cursor-help"
+                        role="img"
+                        aria-label="Document description"
+                        data-testid={`document-info-${entry.documentKey}`}
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      align="center"
+                      collisionBoundary={checklistRef.current}
+                      className="max-w-sm whitespace-pre-line break-words"
+                    >
+                      {descriptionWithBreaks}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : null}
+              </div>
             </li>
           );
         })}
@@ -739,11 +780,19 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
           <DialogHeader>
             <DialogTitle>Regenerate document</DialogTitle>
           </DialogHeader>
-          {regenerateDialogContext && (
+          {regenerateDialogContext && (() => {
+            const dialogMeta = documentDisplayMetadata.get(regenerateDialogContext.documentKey);
+            const dialogDisplayName: string =
+              dialogMeta?.displayName ??
+              regenerateDialogContext.documentKey
+                .split('_')
+                .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                .join(' ');
+            return (
             <>
               <p className="text-sm text-muted-foreground">
                 Select which model outputs to regenerate for{' '}
-                <code className="font-mono text-xs">{regenerateDialogContext.documentKey}</code>.
+                <code className="font-mono text-xs">{dialogDisplayName}</code>.
               </p>
               <div className="flex flex-col gap-2">
                 {regenerateDialogContext.perModelLabels.map((label) => (
@@ -790,7 +839,8 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
                 </Button>
               </DialogFooter>
             </>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

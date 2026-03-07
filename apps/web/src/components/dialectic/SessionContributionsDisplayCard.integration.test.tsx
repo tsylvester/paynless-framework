@@ -17,6 +17,7 @@ import type {
   SelectedModels,
   StageDocumentContentState,
   StageRenderedDocumentDescriptor,
+  UnifiedProjectProgress,
 } from '@paynless/types';
 
 import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard';
@@ -28,6 +29,7 @@ import {
   setDialecticStateValues,
   selectIsStageReadyForSessionIteration,
   selectSelectedModels,
+  selectUnifiedProjectProgress,
 } from '../../mocks/dialecticStore.mock';
 import { mockSetAuthUser } from '../../mocks/authStore.mock';
 import { selectStageDocumentChecklist } from '@paynless/store';
@@ -42,6 +44,7 @@ vi.mock('@paynless/store', async () => {
     useAuthStore: authMock.useAuthStore,
     selectStageDocumentChecklist: actual.selectStageDocumentChecklist,
     selectIsStageReadyForSessionIteration: mock.selectIsStageReadyForSessionIteration,
+    selectUnifiedProjectProgress: mock.selectUnifiedProjectProgress,
   };
 });
 
@@ -58,6 +61,31 @@ const sessionId = 'sess-1';
 const projectId = 'proj-1';
 const iterationNumber = 1;
 const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+function buildUnifiedProgressWithStageComplete(activeStageSlug: string): UnifiedProjectProgress {
+  return {
+    totalStages: 1,
+    completedStages: 0,
+    currentStageSlug: activeStageSlug,
+    overallPercentage: 100,
+    currentStage: null,
+    projectStatus: 'in_progress',
+    hydrationReady: true,
+    stageDetails: [
+      {
+        stageSlug: activeStageSlug,
+        totalSteps: 3,
+        completedSteps: 3,
+        totalDocuments: 1,
+        completedDocuments: 1,
+        failedSteps: 0,
+        stagePercentage: 100,
+        stepsDetail: [],
+        stageStatus: 'completed',
+      },
+    ],
+  };
+}
 
 type StageRunProgressEntry = NonNullable<DialecticStateValues['stageRunProgress'][string]>;
 type StepStatuses = StageRunProgressEntry['stepStatuses'];
@@ -104,6 +132,11 @@ const buildRecipeSteps = (): DialecticStageRecipeStep[] => [
         artifact_class: 'assembled_json',
         file_type: 'json',
       },
+      {
+        document_key: 'draft_document_outline',
+        artifact_class: 'rendered_document',
+        file_type: 'markdown',
+      },
     ],
     output_type: 'assembled_document_json',
     granularity_strategy: 'per_source_document',
@@ -141,6 +174,7 @@ const buildStage = (): DialecticStage => ({
   recipe_template_id: null,
   active_recipe_instance_id: null,
   created_at: isoTimestamp,
+  minimum_balance: 100000,
 });
 
 const buildProcessTemplate = (stage: DialecticStage): DialecticProcessTemplate => ({
@@ -163,6 +197,7 @@ const buildNextStage = (): DialecticStage => ({
   recipe_template_id: null,
   active_recipe_instance_id: null,
   created_at: isoTimestamp,
+  minimum_balance: 100000,
 });
 
 const buildProcessTemplateWithTransition = (
@@ -274,6 +309,7 @@ const buildRecipe = (steps: DialecticStageRecipeStep[]): DialecticStageRecipe =>
   stageSlug,
   instanceId: 'instance-1',
   steps,
+  edges: [],
 });
 
 const buildStageRunProgress = (
@@ -283,6 +319,8 @@ const buildStageRunProgress = (
   stepStatuses,
   documents,
   jobProgress: {},
+  progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+  jobs: [],
 });
 
 const buildStageDocumentDescriptor = (
@@ -747,6 +785,8 @@ describe('SessionContributionsDisplayCard Integration Tests', () => {
         },
       });
 
+      selectUnifiedProjectProgress.mockReturnValue(buildUnifiedProgressWithStageComplete(stage.slug));
+
       const actions = getDialecticStoreActions();
       const submitResponsesMock = actions.submitStageResponses;
       if (!isMockFn(submitResponsesMock)) {
@@ -985,6 +1025,8 @@ describe('SessionContributionsDisplayCard Integration Tests', () => {
           [contentKey]: buildStageDocumentContentState(),
         },
       });
+
+      selectUnifiedProjectProgress.mockReturnValue(buildUnifiedProgressWithStageComplete(stage.slug));
 
       const actions = getDialecticStoreActions();
       const submitResponsesMock = actions.submitStageResponses;

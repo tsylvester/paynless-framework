@@ -11,7 +11,6 @@ import {
   selectActiveChatWalletInfo,
 } from "@paynless/store";
 import {
-  STAGE_BALANCE_THRESHOLDS,
   type DialecticSession,
   type GenerateContributionsPayload,
   type StartContributionGenerationResult,
@@ -103,8 +102,7 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
 
   const stageThreshold: number | undefined = useMemo(() => {
     if (!activeStage) return undefined;
-    const value = STAGE_BALANCE_THRESHOLDS[activeStage.slug];
-    return typeof value === "number" ? value : undefined;
+    return activeStage.minimum_balance;
   }, [activeStage]);
 
   const balanceMeetsThreshold = useMemo((): boolean => {
