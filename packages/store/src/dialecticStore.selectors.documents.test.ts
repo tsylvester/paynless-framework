@@ -49,6 +49,7 @@ import {
     selectStageDocumentResource,
     selectEditedDocumentByKey,
     selectValidMarkdownDocumentKeys,
+    selectDocumentDisplayMetadata,
     selectUnifiedProjectProgress,
     selectStageHasUnsavedChanges,
     selectStageDocumentChecklist,
@@ -79,6 +80,7 @@ import type {
     SelectedModels,
     JobProgressEntry,
     JobProgressDto,
+    DocumentDisplayMetadata,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 
@@ -695,9 +697,9 @@ describe('selectStageDocumentChecklist', () => {
             ],
         };
 
-        const renderedDescriptor = {
-            descriptorType: 'rendered' as const,
-            status: 'completed' as const,
+        const renderedDescriptor: StageRenderedDocumentDescriptor = {
+            descriptorType: 'rendered',
+            status: 'completed',
             job_id: 'job-1',
             latestRenderedResourceId: 'res-1',
             modelId,
@@ -1413,6 +1415,257 @@ describe('selectUnifiedProjectProgress', () => {
         expect(stageADetail).toBeDefined();
         expect(stageADetail?.totalDocuments).toBe(1);
         expect(stageADetail?.completedDocuments).toBe(0);
+    });
+});
+
+describe('selectDocumentDisplayMetadata', () => {
+    const stageSlug = 'thesis';
+
+    it('returns empty map when no recipe steps exist', () => {
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: {},
+        };
+
+        const result = selectDocumentDisplayMetadata(state, 'nonexistent-stage');
+
+        expect(result).toBeInstanceOf(Map);
+        expect(result.size).toBe(0);
+    });
+
+    it('extracts display_name and description from document entries in outputs_required', () => {
+        const steps: DialecticStageRecipeStep[] = [
+            {
+                id: 'step-1',
+                step_key: 'step_1',
+                step_slug: 'step-1',
+                step_name: 'Step 1',
+                execution_order: 1,
+                parallel_group: 1,
+                branch_key: 'b1',
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                prompt_template_id: 'p1',
+                output_type: 'assembled_document_json',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'business_case',
+                        artifact_class: 'rendered_document',
+                        file_type: 'markdown',
+                        display_name: 'Business Case',
+                        description: 'A business case document.',
+                    },
+                ],
+            },
+        ];
+        const recipe: DialecticStageRecipe = {
+            stageSlug,
+            instanceId: 'inst-1',
+            steps,
+            edges: [],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: { [stageSlug]: recipe },
+        };
+
+        const result = selectDocumentDisplayMetadata(state, stageSlug);
+
+        expect(result.size).toBe(1);
+        const meta: DocumentDisplayMetadata | undefined = result.get('business_case');
+        expect(meta).toBeDefined();
+        expect(meta?.displayName).toBe('Business Case');
+        expect(meta?.description).toBe('A business case document.');
+    });
+
+    it('falls back to title-cased document_key when display_name is absent', () => {
+        const steps: DialecticStageRecipeStep[] = [
+            {
+                id: 'step-1',
+                step_key: 'step_1',
+                step_slug: 'step-1',
+                step_name: 'Step 1',
+                execution_order: 1,
+                parallel_group: 1,
+                branch_key: 'b1',
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                prompt_template_id: 'p1',
+                output_type: 'assembled_document_json',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'feature_spec',
+                        artifact_class: 'rendered_document',
+                        file_type: 'markdown',
+                    },
+                ],
+            },
+        ];
+        const recipe: DialecticStageRecipe = {
+            stageSlug,
+            instanceId: 'inst-1',
+            steps,
+            edges: [],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: { [stageSlug]: recipe },
+        };
+
+        const result = selectDocumentDisplayMetadata(state, stageSlug);
+
+        expect(result.size).toBe(1);
+        const meta: DocumentDisplayMetadata | undefined = result.get('feature_spec');
+        expect(meta).toBeDefined();
+        expect(meta?.displayName).toBe('Feature Spec');
+        expect(meta?.description).toBe('');
+    });
+
+    it('falls back to empty string when description is absent', () => {
+        const steps: DialecticStageRecipeStep[] = [
+            {
+                id: 'step-1',
+                step_key: 'step_1',
+                step_slug: 'step-1',
+                step_name: 'Step 1',
+                execution_order: 1,
+                parallel_group: 1,
+                branch_key: 'b1',
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                prompt_template_id: 'p1',
+                output_type: 'assembled_document_json',
+                granularity_strategy: 'per_source_document',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'success_metrics',
+                        artifact_class: 'rendered_document',
+                        file_type: 'markdown',
+                        display_name: 'Success Metrics',
+                    },
+                ],
+            },
+        ];
+        const recipe: DialecticStageRecipe = {
+            stageSlug,
+            instanceId: 'inst-1',
+            steps,
+            edges: [],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: { [stageSlug]: recipe },
+        };
+
+        const result = selectDocumentDisplayMetadata(state, stageSlug);
+
+        expect(result.size).toBe(1);
+        const meta: DocumentDisplayMetadata | undefined = result.get('success_metrics');
+        expect(meta).toBeDefined();
+        expect(meta?.displayName).toBe('Success Metrics');
+        expect(meta?.description).toBe('');
+    });
+
+    it('ignores header_context output_type steps', () => {
+        const steps: DialecticStageRecipeStep[] = [
+            {
+                id: 'step-header',
+                step_key: 'header_step',
+                step_slug: 'header-step',
+                step_name: 'Header Step',
+                execution_order: 1,
+                parallel_group: 1,
+                branch_key: 'b1',
+                job_type: 'PLAN',
+                prompt_type: 'Planner',
+                prompt_template_id: 'p1',
+                output_type: 'header_context',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [],
+                inputs_relevance: [],
+                outputs_required: [
+                    {
+                        document_key: 'header_doc',
+                        artifact_class: 'header_context',
+                        file_type: 'markdown',
+                        display_name: 'Header Doc',
+                        description: 'Should be excluded.',
+                    },
+                ],
+            },
+        ];
+        const recipe: DialecticStageRecipe = {
+            stageSlug: 'header-stage',
+            instanceId: 'inst-1',
+            steps,
+            edges: [],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: { 'header-stage': recipe },
+        };
+
+        const result = selectDocumentDisplayMetadata(state, 'header-stage');
+
+        expect(result.size).toBe(0);
+    });
+
+    it('handles string JSONB (unparsed) outputs_required', () => {
+        const stepWithStringOutputs: DialecticStageRecipeStep = {
+            id: 'step-1',
+            step_key: 'step_1',
+            step_slug: 'step-1',
+            step_name: 'Step 1',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'EXECUTE',
+            prompt_type: 'Turn',
+            prompt_template_id: 'p1',
+            output_type: 'assembled_document_json',
+            granularity_strategy: 'per_source_document',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [
+                {
+                    document_key: 'technical_approach',
+                    artifact_class: 'rendered_document',
+                    file_type: 'markdown',
+                    display_name: 'Technical Approach',
+                    description: 'Technical approach document.',
+                },
+            ],
+        };
+        const stepWithStringOutputsUntyped: DialecticStageRecipeStep = {
+            ...stepWithStringOutputs,
+            outputs_required: JSON.stringify(stepWithStringOutputs.outputs_required),
+        };
+        const recipe: DialecticStageRecipe = {
+            stageSlug,
+            instanceId: 'inst-1',
+            steps: [stepWithStringOutputsUntyped],
+            edges: [],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            recipesByStageSlug: { [stageSlug]: recipe },
+        };
+
+        const result = selectDocumentDisplayMetadata(state, stageSlug);
+
+        expect(result.size).toBe(1);
+        const meta: DocumentDisplayMetadata | undefined = result.get('technical_approach');
+        expect(meta).toBeDefined();
+        expect(meta?.displayName).toBe('Technical Approach');
+        expect(meta?.description).toBe('Technical approach document.');
     });
 });
 

@@ -214,6 +214,16 @@ export interface OutputRequirement {
   artifact_class: 'header_context' | 'assembled_json' | 'rendered_document';
   file_type: 'json' | 'markdown';
   template_filename?: string;
+  /** From DB/recipe JSONB; used for document display metadata. */
+  display_name?: string;
+  /** From DB/recipe JSONB; used for document display metadata. */
+  description?: string;
+}
+
+/** Display metadata for a document key, derived from recipe outputs_required (display_name, description). */
+export interface DocumentDisplayMetadata {
+  displayName: string;
+  description: string;
 }
 
 export interface DialecticStageRecipeStep {
@@ -231,7 +241,8 @@ export interface DialecticStageRecipeStep {
   granularity_strategy: RecipeGranularity;
   inputs_required: InputRequirement[];
   inputs_relevance?: InputsRelevanceItem[];
-  outputs_required?: OutputRequirement[];
+  /** Recipe step outputs; may be string when JSONB is unparsed. */
+  outputs_required?: OutputRequirement[] | string;
 }
 
 export interface DialecticRecipeEdge {

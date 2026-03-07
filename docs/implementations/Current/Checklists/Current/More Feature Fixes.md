@@ -1250,105 +1250,105 @@ x Never try to display header_context during generation
 
 ### Phase 2 — Dynamic document metadata and document tooltips (Option B)
 
-*   `[ ]`   [DB] supabase/migrations **Add display_name and description to document entries in outputs_required JSONB**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Write a new SQL migration that UPDATEs the `outputs_required` JSONB on `dialectic_recipe_template_steps` and `dialectic_stage_recipe_steps` to add `display_name` and `description` fields alongside each existing `document_key` in the `documents` array entries
-    *   `[ ]`   Every markdown document entry across all 5 stage recipes receives a `display_name` (e.g., `"business_case"` → `"Business Case"`) and a `description` (e.g., `"Market analysis, user problem validation, and value proposition for the project"`)
-    *   `[ ]`   Non-markdown entries (`header_context`, `seed_prompt`, `comparison_vector`, etc.) are excluded — only rendered document entries visible to users need friendly metadata
-    *   `[ ]`   The pipeline passes `outputs_required` as opaque JSONB — no backend code changes are needed
-  *   `[ ]`   `role`
-    *   `[ ]`   Infrastructure — database schema enrichment providing document display metadata to front-end selectors
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic recipe configuration
-    *   `[ ]`   Boundary: JSONB content update within `outputs_required` on recipe step rows — no schema DDL
-  *   `[ ]`   `deps`
-    *   `[ ]`   Existing `dialectic_recipe_template_steps` and `dialectic_stage_recipe_steps` tables from migration `20251006194452_dialectic_stage_recipes.sql`
-    *   `[ ]`   Existing stage-specific recipe migrations (`20251006194531` through `20251006194605`)
-    *   `[ ]`   No reverse dependency introduced — JSONB is opaque to the pipeline
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Adds `display_name: string` and `description: string` to document entries inside `outputs_required` JSONB
-    *   `[ ]`   No new columns, no DDL, no code imports
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Migration is idempotent (uses `jsonb_set` or equivalent UPDATE pattern)
-    *   `[ ]`   All user-visible markdown document entries across all 5 stage recipes receive `display_name` and `description`
-    *   `[ ]`   Pipeline passes the enriched JSONB through without modification — no backend test failures
+*   `[✅]`   [DB] supabase/migrations **Add display_name and description to document entries in outputs_required JSONB**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Write a new SQL migration that UPDATEs the `outputs_required` JSONB on `dialectic_recipe_template_steps` and `dialectic_stage_recipe_steps` to add `display_name` and `description` fields alongside each existing `document_key` in the `documents` array entries
+    *   `[✅]`   Every markdown document entry across all 5 stage recipes receives a `display_name` (e.g., `"business_case"` → `"Business Case"`) and a `description` (e.g., `"Market analysis, user problem validation, and value proposition for the project"`)
+    *   `[✅]`   Non-markdown entries (`header_context`, `seed_prompt`, `comparison_vector`, etc.) are excluded — only rendered document entries visible to users need friendly metadata
+    *   `[✅]`   The pipeline passes `outputs_required` as opaque JSONB — no backend code changes are needed
+  *   `[✅]`   `role`
+    *   `[✅]`   Infrastructure — database schema enrichment providing document display metadata to front-end selectors
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic recipe configuration
+    *   `[✅]`   Boundary: JSONB content update within `outputs_required` on recipe step rows — no schema DDL
+  *   `[✅]`   `deps`
+    *   `[✅]`   Existing `dialectic_recipe_template_steps` and `dialectic_stage_recipe_steps` tables from migration `20251006194452_dialectic_stage_recipes.sql`
+    *   `[✅]`   Existing stage-specific recipe migrations (`20251006194531` through `20251006194605`)
+    *   `[✅]`   No reverse dependency introduced — JSONB is opaque to the pipeline
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Adds `display_name: string` and `description: string` to document entries inside `outputs_required` JSONB
+    *   `[✅]`   No new columns, no DDL, no code imports            
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Migration is idempotent (uses `jsonb_set` or equivalent UPDATE pattern)
+    *   `[✅]`   All user-visible markdown document entries across all 5 stage recipes receive `display_name` and `description`
+    *   `[✅]`   Pipeline passes the enriched JSONB through without modification — no backend test failures
 
-*   `[ ]`   [STORE] packages/store/src/dialecticStore.selectors.ts **Add selectDocumentDisplayMetadata selector**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Create a new memoized selector `selectDocumentDisplayMetadata` that returns `Map<string, { displayName: string; description: string }>` keyed by `document_key`
-    *   `[ ]`   The selector parses `outputs_required` JSONB from recipe steps (same pattern as `selectValidMarkdownDocumentKeys`) and extracts `display_name` and `description` from document entries
-    *   `[ ]`   Falls back to a title-cased `document_key` for `displayName` and empty string for `description` if fields are absent
-  *   `[ ]`   `role`
-    *   `[ ]`   Store selector — app layer deriving display metadata from recipe data already in state
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic store selectors
-    *   `[ ]`   Boundary: reads `recipesByStageSlug` from state, returns derived display metadata map
-  *   `[ ]`   `deps`
-    *   `[ ]`   `selectRecipeSteps` from `dialecticStore.selectors.ts` — existing memoized selector providing recipe steps
-    *   `[ ]`   `createSelector` from `dialecticStore.selectors.ts` — existing selector factory
-    *   `[ ]`   Existing helpers `isPlainRecord`, `toPlainArray` in same file
-    *   `[ ]`   No reverse dependency introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Input: recipe steps from state (same as `selectValidMarkdownDocumentKeys`)
-    *   `[ ]`   Output: `Map<string, { displayName: string; description: string }>`
-    *   `[ ]`   No new store state, no new actions
-  *   `[ ]`   interface/`DocumentDisplayMetadata` type
-    *   `[ ]`   Define `DocumentDisplayMetadata` type: `{ displayName: string; description: string }` — in `@paynless/types` or locally in the selector file if only used here
-  *   `[ ]`   unit/`dialecticStore.selectors.documents.test.ts`
-    *   `[ ]`   Test: returns empty map when no recipe steps exist
-    *   `[ ]`   Test: extracts `display_name` and `description` from document entries in `outputs_required`
-    *   `[ ]`   Test: falls back to title-cased `document_key` when `display_name` is absent
-    *   `[ ]`   Test: falls back to empty string when `description` is absent
-    *   `[ ]`   Test: ignores `header_context` output_type steps
-    *   `[ ]`   Test: handles string JSONB (unparsed) `outputs_required`
-  *   `[ ]`   `dialecticStore.selectors.ts`
-    *   `[ ]`   Add `selectDocumentDisplayMetadata` selector using `createSelector([selectRecipeSteps], ...)`
-    *   `[ ]`   Parse `outputs_required` documents array, extract `display_name` and `description` alongside `document_key`
-    *   `[ ]`   Export the new selector
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Selector is memoized via `createSelector`
-    *   `[ ]`   Follows same JSONB parsing pattern as `selectValidMarkdownDocumentKeys`
-    *   `[ ]`   Exported from `@paynless/store` barrel
-    *   `[ ]`   File lints clean
+*   `[✅]`   [STORE] packages/store/src/dialecticStore.selectors.ts **Add selectDocumentDisplayMetadata selector**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Create a new memoized selector `selectDocumentDisplayMetadata` that returns `Map<string, { displayName: string; description: string }>` keyed by `document_key`
+    *   `[✅]`   The selector parses `outputs_required` JSONB from recipe steps (same pattern as `selectValidMarkdownDocumentKeys`) and extracts `display_name` and `description` from document entries
+    *   `[✅]`   Falls back to a title-cased `document_key` for `displayName` and empty string for `description` if fields are absent
+  *   `[✅]`   `role`
+    *   `[✅]`   Store selector — app layer deriving display metadata from recipe data already in state
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic store selectors
+    *   `[✅]`   Boundary: reads `recipesByStageSlug` from state, returns derived display metadata map
+  *   `[✅]`   `deps`
+    *   `[✅]`   `selectRecipeSteps` from `dialecticStore.selectors.ts` — existing memoized selector providing recipe steps
+    *   `[✅]`   `createSelector` from `dialecticStore.selectors.ts` — existing selector factory
+    *   `[✅]`   Existing helpers `isPlainRecord`, `toPlainArray` in same file
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Input: recipe steps from state (same as `selectValidMarkdownDocumentKeys`)
+    *   `[✅]`   Output: `Map<string, { displayName: string; description: string }>`
+    *   `[✅]`   No new store state, no new actions
+  *   `[✅]`   interface/`DocumentDisplayMetadata` type
+    *   `[✅]`   Define `DocumentDisplayMetadata` type: `{ displayName: string; description: string }` — in `@paynless/types` or locally in the selector file if only used here
+  *   `[✅]`   unit/`dialecticStore.selectors.documents.test.ts`
+    *   `[✅]`   Test: returns empty map when no recipe steps exist
+    *   `[✅]`   Test: extracts `display_name` and `description` from document entries in `outputs_required`
+    *   `[✅]`   Test: falls back to title-cased `document_key` when `display_name` is absent
+    *   `[✅]`   Test: falls back to empty string when `description` is absent
+    *   `[✅]`   Test: ignores `header_context` output_type steps
+    *   `[✅]`   Test: handles string JSONB (unparsed) `outputs_required`
+  *   `[✅]`   `dialecticStore.selectors.ts`
+    *   `[✅]`   Add `selectDocumentDisplayMetadata` selector using `createSelector([selectRecipeSteps], ...)`
+    *   `[✅]`   Parse `outputs_required` documents array, extract `display_name` and `description` alongside `document_key`
+    *   `[✅]`   Export the new selector
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Selector is memoized via `createSelector`
+    *   `[✅]`   Follows same JSONB parsing pattern as `selectValidMarkdownDocumentKeys`
+    *   `[✅]`   Exported from `@paynless/store` barrel
+    *   `[✅]`   File lints clean
 
-*   `[ ]`   [UI] apps/web/src/components/dialectic/StageRunChecklist.tsx **Add tooltip with document description on hover, show display_name instead of raw document_key**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Import and use `selectDocumentDisplayMetadata` to look up `displayName` and `description` for each document row
-    *   `[ ]`   Replace `{entry.documentKey}` (line 725) with the resolved `displayName`
-    *   `[ ]`   Wrap each document row with `Tooltip` / `TooltipTrigger` / `TooltipContent` from `@/components/ui/tooltip`
-    *   `[ ]`   Tooltip content shows the document `description`
-  *   `[ ]`   `role`
-    *   `[ ]`   UI component — document checklist with contextual help
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic stage run checklist
-    *   `[ ]`   Boundary: document row rendering and tooltip display
-  *   `[ ]`   `deps`
-    *   `[ ]`   `selectDocumentDisplayMetadata` from `@paynless/store` — provides display metadata map
-    *   `[ ]`   `Tooltip`, `TooltipTrigger`, `TooltipContent` from `@/components/ui/tooltip`
-    *   `[ ]`   No reverse dependency introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Calls `selectDocumentDisplayMetadata` for the effective stage slug to get `Map<string, { displayName, description }>`
-    *   `[ ]`   Reads `displayName` and `description` for each `entry.documentKey`
-    *   `[ ]`   Imports tooltip components from existing UI library
-  *   `[ ]`   unit/`StageRunChecklist.test.tsx` (create or extend)
-    *   `[ ]`   Test: document row renders friendly `displayName` instead of raw `document_key`
-    *   `[ ]`   Test: tooltip appears on hover showing document `description`
-    *   `[ ]`   Test: falls back to title-cased `document_key` when display metadata is unavailable
-  *   `[ ]`   `StageRunChecklist.tsx`
-    *   `[ ]`   Import `selectDocumentDisplayMetadata` from `@paynless/store`
-    *   `[ ]`   Import `Tooltip`, `TooltipTrigger`, `TooltipContent` from `@/components/ui/tooltip`
-    *   `[ ]`   Call selector to get display metadata map for the current stage
-    *   `[ ]`   Replace `{entry.documentKey}` with resolved `displayName`
-    *   `[ ]`   Wrap document list items with tooltip showing `description`
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Document names shown as friendly display names, not snake_case keys
-    *   `[ ]`   Hovering over a document shows its description
-    *   `[ ]`   Falls back gracefully when metadata is absent
-    *   `[ ]`   File lints clean
-  *   `[ ]`   **Commit** `feat(dialectic): add document display_name and description to recipe JSONB — add document tooltips`
-    *   `[ ]`   Migration enriches `outputs_required` JSONB with `display_name` and `description` for all markdown document entries
-    *   `[ ]`   Added `selectDocumentDisplayMetadata` selector to `dialecticStore.selectors.ts`
-    *   `[ ]`   Updated `StageRunChecklist.tsx` to show friendly document names with hover descriptions
+*   `[✅]`   [UI] apps/web/src/components/dialectic/StageRunChecklist.tsx **Add tooltip with document description on hover, show display_name instead of raw document_key**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Import and use `selectDocumentDisplayMetadata` to look up `displayName` and `description` for each document row
+    *   `[✅]`   Replace `{entry.documentKey}` (line 725) with the resolved `displayName`
+    *   `[✅]`   Wrap each document row with `Tooltip` / `TooltipTrigger` / `TooltipContent` from `@/components/ui/tooltip`
+    *   `[✅]`   Tooltip content shows the document `description`
+  *   `[✅]`   `role`
+    *   `[✅]`   UI component — document checklist with contextual help
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic stage run checklist
+    *   `[✅]`   Boundary: document row rendering and tooltip display
+  *   `[✅]`   `deps`
+    *   `[✅]`   `selectDocumentDisplayMetadata` from `@paynless/store` — provides display metadata map
+    *   `[✅]`   `Tooltip`, `TooltipTrigger`, `TooltipContent` from `@/components/ui/tooltip`
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Calls `selectDocumentDisplayMetadata` for the effective stage slug to get `Map<string, { displayName, description }>`
+    *   `[✅]`   Reads `displayName` and `description` for each `entry.documentKey`
+    *   `[✅]`   Imports tooltip components from existing UI library
+  *   `[✅]`   unit/`StageRunChecklist.test.tsx` (create or extend)
+    *   `[✅]`   Test: document row renders friendly `displayName` instead of raw `document_key`
+    *   `[✅]`   Test: tooltip appears on hover showing document `description`
+    *   `[✅]`   Test: falls back to title-cased `document_key` when display metadata is unavailable
+  *   `[✅]`   `StageRunChecklist.tsx`
+    *   `[✅]`   Import `selectDocumentDisplayMetadata` from `@paynless/store`
+    *   `[✅]`   Import `Tooltip`, `TooltipTrigger`, `TooltipContent` from `@/components/ui/tooltip`
+    *   `[✅]`   Call selector to get display metadata map for the current stage
+    *   `[✅]`   Replace `{entry.documentKey}` with resolved `displayName`
+    *   `[✅]`   Wrap document list items with tooltip showing `description`
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Document names shown as friendly display names, not snake_case keys
+    *   `[✅]`   Hovering over a document shows its description
+    *   `[✅]`   Falls back gracefully when metadata is absent
+    *   `[✅]`   File lints clean
+  *   `[✅]`   **Commit** `feat(dialectic): add document display_name and description to recipe JSONB — add document tooltips`
+    *   `[✅]`   Migration enriches `outputs_required` JSONB with `display_name` and `description` for all markdown document entries
+    *   `[✅]`   Added `selectDocumentDisplayMetadata` selector to `dialecticStore.selectors.ts`
+    *   `[✅]`   Updated `StageRunChecklist.tsx` to show friendly document names with hover descriptions
 
 ## Expand paused_nsf for general pause/resume
 - Add explicit "Pause" condition that sets all jobs to "paused" and can be restarted. 
@@ -1422,3 +1422,7 @@ AND/OR
 ## Set Free accounts to Gemini Flash only 
 - Claude & ChatGPT only for paid
 - Paying customers get BYOK (heavy lift)
+
+## Add Idem keys to project, session, generate, redo
+- Users report multiple projects, sessions, generates, and redos on a single click
+- Probably delay or transient errors between Supabase and Netlify 

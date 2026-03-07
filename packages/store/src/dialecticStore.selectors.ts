@@ -10,6 +10,7 @@ import type {
     DialecticFeedback,
     DialecticStageRecipe,
     DialecticStageRecipeStep,
+    DocumentDisplayMetadata,
     FocusedStageDocumentState,
     StageDocumentChecklistEntry,
     StageRunDocumentDescriptor,
@@ -432,7 +433,7 @@ export const selectIsStageReadyForSessionIteration = createSelector(
 
                 if (requirement.type === 'header_context') {
                     const sourceStageSlug = deriveRequirementStageSlug(requirement.slug);
-                    const producingStep = steps.find((candidateStep) => candidateStep.outputs_required?.some((output) => {
+                    const producingStep = steps.find((candidateStep) => Array.isArray(candidateStep.outputs_required) && candidateStep.outputs_required.some((output) => {
                         if (output.artifact_class !== 'header_context') {
                             return false;
                         }
@@ -1260,6 +1261,102 @@ const extractMarkdownDocumentKeysFromRule = (
 };
 
 /**
+ * Title-case a document_key for display (e.g. "business_case" -> "Business Case").
+ */
+function titleCaseDocumentKey(documentKey: string): string {
+    return documentKey
+        .split('_')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+}
+
+/**
+ * Extract display metadata from a single rule into the map (same rule shapes as extractMarkdownDocumentKeysFromRule).
+ * Only adds entries for markdown documents; skips if key already present.
+ */
+function extractDocumentDisplayMetadataFromRule(
+    rawRule: unknown,
+    map: Map<string, DocumentDisplayMetadata>
+): void {
+    if (!isPlainRecord(rawRule)) {
+        return;
+    }
+
+    const addEntry = (documentKey: unknown, displayName: string, description: string) => {
+        if (typeof documentKey === 'string' && documentKey.trim().length > 0 && !map.has(documentKey)) {
+            map.set(documentKey, { displayName, description });
+        }
+    };
+
+    const getDisplayName = (entry: Record<string, unknown>): string => {
+        const raw = entry['display_name'];
+        if (typeof raw === 'string' && raw.trim().length > 0) {
+            return raw;
+        }
+        const key = entry['document_key'];
+        return typeof key === 'string' && key.trim().length > 0 ? titleCaseDocumentKey(key) : '';
+    };
+
+    const getDescription = (entry: Record<string, unknown>): string => {
+        const raw = entry['description'];
+        return typeof raw === 'string' ? raw : '';
+    };
+
+    const evaluateDocumentEntry = (entry: unknown) => {
+        if (!isPlainRecord(entry)) {
+            return;
+        }
+
+        const documentKey = entry['document_key'];
+        const fileType = entry['file_type'];
+        const templateFilename = entry['template_filename'];
+
+        if (fileType === 'markdown') {
+            addEntry(documentKey, getDisplayName(entry), getDescription(entry));
+            return;
+        }
+
+        if (typeof templateFilename === 'string' && isMarkdownTemplate(templateFilename)) {
+            addEntry(documentKey, getDisplayName(entry), getDescription(entry));
+        }
+    };
+
+    // Legacy document_key/file_type at root level
+    const legacyDocumentKey = rawRule['document_key'];
+    const legacyFileType = rawRule['file_type'];
+    if (legacyFileType === 'markdown') {
+        addEntry(
+            legacyDocumentKey,
+            getDisplayName(rawRule),
+            getDescription(rawRule)
+        );
+    }
+
+    const documents = toPlainArray(rawRule['documents']);
+    documents.forEach(evaluateDocumentEntry);
+
+    const assembledJson = toPlainArray(rawRule['assembled_json']);
+    assembledJson.forEach(evaluateDocumentEntry);
+
+    const filesToGenerate = toPlainArray(rawRule['files_to_generate']);
+    filesToGenerate.forEach((entry) => {
+        if (!isPlainRecord(entry)) {
+            return;
+        }
+        const documentKey = entry['from_document_key'];
+        const templateFilename = entry['template_filename'];
+        if (
+            typeof documentKey === 'string' &&
+            documentKey.trim().length > 0 &&
+            typeof templateFilename === 'string' &&
+            isMarkdownTemplate(templateFilename)
+        ) {
+            addEntry(documentKey, titleCaseDocumentKey(documentKey), getDescription(entry));
+        }
+    });
+}
+
+/**
  * Selector to get valid markdown document keys for a stage.
  * Returns a Set<string> containing all document keys that are markdown files,
  * extracted from the stage's recipe steps outputs_required fields.
@@ -1304,5 +1401,47 @@ export const selectValidMarkdownDocumentKeys = createSelector(
         });
 
         return documentKeys;
+    }
+);
+
+/**
+ * Selector to get document display metadata for a stage.
+ * Returns a Map keyed by document_key with displayName and description from recipe outputs_required.
+ * Falls back to title-cased document_key for displayName and empty string for description when absent.
+ *
+ * @param state - The dialectic state values
+ * @param stageSlug - The stage slug to get document display metadata for
+ * @returns A Map from document_key to DocumentDisplayMetadata
+ */
+export const selectDocumentDisplayMetadata = createSelector(
+    [selectRecipeSteps],
+    (steps): Map<string, DocumentDisplayMetadata> => {
+        const map = new Map<string, DocumentDisplayMetadata>();
+        if (!steps) {
+            return map;
+        }
+
+        steps.forEach((step) => {
+            if (!step.outputs_required || step.output_type === 'header_context') {
+                return;
+            }
+
+            let rawOutputs: unknown = step.outputs_required;
+
+            if (typeof rawOutputs === 'string') {
+                try {
+                    rawOutputs = JSON.parse(rawOutputs);
+                } catch {
+                    return;
+                }
+            }
+
+            const rules = toPlainArray(rawOutputs);
+            rules.forEach((rule) => {
+                extractDocumentDisplayMetadataFromRule(rule, map);
+            });
+        });
+
+        return map;
     }
 );
