@@ -10,40 +10,6 @@ export interface UpdateProjectDomainPayload {
 
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
-export enum DialecticStages {
-  thesis = 'Proposal',
-  antithesis = 'Review',
-  synthesis = 'Refinement',
-  parenthesis = 'Planning',
-  paralysis = 'Implementation',
-}
-
-export function isDialecticStageSlug(slug: string): slug is keyof typeof DialecticStages {
-  return (
-    slug === 'thesis' ||
-    slug === 'antithesis' ||
-    slug === 'synthesis' ||
-    slug === 'parenthesis' ||
-    slug === 'paralysis'
-  );
-}
-
-export function getDisplayName(slug: string): string {
-  if (!isDialecticStageSlug(slug)) {
-    throw new Error(`Unknown stage slug: ${slug}`);
-  }
-  return DialecticStages[slug];
-}
-
-/** Per-stage minimum wallet balance (token count) required before generating. Values from product owner. */
-export const STAGE_BALANCE_THRESHOLDS: Record<string, number> = {
-  thesis: 200_000,
-  antithesis: 400_000,
-  synthesis: 1_000_000,
-  parenthesis: 250_000,
-  paralysis: 250_000,
-};
-
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
 
 export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'] & {
@@ -248,6 +214,16 @@ export interface OutputRequirement {
   artifact_class: 'header_context' | 'assembled_json' | 'rendered_document';
   file_type: 'json' | 'markdown';
   template_filename?: string;
+  /** From DB/recipe JSONB; used for document display metadata. */
+  display_name?: string;
+  /** From DB/recipe JSONB; used for document display metadata. */
+  description?: string;
+}
+
+/** Display metadata for a document key, derived from recipe outputs_required (display_name, description). */
+export interface DocumentDisplayMetadata {
+  displayName: string;
+  description: string;
 }
 
 export interface DialecticStageRecipeStep {
@@ -265,7 +241,8 @@ export interface DialecticStageRecipeStep {
   granularity_strategy: RecipeGranularity;
   inputs_required: InputRequirement[];
   inputs_relevance?: InputsRelevanceItem[];
-  outputs_required?: OutputRequirement[];
+  /** Recipe step outputs; may be string when JSONB is unparsed. */
+  outputs_required?: OutputRequirement[] | string;
 }
 
 export interface DialecticRecipeEdge {

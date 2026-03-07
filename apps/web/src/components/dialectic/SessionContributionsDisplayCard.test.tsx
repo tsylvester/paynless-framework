@@ -13,6 +13,7 @@ import type {
   SelectedModels,
   StageDocumentContentState,
   StageRenderedDocumentDescriptor,
+  UnifiedProjectProgress,
 } from '@paynless/types';
 
 import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard';
@@ -24,6 +25,7 @@ import {
   setDialecticStateValues,
   selectIsStageReadyForSessionIteration,
   selectSelectedModels,
+  selectUnifiedProjectProgress,
 } from '../../mocks/dialecticStore.mock';
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 
@@ -46,6 +48,31 @@ const sessionId = 'sess-1';
 const projectId = 'proj-1';
 const iterationNumber = 1;
 const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+function buildUnifiedProgressWithStageComplete(activeStageSlug: string): UnifiedProjectProgress {
+  return {
+    totalStages: 1,
+    completedStages: 0,
+    currentStageSlug: activeStageSlug,
+    overallPercentage: 100,
+    currentStage: null,
+    projectStatus: 'in_progress',
+    hydrationReady: true,
+    stageDetails: [
+      {
+        stageSlug: activeStageSlug,
+        totalSteps: 3,
+        completedSteps: 3,
+        totalDocuments: 1,
+        completedDocuments: 1,
+        failedSteps: 0,
+        stagePercentage: 100,
+        stepsDetail: [],
+        stageStatus: 'completed',
+      },
+    ],
+  };
+}
 
 type StageRunProgressEntry = NonNullable<DialecticStateValues['stageRunProgress'][string]>;
 type StepStatuses = StageRunProgressEntry['stepStatuses'];
@@ -129,6 +156,7 @@ const buildStage = (): DialecticStage => ({
   recipe_template_id: null,
   active_recipe_instance_id: null,
   created_at: isoTimestamp,
+  minimum_balance: 100000,
 });
 
 const buildProcessTemplate = (stage: DialecticStage): DialecticProcessTemplate => ({
@@ -228,6 +256,7 @@ const buildRecipe = (steps: DialecticStageRecipeStep[]): DialecticStageRecipe =>
   stageSlug,
   instanceId: 'instance-1',
   steps,
+  edges: [],
 });
 
 const buildStageRunProgress = (
@@ -237,6 +266,8 @@ const buildStageRunProgress = (
   stepStatuses,
   documents,
   jobProgress: {},
+  progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+  jobs: [],
 });
 
 const buildStageDocumentDescriptor = (
@@ -378,7 +409,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       renderSessionContributionsDisplayCard();
 
-      expect(useStageRunProgressHydration).toHaveBeenCalledTimes(1);
+      expect(useStageRunProgressHydration).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -395,6 +426,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const stage2: DialecticStage = {
         id: 'stage-2',
@@ -406,6 +438,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const multiStageProcessTemplate: DialecticProcessTemplate = {
         id: 'template-multi',
@@ -508,6 +541,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const stage2: DialecticStage = {
         id: 'stage-2',
@@ -519,6 +553,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const multiStageProcessTemplate: DialecticProcessTemplate = {
         id: 'template-multi',
@@ -600,6 +635,7 @@ describe('SessionContributionsDisplayCard', () => {
       });
 
       selectIsStageReadyForSessionIteration.mockReturnValue(true);
+      selectUnifiedProjectProgress.mockReturnValue(buildUnifiedProgressWithStageComplete(stage1.slug));
 
       renderSessionContributionsDisplayCard();
 
@@ -663,6 +699,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const multiStageTemplate: DialecticProcessTemplate = {
         id: 'template-multi',
@@ -684,6 +721,7 @@ describe('SessionContributionsDisplayCard', () => {
       };
       seedBaseStore(progress, { currentProcessTemplate: multiStageTemplate });
       selectIsStageReadyForSessionIteration.mockReturnValue(true);
+      selectUnifiedProjectProgress.mockReturnValue(buildUnifiedProgressWithStageComplete(stage1.slug));
 
       renderSessionContributionsDisplayCard();
 
@@ -1016,306 +1054,6 @@ describe('SessionContributionsDisplayCard', () => {
     });
   });
 
-  // NOTE: "Resource metadata display" tests removed - behavior is now owned by GeneratedContributionCard
-
-  describe('Progress summary display removal', () => {
-    it('does not display document progress summary', () => {
-      const progress = buildStageRunProgress(
-        {
-          planner_header: 'completed',
-          draft_document: 'completed',
-          render_document: 'completed',
-        },
-        {
-          header_context: {
-            status: 'completed',
-            job_id: 'job-1',
-            latestRenderedResourceId: 'header.json',
-            modelId: 'model-a',
-            versionHash: 'hash-a',
-            lastRenderedResourceId: 'resource-a',
-            lastRenderAtIso: isoTimestamp,
-          },
-          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
-            status: 'completed',
-          }),
-        },
-      );
-
-      seedBaseStore(progress);
-
-      renderSessionContributionsDisplayCard();
-
-      // Assert that progress summary display is NOT rendered
-      expect(screen.queryByText(/Completed \d+ of \d+ documents/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/Outstanding:/i)).not.toBeInTheDocument();
-    });
-
-    it('does not display progress summary even when outstandingDocuments exist', () => {
-      const progress = buildStageRunProgress(
-        {
-          planner_header: 'completed',
-          draft_document: 'in_progress',
-          render_document: 'waiting_for_children',
-        },
-        {
-          header_context: {
-            status: 'completed',
-            job_id: 'job-1',
-            latestRenderedResourceId: 'header.json',
-            modelId: 'model-a',
-            versionHash: 'hash-a',
-            lastRenderedResourceId: 'resource-a',
-            lastRenderAtIso: isoTimestamp,
-          },
-          draft_document_outline: {
-            status: 'generating',
-            job_id: 'job-2',
-            modelId: 'model-a',
-            versionHash: 'hash-a',
-            lastRenderedResourceId: 'resource-a',
-            lastRenderAtIso: isoTimestamp,
-            latestRenderedResourceId: 'outline.json',
-          },
-          draft_document_markdown: {
-            status: 'idle',
-            modelId: 'model-a',
-            versionHash: 'hash-a',
-            lastRenderedResourceId: 'resource-a',
-            lastRenderAtIso: isoTimestamp,
-            latestRenderedResourceId: 'render.md',
-            job_id: 'job-3',
-          },
-        },
-      );
-
-      seedBaseStore(progress);
-
-      renderSessionContributionsDisplayCard();
-
-      // Assert that progress summary display is NOT rendered even when documents are incomplete
-      expect(screen.queryByText(/Completed \d+ of \d+ documents/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/Outstanding:/i)).not.toBeInTheDocument();
-    });
-
-    it('enables submit button when isComplete is true even without progress display', () => {
-      // Use multi-stage setup so this is not the last stage (single stage would disable button per step 5.c.v)
-      const stage1: DialecticStage = {
-        id: 'stage-1',
-        slug: 'thesis',
-        display_name: 'Thesis',
-        description: 'Thesis stage',
-        default_system_prompt_id: 'prompt-1',
-        expected_output_template_ids: [],
-        recipe_template_id: null,
-        active_recipe_instance_id: null,
-        created_at: isoTimestamp,
-      };
-      const stage2: DialecticStage = {
-        id: 'stage-2',
-        slug: 'antithesis',
-        display_name: 'Antithesis',
-        description: 'Antithesis stage',
-        default_system_prompt_id: 'prompt-2',
-        expected_output_template_ids: [],
-        recipe_template_id: null,
-        active_recipe_instance_id: null,
-        created_at: isoTimestamp,
-      };
-      const multiStageProcessTemplate: DialecticProcessTemplate = {
-        id: 'template-multi',
-        name: 'Multi-Stage Template',
-        description: 'Template with multiple stages',
-        starting_stage_id: stage1.id,
-        created_at: isoTimestamp,
-        stages: [stage1, stage2],
-        transitions: [
-          {
-            id: 'transition-1',
-            source_stage_id: stage1.id,
-            target_stage_id: stage2.id,
-            condition_description: null,
-            created_at: isoTimestamp,
-            process_template_id: 'template-multi',
-          },
-        ],
-      };
-
-      const progress = buildStageRunProgress(
-        {
-          planner_header: 'completed',
-          draft_document: 'completed',
-          render_document: 'completed',
-        },
-        {
-          header_context: {
-            status: 'completed',
-            job_id: 'job-1',
-            latestRenderedResourceId: 'header.json',
-            modelId: 'model-a',
-            versionHash: 'hash-a',
-            lastRenderedResourceId: 'resource-a',
-            lastRenderAtIso: isoTimestamp,
-          },
-          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
-            status: 'completed',
-          }),
-        },
-      );
-
-      const steps = buildRecipeSteps();
-      const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
-      const project = buildProject(session, multiStageProcessTemplate);
-      const recipe = buildRecipe(steps);
-
-      setDialecticStateValues({
-        activeContextProjectId: project.id,
-        activeContextSessionId: session.id,
-        activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
-        activeSessionDetail: session,
-        selectedModels: session.selected_models,
-        currentProjectDetail: project,
-        currentProcessTemplate: multiStageProcessTemplate,
-        recipesByStageSlug: {
-          [stage1.slug]: recipe,
-        },
-        stageRunProgress: {
-          [progressKey]: progress,
-        },
-      });
-
-      selectIsStageReadyForSessionIteration.mockReturnValue(true);
-
-      renderSessionContributionsDisplayCard();
-
-      const submitButton = getSubmitButton();
-      expect(submitButton).toBeInTheDocument();
-      if (submitButton) {
-        expect(submitButton).not.toBeDisabled();
-      }
-
-      expect(screen.queryByText(/Completed \d+ of \d+ documents/i)).not.toBeInTheDocument();
-    });
-
-    it('disables submit button when isComplete is false even without progress display', () => {
-      // Use multi-stage setup so this is not the last stage (single stage would disable button per step 5.c.v)
-      const stage1: DialecticStage = {
-        id: 'stage-1',
-        slug: 'thesis',
-        display_name: 'Thesis',
-        description: 'Thesis stage',
-        default_system_prompt_id: 'prompt-1',
-        expected_output_template_ids: [],
-        recipe_template_id: null,
-        active_recipe_instance_id: null,
-        created_at: isoTimestamp,
-      };
-      const stage2: DialecticStage = {
-        id: 'stage-2',
-        slug: 'antithesis',
-        display_name: 'Antithesis',
-        description: 'Antithesis stage',
-        default_system_prompt_id: 'prompt-2',
-        expected_output_template_ids: [],
-        recipe_template_id: null,
-        active_recipe_instance_id: null,
-        created_at: isoTimestamp,
-      };
-      const multiStageProcessTemplate: DialecticProcessTemplate = {
-        id: 'template-multi',
-        name: 'Multi-Stage Template',
-        description: 'Template with multiple stages',
-        starting_stage_id: stage1.id,
-        created_at: isoTimestamp,
-        stages: [stage1, stage2],
-        transitions: [
-          {
-            id: 'transition-1',
-            source_stage_id: stage1.id,
-            target_stage_id: stage2.id,
-            condition_description: null,
-            created_at: isoTimestamp,
-            process_template_id: 'template-multi',
-          },
-        ],
-      };
-
-      const progress = buildStageRunProgress(
-        {
-          planner_header: 'completed',
-          draft_document: 'in_progress',
-          render_document: 'waiting_for_children',
-        },
-        {
-          header_context: {
-            status: 'completed',
-            job_id: 'job-1',
-            latestRenderedResourceId: 'header.json',
-            modelId: 'model-a',
-            versionHash: 'hash-a',
-            lastRenderedResourceId: 'resource-a',
-            lastRenderAtIso: isoTimestamp,
-          },
-          draft_document_outline: {
-            status: 'generating',
-            job_id: 'job-2',
-            modelId: 'model-a',
-            versionHash: 'hash-a',
-            lastRenderedResourceId: 'resource-a',
-            lastRenderAtIso: isoTimestamp,
-            latestRenderedResourceId: 'outline.json',
-          },
-          draft_document_markdown: {
-            status: 'idle',
-            modelId: 'model-a',
-            versionHash: 'hash-a',
-            lastRenderedResourceId: 'resource-a',
-            lastRenderAtIso: isoTimestamp,
-            latestRenderedResourceId: 'render.md',
-            job_id: 'job-3',
-          },
-        },
-      );
-
-      const steps = buildRecipeSteps();
-      const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
-      const project = buildProject(session, multiStageProcessTemplate);
-      const recipe = buildRecipe(steps);
-
-      setDialecticStateValues({
-        activeContextProjectId: project.id,
-        activeContextSessionId: session.id,
-        activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
-        activeSessionDetail: session,
-        selectedModels: session.selected_models,
-        currentProjectDetail: project,
-        currentProcessTemplate: multiStageProcessTemplate,
-        recipesByStageSlug: {
-          [stage1.slug]: recipe,
-        },
-        stageRunProgress: {
-          [progressKey]: progress,
-        },
-      });
-
-      selectIsStageReadyForSessionIteration.mockReturnValue(true);
-
-      renderSessionContributionsDisplayCard();
-
-      expect(screen.getByTestId('card-header')).toBeInTheDocument();
-      const submitButton = getSubmitButton();
-      expect(submitButton).toBeInTheDocument();
-      if (submitButton) {
-        expect(submitButton).toBeDisabled();
-      }
-
-      expect(screen.queryByText(/Completed \d+ of \d+ documents/i)).not.toBeInTheDocument();
-    });
-  });
 
   describe('Last stage detection and button disabling', () => {
     it('disables submit button when in last stage even if canSubmitStageResponses is true', () => {
@@ -1330,6 +1068,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       
       const antithesisStage: DialecticStage = {
@@ -1342,6 +1081,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       
       const synthesisStage: DialecticStage = {
@@ -1354,6 +1094,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
 
       const multiStageProcessTemplate: DialecticProcessTemplate = {
@@ -1463,6 +1204,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       
       const antithesisStage: DialecticStage = {
@@ -1475,6 +1217,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       
       const synthesisStage: DialecticStage = {
@@ -1487,6 +1230,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
 
       const multiStageProcessTemplate: DialecticProcessTemplate = {
@@ -1564,6 +1308,7 @@ describe('SessionContributionsDisplayCard', () => {
       });
 
       selectIsStageReadyForSessionIteration.mockReturnValue(true);
+      selectUnifiedProjectProgress.mockReturnValue(buildUnifiedProgressWithStageComplete(thesisStage.slug));
 
       renderSessionContributionsDisplayCard();
 
@@ -2047,6 +1792,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const stage2: DialecticStage = {
         id: 'stage-2',
@@ -2058,6 +1804,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const multiStageProcessTemplate: DialecticProcessTemplate = {
         id: 'template-multi',
@@ -2129,6 +1876,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const { submitStageResponses } = getDialecticStoreState();
       selectIsStageReadyForSessionIteration.mockReturnValue(true);
+      selectUnifiedProjectProgress.mockReturnValue(buildUnifiedProgressWithStageComplete(stage1.slug));
 
       renderSessionContributionsDisplayCard();
 
@@ -2165,6 +1913,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const stage2: DialecticStage = {
         id: 'stage-2',
@@ -2176,6 +1925,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const multiStageProcessTemplate: DialecticProcessTemplate = {
         id: 'template-multi',
@@ -2245,6 +1995,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const { submitStageResponses } = getDialecticStoreState();
       selectIsStageReadyForSessionIteration.mockReturnValue(true);
+      selectUnifiedProjectProgress.mockReturnValue(buildUnifiedProgressWithStageComplete(stage1.slug));
 
       renderSessionContributionsDisplayCard();
 
@@ -2274,6 +2025,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const stage2: DialecticStage = {
         id: 'stage-2',
@@ -2285,6 +2037,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const multiStageProcessTemplate: DialecticProcessTemplate = {
         id: 'template-multi',
@@ -2354,6 +2107,7 @@ describe('SessionContributionsDisplayCard', () => {
 
       const { submitStageResponses } = getDialecticStoreState();
       selectIsStageReadyForSessionIteration.mockReturnValue(true);
+      selectUnifiedProjectProgress.mockReturnValue(buildUnifiedProgressWithStageComplete(stage1.slug));
 
       renderSessionContributionsDisplayCard();
 
@@ -2394,6 +2148,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const antithesisStage: DialecticStage = {
         id: 'stage-antithesis',
@@ -2405,6 +2160,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const multiStageProcessTemplate: DialecticProcessTemplate = {
         id: 'template-multi',
@@ -2497,6 +2253,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const antithesisStage: DialecticStage = {
         id: 'stage-antithesis',
@@ -2508,6 +2265,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const multiStageProcessTemplate: DialecticProcessTemplate = {
         id: 'template-multi',
@@ -2626,6 +2384,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const antithesisStage: DialecticStage = {
         id: 'stage-antithesis',
@@ -2637,6 +2396,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const multiStageProcessTemplate: DialecticProcessTemplate = {
         id: 'template-multi',
@@ -2719,6 +2479,7 @@ describe('SessionContributionsDisplayCard', () => {
       });
 
       selectIsStageReadyForSessionIteration.mockReturnValue(true);
+      selectUnifiedProjectProgress.mockReturnValue(buildUnifiedProgressWithStageComplete(thesisStage.slug));
 
       renderSessionContributionsDisplayCard();
 
@@ -2738,7 +2499,7 @@ describe('SessionContributionsDisplayCard', () => {
       expect(store.setActiveStage).toHaveBeenCalledWith(antithesisStage.slug);
 
       await waitFor(() => {
-        expect(screen.getByText('Review')).toBeInTheDocument();
+        expect(screen.getByText('Antithesis')).toBeInTheDocument();
       });
       expect(screen.getByText(/Antithesis stage|Stage advanced!/)).toBeInTheDocument();
     });
@@ -2754,6 +2515,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const antithesisStage: DialecticStage = {
         id: 'stage-antithesis',
@@ -2765,6 +2527,7 @@ describe('SessionContributionsDisplayCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: isoTimestamp,
+        minimum_balance: 100000,
       };
       const multiStageProcessTemplate: DialecticProcessTemplate = {
         id: 'template-multi',

@@ -12,6 +12,7 @@ import {
   selectDomains,
   selectDefaultGenerationModels,
   selectActiveChatWalletInfo,
+  selectSortedStages,
 } from '@paynless/store';
 import { DomainSelector } from '@/components/dialectic/DomainSelector';
 
@@ -27,7 +28,6 @@ import { TextInputArea } from '@/components/common/TextInputArea';
 import { usePlatform } from '@paynless/platform';
 import { platformEventEmitter, type PlatformEvents, type FileDropPayload } from '@paynless/platform';
 import type { CreateProjectPayload } from '@paynless/types';
-import { STAGE_BALANCE_THRESHOLDS } from '@paynless/types';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
@@ -84,6 +84,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   const isLoadingModelCatalog = useDialecticStore((state) => state.isLoadingModelCatalog);
 
   const walletInfo = useWalletStore((state) => selectActiveChatWalletInfo(state, null));
+  const sortedStages = useDialecticStore(selectSortedStages);
 
   const [promptFile, setPromptFile] = useState<File | null>(null);
   const [projectNameManuallySet, setProjectNameManuallySet] = useState<boolean>(false);
@@ -300,19 +301,26 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   useEffect(() => {
     if (configureManually) return;
     const noDefaults = !isLoadingModelCatalog && defaultModels.length === 0;
-    const lowBalance = Number(walletInfo.balance ?? '0') < STAGE_BALANCE_THRESHOLDS['thesis'];
+    const firstStageMinBalance = sortedStages[0]?.minimum_balance;
+    const lowBalance =
+      typeof firstStageMinBalance === 'number' &&
+      Number(walletInfo.balance ?? '0') < firstStageMinBalance;
     if (noDefaults || lowBalance) {
       setStartGeneration(false);
     } else {
       setStartGeneration(true);
     }
-  }, [configureManually, isLoadingModelCatalog, defaultModels.length, walletInfo.balance]);
+  }, [configureManually, isLoadingModelCatalog, defaultModels.length, walletInfo.balance, sortedStages]);
 
+  const firstStageMinBalance = sortedStages[0]?.minimum_balance;
+  const lowBalanceForReason =
+    typeof firstStageMinBalance === 'number' &&
+    Number(walletInfo.balance ?? '0') < firstStageMinBalance;
   const autoUncheckReason: string | null =
     !configureManually && !startGeneration
       ? !isLoadingModelCatalog && defaultModels.length === 0
         ? 'No default models available'
-        : Number(walletInfo.balance ?? '0') < STAGE_BALANCE_THRESHOLDS['thesis']
+        : lowBalanceForReason
           ? 'Wallet balance too low for auto-start'
           : null
       : null;

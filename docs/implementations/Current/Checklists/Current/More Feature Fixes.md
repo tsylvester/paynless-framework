@@ -1010,17 +1010,345 @@
     *   `[ ]`   `apps/web/src/pages/DialecticProjectDetailsPage.tsx` — render repo settings and sync button
 
 ## Download Each Document
-- Add a "download" button to file view in GeneratedContributionsCard so that each file can be downloaded separately. 
+x Add a "download" button to file view in GeneratedContributionsCard so that each file can be downloaded separately. 
 - Add toggle for Export Project to export full project OR only export finished documents 
 
 ## Fix GeneratedContributionCard
-- GeneratedContributionCard tries to display header_context, which it should never even acknowledge since it's not a document and isn't available to the FE 
-- Never try to display header_context during generation
+x GeneratedContributionCard tries to display header_context, which it should never even acknowledge since it's not a document and isn't available to the FE 
+x Never try to display header_context during generation
 
 ## Add onHover eye to each stage and document
 - What is the purpose
 - What do you get
-- ELIF, give the user engagement 
+- ELIF, give the user engagement
+
+### Phase 1 — Dynamic stage metadata and stage tooltips
+
+*   `[✅]`   [DB] supabase/migrations **Add friendly display_name, description, and minimum_balance to dialectic_stages**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Write a new SQL migration that UPDATEs `dialectic_stages.display_name` from formal names ("Thesis", "Antithesis", "Synthesis", "Parenthesis", "Paralysis") to user-friendly names ("Proposal", "Review", "Refinement", "Planning", "Implementation")
+    *   `[✅]`   UPDATE `dialectic_stages.description` to user-facing explanations suitable for tooltip display (e.g., "Generate initial, diverse proposals for your project" instead of "Generate initial, diverse solutions to the prompt.")
+    *   `[✅]`   ALTER TABLE `dialectic_stages` ADD COLUMN `minimum_balance INTEGER NOT NULL DEFAULT 0`
+    *   `[✅]`   UPDATE each stage's `minimum_balance` with values currently hardcoded in `STAGE_BALANCE_THRESHOLDS`: thesis=200000, antithesis=400000, synthesis=1000000, parenthesis=250000, paralysis=250000
+    *   `[✅]`   Regenerate `supabase/functions/types_db.ts` to reflect the new column
+  *   `[✅]`   `role`
+    *   `[✅]`   Infrastructure — database schema change providing dynamic stage metadata to all consumers
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic stage configuration
+    *   `[✅]`   Boundary: migration modifies `dialectic_stages` table only
+  *   `[✅]`   `deps`
+    *   `[✅]`   Existing `dialectic_stages` table from migration `20250613190311_domains_and_processes_improvement.sql`
+    *   `[✅]`   No reverse dependency introduced — this is a leaf schema change consumed by downstream code
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Adds `minimum_balance` column to `dialectic_stages` Row type
+    *   `[✅]`   Updates `display_name` and `description` values for all 5 stages
+    *   `[✅]`   No code imports, no concrete dependencies
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Migration is idempotent (uses IF NOT EXISTS for ADD COLUMN, UPDATE is safe to re-run)
+    *   `[✅]`   All 5 stages receive updated `display_name`, `description`, and `minimum_balance`
+    *   `[✅]`   `types_db.ts` regenerated and includes `minimum_balance: number` on `dialectic_stages` Row
+
+*   `[✅]`   [STORE] packages/types/src/dialectic.types.ts **Remove hardcoded stage enum, getDisplayName, isDialecticStageSlug, and STAGE_BALANCE_THRESHOLDS**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Delete the `DialecticStages` enum (lines 13-19)
+    *   `[✅]`   Delete the `isDialecticStageSlug` function (lines 21-29)
+    *   `[✅]`   Delete the `getDisplayName` function (lines 31-36)
+    *   `[✅]`   Delete the `STAGE_BALANCE_THRESHOLDS` constant (lines 38-45)
+    *   `[✅]`   These are all replaced by `stage.display_name`, `stage.description`, and `stage.minimum_balance` from the database row type
+  *   `[✅]`   `role`
+    *   `[✅]`   Domain type file — removing hardcoded slug-keyed lookups that violate the dynamic COW DAG pattern
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic types
+    *   `[✅]`   Boundary: type definitions only, no executable logic remains after deletions
+  *   `[✅]`   `deps`
+    *   `[✅]`   `DialecticStage` type (unchanged, remains as `Database['public']['Tables']['dialectic_stages']['Row']`) — now includes `minimum_balance` from regenerated `types_db.ts`
+    *   `[✅]`   No reverse dependency introduced — consumers will be updated in subsequent nodes
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Removes 4 exported symbols: `DialecticStages`, `isDialecticStageSlug`, `getDisplayName`, `STAGE_BALANCE_THRESHOLDS`
+    *   `[✅]`   `DialecticStage` row type now carries `display_name`, `description`, and `minimum_balance` from the database
+  *   `[✅]`   `requirements`
+    *   `[✅]`   No hardcoded stage slug mappings remain in this file
+    *   `[✅]`   `DialecticStage` type still exported and unchanged
+    *   `[✅]`   File lints clean after deletions
+    *   `[✅]`   Downstream consumers will have lint errors until updated in subsequent nodes — this is expected and acceptable
+
+*   `[✅]`   [UI] apps/web/src/components/dialectic/GenerateContributionButton.tsx **Replace getDisplayName with stage.display_name**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Remove import of `getDisplayName` from `@paynless/types`
+    *   `[✅]`   Replace `getDisplayName(activeStage.slug)` calls (lines 69, 92) with `activeStage.display_name`
+  *   `[✅]`   `role`
+    *   `[✅]`   UI component — adapter layer consuming stage metadata from store
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic generation controls
+    *   `[✅]`   Boundary: component rendering and button label logic only
+  *   `[✅]`   `deps`
+    *   `[✅]`   `DialecticStage` type from `@paynless/types` — `display_name: string` field (populated by migration)
+    *   `[✅]`   `useDialecticStore` from `@paynless/store` — provides `activeStage` object
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Reads `activeStage.display_name` instead of calling `getDisplayName(activeStage.slug)`
+    *   `[✅]`   No new imports required
+  *   `[✅]`   unit/`GenerateContributionButton.test.tsx`
+    *   `[✅]`   Update any test mocks that reference `getDisplayName` to use `display_name` field on stage objects
+  *   `[✅]`   `GenerateContributionButton.tsx`
+    *   `[✅]`   Remove `getDisplayName` import
+    *   `[✅]`   Replace `getDisplayName(activeStage.slug)` with `activeStage.display_name` at both call sites
+  *   `[✅]`   `requirements`
+    *   `[✅]`   No import of `getDisplayName` remains
+    *   `[✅]`   Button labels use database-driven `display_name`
+    *   `[✅]`   File lints clean
+
+*   `[✅]`   [UI] apps/web/src/hooks/useStartContributionGeneration.ts **Replace STAGE_BALANCE_THRESHOLDS with stage.minimum_balance**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Remove import of `STAGE_BALANCE_THRESHOLDS` from `@paynless/types`
+    *   `[✅]`   Replace `STAGE_BALANCE_THRESHOLDS[activeStage.slug]` (line 106) with `activeStage.minimum_balance`
+  *   `[✅]`   `role`
+    *   `[✅]`   App layer hook — wallet balance gating logic for stage generation
+  *   `[✅]`   `module`
+    *   `[✅]`   Contribution generation orchestration
+    *   `[✅]`   Boundary: hook logic that determines wallet readiness
+  *   `[✅]`   `deps`
+    *   `[✅]`   `DialecticStage` type from `@paynless/types` — `minimum_balance: number` field (populated by migration)
+    *   `[✅]`   `useDialecticStore` from `@paynless/store` — provides `activeStage` object
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Reads `activeStage.minimum_balance` instead of looking up `STAGE_BALANCE_THRESHOLDS[activeStage.slug]`
+    *   `[✅]`   No new imports required
+  *   `[✅]`   unit/`useStartContributionGeneration.test.ts`
+    *   `[✅]`   Update any test mocks that reference `STAGE_BALANCE_THRESHOLDS` to use `minimum_balance` field on stage objects
+  *   `[✅]`   `useStartContributionGeneration.ts`
+    *   `[✅]`   Remove `STAGE_BALANCE_THRESHOLDS` import
+    *   `[✅]`   Replace threshold lookup with `activeStage.minimum_balance`
+  *   `[✅]`   `requirements`
+    *   `[✅]`   No import of `STAGE_BALANCE_THRESHOLDS` remains
+    *   `[✅]`   Threshold is sourced from database via stage object
+    *   `[✅]`   File lints clean
+
+*   `[✅]`   [UI] apps/web/src/components/dialectic/CreateDialecticProjectForm.tsx **Replace STAGE_BALANCE_THRESHOLDS with stage data**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Remove import of `STAGE_BALANCE_THRESHOLDS` from `@paynless/types`
+    *   `[✅]`   Replace `STAGE_BALANCE_THRESHOLDS['thesis']` (lines 303, 315) with the first stage's `minimum_balance` from the store (the sorted stages array provides this)
+  *   `[✅]`   `role`
+    *   `[✅]`   UI component — project creation form with auto-start gating
+  *   `[✅]`   `module`
+    *   `[✅]`   Project creation
+    *   `[✅]`   Boundary: form logic determining whether to auto-check "start generation"
+  *   `[✅]`   `deps`
+    *   `[✅]`   `selectSortedStages` from `@paynless/store` — provides stages with `minimum_balance`
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Reads `stages[0].minimum_balance` (first stage threshold) instead of `STAGE_BALANCE_THRESHOLDS['thesis']`
+    *   `[✅]`   May require adding `selectSortedStages` to existing store subscriptions
+  *   `[✅]`   unit/`CreateDialecticProjectForm.autostart.test.tsx`
+    *   `[✅]`   Update any test mocks that reference `STAGE_BALANCE_THRESHOLDS` to use `minimum_balance` field on stage objects
+  *   `[✅]`   `CreateDialecticProjectForm.tsx`
+    *   `[✅]`   Remove `STAGE_BALANCE_THRESHOLDS` import
+    *   `[✅]`   Replace hardcoded `'thesis'` lookup with first sorted stage's `minimum_balance`
+  *   `[✅]`   `requirements`
+    *   `[✅]`   No import of `STAGE_BALANCE_THRESHOLDS` remains
+    *   `[✅]`   Auto-start gating uses database-driven threshold from first stage
+    *   `[✅]`   File lints clean
+
+*   `[✅]`   [UI] apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx **Remove duplicate stageNameMap, use stage.display_name and stage.description**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Delete the local `stageNameMap` constant (lines 44-50)
+    *   `[✅]`   Delete the local `getDisplayName` function (lines 52-57)
+    *   `[✅]`   Replace `getDisplayName(activeStage)` (line 465) with `activeStage.display_name`
+    *   `[✅]`   `activeStage.description` is already used on line 466 — no change needed there
+  *   `[✅]`   `role`
+    *   `[✅]`   UI component — adapter layer displaying stage content and documents
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic session workspace
+    *   `[✅]`   Boundary: stage header display
+  *   `[✅]`   `deps`
+    *   `[✅]`   `DialecticStage` type from `@paynless/types` — `display_name: string` field
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Reads `activeStage.display_name` directly instead of mapping through local constant
+    *   `[✅]`   No new imports required
+  *   `[✅]`   unit/`SessionContributionsDisplayCard.test.tsx`
+    *   `[✅]`   Update any test mocks that reference `stageNameMap` or local `getDisplayName` to use `display_name` field on stage objects
+  *   `[✅]`   `SessionContributionsDisplayCard.tsx`
+    *   `[✅]`   Delete `stageNameMap` and local `getDisplayName`
+    *   `[✅]`   Replace call site with `activeStage.display_name`
+  *   `[✅]`   `requirements`
+    *   `[✅]`   No hardcoded stage name mapping remains in this file
+    *   `[✅]`   Stage header uses database-driven `display_name`
+    *   `[✅]`   File lints clean
+
+*   `[✅]`   [UI] apps/web/src/components/common/DynamicProgressBar.tsx **Use stage display_name instead of raw slug**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Replace `progress.currentStageSlug` (line 15) with the display name for the current stage
+    *   `[✅]`   This requires looking up the stage object from sorted stages using `currentStageSlug` to get `display_name`
+  *   `[✅]`   `role`
+    *   `[✅]`   UI component — progress display
+  *   `[✅]`   `module`
+    *   `[✅]`   Common progress indicator
+    *   `[✅]`   Boundary: progress bar label rendering
+  *   `[✅]`   `deps`
+    *   `[✅]`   `selectSortedStages` from `@paynless/store` — provides stages with `display_name`
+    *   `[✅]`   `useDialecticStore` from `@paynless/store` — existing store hook
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Reads sorted stages to find stage matching `currentStageSlug`, uses its `display_name`
+    *   `[✅]`   Falls back to slug if stage not found
+  *   `[✅]`   unit/`DynamicProgressBar.test.tsx` (create if not exists)
+    *   `[✅]`   Test: progress bar label shows friendly display_name instead of raw slug
+    *   `[✅]`   Test: falls back to slug when stage object is not found
+  *   `[✅]`   `DynamicProgressBar.tsx`
+    *   `[✅]`   Add `selectSortedStages` usage to look up `display_name` for `currentStageSlug`
+    *   `[✅]`   Replace raw slug in display message with resolved `display_name`
+    *   `[✅]`   Remove `console.log(progress)` on line 17
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Progress bar shows "Stage 2/5: Review" not "Stage 2/5: antithesis"
+    *   `[✅]`   File lints clean
+
+*   `[✅]`   [UI] apps/web/src/components/dialectic/StageTabCard.tsx **Add tooltip with stage description and minimum balance on hover**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Remove import of `getDisplayName` from `@paynless/types`
+    *   `[✅]`   Replace `getDisplayName(stage.slug)` (line 50) with `stage.display_name`
+    *   `[✅]`   Wrap each `StageCard` button with `Tooltip` / `TooltipTrigger` / `TooltipContent` from `@/components/ui/tooltip`
+    *   `[✅]`   Tooltip content shows: stage `description` and formatted `minimum_balance` (e.g., "Minimum balance: 200,000 tokens")
+  *   `[✅]`   `role`
+    *   `[✅]`   UI component — stage navigation with contextual help
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic stage sidebar
+    *   `[✅]`   Boundary: stage tab rendering and tooltip display
+  *   `[✅]`   `deps`
+    *   `[✅]`   `Tooltip`, `TooltipTrigger`, `TooltipContent` from `@/components/ui/tooltip`
+    *   `[✅]`   `DialecticStage` type from `@paynless/types` — `display_name`, `description`, `minimum_balance` fields
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Reads `stage.display_name`, `stage.description`, `stage.minimum_balance` from the stage object already passed as props
+    *   `[✅]`   Imports tooltip components from existing UI library
+  *   `[✅]`   interface/`StageCardProps` in StageTabCard.tsx
+    *   `[✅]`   No changes needed — `stage: DialecticStage` prop already carries `description` and `minimum_balance`
+  *   `[✅]`   unit/`StageTabCard.test.tsx` (create if not exists)
+    *   `[✅]`   Test: stage card renders `display_name` from stage object, not hardcoded mapping
+    *   `[✅]`   Test: tooltip appears on hover showing stage description
+    *   `[✅]`   Test: tooltip shows formatted minimum balance
+  *   `[✅]`   `StageTabCard.tsx`
+    *   `[✅]`   Remove `getDisplayName` import from `@paynless/types`
+    *   `[✅]`   Replace `getDisplayName(stage.slug)` with `stage.display_name`
+    *   `[✅]`   Wrap stage button with `Tooltip` components
+    *   `[✅]`   Render `stage.description` and formatted `stage.minimum_balance` in `TooltipContent`
+  *   `[✅]`   `requirements`
+    *   `[✅]`   No import of `getDisplayName` remains
+    *   `[✅]`   Stage name sourced from database `display_name`
+    *   `[✅]`   Hovering over a stage shows description and minimum token balance
+    *   `[✅]`   File lints clean
+  *   `[✅]`   **Commit** `feat(dialectic): replace hardcoded stage metadata with database-driven display_name, description, and minimum_balance — add stage tooltips`
+    *   `[✅]`   Migration adds `minimum_balance` column and updates `display_name`/`description` for all 5 stages
+    *   `[✅]`   Regenerated `types_db.ts`
+    *   `[✅]`   Deleted `DialecticStages` enum, `getDisplayName`, `isDialecticStageSlug`, `STAGE_BALANCE_THRESHOLDS` from `dialectic.types.ts`
+    *   `[✅]`   Updated `GenerateContributionButton.tsx` to use `stage.display_name`
+    *   `[✅]`   Updated `useStartContributionGeneration.ts` to use `stage.minimum_balance`
+    *   `[✅]`   Updated `CreateDialecticProjectForm.tsx` to use `stage.minimum_balance`
+    *   `[✅]`   Updated `SessionContributionsDisplayCard.tsx` — removed duplicate `stageNameMap`
+    *   `[✅]`   Updated `DynamicProgressBar.tsx` to show `display_name` instead of raw slug
+    *   `[✅]`   Updated `StageTabCard.tsx` — removed `getDisplayName`, added tooltip with description and minimum balance
+
+### Phase 2 — Dynamic document metadata and document tooltips (Option B)
+
+*   `[✅]`   [DB] supabase/migrations **Add display_name and description to document entries in outputs_required JSONB**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Write a new SQL migration that UPDATEs the `outputs_required` JSONB on `dialectic_recipe_template_steps` and `dialectic_stage_recipe_steps` to add `display_name` and `description` fields alongside each existing `document_key` in the `documents` array entries
+    *   `[✅]`   Every markdown document entry across all 5 stage recipes receives a `display_name` (e.g., `"business_case"` → `"Business Case"`) and a `description` (e.g., `"Market analysis, user problem validation, and value proposition for the project"`)
+    *   `[✅]`   Non-markdown entries (`header_context`, `seed_prompt`, `comparison_vector`, etc.) are excluded — only rendered document entries visible to users need friendly metadata
+    *   `[✅]`   The pipeline passes `outputs_required` as opaque JSONB — no backend code changes are needed
+  *   `[✅]`   `role`
+    *   `[✅]`   Infrastructure — database schema enrichment providing document display metadata to front-end selectors
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic recipe configuration
+    *   `[✅]`   Boundary: JSONB content update within `outputs_required` on recipe step rows — no schema DDL
+  *   `[✅]`   `deps`
+    *   `[✅]`   Existing `dialectic_recipe_template_steps` and `dialectic_stage_recipe_steps` tables from migration `20251006194452_dialectic_stage_recipes.sql`
+    *   `[✅]`   Existing stage-specific recipe migrations (`20251006194531` through `20251006194605`)
+    *   `[✅]`   No reverse dependency introduced — JSONB is opaque to the pipeline
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Adds `display_name: string` and `description: string` to document entries inside `outputs_required` JSONB
+    *   `[✅]`   No new columns, no DDL, no code imports            
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Migration is idempotent (uses `jsonb_set` or equivalent UPDATE pattern)
+    *   `[✅]`   All user-visible markdown document entries across all 5 stage recipes receive `display_name` and `description`
+    *   `[✅]`   Pipeline passes the enriched JSONB through without modification — no backend test failures
+
+*   `[✅]`   [STORE] packages/store/src/dialecticStore.selectors.ts **Add selectDocumentDisplayMetadata selector**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Create a new memoized selector `selectDocumentDisplayMetadata` that returns `Map<string, { displayName: string; description: string }>` keyed by `document_key`
+    *   `[✅]`   The selector parses `outputs_required` JSONB from recipe steps (same pattern as `selectValidMarkdownDocumentKeys`) and extracts `display_name` and `description` from document entries
+    *   `[✅]`   Falls back to a title-cased `document_key` for `displayName` and empty string for `description` if fields are absent
+  *   `[✅]`   `role`
+    *   `[✅]`   Store selector — app layer deriving display metadata from recipe data already in state
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic store selectors
+    *   `[✅]`   Boundary: reads `recipesByStageSlug` from state, returns derived display metadata map
+  *   `[✅]`   `deps`
+    *   `[✅]`   `selectRecipeSteps` from `dialecticStore.selectors.ts` — existing memoized selector providing recipe steps
+    *   `[✅]`   `createSelector` from `dialecticStore.selectors.ts` — existing selector factory
+    *   `[✅]`   Existing helpers `isPlainRecord`, `toPlainArray` in same file
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Input: recipe steps from state (same as `selectValidMarkdownDocumentKeys`)
+    *   `[✅]`   Output: `Map<string, { displayName: string; description: string }>`
+    *   `[✅]`   No new store state, no new actions
+  *   `[✅]`   interface/`DocumentDisplayMetadata` type
+    *   `[✅]`   Define `DocumentDisplayMetadata` type: `{ displayName: string; description: string }` — in `@paynless/types` or locally in the selector file if only used here
+  *   `[✅]`   unit/`dialecticStore.selectors.documents.test.ts`
+    *   `[✅]`   Test: returns empty map when no recipe steps exist
+    *   `[✅]`   Test: extracts `display_name` and `description` from document entries in `outputs_required`
+    *   `[✅]`   Test: falls back to title-cased `document_key` when `display_name` is absent
+    *   `[✅]`   Test: falls back to empty string when `description` is absent
+    *   `[✅]`   Test: ignores `header_context` output_type steps
+    *   `[✅]`   Test: handles string JSONB (unparsed) `outputs_required`
+  *   `[✅]`   `dialecticStore.selectors.ts`
+    *   `[✅]`   Add `selectDocumentDisplayMetadata` selector using `createSelector([selectRecipeSteps], ...)`
+    *   `[✅]`   Parse `outputs_required` documents array, extract `display_name` and `description` alongside `document_key`
+    *   `[✅]`   Export the new selector
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Selector is memoized via `createSelector`
+    *   `[✅]`   Follows same JSONB parsing pattern as `selectValidMarkdownDocumentKeys`
+    *   `[✅]`   Exported from `@paynless/store` barrel
+    *   `[✅]`   File lints clean
+
+*   `[✅]`   [UI] apps/web/src/components/dialectic/StageRunChecklist.tsx **Add tooltip with document description on hover, show display_name instead of raw document_key**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Import and use `selectDocumentDisplayMetadata` to look up `displayName` and `description` for each document row
+    *   `[✅]`   Replace `{entry.documentKey}` (line 725) with the resolved `displayName`
+    *   `[✅]`   Wrap each document row with `Tooltip` / `TooltipTrigger` / `TooltipContent` from `@/components/ui/tooltip`
+    *   `[✅]`   Tooltip content shows the document `description`
+  *   `[✅]`   `role`
+    *   `[✅]`   UI component — document checklist with contextual help
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic stage run checklist
+    *   `[✅]`   Boundary: document row rendering and tooltip display
+  *   `[✅]`   `deps`
+    *   `[✅]`   `selectDocumentDisplayMetadata` from `@paynless/store` — provides display metadata map
+    *   `[✅]`   `Tooltip`, `TooltipTrigger`, `TooltipContent` from `@/components/ui/tooltip`
+    *   `[✅]`   No reverse dependency introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Calls `selectDocumentDisplayMetadata` for the effective stage slug to get `Map<string, { displayName, description }>`
+    *   `[✅]`   Reads `displayName` and `description` for each `entry.documentKey`
+    *   `[✅]`   Imports tooltip components from existing UI library
+  *   `[✅]`   unit/`StageRunChecklist.test.tsx` (create or extend)
+    *   `[✅]`   Test: document row renders friendly `displayName` instead of raw `document_key`
+    *   `[✅]`   Test: tooltip appears on hover showing document `description`
+    *   `[✅]`   Test: falls back to title-cased `document_key` when display metadata is unavailable
+  *   `[✅]`   `StageRunChecklist.tsx`
+    *   `[✅]`   Import `selectDocumentDisplayMetadata` from `@paynless/store`
+    *   `[✅]`   Import `Tooltip`, `TooltipTrigger`, `TooltipContent` from `@/components/ui/tooltip`
+    *   `[✅]`   Call selector to get display metadata map for the current stage
+    *   `[✅]`   Replace `{entry.documentKey}` with resolved `displayName`
+    *   `[✅]`   Wrap document list items with tooltip showing `description`
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Document names shown as friendly display names, not snake_case keys
+    *   `[✅]`   Hovering over a document shows its description
+    *   `[✅]`   Falls back gracefully when metadata is absent
+    *   `[✅]`   File lints clean
+  *   `[✅]`   **Commit** `feat(dialectic): add document display_name and description to recipe JSONB — add document tooltips`
+    *   `[✅]`   Migration enriches `outputs_required` JSONB with `display_name` and `description` for all markdown document entries
+    *   `[✅]`   Added `selectDocumentDisplayMetadata` selector to `dialecticStore.selectors.ts`
+    *   `[✅]`   Updated `StageRunChecklist.tsx` to show friendly document names with hover descriptions
 
 ## Expand paused_nsf for general pause/resume
 - Add explicit "Pause" condition that sets all jobs to "paused" and can be restarted. 
@@ -1037,8 +1365,6 @@
 ## Highlight the chosen Chat or Project in the left sidebar 
 - Currently the sidebar gives no indication of which Chat or Project the user has focused
 - Outline and/or highlight the chosen Chat or Project in the left sidebar
-
-# ToDo
 
 ## New user sign in banner doesn't display, throws console error  
 - Chase, diagnose, fix 
@@ -1096,3 +1422,7 @@ AND/OR
 ## Set Free accounts to Gemini Flash only 
 - Claude & ChatGPT only for paid
 - Paying customers get BYOK (heavy lift)
+
+## Add Idem keys to project, session, generate, redo
+- Users report multiple projects, sessions, generates, and redos on a single click
+- Probably delay or transient errors between Supabase and Netlify 

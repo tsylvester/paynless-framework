@@ -17,7 +17,6 @@ import type {
   StageDAGProgressDialogProps,
   UseStartContributionGenerationReturn,
 } from '@paynless/types';
-import { STAGE_BALANCE_THRESHOLDS } from '@paynless/types';
 
 // Import utilities from the actual mock file
 import { 
@@ -108,13 +107,14 @@ const renderWithRouter = (ui: React.ReactElement) =>
 const mockThesisStage: DialecticStage = {
   id: 'stage-1',
   slug: 'thesis',
-  display_name: 'Thesis',
+  display_name: 'Proposal',
   description: 'Initial hypothesis generation',
   default_system_prompt_id: 'prompt-1',
   created_at: new Date().toISOString(),
   expected_output_template_ids: [],
   recipe_template_id: null,
   active_recipe_instance_id: null,
+  minimum_balance: 100000,
 };
 
 // Helper to create a complete DialecticProject mock
@@ -198,7 +198,7 @@ function getDefaultHookReturn(
     showBalanceCallout: false,
     activeStage: mockThesisStage,
     activeSession: defaultSession,
-    stageThreshold: STAGE_BALANCE_THRESHOLDS['thesis'],
+    stageThreshold: mockThesisStage.minimum_balance,
     ...overrides,
   };
 }
@@ -229,7 +229,7 @@ describe('GenerateContributionButton', () => {
     vi.mocked(toast.success).mockClear();
     vi.mocked(toast.error).mockClear();
 
-    const thesisMinBalance = STAGE_BALANCE_THRESHOLDS['thesis'];
+    const thesisMinBalance = mockThesisStage.minimum_balance;
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
       status: 'ok',
       type: 'personal',
@@ -366,7 +366,7 @@ describe('GenerateContributionButton', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
 
     // Selector returns ok only when ctx === 'personal'; otherwise loading
-    const thesisMinBalance = STAGE_BALANCE_THRESHOLDS['thesis'];
+    const thesisMinBalance = mockThesisStage.minimum_balance;
     vi.mocked(selectActiveChatWalletInfo).mockImplementation((state, ctx) => {
       void state;
       if (ctx === 'personal') {

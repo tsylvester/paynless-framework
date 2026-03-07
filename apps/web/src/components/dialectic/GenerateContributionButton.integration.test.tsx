@@ -17,7 +17,7 @@ import type {
   UnifiedProjectStatus,
   SelectedModels,
 } from '@paynless/types';
-import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR, STAGE_BALANCE_THRESHOLDS } from '@paynless/types';
+import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import { GenerateContributionButton } from './GenerateContributionButton';
 import {
   initialDialecticStateValues,
@@ -61,6 +61,19 @@ const stageSlug = 'thesis';
 const sessionId = 'test-session-id';
 const iterationNumber = 1;
 const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+
+const mockThesisStage: DialecticStage = {
+  id: `stage-${stageSlug}`,
+  slug: stageSlug,
+  display_name: 'Proposal',
+  description: null,
+  created_at: new Date().toISOString(),
+  default_system_prompt_id: null,
+  expected_output_template_ids: [],
+  recipe_template_id: null,
+  active_recipe_instance_id: null,
+  minimum_balance: 100000,
+};
 
 function renderWithRouter(ui: React.ReactElement) {
   return render(ui, {
@@ -113,6 +126,7 @@ function buildProgressSnapshot(
       totalSteps: Object.keys(stepStatuses).length,
       failedSteps: 0,
     },
+    jobs: [],
   };
 }
 
@@ -125,17 +139,7 @@ function setStoreForButton(
   progress: StageRunProgressSnapshot,
   selectedModels: SelectedModels[] = [{ id: 'model-1', displayName: 'Model 1' }]
 ): void {
-  const stage: DialecticStage = {
-    id: `stage-${stageSlug}`,
-    slug: stageSlug,
-    display_name: 'Thesis',
-    description: null,
-    created_at: new Date().toISOString(),
-    default_system_prompt_id: null,
-    expected_output_template_ids: [],
-    recipe_template_id: null,
-    active_recipe_instance_id: null,
-  };
+  const stage = mockThesisStage;
   const template: DialecticProcessTemplate = {
     id: 'template-1',
     name: 'Test',
@@ -203,13 +207,12 @@ describe('GenerateContributionButton integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     initializeMockDialecticState();
-    const thesisMinBalance = STAGE_BALANCE_THRESHOLDS['thesis'];
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
       status: 'ok',
       type: 'personal',
       walletId: 'wallet-1',
       orgId: null,
-      balance: String(thesisMinBalance),
+      balance: String(mockThesisStage.minimum_balance),
       isLoadingPrimaryWallet: false,
     });
   });
@@ -244,7 +247,7 @@ describe('GenerateContributionButton integration', () => {
     const recipe = buildRecipe(steps, []);
     const progress = buildProgressSnapshot({ plan: 'paused_nsf' }, {});
     setStoreForButton(recipe, progress);
-    const thesisMinBalance = STAGE_BALANCE_THRESHOLDS['thesis'];
+    const thesisMinBalance = 100000;
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
       status: 'ok',
       type: 'personal',

@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, expect, vi } from 'vitest';
-import { act, render, screen, within, fireEvent } from '@testing-library/react';
+import { act, render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import type {
     DialecticStageRecipe,
@@ -49,22 +50,26 @@ const buildOutputsRule = (
     documentKey: string,
     artifactClass: 'rendered_document' | 'assembled_json' | 'header_context',
     fileType: 'markdown' | 'json',
+    displayMetadata?: { display_name: string; description: string },
 ): OutputsRequired => {
+    const documentEntry: Record<string, unknown> = {
+        document_key: documentKey,
+        artifact_class: artifactClass,
+        file_type: fileType,
+        template_filename:
+            fileType === 'markdown' ? `${documentKey}.md` : `${documentKey}.json`,
+    };
+    if (displayMetadata) {
+        documentEntry['display_name'] = displayMetadata.display_name;
+        documentEntry['description'] = displayMetadata.description;
+    }
     return JSON.parse(
         JSON.stringify([
             {
-                documents: [
-                    {
-                        document_key: documentKey,
-                        artifact_class: artifactClass,
-                        file_type: fileType,
-                        template_filename:
-                            fileType === 'markdown' ? `${documentKey}.md` : `${documentKey}.json`,
-                    },
-                ],
+                documents: [documentEntry],
             },
         ]),
-    );
+    ) as OutputsRequired;
 };
 
 const buildDialecticContribution = (
@@ -320,6 +325,7 @@ function buildProcessTemplateForStage(slug: string): DialecticProcessTemplate {
         expected_output_template_ids: [],
         recipe_template_id: null,
         active_recipe_instance_id: null,
+        minimum_balance: 0,
     };
     return {
         id: `template-${slug}`,
@@ -534,7 +540,7 @@ describe('StageRunChecklist', () => {
         });
 
         const documentRow = screen.getByTestId('document-synthesis_document_rendered');
-        expect(within(documentRow).getByText('synthesis_document_rendered')).toBeInTheDocument();
+        expect(within(documentRow).getByText('Synthesis Document Rendered')).toBeInTheDocument();
         expect(within(documentRow).getByTestId('document-generating-icon')).toBeInTheDocument();
         expect(within(documentRow).queryByText(/Job ID/i)).toBeNull();
         expect(within(documentRow).queryByText(/Latest Render/i)).toBeNull();
@@ -631,8 +637,8 @@ describe('StageRunChecklist', () => {
         const primaryRow = screen.getByTestId('document-synthesis_document_rendered');
         const secondaryRow = screen.getByTestId('document-synthesis_document_secondary');
 
-        expect(within(primaryRow).getByText('synthesis_document_rendered')).toBeInTheDocument();
-        expect(within(secondaryRow).getByText('synthesis_document_secondary')).toBeInTheDocument();
+        expect(within(primaryRow).getByText('Synthesis Document Rendered')).toBeInTheDocument();
+        expect(within(secondaryRow).getByText('Synthesis Document Secondary')).toBeInTheDocument();
     });
 
     it('renders planned documents even when active session context is missing', () => {
@@ -792,8 +798,8 @@ describe('StageRunChecklist', () => {
         const primaryRow = screen.getByTestId('document-synthesis_document_rendered');
         const secondaryRow = screen.getByTestId('document-synthesis_document_secondary');
 
-        expect(within(primaryRow).getByText('synthesis_document_rendered')).toBeInTheDocument();
-        expect(within(secondaryRow).getByText('synthesis_document_secondary')).toBeInTheDocument();
+        expect(within(primaryRow).getByText('Synthesis Document Rendered')).toBeInTheDocument();
+        expect(within(secondaryRow).getByText('Synthesis Document Secondary')).toBeInTheDocument();
     });
 
     it('shows completed documents regardless of the user’s current selected models', () => {
@@ -2207,5 +2213,145 @@ describe('StageRunChecklist', () => {
             const row = screen.getByTestId('document-synthesis_document_rendered');
             expect(within(row).getByTestId('document-completed-icon')).toBeInTheDocument();
         });
+    });
+
+    it('document row renders friendly displayName instead of raw document_key when recipe has display_name', () => {
+        const renderOutputs = buildOutputsRule(
+            'synthesis_document_rendered',
+            'rendered_document',
+            'markdown',
+            { display_name: 'Business Case', description: 'Market analysis and value proposition.' },
+        );
+        const stepWithDisplayMetadata: DialecticStageRecipeStep = {
+            ...buildRenderStep(),
+            outputs_required: renderOutputs,
+        };
+        const recipe = createRecipe([stepWithDisplayMetadata]);
+
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
+        const progressEntry = createProgressEntry(
+            { render_document: 'completed' },
+            {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
+                    status: 'completed',
+                    job_id: 'job-render',
+                    latestRenderedResourceId: 'resource-render',
+                    modelId: modelIdA,
+                    versionHash: 'hash-render',
+                    lastRenderedResourceId: 'resource-render',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            },
+            [
+                buildJobProgressDto({
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                }),
+            ],
+        );
+
+        setChecklistState(recipe, progressEntry);
+
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+        const row = screen.getByTestId('document-synthesis_document_rendered');
+        expect(row).toHaveTextContent('Business Case');
+        expect(row).not.toHaveTextContent('synthesis_document_rendered');
+    });
+
+    it('tooltip appears on hover showing document description', async () => {
+        const user = userEvent.setup();
+        const renderOutputs = buildOutputsRule(
+            'synthesis_document_rendered',
+            'rendered_document',
+            'markdown',
+            { display_name: 'Business Case', description: 'Market analysis and value proposition.' },
+        );
+        const stepWithDisplayMetadata: DialecticStageRecipeStep = {
+            ...buildRenderStep(),
+            outputs_required: renderOutputs,
+        };
+        const recipe = createRecipe([stepWithDisplayMetadata]);
+
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
+        const progressEntry = createProgressEntry(
+            { render_document: 'completed' },
+            {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
+                    status: 'completed',
+                    job_id: 'job-render',
+                    latestRenderedResourceId: 'resource-render',
+                    modelId: modelIdA,
+                    versionHash: 'hash-render',
+                    lastRenderedResourceId: 'resource-render',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            },
+            [
+                buildJobProgressDto({
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                }),
+            ],
+        );
+
+        setChecklistState(recipe, progressEntry);
+
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+        const row = screen.getByTestId('document-synthesis_document_rendered');
+        const infoIcon = within(row).getByTestId('document-info-synthesis_document_rendered');
+        await user.hover(infoIcon);
+
+        await waitFor(() => {
+            const tooltipContent = document.querySelector('[data-slot="tooltip-content"]');
+            expect(tooltipContent).toBeTruthy();
+            expect(tooltipContent?.textContent).toContain('Market analysis and value proposition.');
+        });
+    });
+
+    it('falls back to title-cased document_key when display metadata is absent in recipe', () => {
+        const recipe = createRecipe([buildRenderStep()]);
+
+        selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
+
+        const progressEntry = createProgressEntry(
+            { render_document: 'completed' },
+            {
+                [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
+                    status: 'completed',
+                    job_id: 'job-render',
+                    latestRenderedResourceId: 'resource-render',
+                    modelId: modelIdA,
+                    versionHash: 'hash-render',
+                    lastRenderedResourceId: 'resource-render',
+                    lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+                },
+            },
+            [
+                buildJobProgressDto({
+                    status: 'completed',
+                    modelId: modelIdA,
+                    documentKey: 'synthesis_document_rendered',
+                }),
+            ],
+        );
+
+        setChecklistState(recipe, progressEntry);
+
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+        const row = screen.getByTestId('document-synthesis_document_rendered');
+        expect(row).toHaveTextContent('Synthesis Document Rendered');
     });
 });

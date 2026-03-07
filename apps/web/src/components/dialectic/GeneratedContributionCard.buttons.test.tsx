@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GeneratedContributionCard } from './GeneratedContributionCard';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
@@ -261,6 +261,7 @@ const defaultTestRecipe: DialecticStageRecipe = {
       ],
     },
   ],
+  edges: [],
 };
 
 const buildDialecticContribution = (payload: {
@@ -428,14 +429,16 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
       dialectic_contributions: contributionList,
     },
     modelCatalog: [
-      { id: modelA, model_name: 'Model Alpha', provider_name: 'OpenAI', api_identifier: 'openai', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [] },
-      { id: modelB, model_name: 'Model Beta', provider_name: 'Anthropic', api_identifier: 'anthropic', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [] },
+      { id: modelA, model_name: 'Model Alpha', provider_name: 'OpenAI', api_identifier: 'openai', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [], is_default_generation: false },
+      { id: modelB, model_name: 'Model Beta', provider_name: 'Anthropic', api_identifier: 'anthropic', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [], is_default_generation: false },
     ],
     stageRunProgress: {
       [progressKey]: {
         stepStatuses: {},
         documents: documents,
         jobProgress: {},
+        progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+        jobs: [],
       },
     },
     stageDocumentContent: contentState,
@@ -611,6 +614,30 @@ describe('GeneratedContributionCard', () => {
 
       const saveEditButtons = await screen.findAllByRole('button', { name: /save edit/i });
       expect(saveEditButtons.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('renders Download button to the left of Save Edit button in the same row', async () => {
+      setupStore({
+        focusedDocument: { modelId: modelA, documentKey: docA1Key },
+        content: 'Doc content',
+        feedback: '',
+        focusedStageDocument: {
+          [buildFocusKey(modelA)]: { modelId: modelA, documentKey: docA1Key },
+        },
+      });
+
+      render(<GeneratedContributionCard modelId={modelA} />);
+
+      const downloadButtons = await screen.findAllByRole('button', { name: /download/i });
+      expect(downloadButtons.length).toBeGreaterThanOrEqual(1);
+
+      const firstDownload = downloadButtons[0];
+      const row = firstDownload.parentElement;
+      if (!row) throw new Error('expected row');
+      const buttonsInRow = within(row).getAllByRole('button');
+      expect(buttonsInRow).toHaveLength(2);
+      expect(buttonsInRow[0]).toHaveAccessibleName(/download/i);
+      expect(buttonsInRow[1]).toHaveAccessibleName(/save edit/i);
     });
 
     it('renders Save Feedback button below feedback editor when document is focused', async () => {
