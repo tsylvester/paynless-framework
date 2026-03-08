@@ -5,21 +5,23 @@ import {
     beforeEach, 
     vi,
 } from 'vitest';
-import { 
-    useDialecticStore, 
+import {
+    useDialecticStore,
+    initialDialecticStateValues,
 } from './dialecticStore';
-import type { 
-  ApiError, 
-  ApiResponse, 
-  DialecticProject, 
-  CreateProjectPayload,
-  DialecticProjectResource,
-  UpdateProjectInitialPromptPayload,
-  GetProjectResourceContentResponse,
-  StartSessionPayload,
-  DialecticSession,
-  StartSessionSuccessResponse,
+import type {
+  ApiError,
+  ApiResponse,
+  AIModelCatalogEntry,
   AssembledPrompt,
+  CreateProjectAutoStartResult,
+  CreateProjectPayload,
+  DialecticProcessTemplate,
+  DialecticProject,
+  DialecticStage,
+  StartSessionPayload,
+  StartSessionSuccessResponse,
+  UpdateProjectInitialPromptPayload,
 } from '@paynless/types';
 
 // Add the mock call here
@@ -155,11 +157,12 @@ describe('useDialecticStore', () => {
 
     // New tests for createDialecticProject
     describe('createDialecticProject action', () => {
-        const projectPayload: CreateProjectPayload = { 
-            projectName: 'New Proj', 
+        const projectPayload: CreateProjectPayload = {
+            idempotencyKey: 'test-idem-key-project',
+            projectName: 'New Proj',
             initialUserPrompt: 'A prompt',
             selectedDomainId: 'dom-1',
-            selectedDomainOverlayId: 'overlay-1'
+            selectedDomainOverlayId: 'overlay-1',
         };
         const mockCreatedProject: DialecticProject = {
             id: 'newProjId',
@@ -205,9 +208,10 @@ describe('useDialecticStore', () => {
             const formData = mockDialecticApi.createProject.mock.calls[0][0];
             expect(formData.get('projectName')).toBe(projectPayload.projectName);
             expect(formData.get('initialUserPromptText')).toBe(projectPayload.initialUserPrompt);
-            expect(formData.get('selectedDomainId')).toBe(projectPayload.selectedDomainId); 
+            expect(formData.get('selectedDomainId')).toBe(projectPayload.selectedDomainId);
             expect(formData.get('selectedDomainOverlayId')).toBe(projectPayload.selectedDomainOverlayId);
             expect(formData.get('promptFile')).toBeNull();
+            expect(formData.get('idempotencyKey')).toBe(projectPayload.idempotencyKey);
 
             // Verify that the new project is added to the state
             const state = useDialecticStore.getState();
@@ -272,11 +276,152 @@ describe('useDialecticStore', () => {
             // expect(result.status).toBe(0); // Status is not set for network errors in the new return type
             expect(mockDialecticApi.listProjects).not.toHaveBeenCalled(); // Should not attempt to refetch
         });
+
+        it('should append idempotencyKey to FormData when calling createProject', async () => {
+            mockDialecticApi.createProject.mockResolvedValue({ data: mockCreatedProject, status: 201 });
+
+            const { createDialecticProject } = useDialecticStore.getState();
+            await createDialecticProject(projectPayload);
+
+            expect(mockDialecticApi.createProject).toHaveBeenCalledWith(expect.any(FormData));
+            const formData: FormData = mockDialecticApi.createProject.mock.calls[0][0];
+            expect(formData.get('idempotencyKey')).toBeTruthy();
+            expect(formData.get('idempotencyKey')).toBe(projectPayload.idempotencyKey);
+        });
+    });
+
+    describe('createProjectAndAutoStart idempotency', () => {
+        const projectId = 'proj-auto-idem-1';
+        const sessionId = 'sess-auto-idem-1';
+        const stageSlug = 'thesis';
+        const oneStage: DialecticStage[] = [
+            {
+                id: 'stage-1',
+                slug: stageSlug,
+                display_name: 'Thesis',
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                created_at: '2023-01-01T00:00:00.000Z',
+                default_system_prompt_id: null,
+                description: null,
+                active_recipe_instance_id: null,
+                minimum_balance: 0,
+            },
+        ];
+        const template: DialecticProcessTemplate = {
+            id: 'pt-1',
+            name: 'Standard',
+            description: null,
+            created_at: '2023-01-01T00:00:00.000Z',
+            starting_stage_id: 'stage-1',
+            stages: oneStage,
+        };
+        const mockProjectForAutoStart: DialecticProject = {
+            id: projectId,
+            user_id: 'user-1',
+            project_name: 'Auto Project',
+            selected_domain_id: 'dom-1',
+            dialectic_domains: null,
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            status: 'active',
+            created_at: '2023-01-01T00:00:00.000Z',
+            updated_at: '2023-01-01T00:00:00.000Z',
+            process_template_id: 'pt-1',
+            dialectic_process_templates: template,
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
+        };
+        const defaultCatalogEntry: AIModelCatalogEntry = {
+            id: 'm1',
+            provider_name: 'Provider',
+            model_name: 'Model One',
+            api_identifier: 'm1',
+            created_at: '',
+            updated_at: '',
+            context_window_tokens: 1000,
+            input_token_cost_usd_millionths: 1,
+            output_token_cost_usd_millionths: 1,
+            max_output_tokens: 500,
+            is_active: true,
+            description: null,
+            strengths: null,
+            weaknesses: null,
+            is_default_generation: true,
+        };
+        const payload: CreateProjectPayload = {
+            idempotencyKey: 'caller-provided-project-idem',
+            projectName: 'Auto Project',
+            selectedDomainId: 'dom-1',
+        };
+
+        it('should use separate idempotency keys for project creation and session start', async () => {
+            useDialecticStore.setState({
+                ...initialDialecticStateValues,
+                modelCatalog: [defaultCatalogEntry],
+            });
+            mockDialecticApi.createProject.mockResolvedValue({
+                data: mockProjectForAutoStart,
+                status: 201,
+            });
+            mockDialecticApi.getProjectDetails.mockResolvedValue({
+                data: mockProjectForAutoStart,
+                status: 200,
+            });
+            mockDialecticApi.fetchProcessTemplate.mockResolvedValue({
+                data: template,
+                status: 200,
+            });
+            mockDialecticApi.fetchStageRecipe.mockResolvedValue({
+                data: { stageSlug, instanceId: 'inst-1', steps: [], edges: [] },
+                status: 200,
+            });
+            const mockStartSessionResponse: StartSessionSuccessResponse = {
+                id: sessionId,
+                project_id: projectId,
+                current_stage_id: 'stage-1',
+                status: 'pending',
+                iteration_count: 1,
+                session_description: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                seedPrompt: { promptContent: 'Seed', source_prompt_resource_id: 'res-idem-1' },
+                associated_chat_id: null,
+                selected_models: [{ id: 'm1', displayName: 'Model One' }],
+                user_input_reference_url: null,
+            };
+            mockDialecticApi.startSession.mockResolvedValue({
+                data: mockStartSessionResponse,
+                status: 200,
+            });
+
+            const { createProjectAndAutoStart } = useDialecticStore.getState();
+            const result: CreateProjectAutoStartResult = await createProjectAndAutoStart(payload);
+
+            expect(result.projectId).toBe(projectId);
+            expect(result.sessionId).toBe(sessionId);
+            expect(mockDialecticApi.createProject).toHaveBeenCalledTimes(1);
+            expect(mockDialecticApi.startSession).toHaveBeenCalledTimes(1);
+
+            const createProjectFormData: FormData = mockDialecticApi.createProject.mock.calls[0][0];
+            const sessionCallPayload: StartSessionPayload = mockDialecticApi.startSession.mock.calls[0][0];
+
+            expect(createProjectFormData.get('idempotencyKey')).toBeTruthy();
+            expect(sessionCallPayload.idempotencyKey).toBeTruthy();
+            expect(createProjectFormData.get('idempotencyKey')).not.toBe(sessionCallPayload.idempotencyKey);
+        });
     });
 
     describe('startDialecticSession action', () => {
         it('should set activeSeedPrompt on successful session start', async () => {
             const payload: StartSessionPayload = {
+                idempotencyKey: 'test-idem-key-session',
                 projectId: 'proj-1',
                 selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
             };
@@ -371,6 +516,7 @@ describe('useDialecticStore', () => {
                     recipe_template_id: null, 
                     active_recipe_instance_id: null,
                     default_system_prompt_id: null,
+                    minimum_balance: 0,
                 },
                 selectedModels: [{ id: 'old-model-1', displayName: 'Old Model 1' }],
             });

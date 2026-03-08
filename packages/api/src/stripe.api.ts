@@ -86,7 +86,7 @@ export class StripeApiClient {
   async cancelSubscription(subscriptionId: string, options?: FetchOptions): Promise<ApiResponse<void>> {
     try {
       logger.info('Cancelling subscription', { subscriptionId });
-      const result = await this.apiClient.post<void, null>(`api-subscriptions/${subscriptionId}/cancel`, null, options);
+      const result = await this.apiClient.post<void, Record<string, never>>(`api-subscriptions/${subscriptionId}/cancel`, {}, options);
        if (result.error) {
          logger.warn('Cancelling subscription API returned an error', { error: result.error, subscriptionId });
       }
@@ -104,7 +104,7 @@ export class StripeApiClient {
   async resumeSubscription(subscriptionId: string, options?: FetchOptions): Promise<ApiResponse<void>> {
     try {
       logger.info('Resuming subscription', { subscriptionId });
-      const result = await this.apiClient.post<void, null>(`api-subscriptions/${subscriptionId}/resume`, null, options);
+      const result = await this.apiClient.post<void, Record<string, never>>(`api-subscriptions/${subscriptionId}/resume`, {}, options);
       if (result.error) {
          logger.warn('Resuming subscription API returned an error', { error: result.error, subscriptionId });
       }

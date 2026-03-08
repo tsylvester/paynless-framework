@@ -217,7 +217,16 @@ describe('DialecticApiClient - Document Listing', () => {
         stages: [
           {
             stageSlug: 'thesis',
+            edges: [{ from_step_id: 'feature_spec', to_step_id: 'thesis' }],
+            jobs: [{ id: 'job-123', status: 'completed', jobType: 'PLAN', stepKey: 'feature_spec', modelId: 'gpt-4', documentKey: 'feature_spec', parentJobId: null, createdAt: new Date().toISOString(), startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), modelName: 'GPT-4' }],
           documents: [
+            {
+              documentKey: 'feature_spec',
+              status: 'completed',
+              jobId: 'job-123',
+              latestRenderedResourceId: 'resource-456',
+              modelId: 'gpt-4',
+            },
             {
               documentKey: 'feature_spec',
               status: 'completed',
@@ -430,6 +439,7 @@ describe('DialecticApiClient - Document Listing', () => {
   describe('regenerateDocument', () => {
     it('should call the post method with the correct action and payload and return jobIds on success', async () => {
       const payload: RegenerateDocumentPayload = {
+        idempotencyKey: 'test-idem-regen-1',
         sessionId: 'test-session-id',
         stageSlug: 'thesis',
         iterationNumber: 1,
@@ -460,6 +470,7 @@ describe('DialecticApiClient - Document Listing', () => {
 
     it('should return an error when the API call fails', async () => {
       const payload: RegenerateDocumentPayload = {
+        idempotencyKey: 'test-idem-regen-2',
         sessionId: 'test-session-id',
         stageSlug: 'thesis',
         iterationNumber: 1,
@@ -490,6 +501,7 @@ describe('DialecticApiClient - Document Listing', () => {
 
     it('should propagate when post rejects (network error)', async () => {
       const payload: RegenerateDocumentPayload = {
+        idempotencyKey: 'test-idem-regen-3',
         sessionId: 'test-session-id',
         stageSlug: 'thesis',
         iterationNumber: 1,
@@ -506,6 +518,22 @@ describe('DialecticApiClient - Document Listing', () => {
           action: 'regenerateDocument',
           payload,
         }
+      );
+    });
+
+    it('should include idempotencyKey in payload sent to post', async () => {
+      const payload: RegenerateDocumentPayload = {
+        idempotencyKey: 'test-idem-regen-4',
+        sessionId: 'test-session-id',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        documents: [{ documentKey: 'doc-1', modelId: 'model-a' }],
+      };
+      vi.mocked(mockApiClient.post).mockResolvedValue({ data: { jobIds: ['job-1'] }, error: undefined, status: 200 });
+      await dialecticApiClient.regenerateDocument(payload);
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        expect.objectContaining({ payload: expect.objectContaining({ idempotencyKey: payload.idempotencyKey }) })
       );
     });
   });

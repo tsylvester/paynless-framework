@@ -437,6 +437,7 @@ describe('useDialecticStore', () => {
                 expected_output_template_ids: [],
                 recipe_template_id: null,
                 active_recipe_instance_id: null,
+                minimum_balance: 0,
             };
             setActiveContextStage(testStage);
             expect(useDialecticStore.getState().activeContextStage).toEqual(testStage);
@@ -459,6 +460,7 @@ describe('useDialecticStore', () => {
                     expected_output_template_ids: [],
                     recipe_template_id: null,
                     active_recipe_instance_id: null,
+                    minimum_balance: 0,
                 },
             };
             setActiveDialecticContext(testContext);
@@ -1286,6 +1288,7 @@ describe('useDialecticStore', () => {
         };
 
         const mockPayload: CreateProjectPayload = {
+            idempotencyKey: 'test-idem-create-project',
             projectName: 'Test Project',
             initialUserPrompt: 'Test prompt',
             selectedDomainId: 'domain-1',
@@ -1375,6 +1378,7 @@ describe('useDialecticStore', () => {
 
     describe('generateContributions action', () => {
         const mockPayload: GenerateContributionsPayload = {
+            idempotencyKey: 'test-idem-generate-contributions',
             sessionId: 'sess-generate-123',
             projectId: 'proj-generate-abc',
             iterationNumber: 1,
@@ -1545,6 +1549,30 @@ describe('useDialecticStore', () => {
             expect(finalContributions?.[0].status).toBe('failed');
             expect(finalContributions?.[1].status).toBe('failed');
         });
+
+        it('should include idempotencyKey in the payload sent to generateContributions API', async () => {
+            getMockDialecticClient().generateContributions.mockResolvedValue({
+                data: {
+                    sessionId: mockPayload.sessionId,
+                    projectId: mockPayload.projectId,
+                    stage: mockPayload.stageSlug,
+                    iteration: mockPayload.iterationNumber,
+                    status: 'pending',
+                    job_ids: ['job-1', 'job-2'],
+                    successfulContributions: [],
+                    failedAttempts: [],
+                },
+                status: 202,
+            });
+
+            const { generateContributions } = useDialecticStore.getState();
+            await generateContributions(mockPayload);
+
+            expect(getMockDialecticClient().generateContributions).toHaveBeenCalledTimes(1);
+            const callPayload: GenerateContributionsPayload = getMockDialecticClient().generateContributions.mock.calls[0][0];
+            expect(callPayload.idempotencyKey).toBeTruthy();
+            expect(callPayload.idempotencyKey).toBe(mockPayload.idempotencyKey);
+        });
     });
 
     describe('clearFocusedStageDocument', () => {
@@ -1686,6 +1714,7 @@ describe('useDialecticStore', () => {
                     expected_output_template_ids: [],
                     recipe_template_id: null,
                     active_recipe_instance_id: null,
+                    minimum_balance: 0,
                 }]
             },
             dialectic_sessions: [{ 
@@ -1758,6 +1787,7 @@ describe('useDialecticStore', () => {
             expected_output_template_ids: [],
             recipe_template_id: null,
             active_recipe_instance_id: null,
+            minimum_balance: 0,
         };
 
         it('should fetch project, then session, and set all context', async () => {

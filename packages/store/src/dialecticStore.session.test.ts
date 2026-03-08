@@ -72,10 +72,11 @@ describe('useDialecticStore', () => {
         vi.clearAllMocks(); // resetApiMock should handle this for the api calls
     });
     describe('startDialecticSession action', () => {
-        const startSessionPayload: StartSessionPayload = { 
-            projectId: 'proj-123', 
-            selectedModels: [{ id: 'model-abc', displayName: 'Model ABC' }], 
-            sessionDescription: 'Test Session' 
+        const startSessionPayload: StartSessionPayload = {
+            idempotencyKey: 'test-idem-key-session',
+            projectId: 'proj-123',
+            selectedModels: [{ id: 'model-abc', displayName: 'Model ABC' }],
+            sessionDescription: 'Test Session',
         };
         const mockAssembledPrompt: AssembledPrompt = {
             promptContent: "This is a seed prompt.",
@@ -215,19 +216,63 @@ describe('useDialecticStore', () => {
             expect(useDialecticStore.getState().isStartingSession).toBe(true);
             expect(useDialecticStore.getState().startSessionError).toBeNull();
         });
+
+        it('should include idempotencyKey in the payload sent to startSession API', async () => {
+            const mockSuccessResponse: StartSessionSuccessResponse = {
+                ...mockSession,
+                seedPrompt: mockAssembledPrompt,
+            };
+            getMockDialecticClient().startSession.mockResolvedValue({
+                data: mockSuccessResponse,
+                status: 201,
+            });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({
+                data: {
+                    id: startSessionPayload.projectId,
+                    user_id: 'user-1',
+                    project_name: 'Test Project',
+                    selected_domain_id: 'domain-1',
+                    dialectic_domains: null,
+                    selected_domain_overlay_id: null,
+                    repo_url: null,
+                    status: 'active',
+                    created_at: '2023-01-01T00:00:00.000Z',
+                    updated_at: '2023-01-01T00:00:00.000Z',
+                    dialectic_process_templates: null,
+                    isLoadingProcessTemplate: false,
+                    processTemplateError: null,
+                    contributionGenerationStatus: 'idle',
+                    generateContributionsError: null,
+                    isSubmittingStageResponses: false,
+                    submitStageResponsesError: null,
+                    isSavingContributionEdit: false,
+                    saveContributionEditError: null,
+                },
+                status: 200,
+            });
+
+            const { startDialecticSession } = useDialecticStore.getState();
+            await startDialecticSession(startSessionPayload);
+
+            expect(getMockDialecticClient().startSession).toHaveBeenCalledTimes(1);
+            const callPayload: StartSessionPayload = getMockDialecticClient().startSession.mock.calls[0][0];
+            expect(callPayload.idempotencyKey).toBeTruthy();
+            expect(callPayload.idempotencyKey).toBe(startSessionPayload.idempotencyKey);
+        });
     });
 
     describe('fetchAIModelCatalog action', () => {
         it('should fetch and set AI model catalog on success', async () => {
             const mockCatalog: AIModelCatalogEntry[] = [
-                { 
-                    id: 'model1', 
-                    provider_name: 'OpenAI', 
-                    model_name: 'GPT-4', 
+                {
+                    id: 'model1',
+                    provider_name: 'OpenAI',
+                    model_name: 'GPT-4',
                     api_identifier: 'gpt-4',
                     created_at: '2023-01-01T00:00:00.000Z',
                     updated_at: '2023-01-01T00:00:00.000Z',
                     is_active: true,
+                    is_default_generation: false,
                     description: null,
                     strengths: null,
                     weaknesses: null,
@@ -236,14 +281,15 @@ describe('useDialecticStore', () => {
                     output_token_cost_usd_millionths: null,
                     max_output_tokens: null,
                 },
-                { 
-                    id: 'model2', 
-                    provider_name: 'Anthropic', 
-                    model_name: 'Claude 3', 
+                {
+                    id: 'model2',
+                    provider_name: 'Anthropic',
+                    model_name: 'Claude 3',
                     api_identifier: 'claude-3',
                     created_at: '2023-01-01T00:00:00.000Z',
                     updated_at: '2023-01-01T00:00:00.000Z',
                     is_active: true,
+                    is_default_generation: false,
                     description: null,
                     strengths: null,
                     weaknesses: null,
@@ -444,7 +490,7 @@ describe('useDialecticStore', () => {
                 isLoadingDomainOverlays: true,
             });
 
-            const mockStage: DialecticStage = { id: 'stage-1', slug: 'thesis', display_name: 'Thesis', description: 'Test stage', default_system_prompt_id: 'p1', expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, created_at: 'now' };
+            const mockStage: DialecticStage = { id: 'stage-1', slug: 'thesis', display_name: 'Thesis', description: 'Test stage', default_system_prompt_id: 'p1', expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, created_at: 'now', minimum_balance: 0 };
             setSelectedStageAssociation(mockStage);
             let state = useDialecticStore.getState();
             expect(state.selectedStageAssociation).toEqual(mockStage);
@@ -700,7 +746,7 @@ describe('useDialecticStore', () => {
                 isLoadingDomainOverlays: true,
             });
 
-            const mockStage: DialecticStage = { id: 'stage-1', slug: 'thesis', display_name: 'Thesis', description: 'Test stage', default_system_prompt_id: 'p1', expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, created_at: 'now' };
+            const mockStage: DialecticStage = { id: 'stage-1', slug: 'thesis', display_name: 'Thesis', description: 'Test stage', default_system_prompt_id: 'p1', expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, created_at: 'now', minimum_balance: 0 };
             setSelectedStageAssociation(mockStage);
             let state = useDialecticStore.getState();
             expect(state.selectedStageAssociation).toEqual(mockStage);
@@ -748,6 +794,7 @@ describe('useDialecticStore', () => {
             recipe_template_id: null,
             active_recipe_instance_id: null,
             created_at: 'now',
+            minimum_balance: 0,
         };
 
         const mockSeedPrompt: AssembledPrompt = {

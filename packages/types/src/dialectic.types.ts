@@ -69,6 +69,7 @@ export interface DialecticProject {
 }
 
 export interface CreateProjectPayload {
+    idempotencyKey: string;
     projectName: string;
     initialUserPrompt?: string | null;
     selectedDomainId: string;
@@ -98,6 +99,7 @@ export interface GetContributionContentDataResponse {
 }
 
 export interface StartSessionPayload {
+  idempotencyKey: string;
   projectId: string;
   sessionDescription?: string | null;
   selectedModels: SelectedModels[];
@@ -1101,6 +1103,7 @@ export interface CreateProjectAutoStartResult {
 }
 
 export interface GenerateContributionsPayload {
+  idempotencyKey: string;
   sessionId: string;
   projectId: string;
   stageSlug: DialecticStage['slug'];
@@ -1218,6 +1221,7 @@ export interface ResumePausedNsfJobsResponse {
 }
 
 export interface RegenerateDocumentPayload {
+  idempotencyKey: string;
   sessionId: string;
   stageSlug: string;
   iterationNumber: number;

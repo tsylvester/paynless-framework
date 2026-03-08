@@ -362,97 +362,97 @@
 
 ### Phase 3: Frontend API Client
 
-*   `[ ]`   [API] packages/api/src/`dialectic.api` **Pass idempotency keys through API client methods for createProject, startSession, generateContributions, regenerateDocument**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Add `idempotencyKey: string` to `CreateProjectPayload`, `StartSessionPayload`, `GenerateContributionsPayload`, and `RegenerateDocumentPayload` in `@paynless/types/dialectic.types.ts`
-    *   `[ ]`   Update `createProject` to append `idempotencyKey` to the FormData sent to the edge function
-    *   `[ ]`   `startSession`, `generateContributions`, and `regenerateDocument` already pass the full payload object — the new `idempotencyKey` field flows through automatically once added to the types
-    *   `[ ]`   Verify all four methods correctly transmit the idempotency key to the edge function
-  *   `[ ]`   `role`
-    *   `[ ]`   Port — API client library bridging frontend store to backend edge functions
-  *   `[ ]`   `module`
-    *   `[ ]`   `@paynless/api/dialectic.api` — dialectic API client methods
-    *   `[ ]`   Boundary: receives typed payloads from store actions, sends HTTP requests to `dialectic-service` edge function
-  *   `[ ]`   `deps`
-    *   `[ ]`   `@paynless/types` `dialectic.types.ts` — shared frontend types, same layer (updated in this node)
-    *   `[ ]`   `ApiClient` — infrastructure adapter, inward
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Typed payloads from `@paynless/types` with `idempotencyKey` field
-    *   `[ ]`   `ApiClient` for HTTP transport
-  *   `[ ]`   interface/`packages/types/src/dialectic.types.ts`
-    *   `[ ]`   Add `idempotencyKey: string` to `CreateProjectPayload`
-    *   `[ ]`   Add `idempotencyKey: string` to `StartSessionPayload`
-    *   `[ ]`   Add `idempotencyKey: string` to `GenerateContributionsPayload`
-    *   `[ ]`   Add `idempotencyKey: string` to `RegenerateDocumentPayload`
-  *   `[ ]`   unit/`dialectic.api.project.test.ts`
-    *   `[ ]`   Test: `createProject` appends `idempotencyKey` to FormData
-    *   `[ ]`   Test: existing createProject tests updated with `idempotencyKey` in payloads
-  *   `[ ]`   unit/`dialectic.api.contribution.test.ts`
-    *   `[ ]`   Test: `generateContributions` payload includes `idempotencyKey`
-    *   `[ ]`   Test: `regenerateDocument` payload includes `idempotencyKey`
-    *   `[ ]`   Test: existing tests updated with `idempotencyKey` in payloads
-  *   `[ ]`   `dialectic.api.ts`
-    *   `[ ]`   In `createProject`, add `formData.append('idempotencyKey', payload.get('idempotencyKey'))` — note: the store constructs FormData, so the key must be appended there; verify API passes it through
-    *   `[ ]`   `startSession`, `generateContributions`, `regenerateDocument` already pass full payload objects — no source changes needed beyond the type additions, but verify in tests
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Port layer — depends inward on types and API client, provides outward to store
-    *   `[ ]`   No new outward dependencies introduced
-  *   `[ ]`   `requirements`
-    *   `[ ]`   All four API methods transmit `idempotencyKey` to the backend
-    *   `[ ]`   All existing API tests continue to pass with updated payloads
-    *   `[ ]`   Type system enforces `idempotencyKey` is present at compile time
+*   `[✅]`   [API] packages/api/src/`dialectic.api` **Pass idempotency keys through API client methods for createProject, startSession, generateContributions, regenerateDocument**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add `idempotencyKey: string` to `CreateProjectPayload`, `StartSessionPayload`, `GenerateContributionsPayload`, and `RegenerateDocumentPayload` in `@paynless/types/dialectic.types.ts`
+    *   `[✅]`   Update `createProject` to append `idempotencyKey` to the FormData sent to the edge function
+    *   `[✅]`   `startSession`, `generateContributions`, and `regenerateDocument` already pass the full payload object — the new `idempotencyKey` field flows through automatically once added to the types
+    *   `[✅]`   Verify all four methods correctly transmit the idempotency key to the edge function
+  *   `[✅]`   `role`
+    *   `[✅]`   Port — API client library bridging frontend store to backend edge functions
+  *   `[✅]`   `module`
+    *   `[✅]`   `@paynless/api/dialectic.api` — dialectic API client methods
+    *   `[✅]`   Boundary: receives typed payloads from store actions, sends HTTP requests to `dialectic-service` edge function
+  *   `[✅]`   `deps`
+    *   `[✅]`   `@paynless/types` `dialectic.types.ts` — shared frontend types, same layer (updated in this node)
+    *   `[✅]`   `ApiClient` — infrastructure adapter, inward
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Typed payloads from `@paynless/types` with `idempotencyKey` field
+    *   `[✅]`   `ApiClient` for HTTP transport
+  *   `[✅]`   interface/`packages/types/src/dialectic.types.ts`
+    *   `[✅]`   Add `idempotencyKey: string` to `CreateProjectPayload`
+    *   `[✅]`   Add `idempotencyKey: string` to `StartSessionPayload`
+    *   `[✅]`   Add `idempotencyKey: string` to `GenerateContributionsPayload`
+    *   `[✅]`   Add `idempotencyKey: string` to `RegenerateDocumentPayload`
+  *   `[✅]`   unit/`dialectic.api.project.test.ts`
+    *   `[✅]`   Test: `createProject` appends `idempotencyKey` to FormData
+    *   `[✅]`   Test: existing createProject tests updated with `idempotencyKey` in payloads
+  *   `[✅]`   unit/`dialectic.api.contribution.test.ts`
+    *   `[✅]`   Test: `generateContributions` payload includes `idempotencyKey`
+    *   `[✅]`   Test: `regenerateDocument` payload includes `idempotencyKey`
+    *   `[✅]`   Test: existing tests updated with `idempotencyKey` in payloads
+  *   `[✅]`   `dialectic.api.ts`
+    *   `[✅]`   In `createProject`, add `formData.append('idempotencyKey', payload.get('idempotencyKey'))` — note: the store constructs FormData, so the key must be appended there; verify API passes it through
+    *   `[✅]`   `startSession`, `generateContributions`, `regenerateDocument` already pass full payload objects — no source changes needed beyond the type additions, but verify in tests
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Port layer — depends inward on types and API client, provides outward to store
+    *   `[✅]`   No new outward dependencies introduced
+  *   `[✅]`   `requirements`
+    *   `[✅]`   All four API methods transmit `idempotencyKey` to the backend
+    *   `[✅]`   All existing API tests continue to pass with updated payloads
+    *   `[✅]`   Type system enforces `idempotencyKey` is present at compile time
 
 ### Phase 4: Store
 
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore` **Generate and attach idempotency keys in store actions for createProject, startSession, generateContributions, regenerateDocument**
-  *   `[ ]`   `objective`
-    *   `[ ]`   In `createDialecticProject`, generate a `crypto.randomUUID()` and include it as `idempotencyKey` in the FormData sent to the API
-    *   `[ ]`   In `createProjectAndAutoStart`, generate a single `crypto.randomUUID()` for the project creation step and a separate one for the session start step
-    *   `[ ]`   In `startNewSession` (or equivalent session-starting action), generate a `crypto.randomUUID()` and include it as `idempotencyKey` in the `StartSessionPayload`
-    *   `[ ]`   In the action that calls `generateContributions`, generate a `crypto.randomUUID()` and include it as `idempotencyKey` in the `GenerateContributionsPayload`
-    *   `[ ]`   In the action that calls `regenerateDocument`, generate a `crypto.randomUUID()` and include it as `idempotencyKey` in the `RegenerateDocumentPayload`
-    *   `[ ]`   Keys are generated once per user action (button click) and reused on retry, not regenerated
-  *   `[ ]`   `role`
-    *   `[ ]`   App — state management layer, origin point for idempotency key generation
-  *   `[ ]`   `module`
-    *   `[ ]`   `@paynless/store/dialecticStore` — dialectic state management actions
-    *   `[ ]`   Boundary: receives user intent from UI components, calls API client methods with complete payloads including idempotency keys
-  *   `[ ]`   `deps`
-    *   `[ ]`   `@paynless/api` `DialecticApiClient` — port layer, outward
-    *   `[ ]`   `@paynless/types` `CreateProjectPayload`, `StartSessionPayload`, `GenerateContributionsPayload`, `RegenerateDocumentPayload` — shared types
-    *   `[ ]`   `crypto.randomUUID()` — browser/runtime API
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Store state and API client instance
-    *   `[ ]`   `crypto.randomUUID` for key generation
-  *   `[ ]`   unit/`dialecticStore.project.test.ts`
-    *   `[ ]`   Test: `createDialecticProject` generates an `idempotencyKey` and appends it to FormData
-    *   `[ ]`   Test: `createProjectAndAutoStart` generates separate idempotency keys for project creation and session start steps
-  *   `[ ]`   unit/`dialecticStore.session.test.ts`
-    *   `[ ]`   Test: session-starting action includes `idempotencyKey` in the `StartSessionPayload` sent to API
-  *   `[ ]`   unit/`dialecticStore.test.ts` (or relevant test file for generate/redo actions)
-    *   `[ ]`   Test: generate action includes `idempotencyKey` in the `GenerateContributionsPayload` sent to API
-    *   `[ ]`   Test: regenerate/redo action includes `idempotencyKey` in the `RegenerateDocumentPayload` sent to API
-  *   `[ ]`   `dialecticStore.ts`
-    *   `[ ]`   In `createDialecticProject`: add `formData.append('idempotencyKey', crypto.randomUUID())` before the API call
-    *   `[ ]`   In `createProjectAndAutoStart`: generate `const projectIdemKey = crypto.randomUUID()` and `const sessionIdemKey = crypto.randomUUID()` at the top, pass to respective API calls
-    *   `[ ]`   In session start action: add `idempotencyKey: crypto.randomUUID()` to the `StartSessionPayload`
-    *   `[ ]`   In generate contributions action: add `idempotencyKey: crypto.randomUUID()` to the `GenerateContributionsPayload`
-    *   `[ ]`   In regenerate document action: add `idempotencyKey: crypto.randomUUID()` to the `RegenerateDocumentPayload`
-  *   `[ ]`   `directionality`
-    *   `[ ]`   App layer — depends outward on port (API client), depends inward on types
-    *   `[ ]`   No new outward dependencies introduced
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Every user-facing create/start/generate/regenerate action generates and transmits a unique idempotency key
-    *   `[ ]`   Keys are generated at action entry point (one per user intent)
-    *   `[ ]`   All existing store tests continue to pass with updated payloads
-    *   `[ ]`   End-to-end: a retried API call with the same key is rejected at the DB layer, preventing duplicates
-  *   `[ ]`   **Commit** `feat(dialectic): add frontend idempotency key generation in API client and store`
-    *   `[ ]`   Updated `@paynless/types/dialectic.types.ts` with `idempotencyKey` on four payload interfaces
-    *   `[ ]`   Updated `dialectic.api.ts` to pass idempotency keys through to edge functions
-    *   `[ ]`   Updated `dialecticStore.ts` to generate `crypto.randomUUID()` per user action
-    *   `[ ]`   All frontend unit tests updated and passing
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore` **Generate and attach idempotency keys in store actions for createProject, startSession, generateContributions, regenerateDocument**
+  *   `[✅]`   `objective`
+    *   `[✅]`   In `createDialecticProject`, generate a `crypto.randomUUID()` and include it as `idempotencyKey` in the FormData sent to the API
+    *   `[✅]`   In `createProjectAndAutoStart`, generate a single `crypto.randomUUID()` for the project creation step and a separate one for the session start step
+    *   `[✅]`   In `startNewSession` (or equivalent session-starting action), generate a `crypto.randomUUID()` and include it as `idempotencyKey` in the `StartSessionPayload`
+    *   `[✅]`   In the action that calls `generateContributions`, generate a `crypto.randomUUID()` and include it as `idempotencyKey` in the `GenerateContributionsPayload`
+    *   `[✅]`   In the action that calls `regenerateDocument`, generate a `crypto.randomUUID()` and include it as `idempotencyKey` in the `RegenerateDocumentPayload`
+    *   `[✅]`   Keys are generated once per user action (button click) and reused on retry, not regenerated
+  *   `[✅]`   `role`
+    *   `[✅]`   App — state management layer, origin point for idempotency key generation
+  *   `[✅]`   `module`
+    *   `[✅]`   `@paynless/store/dialecticStore` — dialectic state management actions
+    *   `[✅]`   Boundary: receives user intent from UI components, calls API client methods with complete payloads including idempotency keys
+  *   `[✅]`   `deps`
+    *   `[✅]`   `@paynless/api` `DialecticApiClient` — port layer, outward
+    *   `[✅]`   `@paynless/types` `CreateProjectPayload`, `StartSessionPayload`, `GenerateContributionsPayload`, `RegenerateDocumentPayload` — shared types
+    *   `[✅]`   `crypto.randomUUID()` — browser/runtime API
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Store state and API client instance
+    *   `[✅]`   `crypto.randomUUID` for key generation
+  *   `[✅]`   unit/`dialecticStore.project.test.ts`
+    *   `[✅]`   Test: `createDialecticProject` generates an `idempotencyKey` and appends it to FormData
+    *   `[✅]`   Test: `createProjectAndAutoStart` generates separate idempotency keys for project creation and session start steps
+  *   `[✅]`   unit/`dialecticStore.session.test.ts`
+    *   `[✅]`   Test: session-starting action includes `idempotencyKey` in the `StartSessionPayload` sent to API
+  *   `[✅]`   unit/`dialecticStore.test.ts` (or relevant test file for generate/redo actions)
+    *   `[✅]`   Test: generate action includes `idempotencyKey` in the `GenerateContributionsPayload` sent to API
+    *   `[✅]`   Test: regenerate/redo action includes `idempotencyKey` in the `RegenerateDocumentPayload` sent to API
+  *   `[✅]`   `dialecticStore.ts`
+    *   `[✅]`   In `createDialecticProject`: add `formData.append('idempotencyKey', crypto.randomUUID())` before the API call
+    *   `[✅]`   In `createProjectAndAutoStart`: generate `const projectIdemKey = crypto.randomUUID()` and `const sessionIdemKey = crypto.randomUUID()` at the top, pass to respective API calls
+    *   `[✅]`   In session start action: add `idempotencyKey: crypto.randomUUID()` to the `StartSessionPayload`
+    *   `[✅]`   In generate contributions action: add `idempotencyKey: crypto.randomUUID()` to the `GenerateContributionsPayload`
+    *   `[✅]`   In regenerate document action: add `idempotencyKey: crypto.randomUUID()` to the `RegenerateDocumentPayload`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   App layer — depends outward on port (API client), depends inward on types
+    *   `[✅]`   No new outward dependencies introduced
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Every user-facing create/start/generate/regenerate action generates and transmits a unique idempotency key
+    *   `[✅]`   Keys are generated at action entry point (one per user intent)
+    *   `[✅]`   All existing store tests continue to pass with updated payloads
+    *   `[✅]`   End-to-end: a retried API call with the same key is rejected at the DB layer, preventing duplicates
+  *   `[✅]`   **Commit** `feat(dialectic): add frontend idempotency key generation in API client and store`
+    *   `[✅]`   Updated `@paynless/types/dialectic.types.ts` with `idempotencyKey` on four payload interfaces
+    *   `[✅]`   Updated `dialectic.api.ts` to pass idempotency keys through to edge functions
+    *   `[✅]`   Updated `dialecticStore.ts` to generate `crypto.randomUUID()` per user action
+    *   `[✅]`   All frontend unit tests updated and passing
 
 ### Phase 5: UI Debounce
 

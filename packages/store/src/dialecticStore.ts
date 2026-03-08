@@ -678,6 +678,8 @@ export const useDialecticStore = create<DialecticStore>()(
     if (payload.promptFile) {
         formData.append('promptFile', payload.promptFile);
     }
+    const idempotencyKey: string = payload.idempotencyKey;
+    formData.append('idempotencyKey', idempotencyKey);
 
     try {
         const response: ApiResponse<DialecticProjectRow> = await api.dialectic().createProject(formData);
@@ -715,7 +717,9 @@ export const useDialecticStore = create<DialecticStore>()(
 			sessionPayload: payload,
 		});
 		try {
-			const response = await api.dialectic().startSession(payload);
+			const sessionIdempotencyKey: string = payload.idempotencyKey;
+			const payloadWithKey: StartSessionPayload = { ...payload, idempotencyKey: sessionIdempotencyKey };
+			const response = await api.dialectic().startSession(payloadWithKey);
 			if (response.error) {
 				logger.error("[DialecticStore] Error starting session:", {
 					errorDetails: response.error,
@@ -790,13 +794,15 @@ export const useDialecticStore = create<DialecticStore>()(
 
 	createProjectAndAutoStart: async (payload: CreateProjectPayload): Promise<CreateProjectAutoStartResult> => {
 		set({ isAutoStarting: true, autoStartError: null, autoStartStep: null });
+		const projectIdemKey: string = crypto.randomUUID();
+		const sessionIdemKey: string = crypto.randomUUID();
 		try {
 			if (get().modelCatalog.length === 0 && !get().isLoadingModelCatalog) {
 				set({ autoStartStep: 'Loading models…' });
 				await get().fetchAIModelCatalog();
 			}
 			set({ autoStartStep: 'Creating project…' });
-			const createResult = await get().createDialecticProject(payload);
+			const createResult = await get().createDialecticProject({ ...payload, idempotencyKey: projectIdemKey });
 			if (!createResult.data) {
 				const err = createResult.error;
 				set({ autoStartError: err });
@@ -839,6 +845,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			}
 			set({ autoStartStep: 'Starting session…' });
 			const sessionResult = await get().startDialecticSession({
+				idempotencyKey: sessionIdemKey,
 				projectId,
 				stageSlug,
 				selectedModels: defaultModels,
@@ -2006,16 +2013,17 @@ export const useDialecticStore = create<DialecticStore>()(
     });
 
     try {
-      // Enrich payload with active walletId from wallet store
+      const generateIdempotencyKey: string = payload.idempotencyKey;
+      let payloadToSend: GenerateContributionsPayload = { ...payload, idempotencyKey: generateIdempotencyKey };
       const activeWalletInfo = selectActiveChatWalletInfo(
         useWalletStore.getState(),
         useAiStore.getState().newChatContext
       );
       if (activeWalletInfo && activeWalletInfo.walletId) {
-        payload = { ...payload, walletId: activeWalletInfo.walletId };
+        payloadToSend = { ...payloadToSend, walletId: activeWalletInfo.walletId };
       }
 
-      const response = await api.dialectic().generateContributions(payload);
+      const response = await api.dialectic().generateContributions(payloadToSend);
   
       if (response.error || !response.data?.job_ids) {
         const error: ApiError = response.error || { message: 'API call succeeded but returned no job_ids', code: 'UNEXPECTED_RESPONSE' };
@@ -2115,8 +2123,10 @@ export const useDialecticStore = create<DialecticStore>()(
       state.contributionGenerationStatus = 'generating';
       state.generatingForStageSlug = payload.stageSlug;
     });
+    const regenerateIdempotencyKey: string = payload.idempotencyKey;
+    const payloadToSend: RegenerateDocumentPayload = { ...payload, idempotencyKey: regenerateIdempotencyKey };
     try {
-      const response = await api.dialectic().regenerateDocument(payload);
+      const response = await api.dialectic().regenerateDocument(payloadToSend);
       if (response.error || !response.data?.jobIds) {
         const error: ApiError = response.error ?? { message: 'API call succeeded but returned no jobIds', code: 'UNEXPECTED_RESPONSE' };
         logger.error('[DialecticStore] regenerateDocument failed', { payload, errorDetails: error });
