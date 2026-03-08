@@ -27,7 +27,7 @@ import { Loader2 } from 'lucide-react';
 import { TextInputArea } from '@/components/common/TextInputArea';
 import { usePlatform } from '@paynless/platform';
 import { platformEventEmitter, type PlatformEvents, type FileDropPayload } from '@paynless/platform';
-import type { CreateProjectPayload } from '@paynless/types';
+import type { CreateProjectPayload, CreateProjectAndAutoStartPayload } from '@paynless/types';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
@@ -357,7 +357,9 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
       return;
     }
 
+    const idempotencyKey: string = crypto.randomUUID();
     const payload: CreateProjectPayload = {
+      idempotencyKey,
       projectName: data.projectName || projectNamePlaceholder,
       initialUserPrompt: data.initialUserPrompt || initialUserPromptPlaceholder,
       promptFile: promptFile,
@@ -380,8 +382,10 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
       return;
     }
 
+    const sessionIdempotencyKey: string = crypto.randomUUID();
+    const autoStartPayload: CreateProjectAndAutoStartPayload = { ...payload, sessionIdempotencyKey };
     try {
-      const result = await createProjectAndAutoStart(payload);
+      const result = await createProjectAndAutoStart(autoStartPayload);
       if (result.error) {
         toast.error(result.error.message ?? 'Auto-start failed');
         return;

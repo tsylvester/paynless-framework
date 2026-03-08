@@ -78,6 +78,11 @@ export interface CreateProjectPayload {
     promptFile?: File | null;
 }
 
+/** Payload for createProjectAndAutoStart: requires both project and session idempotency keys from the UI (permanent keys, one per user intent). */
+export interface CreateProjectAndAutoStartPayload extends CreateProjectPayload {
+    sessionIdempotencyKey: string;
+}
+
 export interface DeleteProjectPayload {
   projectId: string;
 }
@@ -670,7 +675,7 @@ export interface DialecticActions {
   startDialecticSession: (payload: StartSessionPayload) => Promise<ApiResponse<StartSessionSuccessResponse>>;
   updateSessionModels: (payload: UpdateSessionModelsPayload) => Promise<ApiResponse<DialecticSession>>;
   fetchAIModelCatalog: () => Promise<void>;
-  createProjectAndAutoStart: (payload: CreateProjectPayload) => Promise<CreateProjectAutoStartResult>;
+  createProjectAndAutoStart: (payload: CreateProjectAndAutoStartPayload) => Promise<CreateProjectAutoStartResult>;
   setShouldOpenDagProgress: (open: boolean) => void;
 
   fetchContributionContent: (contributionId: string) => Promise<void>;

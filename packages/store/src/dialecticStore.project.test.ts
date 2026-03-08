@@ -14,6 +14,7 @@ import type {
   ApiResponse,
   AIModelCatalogEntry,
   AssembledPrompt,
+  CreateProjectAndAutoStartPayload,
   CreateProjectAutoStartResult,
   CreateProjectPayload,
   DialecticProcessTemplate,
@@ -355,8 +356,9 @@ describe('useDialecticStore', () => {
             weaknesses: null,
             is_default_generation: true,
         };
-        const payload: CreateProjectPayload = {
+        const payload: CreateProjectAndAutoStartPayload = {
             idempotencyKey: 'caller-provided-project-idem',
+            sessionIdempotencyKey: 'caller-provided-session-idem',
             projectName: 'Auto Project',
             selectedDomainId: 'dom-1',
         };
@@ -412,8 +414,8 @@ describe('useDialecticStore', () => {
             const createProjectFormData: FormData = mockDialecticApi.createProject.mock.calls[0][0];
             const sessionCallPayload: StartSessionPayload = mockDialecticApi.startSession.mock.calls[0][0];
 
-            expect(createProjectFormData.get('idempotencyKey')).toBeTruthy();
-            expect(sessionCallPayload.idempotencyKey).toBeTruthy();
+            expect(createProjectFormData.get('idempotencyKey')).toBe(payload.idempotencyKey);
+            expect(sessionCallPayload.idempotencyKey).toBe(payload.sessionIdempotencyKey);
             expect(createProjectFormData.get('idempotencyKey')).not.toBe(sessionCallPayload.idempotencyKey);
         });
     });

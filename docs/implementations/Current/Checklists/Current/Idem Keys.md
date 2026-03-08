@@ -412,7 +412,9 @@
     *   `[✅]`   In `startNewSession` (or equivalent session-starting action), generate a `crypto.randomUUID()` and include it as `idempotencyKey` in the `StartSessionPayload`
     *   `[✅]`   In the action that calls `generateContributions`, generate a `crypto.randomUUID()` and include it as `idempotencyKey` in the `GenerateContributionsPayload`
     *   `[✅]`   In the action that calls `regenerateDocument`, generate a `crypto.randomUUID()` and include it as `idempotencyKey` in the `RegenerateDocumentPayload`
-    *   `[✅]`   Keys are generated once per user action (button click) and reused on retry, not regenerated
+    *   `[✅]`   **Permanent vs Ephemeral key strategy:**
+      *   `[✅]`   `createProject` / `startSession`: **permanent keys** — generated once per user intent (in the component/form), passed into the store action. A retry with the same key returns the existing record. These are single-attempt-per-intent operations.
+      *   `[✅]`   `generateContributions` / `regenerateDocument`: **ephemeral keys** — generated fresh inside the store action on every call. Each click gets a new key, so users can intentionally retry. The key only prevents the *same click* from being processed twice (double-submit / network retry).
   *   `[✅]`   `role`
     *   `[✅]`   App — state management layer, origin point for idempotency key generation
   *   `[✅]`   `module`
@@ -438,14 +440,15 @@
     *   `[✅]`   In `createDialecticProject`: add `formData.append('idempotencyKey', crypto.randomUUID())` before the API call
     *   `[✅]`   In `createProjectAndAutoStart`: generate `const projectIdemKey = crypto.randomUUID()` and `const sessionIdemKey = crypto.randomUUID()` at the top, pass to respective API calls
     *   `[✅]`   In session start action: add `idempotencyKey: crypto.randomUUID()` to the `StartSessionPayload`
-    *   `[✅]`   In generate contributions action: add `idempotencyKey: crypto.randomUUID()` to the `GenerateContributionsPayload`
-    *   `[✅]`   In regenerate document action: add `idempotencyKey: crypto.randomUUID()` to the `RegenerateDocumentPayload`
+    *   `[✅]`   In generate contributions action: generate `idempotencyKey: crypto.randomUUID()` **inside the store action** (ephemeral — not passed from caller), overwriting any caller-supplied key
+    *   `[✅]`   In regenerate document action: generate `idempotencyKey: crypto.randomUUID()` **inside the store action** (ephemeral — not passed from caller), overwriting any caller-supplied key
   *   `[✅]`   `directionality`
     *   `[✅]`   App layer — depends outward on port (API client), depends inward on types
     *   `[✅]`   No new outward dependencies introduced
   *   `[✅]`   `requirements`
     *   `[✅]`   Every user-facing create/start/generate/regenerate action generates and transmits a unique idempotency key
-    *   `[✅]`   Keys are generated at action entry point (one per user intent)
+    *   `[✅]`   Permanent keys (createProject/startSession) are generated at the UI layer and passed in — one per user intent, reused on retry
+    *   `[✅]`   Ephemeral keys (generateContributions/regenerateDocument) are generated inside the store action — one per call, so intentional retries get fresh keys
     *   `[✅]`   All existing store tests continue to pass with updated payloads
     *   `[✅]`   End-to-end: a retried API call with the same key is rejected at the DB layer, preventing duplicates
   *   `[✅]`   **Commit** `feat(dialectic): add frontend idempotency key generation in API client and store`
@@ -454,41 +457,141 @@
     *   `[✅]`   Updated `dialecticStore.ts` to generate `crypto.randomUUID()` per user action
     *   `[✅]`   All frontend unit tests updated and passing
 
-### Phase 5: UI Debounce
+### Phase 5: UI — Extract `RegenerateDocumentButton` component and add in-flight guard
 
-*   `[ ]`   [UI] apps/web **Disable submit buttons during in-flight requests to prevent user-initiated duplicate submissions**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Identify all UI components that trigger project creation, session start, contribution generation, and document regeneration
-    *   `[ ]`   Disable the submit/action button immediately on click using the existing `isCreatingProject`, `isStartingSession`, `contributionGenerationStatus`, and equivalent loading state flags from the store
-    *   `[ ]`   Re-enable the button only after the API response (success or error) is received
-    *   `[ ]`   Show a loading indicator (spinner or text change) on the button while the request is in flight
-  *   `[ ]`   `role`
-    *   `[ ]`   UI — presentation layer providing visual feedback and preventing double-clicks
-  *   `[ ]`   `module`
-    *   `[ ]`   `apps/web` — React components for project creation, session management, and generation controls
-    *   `[ ]`   Boundary: reads loading flags from store, disables interactive elements during in-flight operations
-  *   `[ ]`   `deps`
-    *   `[ ]`   `@paynless/store` `dialecticStore` — loading state flags (`isCreatingProject`, `isStartingSession`, `contributionGenerationStatus`, `isAutoStarting`) — app layer, inward
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Store loading flags for each operation
-    *   `[ ]`   Component props and event handlers
-  *   `[ ]`   components (identify specific files during implementation)
-    *   `[ ]`   Project creation form/dialog: disable "Create" button when `isCreatingProject === true` or `isAutoStarting === true`
-    *   `[ ]`   Session start button: disable when `isStartingSession === true`
-    *   `[ ]`   Generate button: disable when `contributionGenerationStatus === 'generating'`
-    *   `[ ]`   Redo/Regenerate button: disable when regeneration is in flight (add loading flag if not present)
-  *   `[ ]`   `directionality`
-    *   `[ ]`   UI layer — depends inward on app (store) for state flags
-    *   `[ ]`   No new outward dependencies introduced
-  *   `[ ]`   `requirements`
-    *   `[ ]`   No button can be clicked twice while a request is in flight
-    *   `[ ]`   Visual feedback (disabled state + loading indicator) is shown during in-flight requests
-    *   `[ ]`   Buttons re-enable on both success and error responses
-    *   `[ ]`   This is a defense-in-depth layer — the backend idempotency keys are the primary guard
-  *   `[ ]`   **Commit** `feat(ui): disable submit buttons during in-flight dialectic operations to prevent double-clicks`
-    *   `[ ]`   Updated project creation, session start, generate, and regenerate UI components with disabled states
-    *   `[ ]`   All affected components use existing store loading flags
+NOTE: Most buttons already disable during in-flight requests — no changes needed:
+- `CreateDialecticProjectForm.tsx` line 515: `disabled={isCreating || isAutoStarting}` — already correct
+- `CreateProjectFromChatButton.tsx` line 85: `disabled={isDisabled}` where `isDisabled` includes `isAutoStarting` — already correct
+- `GenerateContributionButton.tsx` line 97: `disabled={isDisabled}` where `isDisabled` includes `isSessionGenerating` via `useStartContributionGeneration` hook — already correct
+
+The regenerate feature currently lives inline in `StageRunChecklist.tsx`. We extract the entire thing into an independent `RegenerateDocumentButton` component with its own tests, then add the missing in-flight guard.
+
+*   `[✅]`   [UI] apps/web/src/components/dialectic/`RegenerateDocumentButton` **Extract the entire regenerate document feature from StageRunChecklist into a standalone component with in-flight guard**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Create a new `RegenerateDocumentButton.tsx` component that encapsulates the complete regenerate feature currently spread across `StageRunChecklist.tsx`
+    *   `[✅]`   The component owns all regenerate-related state, callbacks, and UI (inline redo icon button, multi-model dialog with checkboxes, confirm/cancel buttons)
+    *   `[✅]`   Add local `isSubmitting` state that is `true` only during the `await` of the `regenerateDocument` store action (~1-2s round-trip), then `false` on response or error — this is **round-trip-only disable**, not lifecycle disable, so users can retry if the backend fails
+    *   `[✅]`   Remove all regenerate-related code from `StageRunChecklist.tsx` and replace with `<RegenerateDocumentButton />` render
+  *   `[✅]`   `role`
+    *   `[✅]`   UI — standalone presentation component for document regeneration, independently testable
+  *   `[✅]`   `module`
+    *   `[✅]`   `apps/web/src/components/dialectic/RegenerateDocumentButton` — self-contained regenerate document feature
+    *   `[✅]`   Boundary: reads `regenerateDocument` from store, manages local `isSubmitting` state, renders inline icon button and multi-model dialog
+  *   `[✅]`   `deps`
+    *   `[✅]`   `@paynless/store` — `useDialecticStore`, selector for `regenerateDocument` action — app layer, inward
+    *   `[✅]`   `@paynless/types` — `RegenerateDocumentPayload` — types layer, inward
+    *   `[✅]`   `lucide-react` — `RefreshCcw`, `Loader2` — UI library
+    *   `[✅]`   `@/components/ui/dialog` — `Dialog`, `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogFooter`
+    *   `[✅]`   `@/components/ui/button` — `Button`
+    *   `[✅]`   `@/components/ui/checkbox` — `Checkbox`
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `regenerateDocument` action from store
+    *   `[✅]`   `contributionGenerationStatus` from store
+    *   `[✅]`   Props passed in from parent (see interface below)
+  *   `[✅]`   interface/`RegenerateDocumentButton.tsx` (component props interface, defined at top of component file)
+    *   `[✅]`   `PerModelLabel` type: `{ modelId: string; displayName: string; statusLabel: string }` — moved from `StageRunChecklist.tsx` line 130
+    *   `[✅]`   `RegenerateDocumentButtonProps` interface:
+      *   `[✅]`   `activeSessionId: string | null` — the current session ID
+      *   `[✅]`   `iterationNumber: number | undefined` — the current iteration count
+      *   `[✅]`   `documentKey: string` — the document being regenerated
+      *   `[✅]`   `stageSlug: string` — the stage this document belongs to
+      *   `[✅]`   `perModelLabels: PerModelLabel[]` — the model labels for this document
+      *   `[✅]`   `isDocumentOnCurrentStage: boolean` — whether the document belongs to the active stage (gates the inline button)
+      *   `[✅]`   `documentDisplayMetadata: Map<string, { displayName?: string; description?: string }>` — display metadata for dialog header
+      *   `[✅]`   `entryStatus: string` — the document entry status (`completed`, `failed`, `generating`, `continuing`, `not_started`) for icon styling
+  *   `[✅]`   unit/`RegenerateDocumentButton.test.tsx`
+    *   `[✅]`   Test: renders inline `RefreshCcw` icon button when `isDocumentOnCurrentStage` is true
+    *   `[✅]`   Test: does not render inline icon button when `isDocumentOnCurrentStage` is false (renders passive status dot instead)
+    *   `[✅]`   Test: single-model click calls `regenerateDocument` with correct `RegenerateDocumentPayload` including `idempotencyKey`
+    *   `[✅]`   Test: single-model click does NOT call `regenerateDocument` when `isSubmitting` is true (request already in flight)
+    *   `[✅]`   Test: multi-model click opens dialog with checkboxes for each model
+    *   `[✅]`   Test: dialog pre-checks models with `statusLabel` of `'Failed'` or `'Not started'`
+    *   `[✅]`   Test: confirm button is disabled when no models are selected
+    *   `[✅]`   Test: confirm button is disabled when `isSubmitting` is true even if models are selected
+    *   `[✅]`   Test: confirm button shows `Loader2` spinner and "Regenerating..." text when `isSubmitting` is true
+    *   `[✅]`   Test: after `regenerateDocument` resolves (success or error), `isSubmitting` returns to false and button is re-enabled
+    *   `[✅]`   Test: confirm calls `regenerateDocument` with all selected model IDs and correct payload including `idempotencyKey`
+    *   `[✅]`   Test: confirm closes dialog and resets state
+    *   `[✅]`   Test: cancel closes dialog and resets state without calling `regenerateDocument`
+    *   `[✅]`   Test: does not call `regenerateDocument` when `activeSessionId` is null
+    *   `[✅]`   Test: does not call `regenerateDocument` when `iterationNumber` is undefined
+  *   `[✅]`   `construction`
+    *   `[✅]`   Component is a React FC accepting `RegenerateDocumentButtonProps`
+    *   `[✅]`   Internal state: `regenerateDialogOpen: boolean`, `regenerateDialogContext: { documentKey, stageSlug, perModelLabels } | null`, `regenerateSelectedModelIds: Set<string>`
+    *   `[✅]`   Store selector: `regenerateDocument = useDialecticStore((state) => state.regenerateDocument)`
+    *   `[✅]`   Local state: `isSubmitting: boolean` — set `true` before `await regenerateDocument(...)`, set `false` in `finally` block after response/error
+    *   `[✅]`   No construction outside component boundary
+  *   `[✅]`   `RegenerateDocumentButton.tsx`
+    *   `[✅]`   Define `PerModelLabel` type (moved from `StageRunChecklist.tsx` line 130)
+    *   `[✅]`   Define `RegenerateDocumentButtonProps` interface
+    *   `[✅]`   Move `regenerateDialogOpen`, `regenerateDialogContext`, `regenerateSelectedModelIds` state from `StageRunChecklist.tsx` lines 433-435
+    *   `[✅]`   Move `regenerateDocument` store selector from `StageRunChecklist.tsx` line 423
+    *   `[✅]`   Add local `const [isSubmitting, setIsSubmitting] = useState(false)` state (new)
+    *   `[✅]`   Move `openRegenerateDialog` callback from `StageRunChecklist.tsx` lines 498-510
+    *   `[✅]`   Move `handleRegenerateConfirm` callback from `StageRunChecklist.tsx` lines 512-542, wrap the `regenerateDocument` call in `setIsSubmitting(true)` / `try { await regenerateDocument(...) } finally { setIsSubmitting(false) }`, add `if (isSubmitting) return;` guard at top
+    *   `[✅]`   Move `handleRegenerateButtonClick` callback from `StageRunChecklist.tsx` lines 544-573, add `if (isSubmitting) return;` guard at top
+    *   `[✅]`   Render: inline `<button>` with `RefreshCcw` icon (moved from `StageRunChecklist.tsx` lines 688-718) when `isDocumentOnCurrentStage` is true, passive `<span>` status dot when false (moved from lines 719-741)
+    *   `[✅]`   Render: `<Dialog>` with model checkboxes, cancel, and confirm buttons (moved from `StageRunChecklist.tsx` lines 772-845)
+    *   `[✅]`   Confirm `<Button>`: `disabled={regenerateSelectedModelIds.size === 0 || isSubmitting}`
+    *   `[✅]`   Confirm `<Button>` content: `{isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Regenerating...</> : 'Regenerate'}`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   UI layer — depends inward on app (store) for `regenerateDocument` action only; disable state is local (`isSubmitting`), not store-driven
+    *   `[✅]`   No new outward dependencies introduced
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Component is fully self-contained: all regenerate state, callbacks, and UI live in this one file
+    *   `[✅]`   Component is independently testable without rendering `StageRunChecklist`
+    *   `[✅]`   Inline redo icon button is blocked when `isSubmitting` is true (round-trip only — re-enables on response/error)
+    *   `[✅]`   Dialog confirm button is disabled and shows spinner when `isSubmitting` is true
+    *   `[✅]`   `handleRegenerateConfirm` callback is guarded by `isSubmitting` and wraps `await regenerateDocument(...)` in `try/finally` to guarantee re-enable
+    *   `[✅]`   All regenerate behavior is functionally identical to the current inline implementation, with the addition of the new in-flight guard
+
+*   `[✅]`   [REFACTOR] apps/web/src/components/dialectic/`StageRunChecklist` **Remove inline regenerate code and import `RegenerateDocumentButton`**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Remove all regenerate-related state, callbacks, and UI from `StageRunChecklist.tsx`
+    *   `[✅]`   Import and render `RegenerateDocumentButton` in place of the removed inline code
+    *   `[✅]`   Export `PerModelLabel` type from `RegenerateDocumentButton.tsx` so `StageRunChecklist` can still construct the `perModelLabels` array it passes as a prop
+  *   `[✅]`   `role`
+    *   `[✅]`   UI — refactored parent component, delegating regenerate responsibility to child
+  *   `[✅]`   `module`
+    *   `[✅]`   `apps/web/src/components/dialectic/StageRunChecklist` — stage run checklist, now consuming `RegenerateDocumentButton` as a child
+    *   `[✅]`   Boundary: passes document context props to `RegenerateDocumentButton`, no longer owns regenerate logic
+  *   `[✅]`   `deps`
+    *   `[✅]`   `RegenerateDocumentButton` — new UI component, same layer (sibling import)
+    *   `[✅]`   All other existing deps unchanged
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Props already available in render scope: `activeSessionId`, `iterationNumber`, `documentKey`, `stageSlug`, `perModelLabels`, `isDocumentOnCurrentStage`, `documentDisplayMetadata`, `entry.status`
+  *   `[✅]`   unit/`StageRunChecklist.test.tsx` (existing tests)
+    *   `[✅]`   Test: existing tests continue to pass (regenerate behavior now tested in `RegenerateDocumentButton.test.tsx`)
+    *   `[✅]`   Test: `StageRunChecklist` renders `RegenerateDocumentButton` for each document row
+  *   `[✅]`   `StageRunChecklist.tsx`
+    *   `[✅]`   Add import: `import { RegenerateDocumentButton } from './RegenerateDocumentButton';` and `import type { PerModelLabel } from './RegenerateDocumentButton';`
+    *   `[✅]`   Remove import of `Checkbox` from `@/components/ui/checkbox` (only used by regenerate dialog, now in child)
+    *   `[✅]`   Remove `RegenerateDialogContext` type definition (line 132-136) — moved to `RegenerateDocumentButton.tsx`
+    *   `[✅]`   Remove `regenerateDocument` store selector (line 423)
+    *   `[✅]`   Remove `regenerateDialogOpen`, `regenerateDialogContext`, `regenerateSelectedModelIds` state declarations (lines 433-435)
+    *   `[✅]`   Remove `openRegenerateDialog` callback (lines 498-510)
+    *   `[✅]`   Remove `handleRegenerateConfirm` callback (lines 512-542)
+    *   `[✅]`   Remove `handleRegenerateButtonClick` callback (lines 544-573)
+    *   `[✅]`   Replace the inline `<button>` with `RefreshCcw` icon (lines 688-718) AND the passive `<span>` status dot (lines 719-741) with a single `<RegenerateDocumentButton activeSessionId={activeSessionId} iterationNumber={iterationNumber} documentKey={entry.documentKey} stageSlug={stageData.stage.slug} perModelLabels={perModelLabels} isDocumentOnCurrentStage={isDocumentOnCurrentStage} documentDisplayMetadata={documentDisplayMetadata} entryStatus={entry.status} />`
+    *   `[✅]`   Remove the entire `<Dialog>` block (lines 772-845) — now rendered inside `RegenerateDocumentButton`
+    *   `[✅]`   `PerModelLabel` type: keep usage in render scope via the re-exported type import from `RegenerateDocumentButton`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   UI layer — depends on sibling `RegenerateDocumentButton` component, same layer
+    *   `[✅]`   Removes direct dependency on `Checkbox` (moved to child)
+    *   `[✅]`   Removes direct dependency on `regenerateDocument` store action (moved to child; child manages its own `isSubmitting` state)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   All existing `StageRunChecklist` tests pass (regenerate-specific assertions may need to change to verify child renders rather than inline behavior)
+    *   `[✅]`   No functional regression — regenerate behavior is identical, now delegated to `RegenerateDocumentButton`
+    *   `[✅]`   `StageRunChecklist` no longer contains any regenerate state, callbacks, or dialog UI
+    *   `[✅]`   Net reduction in `StageRunChecklist.tsx` line count (~130 lines removed)
+  *   `[✅]`   **Commit** `refactor(ui): extract RegenerateDocumentButton from StageRunChecklist with in-flight regeneration guard`
+    *   `[✅]`   Created `RegenerateDocumentButton.tsx` with all regenerate state, callbacks, inline icon, and dialog UI
+    *   `[✅]`   Created `RegenerateDocumentButton.test.tsx` with full unit test coverage including in-flight guard
+    *   `[✅]`   Refactored `StageRunChecklist.tsx` to import and render `RegenerateDocumentButton`, removing ~130 lines of inline regenerate code
+    *   `[✅]`   Added `isSubmitting` local state guard with `try/finally` around `await regenerateDocument(...)` — round-trip-only disable, not lifecycle
+    *   `[✅]`   Added `Loader2` spinner on confirm button during in-flight round-trip
 
 ## Add Github login & sync
 - Enable Github for login 

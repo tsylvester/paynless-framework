@@ -5,7 +5,8 @@ import {
   type ApiError, 
   type ApiResponse, 
   type DialecticProject, 
-  type CreateProjectPayload, 
+  type CreateProjectPayload,
+  type CreateProjectAndAutoStartPayload,
   type DialecticStateValues, 
   type DialecticStore, 
   type StartSessionPayload,
@@ -792,17 +793,15 @@ export const useDialecticStore = create<DialecticStore>()(
 		}
 	},
 
-	createProjectAndAutoStart: async (payload: CreateProjectPayload): Promise<CreateProjectAutoStartResult> => {
+	createProjectAndAutoStart: async (payload: CreateProjectAndAutoStartPayload): Promise<CreateProjectAutoStartResult> => {
 		set({ isAutoStarting: true, autoStartError: null, autoStartStep: null });
-		const projectIdemKey: string = crypto.randomUUID();
-		const sessionIdemKey: string = crypto.randomUUID();
 		try {
 			if (get().modelCatalog.length === 0 && !get().isLoadingModelCatalog) {
 				set({ autoStartStep: 'Loading models…' });
 				await get().fetchAIModelCatalog();
 			}
 			set({ autoStartStep: 'Creating project…' });
-			const createResult = await get().createDialecticProject({ ...payload, idempotencyKey: projectIdemKey });
+			const createResult = await get().createDialecticProject(payload);
 			if (!createResult.data) {
 				const err = createResult.error;
 				set({ autoStartError: err });
@@ -845,7 +844,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			}
 			set({ autoStartStep: 'Starting session…' });
 			const sessionResult = await get().startDialecticSession({
-				idempotencyKey: sessionIdemKey,
+				idempotencyKey: payload.sessionIdempotencyKey,
 				projectId,
 				stageSlug,
 				selectedModels: defaultModels,
@@ -2013,7 +2012,7 @@ export const useDialecticStore = create<DialecticStore>()(
     });
 
     try {
-      const generateIdempotencyKey: string = payload.idempotencyKey;
+      const generateIdempotencyKey: string = crypto.randomUUID();
       let payloadToSend: GenerateContributionsPayload = { ...payload, idempotencyKey: generateIdempotencyKey };
       const activeWalletInfo = selectActiveChatWalletInfo(
         useWalletStore.getState(),
@@ -2123,7 +2122,7 @@ export const useDialecticStore = create<DialecticStore>()(
       state.contributionGenerationStatus = 'generating';
       state.generatingForStageSlug = payload.stageSlug;
     });
-    const regenerateIdempotencyKey: string = payload.idempotencyKey;
+    const regenerateIdempotencyKey: string = crypto.randomUUID();
     const payloadToSend: RegenerateDocumentPayload = { ...payload, idempotencyKey: regenerateIdempotencyKey };
     try {
       const response = await api.dialectic().regenerateDocument(payloadToSend);

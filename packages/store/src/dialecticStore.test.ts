@@ -1571,7 +1571,7 @@ describe('useDialecticStore', () => {
             expect(getMockDialecticClient().generateContributions).toHaveBeenCalledTimes(1);
             const callPayload: GenerateContributionsPayload = getMockDialecticClient().generateContributions.mock.calls[0][0];
             expect(callPayload.idempotencyKey).toBeTruthy();
-            expect(callPayload.idempotencyKey).toBe(mockPayload.idempotencyKey);
+            expect(callPayload.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
         });
     });
 
