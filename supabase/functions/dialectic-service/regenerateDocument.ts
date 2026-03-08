@@ -17,6 +17,8 @@ function isValidRegeneratePayload(
   value: unknown,
 ): value is RegenerateDocumentPayload {
   if (!isRecord(value)) return false;
+  if (typeof value["idempotencyKey"] !== "string") return false;
+  if (value["idempotencyKey"].trim().length === 0) return false;
   if (typeof value["sessionId"] !== "string" || value["sessionId"].length === 0)
     return false;
   if (typeof value["stageSlug"] !== "string" || value["stageSlug"].length === 0)
@@ -123,6 +125,34 @@ export const regenerateDocument: RegenerateDocumentFn = async (
   const jobIds: string[] = [];
 
   for (const docRef of payload.documents) {
+    const jobIdempotencyKey: string = `${payload.idempotencyKey}_${docRef.documentKey}_${docRef.modelId}`;
+
+    const { data: existingClone, error: existingCloneError } = await dbClient
+      .from("dialectic_generation_jobs")
+      .select("id")
+      .eq("idempotency_key", jobIdempotencyKey)
+      .eq("session_id", payload.sessionId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!existingCloneError && existingClone && typeof existingClone.id === "string") {
+      jobIds.push(existingClone.id);
+      continue;
+    }
+
+    if (existingCloneError) {
+      logger.error("regenerateDocument: failed to check existing clone", {
+        jobIdempotencyKey,
+        error: existingCloneError.message,
+      });
+      const error: ServiceError = {
+        message: existingCloneError.message,
+        status: 500,
+        code: "DB_ERROR",
+      };
+      return { status: 500, error };
+    }
+
     const { data: jobRows, error: jobError } = await dbClient
       .from("dialectic_generation_jobs")
       .select("*")
@@ -230,6 +260,7 @@ export const regenerateDocument: RegenerateDocumentFn = async (
       error_details: null,
       target_contribution_id: typeof job.target_contribution_id === "string" ? job.target_contribution_id : null,
       is_test_job: job.is_test_job,
+      idempotency_key: jobIdempotencyKey,
     };
 
     const { data: inserted, error: insertError } = await dbClient
@@ -239,6 +270,23 @@ export const regenerateDocument: RegenerateDocumentFn = async (
       .single();
 
     if (insertError) {
+      const isUniqueViolationOnIdempotencyKey: boolean =
+        insertError.code === "23505" &&
+        typeof insertError.message === "string" &&
+        insertError.message.includes("idempotency_key");
+      if (isUniqueViolationOnIdempotencyKey) {
+        const { data: existingJob, error: selectError } = await dbClient
+          .from("dialectic_generation_jobs")
+          .select("id")
+          .eq("idempotency_key", jobIdempotencyKey)
+          .eq("session_id", payload.sessionId)
+          .eq("user_id", user.id)
+          .single();
+        if (!selectError && existingJob && typeof existingJob.id === "string") {
+          jobIds.push(existingJob.id);
+          continue;
+        }
+      }
       logger.error("regenerateDocument: failed to insert clone job", {
         originalJobId: job.id,
         documentKey: docRef.documentKey,

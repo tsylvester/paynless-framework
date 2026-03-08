@@ -83,6 +83,7 @@ export function createMockJob(payload: DialecticJobPayload, overrides: Partial<D
         payload: payload,
         is_test_job: false,
         job_type: 'EXECUTE',
+        idempotency_key: null,
         ...overrides,
     };
   
@@ -109,6 +110,7 @@ export const testPayload: DialecticExecuteJobPayload = {
     document_relationships: {
         source_group: '550e8400-e29b-41d4-a716-446655440000',
     },
+    idempotencyKey: 'job-id-123_execute',
 };
 
 export const mockSessionData: DialecticSession = {
@@ -148,6 +150,7 @@ const mockFullProviderData: Tables<'ai_providers'> = {
     is_active: true,
     is_enabled: true,
     is_default_embedding: false,
+    is_default_generation: false,
     updated_at: new Date().toISOString(),
 };
 

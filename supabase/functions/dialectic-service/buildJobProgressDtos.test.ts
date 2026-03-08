@@ -45,6 +45,7 @@ function jobRow(
 		parent_job_id: overrides.parent_job_id ?? null,
 		prerequisite_job_id: null,
 		is_test_job: false,
+		idempotency_key: null,
 	};
 	return row;
 }

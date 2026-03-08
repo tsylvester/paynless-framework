@@ -297,6 +297,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             model_id: 'model-id-cloned',
             walletId: 'wallet-id-cloned',
             user_jwt: 'user-jwt-cloned',
+            idempotencyKey: 'idem-plan-cloned',
         };
         if (!isJson(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not valid JSON');
@@ -322,6 +323,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: 'idem-plan-cloned',
         };
 
         const mockParams = {
@@ -368,6 +370,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
                 recipe_step_id: firstClonedStep.id,
                 recipe_template_id: undefined,
             },
+            idempotencyKey: 'idem-execute-cloned',
         };
         if (!isJson(completedChildJobForStep1Payload)) {
             throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
@@ -381,6 +384,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             target_contribution_id: null, prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-cloned',
         };
         
         // This is the only query that should be different for the "advance" logic
@@ -435,6 +439,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
                     recipe_step_id: step.id,
                     recipe_template_id: undefined,
                 },
+                idempotencyKey: 'idem-execute-cloned',
             };
             if (!isJson(completedPayload)) {
                 throw new Error(`Test setup failed: completedPayload for step ${step.id} is not valid JSON`);
@@ -583,6 +588,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
                 recipe_step_id: step1.id,
                 recipe_template_id: undefined,
             },
+            idempotencyKey: 'idem-execute-cloned',
         };
         if (!isJson(completedChildJobForStep1Payload)) {
             throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
@@ -596,6 +602,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             target_contribution_id: null, prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-cloned',
         };
         
         const customSupabase = createMockSupabaseClient(wakingJob.user_id, {
@@ -670,6 +677,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             model_id: 'model-id-parallel',
             walletId: 'wallet-id-parallel',
             user_jwt: 'user-jwt-parallel',
+            idempotencyKey: 'idem-plan-parallel',
         };
         if (!isJson(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not valid JSON');
@@ -695,6 +703,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: 'idem-plan-parallel',
         };
 
         const mockParams = {
@@ -733,6 +742,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 recipe_step_id: step1.id,
                 recipe_template_id: 'parallel-template-1',
             },
+            idempotencyKey: 'idem-execute-parallel',
         };
         if (!isJson(completedChildJobForStep1Payload)) {
             throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
@@ -745,6 +755,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
             target_contribution_id: null, prerequisite_job_id: null,
             is_test_job: false, job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-parallel',
         };
 
         mockSupabase.genericMockResults!['dialectic_generation_jobs'] = {
@@ -792,6 +803,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                     recipe_step_id: step.id,
                     recipe_template_id: 'parallel-template-1',
                 },
+                idempotencyKey: 'idem-execute-parallel',
             };
         };
 
@@ -809,6 +821,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
                 target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'EXECUTE',
+                idempotency_key: 'idem-execute-parallel',
             },
             {
                 id: 'child-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
@@ -817,6 +830,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
                 target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'EXECUTE',
+                idempotency_key: 'idem-execute-parallel',
             }
         ];
         
@@ -867,6 +881,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                     recipe_step_id: step.id,
                     recipe_template_id: 'parallel-template-1',
                 },
+                idempotencyKey: 'idem-execute-parallel',
             };
         };
 
@@ -885,6 +900,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
                 target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'EXECUTE',
+                idempotency_key: 'idem-execute-parallel',
             },
             {
                 id: 'child-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
@@ -893,6 +909,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
                 target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'EXECUTE',
+                idempotency_key: 'idem-execute-parallel',
             },
              {
                 id: 'child-step-2b-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
@@ -901,6 +918,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
                 target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'EXECUTE',
+                idempotency_key: 'idem-execute-parallel',
             }
         ];
         
@@ -1114,6 +1132,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             model_id: 'model-id-cloned-parallel',
             walletId: 'wallet-id-cloned-parallel',
             user_jwt: 'user-jwt-cloned-parallel',
+            idempotencyKey: 'idem-plan-cloned-parallel',
         };
         if (!isJson(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not valid JSON');
@@ -1139,6 +1158,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: 'idem-plan-cloned-parallel',
         };
 
         const mockParams = {
@@ -1176,6 +1196,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
                 recipe_step_id: step1.id,
                 recipe_template_id: undefined,
             },
+            idempotencyKey: 'idem-execute-cloned-parallel',
         };
         if (!isJson(completedChildJobForStep1Payload)) {
             throw new Error('Test setup failed: completedChildJobForStep1Payload is not valid JSON');
@@ -1187,6 +1208,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
             completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
             target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-cloned-parallel',
         };
 
         mockSupabase.genericMockResults!['dialectic_generation_jobs'] = {
@@ -1231,6 +1253,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
                     recipe_step_id: step.id,
                     recipe_template_id: undefined,
                 },
+                idempotencyKey: 'idem-execute-cloned-parallel',
             };
         };
 
@@ -1248,6 +1271,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
                 target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'EXECUTE',
+                idempotency_key: 'idem-execute-cloned-parallel',
             },
             {
                 id: 'child-cloned-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
@@ -1256,6 +1280,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
                 target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'EXECUTE',
+                idempotency_key: 'idem-execute-cloned-parallel',
             }
         ];
         
@@ -1304,6 +1329,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
                 recipe_step_id: step.id,
                 recipe_template_id: undefined,
             },
+            idempotencyKey: 'idem-execute-cloned-parallel',
         };
         if (!isJson(payload)) {
             throw new Error('Test setup failed: payload is not valid JSON');
@@ -1326,6 +1352,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
                 target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'EXECUTE',
+                idempotency_key: 'child-cloned-step-1-complete',
             },
             {
                 id: 'child-cloned-step-2a-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
@@ -1334,6 +1361,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
                 target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'EXECUTE',
+                idempotency_key: 'child-cloned-step-2a-complete',
             },
              {
                 id: 'child-cloned-step-2b-complete', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
@@ -1342,6 +1370,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
                 attempt_count: 1, max_retries: 3, created_at: new Date().toISOString(), started_at: new Date().toISOString(),
                 completed_at: new Date().toISOString(), results: null, error_details: null, parent_job_id: mockParentJob.id,
                 target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'EXECUTE',
+                idempotency_key: 'child-cloned-step-2b-complete',
             }
         ];
         

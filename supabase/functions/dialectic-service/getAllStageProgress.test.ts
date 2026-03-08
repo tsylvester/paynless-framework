@@ -255,6 +255,7 @@ Deno.test("getAllStageProgress: thesis stage with full recipe and sparse jobs re
       completed_at: new Date().toISOString(),
       results: null,
       error_details: null,
+      idempotency_key: null,
     },
     {
       id: "job-execute-business-1",
@@ -285,6 +286,7 @@ Deno.test("getAllStageProgress: thesis stage with full recipe and sparse jobs re
       completed_at: new Date().toISOString(),
       results: null,
       error_details: null,
+      idempotency_key: null,
     },
   ];
 
@@ -315,6 +317,7 @@ Deno.test("getAllStageProgress: thesis stage with full recipe and sparse jobs re
       active_recipe_instance_id: instanceId,
       default_system_prompt_id: null,
       recipe_template_id: templateId,
+      minimum_balance: 0,
     },
   ];
 
@@ -622,6 +625,7 @@ Deno.test("getAllStageProgress: progress calculates correctly for every stage in
     active_recipe_instance_id: instanceIds[i],
     default_system_prompt_id: null,
     recipe_template_id: templateIds[i],
+    minimum_balance: 0,
   }));
   const instances: DialecticStageRecipeInstance[] = instanceIds.map((id: string, i: number) => ({
     id,
@@ -759,9 +763,11 @@ Deno.test("getAllStageProgress: RENDER jobs excluded from step status derivation
     completed_at: new Date().toISOString(),
     results: null,
     error_details: null,
+    idempotency_key: null,
   };
   const sourceContributionId = "contrib-render-1";
   const renderPayload: DialecticRenderJobPayload = {
+    idempotencyKey: 'job-id-123_render',
     sessionId: basePayload.sessionId,
     projectId: basePayload.projectId,
     model_id: modelId,
@@ -797,6 +803,7 @@ Deno.test("getAllStageProgress: RENDER jobs excluded from step status derivation
     completed_at: new Date().toISOString(),
     results: null,
     error_details: null,
+    idempotency_key: null,
   };
   const jobs: DialecticJobRow[] = [executeJob, renderJob];
   const tplPlanId = "tpl-plan";
@@ -842,6 +849,7 @@ Deno.test("getAllStageProgress: RENDER jobs excluded from step status derivation
     active_recipe_instance_id: instanceId,
     default_system_prompt_id: null,
     recipe_template_id: templateId,
+    minimum_balance: 0,
   }];
   const instances: DialecticStageRecipeInstance[] = [{
     id: instanceId,
@@ -931,6 +939,7 @@ Deno.test("getAllStageProgress: continuation jobs excluded from step status deri
     completed_at: new Date().toISOString(),
     results: null,
     error_details: null,
+    idempotency_key: null,
   };
   const continuationJob: DialecticJobRow = {
     id: "job-cont",
@@ -961,6 +970,7 @@ Deno.test("getAllStageProgress: continuation jobs excluded from step status deri
     completed_at: new Date().toISOString(),
     results: null,
     error_details: null,
+    idempotency_key: null,
   };
   const jobs: DialecticJobRow[] = [normalJob, continuationJob];
   const sessionRow = { id: basePayload.sessionId, project_id: basePayload.projectId, selected_model_ids: [modelId] };
@@ -977,6 +987,7 @@ Deno.test("getAllStageProgress: continuation jobs excluded from step status deri
     active_recipe_instance_id: instanceId,
     default_system_prompt_id: null,
     recipe_template_id: templateId,
+    minimum_balance: 0,
   }];
   const instances: DialecticStageRecipeInstance[] = [{
     id: instanceId,
@@ -1061,6 +1072,7 @@ Deno.test("getAllStageProgress: spec invariant progress never decreases across s
     completed_at: new Date().toISOString(),
     results: null,
     error_details: null,
+    idempotency_key: null,
   }];
   const sessionRow = { id: basePayload.sessionId, project_id: basePayload.projectId, selected_model_ids: [modelId] };
   const projectRow = { id: basePayload.projectId, process_template_id: "process-1" };
@@ -1076,6 +1088,7 @@ Deno.test("getAllStageProgress: spec invariant progress never decreases across s
     active_recipe_instance_id: instanceId,
     default_system_prompt_id: null,
     recipe_template_id: templateId,
+    minimum_balance: 0,
   }];
   const instances: DialecticStageRecipeInstance[] = [{
     id: instanceId,
@@ -1168,6 +1181,7 @@ Deno.test("getAllStageProgress: progress independent of model count", async (t) 
     completed_at: new Date().toISOString(),
     results: null,
     error_details: null,
+    idempotency_key: null,
   };
   const projectRow = { id: basePayload.projectId, process_template_id: "process-1" };
   const transitions = [{ source_stage_id: stageId, target_stage_id: stageId }];
@@ -1182,6 +1196,7 @@ Deno.test("getAllStageProgress: progress independent of model count", async (t) 
     active_recipe_instance_id: instanceId,
     default_system_prompt_id: null,
     recipe_template_id: templateId,
+    minimum_balance: 0,
   }];
   const instances: DialecticStageRecipeInstance[] = [{
     id: instanceId,
@@ -1290,6 +1305,7 @@ Deno.test("getAllStageProgress: step with zero jobs whose successors have been r
     completed_at: new Date().toISOString(),
     results: null,
     error_details: null,
+    idempotency_key: null,
   };
   const jobs: DialecticJobRow[] = [jobForB];
   const sessionRow = { id: basePayload.sessionId, project_id: basePayload.projectId, selected_model_ids: [modelId] };
@@ -1306,6 +1322,7 @@ Deno.test("getAllStageProgress: step with zero jobs whose successors have been r
     active_recipe_instance_id: instanceId,
     default_system_prompt_id: null,
     recipe_template_id: templateId,
+    minimum_balance: 0,
   }];
   const instances: DialecticStageRecipeInstance[] = [{
     id: instanceId,
@@ -1416,6 +1433,7 @@ Deno.test("getAllStageProgress: randomized DAG test and progress for any valid D
       completed_at: new Date().toISOString(),
       results: null,
       error_details: null,
+      idempotency_key: null,
     });
   }
   const completedB: number = Math.floor(Math.random() * (numStepsB + 1));
@@ -1451,6 +1469,7 @@ Deno.test("getAllStageProgress: randomized DAG test and progress for any valid D
       completed_at: new Date().toISOString(),
       results: null,
       error_details: null,
+      idempotency_key: null,
     });
   }
   const sessionRow: { id: string; project_id: string; selected_model_ids: string[] } = {
@@ -1482,6 +1501,7 @@ Deno.test("getAllStageProgress: randomized DAG test and progress for any valid D
       active_recipe_instance_id: instanceIdA,
       default_system_prompt_id: null,
       recipe_template_id: templateIdA,
+      minimum_balance: 0,
     },
     {
       id: stageIdB,
@@ -1493,6 +1513,7 @@ Deno.test("getAllStageProgress: randomized DAG test and progress for any valid D
       active_recipe_instance_id: instanceIdB,
       default_system_prompt_id: null,
       recipe_template_id: templateIdB,
+      minimum_balance: 0,
     },
   ];
   const instances: DialecticStageRecipeInstance[] = [
@@ -1602,6 +1623,7 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
     status: "active",
     updated_at: iso,
     user_input_reference_url: null,
+    idempotency_key: null,
   };
   const projectRow: Tables<"dialectic_projects"> = {
     id: basePayload.projectId,
@@ -1617,15 +1639,16 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
     updated_at: iso,
     user_domain_overlay_values: null,
     user_id: basePayload.userId,
+    idempotency_key: null,
   };
   const transitions: DialecticStageTransition[] = [
     { id: "trans-1", process_template_id: "process-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
   ];
   const templateStages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
   ];
   const stages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
   ];
   const instances: DialecticStageRecipeInstance[] = [
     { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
@@ -1662,6 +1685,7 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
       completed_at: null,
       results: null,
       error_details: null,
+      idempotency_key: null,
     }];
     mockFetch([
       new Response(JSON.stringify(sessionRow), { status: 200, headers }),
@@ -1724,6 +1748,7 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
         completed_at: iso,
         results: null,
         error_details: null,
+        idempotency_key: null,
       },
       {
         id: "job-paused-b",
@@ -1754,6 +1779,7 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
         completed_at: null,
         results: null,
         error_details: null,
+        idempotency_key: null,
       },
     ];
     mockFetch([
@@ -1817,6 +1843,7 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
         completed_at: null,
         results: null,
         error_details: null,
+        idempotency_key: null,
       },
       {
         id: "job-failed-b",
@@ -1847,6 +1874,7 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
         completed_at: null,
         results: null,
         error_details: null,
+        idempotency_key: null,
       },
     ];
     mockFetch([
@@ -1922,6 +1950,7 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
       completed_at: null,
       results: null,
       error_details: null,
+      idempotency_key: null,
     },
     {
       id: "job-execute-completed",
@@ -1943,6 +1972,7 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
       completed_at: "2025-01-01T00:02:00Z",
       results: null,
       error_details: null,
+      idempotency_key: null,
     },
     {
       id: "job-render-failed",
@@ -1964,6 +1994,7 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
       completed_at: null,
       results: null,
       error_details: null,
+      idempotency_key: null,
     },
     {
       id: "job-execute-paused_nsf",
@@ -1985,6 +2016,7 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
       completed_at: null,
       results: null,
       error_details: null,
+      idempotency_key: null,
     },
   ];
 
@@ -2000,6 +2032,7 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
     status: "active",
     updated_at: iso,
     user_input_reference_url: null,
+    idempotency_key: null,
   };
   const projectRow: Tables<"dialectic_projects"> = {
     id: basePayload.projectId,
@@ -2015,15 +2048,16 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
     updated_at: iso,
     user_domain_overlay_values: null,
     user_id: basePayload.userId,
+    idempotency_key: null,
   };
   const transitions: DialecticStageTransition[] = [
     { id: "trans-je-1", process_template_id: "process-tpl-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
   ];
   const templateStages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
   ];
   const stages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
   ];
   const instances: DialecticStageRecipeInstance[] = [
     { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
@@ -2139,6 +2173,7 @@ Deno.test("getAllStageProgress: stage with no jobs returns empty jobs: [] array"
     status: "active",
     updated_at: iso,
     user_input_reference_url: null,
+    idempotency_key: null,
   };
   const projectRow: Tables<"dialectic_projects"> = {
     id: basePayload.projectId,
@@ -2154,15 +2189,16 @@ Deno.test("getAllStageProgress: stage with no jobs returns empty jobs: [] array"
     updated_at: iso,
     user_domain_overlay_values: null,
     user_id: basePayload.userId,
+    idempotency_key: null,
   };
   const transitions: DialecticStageTransition[] = [
     { id: "trans-nojobs-1", process_template_id: "process-tpl-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
   ];
   const templateStages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
   ];
   const stages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
   ];
   const instances: DialecticStageRecipeInstance[] = [
     { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
@@ -2228,6 +2264,7 @@ Deno.test("getAllStageProgress: stage with no edges returns empty edges: [] arra
     status: "active",
     updated_at: iso,
     user_input_reference_url: null,
+    idempotency_key: null,
   };
   const projectRow: Tables<"dialectic_projects"> = {
     id: basePayload.projectId,
@@ -2243,15 +2280,16 @@ Deno.test("getAllStageProgress: stage with no edges returns empty edges: [] arra
     updated_at: iso,
     user_domain_overlay_values: null,
     user_id: basePayload.userId,
+    idempotency_key: null,
   };
   const transitions: DialecticStageTransition[] = [
     { id: "trans-noedges-1", process_template_id: "process-tpl-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
   ];
   const templateStages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
   ];
   const stages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId },
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
   ];
   const instances: DialecticStageRecipeInstance[] = [
     { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },

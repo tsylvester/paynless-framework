@@ -50,6 +50,7 @@ const MOCK_PAYLOAD: DialecticPlanJobPayload = {
     model_id: 'model-ghi',
     walletId: 'wallet-default',
     user_jwt: 'user-jwt-123',
+    idempotencyKey: "idempotency-key-1",
 };
 
 if(!isJson(MOCK_PAYLOAD)) {
@@ -75,7 +76,8 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
     status: 'pending', 
     target_contribution_id: null, 
     is_test_job: false, 
-    job_type: 'PLAN'
+    job_type: 'PLAN',
+    idempotency_key: "idempotency-key-1",
 };
 
 const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
@@ -975,6 +977,7 @@ Deno.test('planAllToOne PLAN branch must not set document_relationships[stageSlu
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -1074,6 +1077,7 @@ Deno.test('planAllToOne EXECUTE branch must not set document_relationships[stage
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -1141,6 +1145,7 @@ Deno.test('planAllToOne extracts sourceAnchorModelSlug from thesis document file
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -1410,6 +1415,7 @@ Deno.test('planAllToOne PLAN branch uses relevance-selected anchor for canonical
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -1673,6 +1679,7 @@ Deno.test('planAllToOne EXECUTE branch uses relevance-selected anchor for canoni
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -1887,6 +1894,7 @@ Deno.test('planAllToOne throws when recipe lacks relevance metadata', () => {
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -2076,6 +2084,7 @@ Deno.test('planAllToOne handles no_document_inputs_required by passing null anch
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -2223,6 +2232,7 @@ Deno.test('planAllToOne handles anchor_found by using result.document', () => {
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -2426,6 +2436,7 @@ Deno.test('planAllToOne throws on anchor_not_found', async () => {
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -2553,6 +2564,7 @@ Deno.test('planAllToOne includes inputs.header_context_id when recipeStep.inputs
             model_id: 'model-antithesis-123',
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -2681,6 +2693,7 @@ Deno.test('planAllToOne selects header_context source doc by document_key when r
             model_id: 'model-antithesis-123',
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -2826,6 +2839,7 @@ Deno.test('planAllToOne selects header_context source doc by document_key when r
             model_id: 'model-antithesis-123',
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 

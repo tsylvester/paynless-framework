@@ -38,6 +38,7 @@ const createMockDbResponse = (stepCount: number): DatabaseRecipeSteps => {
         expected_output_template_ids: [],
         recipe_template_id: 'rt-1',
         active_recipe_instance_id: 'ari-1',
+        minimum_balance: 0,
     };
 
     const instance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -109,6 +110,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
         continueUntilComplete: true,
         walletId: 'test-wallet-id',
         user_jwt: 'test-user-jwt',
+        idempotencyKey: 'idem-happy-multi',
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -233,6 +235,7 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
         continueUntilComplete: true,
         walletId: 'test-wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-happy-single',
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -327,6 +330,7 @@ Deno.test("generateContributions - Failure Path: Fails if stage recipe lookup fa
         iterationNumber: 1, // Add the required iteration number
         walletId: 'test-wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-fail-recipe',
     };
     const dbError = { name: 'DBError', message: "Stage not found", details: "Query returned no rows", code: "PGRST116" };
 
@@ -389,6 +393,7 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
         iterationNumber: 1, // Add the missing iteration number
         walletId: 'test-wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-fail-enqueue',
     };
 
     const dbError = { name: 'DBError', message: "Database permission denied", details: "RLS policy violation", code: "42501" };
@@ -468,6 +473,7 @@ Deno.test("generateContributions - Validation: Fails if stageSlug is missing", a
         // stageSlug is intentionally omitted
         walletId: 'test-wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-missing-stage',
     };
 
     const mockSupabase = createMockSupabaseClient(); // No DB calls should be made
@@ -499,11 +505,14 @@ Deno.test("generateContributions - Validation: Fails if stageSlug is missing", a
 
 Deno.test("generateContributions - Validation: Fails if sessionId is missing", async () => {
     // Intentionally create a payload that is missing a required property to test runtime validation
-    const mockPayload = {
+    const mockPayload: GenerateContributionsPayload = {
         stageSlug: 'thesis',
         projectId: 'project-123',
+        walletId: 'test-wallet-id',
+        user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-missing-session',
         // sessionId is intentionally omitted
-    } as GenerateContributionsPayload; // Cast to satisfy the function signature for the test
+    } as GenerateContributionsPayload; // Intentionally malformed for error-handling test
 
     const mockSupabase = createMockSupabaseClient();
 
@@ -539,6 +548,7 @@ Deno.test("generateContributions - Validation: Fails if userId is missing", asyn
         projectId: 'project-123',
         walletId: 'test-wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-missing-user',
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -579,6 +589,7 @@ Deno.test("generateContributions - Validation: Fails if selectedModelIds is empt
         iterationNumber: 1,
         walletId: 'test-wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-empty-models',
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -631,8 +642,10 @@ Deno.test("generateContributions - Validation: Fails if walletId is missing (man
         stageSlug: 'thesis',
         iterationNumber: 1,
         projectId: mockProjectId,
+        user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-missing-wallet',
         // walletId intentionally omitted
-    } as GenerateContributionsPayload;
+    } as GenerateContributionsPayload; // Intentionally malformed for error-handling test
 
     const mockDbResponse = createMockDbResponse(1);
     assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
@@ -702,6 +715,7 @@ Deno.test("generateContributions - Fails when authToken is missing and does not 
         projectId: mockProjectId,
         walletId: 'wallet-1',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-missing-auth',
     };
 
     const mockDbResponse = createMockDbResponse(1);
@@ -771,6 +785,7 @@ Deno.test("generateContributions - should reject job creation when authToken is 
         projectId: mockProjectId,
         walletId: 'wallet-1',
         user_jwt: 'jwt-from-payload',
+        idempotencyKey: 'idem-null-auth',
     };
 
     const mockDbResponse = createMockDbResponse(1);
@@ -840,6 +855,7 @@ Deno.test("generateContributions - should reject job creation when authToken is 
         projectId: mockProjectId,
         walletId: 'wallet-1',
         user_jwt: 'jwt-from-payload',
+        idempotencyKey: 'idem-undefined-auth',
     };
 
     const mockDbResponse = createMockDbResponse(1);
@@ -921,6 +937,7 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
         walletId: 'wallet-1',
         continueUntilComplete: true,
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-auth-jwt',
     };
 
     const mockDbResponse = createMockDbResponse(2); // 2-step recipe
@@ -1026,6 +1043,7 @@ Deno.test("generateContributions - plan jobs include model_slug from ai_provider
         projectId: mockProjectId,
         walletId: 'wallet-1',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-model-slug',
     };
 
     const mockDbResponse = createMockDbResponse(1);
@@ -1121,6 +1139,7 @@ Deno.test("should create jobs with a top-level 'is_test_job' flag when specified
         walletId: 'test-wallet-id',
         is_test_job: true,
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-is-test-job',
     };
 
     const mockDbResponse = createMockDbResponse(1);
@@ -1226,6 +1245,7 @@ Deno.test("generateContributions successfully enqueues jobs given a valid and co
         continueUntilComplete: true,
         walletId: 'test-wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-stateless',
     };
 
     // The mock data represents the correct, nested data structure as defined by the database schema.
@@ -1241,6 +1261,7 @@ Deno.test("generateContributions successfully enqueues jobs given a valid and co
         expected_output_template_ids: [],
         recipe_template_id: 'rt-1',
         active_recipe_instance_id: 'ari-1',
+        minimum_balance: 0,
     };
 
     const dialecticStageRecipeInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -1340,4 +1361,343 @@ Deno.test("generateContributions successfully enqueues jobs given a valid and co
     assertEquals(result.success, true, "The function should succeed in creating jobs.");
     assertExists(result.data, "Successful result should contain a data object.");
     assertEquals(result.data?.job_ids[0], mockJobId, "The correct job ID should be returned.");
+});
+
+Deno.test("generateContributions - Validation: Rejects when idempotencyKey is missing from payload", async () => {
+    const mockPayload = {
+        sessionId: 'session-123',
+        projectId: 'project-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        walletId: 'test-wallet-id',
+        user_jwt: 'jwt.token.here',
+    } as GenerateContributionsPayload; // Intentionally malformed for error-handling test
+
+    const mockSupabase = createMockSupabaseClient();
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
+            downloadFromStorage: downloadFromStorage100,
+            getExtensionFromMimeType: () => 'txt',
+            logger: logger,
+            randomUUID: () => '123',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+            },
+            deleteFromStorage: deleteFromStorageOk,
+        },
+        'jwt.token.here'
+    );
+
+    assertEquals(result.success, false);
+    assertExists(result.error);
+    assertEquals(result.error.message, "idempotencyKey is required");
+    assertEquals(result.error.status, 400);
+});
+
+Deno.test("generateContributions - Validation: Rejects when idempotencyKey is empty string", async () => {
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: 'session-123',
+        projectId: 'project-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        walletId: 'test-wallet-id',
+        user_jwt: 'jwt.token.here',
+        idempotencyKey: '',
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
+            downloadFromStorage: downloadFromStorage100,
+            getExtensionFromMimeType: () => 'txt',
+            logger: logger,
+            randomUUID: () => '123',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123', iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+            },
+            deleteFromStorage: deleteFromStorageOk,
+        },
+        'jwt.token.here'
+    );
+
+    assertEquals(result.success, false);
+    assertExists(result.error);
+    assertEquals(result.error.message, "idempotencyKey is required");
+    assertEquals(result.error.status, 400);
+});
+
+Deno.test("generateContributions - Derives per-job idempotency key and includes it in each insert", async () => {
+    const mockSessionId = "sess-idem-per-job";
+    const mockProjectId = "proj-idem-per-job";
+    const mockUserId = "user-idem-per-job";
+    const mockModelIds = ["model-A", "model-B"];
+    const mockJobIds = ["job-id-A", "job-id-B"];
+    const idempotencyKey = "idem-key-per-job";
+    let insertCallIdx = 0;
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        projectId: mockProjectId,
+        walletId: 'wallet-1',
+        user_jwt: 'jwt.token.here',
+        idempotencyKey,
+    };
+
+    const mockDbResponse = createMockDbResponse(2);
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: mockModelIds,
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [mockDbResponse],
+                    error: null
+                }
+            },
+            'ai_providers': {
+                select: (state: MockQueryBuilderState) => {
+                    const idFilter = state.filters.find(f => f.column === 'id' && f.type === 'eq');
+                    if (!idFilter || !idFilter.value || typeof idFilter.value !== 'string') {
+                        return Promise.resolve({ data: null, error: new Error('Model not found'), count: 0, status: 406, statusText: 'OK' });
+                    }
+                    const modelNames: Record<string, string> = {
+                        'model-A': 'model-slug-A',
+                        'model-B': 'model-slug-B',
+                    };
+                    const modelName = modelNames[idFilter.value] || `slug-${idFilter.value}`;
+                    return Promise.resolve({ data: [{ name: modelName }], error: null, count: 1, status: 200, statusText: 'OK' });
+                }
+            },
+            'dialectic_generation_jobs': {
+                insert: (_state: MockQueryBuilderState) => {
+                    const jobId = mockJobIds[insertCallIdx];
+                    insertCallIdx++;
+                    return Promise.resolve({ data: [{ id: jobId }], error: null, count: 1, status: 201, statusText: 'Created' });
+                }
+            },
+        },
+    });
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
+            downloadFromStorage: downloadFromStorage1,
+            getExtensionFromMimeType: () => 'txt',
+            logger,
+            randomUUID: () => 'uuid',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+            },
+            deleteFromStorage: deleteFromStorageOk,
+        },
+        'jwt.token.here'
+    );
+
+    assertEquals(result.success, true);
+    assertExists(result.data);
+    assertEquals(result.data.job_ids, mockJobIds);
+
+    const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertSpy);
+    assertEquals(insertSpy.callCount, 2);
+
+    const expectedKeyA: string = `${idempotencyKey}_${mockModelIds[0]}`;
+    const expectedKeyB: string = `${idempotencyKey}_${mockModelIds[1]}`;
+
+    const firstInsertArg = insertSpy.callsArgs[0][0];
+    const secondInsertArg = insertSpy.callsArgs[1][0];
+    if (!isPlanJobInsert(firstInsertArg) || !isPlanJobInsert(secondInsertArg)) {
+        fail("Insert args should match PlanJobInsert shape");
+    }
+    assertEquals(firstInsertArg['idempotency_key'], expectedKeyA, "First insert must include derived idempotency_key");
+    assertEquals(secondInsertArg['idempotency_key'], expectedKeyB, "Second insert must include derived idempotency_key");
+});
+
+Deno.test("generateContributions - On unique constraint violation on idempotency_key returns existing job IDs", async () => {
+    const mockSessionId = "sess-idem-23505";
+    const mockProjectId = "proj-idem-23505";
+    const mockUserId = "user-idem-23505";
+    const mockModelId = "model-23505";
+    const existingJobId = "existing-job-id-23505";
+    const idempotencyKey = "idem-key-23505";
+    const jobIdempotencyKey: string = `${idempotencyKey}_${mockModelId}`;
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        projectId: mockProjectId,
+        walletId: 'wallet-1',
+        user_jwt: 'jwt.token.here',
+        idempotencyKey,
+    };
+
+    const mockDbResponse = createMockDbResponse(1);
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
+
+    const uniqueViolationError: Error & { code: string } = Object.assign(new Error('duplicate key value violates unique constraint on idempotency_key'), { code: '23505' });
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: [mockModelId],
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [mockDbResponse],
+                    error: null
+                }
+            },
+            'ai_providers': {
+                select: {
+                    data: [{ name: 'model-slug-23505' }],
+                    error: null
+                }
+            },
+            'dialectic_generation_jobs': {
+                insert: { data: null, error: uniqueViolationError },
+                select: {
+                    data: [{ id: existingJobId }],
+                    error: null
+                }
+            },
+        },
+    });
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
+            downloadFromStorage: downloadFromStorage1,
+            getExtensionFromMimeType: () => 'txt',
+            logger,
+            randomUUID: () => 'uuid',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+            },
+            deleteFromStorage: deleteFromStorageOk,
+        },
+        'jwt.token.here'
+    );
+
+    assertEquals(result.success, true, "Should return success when 23505 is handled by returning existing job");
+    assertExists(result.data);
+    assertEquals(result.data.job_ids.length, 1);
+    assertEquals(result.data.job_ids[0], existingJobId);
+});
+
+Deno.test("generateContributions - Normal successful job creation with unique idempotency key", async () => {
+    const mockSessionId = "sess-idem-unique";
+    const mockProjectId = "proj-idem-unique";
+    const mockUserId = "user-idem-unique";
+    const mockModelId = "model-unique";
+    const mockJobId = "job-id-unique";
+    const idempotencyKey = "idem-unique-key";
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        projectId: mockProjectId,
+        walletId: 'wallet-1',
+        user_jwt: 'jwt.token.here',
+        idempotencyKey,
+    };
+
+    const mockDbResponse = createMockDbResponse(1);
+    assertEquals(isDatabaseRecipeSteps(mockDbResponse), true, "The mock DB response should be a valid DatabaseRecipeSteps object");
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: [mockModelId],
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [mockDbResponse],
+                    error: null
+                }
+            },
+            'ai_providers': {
+                select: {
+                    data: [{ name: 'model-slug-unique' }],
+                    error: null
+                }
+            },
+            'dialectic_generation_jobs': {
+                insert: { data: [{ id: mockJobId }], error: null }
+            },
+        },
+    });
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
+            downloadFromStorage: downloadFromStorage1,
+            getExtensionFromMimeType: () => 'txt',
+            logger,
+            randomUUID: () => 'uuid',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'f', created_at: new Date().toISOString(), file_name: 'n', mime_type: 'text/plain', project_id: mockProjectId, resource_description: {}, size_bytes: 1, storage_bucket: 'b', storage_path: 'p', updated_at: new Date().toISOString(), user_id: mockUserId, iteration_number: null, resource_type: null, session_id: null, source_contribution_id: null, stage_slug: null }, error: null }),
+                assembleAndSaveFinalDocument: () => Promise.resolve({ finalPath: null, error: null }),
+            },
+            deleteFromStorage: deleteFromStorageOk,
+        },
+        'jwt.token.here'
+    );
+
+    assertEquals(result.success, true);
+    assertExists(result.data);
+    assertEquals(result.data.job_ids, [mockJobId]);
 });

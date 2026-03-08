@@ -90,6 +90,7 @@ const mockJob: DialecticJobRow = {
   prerequisite_job_id: null,
   is_test_job: false,
   job_type: 'PLAN',
+  idempotency_key: "idempotency-key-1",
 };
 
 const mockSessionData: DialecticSession = {
@@ -166,7 +167,8 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
             id: 'domain-123',
             name: 'Test Domain',
             description: 'A domain for testing',
-        }
+        },
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockStage: Tables<'dialectic_stages'> & { system_prompts: { id: string; prompt_text: string } | null } = {
@@ -183,6 +185,7 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
         },
         active_recipe_instance_id: null,
         recipe_template_id: 'template-123',
+        minimum_balance: 0,
     };
 
     const templateInputsRequired: InputRule[] = [
@@ -1022,6 +1025,7 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
 
   const continuationContributionId = 'root-contrib-456';
   const continuationPayload: DialecticExecuteJobPayload = {
+    idempotencyKey: "idempotency-key-1",
     projectId: 'project-abc',
     sessionId: 'session-456',
     stageSlug: 'test-stage',

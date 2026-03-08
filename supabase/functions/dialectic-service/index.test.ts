@@ -88,6 +88,7 @@ const mockProject: DialecticProjectRow = {
   process_template_id: null,
   selected_domain_overlay_id: null,
   user_domain_overlay_values: null,
+  idempotency_key: null,
 };
 
 const mockSession: DialecticSession = {
@@ -794,7 +795,7 @@ withSupabaseEnv("handleRequest - startSession", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const payload: StartSessionPayload = { projectId, sessionDescription: 'New session', selectedModels: [{ id: 'model-1', displayName: 'Model One' }] };
+        const payload: StartSessionPayload = { projectId, sessionDescription: 'New session', selectedModels: [{ id: 'model-1', displayName: 'Model One' }], idempotencyKey: 'job-id-123_start_session' };
         const req = createJsonRequest("startSession", payload, mockToken);
         const response = await handleRequest(
           req,
@@ -820,7 +821,7 @@ withSupabaseEnv("handleRequest - startSession", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const payload: StartSessionPayload = { projectId, selectedModels: [{ id: 'model-1', displayName: 'Model One' }] };
+        const payload: StartSessionPayload = { projectId, selectedModels: [{ id: 'model-1', displayName: 'Model One' }], idempotencyKey: 'job-id-123_start_session' };
         const req = createJsonRequest("startSession", payload, mockToken);
         const response = await handleRequest(
           req,
@@ -1943,6 +1944,7 @@ withSupabaseEnv("handleRequest - regenerateDocument", async (t) => {
         stageSlug: 'thesis',
         iterationNumber: 1,
         documents: [{ documentKey: 'doc-1', modelId: 'model-1' }],
+        idempotencyKey: 'job-id-123_regenerate',
     };
 
     await t.step("should route action 'regenerateDocument' to handler and return 200 with jobIds", async () => {

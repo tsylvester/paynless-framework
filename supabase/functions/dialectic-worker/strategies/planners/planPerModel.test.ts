@@ -75,6 +75,7 @@ const MOCK_PAYLOAD: DialecticPlanJobPayload = {
 	model_id: 'model-parent',
 	walletId: 'wallet-default',
 	user_jwt: 'user-jwt-123',
+	idempotencyKey: "idempotency-key-1",
 };
 
 if(!isJson(MOCK_PAYLOAD)) {
@@ -101,6 +102,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
 	target_contribution_id: null,
 	is_test_job: false,
 	job_type: 'PLAN',
+	idempotency_key: "idempotency-key-1",
 };
 
 const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
@@ -764,6 +766,7 @@ Deno.test('planPerModel EXECUTE branch must not set document_relationships[stage
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -838,8 +841,9 @@ Deno.test('planPerModel per_model EXECUTE jobs have null source_group and pass n
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
-			job_type: 'PLAN' as const,
+			job_type: 'PLAN',
 			is_test_job: false,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -1026,6 +1030,7 @@ Deno.test('planPerModel handles no_document_inputs_required by passing null anch
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -1153,6 +1158,7 @@ Deno.test('planPerModel per_model EXECUTE with document inputs still returns no_
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -1341,6 +1347,7 @@ Deno.test('planPerModel per_model does not throw even when document_key mismatch
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -1515,6 +1522,7 @@ Deno.test('96.c.i: Given n² pairwise outputs, planPerModel creates 1 job per mo
 			model_id: 'model-A',
 			walletId: MOCK_PAYLOAD.walletId,
 			user_jwt: MOCK_PAYLOAD.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -1773,6 +1781,7 @@ Deno.test('96.c.v: Job is assigned to correct model based on parent job model_id
 			model_id: targetModelId,
 			walletId: MOCK_PAYLOAD.walletId,
 			user_jwt: MOCK_PAYLOAD.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 

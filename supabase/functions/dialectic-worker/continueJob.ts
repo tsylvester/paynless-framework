@@ -211,12 +211,21 @@ export async function continueJob(
     error_details: null,
     // Align row-level target with payload target for traceability
     target_contribution_id: savedContribution.id,
+    idempotency_key: `${job.id}_continue_${savedContribution.id}`,
   };
 
   // The type of `newJobToInsert` is compatible with the `insert` method's expected type.
   const { error: insertError } = await dbClient.from('dialectic_generation_jobs').insert(newJobToInsert);
   
   if (insertError) {
+    const isUniqueViolationOnIdempotencyKey =
+      insertError.code === '23505' &&
+      typeof insertError.message === 'string' &&
+      insertError.message.includes('idempotency_key');
+    if (isUniqueViolationOnIdempotencyKey) {
+      deps.logger.info('[dialectic-worker] [continueJob] Continuation job already exists from prior attempt (idempotency_key), treating as success.', { jobId: job.id, savedContributionId: savedContribution.id });
+      return { enqueued: true };
+    }
     deps.logger.error(`[dialectic-worker] [continueJob] Failed to enqueue continuation job.`, { error: insertError });
     return {
         enqueued: false,

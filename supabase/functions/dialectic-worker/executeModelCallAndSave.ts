@@ -1677,6 +1677,7 @@ export async function executeModelCallAndSave(
         }
 
         const renderPayload: DialecticRenderJobPayload = {
+            idempotencyKey: `${jobId}_render`,
             projectId,
             sessionId,
             iterationNumber,
@@ -1707,6 +1708,7 @@ export async function executeModelCallAndSave(
             is_test_job: job.is_test_job ?? false,
             status: 'pending',
             user_id: projectOwnerUserId,
+            idempotency_key: `${jobId}_render`,
         };
 
         const { data: renderInsertData, error: renderInsertError } = await dbClient
@@ -1719,35 +1721,57 @@ export async function executeModelCallAndSave(
             const errorMessage = renderInsertError.message || '';
             const errorCode = renderInsertError.code || '';
 
-            // Categorize programmer errors (FK violations, constraint violations, RLS)
-            const isProgrammerError =
-                errorMessage.includes('foreign key constraint') ||
-                errorMessage.includes('unique constraint') ||
-                errorMessage.includes('violates') ||
-                errorCode === '42501' || // RLS policy violation
-                errorCode === '23503' || // FK constraint violation
-                errorCode === '23505';   // Unique constraint violation
+            if (errorCode === '23505' && errorMessage.includes('idempotency_key')) {
+                const renderIdempotencyKey = `${jobId}_render`;
+                const { data: existingRow, error: selectError } = await dbClient
+                    .from('dialectic_generation_jobs')
+                    .select('*')
+                    .eq('idempotency_key', renderIdempotencyKey)
+                    .single();
 
-            if (isProgrammerError) {
-                deps.logger.error('[executeModelCallAndSave] Programmer error during RENDER job insert', {
+                if (!selectError && existingRow && isRecord(existingRow) && typeof existingRow['id'] === 'string') {
+                    deps.logger.info('[executeModelCallAndSave] RENDER job already existed from prior attempt', { parent_job_id: jobId, render_job_id: existingRow['id'] });
+                } else {
+                    deps.logger.error('[executeModelCallAndSave] Programmer error during RENDER job insert (23505 recovery failed)', {
+                        renderInsertError,
+                        insertObj,
+                        selectError,
+                    });
+                    throw new RenderJobEnqueueError(
+                        `Failed to insert RENDER job due to database constraint violation: ${errorMessage} (code: ${errorCode})`
+                    );
+                }
+            } else {
+                // Categorize programmer errors (FK violations, constraint violations, RLS)
+                const isProgrammerError =
+                    errorMessage.includes('foreign key constraint') ||
+                    errorMessage.includes('unique constraint') ||
+                    errorMessage.includes('violates') ||
+                    errorCode === '42501' || // RLS policy violation
+                    errorCode === '23503' || // FK constraint violation
+                    errorCode === '23505';   // Unique constraint violation
+
+                if (isProgrammerError) {
+                    deps.logger.error('[executeModelCallAndSave] Programmer error during RENDER job insert', {
+                        renderInsertError,
+                        insertObj,
+                        errorMessage,
+                        errorCode
+                    });
+                    throw new RenderJobEnqueueError(
+                        `Failed to insert RENDER job due to database constraint violation: ${errorMessage} (code: ${errorCode})`
+                    );
+                }
+
+                // Transient errors - throw to trigger job-level retry
+                deps.logger.error('[executeModelCallAndSave] Transient error during RENDER job insert - will retry', {
                     renderInsertError,
-                    insertObj,
-                    errorMessage,
-                    errorCode
+                    insertObj
                 });
                 throw new RenderJobEnqueueError(
-                    `Failed to insert RENDER job due to database constraint violation: ${errorMessage} (code: ${errorCode})`
+                    `Failed to insert RENDER job due to transient error: ${errorMessage}`
                 );
             }
-
-            // Transient errors - throw to trigger job-level retry
-            deps.logger.error('[executeModelCallAndSave] Transient error during RENDER job insert - will retry', {
-                renderInsertError,
-                insertObj
-            });
-            throw new RenderJobEnqueueError(
-                `Failed to insert RENDER job due to transient error: ${errorMessage}`
-            );
         } else {
             const newId = isRecord(renderInsertData) && typeof renderInsertData['id'] === 'string' ? renderInsertData['id'] : undefined;
             deps.logger.info('[executeModelCallAndSave] Enqueued RENDER job', { parent_job_id: jobId, render_job_id: newId });

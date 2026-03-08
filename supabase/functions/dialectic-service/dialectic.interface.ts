@@ -542,6 +542,7 @@ export interface RegenerateDocumentPayload {
 	stageSlug: string;
 	iterationNumber: number;
 	documents: Array<{ documentKey: string; modelId: string }>;
+	idempotencyKey: string;
 }
 
 export interface RegenerateDocumentResponse {
@@ -884,6 +885,7 @@ export interface StartSessionPayload {
 	selectedModels: SelectedModels[];
 	originatingChatId?: string | null;
 	stageSlug?: string;
+	idempotencyKey: string;
 }
 
 export interface UpdateSessionModelsPayload {
@@ -968,6 +970,7 @@ export interface GenerateContributionsPayload {
 	user_jwt: string;
 	is_test_job?: boolean;
 	model_slug?: string;
+	idempotencyKey: string;
 }
 
 /**

@@ -51,6 +51,7 @@ function job(
 		parent_job_id: null,
 		prerequisite_job_id: null,
 		is_test_job: false,
+		idempotency_key: null,
 	};
 	return row;
 }
@@ -82,6 +83,7 @@ function execPayload(recipe_step_id: string): DialecticExecuteJobPayload {
 		output_type: FileType.business_case,
 		canonicalPathParams: { contributionType: "thesis", stageSlug: STAGE_SLUG, sourceModelSlugs: [] },
 		inputs: {},
+		idempotencyKey: "idempotency-key-1",
 	};
 }
 
@@ -218,6 +220,7 @@ Deno.test("deriveStepStatuses", async (t) => {
 			user_jwt: USER_JWT,
 			stageSlug: STAGE_SLUG,
 			iterationNumber: ITERATION,
+			idempotencyKey: "idempotency-key-1",
 		};
 		const plan = step("p1", "plan_header", "PLAN", "all_to_one");
 		const steps: ProgressRecipeStep[] = [plan];
@@ -243,6 +246,7 @@ Deno.test("deriveStepStatuses", async (t) => {
 			documentKey: FileType.business_case,
 			sourceContributionId: "contrib-1",
 			template_filename: "template.md",
+			idempotencyKey: "idempotency-key-1",
 		};
 		const steps: ProgressRecipeStep[] = [step("e1", "business_case", "EXECUTE", "per_source_document")];
 		const stepIdToStepKey: Map<string, string> = new Map([["e1", "business_case"]]);

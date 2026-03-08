@@ -39,6 +39,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         projectId: mockProjectId,
         selectedModels: [{ id: "model-1", displayName: "Model One" }],
         sessionDescription: mockExplicitSessionDescription,
+        idempotencyKey: "idempotency-key-happy-path",
     };
 
     // --- Start of Mocking Setup ---
@@ -193,6 +194,7 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
     const payload: StartSessionPayload = {
         projectId: mockProjectId,
         selectedModels: [{ id: "model-1", displayName: "Model One" }],
+        idempotencyKey: "idempotency-key-default-desc",
     };
 
     const mockAssembledPrompt: AssembledPrompt = {
@@ -361,6 +363,7 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
         projectId: mockProjectId,
         selectedModels: [{ id: "model-file", displayName: "Model File" }],
         sessionDescription: "Session from a file prompt",
+        idempotencyKey: "idempotency-key-file-prompt",
     };
 
     const mockAssembledPrompt: AssembledPrompt = {
@@ -542,6 +545,7 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
         projectId: mockProjectId,
         selectedModels: [{ id: "dummy-model-v1", displayName: "Dummy Model" }],
         sessionDescription: "Dummy embedding session",
+        idempotencyKey: "idempotency-key-dummy-embed",
     };
 
     const mockAssembledPrompt: AssembledPrompt = {

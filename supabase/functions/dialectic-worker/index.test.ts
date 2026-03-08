@@ -105,6 +105,7 @@ const mockJobMissingUserId: MockJob = {
     prerequisite_job_id: null,
     is_test_job: false,
     job_type: 'PLAN',
+    idempotency_key: "idempotency-key-1",
 };
 
 // Global mock job for invalid payload test
@@ -131,6 +132,7 @@ const mockJobInvalidPayload: MockJob = {
     prerequisite_job_id: null,
     is_test_job: false,
     job_type: 'PLAN',
+    idempotency_key: "idempotency-key-1",
 };
 
 // Global mock supabase client for invalid payload test
@@ -219,6 +221,7 @@ const mockJobValid: MockJob = {
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
 // Global mock supabase client for valid job test
@@ -308,6 +311,7 @@ const mockJobPayloadValidation: MockJob = {
     prerequisite_job_id: null,
     is_test_job: false,
     job_type: 'PLAN',
+    idempotency_key: "idempotency-key-1",
 };
 
 // Global mock client for payload validation test
@@ -352,6 +356,7 @@ const mockJobException: MockJob = {
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
 // Global mock supabase client for exception test
@@ -721,6 +726,7 @@ Deno.test('handleJob - does not inject user_jwt and fails when payload.user_jwt 
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: "idempotency-key-1",
         };
     
         const mockSupabase = createMockSupabaseClient(undefined, {
@@ -860,6 +866,7 @@ Deno.test('handleJob - RENDER routes via provided processors and propagates args
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'RENDER',
+        idempotency_key: "idempotency-key-1",
     };
 
     const { client: dbClient } = createMockSupabaseClient(undefined, {
@@ -927,6 +934,7 @@ Deno.test('handleJob - prevents concurrent processing of the same job atomically
             model_id: 'model-id',
             continueUntilComplete: false,
             user_jwt: 'jwt.token.here',
+            idempotencyKey: "idempotency-key-1",
         },
         iteration_number: 1,
         status: 'pending_next_step',
@@ -942,6 +950,7 @@ Deno.test('handleJob - prevents concurrent processing of the same job atomically
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     // Track database state to simulate race condition
@@ -1158,6 +1167,7 @@ const mockJobNsf: MockJob = {
         stageSlug: 'thesis',
         model_id: 'model-id',
         iterationNumber: 1,
+        idempotencyKey: "idempotency-key-1",
     },
     iteration_number: 1,
     status: 'pending',
@@ -1173,6 +1183,7 @@ const mockJobNsf: MockJob = {
     prerequisite_job_id: null,
     is_test_job: false,
     job_type: 'PLAN',
+    idempotency_key: "idempotency-key-1",
 };
 
 const mockSupabaseClientNsf = createMockSupabaseClient(undefined, {

@@ -147,6 +147,7 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 			model_id: parentJob.payload.model_id,
 			user_jwt: parentJwt,
 			walletId: parentJob.payload.walletId,
+			idempotencyKey: parentJob.payload.idempotencyKey,
 			// Optional fields - include only if present in parent
 			...(parentJob.payload.model_slug ? { model_slug: parentJob.payload.model_slug } : {}),
 			...(parentJob.payload.continueUntilComplete !== undefined ? { continueUntilComplete: parentJob.payload.continueUntilComplete } : {}),
@@ -316,6 +317,7 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 			}
 
 			const newPayload: DialecticExecuteJobPayload = {
+				idempotencyKey: "idempotency-key-1",
 				// Inherit ALL fields from parent job payload (defensive programming)
 				projectId: parentJob.payload.projectId,
 				sessionId: parentJob.payload.sessionId,

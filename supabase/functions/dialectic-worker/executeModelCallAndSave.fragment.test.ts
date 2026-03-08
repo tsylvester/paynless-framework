@@ -47,6 +47,7 @@ Deno.test('executeModelCallAndSave - 71.c.i: PathContext includes sourceGroupFra
     };
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -126,6 +127,7 @@ Deno.test('executeModelCallAndSave - 71.c.ii: fragment extraction handles UUID w
     };
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.HeaderContext,
@@ -201,6 +203,7 @@ Deno.test('executeModelCallAndSave - 71.c.iii: PathContext works without source_
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.HeaderContext,
@@ -280,6 +283,7 @@ Deno.test('executeModelCallAndSave - 71.c.iv: fragment extraction handles undefi
     };
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.HeaderContext,
@@ -360,6 +364,7 @@ Deno.test('executeModelCallAndSave - 71.c.v: sourceAnchorModelSlug propagates co
     };
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -441,6 +446,7 @@ Deno.test('executeModelCallAndSave - 71.c.vi: canonicalPathParams includes sourc
 
     // Simulate antithesis HeaderContext job with sourceAnchorModelSlug from planner
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.HeaderContext,

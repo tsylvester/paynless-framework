@@ -247,6 +247,7 @@ Deno.test("Chat Service Handler", async (t) => {
             updated_at: new Date().toISOString(),
             is_active: true,
             is_default_embedding: false,
+            is_default_generation: false,
             is_enabled: true,
             description: 'Dummy provider for testing',
         };
@@ -312,6 +313,7 @@ Deno.test("Chat Service Handler", async (t) => {
             updated_at: new Date().toISOString(),
             is_active: true,
             is_default_embedding: false,
+            is_default_generation: false,
             is_enabled: true,
             description: 'Test provider',
         };
