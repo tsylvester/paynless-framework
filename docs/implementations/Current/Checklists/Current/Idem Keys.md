@@ -1891,6 +1891,76 @@ The regenerate feature currently lives inline in `StageRunChecklist.tsx`. We ext
 - Check if n/n Done is calculating correctly
 - Ensure n/n Done updates from notifications, not just page refresh 
 
+* `[✅]` [STORE] `packages/store/src/dialecticStore.documents.ts` / `hydrateStageProgressLogic` **Populate jobs from document data during per-stage hydration**
+  * `[✅]` `objective`
+    * `[✅]` `hydrateStageProgressLogic` creates `StageRunProgressSnapshot` with `jobs: []` and never populates it, causing `selectUnifiedProjectProgress` to permanently report `completedDocuments: 0` for stages hydrated only through this path
+    * `[✅]` Build `JobProgressDto[]` from the document entries already returned by `listStageDocuments` — each `StageRenderedDocumentChecklistEntry` contains `jobId`, `modelId`, `documentKey`, `stepKey`, and `status`, which map directly to `JobProgressDto` fields
+    * `[✅]` Set `progress.jobs` from the constructed array so the selector can derive expected `(documentKey, modelId)` pairs
+  * `[✅]` `role`
+    * `[✅]` Application-layer store action (state mutation logic)
+  * `[✅]` `module`
+    * `[✅]` Dialectic document hydration — the per-stage path that fires on tab change / stage advance
+  * `[✅]` `deps`
+    * `[✅]` `JobProgressDto` from `@paynless/types` — domain type, inward dependency ✓
+    * `[✅]` `StageRenderedDocumentChecklistEntry` (already imported/used) — domain type ✓
+    * `[✅]` No new imports required; all needed types are already in scope
+    * `[✅]` No reverse dependency introduced
+  * `[✅]` `context_slice`
+    * `[✅]` Minimal surface: the `data` array from `listStageDocuments` response (already consumed)
+    * `[✅]` No new injection shape; existing `set` callback is sufficient
+  * `[✅]` interface/`dialectic.types.ts`
+    * `[✅]` No type changes required — `JobProgressDto` and `StageRunProgressSnapshot.jobs` already exist and are correct
+  * `[✅]` unit/`dialecticStore.documents.test.ts`
+    * `[✅]` **RED test**: `hydrateStageProgressLogic` populates `jobs` array with one `JobProgressDto` per document entry returned by `listStageDocuments`
+    * `[✅]` **RED test**: each constructed `JobProgressDto` has correct `id` (from `jobId`), `status` (from doc status mapped to job status), `modelId`, `documentKey`, `stepKey`, `jobType: 'RENDER'`
+    * `[✅]` **RED test**: `jobProgress` map is populated per `stepKey` with correct `totalJobs` / `completedJobs` / `failedJobs` / `inProgressJobs` counts
+  * `[✅]` `construction`
+    * `[✅]` Construct `JobProgressDto` objects inline from each validated `StageRenderedDocumentChecklistEntry`
+    * `[✅]` Prohibited: no partial objects, no casts
+    * `[✅]` All fields of `JobProgressDto` must be explicitly set
+  * `[✅]` `dialecticStore.documents.ts`
+    * `[✅]` After the `data.forEach` loop that populates `progress.documents`, build a `JobProgressDto[]` from `data` and assign to `progress.jobs`
+    * `[✅]` Populate `progress.jobProgress` per `stepKey` using the same `ensureJobProgressEntry` pattern already used in `hydrateAllStageProgressLogic` (lines 1770-1779)
+  * `[✅]` `directionality`
+    * `[✅]` Layer: application (store)
+    * `[✅]` All dependencies inward-facing (types) ✓
+    * `[✅]` Provides outward-facing state consumed by selectors ✓
+  * `[✅]` `requirements`
+    * `[✅]` After `hydrateStageProgressLogic` completes, `stageRunProgress[progressKey].jobs` contains one `JobProgressDto` per document entry
+    * `[✅]` `selectUnifiedProjectProgress` can derive non-zero `completedDocuments` for stages hydrated through this path
+    * `[✅]` Parity with `hydrateAllStageProgressLogic`'s jobs population logic
+
+* `[✅]` [UI] `apps/web/src/components/dialectic/SubmitResponsesButton.test.tsx` **Add matching JobProgressDto entries to test progress snapshots**
+  * `[✅]` `objective`
+    * `[✅]` Test fixtures construct `stageRunProgress` snapshots with documents but no `jobs`, which is now an impossible state — the selector requires `jobs` to count completed documents
+    * `[✅]` Add `jobs: [...]` with matching `JobProgressDto` entries to every test snapshot that includes document descriptors
+  * `[✅]` `role`
+    * `[✅]` Test fixture correction — aligning test data with production invariants
+  * `[✅]` `module`
+    * `[✅]` SubmitResponsesButton component tests — button enabled/disabled gating
+  * `[✅]` `deps`
+    * `[✅]` Node 1 (`hydrateStageProgressLogic` fix) must be complete first — tests should reflect the corrected production behavior
+    * `[✅]` `JobProgressDto` from `@paynless/types` — for constructing typed job entries
+    * `[✅]` No reverse dependency introduced
+  * `[✅]` `context_slice`
+    * `[✅]` `JobProgressDto` interface for constructing test job objects
+    * `[✅]` Existing `StageRunProgressSnapshot` shape (now including populated `jobs`)
+  * `[✅]` unit/`SubmitResponsesButton.test.tsx`
+    * `[✅]` `setupVisibleButtonState` (line 206): add `jobs: [{ id: 'job-1', status: 'completed', jobType: 'RENDER', stepKey: 'step-1', modelId: 'model-1', documentKey: 'success_metrics', parentJobId: null, createdAt: <iso>, startedAt: <iso>, completedAt: <iso>, modelName: null }]` to the `progressKey` snapshot
+    * `[✅]` "button is disabled when not all documents are available" test (line 348): add `jobs: [{ id: 'job-1', status: 'in_progress', jobType: 'RENDER', stepKey: 'step-1', modelId: 'model-1', documentKey: 'doc', parentJobId: null, createdAt: <iso>, startedAt: <iso>, completedAt: null, modelName: null }]` to the `progressKey` snapshot
+    * `[✅]` "does not render when isFinalStage" test (line 292): add matching job entry for `doc:model-1` document descriptor
+    * `[✅]` Verify all other test snapshots that include document descriptors and add `jobs` if missing
+  * `[✅]` `directionality`
+    * `[✅]` Layer: UI test
+    * `[✅]` Depends on types (inward) and Node 1 completion ✓
+  * `[✅]` `requirements`
+    * `[✅]` Every test `StageRunProgressSnapshot` with non-empty `documents` also has corresponding `jobs` entries
+    * `[✅]` "button is NOT disabled when all documents are available" test passes with jobs-based counting
+    * `[✅]` "button is disabled when not all documents are available" test passes with in-progress job
+    * `[✅]` No test constructs a snapshot that is impossible in production
+  * `[✅]` **Commit** `fix(dialectic): populate jobs in hydrateStageProgressLogic and align test fixtures — fixes permanent completedDocuments=0 on per-stage hydration path`
+
+
 ## StageDAGProgressDialog does not color nodes correctly, probably relies on explicit hydration instead of dynamic hydration from notifications
 - Update StageDAGProgressDialog to use notifications to change color too 
 

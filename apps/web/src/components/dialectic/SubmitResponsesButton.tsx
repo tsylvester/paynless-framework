@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   useDialecticStore,
   selectActiveContextSessionId,
@@ -27,7 +27,6 @@ export const SubmitResponsesButton: React.FC = () => {
   const project = useDialecticStore((state) => state.currentProjectDetail);
   const session = useDialecticStore((state) => state.activeSessionDetail);
   const activeStage = useDialecticStore((state) => state.activeContextStage);
-  const processTemplate = useDialecticStore((state) => state.currentProcessTemplate);
   const sortedStages = useDialecticStore(selectSortedStages);
   const setActiveStage = useDialecticStore((state) => state.setActiveStage);
   const submitStageResponses = useDialecticStore((state) => state.submitStageResponses);
@@ -57,12 +56,14 @@ export const SubmitResponsesButton: React.FC = () => {
     };
   });
 
-  const isFinalStage = useMemo(() => {
-    if (!activeStage || !processTemplate?.transitions?.length) return true;
-    return !processTemplate.transitions.some(
-      (t) => t.source_stage_id === activeStage.id,
-    );
-  }, [activeStage, processTemplate?.transitions]);
+  const isFinalStage = useDialecticStore((state) => {
+    const slug = state.activeStageSlug;
+    const template = state.currentProcessTemplate;
+    if (!slug || !template?.transitions?.length || !template?.stages?.length) return true;
+    const stage = template.stages.find((s) => s.slug === slug);
+    if (!stage) return true;
+    return !template.transitions.some((t) => t.source_stage_id === stage.id);
+  });
 
   const allDocumentsAvailable =
     activeStageDetail != null &&
