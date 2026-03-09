@@ -452,4 +452,51 @@ Deno.test("deriveStepStatuses", async (t) => {
 		const result = deriveStepStatuses(deps, params);
 		assertEquals(result.get("step_superseded_failed_completed"), "failed");
 	});
+
+	await t.step("step with all jobs paused_user → status paused_user", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_paused_user", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_paused_user"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_user", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_paused_user"), "paused_user");
+	});
+
+	await t.step("step with paused_user and paused_nsf jobs → status paused_nsf (paused_nsf takes priority)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_mixed_paused", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_mixed_paused"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_user", execPayload("e1"), null),
+			job("j2", "EXECUTE", "paused_nsf", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_mixed_paused"), "paused_nsf");
+	});
+
+	await t.step("step with paused_user and active job (pending) → status in_progress (active takes priority)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_paused_user_active", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_paused_user_active"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_user", execPayload("e1"), null),
+			job("j2", "EXECUTE", "pending", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_paused_user_active"), "in_progress");
+	});
+
+	await t.step("step with paused_user and completed jobs → status paused_user (paused_user takes priority over completed)", () => {
+		const steps: ProgressRecipeStep[] = [step("e1", "step_paused_user_completed", "EXECUTE", "per_model")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "step_paused_user_completed"]]);
+		const jobs: DialecticJobRow[] = [
+			job("j1", "EXECUTE", "paused_user", execPayload("e1"), null),
+			job("j2", "EXECUTE", "completed", execPayload("e1"), null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("step_paused_user_completed"), "paused_user");
+	});
 });

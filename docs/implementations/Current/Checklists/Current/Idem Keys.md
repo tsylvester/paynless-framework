@@ -1402,211 +1402,211 @@ The regenerate feature currently lives inline in `StageRunChecklist.tsx`. We ext
 
 ### Phase 1: Database Infrastructure
 
-*   `[ ]`   [DB] supabase/migrations **Add `pause_active_jobs` RPC and generalize `resume_paused_nsf_jobs` to handle both `paused_user` and `paused_nsf`**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Create a new RPC `pause_active_jobs(p_session_id UUID, p_stage_slug TEXT, p_iteration_number INTEGER)` that sets all active (non-terminal, non-paused, non-waiting) jobs in the given session/stage/iteration to status `'paused_user'`, storing each job's current status in `error_details->>'original_status'` and setting `error_details->>'user_paused' = true`
-    *   `[ ]`   The RPC must verify ownership: the calling user must own the project that owns the session, matching the pattern in `resume_paused_nsf_jobs` (lines 37-46 of `20260302193405_nsf_pause_resume.sql`)
-    *   `[ ]`   The RPC must exclude jobs already in terminal or waiting states: `'completed'`, `'failed'`, `'retry_loop_failed'`, `'paused_nsf'`, `'paused_user'`, `'waiting_for_children'`, `'waiting_for_prerequisite'`, `'superseded'`
-    *   `[ ]`   The RPC must return `INTEGER` — the count of jobs paused
-    *   `[ ]`   Update the existing `resume_paused_nsf_jobs` RPC (or create a replacement `resume_paused_jobs`) to resume jobs with status `IN ('paused_nsf', 'paused_user')` instead of only `= 'paused_nsf'`. The restore logic (original_status recovery, `'processing'` mapped to `'pending'`) remains unchanged
-    *   `[ ]`   Grant `EXECUTE` on both RPCs to the `authenticated` role
-  *   `[ ]`   `role`
-    *   `[ ]`   Infrastructure — database RPC layer providing the constraint and state-transition surface that all upstream pause/resume enforcement depends on
-  *   `[ ]`   `module`
-    *   `[ ]`   Database RPCs: `pause_active_jobs`, `resume_paused_jobs` (or updated `resume_paused_nsf_jobs`) — user-driven pause/resume constraint surface
-    *   `[ ]`   Boundary: consumed by `dialectic-service` edge functions (`pauseActiveJobs` handler, `resumePausedNsfJobs` handler)
-  *   `[ ]`   `deps`
-    *   `[ ]`   `dialectic_generation_jobs` table — existing table, `status` TEXT column accepts any string value
-    *   `[ ]`   `dialectic_sessions` table — join target for ownership verification (session → project → owner)
-    *   `[ ]`   `dialectic_projects` table — join target for ownership verification
-    *   `[ ]`   Existing `resume_paused_nsf_jobs` RPC at `20260302193405_nsf_pause_resume.sql` lines 23-72 — pattern reference and target for generalization
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `supabase/migrations/YYYYMMDDHHMMSS_pause_resume_user.sql`
-    *   `[ ]`   `CREATE OR REPLACE FUNCTION public.pause_active_jobs(p_session_id UUID, p_stage_slug TEXT, p_iteration_number INTEGER) RETURNS INTEGER` — SECURITY DEFINER, plpgsql
-    *   `[ ]`   Ownership check: join `dialectic_sessions` → `dialectic_projects` to verify `auth.uid() = owner_user_id`
-    *   `[ ]`   UPDATE `dialectic_generation_jobs` SET `status = 'paused_user'`, `error_details = jsonb_build_object('original_status', status, 'user_paused', true)` WHERE session/stage/iteration match AND status NOT IN terminal/waiting/paused list
-    *   `[ ]`   `GET DIAGNOSTICS paused_count = ROW_COUNT; RETURN paused_count;`
-    *   `[ ]`   `CREATE OR REPLACE FUNCTION public.resume_paused_jobs(...)` (or `ALTER` existing `resume_paused_nsf_jobs`): change WHERE clause from `status = 'paused_nsf'` to `status IN ('paused_nsf', 'paused_user')`, strip both `nsf_paused` and `user_paused` flags from `error_details`
-    *   `[ ]`   `GRANT EXECUTE ON FUNCTION public.pause_active_jobs(UUID, TEXT, INTEGER) TO authenticated;`
-    *   `[ ]`   `GRANT EXECUTE ON FUNCTION public.resume_paused_jobs(UUID, TEXT, INTEGER) TO authenticated;` (if renamed)
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Infrastructure layer — provides RPC surface consumed by adapter/app layers
-    *   `[ ]`   All dependencies are inward-facing (schema only)
-    *   `[ ]`   All provides are outward-facing (consumed by edge functions)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Migration applies cleanly on top of existing schema including `20260302193405_nsf_pause_resume.sql`
-    *   `[ ]`   `pause_active_jobs` only pauses non-terminal, non-waiting, non-already-paused jobs
-    *   `[ ]`   `pause_active_jobs` preserves each job's current status in `error_details->>'original_status'` before overwriting status
-    *   `[ ]`   Resume RPC restores `original_status` for both `paused_nsf` and `paused_user` jobs, mapping `'processing'` → `'pending'`
-    *   `[ ]`   Ownership check prevents unauthorized users from pausing/resuming other users' jobs
-    *   `[ ]`   Existing `paused_nsf` behavior is unbroken — NSF-paused jobs are still resumable via the updated/new resume RPC
+*   `[✅]`   [DB] supabase/migrations **Add `pause_active_jobs` RPC and generalize `resume_paused_nsf_jobs` to handle both `paused_user` and `paused_nsf`**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Create a new RPC `pause_active_jobs(p_session_id UUID, p_stage_slug TEXT, p_iteration_number INTEGER)` that sets all active (non-terminal, non-paused, non-waiting) jobs in the given session/stage/iteration to status `'paused_user'`, storing each job's current status in `error_details->>'original_status'` and setting `error_details->>'user_paused' = true`
+    *   `[✅]`   The RPC must verify ownership: the calling user must own the project that owns the session, matching the pattern in `resume_paused_nsf_jobs` (lines 37-46 of `20260302193405_nsf_pause_resume.sql`)
+    *   `[✅]`   The RPC must exclude jobs already in terminal or waiting states: `'completed'`, `'failed'`, `'retry_loop_failed'`, `'paused_nsf'`, `'paused_user'`, `'waiting_for_children'`, `'waiting_for_prerequisite'`, `'superseded'`
+    *   `[✅]`   The RPC must return `INTEGER` — the count of jobs paused
+    *   `[✅]`   Update the existing `resume_paused_nsf_jobs` RPC (or create a replacement `resume_paused_jobs`) to resume jobs with status `IN ('paused_nsf', 'paused_user')` instead of only `= 'paused_nsf'`. The restore logic (original_status recovery, `'processing'` mapped to `'pending'`) remains unchanged
+    *   `[✅]`   Grant `EXECUTE` on both RPCs to the `authenticated` role
+  *   `[✅]`   `role`
+    *   `[✅]`   Infrastructure — database RPC layer providing the constraint and state-transition surface that all upstream pause/resume enforcement depends on
+  *   `[✅]`   `module`
+    *   `[✅]`   Database RPCs: `pause_active_jobs`, `resume_paused_jobs` (or updated `resume_paused_nsf_jobs`) — user-driven pause/resume constraint surface
+    *   `[✅]`   Boundary: consumed by `dialectic-service` edge functions (`pauseActiveJobs` handler, `resumePausedNsfJobs` handler)
+  *   `[✅]`   `deps`
+    *   `[✅]`   `dialectic_generation_jobs` table — existing table, `status` TEXT column accepts any string value
+    *   `[✅]`   `dialectic_sessions` table — join target for ownership verification (session → project → owner)
+    *   `[✅]`   `dialectic_projects` table — join target for ownership verification
+    *   `[✅]`   Existing `resume_paused_nsf_jobs` RPC at `20260302193405_nsf_pause_resume.sql` lines 23-72 — pattern reference and target for generalization
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `supabase/migrations/YYYYMMDDHHMMSS_pause_resume_user.sql`
+    *   `[✅]`   `CREATE OR REPLACE FUNCTION public.pause_active_jobs(p_session_id UUID, p_stage_slug TEXT, p_iteration_number INTEGER) RETURNS INTEGER` — SECURITY DEFINER, plpgsql
+    *   `[✅]`   Ownership check: join `dialectic_sessions` → `dialectic_projects` to verify `auth.uid() = owner_user_id`
+    *   `[✅]`   UPDATE `dialectic_generation_jobs` SET `status = 'paused_user'`, `error_details = jsonb_build_object('original_status', status, 'user_paused', true)` WHERE session/stage/iteration match AND status NOT IN terminal/waiting/paused list
+    *   `[✅]`   `GET DIAGNOSTICS paused_count = ROW_COUNT; RETURN paused_count;`
+    *   `[✅]`   `CREATE OR REPLACE FUNCTION public.resume_paused_jobs(...)` (or `ALTER` existing `resume_paused_nsf_jobs`): change WHERE clause from `status = 'paused_nsf'` to `status IN ('paused_nsf', 'paused_user')`, strip both `nsf_paused` and `user_paused` flags from `error_details`
+    *   `[✅]`   `GRANT EXECUTE ON FUNCTION public.pause_active_jobs(UUID, TEXT, INTEGER) TO authenticated;`
+    *   `[✅]`   `GRANT EXECUTE ON FUNCTION public.resume_paused_jobs(UUID, TEXT, INTEGER) TO authenticated;` (if renamed)
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Infrastructure layer — provides RPC surface consumed by adapter/app layers
+    *   `[✅]`   All dependencies are inward-facing (schema only)
+    *   `[✅]`   All provides are outward-facing (consumed by edge functions)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Migration applies cleanly on top of existing schema including `20260302193405_nsf_pause_resume.sql`
+    *   `[✅]`   `pause_active_jobs` only pauses non-terminal, non-waiting, non-already-paused jobs
+    *   `[✅]`   `pause_active_jobs` preserves each job's current status in `error_details->>'original_status'` before overwriting status
+    *   `[✅]`   Resume RPC restores `original_status` for both `paused_nsf` and `paused_user` jobs, mapping `'processing'` → `'pending'`
+    *   `[✅]`   Ownership check prevents unauthorized users from pausing/resuming other users' jobs
+    *   `[✅]`   Existing `paused_nsf` behavior is unbroken — NSF-paused jobs are still resumable via the updated/new resume RPC
 
 ### Phase 2: Backend Service Types & Status Derivation
 
-*   `[ ]`   [BE] supabase/functions/dialectic-service/`deriveStepStatuses.ts` **Add `paused_user` status recognition to step and stage status derivation**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Update `deriveStepStatuses.ts` to recognize `'paused_user'` as a paused status alongside `'paused_nsf'`
-    *   `[ ]`   Update the `UnifiedStageStatus` type in `dialectic.interface.ts` to include `'paused_user'` as a valid value
-    *   `[ ]`   Ensure stage-level status rollup treats `paused_user` with same priority as `paused_nsf` (Active > Paused > Failed > Completed)
-  *   `[ ]`   `role`
-    *   `[ ]`   Domain — status derivation logic that transforms raw job statuses into unified step/stage statuses for the frontend
-  *   `[ ]`   `module`
-    *   `[ ]`   `dialectic-service/deriveStepStatuses` — step status derivation from job statuses
-    *   `[ ]`   Boundary: receives raw job rows, produces `Map<string, UnifiedStageStatus>` consumed by `hydrateStageProgress` and frontend selectors
-  *   `[ ]`   `deps`
-    *   `[ ]`   `dialectic.interface.ts` `UnifiedStageStatus` type (lines 736-741) — domain type, inward. Requires addition of `'paused_user'` variant
-    *   `[ ]`   `dialectic_generation_jobs` row shape — infrastructure, inward (unchanged)
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Raw job rows with `status` field
-    *   `[ ]`   No injection shape change — pure function operating on data
-  *   `[ ]`   interface/`dialectic.interface.ts`
-    *   `[ ]`   Add `| "paused_user"` to `UnifiedStageStatus` type union (currently at lines 736-741)
-  *   `[ ]`   unit/`deriveStepStatuses.test.ts`
-    *   `[ ]`   Test: jobs with status `'paused_user'` derive step status `'paused_user'`
-    *   `[ ]`   Test: mixed `'paused_user'` and `'paused_nsf'` jobs in same step — `'paused_nsf'` takes priority (more restrictive)
-    *   `[ ]`   Test: `'paused_user'` job alongside active job — active takes priority (already in-progress)
-    *   `[ ]`   Test: `'paused_user'` job alongside completed job — `'paused_user'` takes priority (not all done)
-    *   `[ ]`   Test: existing `'paused_nsf'` tests continue to pass unchanged
-  *   `[ ]`   `deriveStepStatuses.ts`
-    *   `[ ]`   Rename `PAUSED_NSF_STATUSES` set to `PAUSED_STATUSES` (or expand it): add `'paused_user'` alongside `'paused_nsf'` (line 19)
-    *   `[ ]`   Update the `stepKeyToHasPausedNsf` map to track both paused types, or add a parallel `stepKeyToHasPausedUser` map
-    *   `[ ]`   In the derivation logic (lines 87-99): if both `paused_nsf` and `paused_user` exist for a step, prefer `'paused_nsf'` (more restrictive — requires balance). If only `paused_user`, derive `'paused_user'`
-    *   `[ ]`   Priority order: Active > Paused NSF > Paused User > Failed > Completed
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Domain layer — derives status from infrastructure data, provides to app/adapter layers
-    *   `[ ]`   All dependencies are inward-facing
-    *   `[ ]`   All provides are outward-facing (consumed by hydrateStageProgress, frontend selectors)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `paused_user` jobs produce `'paused_user'` step status
-    *   `[ ]`   `paused_nsf` takes priority over `paused_user` when both exist in the same step
-    *   `[ ]`   All existing `paused_nsf` derivation behavior is preserved
-    *   `[ ]`   `UnifiedStageStatus` type includes `'paused_user'`
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`deriveStepStatuses.ts` **Add `paused_user` status recognition to step and stage status derivation**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Update `deriveStepStatuses.ts` to recognize `'paused_user'` as a paused status alongside `'paused_nsf'`
+    *   `[✅]`   Update the `UnifiedStageStatus` type in `dialectic.interface.ts` to include `'paused_user'` as a valid value
+    *   `[✅]`   Ensure stage-level status rollup treats `paused_user` with same priority as `paused_nsf` (Active > Paused > Failed > Completed)
+  *   `[✅]`   `role`
+    *   `[✅]`   Domain — status derivation logic that transforms raw job statuses into unified step/stage statuses for the frontend
+  *   `[✅]`   `module`
+    *   `[✅]`   `dialectic-service/deriveStepStatuses` — step status derivation from job statuses
+    *   `[✅]`   Boundary: receives raw job rows, produces `Map<string, UnifiedStageStatus>` consumed by `hydrateStageProgress` and frontend selectors
+  *   `[✅]`   `deps`
+    *   `[✅]`   `dialectic.interface.ts` `UnifiedStageStatus` type (lines 736-741) — domain type, inward. Requires addition of `'paused_user'` variant
+    *   `[✅]`   `dialectic_generation_jobs` row shape — infrastructure, inward (unchanged)
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Raw job rows with `status` field
+    *   `[✅]`   No injection shape change — pure function operating on data
+  *   `[✅]`   interface/`dialectic.interface.ts`
+    *   `[✅]`   Add `| "paused_user"` to `UnifiedStageStatus` type union (currently at lines 736-741)
+  *   `[✅]`   unit/`deriveStepStatuses.test.ts`
+    *   `[✅]`   Test: jobs with status `'paused_user'` derive step status `'paused_user'`
+    *   `[✅]`   Test: mixed `'paused_user'` and `'paused_nsf'` jobs in same step — `'paused_nsf'` takes priority (more restrictive)
+    *   `[✅]`   Test: `'paused_user'` job alongside active job — active takes priority (already in-progress)
+    *   `[✅]`   Test: `'paused_user'` job alongside completed job — `'paused_user'` takes priority (not all done)
+    *   `[✅]`   Test: existing `'paused_nsf'` tests continue to pass unchanged
+  *   `[✅]`   `deriveStepStatuses.ts`
+    *   `[✅]`   Rename `PAUSED_NSF_STATUSES` set to `PAUSED_STATUSES` (or expand it): add `'paused_user'` alongside `'paused_nsf'` (line 19)
+    *   `[✅]`   Update the `stepKeyToHasPausedNsf` map to track both paused types, or add a parallel `stepKeyToHasPausedUser` map
+    *   `[✅]`   In the derivation logic (lines 87-99): if both `paused_nsf` and `paused_user` exist for a step, prefer `'paused_nsf'` (more restrictive — requires balance). If only `paused_user`, derive `'paused_user'`
+    *   `[✅]`   Priority order: Active > Paused NSF > Paused User > Failed > Completed
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Domain layer — derives status from infrastructure data, provides to app/adapter layers
+    *   `[✅]`   All dependencies are inward-facing
+    *   `[✅]`   All provides are outward-facing (consumed by hydrateStageProgress, frontend selectors)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `paused_user` jobs produce `'paused_user'` step status
+    *   `[✅]`   `paused_nsf` takes priority over `paused_user` when both exist in the same step
+    *   `[✅]`   All existing `paused_nsf` derivation behavior is preserved
+    *   `[✅]`   `UnifiedStageStatus` type includes `'paused_user'`
 
 ### Phase 3: Backend Service Handlers
 
-*   `[ ]`   [BE] supabase/functions/dialectic-service/`pauseActiveJobs.ts` **New service handler for user-initiated pause**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Create a new edge function handler `handlePauseActiveJobs` that accepts a payload with `sessionId`, `stageSlug`, and `iterationNumber`, authenticates the user, calls the `pause_active_jobs` RPC, and returns the count of paused jobs
-    *   `[ ]`   Follow the exact pattern of `resumePausedNsfJobs.ts` (lines 10-61) for structure, error handling, and response shape
-  *   `[ ]`   `role`
-    *   `[ ]`   Adapter — edge function handler bridging the API action to the database RPC
-  *   `[ ]`   `module`
-    *   `[ ]`   `dialectic-service/pauseActiveJobs` — user-initiated job pause handler
-    *   `[ ]`   Boundary: receives typed payload from `index.ts` router, calls `pause_active_jobs` RPC via Supabase client, returns result
-  *   `[ ]`   `deps`
-    *   `[ ]`   `pause_active_jobs` RPC — infrastructure layer, inward (created in Phase 1 migration)
-    *   `[ ]`   `SupabaseClient` — infrastructure, inward (injected)
-    *   `[ ]`   `User` from `@supabase/supabase-js` — for authentication check
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `PauseActiveJobsPayload` containing `sessionId`, `stageSlug`, `iterationNumber`
-    *   `[ ]`   `SupabaseClient` for RPC calls
-    *   `[ ]`   `User | null` for authentication
-  *   `[ ]`   interface/`dialectic.interface.ts`
-    *   `[ ]`   Add `PauseActiveJobsPayload` interface: `{ sessionId: string; stageSlug: string; iterationNumber: number; }`
-    *   `[ ]`   Add `PauseActiveJobsResponse` interface: `{ pausedCount: number; }`
-    *   `[ ]`   Add `PauseActiveJobsResult` interface: `{ data?: PauseActiveJobsResponse; error?: ServiceError; status?: number; }` — matching `ResumePausedNsfJobsResult` pattern (lines 529-533)
-  *   `[ ]`   unit/`pauseActiveJobs.test.ts`
-    *   `[ ]`   Test: returns 401 when `user` is null
-    *   `[ ]`   Test: calls `pause_active_jobs` RPC with correct parameters (`p_session_id`, `p_stage_slug`, `p_iteration_number`)
-    *   `[ ]`   Test: returns `{ data: { pausedCount: N } }` on successful RPC call
-    *   `[ ]`   Test: returns 500 with error when RPC call fails
-    *   `[ ]`   Test: returns 500 when RPC returns non-number result
-  *   `[ ]`   `construction`
-    *   `[ ]`   Pure function — no constructor. Called directly by `index.ts` router with `(payload, adminClient, user)`
-    *   `[ ]`   Prohibited: do not instantiate from outside `dialectic-service`
-  *   `[ ]`   `pauseActiveJobs.ts`
-    *   `[ ]`   Export `async function handlePauseActiveJobs(payload: PauseActiveJobsPayload, adminClient: SupabaseClient, user: User | null): Promise<PauseActiveJobsResult>`
-    *   `[ ]`   Authenticate: if `!user`, return `{ error: { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' }, status: 401 }`
-    *   `[ ]`   Call `adminClient.rpc('pause_active_jobs', { p_session_id: payload.sessionId, p_stage_slug: payload.stageSlug, p_iteration_number: payload.iterationNumber })`
-    *   `[ ]`   Handle RPC error: log and return `{ error: { message, status: 500, code: 'PAUSE_ACTIVE_JOBS_FAILED' }, status: 500 }`
-    *   `[ ]`   Validate response is a number, return `{ data: { pausedCount: result }, status: 200 }`
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Adapter layer — bridges API routing to infrastructure RPC
-    *   `[ ]`   All dependencies are inward-facing (RPC, Supabase client)
-    *   `[ ]`   All provides are outward-facing (consumed by `index.ts` router)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Unauthenticated requests are rejected with 401
-    *   `[ ]`   RPC is called with the exact parameter names the migration defines
-    *   `[ ]`   Error responses follow the `ServiceError` shape used by `resumePausedNsfJobs.ts`
-    *   `[ ]`   Successful response returns `pausedCount` as a number
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`pauseActiveJobs.ts` **New service handler for user-initiated pause**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Create a new edge function handler `handlePauseActiveJobs` that accepts a payload with `sessionId`, `stageSlug`, and `iterationNumber`, authenticates the user, calls the `pause_active_jobs` RPC, and returns the count of paused jobs
+    *   `[✅]`   Follow the exact pattern of `resumePausedNsfJobs.ts` (lines 10-61) for structure, error handling, and response shape
+  *   `[✅]`   `role`
+    *   `[✅]`   Adapter — edge function handler bridging the API action to the database RPC
+  *   `[✅]`   `module`
+    *   `[✅]`   `dialectic-service/pauseActiveJobs` — user-initiated job pause handler
+    *   `[✅]`   Boundary: receives typed payload from `index.ts` router, calls `pause_active_jobs` RPC via Supabase client, returns result
+  *   `[✅]`   `deps`
+    *   `[✅]`   `pause_active_jobs` RPC — infrastructure layer, inward (created in Phase 1 migration)
+    *   `[✅]`   `SupabaseClient` — infrastructure, inward (injected)
+    *   `[✅]`   `User` from `@supabase/supabase-js` — for authentication check
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `PauseActiveJobsPayload` containing `sessionId`, `stageSlug`, `iterationNumber`
+    *   `[✅]`   `SupabaseClient` for RPC calls
+    *   `[✅]`   `User | null` for authentication
+  *   `[✅]`   interface/`dialectic.interface.ts`
+    *   `[✅]`   Add `PauseActiveJobsPayload` interface: `{ sessionId: string; stageSlug: string; iterationNumber: number; }`
+    *   `[✅]`   Add `PauseActiveJobsResponse` interface: `{ pausedCount: number; }`
+    *   `[✅]`   Add `PauseActiveJobsResult` interface: `{ data?: PauseActiveJobsResponse; error?: ServiceError; status?: number; }` — matching `ResumePausedNsfJobsResult` pattern (lines 529-533)
+  *   `[✅]`   unit/`pauseActiveJobs.test.ts`
+    *   `[✅]`   Test: returns 401 when `user` is null
+    *   `[✅]`   Test: calls `pause_active_jobs` RPC with correct parameters (`p_session_id`, `p_stage_slug`, `p_iteration_number`)
+    *   `[✅]`   Test: returns `{ data: { pausedCount: N } }` on successful RPC call
+    *   `[✅]`   Test: returns 500 with error when RPC call fails
+    *   `[✅]`   Test: returns 500 when RPC returns non-number result
+  *   `[✅]`   `construction`
+    *   `[✅]`   Pure function — no constructor. Called directly by `index.ts` router with `(payload, adminClient, user)`
+    *   `[✅]`   Prohibited: do not instantiate from outside `dialectic-service`
+  *   `[✅]`   `pauseActiveJobs.ts`
+    *   `[✅]`   Export `async function handlePauseActiveJobs(payload: PauseActiveJobsPayload, adminClient: SupabaseClient, user: User | null): Promise<PauseActiveJobsResult>`
+    *   `[✅]`   Authenticate: if `!user`, return `{ error: { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' }, status: 401 }`
+    *   `[✅]`   Call `adminClient.rpc('pause_active_jobs', { p_session_id: payload.sessionId, p_stage_slug: payload.stageSlug, p_iteration_number: payload.iterationNumber })`
+    *   `[✅]`   Handle RPC error: log and return `{ error: { message, status: 500, code: 'PAUSE_ACTIVE_JOBS_FAILED' }, status: 500 }`
+    *   `[✅]`   Validate response is a number, return `{ data: { pausedCount: result }, status: 200 }`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Adapter layer — bridges API routing to infrastructure RPC
+    *   `[✅]`   All dependencies are inward-facing (RPC, Supabase client)
+    *   `[✅]`   All provides are outward-facing (consumed by `index.ts` router)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Unauthenticated requests are rejected with 401
+    *   `[✅]`   RPC is called with the exact parameter names the migration defines
+    *   `[✅]`   Error responses follow the `ServiceError` shape used by `resumePausedNsfJobs.ts`
+    *   `[✅]`   Successful response returns `pausedCount` as a number
 
-*   `[ ]`   [BE] supabase/functions/dialectic-service/`resumePausedNsfJobs.ts` **Generalize resume handler to support both `paused_user` and `paused_nsf`, and refresh JWT on resumed jobs**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Update `handleResumePausedNsfJobs` to call the updated/renamed resume RPC that handles both `paused_nsf` and `paused_user` jobs
-    *   `[ ]`   If the migration renames the RPC to `resume_paused_jobs`, update the RPC call name in this handler
-    *   `[ ]`   Accept `authToken: string` as a new parameter (passed from `index.ts` which extracts it from the `Authorization` header at line 219-222)
-    *   `[ ]`   After the RPC restores job statuses, perform a second UPDATE on all just-resumed jobs to set `payload = jsonb_set(payload, '{user_jwt}', to_jsonb(authToken))` so the worker receives a fresh JWT. Without this, resumed jobs carry a stale JWT from when they were originally created, which may have expired during the pause. This is the same pattern `regenerateDocument.ts` uses at line 214: `Object.assign({}, job.payload, { user_jwt: params.authToken })`
-    *   `[ ]`   The JWT update targets jobs matching `session_id/stage_slug/iteration_number` whose status is now one of the restored statuses (`'pending'`, `'retrying'`, or the original status) — i.e., jobs that were just resumed by the RPC in the same call
-  *   `[ ]`   `role`
-    *   `[ ]`   Adapter — edge function handler for job resumption
-  *   `[ ]`   `module`
-    *   `[ ]`   `dialectic-service/resumePausedNsfJobs` — job resumption handler
-    *   `[ ]`   Boundary: receives payload + authToken from `index.ts` router, calls resume RPC, updates JWT, returns count
-  *   `[ ]`   `deps`
-    *   `[ ]`   Updated `resume_paused_jobs` RPC (or `resume_paused_nsf_jobs` with expanded WHERE) — infrastructure, inward
-    *   `[ ]`   `SupabaseClient`, `User` — infrastructure, inward
-    *   `[ ]`   `authToken` — extracted from request `Authorization` header by `index.ts` (line 219-222), passed as parameter
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `ResumePausedNsfJobsPayload` — unchanged interface
-    *   `[ ]`   `SupabaseClient` for RPC calls and post-RPC UPDATE
-    *   `[ ]`   `User | null` for authentication
-    *   `[ ]`   `authToken: string` for refreshing `payload->>'user_jwt'` on resumed jobs
-  *   `[ ]`   unit/`resumePausedNsfJobs.test.ts`
-    *   `[ ]`   Test: existing tests continue to pass (RPC name may change to `resume_paused_jobs`; signature adds `authToken` param)
-    *   `[ ]`   Test: if RPC was renamed, the handler calls the new RPC name
-    *   `[ ]`   Test: after RPC succeeds, handler updates `payload->>'user_jwt'` on resumed jobs in the same session/stage/iteration using `adminClient.from('dialectic_generation_jobs').update(...)` with `jsonb_set`
-    *   `[ ]`   Test: if JWT update fails, handler logs warning but still returns success (the resume itself succeeded; stale JWT is a degraded state, not a hard failure)
-    *   `[ ]`   Test: returns 401 when `authToken` is missing/empty
-  *   `[ ]`   `resumePausedNsfJobs.ts`
-    *   `[ ]`   Update function signature: `handleResumePausedNsfJobs(payload, adminClient, user, authToken: string)` — add `authToken` as 4th parameter
-    *   `[ ]`   Add auth token validation: if `!authToken`, return 401 with `code: 'AUTH_TOKEN_MISSING'`
-    *   `[ ]`   If RPC was renamed in migration: update `.rpc('resume_paused_nsf_jobs', ...)` to `.rpc('resume_paused_jobs', ...)` (line 24-28)
-    *   `[ ]`   After successful RPC call (after line 57), add JWT refresh: update all jobs matching `session_id = payload.sessionId AND stage_slug = payload.stageSlug AND iteration_number = payload.iterationNumber AND status IN ('pending', 'retrying')` to set `payload = payload || jsonb_build_object('user_jwt', authToken)` via `adminClient.rpc` or raw SQL. Use `adminClient.from('dialectic_generation_jobs').update(...)` if Supabase client supports JSONB set, otherwise use `.rpc()` with a small helper or inline SQL
-    *   `[ ]`   Log warning if JWT update fails but do not fail the overall response
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Adapter layer — bridges API routing to infrastructure RPC
-    *   `[ ]`   All dependencies are inward-facing
-    *   `[ ]`   All provides are outward-facing
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Resume handler works for both `paused_nsf` and `paused_user` jobs
-    *   `[ ]`   Existing resume behavior for `paused_nsf` is preserved
-    *   `[ ]`   All resumed jobs receive a fresh `user_jwt` in their payload so the worker can authenticate downstream calls
-    *   `[ ]`   Missing `authToken` is rejected with 401
-    *   `[ ]`   JWT refresh failure is logged but does not block the resume response
-    *   `[ ]`   All existing tests pass or are updated to reflect RPC name change and new `authToken` param
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`resumePausedNsfJobs.ts` **Generalize resume handler to support both `paused_user` and `paused_nsf`, and refresh JWT on resumed jobs**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Update `handleResumePausedNsfJobs` to call the updated/renamed resume RPC that handles both `paused_nsf` and `paused_user` jobs
+    *   `[✅]`   If the migration renames the RPC to `resume_paused_jobs`, update the RPC call name in this handler
+    *   `[✅]`   Accept `authToken: string` as a new parameter (passed from `index.ts` which extracts it from the `Authorization` header at line 219-222)
+    *   `[✅]`   After the RPC restores job statuses, perform a second UPDATE on all just-resumed jobs to set `payload = jsonb_set(payload, '{user_jwt}', to_jsonb(authToken))` so the worker receives a fresh JWT. Without this, resumed jobs carry a stale JWT from when they were originally created, which may have expired during the pause. This is the same pattern `regenerateDocument.ts` uses at line 214: `Object.assign({}, job.payload, { user_jwt: params.authToken })`
+    *   `[✅]`   The JWT update targets jobs matching `session_id/stage_slug/iteration_number` whose status is now one of the restored statuses (`'pending'`, `'retrying'`, or the original status) — i.e., jobs that were just resumed by the RPC in the same call
+  *   `[✅]`   `role`
+    *   `[✅]`   Adapter — edge function handler for job resumption
+  *   `[✅]`   `module`
+    *   `[✅]`   `dialectic-service/resumePausedNsfJobs` — job resumption handler
+    *   `[✅]`   Boundary: receives payload + authToken from `index.ts` router, calls resume RPC, updates JWT, returns count
+  *   `[✅]`   `deps`
+    *   `[✅]`   Updated `resume_paused_jobs` RPC (or `resume_paused_nsf_jobs` with expanded WHERE) — infrastructure, inward
+    *   `[✅]`   `SupabaseClient`, `User` — infrastructure, inward
+    *   `[✅]`   `authToken` — extracted from request `Authorization` header by `index.ts` (line 219-222), passed as parameter
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `ResumePausedNsfJobsPayload` — unchanged interface
+    *   `[✅]`   `SupabaseClient` for RPC calls and post-RPC UPDATE
+    *   `[✅]`   `User | null` for authentication
+    *   `[✅]`   `authToken: string` for refreshing `payload->>'user_jwt'` on resumed jobs
+  *   `[✅]`   unit/`resumePausedNsfJobs.test.ts`
+    *   `[✅]`   Test: existing tests continue to pass (RPC name may change to `resume_paused_jobs`; signature adds `authToken` param)
+    *   `[✅]`   Test: if RPC was renamed, the handler calls the new RPC name
+    *   `[✅]`   Test: after RPC succeeds, handler updates `payload->>'user_jwt'` on resumed jobs in the same session/stage/iteration using `adminClient.from('dialectic_generation_jobs').update(...)` with `jsonb_set`
+    *   `[✅]`   Test: if JWT update fails, handler logs warning but still returns success (the resume itself succeeded; stale JWT is a degraded state, not a hard failure)
+    *   `[✅]`   Test: returns 401 when `authToken` is missing/empty
+  *   `[✅]`   `resumePausedNsfJobs.ts`
+    *   `[✅]`   Update function signature: `handleResumePausedNsfJobs(payload, adminClient, user, authToken: string)` — add `authToken` as 4th parameter
+    *   `[✅]`   Add auth token validation: if `!authToken`, return 401 with `code: 'AUTH_TOKEN_MISSING'`
+    *   `[✅]`   If RPC was renamed in migration: update `.rpc('resume_paused_nsf_jobs', ...)` to `.rpc('resume_paused_jobs', ...)` (line 24-28)
+    *   `[✅]`   After successful RPC call (after line 57), add JWT refresh: update all jobs matching `session_id = payload.sessionId AND stage_slug = payload.stageSlug AND iteration_number = payload.iterationNumber AND status IN ('pending', 'retrying')` to set `payload = payload || jsonb_build_object('user_jwt', authToken)` via `adminClient.rpc` or raw SQL. Use `adminClient.from('dialectic_generation_jobs').update(...)` if Supabase client supports JSONB set, otherwise use `.rpc()` with a small helper or inline SQL
+    *   `[✅]`   Log warning if JWT update fails but do not fail the overall response
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Adapter layer — bridges API routing to infrastructure RPC
+    *   `[✅]`   All dependencies are inward-facing
+    *   `[✅]`   All provides are outward-facing
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Resume handler works for both `paused_nsf` and `paused_user` jobs
+    *   `[✅]`   Existing resume behavior for `paused_nsf` is preserved
+    *   `[✅]`   All resumed jobs receive a fresh `user_jwt` in their payload so the worker can authenticate downstream calls
+    *   `[✅]`   Missing `authToken` is rejected with 401
+    *   `[✅]`   JWT refresh failure is logged but does not block the resume response
+    *   `[✅]`   All existing tests pass or are updated to reflect RPC name change and new `authToken` param
 
-*   `[ ]`   [BE] supabase/functions/dialectic-service/`index.ts` **Add `pauseActiveJobs` action route to the dialectic-service dispatcher**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Add a new `case "pauseActiveJobs"` to the action switch in `index.ts` that routes to `handlePauseActiveJobs`
-    *   `[ ]`   Follow the exact pattern of the existing `case "resumePausedNsfJobs"` block (lines 625-635)
-    *   `[ ]`   Add the import for `handlePauseActiveJobs` from `./pauseActiveJobs.ts`
-    *   `[ ]`   If the resume RPC was renamed, update the `resumePausedNsfJobs` case to call updated handler if needed
-  *   `[ ]`   `role`
-    *   `[ ]`   Adapter — API router dispatching actions to handlers
-  *   `[ ]`   `module`
-    *   `[ ]`   `dialectic-service/index` — action dispatcher
-    *   `[ ]`   Boundary: receives JSON body with `action` field, dispatches to typed handlers
-  *   `[ ]`   `deps`
-    *   `[ ]`   `handlePauseActiveJobs` from `./pauseActiveJobs.ts` — adapter, inward (created in prior node)
-    *   `[ ]`   `PauseActiveJobsPayload` from `./dialectic.interface.ts` — domain type, inward
-    *   `[ ]`   Existing `handleResumePausedNsfJobs` import (line 88) — unchanged or updated
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `requestBody.action` — string discriminator
-    *   `[ ]`   `requestBody.payload` — typed as `PauseActiveJobsPayload`
-    *   `[ ]`   `adminClient`, `userForJson` — injected context
-    *   `[ ]`   `authToken` — already extracted from `Authorization` header at line 219-222, available in `handleRequest` scope
-  *   `[ ]`   unit/`index.test.ts` (if exists, otherwise note exemption)
-    *   `[ ]`   Test: action `"pauseActiveJobs"` routes to `handlePauseActiveJobs` with correct arguments
-    *   `[ ]`   Test: action `"pauseActiveJobs"` returns 401 when user is not authenticated
-    *   `[ ]`   Test: action `"resumePausedNsfJobs"` now passes `authToken` as 4th argument to handler
-    *   `[ ]`   Test: action `"resumePausedNsfJobs"` returns 401 when `authToken` is missing
-  *   `[ ]`   `index.ts`
-    *   `[ ]`   Add `import { handlePauseActiveJobs } from './pauseActiveJobs.ts';` near line 88
-    *   `[ ]`   Add new case block after the `resumePausedNsfJobs` case (after line 635):
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`index.ts` **Add `pauseActiveJobs` action route to the dialectic-service dispatcher**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add a new `case "pauseActiveJobs"` to the action switch in `index.ts` that routes to `handlePauseActiveJobs`
+    *   `[✅]`   Follow the exact pattern of the existing `case "resumePausedNsfJobs"` block (lines 625-635)
+    *   `[✅]`   Add the import for `handlePauseActiveJobs` from `./pauseActiveJobs.ts`
+    *   `[✅]`   If the resume RPC was renamed, update the `resumePausedNsfJobs` case to call updated handler if needed
+  *   `[✅]`   `role`
+    *   `[✅]`   Adapter — API router dispatching actions to handlers
+  *   `[✅]`   `module`
+    *   `[✅]`   `dialectic-service/index` — action dispatcher
+    *   `[✅]`   Boundary: receives JSON body with `action` field, dispatches to typed handlers
+  *   `[✅]`   `deps`
+    *   `[✅]`   `handlePauseActiveJobs` from `./pauseActiveJobs.ts` — adapter, inward (created in prior node)
+    *   `[✅]`   `PauseActiveJobsPayload` from `./dialectic.interface.ts` — domain type, inward
+    *   `[✅]`   Existing `handleResumePausedNsfJobs` import (line 88) — unchanged or updated
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `requestBody.action` — string discriminator
+    *   `[✅]`   `requestBody.payload` — typed as `PauseActiveJobsPayload`
+    *   `[✅]`   `adminClient`, `userForJson` — injected context
+    *   `[✅]`   `authToken` — already extracted from `Authorization` header at line 219-222, available in `handleRequest` scope
+  *   `[✅]`   unit/`index.test.ts` (if exists, otherwise note exemption)
+    *   `[✅]`   Test: action `"pauseActiveJobs"` routes to `handlePauseActiveJobs` with correct arguments
+    *   `[✅]`   Test: action `"pauseActiveJobs"` returns 401 when user is not authenticated
+    *   `[✅]`   Test: action `"resumePausedNsfJobs"` now passes `authToken` as 4th argument to handler
+    *   `[✅]`   Test: action `"resumePausedNsfJobs"` returns 401 when `authToken` is missing
+  *   `[✅]`   `index.ts`
+    *   `[✅]`   Add `import { handlePauseActiveJobs } from './pauseActiveJobs.ts';` near line 88
+    *   `[✅]`   Add new case block after the `resumePausedNsfJobs` case (after line 635):
         ```
         case "pauseActiveJobs": {
           if (!userForJson) {
@@ -1620,7 +1620,7 @@ The regenerate feature currently lives inline in `StageRunChecklist.tsx`. We ext
           return createSuccessResponse(result.data, result.status, req);
         }
         ```
-    *   `[ ]`   Update existing `case "resumePausedNsfJobs"` (lines 625-635) to pass `authToken` as 4th argument to the handler, matching the updated signature. Add an `authToken` guard: if `!authToken`, return 401 with `code: 'AUTH_TOKEN_MISSING'` (same pattern as `regenerateDocument` at lines 641-643). Updated case:
+    *   `[✅]`   Update existing `case "resumePausedNsfJobs"` (lines 625-635) to pass `authToken` as 4th argument to the handler, matching the updated signature. Add an `authToken` guard: if `!authToken`, return 401 with `code: 'AUTH_TOKEN_MISSING'` (same pattern as `regenerateDocument` at lines 641-643). Updated case:
         ```
         case "resumePausedNsfJobs": {
           if (!userForJson) {
@@ -1634,23 +1634,23 @@ The regenerate feature currently lives inline in `StageRunChecklist.tsx`. We ext
           ...
         }
         ```
-    *   `[ ]`   Add `pauseActiveJobs: handlePauseActiveJobs` to the `handlers` object if one exists, or wire directly in the case
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Adapter layer — routes external API calls to internal handlers
-    *   `[ ]`   All dependencies are inward-facing (handlers, types)
-    *   `[ ]`   All provides are outward-facing (HTTP responses)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `pauseActiveJobs` action is routable and authenticated
-    *   `[ ]`   `resumePausedNsfJobs` action now passes `authToken` to the handler for JWT refresh on resumed jobs
-    *   `[ ]`   `resumePausedNsfJobs` rejects requests with missing `authToken` (401)
-    *   `[ ]`   Response shape matches existing action patterns (success/error)
-    *   `[ ]`   Existing `resumePausedNsfJobs` routing is unbroken aside from the new `authToken` parameter
-  *   `[ ]`   **Commit** `feat(dialectic-service): add user-initiated pause/resume — new pauseActiveJobs handler, generalized resume RPC, JWT refresh on resume, paused_user status derivation`
-    *   `[ ]`   Migration: `pause_active_jobs` RPC, generalized resume RPC
-    *   `[ ]`   `deriveStepStatuses.ts`: `paused_user` recognition in status derivation
-    *   `[ ]`   `pauseActiveJobs.ts`: new service handler
-    *   `[ ]`   `resumePausedNsfJobs.ts`: accepts `authToken`, refreshes `payload->>'user_jwt'` on resumed jobs, updated RPC call if renamed
-    *   `[ ]`   `index.ts`: new `pauseActiveJobs` action route, updated `resumePausedNsfJobs` route to pass `authToken`
+    *   `[✅]`   Add `pauseActiveJobs: handlePauseActiveJobs` to the `handlers` object if one exists, or wire directly in the case
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Adapter layer — routes external API calls to internal handlers
+    *   `[✅]`   All dependencies are inward-facing (handlers, types)
+    *   `[✅]`   All provides are outward-facing (HTTP responses)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `pauseActiveJobs` action is routable and authenticated
+    *   `[✅]`   `resumePausedNsfJobs` action now passes `authToken` to the handler for JWT refresh on resumed jobs
+    *   `[✅]`   `resumePausedNsfJobs` rejects requests with missing `authToken` (401)
+    *   `[✅]`   Response shape matches existing action patterns (success/error)
+    *   `[✅]`   Existing `resumePausedNsfJobs` routing is unbroken aside from the new `authToken` parameter
+  *   `[✅]`   **Commit** `feat(dialectic-service): add user-initiated pause/resume — new pauseActiveJobs handler, generalized resume RPC, JWT refresh on resume, paused_user status derivation`
+    *   `[✅]`   Migration: `pause_active_jobs` RPC, generalized resume RPC
+    *   `[✅]`   `deriveStepStatuses.ts`: `paused_user` recognition in status derivation
+    *   `[✅]`   `pauseActiveJobs.ts`: new service handler
+    *   `[✅]`   `resumePausedNsfJobs.ts`: accepts `authToken`, refreshes `payload->>'user_jwt'` on resumed jobs, updated RPC call if renamed
+    *   `[✅]`   `index.ts`: new `pauseActiveJobs` action route, updated `resumePausedNsfJobs` route to pass `authToken`
 
 ### Phase 4: API Client & Store
 

@@ -1908,6 +1908,223 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
   });
 });
 
+Deno.test("getAllStageProgress: paused_user step status drives stage status (user pause/resume)", async (t) => {
+  const stageId: string = "stage-paused-user-id";
+  const instanceId: string = "instance-paused-user-id";
+  const templateId: string = "template-paused-user-id";
+  const modelId: string = "model-1";
+  const stepAId: string = "step-paused-user-a";
+  const stepBId: string = "step-paused-user-b";
+  const iso: string = new Date().toISOString();
+  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
+    buildClonedStepRow(stepAId, instanceId, "step_paused_user_a", "EXECUTE", "all_to_one"),
+    buildClonedStepRow(stepBId, instanceId, "step_paused_user_b", "EXECUTE", "all_to_one"),
+  ];
+  const edges: Tables<"dialectic_stage_recipe_edges">[] = [
+    { id: "edge-paused-user-1", created_at: iso, instance_id: instanceId, from_step_id: stepAId, to_step_id: stepBId },
+  ];
+  const sessionRow: Tables<"dialectic_sessions"> = {
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: [modelId],
+    associated_chat_id: null,
+    created_at: iso,
+    current_stage_id: stageId,
+    iteration_count: 1,
+    session_description: null,
+    status: "active",
+    updated_at: iso,
+    user_input_reference_url: null,
+    idempotency_key: null,
+  };
+  const projectRow: Tables<"dialectic_projects"> = {
+    id: basePayload.projectId,
+    process_template_id: "process-1",
+    created_at: iso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: iso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
+  };
+  const transitions: DialecticStageTransition[] = [
+    { id: "trans-pu-1", process_template_id: "process-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
+  ];
+  const templateStages: DialecticStage[] = [
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
+  ];
+  const stages: DialecticStage[] = [
+    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
+  ];
+  const instances: DialecticStageRecipeInstance[] = [
+    { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
+  ];
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+
+  await t.step("when any step has status paused_user, stage status is paused_user", async () => {
+    const jobs: DialecticJobRow[] = [{
+      id: "job-paused-user-only",
+      created_at: iso,
+      session_id: basePayload.sessionId,
+      stage_slug: THESIS_STAGE_SLUG,
+      iteration_number: basePayload.iterationNumber,
+      status: "paused_user",
+      payload: {
+          sessionId: basePayload.sessionId,
+          projectId: basePayload.projectId,
+          model_id: modelId,
+          walletId: "wallet-1",
+          user_jwt: "jwt",
+          stageSlug: THESIS_STAGE_SLUG,
+          iterationNumber: basePayload.iterationNumber,
+          planner_metadata: { recipe_step_id: stepAId, stage_slug: THESIS_STAGE_SLUG },
+        },
+      user_id: basePayload.userId,
+      is_test_job: false,
+      attempt_count: 0,
+      max_retries: 0,
+      job_type: "EXECUTE",
+      parent_job_id: null,
+      prerequisite_job_id: null,
+      target_contribution_id: null,
+      started_at: null,
+      completed_at: null,
+      results: null,
+      error_details: null,
+      idempotency_key: null,
+    }];
+    mockFetch([
+      new Response(JSON.stringify(sessionRow), { status: 200, headers }),
+      new Response(JSON.stringify(projectRow), { status: 200, headers }),
+      new Response(JSON.stringify(transitions), { status: 200, headers }),
+      new Response(JSON.stringify(templateStages), { status: 200, headers }),
+      new Response(JSON.stringify(jobs), { status: 200, headers }),
+      new Response(JSON.stringify(stages), { status: 200, headers }),
+      new Response(JSON.stringify(instances), { status: 200, headers }),
+      new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
+      new Response(JSON.stringify(edges), { status: 200, headers }),
+      new Response(JSON.stringify([]), { status: 200, headers }),
+      new Response(JSON.stringify([]), { status: 200, headers }),
+    ]);
+    const dbClient: SupabaseClient<Database> = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+    try {
+      const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+      const params: GetAllStageProgressParams = { payload: basePayload };
+      const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
+      assertEquals(result.status, 200, "expected status 200");
+      assertExists(result.data);
+      const entry: StageProgressEntry | undefined = result.data!.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+      assertExists(entry);
+      assertEquals(entry!.status, "paused_user");
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  await t.step("when steps have mix of paused_user and completed, stage status is paused_user", async () => {
+    const jobs: DialecticJobRow[] = [
+      {
+        id: "job-completed-pu-a",
+        created_at: iso,
+        session_id: basePayload.sessionId,
+        stage_slug: THESIS_STAGE_SLUG,
+        iteration_number: basePayload.iterationNumber,
+        status: "completed",
+        payload: {
+          sessionId: basePayload.sessionId,
+          projectId: basePayload.projectId,
+          model_id: modelId,
+          walletId: "wallet-1",
+          user_jwt: "jwt",
+          stageSlug: THESIS_STAGE_SLUG,
+          iterationNumber: basePayload.iterationNumber,
+          planner_metadata: { recipe_step_id: stepAId, stage_slug: THESIS_STAGE_SLUG },
+        },
+        user_id: basePayload.userId,
+        is_test_job: false,
+        attempt_count: 0,
+        max_retries: 0,
+        job_type: "EXECUTE",
+        parent_job_id: null,
+        prerequisite_job_id: null,
+        target_contribution_id: null,
+        started_at: iso,
+        completed_at: iso,
+        results: null,
+        error_details: null,
+        idempotency_key: null,
+      },
+      {
+        id: "job-paused-user-b",
+        created_at: iso,
+        session_id: basePayload.sessionId,
+        stage_slug: THESIS_STAGE_SLUG,
+        iteration_number: basePayload.iterationNumber,
+        status: "paused_user",
+        payload: {
+          sessionId: basePayload.sessionId,
+          projectId: basePayload.projectId,
+          model_id: modelId,
+          walletId: "wallet-1",
+          user_jwt: "jwt",
+          stageSlug: THESIS_STAGE_SLUG,
+          iterationNumber: basePayload.iterationNumber,
+          planner_metadata: { recipe_step_id: stepBId, stage_slug: THESIS_STAGE_SLUG },
+        },
+        user_id: basePayload.userId,
+        is_test_job: false,
+        attempt_count: 0,
+        max_retries: 0,
+        job_type: "EXECUTE",
+        parent_job_id: null,
+        prerequisite_job_id: null,
+        target_contribution_id: null,
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        idempotency_key: null,
+      },
+    ];
+    mockFetch([
+      new Response(JSON.stringify(sessionRow), { status: 200, headers }),
+      new Response(JSON.stringify(projectRow), { status: 200, headers }),
+      new Response(JSON.stringify(transitions), { status: 200, headers }),
+      new Response(JSON.stringify(templateStages), { status: 200, headers }),
+      new Response(JSON.stringify(jobs), { status: 200, headers }),
+      new Response(JSON.stringify(stages), { status: 200, headers }),
+      new Response(JSON.stringify(instances), { status: 200, headers }),
+      new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
+      new Response(JSON.stringify(edges), { status: 200, headers }),
+      new Response(JSON.stringify([]), { status: 200, headers }),
+      new Response(JSON.stringify([]), { status: 200, headers }),
+    ]);
+    const dbClient: SupabaseClient<Database> = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+    try {
+      const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+      const params: GetAllStageProgressParams = { payload: basePayload };
+      const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
+      assertEquals(result.status, 200, "expected status 200");
+      assertExists(result.data);
+      const entry: StageProgressEntry | undefined = result.data!.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+      assertExists(entry);
+      assertEquals(entry!.status, "paused_user");
+    } finally {
+      restoreFetch();
+    }
+  });
+});
+
 Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with correct fields and all job types/statuses, stages[].edges match recipe", async (t) => {
   const stageId: string = "stage-jobs-edges-id";
   const instanceId: string = "instance-jobs-edges-id";

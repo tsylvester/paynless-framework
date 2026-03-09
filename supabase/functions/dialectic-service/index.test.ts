@@ -38,6 +38,11 @@ import {
   ResumePausedNsfJobsPayload,
   ResumePausedNsfJobsResponse,
   ResumePausedNsfJobsResult,
+  ResumePausedNsfJobsParams,
+  ResumePausedNsfJobsDeps,
+  PauseActiveJobsPayload,
+  PauseActiveJobsResult,
+  PauseActiveJobsDeps,
   RegenerateDocumentPayload,
   RegenerateDocumentResponse,
   RegenerateDocumentResult,
@@ -133,7 +138,6 @@ const mockFeedbackRow: DialecticFeedbackRow = {
 const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
   getStageRecipe?: (...args: unknown[]) => Promise<{ data?: unknown; error?: { message: string }; status?: number }>;
   getAllStageProgress?: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
-  resumePausedNsfJobs?: (payload: ResumePausedNsfJobsPayload, dbClient: SupabaseClient, user: User) => Promise<ResumePausedNsfJobsResult>;
   regenerateDocument?: (payload: RegenerateDocumentPayload, params: RegenerateDocumentParams, deps: RegenerateDocumentDeps) => Promise<RegenerateDocumentResult>;
 }): ActionHandlers => {
     return {
@@ -161,7 +165,8 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
         submitStageDocumentFeedback: overrides?.submitStageDocumentFeedback || (() => Promise.resolve({ data: mockFeedbackRow })),
         getStageDocumentFeedback: overrides?.getStageDocumentFeedback || (() => Promise.resolve({ data: [] })),
         getAllStageProgress: overrides?.getAllStageProgress || (() => Promise.resolve({ data: { dagProgress: { completedStages: 0, totalStages: 0 }, stages: [] }, status: 200 })),
-        resumePausedNsfJobs: overrides?.resumePausedNsfJobs || (() => Promise.resolve({ data: { resumedCount: 0 }, status: 200 })),
+        resumePausedNsfJobs: overrides?.resumePausedNsfJobs || ((_p: ResumePausedNsfJobsPayload, _params: ResumePausedNsfJobsParams, _deps: ResumePausedNsfJobsDeps): Promise<ResumePausedNsfJobsResult> => Promise.resolve({ data: { resumedCount: 0 }, status: 200 })),
+        pauseActiveJobs: overrides?.pauseActiveJobs || ((_p: PauseActiveJobsPayload, _deps: PauseActiveJobsDeps, _adminClient: SupabaseClient, _u: User | null): Promise<PauseActiveJobsResult> => Promise.resolve({ data: { pausedCount: 0 }, status: 200 })),
         regenerateDocument: overrides?.regenerateDocument || (() => Promise.resolve({ data: { jobIds: [] }, status: 200 })),
         listModelCatalog: overrides?.listModelCatalog || (() => Promise.resolve({ data: [] })),
         ...overrides,
@@ -1891,8 +1896,8 @@ withSupabaseEnv("handleRequest - resumePausedNsfJobs", async (t) => {
         assertEquals(resumeSpy.calls.length, 1);
     });
 
-    await t.step("should pass correct payload, dbClient, and user to resumePausedNsfJobs handler", async () => {
-        const resumeSpy = spy((_p: ResumePausedNsfJobsPayload, _db: SupabaseClient, _u: User): Promise<ResumePausedNsfJobsResult> =>
+    await t.step("should pass correct payload, params, and deps to resumePausedNsfJobs handler", async () => {
+        const resumeSpy = spy((_p: ResumePausedNsfJobsPayload, _params: ResumePausedNsfJobsParams, _deps: ResumePausedNsfJobsDeps): Promise<ResumePausedNsfJobsResult> =>
             Promise.resolve({ data: { resumedCount: 0 }, status: 200 }));
         const mockHandlers = createMockHandlers({ resumePausedNsfJobs: resumeSpy });
 
@@ -1912,8 +1917,11 @@ withSupabaseEnv("handleRequest - resumePausedNsfJobs", async (t) => {
 
         assertEquals(resumeSpy.calls.length, 1);
         assertEquals(resumeSpy.calls[0].args[0], payload);
-        assert((resumeSpy.calls[0].args[1]) === (mockAdminClient as unknown), "handler should receive adminClient as dbClient");
-        assertEquals(resumeSpy.calls[0].args[2].id, mockUser.id);
+        const params: ResumePausedNsfJobsParams = resumeSpy.calls[0].args[1];
+        assertEquals(params.user?.id, mockUser.id);
+        assertEquals(params.authToken, mockToken);
+        const deps: ResumePausedNsfJobsDeps = resumeSpy.calls[0].args[2];
+        assert(deps.adminClient === (mockAdminClient as unknown), "handler should receive deps.adminClient");
     });
 
     await t.step("should return 401 if not authenticated", async () => {
@@ -1935,6 +1943,109 @@ withSupabaseEnv("handleRequest - resumePausedNsfJobs", async (t) => {
 
         assertEquals(response.status, 401);
         assertEquals(resumeSpy.calls.length, 0);
+    });
+
+    await t.step("should return 401 when authToken is missing", async () => {
+        const resumeSpy = spy(() => Promise.resolve({ data: { resumedCount: 0 }, status: 200 }));
+        const mockHandlers = createMockHandlers({ resumePausedNsfJobs: resumeSpy });
+
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("resumePausedNsfJobs", payload);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 401);
+        assertEquals(resumeSpy.calls.length, 0);
+    });
+});
+
+withSupabaseEnv("handleRequest - pauseActiveJobs", async (t) => {
+    const payload: PauseActiveJobsPayload = {
+        sessionId: 'sess-pause-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+    };
+
+    await t.step("should route action 'pauseActiveJobs' to handler and return 200 with pausedCount", async () => {
+        const pausedCount = 2;
+        const pauseSpy = spy(() => Promise.resolve({ data: { pausedCount }, status: 200 }));
+        const mockHandlers = createMockHandlers({ pauseActiveJobs: pauseSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("pauseActiveJobs", payload, mockToken);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 200);
+        const body = await response.json();
+        assertExists(body.pausedCount);
+        assertEquals(typeof body.pausedCount, 'number');
+        assertEquals(body.pausedCount, pausedCount);
+        assertEquals(pauseSpy.calls.length, 1);
+    });
+
+    await t.step("should pass correct payload, deps, adminClient, and user to pauseActiveJobs handler", async () => {
+        const pauseSpy = spy((_p: PauseActiveJobsPayload, _deps: PauseActiveJobsDeps, _adminClient: SupabaseClient, _u: User | null): Promise<PauseActiveJobsResult> =>
+            Promise.resolve({ data: { pausedCount: 0 }, status: 200 }));
+        const mockHandlers = createMockHandlers({ pauseActiveJobs: pauseSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("pauseActiveJobs", payload, mockToken);
+        await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(pauseSpy.calls.length, 1);
+        assertEquals(pauseSpy.calls[0].args[0], payload);
+        assertEquals(pauseSpy.calls[0].args[1], {});
+        assert(pauseSpy.calls[0].args[2] === (mockAdminClient as unknown), "handler should receive adminClient as 3rd argument");
+        assertEquals(pauseSpy.calls[0].args[3]?.id, mockUser.id);
+    });
+
+    await t.step("should return 401 if not authenticated", async () => {
+        const pauseSpy = spy(() => Promise.resolve({ data: { pausedCount: 0 }, status: 200 }));
+        const mockHandlers = createMockHandlers({ pauseActiveJobs: pauseSpy });
+
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: null }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("pauseActiveJobs", payload);
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as unknown as SupabaseClient<Database>,
+            mockAdminClient as unknown as SupabaseClient<Database>
+        );
+
+        assertEquals(response.status, 401);
+        assertEquals(pauseSpy.calls.length, 0);
     });
 });
 
