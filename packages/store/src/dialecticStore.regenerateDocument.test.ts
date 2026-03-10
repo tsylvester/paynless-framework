@@ -27,6 +27,7 @@ describe('dialecticStore regenerateDocument', () => {
   const userId = 'user-regen-1';
 
   const regeneratePayload: RegenerateDocumentPayload = {
+    idempotencyKey: 'test-idem-regen',
     sessionId,
     stageSlug,
     iterationNumber,
@@ -71,9 +72,9 @@ describe('dialecticStore regenerateDocument', () => {
       data: {
         dagProgress: { completedStages: 0, totalStages: 3 },
         stages: [
-          { stageSlug: 'thesis', status: 'in_progress', modelCount: 2, steps: [], progress: { completedSteps: 0, totalSteps: 2, failedSteps: 0 }, documents: [] },
-          { stageSlug: 'antithesis', status: 'not_started', modelCount: 1, steps: [], progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 }, documents: [] },
-          { stageSlug: 'synthesis', status: 'not_started', modelCount: 1, steps: [], progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 }, documents: [] },
+          { stageSlug: 'thesis', status: 'in_progress', modelCount: 2, steps: [], progress: { completedSteps: 0, totalSteps: 2, failedSteps: 0 }, documents: [], jobs: [], edges: [] },
+          { stageSlug: 'antithesis', status: 'not_started', modelCount: 1, steps: [], progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 }, documents: [], jobs: [], edges: [] },
+          { stageSlug: 'synthesis', status: 'not_started', modelCount: 1, steps: [], progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 }, documents: [], jobs: [], edges: [] },
         ],
       },
       status: 200,
@@ -89,12 +90,13 @@ describe('dialecticStore regenerateDocument', () => {
     await useDialecticStore.getState().regenerateDocument(regeneratePayload);
 
     expect(getMockDialecticClient().regenerateDocument).toHaveBeenCalledTimes(1);
-    expect(getMockDialecticClient().regenerateDocument).toHaveBeenCalledWith(regeneratePayload);
     const callPayload: RegenerateDocumentPayload = getMockDialecticClient().regenerateDocument.mock.calls[0][0];
     expect(callPayload.sessionId).toBe(sessionId);
     expect(callPayload.stageSlug).toBe(stageSlug);
     expect(callPayload.iterationNumber).toBe(iterationNumber);
     expect(callPayload.documents).toEqual(regeneratePayload.documents);
+    expect(callPayload.idempotencyKey).toBeTruthy();
+    expect(callPayload.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
   });
 
   it('on successful API response, adds returned job IDs to generatingSessions[sessionId]', async () => {

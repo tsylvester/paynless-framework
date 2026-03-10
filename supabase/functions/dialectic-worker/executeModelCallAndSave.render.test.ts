@@ -59,6 +59,7 @@ const mockRenderJob: Tables<'dialectic_generation_jobs'> = {
     prerequisite_job_id: null,
     target_contribution_id: null,
     max_retries: 0,
+    idempotency_key: null,
 };
 
 /**
@@ -115,6 +116,7 @@ Deno.test('should not enqueue RENDER job for header_context output type', async 
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -226,6 +228,7 @@ Deno.test('should enqueue RENDER job for markdown document output type (single c
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -352,6 +355,9 @@ Deno.test('should enqueue RENDER job for markdown document output type (single c
     // Parent must associate to the just-completed EXECUTE job
     assertEquals(inserted['parent_job_id'], job.id, 'Parent job id must point to completed EXECUTE job');
 
+    // RENDER job insert must include idempotency_key derived as jobId_render
+    assertEquals(inserted['idempotency_key'], `${job.id}_render`, 'RENDER job insert must include idempotency_key derived as jobId_render');
+
     // Payload must include required renderer identity fields
     const pl = inserted['payload'];
     assert(isRecord(pl), 'Inserted payload.payload must be an object');
@@ -377,6 +383,7 @@ Deno.test('should NOT enqueue RENDER job for intermediate continuation chunk whe
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -509,6 +516,7 @@ Deno.test('intermediate continuation chunk with invalid JSON fragment must skip 
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -619,6 +627,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -820,6 +829,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload includes documentKey wit
         documentKey: documentKey,
         sourceContributionId: sourceContributionId,
         template_filename: 'thesis_business_case.md',
+        idempotencyKey: 'idem-render-1',
     };
 
     assert('documentKey' in pl, 'RENDER job payload must include documentKey field');
@@ -840,6 +850,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload contains all required fi
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -1011,6 +1022,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload contains all required fi
         documentKey: documentKey,
         sourceContributionId: sourceContributionId,
         template_filename: 'thesis_business_case.md',
+        idempotencyKey: 'idem-render-2',
     };
 
     assert('projectId' in pl, 'RENDER job payload must include projectId');
@@ -1047,6 +1059,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload sourceContributionId mus
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -1231,6 +1244,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload sourceContributionId mus
         documentKey: documentKey,
         sourceContributionId: sourceContributionId,
         template_filename: 'thesis_business_case.md',
+        idempotencyKey: 'idem-render-3',
     };
 
     assert('sourceContributionId' in pl, 'RENDER job payload must include sourceContributionId field');
@@ -1284,6 +1298,7 @@ Deno.test('executeModelCallAndSave - RENDER jobs for root and continuation chunk
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -1539,6 +1554,7 @@ Deno.test('executeModelCallAndSave - enqueues RENDER job with ALL required paylo
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -1713,6 +1729,7 @@ Deno.test('executeModelCallAndSave - enqueues RENDER job with ALL required paylo
         documentKey: documentKey,
         sourceContributionId: sourceContributionId,
         template_filename: 'thesis_business_case.md',
+        idempotencyKey: 'idem-render-4',
     };
 
     // Field 1: user_jwt (string, for trigger authentication)
@@ -1770,6 +1787,7 @@ Deno.test('executeModelCallAndSave - throws error when parent job payload lacks 
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -1896,6 +1914,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload user_jwt matches parent 
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -2066,6 +2085,7 @@ Deno.test('executeModelCallAndSave - RENDER job payload user_jwt matches parent 
         documentKey: documentKey,
         sourceContributionId: sourceContributionId,
         template_filename: 'thesis_business_case.md',
+        idempotencyKey: 'idem-render-5',
     };
 
     // Verify user_jwt is passed through exactly without modification
@@ -2088,6 +2108,7 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -2235,6 +2256,7 @@ Deno.test('extracts documentIdentity from document_relationships[stageSlug] for 
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -2394,6 +2416,7 @@ Deno.test('extracts documentIdentity using stageSlug key specifically, not first
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -2547,6 +2570,7 @@ Deno.test('throws error when document_relationships is null after persistence', 
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -2685,6 +2709,7 @@ Deno.test('validatedDocumentKey is undefined for document outputs, preventing RE
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -2797,6 +2822,7 @@ Deno.test('skips RENDER job when shouldEnqueueRenderJob returns { shouldRender: 
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -2965,6 +2991,7 @@ Deno.test('should query recipe step and extract template_filename for RENDER job
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -3097,6 +3124,127 @@ Deno.test('should query recipe step and extract template_filename for RENDER job
         'antithesis_business_case_critique.md',
         `RENDER job payload should contain template_filename: 'antithesis_business_case_critique.md' extracted from recipe step's outputs_required.files_to_generate[]. Got: ${pl['template_filename']}`
     );
+
+    clearAllStubs?.();
+});
+
+// Idempotency key: RENDER job insert and 23505 handling
+Deno.test('executeModelCallAndSave RENDER idempotency: on unique constraint violation (23505 on idempotency_key) queries existing RENDER job and does not throw', async () => {
+    const mockStage: Tables<'dialectic_stages'> = {
+        id: 'stage-1',
+        slug: DialecticStageSlug.Thesis,
+        display_name: 'Test Stage',
+        description: null,
+        default_system_prompt_id: null,
+        recipe_template_id: 'template-1',
+        active_recipe_instance_id: 'instance-1',
+        expected_output_template_ids: [],
+        created_at: new Date().toISOString(),
+        minimum_balance: 0,
+    };
+
+    const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
+        id: 'instance-1',
+        stage_id: 'stage-1',
+        template_id: 'template-1',
+        is_cloned: false,
+        cloned_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const mockStep: Tables<'dialectic_recipe_template_steps'> = {
+        id: 'step-1',
+        template_id: 'template-1',
+        step_number: 1,
+        step_key: 'execute_business_case',
+        step_slug: 'execute-business-case',
+        step_name: 'Execute Business Case',
+        step_description: null,
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        prompt_template_id: null,
+        output_type: 'business_case',
+        granularity_strategy: 'per_source_document',
+        inputs_required: [],
+        inputs_relevance: [],
+        outputs_required: {
+            files_to_generate: [
+                { from_document_key: 'business_case', template_filename: 'thesis_business_case.md' },
+            ],
+        },
+        parallel_group: null,
+        branch_key: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const jobId = 'job-id-23505-render';
+    const existingRenderJob: Tables<'dialectic_generation_jobs'> = {
+        ...mockRenderJob,
+        id: 'existing-render-job-id',
+        parent_job_id: jobId,
+        idempotency_key: `${jobId}_render`,
+    };
+
+    const idempotencyViolationError: { code: string; message: string } = {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "dialectic_generation_jobs_idempotency_key_key"',
+    };
+
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+        'dialectic_stages': { select: { data: [mockStage], error: null } },
+        'dialectic_stage_recipe_instances': { select: { data: [mockInstance], error: null } },
+        'dialectic_recipe_template_steps': { select: { data: [mockStep], error: null } },
+        'dialectic_generation_jobs': {
+            insert: { data: null, error: idempotencyViolationError },
+            select: { data: [existingRenderJob], error: null },
+        },
+    });
+
+    const deps = getMockDeps();
+    assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+    const savedContribution: DialecticContributionRow = {
+        ...mockContribution,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            [DialecticStageSlug.Thesis]: mockContribution.id,
+        },
+    };
+    deps.fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
+
+    stubShouldEnqueueRenderJobForMarkdown(deps);
+    stub(deps, 'callUnifiedAIModel', () => Promise.resolve(
+        createMockUnifiedAIResponse({
+            content: '{"content": "AI response"}',
+            contentType: 'application/json',
+            inputTokens: 10,
+            outputTokens: 5,
+            processingTimeMs: 50,
+            rawProviderResponse: { finish_reason: 'stop' },
+        })
+    ));
+
+    const businessCasePayload: DialecticExecuteJobPayload = {
+        ...testPayload,
+        output_type: FileType.business_case,
+        document_key: 'business_case',
+        stageSlug: DialecticStageSlug.Thesis,
+        document_relationships: {
+            source_group: '550e8400-e29b-41d4-a716-446655440000',
+            [DialecticStageSlug.Thesis]: mockContribution.id,
+        },
+    };
+
+    const job = createMockJob(businessCasePayload, { id: jobId });
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+    await executeModelCallAndSave(params);
+
+    const selectCalls = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'select');
+    assertExists(selectCalls, 'Expected select to be called to fetch existing RENDER job by idempotency_key');
+    assert(selectCalls.callCount >= 1, 'Select by idempotency_key should be called on 23505 recovery');
 
     clearAllStubs?.();
 });

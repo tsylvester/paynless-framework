@@ -20,6 +20,7 @@ import {
     DialecticStageRecipe,
     DialecticStageRecipeStep,
     DialecticRecipeEdge,
+    OutputRequirement,
     SuccessResponse,
 } from '@paynless/types';
 
@@ -170,6 +171,7 @@ describe('DialecticApiClient', () => {
     describe('createProject', () => {
         const endpoint = 'dialectic-service';
         const validPayload: CreateProjectPayload = {
+            idempotencyKey: 'test-idem-project-1',
             projectName: 'Test Project',
             initialUserPrompt: 'Test prompt',
             selectedDomainId: 'dom-1',
@@ -179,6 +181,7 @@ describe('DialecticApiClient', () => {
         const createFormDataFromPayload = (payload: CreateProjectPayload): FormData => {
             const formData = new FormData();
             formData.append('action', 'createProject');
+            formData.append('idempotencyKey', payload.idempotencyKey);
             formData.append('projectName', payload.projectName);
             if (payload.initialUserPrompt) {
                 formData.append('initialUserPromptText', payload.initialUserPrompt);
@@ -288,6 +291,14 @@ describe('DialecticApiClient', () => {
 
             const formData = createFormDataFromPayload(validPayload);
             await expect(dialecticApiClient.createProject(formData)).rejects.toThrow(networkErrorMessage);
+        });
+
+        it('should include idempotencyKey in FormData sent to createProject', async () => {
+            dialecticApiClient.createProject.mockResolvedValue({ data: mockDialecticProject, status: 201 });
+            const formData = createFormDataFromPayload(validPayload);
+            await dialecticApiClient.createProject(formData);
+            expect(dialecticApiClient.createProject).toHaveBeenCalledWith(formData);
+            expect(formData.get('idempotencyKey')).toBe(validPayload.idempotencyKey);
         });
     });    
     
@@ -817,7 +828,7 @@ describe('DialecticApiClient', () => {
                             output_type: 'AssembledDocumentJson', granularity_strategy: 'per_source_document',
                             inputs_required: [{ type: 'document', document_key: 'feature_spec', required: true, stage_slug: 'thesis' }],
                             inputs_relevance: [{ document_key: 'feature_spec', relevance: 1, type: 'document', stage_slug: 'thesis' }],
-                            outputs_required: [{ type: 'header_context', document_key: 'header_ctx_b' }],
+                            outputs_required: [{ artifact_class: 'header_context', file_type: 'json', document_key: 'header_ctx_b' }],
                         },
                     ],
                 },
@@ -839,7 +850,11 @@ describe('DialecticApiClient', () => {
             expect(result.data?.steps[1].branch_key).toBe('branch_b');
             // Inputs/outputs preserved
             expect(result.data?.steps[1].inputs_required?.[0].document_key).toBe('feature_spec');
-            expect(result.data?.steps[1].outputs_required?.[0].document_key).toBe('header_ctx_b');
+            const outputsRequired = result.data?.steps[1].outputs_required;
+            const firstOutput = Array.isArray(outputsRequired) ? outputsRequired[0] : undefined;
+            const isOutputReq = (x: OutputRequirement | string | undefined): x is OutputRequirement =>
+                typeof x === 'object' && x !== null && 'document_key' in x;
+            expect(isOutputReq(firstOutput) ? firstOutput.document_key : undefined).toBe('header_ctx_b');
         });
 
         it('should propagate backend error status and message', async () => {

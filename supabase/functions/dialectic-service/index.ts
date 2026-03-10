@@ -37,7 +37,9 @@ import {
   GetAllStageProgressPayload,
   GetAllStageProgressResult,
   ResumePausedNsfJobsPayload,
-  ResumePausedNsfJobsResponse,
+  ResumePausedNsfJobsFn,
+  PauseActiveJobsPayload,
+  PauseActiveJobsFn,
   RegenerateDocumentPayload,
   RegenerateDocumentFn,
   AIModelCatalogEntry,
@@ -86,6 +88,7 @@ import { listStageDocuments } from './listStageDocuments.ts';
 import { submitStageDocumentFeedback, type SubmitStageDocumentFeedbackDeps } from './submitStageDocumentFeedback.ts';
 import { getAllStageProgress } from './getAllStageProgress.ts';
 import { handleResumePausedNsfJobs } from './resumePausedNsfJobs.ts';
+import { handlePauseActiveJobs } from './pauseActiveJobs.ts';
 import { regenerateDocument } from './regenerateDocument.ts';
 import { topologicalSortSteps } from './topologicalSortSteps.ts';
 import { deriveStepStatuses } from './deriveStepStatuses.ts';
@@ -205,7 +208,8 @@ export interface ActionHandlers {
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload, dbClient: SupabaseClient, deps: SubmitStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<DialecticFeedbackRow>>;
   getStageDocumentFeedback: (payload: GetStageDocumentFeedbackPayload, dbClient: SupabaseClient<Database>, deps: GetStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<GetStageDocumentFeedbackResponse>>;
   getAllStageProgress: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
-  resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: ResumePausedNsfJobsResponse; error?: ServiceError; status?: number }>;
+  resumePausedNsfJobs: ResumePausedNsfJobsFn;
+  pauseActiveJobs: PauseActiveJobsFn;
   regenerateDocument: RegenerateDocumentFn;
 }
 
@@ -287,6 +291,7 @@ export async function handleRequest(
         'getStageDocumentFeedback',
         'getAllStageProgress',
         'resumePausedNsfJobs',
+        'pauseActiveJobs',
         'regenerateDocument',
       ];
 
@@ -626,8 +631,22 @@ export async function handleRequest(
           if (!userForJson) {
             return createErrorResponse('User not authenticated for resumePausedNsfJobs', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
           }
+          if (!authToken) {
+            return createErrorResponse('Authentication token is required for resumePausedNsfJobs', 401, req, { message: 'Authentication token is required', status: 401, code: 'AUTH_TOKEN_MISSING' });
+          }
           const payload: ResumePausedNsfJobsPayload = requestBody.payload;
-          const result = await handlers.resumePausedNsfJobs(payload, adminClient, userForJson);
+          const result = await handlers.resumePausedNsfJobs(payload, { user: userForJson, authToken }, { adminClient });
+          if (result.error) {
+            return createErrorResponse(result.error.message, result.status, req, result.error);
+          }
+          return createSuccessResponse(result.data, result.status, req);
+        }
+        case "pauseActiveJobs": {
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for pauseActiveJobs', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const payload: PauseActiveJobsPayload = requestBody.payload;
+          const result = await handlers.pauseActiveJobs(payload, {}, adminClient, userForJson);
           if (result.error) {
             return createErrorResponse(result.error.message, result.status, req, result.error);
           }
@@ -715,6 +734,7 @@ export const defaultHandlers: ActionHandlers = {
   getStageDocumentFeedback,
   getAllStageProgress: handleGetAllStageProgress,
   resumePausedNsfJobs: handleResumePausedNsfJobs,
+  pauseActiveJobs: handlePauseActiveJobs,
   regenerateDocument,
 };
 

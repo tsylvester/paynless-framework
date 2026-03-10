@@ -5,7 +5,7 @@ import {
     assertRejects,
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { Database } from '../types_db.ts';
-import { createMockSupabaseClient, MockQueryBuilderState, MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
+import { createMockSupabaseClient, MockQueryBuilderState, MockSupabaseClientSetup, type PostgresError } from '../_shared/supabase.mock.ts';
 import { processComplexJob } from './processComplexJob.ts';
 import { 
     DialecticJobRow, 
@@ -34,7 +34,7 @@ import { findSourceDocuments } from './findSourceDocuments.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { PathContext } from '../_shared/types/file_manager.types.ts';
 import { isDialecticRecipeTemplateStep, isDialecticStageRecipeStep } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
-import { isDialecticJobRow, isDialecticSkeletonJobPayload } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { isDialecticJobRow, isDialecticSkeletonJobPayload, isDialecticJobRowArray } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
 
 const buildPlanningHeaderStep: DialecticRecipeTemplateStep = {
     id: 'build-planning-header-step-id',
@@ -255,6 +255,7 @@ function createJobWithStepId(stepId: string, status: DialecticJobRow['status'], 
         target_contribution_id: 'test-target-contribution-id',
         maxRetries: 5,
         context_for_documents: [],
+        idempotencyKey: 'idem-skeleton-plan',
     };
 
 
@@ -282,6 +283,7 @@ function createJobWithStepId(stepId: string, status: DialecticJobRow['status'], 
         prerequisite_job_id: prerequisiteJobId,
         is_test_job: false,
         job_type: 'EXECUTE',
+        idempotency_key: 'idem-skeleton-plan',
     };
 }
 
@@ -416,6 +418,7 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
             target_contribution_id: 'test-target-contribution-id',
             maxRetries: 5,
             context_for_documents: [],
+            idempotencyKey: 'idem-plan-complex',
         };
 
         if (!isJson(mockPayload)) {
@@ -442,6 +445,7 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: 'idem-plan-complex',
         };
 
         const mockParams = {
@@ -575,6 +579,7 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
             documentKey: FileType.technical_requirements,
             sourceContributionId: 'technical-requirements-contribution-id',
             template_filename: 'parenthesis_technical_requirements.md',
+            idempotencyKey: 'idem-render-job',
         };
 
         if (!isJson(renderPayload)) {
@@ -601,6 +606,7 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
             target_contribution_id: null,
             prerequisite_job_id: null,
             is_test_job: false,
+            idempotency_key: 'idem-render-job',
         };
 
         // NOTE: We are intentionally NOT providing the technical_requirements document resource
@@ -1638,6 +1644,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 },
                 step_info: { current_step: 1, total_steps: 1 },
                 iterationNumber: ITERATION,
+                idempotencyKey: 'idem-skeleton-plan',
             },
             iteration_number: ITERATION,
             status: 'processing', // Would have been flipped to 'pending' then picked up
@@ -1653,6 +1660,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
             prerequisite_job_id: completedPrerequisiteJob.id, // This is the key indicator for deferred planning
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: 'idem-skeleton-plan',
         };
 
         await processComplexJob(
@@ -1838,6 +1846,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 },
                 step_info: { current_step: 1, total_steps: 1 },
                 iterationNumber: ITERATION,
+                idempotencyKey: 'idem-skeleton-plan',
             },
             iteration_number: ITERATION,
             status: 'processing',
@@ -1853,6 +1862,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
             prerequisite_job_id: completedPrerequisiteJob.id,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: 'idem-skeleton-plan',
         };
 
         await processComplexJob(
@@ -1881,6 +1891,431 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
         assert(
             foundCorrectUpdate,
             'Skeleton job update includes status: waiting_for_children and prerequisite_job_id: null'
+        );
+    });
+
+    it('deferred planning path (skeleton job insert at line 288) includes deterministic idempotency_key', async () => {
+        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
+        const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
+
+        const techReqPathCtx = createPathContext('parenthesis', FileType.RenderedDocument, FileType.technical_requirements);
+        const { storagePath: techReqPath, fileName: techReqFileName } = constructStoragePath(techReqPathCtx);
+        const techReqResource = createProjectResource('parenthesis', FileType.technical_requirements, techReqFileName, techReqPath);
+
+        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
+        const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
+
+        const completedPrerequisiteJob = createJobWithStepId('generate-technical-requirements-step-id', 'completed');
+
+        const step = generateMasterPlanStep;
+        const modelId = 'model-deferred-idem';
+        const execPayload: DialecticExecuteJobPayload = {
+            prompt_template_id: step.prompt_template_id!,
+            inputs: {},
+            output_type: step.output_type,
+            projectId: PROJECT_ID,
+            sessionId: SESSION_ID,
+            stageSlug: 'parenthesis',
+            model_id: modelId,
+            iterationNumber: ITERATION,
+            continueUntilComplete: false,
+            walletId: 'wallet-id-parenthesis',
+            user_jwt: 'user-jwt-parenthesis',
+            idempotencyKey: 'idem-deferred-exec',
+            canonicalPathParams: { contributionType: 'thesis', stageSlug: 'parenthesis' },
+            planner_metadata: { recipe_step_id: step.id, recipe_template_id: step.template_id },
+        };
+        if (!isJson(execPayload)) {
+            throw new Error('Test setup: execPayload is not valid JSON');
+        }
+        const deferredChildJob: DialecticJobRow = {
+            id: 'child-deferred-idem',
+            user_id: USER_ID,
+            session_id: SESSION_ID,
+            stage_slug: 'parenthesis',
+            payload: execPayload,
+            iteration_number: ITERATION,
+            status: 'pending',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: null,
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: null,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+            idempotency_key: null,
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_stage_recipe_steps': { select: { data: [], error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedPrerequisiteJob], error: null },
+                },
+                'dialectic_contributions': {
+                    select: (state: MockQueryBuilderState) => {
+                        const stageFilter = state.filters.find(f => f.column === 'stage' && f.value === 'parenthesis');
+                        const typeFilter = state.filters.find(f => f.column === 'contribution_type' && f.value === 'header_context');
+                        if (stageFilter && typeFilter) {
+                            return Promise.resolve({
+                                data: [headerContribution],
+                                error: null,
+                                count: 1,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+                'dialectic_project_resources': {
+                    select: (state: MockQueryBuilderState) => {
+                        const parenthesisFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === 'parenthesis');
+                        if (parenthesisFilter) {
+                            return Promise.resolve({
+                                data: [techReqResource],
+                                error: null,
+                                count: 1,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+                        const synthesisFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === 'synthesis');
+                        if (synthesisFilter) {
+                            return Promise.resolve({
+                                data: [productReqResource],
+                                error: null,
+                                count: 1,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const requiredArtifactIdentity: RequiredArtifactIdentity = {
+            projectId: PROJECT_ID,
+            sessionId: SESSION_ID,
+            stageSlug: 'parenthesis',
+            iterationNumber: ITERATION,
+            model_id: MODEL_SLUG,
+            documentKey: FileType.technical_requirements,
+        };
+        const resultsWithIdentity: { required_artifact_identity: RequiredArtifactIdentity } = {
+            required_artifact_identity: requiredArtifactIdentity,
+        };
+        if (!isJson(resultsWithIdentity)) {
+            throw new Error('Test setup failed: resultsWithIdentity is not valid JSON');
+        }
+
+        const skeletonPlanJob: DialecticJobRow & { payload: DialecticSkeletonJobPayload } = {
+            id: 'skeleton-plan-job-id',
+            user_id: USER_ID,
+            session_id: SESSION_ID,
+            stage_slug: 'parenthesis',
+            payload: {
+                sessionId: SESSION_ID,
+                projectId: PROJECT_ID,
+                stageSlug: 'parenthesis',
+                model_id: MODEL_SLUG,
+                walletId: 'wallet-id-parenthesis',
+                user_jwt: 'user-jwt-parenthesis',
+                planner_metadata: { recipe_step_id: 'generate-master-plan-step-id' },
+                step_info: { current_step: 1, total_steps: 1 },
+                iterationNumber: ITERATION,
+                idempotencyKey: 'idem-skeleton-plan',
+            },
+            iteration_number: ITERATION,
+            status: 'processing',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: null,
+            results: resultsWithIdentity,
+            error_details: null,
+            parent_job_id: 'original-parent-job-id',
+            target_contribution_id: null,
+            prerequisite_job_id: completedPrerequisiteJob.id,
+            is_test_job: false,
+            job_type: 'PLAN',
+            idempotency_key: 'idem-skeleton-plan',
+        };
+
+        const testMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => [deferredChildJob],
+            notificationService: mockNotificationService,
+            findSourceDocuments: findSourceDocuments,
+        };
+        const testRootCtx = createJobContext(testMockParams);
+        const testPlanCtx = createPlanJobContext(testRootCtx);
+
+        await processComplexJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            skeletonPlanJob,
+            USER_ID,
+            testPlanCtx,
+            'user-jwt-parenthesis'
+        );
+
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        assertExists(insertSpy);
+        const insertedRows = insertSpy.callsArgs[0][0];
+        assert(isDialecticJobRowArray(insertedRows) && insertedRows.length === 1);
+        const expectedKey = `${skeletonPlanJob.id}_${step.step_slug}_${modelId}`;
+        assertEquals(
+            insertedRows[0].idempotency_key,
+            expectedKey,
+            'Deferred planning insert must set idempotency_key to skeletonId_stepSlug_modelId for EXECUTE child'
+        );
+    });
+
+    it('on unique constraint violation during deferred planning insert, existing jobs are used and processing continues', async () => {
+        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
+        const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
+
+        const techReqPathCtx = createPathContext('parenthesis', FileType.RenderedDocument, FileType.technical_requirements);
+        const { storagePath: techReqPath, fileName: techReqFileName } = constructStoragePath(techReqPathCtx);
+        const techReqResource = createProjectResource('parenthesis', FileType.technical_requirements, techReqFileName, techReqPath);
+
+        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
+        const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
+
+        const completedPrerequisiteJob = createJobWithStepId('generate-technical-requirements-step-id', 'completed');
+
+        const step = generateMasterPlanStep;
+        const deferredChildJob: DialecticJobRow = {
+            id: 'child-deferred-23505',
+            user_id: USER_ID,
+            session_id: SESSION_ID,
+            stage_slug: 'parenthesis',
+            payload: {
+                prompt_template_id: step.prompt_template_id!,
+                inputs: {},
+                output_type: step.output_type,
+                projectId: PROJECT_ID,
+                sessionId: SESSION_ID,
+                stageSlug: 'parenthesis',
+                model_id: 'model-23505',
+                iterationNumber: ITERATION,
+                continueUntilComplete: false,
+                walletId: 'wallet-id-parenthesis',
+                user_jwt: 'user-jwt-parenthesis',
+                idempotencyKey: 'idem-deferred-23505',
+                canonicalPathParams: { contributionType: 'thesis', stageSlug: 'parenthesis' },
+                planner_metadata: { recipe_step_id: step.id, recipe_template_id: step.template_id },
+            },
+            iteration_number: ITERATION,
+            status: 'pending',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: null,
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: null,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+            idempotency_key: null,
+        };
+
+        const postgres23505: PostgresError = {
+            name: 'PostgrestError',
+            message: 'duplicate key value violates unique constraint "dialectic_generation_jobs_idempotency_key_key"',
+            code: '23505',
+            details: 'idempotency_key',
+            hint: undefined,
+        };
+
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_stage_recipe_steps': { select: { data: [], error: null } },
+                'dialectic_generation_jobs': {
+                    select: { data: [completedPrerequisiteJob], error: null },
+                    insert: () => Promise.resolve({ data: null, error: postgres23505, count: 0, status: 409, statusText: 'Conflict' }),
+                    update: (state: { updateData: object | null }) =>
+                        Promise.resolve({
+                            data: state.updateData != null ? [state.updateData] : [],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        }),
+                },
+                'dialectic_contributions': {
+                    select: (state: MockQueryBuilderState) => {
+                        const stageFilter = state.filters.find(f => f.column === 'stage' && f.value === 'parenthesis');
+                        const typeFilter = state.filters.find(f => f.column === 'contribution_type' && f.value === 'header_context');
+                        if (stageFilter && typeFilter) {
+                            return Promise.resolve({
+                                data: [headerContribution],
+                                error: null,
+                                count: 1,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+                'dialectic_project_resources': {
+                    select: (state: MockQueryBuilderState) => {
+                        const parenthesisFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === 'parenthesis');
+                        if (parenthesisFilter) {
+                            return Promise.resolve({
+                                data: [techReqResource],
+                                error: null,
+                                count: 1,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+                        const synthesisFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === 'synthesis');
+                        if (synthesisFilter) {
+                            return Promise.resolve({
+                                data: [productReqResource],
+                                error: null,
+                                count: 1,
+                                status: 200,
+                                statusText: 'OK',
+                            });
+                        }
+                        return Promise.resolve({
+                            data: [],
+                            error: null,
+                            count: 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                },
+            },
+        });
+
+        const requiredArtifactIdentity: RequiredArtifactIdentity = {
+            projectId: PROJECT_ID,
+            sessionId: SESSION_ID,
+            stageSlug: 'parenthesis',
+            iterationNumber: ITERATION,
+            model_id: MODEL_SLUG,
+            documentKey: FileType.technical_requirements,
+        };
+        const resultsWithIdentity: { required_artifact_identity: RequiredArtifactIdentity } = {
+            required_artifact_identity: requiredArtifactIdentity,
+        };
+        if (!isJson(resultsWithIdentity)) {
+            throw new Error('Test setup failed: resultsWithIdentity is not valid JSON');
+        }
+
+        const skeletonPlanJob: DialecticJobRow & { payload: DialecticSkeletonJobPayload } = {
+            id: 'skeleton-plan-job-id',
+            user_id: USER_ID,
+            session_id: SESSION_ID,
+            stage_slug: 'parenthesis',
+            payload: {
+                sessionId: SESSION_ID,
+                projectId: PROJECT_ID,
+                stageSlug: 'parenthesis',
+                model_id: MODEL_SLUG,
+                walletId: 'wallet-id-parenthesis',
+                user_jwt: 'user-jwt-parenthesis',
+                planner_metadata: { recipe_step_id: 'generate-master-plan-step-id' },
+                step_info: { current_step: 1, total_steps: 1 },
+                iterationNumber: ITERATION,
+                idempotencyKey: 'idem-skeleton-plan',
+            },
+            iteration_number: ITERATION,
+            status: 'processing',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: new Date().toISOString(),
+            completed_at: null,
+            results: resultsWithIdentity,
+            error_details: null,
+            parent_job_id: 'original-parent-job-id',
+            target_contribution_id: null,
+            prerequisite_job_id: completedPrerequisiteJob.id,
+            is_test_job: false,
+            job_type: 'PLAN',
+            idempotency_key: 'idem-skeleton-plan',
+        };
+
+        const testMockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => [deferredChildJob],
+            notificationService: mockNotificationService,
+            findSourceDocuments: findSourceDocuments,
+        };
+        const testRootCtx = createJobContext(testMockParams);
+        const testPlanCtx = createPlanJobContext(testRootCtx);
+
+        await processComplexJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            skeletonPlanJob,
+            USER_ID,
+            testPlanCtx,
+            'user-jwt-parenthesis'
+        );
+
+        const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+        assertExists(updateSpy, 'Skeleton should be updated to waiting_for_children on 23505');
+        assert(updateSpy.callCount >= 1, 'At least one update (skeleton to waiting_for_children)');
+        let foundCorrectUpdate = false;
+        for (let i = 0; i < updateSpy.callCount; i++) {
+            const updateArg = updateSpy.callsArgs[i][0];
+            if (isRecord(updateArg) &&
+                updateArg.status === 'waiting_for_children' &&
+                updateArg.prerequisite_job_id === null) {
+                foundCorrectUpdate = true;
+                break;
+            }
+        }
+        assert(
+            foundCorrectUpdate,
+            'On 23505 during deferred planning insert, skeleton must be updated to waiting_for_children with prerequisite_job_id cleared'
         );
     });
 
@@ -2036,6 +2471,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                     },
                     step_info: { current_step: 1, total_steps: 1 },
                     iterationNumber: ITERATION,
+                    idempotencyKey: 'idem-skeleton-plan',
                 },
                 iteration_number: ITERATION,
                 status: 'processing',
@@ -2051,6 +2487,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 prerequisite_job_id: completedPrerequisiteJob.id,
                 is_test_job: false,
                 job_type: 'PLAN',
+                idempotency_key: 'idem-skeleton-plan',
             };
 
             await processComplexJob(
@@ -2088,6 +2525,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                     sourceModelSlugs: [],
                 },
                 inputs: {},
+                idempotencyKey: 'idem-execute-job',
             };
             if (!isJson(executePayload)) {
                 throw new Error('Test setup failed: executePayload is not valid JSON');
@@ -2112,6 +2550,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 prerequisite_job_id: null,
                 is_test_job: false,
                 job_type: 'EXECUTE',
+                idempotency_key: 'idem-execute-job',
             };
 
             const requiredArtifactIdentity: RequiredArtifactIdentity = {
@@ -2215,6 +2654,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                     },
                     step_info: { current_step: 1, total_steps: 1 },
                     iterationNumber: ITERATION,
+                    idempotencyKey: 'idem-skeleton-plan',
                 },
                 iteration_number: ITERATION,
                 status: 'processing',
@@ -2230,6 +2670,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 prerequisite_job_id: completedPrerequisiteJob.id, // Different from pendingExecuteJob.id
                 is_test_job: false,
                 job_type: 'PLAN',
+                idempotency_key: 'idem-skeleton-plan',
             };
 
             await processComplexJob(
@@ -2277,6 +2718,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 documentKey: FileType.technical_requirements,
                 sourceContributionId: 'source-contribution-id',
                 template_filename: 'template.md',
+                idempotencyKey: 'idem-render-job',
             };
             if (!isJson(renderPayload)) {
                 throw new Error('Test setup failed: renderPayload is not valid JSON');
@@ -2301,6 +2743,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 prerequisite_job_id: null,
                 is_test_job: false,
                 job_type: 'RENDER',
+                idempotency_key: 'idem-render-job',
             };
 
             const requiredArtifactIdentity: RequiredArtifactIdentity = {
@@ -2402,6 +2845,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                     },
                     step_info: { current_step: 1, total_steps: 1 },
                     iterationNumber: ITERATION,
+                    idempotencyKey: 'idem-skeleton-plan',
                 },
                 iteration_number: ITERATION,
                 status: 'processing',
@@ -2417,6 +2861,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 prerequisite_job_id: originalPrerequisiteJob.id, // Different from newBlockerJob.id
                 is_test_job: false,
                 job_type: 'PLAN',
+                idempotency_key: 'idem-skeleton-plan',
             };
 
             await processComplexJob(
@@ -2525,6 +2970,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                     },
                     step_info: { current_step: 1, total_steps: 1 },
                     iterationNumber: ITERATION,
+                    idempotencyKey: 'idem-skeleton-plan',
                 },
                 iteration_number: ITERATION,
                 status: 'processing',
@@ -2540,6 +2986,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 prerequisite_job_id: 'original-prerequisite-job-id',
                 is_test_job: false,
                 job_type: 'PLAN',
+                idempotency_key: 'idem-skeleton-plan',
             };
 
             // 109.d.iv: Assert original error is thrown when resolveNextBlocker returns null
@@ -2578,6 +3025,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                     sourceModelSlugs: [],
                 },
                 inputs: {},
+                idempotencyKey: 'idem-execute-job',
             };
             if (!isJson(executePayloadForSame)) {
                 throw new Error('Test setup failed: executePayloadForSame is not valid JSON');
@@ -2602,6 +3050,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 prerequisite_job_id: null,
                 is_test_job: false,
                 job_type: 'EXECUTE',
+                idempotency_key: 'idem-execute-job',
             };
 
             const requiredArtifactIdentity: RequiredArtifactIdentity = {
@@ -2700,6 +3149,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                     },
                     step_info: { current_step: 1, total_steps: 1 },
                     iterationNumber: ITERATION,
+                    idempotencyKey: 'idem-skeleton-plan',
                 },
                 iteration_number: ITERATION,
                 status: 'processing',
@@ -2715,6 +3165,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 prerequisite_job_id: currentPrerequisiteJob.id, // Same as what resolveNextBlocker will return
                 is_test_job: false,
                 job_type: 'PLAN',
+                idempotency_key: 'idem-skeleton-plan',
             };
 
             // 109.d.v: Assert original error is thrown when resolveNextBlocker returns same job ID
@@ -2767,6 +3218,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 documentKey: FileType.technical_requirements,
                 sourceContributionId: 'source-contribution-id',
                 template_filename: 'template.md',
+                idempotencyKey: 'idem-render-job',
             };
             if (!isJson(renderPayloadForLog)) {
                 throw new Error('Test setup failed: renderPayloadForLog is not valid JSON');
@@ -2791,6 +3243,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 prerequisite_job_id: null,
                 is_test_job: false,
                 job_type: 'RENDER',
+                idempotency_key: 'idem-render-job',
             };
 
             const requiredArtifactIdentity: RequiredArtifactIdentity = {
@@ -2888,6 +3341,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                     },
                     step_info: { current_step: 1, total_steps: 1 },
                     iterationNumber: ITERATION,
+                    idempotencyKey: 'idem-skeleton-plan',
                 },
                 iteration_number: ITERATION,
                 status: 'processing',
@@ -2903,6 +3357,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 prerequisite_job_id: originalPrerequisiteJob.id,
                 is_test_job: false,
                 job_type: 'PLAN',
+                idempotency_key: 'idem-skeleton-plan',
             };
 
             await processComplexJob(

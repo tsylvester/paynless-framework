@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   useDialecticStore,
   selectActiveContextSessionId,
   selectSortedStages,
   selectStageHasUnsavedChanges,
+  selectStageRunProgress,
   selectUnifiedProjectProgress,
 } from '@paynless/store';
 import type { ApiError, SubmitStageResponsesPayload } from '@paynless/types';
@@ -27,14 +28,19 @@ export const SubmitResponsesButton: React.FC = () => {
   const project = useDialecticStore((state) => state.currentProjectDetail);
   const session = useDialecticStore((state) => state.activeSessionDetail);
   const activeStage = useDialecticStore((state) => state.activeContextStage);
-  const processTemplate = useDialecticStore((state) => state.currentProcessTemplate);
   const sortedStages = useDialecticStore(selectSortedStages);
   const setActiveStage = useDialecticStore((state) => state.setActiveStage);
   const submitStageResponses = useDialecticStore((state) => state.submitStageResponses);
   const isSubmitting = useDialecticStore((state) => state.isSubmittingStageResponses);
   const submitError = useDialecticStore((state) => state.submitStageResponsesError);
 
-  const { activeStageDetail, hasUnsavedEdits, hasUnsavedFeedback } = useDialecticStore((state) => {
+  const {
+    activeStageDetail,
+    hasUnsavedEdits,
+    hasUnsavedFeedback,
+    nextStageStarted,
+    currentStageHasActiveJobs,
+  } = useDialecticStore((state) => {
     const s = state.activeSessionDetail;
     const a = state.activeContextStage;
     const sessionId = selectActiveContextSessionId(state);
@@ -43,6 +49,8 @@ export const SubmitResponsesButton: React.FC = () => {
         activeStageDetail: undefined,
         hasUnsavedEdits: false,
         hasUnsavedFeedback: false,
+        nextStageStarted: false,
+        currentStageHasActiveJobs: false,
       };
     }
     const unified = sessionId
@@ -50,25 +58,64 @@ export const SubmitResponsesButton: React.FC = () => {
       : null;
     const detail = unified?.stageDetails.find((d) => d.stageSlug === a.slug);
     const changes = selectStageHasUnsavedChanges(state, s.id, a.slug, s.iteration_count);
+
+    const template = state.currentProcessTemplate;
+    const transition = template?.transitions?.find((t) => t.source_stage_id === a.id);
+    const nextStageId = transition?.target_stage_id ?? null;
+    const nextStage =
+      nextStageId && template?.stages
+        ? template.stages.find((st) => st.id === nextStageId) ?? null
+        : null;
+    const nextDetail = nextStage && unified
+      ? unified.stageDetails.find((d) => d.stageSlug === nextStage.slug)
+      : undefined;
+    const nextStageStarted =
+      nextDetail != null &&
+      (nextDetail.totalDocuments > 0 || nextDetail.stageStatus !== 'not_started');
+
+    const progress = selectStageRunProgress(state, s.id, a.slug, s.iteration_count);
+    const activeJobInJobs =
+      progress?.jobs?.some(
+        (job) => job.status !== 'completed' && job.status !== 'failed'
+      ) ?? false;
+    const pausedOrActiveInStepStatuses = progress?.stepStatuses
+      ? Object.values(progress.stepStatuses).some(
+          (status) =>
+            status === 'in_progress' ||
+            status === 'paused_user' ||
+            status === 'paused_nsf'
+        )
+      : false;
+    const currentStageHasActiveJobs = activeJobInJobs || pausedOrActiveInStepStatuses;
+
     return {
       activeStageDetail: detail,
       hasUnsavedEdits: changes.hasUnsavedEdits,
       hasUnsavedFeedback: changes.hasUnsavedFeedback,
+      nextStageStarted,
+      currentStageHasActiveJobs,
     };
   });
 
-  const isFinalStage = useMemo(() => {
-    if (!activeStage || !processTemplate?.transitions?.length) return true;
-    return !processTemplate.transitions.some(
-      (t) => t.source_stage_id === activeStage.id,
-    );
-  }, [activeStage, processTemplate?.transitions]);
+  const viewedStageMatchesAppStage = useDialecticStore((state) =>
+    state.activeContextStage?.slug === state.activeStageSlug,
+  );
+
+  const isFinalStage = useDialecticStore((state) => {
+    const slug = state.activeStageSlug;
+    const template = state.currentProcessTemplate;
+    if (!slug || !template?.transitions?.length || !template?.stages?.length) return true;
+    const stage = template.stages.find((s) => s.slug === slug);
+    if (!stage) return true;
+    return !template.transitions.some((t) => t.source_stage_id === stage.id);
+  });
 
   const allDocumentsAvailable =
     activeStageDetail != null &&
     activeStageDetail.totalDocuments > 0 &&
     activeStageDetail.completedDocuments === activeStageDetail.totalDocuments;
-  const canShowButton = !isFinalStage;
+  const canShowButton =
+    viewedStageMatchesAppStage && !isFinalStage && !nextStageStarted && !currentStageHasActiveJobs;
   const shouldPulse = canShowButton && allDocumentsAvailable && !isSubmitting;
 
   const handleSubmit = async (): Promise<void> => {

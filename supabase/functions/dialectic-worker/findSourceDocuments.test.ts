@@ -47,6 +47,7 @@ describe('findSourceDocuments', () => {
                 maxRetries: 3,
                 continuation_count: 0,
                 user_jwt: 'parent-jwt-default',
+                idempotencyKey: "idempotency-key-1",
             },
             created_at: new Date().toISOString(),
             user_id: 'user-123',
@@ -64,6 +65,7 @@ describe('findSourceDocuments', () => {
             target_contribution_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: "idempotency-key-1",
         };
 
         mockDownloadFromStorage = () => {
@@ -1401,6 +1403,7 @@ describe('findSourceDocuments', () => {
                 maxRetries: 3,
                 continuation_count: 0,
                 user_jwt: 'parent-jwt-default',
+                idempotencyKey: "idempotency-key-1",
             },
             iteration_number: 2,
         };
@@ -2821,6 +2824,7 @@ describe('findSourceDocuments', () => {
             id: 'parent-job-123',
             status: 'pending',
             payload: {
+                idempotencyKey: "idempotency-key-1",
                 job_type: 'PLAN',
                 model_id: '77afe5e0-a0d8-4a01-974f-f74f9f89a4ef',
                 projectId: '2afbba8d-80e9-4c87-82bb-582cb51ef7dc',
@@ -2832,6 +2836,7 @@ describe('findSourceDocuments', () => {
                 maxRetries: 3,
                 continuation_count: 0,
                 user_jwt: 'parent-jwt-default',
+                idempotency_key: "idempotency-key-1",
             },
             created_at: new Date().toISOString(),
             user_id: 'user-123',
@@ -2849,6 +2854,7 @@ describe('findSourceDocuments', () => {
             target_contribution_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: "idempotency-key-1",
         };
 
         // A header_context contribution whose documentKey is 'header_context' (not 'header_context_pairwise').

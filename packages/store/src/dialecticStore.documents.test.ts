@@ -257,6 +257,165 @@ describe('hydrateStageProgressLogic', () => {
 			/[hydrateStageProgress].*validation/,
 		);
 	});
+
+	it('populates jobs array with one JobProgressDto per document entry returned by listStageDocuments', async () => {
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+		const validResponse: ListStageDocumentsResponse = [
+			{
+				documentKey: 'doc_a',
+				modelId: 'model-a',
+				status: 'completed',
+				jobId: 'job-a',
+				latestRenderedResourceId: 'res-a',
+				stepKey: 'step-1',
+			},
+			{
+				documentKey: 'doc_b',
+				modelId: 'model-b',
+				status: 'generating',
+				jobId: 'job-b',
+				latestRenderedResourceId: 'res-b',
+				stepKey: 'step-1',
+			},
+		];
+
+		vi.spyOn(mockDialecticClient, 'listStageDocuments').mockResolvedValue({
+			data: validResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.jobs).toHaveLength(2);
+	});
+
+	it('each constructed JobProgressDto has correct id, status (mapped from doc status), modelId, documentKey, stepKey, jobType RENDER', async () => {
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+		const validResponse: ListStageDocumentsResponse = [
+			{
+				documentKey: 'doc_a',
+				modelId: 'model-a',
+				status: 'completed',
+				jobId: 'job-a',
+				latestRenderedResourceId: 'res-a',
+				stepKey: 'step-1',
+			},
+			{
+				documentKey: 'doc_b',
+				modelId: 'model-b',
+				status: 'generating',
+				jobId: 'job-b',
+				latestRenderedResourceId: 'res-b',
+				stepKey: 'step-2',
+			},
+		];
+
+		vi.spyOn(mockDialecticClient, 'listStageDocuments').mockResolvedValue({
+			data: validResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.jobs).toHaveLength(2);
+
+		const jobA: JobProgressDto = progress.jobs[0];
+		expect(jobA.id).toBe('job-a');
+		expect(jobA.status).toBe('completed');
+		expect(jobA.modelId).toBe('model-a');
+		expect(jobA.documentKey).toBe('doc_a');
+		expect(jobA.stepKey).toBe('step-1');
+		expect(jobA.jobType).toBe('RENDER');
+
+		const jobB: JobProgressDto = progress.jobs[1];
+		expect(jobB.id).toBe('job-b');
+		expect(jobB.status).toBe('processing');
+		expect(jobB.modelId).toBe('model-b');
+		expect(jobB.documentKey).toBe('doc_b');
+		expect(jobB.stepKey).toBe('step-2');
+		expect(jobB.jobType).toBe('RENDER');
+	});
+
+	it('jobProgress map is populated per stepKey with correct totalJobs completedJobs failedJobs inProgressJobs counts', async () => {
+		const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+		const validResponse: ListStageDocumentsResponse = [
+			{
+				documentKey: 'doc_a',
+				modelId: 'model-a',
+				status: 'completed',
+				jobId: 'job-a',
+				latestRenderedResourceId: 'res-a',
+				stepKey: 's1',
+			},
+			{
+				documentKey: 'doc_b',
+				modelId: 'model-b',
+				status: 'generating',
+				jobId: 'job-b',
+				latestRenderedResourceId: 'res-b',
+				stepKey: 's1',
+			},
+			{
+				documentKey: 'doc_c',
+				modelId: 'model-c',
+				status: 'failed',
+				jobId: 'job-c',
+				latestRenderedResourceId: 'res-c',
+				stepKey: 's2',
+			},
+		];
+
+		vi.spyOn(mockDialecticClient, 'listStageDocuments').mockResolvedValue({
+			data: validResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		await hydrateStageProgressLogic(set, payload);
+
+		const progress = state.stageRunProgress[progressKey];
+		expect(progress).toBeDefined();
+		expect(progress.jobs).toHaveLength(3);
+
+		expect(progress.jobProgress['s1']).toBeDefined();
+		expect(progress.jobProgress['s1'].totalJobs).toBe(2);
+		expect(progress.jobProgress['s1'].completedJobs).toBe(1);
+		expect(progress.jobProgress['s1'].inProgressJobs).toBe(1);
+		expect(progress.jobProgress['s1'].failedJobs).toBe(0);
+
+		expect(progress.jobProgress['s2']).toBeDefined();
+		expect(progress.jobProgress['s2'].totalJobs).toBe(1);
+		expect(progress.jobProgress['s2'].completedJobs).toBe(0);
+		expect(progress.jobProgress['s2'].inProgressJobs).toBe(0);
+		expect(progress.jobProgress['s2'].failedJobs).toBe(1);
+	});
 });
 
 describe('hydrateAllStageProgressLogic', () => {
@@ -689,6 +848,7 @@ describe('hydrateAllStageProgressLogic', () => {
 			createdAt: '2025-01-01T00:00:00Z',
 			startedAt: '2025-01-01T00:00:01Z',
 			completedAt: '2025-01-01T00:00:02Z',
+			modelName: 'model-1',
 		};
 		const job2: JobProgressDto = {
 			id: 'job-2',
@@ -701,6 +861,7 @@ describe('hydrateAllStageProgressLogic', () => {
 			createdAt: '2025-01-01T00:00:03Z',
 			startedAt: '2025-01-01T00:00:04Z',
 			completedAt: null,
+			modelName: 'model-a',
 		};
 		const mockResponse: GetAllStageProgressResponse = {
 			dagProgress: { completedStages: 0, totalStages: 1 },
@@ -753,6 +914,7 @@ describe('hydrateAllStageProgressLogic', () => {
 			createdAt: '',
 			startedAt: null,
 			completedAt: null,
+			modelName: null,
 		};
 		const executeJob: JobProgressDto = {
 			id: 'exec-1',
@@ -765,6 +927,7 @@ describe('hydrateAllStageProgressLogic', () => {
 			createdAt: '',
 			startedAt: null,
 			completedAt: null,
+			modelName: null,
 		};
 		const renderJob: JobProgressDto = {
 			id: 'render-1',
@@ -777,6 +940,7 @@ describe('hydrateAllStageProgressLogic', () => {
 			createdAt: '',
 			startedAt: null,
 			completedAt: null,
+			modelName: null,
 		};
 		const mockResponse: GetAllStageProgressResponse = {
 			dagProgress: { completedStages: 1, totalStages: 1 },
@@ -832,6 +996,7 @@ describe('hydrateAllStageProgressLogic', () => {
 				createdAt: '',
 				startedAt: null,
 				completedAt: null,
+				modelName: null,
 			},
 			{
 				id: 'j2',
@@ -844,6 +1009,7 @@ describe('hydrateAllStageProgressLogic', () => {
 				createdAt: '',
 				startedAt: null,
 				completedAt: null,
+				modelName: null,
 			},
 			{
 				id: 'j3',
@@ -856,6 +1022,7 @@ describe('hydrateAllStageProgressLogic', () => {
 				createdAt: '',
 				startedAt: null,
 				completedAt: null,
+				modelName: null,
 			},
 		];
 		const mockResponse: GetAllStageProgressResponse = {
@@ -911,7 +1078,8 @@ describe('hydrateAllStageProgressLogic', () => {
 				parentJobId: null,
 				createdAt: '',
 				startedAt: null,
-				completedAt: null,
+				completedAt: null,	
+				modelName: null,
 			},
 			{
 				id: 'j2',
@@ -924,6 +1092,7 @@ describe('hydrateAllStageProgressLogic', () => {
 				createdAt: '',
 				startedAt: null,
 				completedAt: null,
+				modelName: null,
 			},
 		];
 		const mockResponse: GetAllStageProgressResponse = {
@@ -977,6 +1146,7 @@ describe('hydrateAllStageProgressLogic', () => {
 				createdAt: '',
 				startedAt: null,
 				completedAt: null,
+				modelName: null,
 			},
 		];
 		const mockResponse: GetAllStageProgressResponse = {
@@ -1051,6 +1221,7 @@ describe('hydrateAllStageProgressLogic', () => {
 							createdAt: '',
 							startedAt: null,
 							completedAt: null,
+							modelName: null,
 						},
 					],
 					edges: [],

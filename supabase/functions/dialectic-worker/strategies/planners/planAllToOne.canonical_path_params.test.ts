@@ -147,6 +147,7 @@ const createMockParentJob = (): DialecticJobRow & {
     model_id: 'model-1',
     user_jwt: 'mock-jwt-string',
     walletId: 'wallet-1',
+    idempotencyKey: "idempotency-key-1",
   },
   attempt_count: 0,
   completed_at: null,
@@ -165,6 +166,7 @@ const createMockParentJob = (): DialecticJobRow & {
   status: 'pending',
   target_contribution_id: null,
   user_id: 'user-1',
+  idempotency_key: "idempotency-key-1",
 });
 
 // --- TESTS ---

@@ -18,6 +18,8 @@ const FAILED_STATUSES: Set<string> = new Set(["failed", "retry_loop_failed"]);
 
 const PAUSED_NSF_STATUSES: Set<string> = new Set(["paused_nsf"]);
 
+const PAUSED_USER_STATUSES: Set<string> = new Set(["paused_user"]);
+
 const SUPERSEDED_STATUSES: Set<string> = new Set(["superseded"]);
 
 function getRecipeStepIdFromPayload(payload: unknown): string | undefined {
@@ -47,6 +49,7 @@ export function deriveStepStatuses(
 	const stepKeyToHasCompleted: Map<string, boolean> = new Map<string, boolean>();
 	const stepKeyToHasFailed: Map<string, boolean> = new Map<string, boolean>();
 	const stepKeyToHasPausedNsf: Map<string, boolean> = new Map<string, boolean>();
+	const stepKeyToHasPausedUser: Map<string, boolean> = new Map<string, boolean>();
 
 	for (const job of jobs) {
 		if (job.job_type === "RENDER") continue;
@@ -61,6 +64,8 @@ export function deriveStepStatuses(
 			stepKeyToHasActive.set(stepKey, true);
 		} else if (PAUSED_NSF_STATUSES.has(job.status)) {
 			stepKeyToHasPausedNsf.set(stepKey, true);
+		} else if (PAUSED_USER_STATUSES.has(job.status)) {
+			stepKeyToHasPausedUser.set(stepKey, true);
 		} else if (job.status === "completed") {
 			stepKeyToHasCompleted.set(stepKey, true);
 		} else if (FAILED_STATUSES.has(job.status)) {
@@ -73,6 +78,7 @@ export function deriveStepStatuses(
 	for (const stepKey of stepKeyToHasCompleted.keys()) stepsWithJobs.add(stepKey);
 	for (const stepKey of stepKeyToHasFailed.keys()) stepsWithJobs.add(stepKey);
 	for (const stepKey of stepKeyToHasPausedNsf.keys()) stepsWithJobs.add(stepKey);
+	for (const stepKey of stepKeyToHasPausedUser.keys()) stepsWithJobs.add(stepKey);
 
 	const stepKeyToStepId: Map<string, string> = new Map<string, string>();
 	for (const s of steps) {
@@ -85,13 +91,16 @@ export function deriveStepStatuses(
 		const hasCompleted: boolean = stepKeyToHasCompleted.get(sk) === true;
 		const hasFailed: boolean = stepKeyToHasFailed.get(sk) === true;
 		const hasPausedNsf: boolean = stepKeyToHasPausedNsf.get(sk) === true;
-		const hasEvidence: boolean = hasActive || hasCompleted || hasFailed || hasPausedNsf;
+		const hasPausedUser: boolean = stepKeyToHasPausedUser.get(sk) === true;
+		const hasEvidence: boolean = hasActive || hasCompleted || hasFailed || hasPausedNsf || hasPausedUser;
 
 		if (hasEvidence) {
 			if (hasActive) {
 				result.set(sk, "in_progress");
 			} else if (hasPausedNsf) {
 				result.set(sk, "paused_nsf");
+			} else if (hasPausedUser) {
+				result.set(sk, "paused_user");
 			} else if (hasFailed) {
 				result.set(sk, "failed");
 			} else {

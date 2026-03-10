@@ -121,6 +121,7 @@ export function createMockJob(payload: DialecticJobPayload, overrides: Partial<D
         payload: payload,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: null,
         ...overrides,
     };
   
@@ -143,7 +144,8 @@ export const testPayload: DialecticExecuteJobPayload = {
     canonicalPathParams: {
         contributionType: 'thesis',
         stageSlug: 'thesis',
-    }
+    },
+    idempotencyKey: 'job-id-123_render',
   };
   
 export const mockSessionRow: Tables<'dialectic_sessions'> = {
@@ -158,6 +160,7 @@ export const mockSessionRow: Tables<'dialectic_sessions'> = {
     current_stage_id: 'stage-1',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    idempotency_key: 'session-456_render',
   };
 
 export const mockSessionData: DialecticSession = {
@@ -197,6 +200,7 @@ export const mockFullProviderData: Tables<'ai_providers'> = {
     is_active: true,
     is_enabled: true,
     is_default_embedding: false,
+    is_default_generation: false,
     updated_at: new Date().toISOString(),
   }
   
@@ -707,6 +711,7 @@ Deno.test('executeModelCallAndSave - source_group validation is planner-aware: c
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -2021,6 +2026,7 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -2064,6 +2070,7 @@ Deno.test('executeModelCallAndSave - schedules RENDER job after success with ren
 
   const mockRenderJob: Tables<'dialectic_generation_jobs'> = {
         id: 'render-job-456', 
+        idempotency_key: 'job-id-123_render',
         job_type: 'RENDER', 
         status: 'pending',
         session_id: 'session-456',

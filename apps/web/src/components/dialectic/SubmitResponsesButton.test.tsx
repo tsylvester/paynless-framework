@@ -16,6 +16,7 @@ import type {
   DialecticStageRecipe,
   DialecticStageRecipeStep,
   DialecticStageTransition,
+  JobProgressDto,
   StageRenderedDocumentDescriptor,
   StageDocumentContentState,
 } from '@paynless/types';
@@ -45,6 +46,24 @@ const iterationNumber = 1;
 const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
 const antithesisProgressKey = `${sessionId}:antithesis:${iterationNumber}`;
 const isoTimestamp = '2024-01-01T00:00:00.000Z';
+
+function buildJobProgressDto(
+  overrides: Partial<JobProgressDto> & Pick<JobProgressDto, 'id' | 'status' | 'documentKey' | 'modelId'>,
+): JobProgressDto {
+  return {
+    id: overrides.id,
+    status: overrides.status,
+    jobType: overrides.jobType ?? 'RENDER',
+    stepKey: overrides.stepKey ?? 'step-1',
+    modelId: overrides.modelId,
+    documentKey: overrides.documentKey,
+    parentJobId: overrides.parentJobId ?? null,
+    createdAt: overrides.createdAt ?? isoTimestamp,
+    startedAt: overrides.startedAt ?? isoTimestamp,
+    completedAt: overrides.completedAt ?? isoTimestamp,
+    modelName: overrides.modelName ?? null,
+  };
+}
 
 function buildMinimalRecipe(slug: string): DialecticStageRecipe {
   return {
@@ -101,6 +120,7 @@ const buildStage = (id: string, slug: string, displayName: string): DialecticSta
   recipe_template_id: null,
   active_recipe_instance_id: null,
   created_at: '2024-01-01T00:00:00.000Z',
+  minimum_balance: 0,
 });
 
 const buildTransitions = (stages: DialecticStage[]): DialecticStageTransition[] =>
@@ -233,6 +253,14 @@ function setupVisibleButtonState(): void {
           [`success_metrics:model-1`]: buildRenderedDescriptor('model-1', 'res-1'),
         },
         jobProgress: {},
+        jobs: [
+          buildJobProgressDto({
+            id: 'job-1',
+            status: 'completed',
+            documentKey: 'success_metrics',
+            modelId: 'model-1',
+          }),
+        ],
       },
       [antithesisProgressKey]: emptyStageRunProgressSnapshot,
     },
@@ -310,11 +338,66 @@ describe('SubmitResponsesButton', () => {
             ['doc:model-1']: buildRenderedDescriptor('model-1', 'res-1'),
           },
           jobProgress: {},
+          jobs: [
+            buildJobProgressDto({
+              id: 'job-1',
+              status: 'completed',
+              documentKey: 'doc',
+              modelId: 'model-1',
+            }),
+          ],
         },
       },
     });
     selectIsStageReadyForSessionIteration.mockReturnValue(true);
     render(<SubmitResponsesButton />);
+    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+  });
+
+  it('does not render when user is on the final stage of a multi-stage process before generation', () => {
+    const stage1 = buildStage('stage-1', 'thesis', 'Thesis');
+    const stage2 = buildStage('stage-2', 'antithesis', 'Antithesis');
+    const processTemplate = buildProcessTemplate([stage1, stage2]);
+    const session = buildSession();
+    setDialecticStateValues({
+      currentProjectDetail: buildProject(session, processTemplate),
+      activeSessionDetail: session,
+      activeContextSessionId: sessionId,
+      activeContextStage: stage2,
+      activeStageSlug: stage2.slug,
+      currentProcessTemplate: processTemplate,
+      recipesByStageSlug: {
+        thesis: buildMinimalRecipe('thesis'),
+        antithesis: buildMinimalRecipe('antithesis'),
+      },
+      stageRunProgress: {
+        [progressKey]: emptyStageRunProgressSnapshot,
+        [antithesisProgressKey]: emptyStageRunProgressSnapshot,
+      },
+      isSubmittingStageResponses: false,
+      submitStageResponsesError: null,
+    });
+    selectIsStageReadyForSessionIteration.mockReturnValue(true);
+    render(<SubmitResponsesButton />);
+    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+  });
+
+  it('hides button when viewed stage (activeContextStage) does not match app current stage (activeStageSlug)', async () => {
+    // Start on stage1 — both activeContextStage and activeStageSlug agree, button should render
+    setupVisibleButtonState();
+    render(<SubmitResponsesButton />);
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+
+    // App advances: activeStageSlug moves to antithesis, but user is still
+    // viewing stage1 (activeContextStage unchanged). Button must hide because
+    // the viewed stage is no longer the stage the app is on — the button only
+    // belongs on the verge, where viewed stage === app stage.
+    await act(() => {
+      setDialecticStateValues({
+        activeStageSlug: 'antithesis',
+      });
+    });
+
     expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
   });
 
@@ -368,6 +451,14 @@ describe('SubmitResponsesButton', () => {
             },
           },
           jobProgress: {},
+          jobs: [
+            buildJobProgressDto({
+              id: 'job-1',
+              status: 'completed',
+              documentKey: 'doc',
+              modelId: 'model-1',
+            }),
+          ],
         },
         [antithesisProgressKey]: emptyStageRunProgressSnapshot,
       },
@@ -612,5 +703,295 @@ describe('SubmitResponsesButton', () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('Network error');
     });
+  });
+
+  it('renders button when current stage complete, next stage not started, not final stage, no active jobs', () => {
+    setupVisibleButtonState();
+    render(<SubmitResponsesButton />);
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeInTheDocument();
+  });
+
+  it('hides button when next stage already has generated documents', () => {
+    const stage1 = buildStage('stage-1', 'thesis', 'Thesis');
+    const stage2 = buildStage('stage-2', 'antithesis', 'Antithesis');
+    const processTemplate = buildProcessTemplate([stage1, stage2]);
+    const session = buildSession();
+    const project = buildProject(session, processTemplate);
+    const antithesisRecipe: DialecticStageRecipe = {
+      stageSlug: 'antithesis',
+      instanceId: 'inst-1',
+      steps: [
+        {
+          id: 'step-1',
+          step_key: 'step-1',
+          step_slug: 'step-1',
+          step_name: 'Step',
+          execution_order: 0,
+          job_type: 'RENDER',
+          prompt_type: 'Turn',
+          output_type: 'rendered_document',
+          granularity_strategy: 'all_to_one',
+          inputs_required: [],
+          outputs_required: [
+            { document_key: 'doc', artifact_class: 'rendered_document', file_type: 'markdown' },
+          ],
+        },
+      ],
+      edges: [],
+    };
+    setDialecticStateValues({
+      currentProjectDetail: project,
+      activeSessionDetail: session,
+      activeContextSessionId: sessionId,
+      currentProcessTemplate: processTemplate,
+      activeContextStage: stage1,
+      activeStageSlug: stage1.slug,
+      recipesByStageSlug: {
+        thesis: buildThesisRecipeWithDocumentKey('success_metrics'),
+        antithesis: antithesisRecipe,
+      },
+      stageRunProgress: {
+        [progressKey]: {
+          progress: { totalSteps: 1, completedSteps: 1, failedSteps: 0 },
+          stepStatuses: { 'step-1': 'completed' },
+          documents: {
+            ['success_metrics:model-1']: buildRenderedDescriptor('model-1', 'res-1'),
+          },
+          jobProgress: {},
+          jobs: [
+            buildJobProgressDto({
+              id: 'job-1',
+              status: 'completed',
+              documentKey: 'success_metrics',
+              modelId: 'model-1',
+            }),
+          ],
+        },
+        [antithesisProgressKey]: {
+          progress: { totalSteps: 1, completedSteps: 1, failedSteps: 0 },
+          stepStatuses: { 'step-1': 'completed' },
+          documents: {
+            ['doc:model-1']: buildRenderedDescriptor('model-1', 'res-1'),
+          },
+          jobProgress: {},
+          jobs: [
+            buildJobProgressDto({
+              id: 'job-2',
+              status: 'completed',
+              documentKey: 'doc',
+              modelId: 'model-1',
+            }),
+          ],
+        },
+      },
+      isSubmittingStageResponses: false,
+      submitStageResponsesError: null,
+    });
+    selectIsStageReadyForSessionIteration.mockReturnValue(true);
+    render(<SubmitResponsesButton />);
+    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+  });
+
+  it('hides button when next stage stageStatus is not not_started', () => {
+    const stage1 = buildStage('stage-1', 'thesis', 'Thesis');
+    const stage2 = buildStage('stage-2', 'antithesis', 'Antithesis');
+    const processTemplate = buildProcessTemplate([stage1, stage2]);
+    const session = buildSession();
+    const project = buildProject(session, processTemplate);
+    const antithesisRecipe: DialecticStageRecipe = {
+      stageSlug: 'antithesis',
+      instanceId: 'inst-1',
+      steps: [
+        {
+          id: 'step-1',
+          step_key: 'step-1',
+          step_slug: 'step-1',
+          step_name: 'Step',
+          execution_order: 0,
+          job_type: 'RENDER',
+          prompt_type: 'Turn',
+          output_type: 'rendered_document',
+          granularity_strategy: 'all_to_one',
+          inputs_required: [],
+          outputs_required: [],
+        },
+      ],
+      edges: [],
+    };
+    setDialecticStateValues({
+      currentProjectDetail: project,
+      activeSessionDetail: session,
+      activeContextSessionId: sessionId,
+      currentProcessTemplate: processTemplate,
+      activeContextStage: stage1,
+      activeStageSlug: stage1.slug,
+      recipesByStageSlug: {
+        thesis: buildThesisRecipeWithDocumentKey('success_metrics'),
+        antithesis: antithesisRecipe,
+      },
+      stageRunProgress: {
+        [progressKey]: {
+          progress: { totalSteps: 1, completedSteps: 1, failedSteps: 0 },
+          stepStatuses: { 'step-1': 'completed' },
+          documents: {
+            ['success_metrics:model-1']: buildRenderedDescriptor('model-1', 'res-1'),
+          },
+          jobProgress: {},
+          jobs: [
+            buildJobProgressDto({
+              id: 'job-1',
+              status: 'completed',
+              documentKey: 'success_metrics',
+              modelId: 'model-1',
+            }),
+          ],
+        },
+        [antithesisProgressKey]: {
+          progress: { totalSteps: 1, completedSteps: 0, failedSteps: 0 },
+          stepStatuses: { 'step-1': 'in_progress' },
+          documents: {},
+          jobProgress: {},
+          jobs: [],
+        },
+      },
+      isSubmittingStageResponses: false,
+      submitStageResponsesError: null,
+    });
+    selectIsStageReadyForSessionIteration.mockReturnValue(true);
+    render(<SubmitResponsesButton />);
+    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+  });
+
+  it('hides button when current stage has active jobs', () => {
+    setupVisibleButtonState();
+    setDialecticStateValues({
+      stageRunProgress: {
+        [progressKey]: {
+          progress: { totalSteps: 1, completedSteps: 0, failedSteps: 0 },
+          stepStatuses: {},
+          documents: {
+            ['success_metrics:model-1']: buildRenderedDescriptor('model-1', 'res-1'),
+          },
+          jobProgress: {},
+          jobs: [
+            buildJobProgressDto({
+              id: 'job-1',
+              status: 'in_progress',
+              documentKey: 'success_metrics',
+              modelId: 'model-1',
+            }),
+          ],
+        },
+        [antithesisProgressKey]: emptyStageRunProgressSnapshot,
+      },
+    });
+    render(<SubmitResponsesButton />);
+    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+  });
+
+  it('hides button when current stage has paused jobs', () => {
+    setupVisibleButtonState();
+    setDialecticStateValues({
+      stageRunProgress: {
+        [progressKey]: {
+          progress: { totalSteps: 1, completedSteps: 0, failedSteps: 0 },
+          stepStatuses: { 'step-1': 'paused_user' },
+          documents: {
+            ['success_metrics:model-1']: buildRenderedDescriptor('model-1', 'res-1'),
+          },
+          jobProgress: {},
+          jobs: [
+            buildJobProgressDto({
+              id: 'job-1',
+              status: 'completed',
+              documentKey: 'success_metrics',
+              modelId: 'model-1',
+            }),
+          ],
+        },
+        [antithesisProgressKey]: emptyStageRunProgressSnapshot,
+      },
+    });
+    render(<SubmitResponsesButton />);
+    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+  });
+
+  it('hides button when viewed stage does not match app stage even when no other guard catches it', () => {
+    const stage1 = buildStage('stage-1', 'thesis', 'Thesis');
+    const stage2 = buildStage('stage-2', 'antithesis', 'Antithesis');
+    const stage3 = buildStage('stage-3', 'synthesis', 'Synthesis');
+    const processTemplate: DialecticProcessTemplate = {
+      id: 'template-1',
+      name: 'Template',
+      description: '',
+      starting_stage_id: stage1.id,
+      created_at: isoTimestamp,
+      stages: [stage1, stage2, stage3],
+      transitions: [
+        {
+          id: 'trans-1',
+          process_template_id: 'template-1',
+          source_stage_id: stage1.id,
+          target_stage_id: stage2.id,
+          created_at: isoTimestamp,
+          condition_description: null,
+        },
+        {
+          id: 'trans-2',
+          process_template_id: 'template-1',
+          source_stage_id: stage2.id,
+          target_stage_id: stage3.id,
+          created_at: isoTimestamp,
+          condition_description: null,
+        },
+      ],
+    };
+    const session = buildSession();
+    const project = buildProject(session, processTemplate);
+
+    // User views stage1 (thesis), but app is on stage2 (antithesis) — a non-final stage.
+    // Stage1 is complete with documents. Stage2 (the next stage after viewed stage1)
+    // has empty progress so nextStageStarted won't catch it. isFinalStage reads
+    // activeStageSlug='antithesis' which is non-final. No active jobs.
+    // Without a viewed===app guard, the button incorrectly appears.
+    setDialecticStateValues({
+      currentProjectDetail: project,
+      activeSessionDetail: session,
+      activeContextSessionId: sessionId,
+      currentProcessTemplate: processTemplate,
+      activeContextStage: stage1,
+      activeStageSlug: stage2.slug,
+      recipesByStageSlug: {
+        thesis: buildThesisRecipeWithDocumentKey('success_metrics'),
+        antithesis: buildMinimalRecipe('antithesis'),
+        synthesis: buildMinimalRecipe('synthesis'),
+      },
+      stageRunProgress: {
+        [progressKey]: {
+          progress: { totalSteps: 1, completedSteps: 1, failedSteps: 0 },
+          stepStatuses: { 'step-1': 'completed' },
+          documents: {
+            ['success_metrics:model-1']: buildRenderedDescriptor('model-1', 'res-1'),
+          },
+          jobProgress: {},
+          jobs: [
+            buildJobProgressDto({
+              id: 'job-1',
+              status: 'completed',
+              documentKey: 'success_metrics',
+              modelId: 'model-1',
+            }),
+          ],
+        },
+        [antithesisProgressKey]: emptyStageRunProgressSnapshot,
+        [`${sessionId}:synthesis:${iterationNumber}`]: emptyStageRunProgressSnapshot,
+      },
+      isSubmittingStageResponses: false,
+      submitStageResponsesError: null,
+    });
+    selectIsStageReadyForSessionIteration.mockReturnValue(true);
+    render(<SubmitResponsesButton />);
+    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
   });
 });

@@ -36,6 +36,7 @@ const mockInitialStage: DialecticStage = {
     expected_output_template_ids: [],
     recipe_template_id: null,
     default_system_prompt_id: 'sp-1',
+    minimum_balance: 0,
 };
 
 const mockProcessTemplate: Omit<DialecticProcessTemplate, 'stages' | 'transitions'> & { stages: DialecticStage[] } = {
@@ -241,11 +242,14 @@ describe('DialecticProjectDetailsPage', () => {
     fireEvent.click(startSessionButton);
     
     await waitFor(() => {
-        expect(store.startDialecticSession).toHaveBeenCalledWith({
+        expect(store.startDialecticSession).toHaveBeenCalledWith(
+          expect.objectContaining({
             projectId: mockProjectIdFromUrl,
             selectedModels: [],
             stageSlug: mockInitialStage.slug,
-        });
+            idempotencyKey: expect.any(String),
+          })
+        );
     });
   });
 

@@ -156,6 +156,7 @@ export const planAllToOne: GranularityPlannerFn = (
         
         // Create EXECUTE job payload for PLAN recipe step (will execute Planner prompt to generate HeaderContext)
         const executePayload: DialecticExecuteJobPayload = {
+            idempotencyKey: parentJob.payload.idempotencyKey,
             projectId: parentJob.payload.projectId,
             sessionId: parentJob.payload.sessionId,
             stageSlug: parentJob.payload.stageSlug,
@@ -354,6 +355,7 @@ export const planAllToOne: GranularityPlannerFn = (
         }
 
         const executePayload: DialecticExecuteJobPayload = {
+            idempotencyKey: parentJob.payload.idempotencyKey,
             projectId: parentJob.payload.projectId,
             sessionId: parentJob.payload.sessionId,
             stageSlug: parentJob.payload.stageSlug,

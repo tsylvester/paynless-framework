@@ -285,17 +285,48 @@ export async function processComplexJob(
         );
 
         if (childJobs.length > 0) {
-             const { error: insertError } = await dbClient.from('dialectic_generation_jobs').insert(childJobs);
-             if (insertError) {
-                 throw new Error(`Failed to insert child jobs during deferred planning: ${insertError.message}`);
-             }
-             ctx.logger.info(`[processComplexJob] Deferred planning enqueued ${childJobs.length} child jobs for step ${step.step_slug}`);
+            for (const child of childJobs) {
+                if (child == null) continue;
+                if (child.idempotency_key != null) continue;
+                const payload = child.payload;
+                if (isRecord(payload)) {
+                    if (child.job_type === 'EXECUTE' && typeof payload.model_id === 'string') {
+                        child.idempotency_key = `${job.id}_${step.step_slug}_${payload.model_id}`;
+                    } else if (child.job_type === 'PLAN' && isRecord(payload.planner_metadata) && typeof payload.planner_metadata.recipe_step_id === 'string') {
+                        child.idempotency_key = `${job.id}_skeleton_${payload.planner_metadata.recipe_step_id}`;
+                    }
+                }
+                if (child.idempotency_key == null) {
+                    child.idempotency_key = `${job.id}_child_${child.id}`;
+                }
+            }
+            const { error: insertError } = await dbClient.from('dialectic_generation_jobs').insert(childJobs);
+            if (insertError) {
+                const isUniqueViolationOnIdempotencyKey =
+                    insertError.code === '23505' &&
+                    typeof insertError.message === 'string' &&
+                    insertError.message.includes('idempotency_key');
+                if (isUniqueViolationOnIdempotencyKey) {
+                    const { error: updateError } = await dbClient.from('dialectic_generation_jobs').update({
+                        status: 'waiting_for_children',
+                        prerequisite_job_id: null,
+                    }).eq('id', job.id);
+                    if (updateError) {
+                        throw new Error(`Failed to update skeleton job after idempotent replay: ${updateError.message}`);
+                    }
+                    ctx.logger.info(`[processComplexJob] Deferred planning idempotent replay: existing child jobs for step ${step.step_slug}, updated skeleton to waiting_for_children.`);
+                } else {
+                    throw new Error(`Failed to insert child jobs during deferred planning: ${insertError.message}`);
+                }
+            } else {
+                ctx.logger.info(`[processComplexJob] Deferred planning enqueued ${childJobs.length} child jobs for step ${step.step_slug}`);
 
-             // Update skeleton job to waiting_for_children and clear prerequisite_job_id
-             await dbClient.from('dialectic_generation_jobs').update({
-                status: 'waiting_for_children',
-                prerequisite_job_id: null,
-             }).eq('id', job.id);
+                // Update skeleton job to waiting_for_children and clear prerequisite_job_id
+                await dbClient.from('dialectic_generation_jobs').update({
+                    status: 'waiting_for_children',
+                    prerequisite_job_id: null,
+                }).eq('id', job.id);
+            }
         } else {
             ctx.logger.warn(`[processComplexJob] Deferred planning produced no child jobs for step ${step.step_slug}`);
             // If no children, mark as completed
@@ -839,7 +870,7 @@ export async function processComplexJob(
                     iterationNumber: iterationNumber,
                     planner_metadata: skeletonPlannerMetadata,
                     step_info: skeletonStepInfo,
-                    
+                    idempotencyKey: `${parentJobId}_skeleton_${step.id}`,
                     // Optional fields - only include if defined to pass type guard validation
                     ...(parentPayload.sourceContributionId !== undefined && { sourceContributionId: parentPayload.sourceContributionId }),
                     ...(parentPayload.continueUntilComplete !== undefined && { continueUntilComplete: parentPayload.continueUntilComplete }),
@@ -849,6 +880,7 @@ export async function processComplexJob(
                     ...(parentPayload.is_test_job !== undefined && { is_test_job: parentPayload.is_test_job }),
                     ...(parentPayload.model_slug !== undefined && { model_slug: parentPayload.model_slug }),
                     ...(parentPayload.context_for_documents !== undefined && { context_for_documents: parentPayload.context_for_documents }),
+                    ...(parentPayload.idempotencyKey !== undefined && { idempotencyKey: parentPayload.idempotencyKey }),
                 };
 
                 if (!isJson(skeletonPayload)) {
@@ -892,6 +924,7 @@ export async function processComplexJob(
                     error_details: null,
                     target_contribution_id: null,
                     is_test_job: job.is_test_job ?? false,
+                    idempotency_key: `${parentJobId}_skeleton_${step.id}`,
                 };
 
                 childJobs.push(skeletonPlanJob);
@@ -920,11 +953,64 @@ export async function processComplexJob(
         }
 
         ctx.logger.info(`[processComplexJob] Planner created ${childJobs.length} child jobs for parent ${parentJobId}. Enqueuing now.`);
-        //console.log('[processComplexJob] Child jobs to be inserted:', JSON.stringify(childJobs, null, 2));
+
+        const childJobsToInsert = childJobs.filter((c): c is DialecticJobRow => c != null);
+        for (const child of childJobsToInsert) {
+            if (child.idempotency_key != null) continue;
+            const payload = child.payload;
+            if (isRecord(payload)) {
+                if (child.job_type === 'EXECUTE' && typeof payload.model_id === 'string') {
+                    const recipeStepId = isRecord(payload.planner_metadata) && typeof payload.planner_metadata.recipe_step_id === 'string'
+                        ? payload.planner_metadata.recipe_step_id
+                        : null;
+                    const stepSlug = recipeStepId ? (stepIdToStep.get(recipeStepId)?.step_slug ?? child.stage_slug) : child.stage_slug;
+                    child.idempotency_key = `${parentJobId}_${stepSlug}_${payload.model_id}`;
+                } else if (child.job_type === 'PLAN' && isRecord(payload.planner_metadata) && typeof payload.planner_metadata.recipe_step_id === 'string') {
+                    child.idempotency_key = `${parentJobId}_skeleton_${payload.planner_metadata.recipe_step_id}`;
+                }
+            }
+            if (child.idempotency_key == null) {
+                child.idempotency_key = `${parentJobId}_child_${child.id}`;
+            }
+        }
 
         // 6. Enqueue the child jobs.
-        const { error: insertError } = await dbClient.from('dialectic_generation_jobs').insert(childJobs);
+        const { error: insertError } = await dbClient.from('dialectic_generation_jobs').insert(childJobsToInsert);
         if (insertError) {
+            const isUniqueViolationOnIdempotencyKey =
+                insertError.code === '23505' &&
+                typeof insertError.message === 'string' &&
+                insertError.message.includes('idempotency_key');
+            if (isUniqueViolationOnIdempotencyKey) {
+                const keys = childJobsToInsert.map((c) => c.idempotency_key).filter((k): k is string => k != null);
+                if (keys.length > 0) {
+                    const { data: existingChildren, error: selectError } = await dbClient
+                        .from('dialectic_generation_jobs')
+                        .select('id')
+                        .eq('parent_job_id', parentJobId)
+                        .in('idempotency_key', keys);
+                    if (!selectError && existingChildren && existingChildren.length > 0) {
+                        const { error: updateError } = await dbClient.from('dialectic_generation_jobs').update({
+                            status: 'waiting_for_children',
+                        }).eq('id', parentJobId);
+                        if (updateError) {
+                            throw new Error(`Failed to update parent job status after idempotent replay: ${updateError.message}`);
+                        }
+                        ctx.logger.info(`[processComplexJob] Idempotent replay: found ${existingChildren.length} existing child jobs for parent ${parentJobId}, updated parent to waiting_for_children.`);
+                        try {
+                            await ctx.notificationService.sendJobNotificationEvent({
+                                type: 'planner_completed',
+                                sessionId: job.session_id,
+                                stageSlug: stageSlug,
+                                iterationNumber: job.iteration_number,
+                                job_id: parentJobId,
+                                step_key: firstReady.step_slug,
+                            }, projectOwnerUserId);
+                        } catch { /* best-effort notification */ }
+                        return;
+                    }
+                }
+            }
             throw new Error(`Failed to insert child jobs: ${insertError.message}`);
         }
 

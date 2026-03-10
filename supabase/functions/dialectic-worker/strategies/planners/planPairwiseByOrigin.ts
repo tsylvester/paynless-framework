@@ -298,6 +298,7 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 
 				const planPayload: DialecticPlanJobPayload = {
 					// Inherit ALL fields from parent job payload (defensive programming)
+					idempotencyKey: parentJob.payload.idempotencyKey,
 					projectId: parentJob.payload.projectId,
 					sessionId: parentJob.payload.sessionId,
 					stageSlug: parentJob.payload.stageSlug,
@@ -510,7 +511,7 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
 				}
 
 				const newPayload: DialecticExecuteJobPayload = {
-					// Inherit ALL fields from parent payload first (defensive programming)
+					idempotencyKey: parentJob.payload.idempotencyKey,
 					projectId: parentJob.payload.projectId,
 					sessionId: parentJob.payload.sessionId,
 					stageSlug: parentJob.payload.stageSlug,

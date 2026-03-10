@@ -35,6 +35,7 @@ const makeRenderJob = (payloadOverrides: Partial<DialecticRenderJobPayload> = {}
     documentIdentity: "doc-root-1",
     documentKey: FileType.business_case,
     template_filename: "thesis_business_case.md",
+    idempotencyKey: "idempotency-key-1",
     ...payloadOverrides,
   };
 
@@ -62,6 +63,7 @@ const makeRenderJob = (payloadOverrides: Partial<DialecticRenderJobPayload> = {}
     prerequisite_job_id: null,
     is_test_job: false,
     job_type: "RENDER",
+    idempotency_key: "idempotency-key-1",
   };
   return row;
 };

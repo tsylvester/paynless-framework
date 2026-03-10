@@ -38,6 +38,18 @@ export async function startSession(
 
     log.info(`[startSession] Function started for user ${user.id} with payload projectId: ${payload.projectId}`);
 
+    const idempotencyKeyRaw = payload.idempotencyKey;
+    if (idempotencyKeyRaw === null || idempotencyKeyRaw === undefined) {
+        return { error: { message: "idempotencyKey is required", status: 400 } };
+    }
+    if (typeof idempotencyKeyRaw !== 'string') {
+        return { error: { message: "idempotencyKey is required", status: 400 } };
+    }
+    const idempotencyKey = idempotencyKeyRaw.trim();
+    if (idempotencyKey.length === 0) {
+        return { error: { message: "idempotencyKey is required", status: 400 } };
+    }
+
     const { projectId, originatingChatId, selectedModels, sessionDescription } = payload;
     const userId = user.id;
 
@@ -288,13 +300,47 @@ export async function startSession(
             selected_model_ids: selectedModels.map(m => m.id),
             session_description: sessionDescription ?? `Session for ${project.project_name} - ${initialStageName}`,
             associated_chat_id: originatingChatId,
+            idempotency_key: idempotencyKey,
         })
         .select()
         .single();
 
     if (sessionInsertError || !newSessionRecord) {
+        if (sessionInsertError?.code === '23505' && sessionInsertError.message.includes('idempotency_key')) {
+            const { data: existingSession, error: selectError } = await dbClient
+                .from('dialectic_sessions')
+                .select()
+                .eq('idempotency_key', idempotencyKey)
+                .eq('project_id', projectId)
+                .single();
+            if (!selectError && existingSession) {
+                const sessionContextForExisting: SessionContext = { ...existingSession };
+                const assembledSeedPrompt = await assembler.assembleSeedPrompt({
+                    dbClient,
+                    fileManager,
+                    project: projectContext,
+                    session: sessionContextForExisting,
+                    stage: stageContext,
+                    projectInitialUserPrompt: initialPrompt.content,
+                    iterationNumber: existingSession.iteration_count,
+                    downloadFromStorageFn: (bucket: string, path: string) => downloadFromStorage(dbClient, bucket, path),
+                    gatherInputsForStageFn: gatherInputsForStage,
+                    renderPromptFn: renderPrompt
+                });
+                if (assembledSeedPrompt) {
+                    const { selected_model_ids: _droppedExisting, ...existingSessionFields } = existingSession;
+                    const successResponse: StartSessionSuccessResponse = {
+                        ...existingSessionFields,
+                        selected_models: selectedModels,
+                        seedPrompt: assembledSeedPrompt,
+                    };
+                    log.info(`[startSession] Returning existing session ${existingSession.id} for idempotency key.`);
+                    return { data: successResponse };
+                }
+            }
+        }
         log.error("[startSession] Error inserting new session:", { dbError: sessionInsertError });
-        return { error: { message: "Failed to create new session.", status: 500, details: sessionInsertError.message } };
+        return { error: { message: "Failed to create new session.", status: 500, details: sessionInsertError?.message } };
     }
     log.info(`[startSession] New session ${newSessionRecord.id} created.`);
 

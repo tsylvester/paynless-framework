@@ -150,6 +150,7 @@ describe('processComplexJob', () => {
             model_id: 'model-id-complex',
             walletId: 'wallet-id-complex',
             user_jwt: 'user-jwt-complex',
+            idempotencyKey: 'idem-plan-complex',
         };
 
         if (!isJson(mockPayload)) {
@@ -176,6 +177,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: 'idem-plan-complex',
         };
 
         const mockParams = {
@@ -442,6 +444,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
         mockJobProcessors.planComplexStage = async () => Promise.resolve([mockChildJob]);
 
@@ -497,6 +500,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
         mockJobProcessors.planComplexStage = async () => Promise.resolve([mockChildJob]);
         // - Configure 'insert' to succeed but 'update' to fail.
@@ -571,6 +575,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -638,6 +643,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -708,6 +714,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -778,6 +785,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -843,6 +851,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -907,6 +916,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -971,6 +981,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const retryingChildJob: DialecticJobRow = {
@@ -1014,6 +1025,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -1079,6 +1091,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const retryingChildJob: DialecticJobRow = {
@@ -1122,6 +1135,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -1187,6 +1201,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const retryingChildJob: DialecticJobRow = {
@@ -1230,6 +1245,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const processingChildJob: DialecticJobRow = {
@@ -1273,6 +1289,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -1338,6 +1355,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -1405,6 +1423,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -1500,6 +1519,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const failedChildJob: DialecticJobRow = {
@@ -1544,6 +1564,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const completedChildJob3: DialecticJobRow = {
@@ -1588,6 +1609,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -1670,6 +1692,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const failedChildJob: DialecticJobRow = {
@@ -1714,6 +1737,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {

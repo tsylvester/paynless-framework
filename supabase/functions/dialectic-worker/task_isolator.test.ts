@@ -53,6 +53,7 @@ describe('planComplexStage - Source Document Filtering', () => {
 
         mockParentJob = {
             id: 'parent-job-123',
+            idempotency_key: null,
             parent_job_id: null,
             session_id: 'sess-1',
             user_id: 'user-123',
@@ -78,6 +79,7 @@ describe('planComplexStage - Source Document Filtering', () => {
                 walletId: 'wallet-1',
                 user_jwt: 'user-jwt-123',
                 model_id: 'model-1',
+                idempotencyKey: "idempotency-key-1",
             },
         };
 
@@ -125,6 +127,7 @@ describe('planComplexStage - Source Document Filtering', () => {
                 },
                 inputs: {},
                 document_relationships: doc.document_relationships ?? null,
+                idempotencyKey: "idempotency-key-1",
             }));
         };
 
@@ -638,6 +641,7 @@ describe('planComplexStage - Source Document Filtering', () => {
         // VERIFY: This test explicitly verifies that document_relationships is extracted
         // from the DIRECT column: row.document_relationships (not nested)
         // NOTE: This test uses header_context type since document-type inputs now only use resources
+        // Storage path and file_name must match path_deconstructor headerContextPatternString so attemptCount is extracted (idempotency keys). First segment is project id, then session_shortId (see path_deconstructor.fragment.test.ts).
         const mockContribution: DialecticContributionRow = {
             id: 'contribution-1',
             session_id: 'sess-1',
@@ -661,9 +665,9 @@ describe('planComplexStage - Source Document Filtering', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
-            file_name: 'header_context.json',
+            file_name: 'model-1_1_header_context.json',
             storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+            storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
             size_bytes: 123,
             mime_type: 'application/json',
             document_relationships: { source_group: 'test-id' }, // Direct column, not nested

@@ -235,6 +235,7 @@ export async function planComplexStage(
                 payload: validatedPayload,
                 is_test_job: parentJob.is_test_job ?? false,
                 job_type: jobType,
+                idempotency_key: `${parentJob.id}_${recipeStep.step_slug}_${validatedPayload.model_id}`,
             });
         } catch (error) {
             ctx.logger.warn(`[task_isolator] Error processing payload, skipping. Error: ${error instanceof Error ? error.message : String(error)}`, { payload: JSON.stringify(payload) });

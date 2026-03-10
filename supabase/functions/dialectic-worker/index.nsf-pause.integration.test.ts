@@ -63,6 +63,7 @@ Deno.test('index NSF pause integration - end-to-end: NSF error pauses failing jo
 			stageSlug,
 			model_id: 'model-id',
 			iterationNumber,
+			idempotencyKey: "idempotency-key-1",
 		},
 		iteration_number: iterationNumber,
 		status: 'pending',
@@ -78,6 +79,7 @@ Deno.test('index NSF pause integration - end-to-end: NSF error pauses failing jo
 		prerequisite_job_id: null,
 		is_test_job: false,
 		job_type: 'PLAN',
+		idempotency_key: "idempotency-key-1",
 	};
 
 	const siblingsFromDb: Pick<JobRow, 'id' | 'status'>[] = [

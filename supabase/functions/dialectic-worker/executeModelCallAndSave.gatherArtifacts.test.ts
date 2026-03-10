@@ -50,12 +50,14 @@ function createMockJob(payload: DialecticExecuteJobPayload, overrides: Partial<D
         payload: payload,
         is_test_job: false,
         job_type: 'EXECUTE',
+        idempotency_key: null,
         ...overrides,
     };
     return baseJob;
 }
 
 const testPayload: DialecticExecuteJobPayload = {
+    idempotencyKey: 'job-id-123_execute',
     prompt_template_id: 'test-prompt',
     inputs: {},
     output_type: FileType.business_case,
