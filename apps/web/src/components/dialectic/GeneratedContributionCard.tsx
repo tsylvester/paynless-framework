@@ -238,7 +238,11 @@ export const GeneratedContributionCard: React.FC<
 	const documentDescriptor: StageRunDocumentDescriptor | undefined =
 		focusedDocument && stageRunProgress && documentDescriptorKey
 			? stageRunProgress.documents?.[documentDescriptorKey]
-			: undefined;	
+			: undefined;
+	
+	const isDocumentGenerating = documentDescriptor?.status === 'generating' || 
+		documentDescriptor?.status === 'continuing' ||
+		documentDescriptor?.status === 'retrying';	
 
 	const isRenderedDescriptor = (
 		descriptor: StageRunDocumentDescriptor | undefined,
@@ -619,9 +623,21 @@ export const GeneratedContributionCard: React.FC<
 							</Alert>
 						)}
 
+						{isDocumentGenerating && (
+							<Alert variant="default" className="border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
+								<div className="flex items-center gap-2">
+									<Loader2 className="h-4 w-4 animate-spin text-amber-600" />
+									<AlertDescription className="text-amber-800 dark:text-amber-200">
+										Document is being generated. Content will appear when ready...
+									</AlertDescription>
+								</div>
+							</Alert>
+						)}
+
 						{documentDescriptor &&
 							!isRenderedDescriptor(documentDescriptor) &&
-							!isDraftLoading && (
+							!isDraftLoading &&
+							!isDocumentGenerating && (
 								<Alert variant="default">
 									<AlertDescription>
 										RENDER job has not completed yet. Document content will be

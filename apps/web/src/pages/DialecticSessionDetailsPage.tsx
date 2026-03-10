@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DialecticSession, DialecticProject, ApiError } from "@paynless/types";
 import { useStartContributionGeneration } from "@/hooks/useStartContributionGeneration";
+import { useActiveStageSync } from "@/hooks/useActiveStageSync";
 
 // New Component Imports
 import { GenerateContributionButton } from "../components/dialectic/GenerateContributionButton";
@@ -52,6 +53,9 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 	const selectedModels = useDialecticStore(selectSelectedModels);
 
 	const { startContributionGeneration, activeStage: hookActiveStage } = useStartContributionGeneration();
+
+	// Ensure activeContextStage is synced with activeStageSlug
+	useActiveStageSync();
 
 	// Loading and error states from store
 	const isLoadingProject = useDialecticStore(

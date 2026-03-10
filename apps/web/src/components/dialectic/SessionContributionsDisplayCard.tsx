@@ -39,6 +39,8 @@ import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHyd
 import { Badge } from "@/components/ui/badge";
 import { GeneratedContributionCard } from "./GeneratedContributionCard";
 import { SubmitResponsesButton } from "./SubmitResponsesButton";
+import { useStageProgressPolling } from '../../hooks/useStageProgressPolling';
+import { useActiveStageSync } from '../../hooks/useActiveStageSync';
 
 const DocumentWorkspaceSkeleton: React.FC = () => (
 	<div className="bg-card rounded-2xl shadow-sm border border-border/50 p-8 animate-pulse">
@@ -81,6 +83,8 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	}, [processTemplate, activeStageSlug]);
 
 	useStageRunProgressHydration();
+	useStageProgressPolling();
+	useActiveStageSync();
 
 	// New store states for loading and error handling
 	const isLoadingCurrentProjectDetail = useDialecticStore(

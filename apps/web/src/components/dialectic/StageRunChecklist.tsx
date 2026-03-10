@@ -247,6 +247,7 @@ function computeStageRunChecklistData(
       const stepKey = stepKeyByDocumentKey.get(documentKey);
       let completedCount = 0;
       let hasFailed = false;
+      let hasGenerating = false;
       let hasContinuing = false;
       let firstRenderedEntry: StageDocumentEntry | null = null;
       const perModelLabels: PerModelLabel[] = [];
@@ -277,7 +278,7 @@ function computeStageRunChecklistData(
               hasContinuing = true;
               statusLabel = 'Continuing';
             } else if (checklistEntry.status === 'generating') {
-              hasContinuing = true;
+              hasGenerating = true;
               statusLabel = 'Generating';
             } else {
               statusLabel = 'Not started';
@@ -296,6 +297,10 @@ function computeStageRunChecklistData(
               ) ?? [];
             const job = jobsForModel[0];
             statusLabel = job != null ? jobStatusToLabel(job.status) : 'Missing status';
+            // Check if job is actively generating
+            if (job && (job.status === 'processing' || job.status === 'retrying' || job.status === 'waiting_for_children')) {
+              hasGenerating = true;
+            }
           }
 
           const jobsForModel =
@@ -303,6 +308,10 @@ function computeStageRunChecklistData(
               (j) => j.documentKey === documentKey && j.modelId === mid,
             ) ?? [];
           const job = jobsForModel[0];
+          // Also check job status here to ensure we catch all generating states
+          if (job && (job.status === 'processing' || job.status === 'retrying' || job.status === 'waiting_for_children')) {
+            hasGenerating = true;
+          }
           const nameFromJob =
             job?.modelName != null && job.modelName.trim().length > 0
               ? job.modelName
@@ -320,24 +329,24 @@ function computeStageRunChecklistData(
       const consolidatedLabel =
         hasFailed
           ? 'Failed'
-          : hasContinuing
-            ? 'Continuing'
-            : completedCount === totalModels && totalModels > 0
-              ? 'Completed'
-              : completedCount === 0 && isStageGenerating
-                ? 'Generating'
+          : hasGenerating || (completedCount === 0 && isStageGenerating)
+            ? 'Generating'
+            : hasContinuing
+              ? 'Continuing'
+              : completedCount === totalModels && totalModels > 0
+                ? 'Completed'
                 : completedCount === 0
                   ? 'Not Started'
                   : `${completedCount}/${totalModels} complete`;
 
       const derivedStatus: StageDocumentEntry['status'] = hasFailed
         ? 'failed'
-        : hasContinuing
-          ? 'continuing'
-          : completedCount === totalModels && totalModels > 0
-            ? 'completed'
-            : completedCount === 0 && isStageGenerating
-              ? 'generating'
+        : hasGenerating || (completedCount === 0 && isStageGenerating)
+          ? 'generating'
+          : hasContinuing
+            ? 'continuing'
+            : completedCount === totalModels && totalModels > 0
+              ? 'completed'
               : 'not_started';
 
       const stepKeyResolved: string = stepKey ?? '';
