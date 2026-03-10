@@ -7,6 +7,8 @@ import type {
   GetAllStageProgressResponse,
   ResumePausedNsfJobsPayload,
   ResumePausedNsfJobsResponse,
+  PauseActiveJobsPayload,
+  PauseActiveJobsResponse,
   RegenerateDocumentPayload,
   RegenerateDocumentResponse,
   ApiError,
@@ -430,6 +432,86 @@ describe('DialecticApiClient - Document Listing', () => {
         'dialectic-service',
         {
           action: 'resumePausedNsfJobs',
+          payload,
+        }
+      );
+    });
+  });
+
+  describe('pauseActiveJobs', () => {
+    it('should call the post method with the correct action and payload and return pausedCount on success', async () => {
+      const payload: PauseActiveJobsPayload = {
+        sessionId: 'test-session-id',
+        stageSlug: 'antithesis',
+        iterationNumber: 1,
+      };
+      const mockResponseData: PauseActiveJobsResponse = { pausedCount: 2 };
+      const mockApiResponse: ApiResponse<PauseActiveJobsResponse> = {
+        data: mockResponseData,
+        error: undefined,
+        status: 200,
+      };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
+
+      const result = await dialecticApiClient.pauseActiveJobs(payload);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'pauseActiveJobs',
+          payload,
+        }
+      );
+      expect(result.data).toEqual(mockResponseData);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(200);
+    });
+
+    it('should return an error when the API call fails', async () => {
+      const payload: PauseActiveJobsPayload = {
+        sessionId: 'test-session-id',
+        stageSlug: 'antithesis',
+        iterationNumber: 1,
+      };
+      const mockError: ApiError = { message: 'Pause failed', code: '500' };
+      const mockApiResponse: ApiResponse<PauseActiveJobsResponse> = {
+        data: undefined,
+        error: mockError,
+        status: 500,
+      };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
+
+      const result = await dialecticApiClient.pauseActiveJobs(payload);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'pauseActiveJobs',
+          payload,
+        }
+      );
+      expect(result.data).toBeUndefined();
+      expect(result.error).toEqual(mockError);
+      expect(result.status).toBe(500);
+    });
+
+    it('should propagate when post rejects (network error)', async () => {
+      const payload: PauseActiveJobsPayload = {
+        sessionId: 'test-session-id',
+        stageSlug: 'antithesis',
+        iterationNumber: 1,
+      };
+      const networkError = new Error('Network request failed');
+      vi.mocked(mockApiClient.post).mockRejectedValue(networkError);
+
+      await expect(dialecticApiClient.pauseActiveJobs(payload)).rejects.toThrow('Network request failed');
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'pauseActiveJobs',
           payload,
         }
       );

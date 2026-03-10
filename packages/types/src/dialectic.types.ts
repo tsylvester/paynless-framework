@@ -564,7 +564,7 @@ export interface JobProgressEntry {
 export type StepJobProgress = Record<string, JobProgressEntry>;
 
 export interface StageRunProgressSnapshot {
-  stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed' | 'paused_nsf'>;
+  stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed' | 'paused_nsf' | 'paused_user'>;
   /** Keyed by StageRunDocumentKey (documentKey:modelId). One document key can have N descriptors. */
   documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
   jobProgress: StepJobProgress;
@@ -572,7 +572,7 @@ export interface StageRunProgressSnapshot {
   jobs: JobProgressDto[];
 }
 
-export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed' | 'paused_nsf';
+export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed' | 'paused_nsf' | 'paused_user';
 
 export interface StepProgressDetail {
   stepKey: string;
@@ -717,6 +717,7 @@ export interface DialecticActions {
   generateContributions: (payload: GenerateContributionsPayload) => Promise<ApiResponse<GenerateContributionsResponse>>;
 
   resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload) => Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
+  pauseActiveJobs: (payload: PauseActiveJobsPayload) => Promise<ApiResponse<PauseActiveJobsResponse>>;
   regenerateDocument: (payload: RegenerateDocumentPayload) => Promise<ApiResponse<RegenerateDocumentResponse>>;
 
   // Actions for submitting stage responses and preparing next seed (plan 1.2.Y / 1.5.6.4)
@@ -1091,6 +1092,7 @@ export interface DialecticApiClient {
   submitStageDocumentFeedback(payload: SubmitStageDocumentFeedbackPayload): Promise<ApiResponse<{ success: boolean }>>;
   listStageDocuments(payload: ListStageDocumentsPayload): Promise<ApiResponse<ListStageDocumentsResponse>>;
   resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
+  pauseActiveJobs(payload: PauseActiveJobsPayload): Promise<ApiResponse<PauseActiveJobsResponse>>;
   regenerateDocument(payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>>;
 }
 
@@ -1223,6 +1225,16 @@ export interface ResumePausedNsfJobsPayload {
 
 export interface ResumePausedNsfJobsResponse {
   resumedCount: number;
+}
+
+export interface PauseActiveJobsPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+}
+
+export interface PauseActiveJobsResponse {
+  pausedCount: number;
 }
 
 export interface RegenerateDocumentPayload {
@@ -1373,6 +1385,9 @@ export type DialecticServiceActionPayload = {
 } | {
   action: 'resumePausedNsfJobs';
   payload: ResumePausedNsfJobsPayload;
+} | {
+  action: 'pauseActiveJobs';
+  payload: PauseActiveJobsPayload;
 } | {
   action: 'regenerateDocument';
   payload: RegenerateDocumentPayload;

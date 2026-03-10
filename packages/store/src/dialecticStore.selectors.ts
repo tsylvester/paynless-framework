@@ -898,11 +898,13 @@ export const selectUnifiedProjectProgress = (
                     : raw === 'completed' ? 'completed'
                     : raw === 'in_progress' || raw === 'waiting_for_children' ? 'in_progress'
                     : raw === 'paused_nsf' ? 'paused_nsf'
+                    : raw === 'paused_user' ? 'paused_user'
                     : 'not_started';
 
             if (stepStatus === 'failed') stageStatus = 'failed';
             else if (stepStatus === 'in_progress' && stageStatus !== 'failed') stageStatus = 'in_progress';
             else if (stepStatus === 'paused_nsf' && stageStatus !== 'failed') stageStatus = 'paused_nsf';
+            else if (stepStatus === 'paused_user' && stageStatus !== 'failed' && stageStatus !== 'paused_nsf') stageStatus = 'paused_user';
 
             const stepName = recipeStep.step_name;
 

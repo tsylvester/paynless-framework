@@ -50,6 +50,7 @@ import {
   type SubmitStageDocumentFeedbackPayload,
   type ListStageDocumentsPayload,
   type GetAllStageProgressPayload,
+  type PauseActiveJobsPayload,
   type ResumePausedNsfJobsPayload,
   type RegenerateDocumentPayload,
   type RegenerateDocumentResponse,
@@ -2102,6 +2103,25 @@ export const useDialecticStore = create<DialecticStore>()(
     const response = await api.dialectic().resumePausedNsfJobs(payload);
     if (response.error) {
       logger.error('[DialecticStore] resumePausedNsfJobs failed', { payload, errorDetails: response.error });
+      return response;
+    }
+    const userId: string | undefined = useAuthStore.getState().user?.id;
+    const projectId: string | undefined = get().currentProjectDetail?.id;
+    if (userId && userId.length > 0 && projectId) {
+      get().hydrateAllStageProgress({
+        sessionId: payload.sessionId,
+        iterationNumber: payload.iterationNumber,
+        userId,
+        projectId,
+      });
+    }
+    return response;
+  },
+
+  pauseActiveJobs: async (payload: PauseActiveJobsPayload) => {
+    const response = await api.dialectic().pauseActiveJobs(payload);
+    if (response.error) {
+      logger.error('[DialecticStore] pauseActiveJobs failed', { payload, errorDetails: response.error });
       return response;
     }
     const userId: string | undefined = useAuthStore.getState().user?.id;

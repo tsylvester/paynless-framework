@@ -1654,127 +1654,127 @@ The regenerate feature currently lives inline in `StageRunChecklist.tsx`. We ext
 
 ### Phase 4: API Client & Store
 
-*   `[ ]`   [API] packages/api/src/`dialectic.api.ts` **Add `pauseActiveJobs` method to the dialectic API client**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Add a `pauseActiveJobs(payload: PauseActiveJobsPayload): Promise<ApiResponse<PauseActiveJobsResponse>>` method to `DialecticApiClient`
-    *   `[ ]`   Follow the exact pattern of `resumePausedNsfJobs` (lines 688-700): log, POST to `dialectic-service` with `action: 'pauseActiveJobs'`, log error or success, return response
-    *   `[ ]`   Add the necessary type imports from `@paynless/types`
-  *   `[ ]`   `role`
-    *   `[ ]`   Port — API client method translating store calls to edge function invocations
-  *   `[ ]`   `module`
-    *   `[ ]`   `packages/api/dialectic.api` — dialectic API client
-    *   `[ ]`   Boundary: called by `dialecticStore.pauseActiveJobs`, POSTs to `dialectic-service` edge function
-  *   `[ ]`   `deps`
-    *   `[ ]`   `PauseActiveJobsPayload`, `PauseActiveJobsResponse` from `@paynless/types` — domain types, inward. These must be re-exported from `packages/types/src/dialectic.types.ts` if not already
-    *   `[ ]`   `this.apiClient.post` — infrastructure, inward (existing HTTP client)
-    *   `[ ]`   `DialecticServiceActionPayload` type — existing action wrapper type
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `this.apiClient` — HTTP client for POST requests
-    *   `[ ]`   `logger` — for info/error logging
-  *   `[ ]`   interface/`dialectic.types.ts` (packages/types)
-    *   `[ ]`   Add `PauseActiveJobsPayload` interface: `{ sessionId: string; stageSlug: string; iterationNumber: number; }` — mirroring `ResumePausedNsfJobsPayload`
-    *   `[ ]`   Add `PauseActiveJobsResponse` interface: `{ pausedCount: number; }`
-    *   `[ ]`   Add `'paused_user'` to the `stepStatuses` type/union if not already present (check line 560)
-    *   `[ ]`   Add `'paused_user'` to `UnifiedProjectStatus` if not already present (check line 568)
-  *   `[ ]`   unit/`dialectic.api.test.ts`
-    *   `[ ]`   Test: `pauseActiveJobs` POSTs to `dialectic-service` with `{ action: 'pauseActiveJobs', payload }`
-    *   `[ ]`   Test: `pauseActiveJobs` returns `ApiResponse<PauseActiveJobsResponse>` on success
-    *   `[ ]`   Test: `pauseActiveJobs` returns error response when POST fails
-  *   `[ ]`   `dialectic.api.ts`
-    *   `[ ]`   Add method `async pauseActiveJobs(payload: PauseActiveJobsPayload): Promise<ApiResponse<PauseActiveJobsResponse>>`
-    *   `[ ]`   Log: `logger.info('Pausing active jobs', { ...payload });`
-    *   `[ ]`   Call: `this.apiClient.post<PauseActiveJobsResponse, DialecticServiceActionPayload>('dialectic-service', { action: 'pauseActiveJobs', payload })`
-    *   `[ ]`   Error log: `logger.error('Error pausing active jobs:', { error: response.error, ...payload });`
-    *   `[ ]`   Success log: `logger.info('Successfully paused active jobs', { ...payload });`
-    *   `[ ]`   Return `response`
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Port layer — translates app-layer store calls to infrastructure HTTP requests
-    *   `[ ]`   All dependencies are inward-facing (HTTP client, types)
-    *   `[ ]`   All provides are outward-facing (consumed by dialecticStore)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Method signature matches the pattern of `resumePausedNsfJobs`
-    *   `[ ]`   Action string `'pauseActiveJobs'` matches the case in `dialectic-service/index.ts`
-    *   `[ ]`   Types are imported from `@paynless/types`, not defined inline
+*   `[✅]`   [API] packages/api/src/`dialectic.api.ts` **Add `pauseActiveJobs` method to the dialectic API client**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add a `pauseActiveJobs(payload: PauseActiveJobsPayload): Promise<ApiResponse<PauseActiveJobsResponse>>` method to `DialecticApiClient`
+    *   `[✅]`   Follow the exact pattern of `resumePausedNsfJobs` (lines 688-700): log, POST to `dialectic-service` with `action: 'pauseActiveJobs'`, log error or success, return response
+    *   `[✅]`   Add the necessary type imports from `@paynless/types`
+  *   `[✅]`   `role`
+    *   `[✅]`   Port — API client method translating store calls to edge function invocations
+  *   `[✅]`   `module`
+    *   `[✅]`   `packages/api/dialectic.api` — dialectic API client
+    *   `[✅]`   Boundary: called by `dialecticStore.pauseActiveJobs`, POSTs to `dialectic-service` edge function
+  *   `[✅]`   `deps`
+    *   `[✅]`   `PauseActiveJobsPayload`, `PauseActiveJobsResponse` from `@paynless/types` — domain types, inward. These must be re-exported from `packages/types/src/dialectic.types.ts` if not already
+    *   `[✅]`   `this.apiClient.post` — infrastructure, inward (existing HTTP client)
+    *   `[✅]`   `DialecticServiceActionPayload` type — existing action wrapper type
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `this.apiClient` — HTTP client for POST requests
+    *   `[✅]`   `logger` — for info/error logging
+  *   `[✅]`   interface/`dialectic.types.ts` (packages/types)
+    *   `[✅]`   Add `PauseActiveJobsPayload` interface: `{ sessionId: string; stageSlug: string; iterationNumber: number; }` — mirroring `ResumePausedNsfJobsPayload`
+    *   `[✅]`   Add `PauseActiveJobsResponse` interface: `{ pausedCount: number; }`
+    *   `[✅]`   Add `'paused_user'` to the `stepStatuses` type/union if not already present (check line 560)
+    *   `[✅]`   Add `'paused_user'` to `UnifiedProjectStatus` if not already present (check line 568)
+  *   `[✅]`   unit/`dialectic.api.test.ts`
+    *   `[✅]`   Test: `pauseActiveJobs` POSTs to `dialectic-service` with `{ action: 'pauseActiveJobs', payload }`
+    *   `[✅]`   Test: `pauseActiveJobs` returns `ApiResponse<PauseActiveJobsResponse>` on success
+    *   `[✅]`   Test: `pauseActiveJobs` returns error response when POST fails
+  *   `[✅]`   `dialectic.api.ts`
+    *   `[✅]`   Add method `async pauseActiveJobs(payload: PauseActiveJobsPayload): Promise<ApiResponse<PauseActiveJobsResponse>>`
+    *   `[✅]`   Log: `logger.info('Pausing active jobs', { ...payload });`
+    *   `[✅]`   Call: `this.apiClient.post<PauseActiveJobsResponse, DialecticServiceActionPayload>('dialectic-service', { action: 'pauseActiveJobs', payload })`
+    *   `[✅]`   Error log: `logger.error('Error pausing active jobs:', { error: response.error, ...payload });`
+    *   `[✅]`   Success log: `logger.info('Successfully paused active jobs', { ...payload });`
+    *   `[✅]`   Return `response`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Port layer — translates app-layer store calls to infrastructure HTTP requests
+    *   `[✅]`   All dependencies are inward-facing (HTTP client, types)
+    *   `[✅]`   All provides are outward-facing (consumed by dialecticStore)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Method signature matches the pattern of `resumePausedNsfJobs`
+    *   `[✅]`   Action string `'pauseActiveJobs'` matches the case in `dialectic-service/index.ts`
+    *   `[✅]`   Types are imported from `@paynless/types`, not defined inline
 
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore.ts` **Add `pauseActiveJobs` action to the dialectic store**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Add a `pauseActiveJobs` async action that calls `api.dialectic().pauseActiveJobs(payload)`, handles errors, and hydrates stage progress on success
-    *   `[ ]`   Follow the exact pattern of `resumePausedNsfJobs` (lines 2094-2111)
-  *   `[ ]`   `role`
-    *   `[ ]`   App — state management action coordinating API call and UI state refresh
-  *   `[ ]`   `module`
-    *   `[ ]`   `packages/store/dialecticStore` — dialectic state management
-    *   `[ ]`   Boundary: called by `useStartContributionGeneration` hook, calls `dialectic.api.pauseActiveJobs`, hydrates stage progress
-  *   `[ ]`   `deps`
-    *   `[ ]`   `api.dialectic().pauseActiveJobs` — port layer, inward (created in prior node)
-    *   `[ ]`   `PauseActiveJobsPayload` from `@paynless/types` — domain type, inward
-    *   `[ ]`   `useAuthStore` — for `user.id` (existing pattern at line 2101)
-    *   `[ ]`   `get().hydrateAllStageProgress` — existing store action for refreshing progress
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `api` — API client accessor
-    *   `[ ]`   `get()` — store state accessor for `currentProjectDetail`, `hydrateAllStageProgress`
-    *   `[ ]`   `useAuthStore.getState()` — for authenticated user ID
-  *   `[ ]`   unit/`dialecticStore.test.ts`
-    *   `[ ]`   Test: `pauseActiveJobs` calls `api.dialectic().pauseActiveJobs` with the payload
-    *   `[ ]`   Test: `pauseActiveJobs` calls `hydrateAllStageProgress` on success
-    *   `[ ]`   Test: `pauseActiveJobs` logs error and returns error response on API failure
-    *   `[ ]`   Test: `pauseActiveJobs` does not hydrate when userId or projectId is missing
-  *   `[ ]`   `dialecticStore.ts`
-    *   `[ ]`   Add `pauseActiveJobs: async (payload: PauseActiveJobsPayload) => { ... }` action, following the `resumePausedNsfJobs` pattern:
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore.ts` **Add `pauseActiveJobs` action to the dialectic store**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Add a `pauseActiveJobs` async action that calls `api.dialectic().pauseActiveJobs(payload)`, handles errors, and hydrates stage progress on success
+    *   `[✅]`   Follow the exact pattern of `resumePausedNsfJobs` (lines 2094-2111)
+  *   `[✅]`   `role`
+    *   `[✅]`   App — state management action coordinating API call and UI state refresh
+  *   `[✅]`   `module`
+    *   `[✅]`   `packages/store/dialecticStore` — dialectic state management
+    *   `[✅]`   Boundary: called by `useStartContributionGeneration` hook, calls `dialectic.api.pauseActiveJobs`, hydrates stage progress
+  *   `[✅]`   `deps`
+    *   `[✅]`   `api.dialectic().pauseActiveJobs` — port layer, inward (created in prior node)
+    *   `[✅]`   `PauseActiveJobsPayload` from `@paynless/types` — domain type, inward
+    *   `[✅]`   `useAuthStore` — for `user.id` (existing pattern at line 2101)
+    *   `[✅]`   `get().hydrateAllStageProgress` — existing store action for refreshing progress
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `api` — API client accessor
+    *   `[✅]`   `get()` — store state accessor for `currentProjectDetail`, `hydrateAllStageProgress`
+    *   `[✅]`   `useAuthStore.getState()` — for authenticated user ID
+  *   `[✅]`   unit/`dialecticStore.test.ts`
+    *   `[✅]`   Test: `pauseActiveJobs` calls `api.dialectic().pauseActiveJobs` with the payload
+    *   `[✅]`   Test: `pauseActiveJobs` calls `hydrateAllStageProgress` on success
+    *   `[✅]`   Test: `pauseActiveJobs` logs error and returns error response on API failure
+    *   `[✅]`   Test: `pauseActiveJobs` does not hydrate when userId or projectId is missing
+  *   `[✅]`   `dialecticStore.ts`
+    *   `[✅]`   Add `pauseActiveJobs: async (payload: PauseActiveJobsPayload) => { ... }` action, following the `resumePausedNsfJobs` pattern:
         1. Call `api.dialectic().pauseActiveJobs(payload)`
         2. On error: log and return response
         3. On success: get `userId` from `useAuthStore`, `projectId` from `get().currentProjectDetail?.id`
         4. If both exist: call `get().hydrateAllStageProgress({ sessionId: payload.sessionId, iterationNumber: payload.iterationNumber, userId, projectId })`
         5. Return response
-  *   `[ ]`   `directionality`
-    *   `[ ]`   App layer — orchestrates between port (API) and domain (state)
-    *   `[ ]`   All dependencies are inward-facing (API client, auth store, types)
-    *   `[ ]`   All provides are outward-facing (consumed by UI hooks)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Store action follows the exact same pattern as `resumePausedNsfJobs`
-    *   `[ ]`   Stage progress is hydrated after successful pause so UI reflects new `paused_user` statuses
-    *   `[ ]`   Errors are logged with payload context
+  *   `[✅]`   `directionality`
+    *   `[✅]`   App layer — orchestrates between port (API) and domain (state)
+    *   `[✅]`   All dependencies are inward-facing (API client, auth store, types)
+    *   `[✅]`   All provides are outward-facing (consumed by UI hooks)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Store action follows the exact same pattern as `resumePausedNsfJobs`
+    *   `[✅]`   Stage progress is hydrated after successful pause so UI reflects new `paused_user` statuses
+    *   `[✅]`   Errors are logged with payload context
 
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore.selectors.ts` **Add `paused_user` recognition to frontend status selectors**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Update the status mapping logic that currently maps `raw === 'paused_nsf' ? 'paused_nsf'` (line 900) to also handle `'paused_user'`
-    *   `[ ]`   Update the stage status rollup (line 905) to recognize `'paused_user'` alongside `'paused_nsf'`
-    *   `[ ]`   Ensure `paused_nsf` takes priority over `paused_user` in stage rollup (if both exist, stage shows `paused_nsf` because it requires balance resolution)
-  *   `[ ]`   `role`
-    *   `[ ]`   App — selector logic deriving display-ready status from raw store state
-  *   `[ ]`   `module`
-    *   `[ ]`   `packages/store/dialecticStore.selectors` — status derivation selectors
-    *   `[ ]`   Boundary: reads from dialectic store state, provides derived values to UI hooks and components
-  *   `[ ]`   `deps`
-    *   `[ ]`   `dialecticStore` state shape — app layer, inward (unchanged)
-    *   `[ ]`   Status type unions from `@paynless/types` — domain types, inward (updated in prior node)
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Raw step/stage status strings from store state
-  *   `[ ]`   unit/`dialecticStore.selectors.test.ts`
-    *   `[ ]`   Test: raw status `'paused_user'` maps to `'paused_user'` in step status
-    *   `[ ]`   Test: stage with mixed `'paused_nsf'` and `'paused_user'` steps rolls up to `'paused_nsf'`
-    *   `[ ]`   Test: stage with only `'paused_user'` steps rolls up to `'paused_user'`
-    *   `[ ]`   Test: existing `'paused_nsf'` selector behavior is preserved
-  *   `[ ]`   `dialecticStore.selectors.ts`
-    *   `[ ]`   Add `raw === 'paused_user' ? 'paused_user'` mapping alongside existing `paused_nsf` mapping (near line 900)
-    *   `[ ]`   Update stage status rollup: if `stepStatus === 'paused_user' && stageStatus !== 'failed' && stageStatus !== 'paused_nsf'` then `stageStatus = 'paused_user'` (near line 905)
-    *   `[ ]`   Priority: `failed` > `paused_nsf` > `paused_user` > other statuses
-  *   `[ ]`   `directionality`
-    *   `[ ]`   App layer — reads from store, provides to UI
-    *   `[ ]`   All dependencies are inward-facing
-    *   `[ ]`   All provides are outward-facing (consumed by hooks and components)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   `paused_user` is correctly recognized and propagated through selectors
-    *   `[ ]`   `paused_nsf` always takes priority over `paused_user` in rollups
-    *   `[ ]`   Existing selector behavior is unbroken
-  *   `[ ]`   **Commit** `feat(store,api): add pauseActiveJobs to API client, store, and selectors — support paused_user status in frontend state`
-    *   `[ ]`   `dialectic.api.ts`: new `pauseActiveJobs` method
-    *   `[ ]`   `dialectic.types.ts`: new payload/response types, `paused_user` in status unions
-    *   `[ ]`   `dialecticStore.ts`: new `pauseActiveJobs` action
-    *   `[ ]`   `dialecticStore.selectors.ts`: `paused_user` status recognition
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore.selectors.ts` **Add `paused_user` recognition to frontend status selectors**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Update the status mapping logic that currently maps `raw === 'paused_nsf' ? 'paused_nsf'` (line 900) to also handle `'paused_user'`
+    *   `[✅]`   Update the stage status rollup (line 905) to recognize `'paused_user'` alongside `'paused_nsf'`
+    *   `[✅]`   Ensure `paused_nsf` takes priority over `paused_user` in stage rollup (if both exist, stage shows `paused_nsf` because it requires balance resolution)
+  *   `[✅]`   `role`
+    *   `[✅]`   App — selector logic deriving display-ready status from raw store state
+  *   `[✅]`   `module`
+    *   `[✅]`   `packages/store/dialecticStore.selectors` — status derivation selectors
+    *   `[✅]`   Boundary: reads from dialectic store state, provides derived values to UI hooks and components
+  *   `[✅]`   `deps`
+    *   `[✅]`   `dialecticStore` state shape — app layer, inward (unchanged)
+    *   `[✅]`   Status type unions from `@paynless/types` — domain types, inward (updated in prior node)
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Raw step/stage status strings from store state
+  *   `[✅]`   unit/`dialecticStore.selectors.test.ts`
+    *   `[✅]`   Test: raw status `'paused_user'` maps to `'paused_user'` in step status
+    *   `[✅]`   Test: stage with mixed `'paused_nsf'` and `'paused_user'` steps rolls up to `'paused_nsf'`
+    *   `[✅]`   Test: stage with only `'paused_user'` steps rolls up to `'paused_user'`
+    *   `[✅]`   Test: existing `'paused_nsf'` selector behavior is preserved
+  *   `[✅]`   `dialecticStore.selectors.ts`
+    *   `[✅]`   Add `raw === 'paused_user' ? 'paused_user'` mapping alongside existing `paused_nsf` mapping (near line 900)
+    *   `[✅]`   Update stage status rollup: if `stepStatus === 'paused_user' && stageStatus !== 'failed' && stageStatus !== 'paused_nsf'` then `stageStatus = 'paused_user'` (near line 905)
+    *   `[✅]`   Priority: `failed` > `paused_nsf` > `paused_user` > other statuses
+  *   `[✅]`   `directionality`
+    *   `[✅]`   App layer — reads from store, provides to UI
+    *   `[✅]`   All dependencies are inward-facing
+    *   `[✅]`   All provides are outward-facing (consumed by hooks and components)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `paused_user` is correctly recognized and propagated through selectors
+    *   `[✅]`   `paused_nsf` always takes priority over `paused_user` in rollups
+    *   `[✅]`   Existing selector behavior is unbroken
+  *   `[✅]`   **Commit** `feat(store,api): add pauseActiveJobs to API client, store, and selectors — support paused_user status in frontend state`
+    *   `[✅]`   `dialectic.api.ts`: new `pauseActiveJobs` method
+    *   `[✅]`   `dialectic.types.ts`: new payload/response types, `paused_user` in status unions
+    *   `[✅]`   `dialecticStore.ts`: new `pauseActiveJobs` action
+    *   `[✅]`   `dialecticStore.selectors.ts`: `paused_user` status recognition
 
 ### Phase 5: Frontend Hook & UI
 
