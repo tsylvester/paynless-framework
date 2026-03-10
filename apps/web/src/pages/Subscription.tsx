@@ -125,7 +125,10 @@ export function SubscriptionPage() {
     }).format(amount / 100);
   };
   
-  const formatInterval = (interval: string, count: number) => {
+  const formatInterval = (interval: string | null | undefined, count: number | null | undefined) => {
+    if (interval == null || count == null) {
+      return 'one-time';
+    }
     if (count === 1) {
       return interval === 'month' ? 'monthly' : 'yearly';
     }
@@ -137,7 +140,9 @@ export function SubscriptionPage() {
   const { monthlyPlans, annualPlans, topUpPlans, freePlan } = useMemo(() => {
     const monthly = availablePlans.filter(p => p.name?.toLowerCase().includes('monthly'));
     const annual = availablePlans.filter(p => p.name?.toLowerCase().includes('annual'));
-    const topUp = availablePlans.filter(p => p.name?.toLowerCase().includes('top up'));
+    const topUp = availablePlans.filter(
+      p => p.plan_type === 'one_time_purchase' || p.name?.toLowerCase().includes('top up')
+    );
     const free = availablePlans.find(p => p.name?.toLowerCase() === 'free');
     return { monthlyPlans: monthly, annualPlans: annual, topUpPlans: topUp, freePlan: free };
   }, [availablePlans]);

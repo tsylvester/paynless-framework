@@ -9,7 +9,7 @@ interface PlanCardProps {
   handleSubscribe: (priceId: string) => void;
   handleCancelSubscription: () => void; // For downgrade button
   formatAmount: (amount: number, currency: string) => string;
-  formatInterval: (interval: string, count: number) => string;
+  formatInterval: (interval: string | null | undefined, count: number | null | undefined) => string;
 }
 
 export function PlanCard({
@@ -39,9 +39,19 @@ export function PlanCard({
     subtitle = plan.description;
   }
 
+  const planAmount = plan.amount;
+  if (planAmount == null) {
+    throw new Error("Plan amount is missing");
+  }
+  const planCurrency = plan.currency;
+  if (!planCurrency) {
+    throw new Error("Plan currency is missing");
+  }
+
   return (
     <div
-      key={plan.id} // Assuming plan.id is the unique DB identifier
+      key={plan.id}
+      data-testid={`plan-card-${plan.id}`}
       className={`flex flex-col h-full border rounded-lg shadow-sm divide-y bg-surface overflow-hidden ${
         isCurrentPlan ? 'border-primary ring-2 ring-primary' : 'border-border divide-border'
       }`}
@@ -53,11 +63,15 @@ export function PlanCard({
         <p className="mt-4">
           <span className="text-4xl font-extrabold text-textPrimary">
             {/* Display $0 for free plan, otherwise format amount */}
-            {isFreePlan ? '$0' : formatAmount(plan.amount, plan.currency)}
+            {isFreePlan ? '$0' : formatAmount(planAmount, planCurrency)}
           </span>
           <span className="text-base font-medium text-textSecondary">
-            {/* Display /mo for free plan, otherwise format interval */}
-            {isFreePlan ? '/mo' : `/${formatInterval(plan.interval, plan.interval_count).replace('ly', '')}`}
+            {/* Display /mo for free, /month etc for recurring, one-time for top-ups */}
+            {isFreePlan
+              ? '/mo'
+              : plan.interval != null && plan.interval_count != null
+                ? `/${formatInterval(plan.interval, plan.interval_count).replace('ly', '')}`
+                : ' one-time'}
           </span>
         </p>
         {/* Display features from JSON */}

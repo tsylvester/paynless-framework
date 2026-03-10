@@ -3,25 +3,30 @@ import {
     assert,
   } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
   import { spy, stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-  import type { Database } from '../types_db.ts';
-  import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+  import { Database } from '../types_db.ts';
+  import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
   import {
     isRecord,
 } from '../_shared/utils/type_guards.ts';
   import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
-  import type { 
+  import { 
     ExecuteModelCallAndSaveParams, 
     PromptConstructionPayload,
-    SourceDocument
+    SourceDocument,
+    DocumentRelationships,
 } from '../dialectic-service/dialectic.interface.ts';
-import { Messages } from '../_shared/types.ts';
-import type { AiModelExtendedConfig } from '../_shared/types.ts';
+import { Messages, AiModelExtendedConfig } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
-import { ICompressionStrategy, getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
-
+import { 
+  ICompressionStrategy, 
+  getSortedCompressionCandidates 
+} from '../_shared/utils/vector_utils.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
+import { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
+import { createMockDownloadFromStorage } from '../_shared/supabase_storage_utils.mock.ts';
 import { 
     createMockJob, 
     testPayload, 
@@ -31,17 +36,44 @@ import {
     setupMockClient, 
     getMockDeps 
 } from './executeModelCallAndSave.test.ts';
-import { DocumentRelationships } from '../_shared/types/file_manager.types.ts';
 
 
 Deno.test('resource documents are used for sizing but not included in ChatApiRequest.messages', async () => {
-    const { client: dbClient } = setupMockClient({
-        'ai_providers': {
-            select: { data: [mockFullProviderData], error: null }
-        }
-    });
+  const { client: dbClient } = setupMockClient({
+      'ai_providers': {
+          select: { data: [mockFullProviderData], error: null }
+      },
+      'dialectic_project_resources': {
+          select: () => {
+            return Promise.resolve({
+              data: [
+                {
+                  id: 'doc-xyz',
+                  content: 'DOC: sizing only',
+                  created_at: new Date().toISOString(),
+                  stage_slug: 'test-stage',
+                  project_id: 'project-abc',
+                  session_id: 'session-456',
+                  iteration_number: 1,
+                  resource_type: 'rendered_document',
+                  // Path deconstructor expects directory in storage_path and full file name in file_name
+                  storage_path: 'project-abc/session_session-456/iteration_1/test-stage/documents',
+                  file_name: 'modelA_1_business_case.md',
+                  storage_bucket: 'test-bucket'
+                }
+              ],
+              error: null
+            });
+          }
+      }
+  });
 
-    const deps = getMockDeps();
+    const docEncoded = new TextEncoder().encode('DOC: sizing only');
+    const docBuffer = new ArrayBuffer(docEncoded.byteLength);
+    new Uint8Array(docBuffer).set(docEncoded);
+    const deps = getMockDeps({
+        downloadFromStorage: createMockDownloadFromStorage({ mode: 'success', data: docBuffer }),
+    });
     const callModelSpy = spy(deps, 'callUnifiedAIModel');
 
     // Capture full sized payload (no casts), and also a simple string view for doc presence
@@ -121,6 +153,8 @@ Deno.test('resource documents are used for sizing but not included in ChatApiReq
             tokens_used_input: 0,
             tokens_used_output: 0,
             stage: 'test-stage',
+            is_header: false,
+            source_prompt_resource_id: null,
         },
     ];
 
@@ -141,6 +175,9 @@ Deno.test('resource documents are used for sizing but not included in ChatApiReq
         promptConstructionPayload: payload,
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
+    inputsRequired: [
+      { type: 'document', slug: 'test-stage', document_key: FileType.business_case }
+    ],
     };
 
     await executeModelCallAndSave(params);
@@ -224,14 +261,16 @@ Deno.test('should only pass un-indexed documents to the RAG service', async () =
         }
     });
 
-    const deps = getMockDeps(mockTokenWalletService);
-    deps.ragService = mockRagService;
-    // Deterministic token counter: first call oversized, second call fits
     let countCallIdx = 0;
-    deps.countTokens = (..._args: unknown[]) => {
+    const deterministicCountTokens: CountTokensFn = () => {
         countCallIdx++;
         return countCallIdx === 1 ? 213 : 90;
     };
+    const deps = getMockDeps({
+        tokenWalletService: mockTokenWalletService,
+        ragService: mockRagService,
+        countTokens: deterministicCountTokens,
+    });
 
     // NEW: Configure the RAG service mock to return a short summary.
     mockRagService.setConfig({
@@ -269,6 +308,7 @@ Deno.test('should only pass un-indexed documents to the RAG service', async () =
         promptConstructionPayload: payloadWithHistoryIds,
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
     };
 
     // 2. Act
@@ -329,6 +369,8 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
             seed_prompt_url: null,
             session_id: 'session-123',
             stage: 'test-stage',
+            is_header: false,
+            source_prompt_resource_id: null,
         },
         { 
             id: 'docB', 
@@ -360,6 +402,8 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
             seed_prompt_url: null,
             session_id: 'session-123',
             stage: 'test-stage',
+            is_header: false,
+            source_prompt_resource_id: null,
         },
         { 
             id: 'docC', 
@@ -391,6 +435,8 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
             seed_prompt_url: null,
             session_id: 'session-123',
             stage: 'test-stage',
+            is_header: false,
+            source_prompt_resource_id: null,
         },
     ];
     const currentUserPrompt = "This is the current prompt.";
@@ -408,18 +454,21 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
         getBalance: () => Promise.resolve('1000000'), // Huge balance
     });
     
-    const deps = getMockDeps(mockTokenWalletService);
-    deps.ragService = mockRagService;
+    const deps = getMockDeps({
+        tokenWalletService: mockTokenWalletService,
+        ragService: mockRagService,
+        countTokens,
+    });
     
     // CORRECTED: Create a mock compression strategy to control the exact return value.
     const mockCompressionStrategy: ICompressionStrategy = async () => {
         // This mock will return candidates in a predefined order, ignoring the actual scoring logic.
         return Promise.resolve([
-            { id: 'docB', content: 'Low relevance B', sourceType: 'document', originalIndex: 1, valueScore: 0.1 },
-            { id: 'docC', content: 'Low relevance C', sourceType: 'document', originalIndex: 2, valueScore: 0.2 },
-            { id: 'history-msg-4', content: 'History message 4', sourceType: 'history', originalIndex: 4, valueScore: 0.3 },
-            { id: 'docA', content: 'High relevance A', sourceType: 'document', originalIndex: 0, valueScore: 0.9 },
-        ]);
+            { id: 'docB', content: 'Low relevance B', sourceType: 'document', originalIndex: 1, valueScore: 0.1, effectiveScore: 0.1 },
+            { id: 'docC', content: 'Low relevance C', sourceType: 'document', originalIndex: 2, valueScore: 0.2, effectiveScore: 0.2 },
+            { id: 'history-msg-4', content: 'History message 4', sourceType: 'history', originalIndex: 4, valueScore: 0.3, effectiveScore: 0.3 },
+            { id: 'docA', content: 'High relevance A', sourceType: 'document', originalIndex: 0, valueScore: 0.9, effectiveScore: 0.9 },
+    ]);
     };
 
     if (!isRecord(mockFullProviderData.config)) {
@@ -440,9 +489,6 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
         'dialectic_memory': { select: { data: [{ source_contribution_id: 'history-msg-3' }], error: null } },
     });
 
-    // Assemble dependencies
-    deps.countTokens = countTokens; // Use real token counter
-
     const params: ExecuteModelCallAndSaveParams = {
         dbClient: dbClient as unknown as SupabaseClient<Database>,
         deps,
@@ -458,6 +504,7 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
         },
         sessionData: mockSessionData,
         compressionStrategy: mockCompressionStrategy,
+        inputsRelevance: [],
     };
 
     // 2. Act
@@ -508,9 +555,7 @@ Deno.test('should throw ContextWindowError if compression fails to reduce size s
         }
     });
 
-    const deps = getMockDeps();
-    deps.ragService = mockRagService;
-    deps.countTokens = countTokens; // Use the real token counter
+    const deps = getMockDeps({ ragService: mockRagService, countTokens });
 
     // Provide a payload that will definitely be oversized
     const oversizedPayload: PromptConstructionPayload = {
@@ -542,6 +587,7 @@ Deno.test('should throw ContextWindowError if compression fails to reduce size s
         promptConstructionPayload: oversizedPayload,
         sessionData: mockSessionData,
         compressionStrategy: getSortedCompressionCandidates,
+        inputsRelevance: [],
     };
 
     // 2. Act & 3. Assert
@@ -585,11 +631,10 @@ Deno.test('does not call provider if final input exceeds allowed headroom after 
     getBalance: () => Promise.resolve('1000000'),
   });
 
-  const deps = getMockDeps(mockTokenWalletService);
-  const modelSpy = spy(deps, 'callUnifiedAIModel');
   const mockRag = new MockRagService();
   mockRag.setConfig({ mockContextResult: 'summary', mockTokensUsed: 10 });
-  deps.ragService = mockRag;
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService, ragService: mockRag });
+  const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // Token counter: first call oversized (200), second call fits maxTokens (50) but violates allowed headroom
   let callIdx = 0;
@@ -601,7 +646,7 @@ Deno.test('does not call provider if final input exceeds allowed headroom after 
   });
 
   const oneCandidateStrategy: ICompressionStrategy = async () => ([
-    { id: 'history-msg-3', content: 'long content', sourceType: 'history', originalIndex: 3, valueScore: 0.5 },
+    { id: 'history-msg-3', content: 'long content', sourceType: 'history', originalIndex: 3, valueScore: 0.5, effectiveScore: 0.5 },
   ]);
 
   const payload: PromptConstructionPayload = {
@@ -627,6 +672,7 @@ Deno.test('does not call provider if final input exceeds allowed headroom after 
     promptConstructionPayload: payload,
     sessionData: mockSessionData,
     compressionStrategy: oneCandidateStrategy,
+    inputsRelevance: [],
   };
 
   let threw = false;
@@ -670,7 +716,7 @@ Deno.test('proceeds when final input equals allowed headroom (boundary success)'
     getBalance: () => Promise.resolve('1000000'),
   });
 
-  const deps = getMockDeps(mockTokenWalletService);
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // allowedInput = provider_max_input_tokens - (provider_max_output_tokens + 32)
@@ -702,6 +748,7 @@ Deno.test('proceeds when final input equals allowed headroom (boundary success)'
     promptConstructionPayload: payload,
     sessionData: mockSessionData,
     compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
   };
 
   await executeModelCallAndSave(params);
@@ -731,7 +778,7 @@ Deno.test('fails when final input exceeds allowed headroom by 1 token (boundary 
     getBalance: () => Promise.resolve('1000000'),
   });
 
-  const deps = getMockDeps(mockTokenWalletService);
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   const safetyBuffer = 32;
@@ -757,6 +804,7 @@ Deno.test('fails when final input exceeds allowed headroom by 1 token (boundary 
     promptConstructionPayload: payload,
     sessionData: mockSessionData,
     compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
   };
 
   let threw = false;
@@ -796,8 +844,8 @@ Deno.test('enforces strict user-assistant alternation in ChatApiRequest after co
 
   // Candidates will compress mids, keeping anchors that may violate alternation
   const mockCompressionStrategy: ICompressionStrategy = async () => ([
-    { id: 'mid-1', content: 'MID-1', sourceType: 'history', originalIndex: 2, valueScore: 0.2 },
-    { id: 'mid-2', content: 'MID-2', sourceType: 'history', originalIndex: 3, valueScore: 0.3 },
+    { id: 'mid-1', content: 'MID-1', sourceType: 'history', originalIndex: 2, valueScore: 0.2, effectiveScore: 0.2 },
+    { id: 'mid-2', content: 'MID-2', sourceType: 'history', originalIndex: 3, valueScore: 0.3, effectiveScore: 0.3 },
   ]);
 
   const conversation: Messages[] = [
@@ -836,6 +884,7 @@ Deno.test('enforces strict user-assistant alternation in ChatApiRequest after co
     },
     sessionData: mockSessionData,
     compressionStrategy: mockCompressionStrategy,
+    inputsRelevance: [],
   };
 
   // Act
@@ -895,8 +944,8 @@ Deno.test('preserves continuation anchors after compression', async () => {
 
   // Mock compression ordering: select only middle items, preserve anchors by design
   const mockCompressionStrategy: ICompressionStrategy = async () => ([
-    { id: 'mid-1', content: 'MID-1', sourceType: 'history', originalIndex: 3, valueScore: 0.2 },
-    { id: 'mid-2', content: 'MID-2', sourceType: 'history', originalIndex: 4, valueScore: 0.3 },
+    { id: 'mid-1', content: 'MID-1', sourceType: 'history', originalIndex: 3, valueScore: 0.2, effectiveScore: 0.2 },
+    { id: 'mid-2', content: 'MID-2', sourceType: 'history', originalIndex: 4, valueScore: 0.3, effectiveScore: 0.3 },
   ]);
 
   // Build conversation with explicit anchors
@@ -937,6 +986,7 @@ Deno.test('preserves continuation anchors after compression', async () => {
     },
     sessionData: mockSessionData,
     compressionStrategy: mockCompressionStrategy,
+    inputsRelevance: [],
   };
 
   // Act
@@ -1002,27 +1052,28 @@ Deno.test('RAG debits use stable idempotency keys tied to job and candidate', as
   mockRag.setConfig({ mockContextResult: 'summary', mockTokensUsed: 7 });
 
   // Dependencies
-  const deps = getMockDeps(mockTokenWalletService);
-  deps.ragService = mockRag;
-
-  // Count tokens sequence: initial oversized (300), after first compression (150), after second compression fits (80)
   const counts = [300, 150, 80];
-  deps.countTokens = (..._args: unknown[]) => {
+  const deterministicCountTokens: CountTokensFn = () => {
     const next = counts.shift();
     if (typeof next !== 'number') return 80; // fallback safe fit
     return next;
   };
+  const deps = getMockDeps({
+    tokenWalletService: mockTokenWalletService,
+    ragService: mockRag,
+    countTokens: deterministicCountTokens,
+  });
 
   // Two candidates processed in order
   const mockCompressionStrategy: ICompressionStrategy = async () => ([
-    { id: 'cand-1', content: 'long content A', sourceType: 'document', originalIndex: 0, valueScore: 0.2 },
-    { id: 'cand-2', content: 'long content B', sourceType: 'history', originalIndex: 1, valueScore: 0.3 },
+    { id: 'cand-1', content: 'long content A', sourceType: 'document', originalIndex: 0, valueScore: 0.2, effectiveScore: 0.2 },
+    { id: 'cand-2', content: 'long content B', sourceType: 'history', originalIndex: 1, valueScore: 0.3, effectiveScore: 0.3 },
   ]);
 
   const payload: PromptConstructionPayload = {
     systemInstruction: '',
     conversationHistory: [ { role: 'user', content: 'seed' }, { role: 'assistant', content: 'reply' } ],
-    resourceDocuments: [ { id: 'docX', content: 'very long doc', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), user_id: 'user-789', session_id: 'session-1', iteration_number: 1, target_contribution_id: 'contribution-1', document_relationships: null, mime_type: 'text/plain', citations: [], contribution_type: 'source_document', edit_version: 1, error: null, file_name: 'docX.txt', is_latest_edit: true, model_id: 'model-1', model_name: 'test-model', original_model_contribution_id: 'contribution-1', processing_time_ms: 100, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test/path', tokens_used_input: 10, tokens_used_output: 20, stage: 'test-stage' } ],
+    resourceDocuments: [ { id: 'docX', content: 'very long doc', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), user_id: 'user-789', session_id: 'session-1', iteration_number: 1, target_contribution_id: 'contribution-1', document_relationships: null, mime_type: 'text/plain', citations: [], contribution_type: 'source_document', edit_version: 1, error: null, file_name: 'docX.txt', is_latest_edit: true, model_id: 'model-1', model_name: 'test-model', original_model_contribution_id: 'contribution-1', processing_time_ms: 100, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test/path', tokens_used_input: 10, tokens_used_output: 20, stage: 'test-stage', is_header: false, source_prompt_resource_id: null } ],
     currentUserPrompt: 'current',
   };
 
@@ -1036,6 +1087,7 @@ Deno.test('RAG debits use stable idempotency keys tied to job and candidate', as
     promptConstructionPayload: payload,
     sessionData: mockSessionData,
     compressionStrategy: mockCompressionStrategy,
+    inputsRelevance: [],
   };
 
   // Act
@@ -1082,21 +1134,18 @@ Deno.test('recomputes SSOT output after RAG debit reduces balance', async () => 
   // Start balance 200; initial SSOT_output ~ floor(0.8*200 / 1) = 160
   const { instance: mockTokenWalletService, stubs } = createMockTokenWalletService({ getBalance: () => Promise.resolve('700') });
 
-  const deps = getMockDeps(mockTokenWalletService);
+  const mockRag = new MockRagService();
+  mockRag.setConfig({ mockContextResult: 'short', mockTokensUsed: 50 });
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService, ragService: mockRag });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // Count tokens path: initial tokenCount oversized (300), after first compression (150), after second (80) fits
   let idx = 0;
   const countStub = stub(deps, 'countTokens', () => (++idx === 1 ? 300 : (idx === 2 ? 150 : 80)));
 
-  // RAG mock returns tokensUsed=50 each iteration, debit reduces balance -> new SSOT smaller
-  const mockRag = new MockRagService();
-  mockRag.setConfig({ mockContextResult: 'short', mockTokensUsed: 50 });
-  deps.ragService = mockRag;
-
   const mockCompressionStrategy: ICompressionStrategy = async () => ([
-    { id: 'cand-1', content: 'long-1', sourceType: 'document', originalIndex: 1, valueScore: 0.1 },
-    { id: 'cand-2', content: 'long-2', sourceType: 'history', originalIndex: 2, valueScore: 0.2 },
+    { id: 'cand-1', content: 'long-1', sourceType: 'document', originalIndex: 1, valueScore: 0.1, effectiveScore: 0.1 },
+    { id: 'cand-2', content: 'long-2', sourceType: 'history', originalIndex: 2, valueScore: 0.2, effectiveScore: 0.2 },
   ]);
 
   const payload: PromptConstructionPayload = {
@@ -1116,6 +1165,7 @@ Deno.test('recomputes SSOT output after RAG debit reduces balance', async () => 
     promptConstructionPayload: payload,
     sessionData: mockSessionData,
     compressionStrategy: mockCompressionStrategy,
+    inputsRelevance: [],
   };
 
   await executeModelCallAndSave(params);
@@ -1144,7 +1194,7 @@ Deno.test('final ChatApiRequest.max_tokens_to_generate equals SSOT(final input)'
   // Balance chosen so SSOT_output = floor(0.8*balance / output_rate)
   // balance=1000 => floor(800/2)=400
   const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('1000') });
-  const deps = getMockDeps(mockTokenWalletService);
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // Token counter: initial count fits window (50) so we use non-oversized path, but we still want to validate cap equals SSOT
@@ -1167,6 +1217,7 @@ Deno.test('final ChatApiRequest.max_tokens_to_generate equals SSOT(final input)'
     promptConstructionPayload: payload,
     sessionData: mockSessionData,
     compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
   };
 
   await executeModelCallAndSave(params);
@@ -1192,7 +1243,7 @@ Deno.test('threads SSOT cap unchanged to callUnifiedAIModel in compression path'
 
   // Wallet balance => SSOT_output = floor(0.8 * balance / output_rate) = floor(800 / 2) = 400
   const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('1000') });
-  const deps = getMockDeps(mockTokenWalletService);
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // Token counter: start oversized, compress to fit
@@ -1201,7 +1252,7 @@ Deno.test('threads SSOT cap unchanged to callUnifiedAIModel in compression path'
 
   // One or more candidates to trigger RAG/compression loop
   const mockCompressionStrategy: ICompressionStrategy = async () => ([
-    { id: 'cand-1', content: 'long-1', sourceType: 'document', originalIndex: 1, valueScore: 0.1 },
+    { id: 'cand-1', content: 'long-1', sourceType: 'document', originalIndex: 1, valueScore: 0.1, effectiveScore: 0.1 },
   ]);
 
   const payload: PromptConstructionPayload = {
@@ -1221,6 +1272,7 @@ Deno.test('threads SSOT cap unchanged to callUnifiedAIModel in compression path'
     promptConstructionPayload: payload,
     sessionData: mockSessionData,
     compressionStrategy: mockCompressionStrategy,
+    inputsRelevance: [],
   };
 
   await executeModelCallAndSave(params);
@@ -1254,7 +1306,7 @@ Deno.test('uses SSOT-based output headroom (budget) to compute allowed input dur
   // Wallet balance => SSOT_output = floor(0.8 * balance / output_rate) = 80
   const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100') });
 
-  const deps = getMockDeps(mockTokenWalletService);
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService });
   const modelSpy = spy(deps, 'callUnifiedAIModel');
 
   // Token counter sequence: initial oversized (120), first compression (89) still violates headroom, second (88) fits
@@ -1267,8 +1319,8 @@ Deno.test('uses SSOT-based output headroom (budget) to compute allowed input dur
 
   // Compression strategy to ensure at least two iterations
   const mockCompressionStrategy: ICompressionStrategy = async () => ([
-    { id: 'cand-1', content: 'middle-1', sourceType: 'history', originalIndex: 3, valueScore: 0.2 },
-    { id: 'cand-2', content: 'middle-2', sourceType: 'document', originalIndex: 1, valueScore: 0.3 },
+      { id: 'cand-1', content: 'middle-1', sourceType: 'history', originalIndex: 3, valueScore: 0.2, effectiveScore: 0.2 },
+    { id: 'cand-2', content: 'middle-2', sourceType: 'document', originalIndex: 1, valueScore: 0.3, effectiveScore: 0.3 },
   ]);
 
   const payload: PromptConstructionPayload = {
@@ -1292,6 +1344,7 @@ Deno.test('uses SSOT-based output headroom (budget) to compute allowed input dur
     promptConstructionPayload: payload,
     sessionData: mockSessionData,
     compressionStrategy: mockCompressionStrategy,
+    inputsRelevance: [],
   };
 
   await executeModelCallAndSave(params);
@@ -1328,6 +1381,7 @@ Deno.test('error specificity: missing wallet throws "Wallet is required to proce
     promptConstructionPayload: payload,
     sessionData: mockSessionData,
     compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
   };
 
   let threw = false;
@@ -1373,6 +1427,7 @@ Deno.test("error specificity: missing 'countTokens' dependency throws and does n
     promptConstructionPayload: payload,
     sessionData: mockSessionData,
     compressionStrategy: getSortedCompressionCandidates,
+    inputsRelevance: [],
   };
 
   let threw = false;
@@ -1388,7 +1443,6 @@ Deno.test("error specificity: missing 'countTokens' dependency throws and does n
   assert(threw, "Expected an error to be thrown when 'countTokens' is missing");
   assertEquals(modelSpy.calls.length, 0, 'Provider should not be called when a critical dependency is missing');
 });
-
 
 // 123.g: Preflight should reject when compression + planned embeddings + final send would exceed 80% of balance
 Deno.test('preflight rejects when total planned spend (compression + embeddings + final) exceeds 80% budget', async () => {
@@ -1424,12 +1478,9 @@ Deno.test('preflight rejects when total planned spend (compression + embeddings 
     getBalance: () => Promise.resolve('450'),
   });
 
-  const deps = getMockDeps(mockTokenWalletService);
-
-  // Use a RAG mock that would incur non-zero embedding cost if we accounted for it
   const mockRag = new MockRagService();
   mockRag.setConfig({ mockContextResult: 'short summary', mockTokensUsed: 10 });
-  deps.ragService = mockRag;
+  const deps = getMockDeps({ tokenWalletService: mockTokenWalletService, ragService: mockRag });
 
   // Token counter: first call oversized (300), after one compression fits exactly cw (200)
   let idx = 0;
@@ -1437,7 +1488,7 @@ Deno.test('preflight rejects when total planned spend (compression + embeddings 
 
   // Provide one compression candidate so the function would proceed if preflight does not reject
   const oneCandidateStrategy: ICompressionStrategy = async () => ([
-    { id: 'cand-embed', content: 'long content to summarize', sourceType: 'history', originalIndex: 1, valueScore: 0.5 },
+    { id: 'cand-embed', content: 'long content to summarize', sourceType: 'history', originalIndex: 1, valueScore: 0.5, effectiveScore: 0.5 },
   ]);
 
   const payload: PromptConstructionPayload = {
@@ -1457,6 +1508,7 @@ Deno.test('preflight rejects when total planned spend (compression + embeddings 
     promptConstructionPayload: payload,
     sessionData: mockSessionData,
     compressionStrategy: oneCandidateStrategy,
+    inputsRelevance: [],
   };
 
   let threw = false;
@@ -1476,4 +1528,3 @@ Deno.test('preflight rejects when total planned spend (compression + embeddings 
 
   countStub.restore();
 });
-

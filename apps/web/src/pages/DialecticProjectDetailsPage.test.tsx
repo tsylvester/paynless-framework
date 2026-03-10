@@ -32,9 +32,11 @@ const mockInitialStage: DialecticStage = {
     slug: 'hypothesis-generation',
     display_name: 'Hypothesis Generation',
     description: 'Generate initial hypotheses.',
-    input_artifact_rules: {},
-    expected_output_artifacts: {},
+    active_recipe_instance_id: null,
+    expected_output_template_ids: [],
+    recipe_template_id: null,
     default_system_prompt_id: 'sp-1',
+    minimum_balance: 0,
 };
 
 const mockProcessTemplate: Omit<DialecticProcessTemplate, 'stages' | 'transitions'> & { stages: DialecticStage[] } = {
@@ -78,7 +80,7 @@ const mockSession: DialecticSession = {
     session_description: 'A session for testing.',
     user_input_reference_url: null,
     iteration_count: 1,
-    selected_model_ids: [],
+    selected_models: [],
     status: 'active',
     associated_chat_id: null,
     current_stage_id: 'stage-1',
@@ -240,11 +242,14 @@ describe('DialecticProjectDetailsPage', () => {
     fireEvent.click(startSessionButton);
     
     await waitFor(() => {
-        expect(store.startDialecticSession).toHaveBeenCalledWith({
+        expect(store.startDialecticSession).toHaveBeenCalledWith(
+          expect.objectContaining({
             projectId: mockProjectIdFromUrl,
-            selectedModelIds: [],
+            selectedModels: [],
             stageSlug: mockInitialStage.slug,
-        });
+            idempotencyKey: expect.any(String),
+          })
+        );
     });
   });
 

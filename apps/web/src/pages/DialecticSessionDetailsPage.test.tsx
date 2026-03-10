@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { DialecticSessionDetailsPage } from './DialecticSessionDetailsPage';
-import { setDialecticStateValues, resetDialecticStoreMock, mockActivateProjectAndSessionContextForDeepLink } from '../mocks/dialecticStore.mock';
+import {
+  setDialecticStateValues,
+  resetDialecticStoreMock,
+  mockActivateProjectAndSessionContextForDeepLink,
+  selectSelectedModels,
+  getDialecticStoreActionMock,
+} from '../mocks/dialecticStore.mock';
+import type { StartContributionGenerationResult } from '@paynless/types';
 import type {
   DialecticProject,
   DialecticSession,
@@ -10,6 +17,7 @@ import type {
   DialecticProcessTemplate,
   ApiError,
   DialecticStore,
+  SelectedModels,
 } from '@paynless/types';
 
 // Import the type for the DialecticStore to correctly type the state in the mock
@@ -21,13 +29,26 @@ vi.mock('@paynless/store', async () => {
   };
 });
 
-// Mock useParams
+const mockStartContributionGeneration = vi.fn<
+  [onOpenDagProgress?: () => void],
+  Promise<StartContributionGenerationResult>
+>().mockResolvedValue({ success: true });
+const mockUseStartContributionGeneration = vi.fn().mockReturnValue({
+  startContributionGeneration: mockStartContributionGeneration,
+});
+
+vi.mock('@/hooks/useStartContributionGeneration', () => ({
+  useStartContributionGeneration: () => mockUseStartContributionGeneration(),
+}));
+
+// Mock useParams and useNavigate
 const mockUseParams = vi.fn();
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
   return {
     ...actual,
     useParams: () => mockUseParams(),
+    useNavigate: vi.fn(),
   };
 });
 
@@ -48,6 +69,14 @@ vi.mock('../components/dialectic/StageTabCard', () => ({
   StageTabCard: () => <div data-testid="mock-stage-tab-card" />,
 }));
 vi.mock('../components/dialectic/SessionContributionsDisplayCard', () => ({ SessionContributionsDisplayCard: () => <div data-testid="mock-session-contributions-display-card" /> }));
+vi.mock('../components/dialectic/GenerateContributionButton', () => ({
+  GenerateContributionButton: () => <div data-testid="mock-generate-contribution-button" />,
+}));
+vi.mock('../components/common/DynamicProgressBar', () => ({
+  DynamicProgressBar: ({ sessionId }: { sessionId: string }) => (
+    <div data-testid="dynamic-progress-bar-mock" data-session-id={sessionId} />
+  ),
+}));
 
 // Define Mocks
 const mockProjectId = 'project-123';
@@ -55,8 +84,8 @@ const mockSessionId = 'session-abc';
 const mockOtherSessionId = 'session-xyz';
 
 const mockStages: DialecticStage[] = [
-    { id: 'stage-1', slug: 'hypothesis', display_name: 'Hypothesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', input_artifact_rules: {}, expected_output_artifacts: {}},
-    { id: 'stage-2', slug: 'antithesis', display_name: 'Antithesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', input_artifact_rules: {}, expected_output_artifacts: {}},
+    { id: 'stage-1', slug: 'hypothesis', display_name: 'Hypothesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', recipe_template_id: 'rt-1', expected_output_template_ids: ['ot-1'], active_recipe_instance_id: null, minimum_balance: 0 },
+    { id: 'stage-2', slug: 'antithesis', display_name: 'Antithesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', recipe_template_id: 'rt-1', expected_output_template_ids: ['ot-1'], active_recipe_instance_id: null, minimum_balance: 0 },
 ];
 
 const mockProcessTemplate: DialecticProcessTemplate = {
@@ -79,7 +108,7 @@ const mockSession: DialecticSession = {
   status: 'active',
   associated_chat_id: null,
   user_input_reference_url: null,
-  selected_model_ids: [],
+  selected_models: [],
 };
 
 const mockOtherSession: DialecticSession = {
@@ -93,10 +122,10 @@ const mockOtherSession: DialecticSession = {
   status: 'active',
   associated_chat_id: null,
   user_input_reference_url: null,
-  selected_model_ids: [],
-};
+  selected_models: [],
+  };
 
-const mockProject: DialecticProject = {
+  const mockProject: DialecticProject = {
   id: mockProjectId,
   user_id: 'user-test',
   project_name: 'Test Project',
@@ -121,14 +150,24 @@ const mockProject: DialecticProject = {
   saveContributionEditError: null,
 };
 
+const sessionPagePath = '/dialectic/:projectId/session/:sessionId';
+
+function isVoidFn(u: unknown): u is () => void {
+  return typeof u === 'function';
+}
+
 const renderWithRouter = (
   {
     route = `/dialectic/${mockProjectId}/session/${mockSessionId}`,
-    path = '/dialectic/:projectId/session/:sessionId',
-  }: { route?: string; path?: string; } = {},
+    path = sessionPagePath,
+    locationState,
+  }: { route?: string; path?: string; locationState?: { autoStartGeneration?: boolean } } = {},
 ) => {
+  const initialEntries = locationState !== undefined
+    ? [{ pathname: route, state: locationState }]
+    : [route];
   return render(
-    <MemoryRouter initialEntries={[route]}>
+    <MemoryRouter initialEntries={initialEntries}>
       <Routes>
         <Route path={path} element={<DialecticSessionDetailsPage />} />
       </Routes>
@@ -137,10 +176,15 @@ const renderWithRouter = (
 };
 
 describe('DialecticSessionDetailsPage', () => {
+  const mockNavigate = vi.fn();
+
   beforeEach(() => {
     resetDialecticStoreMock();
     mockUseParams.mockClear();
     mockActivateProjectAndSessionContextForDeepLink.mockClear();
+    mockStartContributionGeneration.mockClear();
+    mockStartContributionGeneration.mockResolvedValue({ success: true });
+    vi.mocked(useNavigate).mockReturnValue(mockNavigate);
   });
 
   it('Scenario 1: should call activateProjectAndSessionContextForDeepLink when no relevant context is set', async () => {
@@ -217,7 +261,7 @@ describe('DialecticSessionDetailsPage', () => {
       activeSessionDetail: mockSession,
       currentProjectDetail: mockProject,
       currentProcessTemplate: mockProcessTemplate,
-      activeContextStage: mockStages[0],
+      activeStageSlug: mockStages[0].slug,
       isLoadingActiveSessionDetail: false,
       activeSessionDetailError: null,
     });
@@ -225,13 +269,7 @@ describe('DialecticSessionDetailsPage', () => {
     renderWithRouter({});
 
     await waitFor(() => {
-      if (mockSession.session_description) {
-        expect(screen.getByTestId('mock-session-info-card')).toHaveTextContent(mockSession.session_description);
-      } else {
-        // Handle the case where session_description is null, if necessary,
-        // or assert that the component handles it gracefully.
-        // For now, we just ensure the test doesn't crash.
-      }
+      expect(screen.getByTestId('mock-session-info-card')).toHaveTextContent('Test Session Description');
     });
     
     expect(screen.getByTestId('mock-stage-tab-card')).toBeInTheDocument();
@@ -274,5 +312,229 @@ describe('DialecticSessionDetailsPage', () => {
         expect(screen.getByText(mockError.message)).toBeInTheDocument();
       }
     });
+  });
+
+  describe('auto-start generation effect', () => {
+    beforeEach(() => {
+      mockUseStartContributionGeneration.mockReturnValue({
+        startContributionGeneration: mockStartContributionGeneration,
+        activeStage: mockStages[0],
+      });
+    });
+
+    const fullContextState = {
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      activeStageSlug: mockStages[0].slug,
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
+    };
+
+    const defaultModels: SelectedModels[] = [{ id: 'model-1', displayName: 'Model One' }];
+
+    it('fires startContributionGeneration when location.state.autoStartGeneration is true and all context is loaded', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues(fullContextState);
+      selectSelectedModels.mockReturnValue(defaultModels);
+
+      renderWithRouter({ locationState: { autoStartGeneration: true } });
+
+      await waitFor(() => {
+        expect(mockStartContributionGeneration).toHaveBeenCalledTimes(1);
+      });
+      expect(mockNavigate).toHaveBeenCalledWith(
+        `/dialectic/${mockProjectId}/session/${mockSessionId}`,
+        { replace: true, state: {} },
+      );
+    });
+
+    it('does NOT fire startContributionGeneration when location.state.autoStartGeneration is absent', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues(fullContextState);
+      selectSelectedModels.mockReturnValue(defaultModels);
+
+      renderWithRouter({});
+
+      await waitFor(() => {
+        expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
+      });
+      expect(mockStartContributionGeneration).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire startContributionGeneration when location.state.autoStartGeneration is false', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues(fullContextState);
+      selectSelectedModels.mockReturnValue(defaultModels);
+
+      renderWithRouter({ locationState: { autoStartGeneration: false } });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
+      });
+      expect(mockStartContributionGeneration).not.toHaveBeenCalled();
+    });
+
+    it('fires startContributionGeneration exactly once (ref guard prevents repeat calls)', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues(fullContextState);
+      selectSelectedModels.mockReturnValue(defaultModels);
+
+      renderWithRouter({ locationState: { autoStartGeneration: true } });
+
+      await waitFor(() => {
+        expect(mockStartContributionGeneration).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith(
+          `/dialectic/${mockProjectId}/session/${mockSessionId}`,
+          { replace: true, state: {} },
+        );
+      });
+      expect(mockStartContributionGeneration).toHaveBeenCalledTimes(1);
+    });
+
+    it('calls navigate with replace true and cleared state after auto-start attempt', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues(fullContextState);
+      selectSelectedModels.mockReturnValue(defaultModels);
+
+      renderWithRouter({ locationState: { autoStartGeneration: true } });
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith(
+          `/dialectic/${mockProjectId}/session/${mockSessionId}`,
+          { replace: true, state: {} },
+        );
+      });
+    });
+
+    it('page remains functional after auto-start failure (session detail and Generate surface available)', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues(fullContextState);
+      selectSelectedModels.mockReturnValue(defaultModels);
+      mockStartContributionGeneration.mockRejectedValueOnce(new Error('Generation failed'));
+
+      renderWithRouter({ locationState: { autoStartGeneration: true } });
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith(
+          `/dialectic/${mockProjectId}/session/${mockSessionId}`,
+          { replace: true, state: {} },
+        );
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
+      });
+      expect(screen.getByTestId('mock-stage-tab-card')).toBeInTheDocument();
+      expect(screen.getByTestId('mock-session-contributions-display-card')).toBeInTheDocument();
+    });
+
+    it('does NOT fire startContributionGeneration when context is not yet loaded (selectedModels empty)', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues(fullContextState);
+      selectSelectedModels.mockReturnValue([]);
+
+      renderWithRouter({ locationState: { autoStartGeneration: true } });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
+      });
+      expect(mockStartContributionGeneration).not.toHaveBeenCalled();
+    });
+
+    it('passes onOpenDagProgress callback that calls setShouldOpenDagProgress(true)', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues(fullContextState);
+      selectSelectedModels.mockReturnValue(defaultModels);
+      const setShouldOpenDagProgress = getDialecticStoreActionMock('setShouldOpenDagProgress');
+
+      renderWithRouter({ locationState: { autoStartGeneration: true } });
+
+      await waitFor(() => {
+        expect(mockStartContributionGeneration).toHaveBeenCalledTimes(1);
+      });
+      const firstCallArgs = mockStartContributionGeneration.mock.calls[0];
+      expect(firstCallArgs).toBeDefined();
+      const onOpenDagProgress = firstCallArgs[0];
+      expect(isVoidFn(onOpenDagProgress)).toBe(true);
+      if (!isVoidFn(onOpenDagProgress)) return;
+      onOpenDagProgress();
+      expect(setShouldOpenDagProgress).toHaveBeenCalledWith(true);
+    });
+  });
+
+  it('renders GenerateContributionButton in the sidebar above StageTabCard', async () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    setDialecticStateValues({
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      activeStageSlug: mockStages[0].slug,
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
+    });
+
+    renderWithRouter({});
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-generate-contribution-button')).toBeInTheDocument();
+      expect(screen.getByTestId('mock-stage-tab-card')).toBeInTheDocument();
+    });
+    const sidebar = document.querySelector('.lg\\:col-span-1');
+    expect(sidebar).toBeInTheDocument();
+    const buttonEl = screen.getByTestId('mock-generate-contribution-button');
+    const tabCardEl = screen.getByTestId('mock-stage-tab-card');
+    expect(sidebar?.compareDocumentPosition(buttonEl)).toBe(Node.DOCUMENT_POSITION_FOLLOWING | Node.DOCUMENT_POSITION_CONTAINED_BY);
+    expect(sidebar?.compareDocumentPosition(tabCardEl)).toBe(Node.DOCUMENT_POSITION_FOLLOWING | Node.DOCUMENT_POSITION_CONTAINED_BY);
+    expect(buttonEl.compareDocumentPosition(tabCardEl)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('does not render the Process Stages static label', async () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    setDialecticStateValues({
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
+    });
+
+    renderWithRouter({});
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Process Stages')).not.toBeInTheDocument();
+  });
+
+  it('sidebar layout contains both GenerateContributionButton and stage tab list', async () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    setDialecticStateValues({
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
+    });
+
+    renderWithRouter({});
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-generate-contribution-button')).toBeInTheDocument();
+      expect(screen.getByTestId('mock-stage-tab-card')).toBeInTheDocument();
+    });
+    const sidebar = document.querySelector('.lg\\:col-span-1');
+    expect(sidebar).toBeInTheDocument();
+    expect(sidebar).toContainElement(screen.getByTestId('mock-generate-contribution-button'));
+    expect(sidebar).toContainElement(screen.getByTestId('mock-stage-tab-card'));
   });
 }); 

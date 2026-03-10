@@ -6,16 +6,11 @@ import {
   SubmitStageResponsesPayload,
   type SubmitStageResponsesDependencies,
   type SubmitStageResponsesResponse,
-  type DialecticFeedback,
   type DialecticStage,
   type DialecticProject,
+  type DialecticSession,
+  type SelectedModels,
 } from './dialectic.interface.ts';
-import type { PathContext } from '../_shared/types/file_manager.types.ts';
-import { PromptAssembler } from "../_shared/prompt-assembler.ts";
-import { ProjectContext, SessionContext, StageContext } from "../_shared/prompt-assembler.interface.ts";
-import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
-import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
 const STORAGE_BUCKET = Deno.env.get('SB_CONTENT_STORAGE_BUCKET');
@@ -36,21 +31,19 @@ export async function submitStageResponses(
     !payload.sessionId ||
     !payload.projectId ||
     !payload.stageSlug ||
-    payload.currentIterationNumber === undefined || // Check for undefined as 0 is a valid iteration
-    !payload.responses || 
-    !Array.isArray(payload.responses)
+    payload.currentIterationNumber === undefined // Check for undefined as 0 is a valid iteration
     // We could add more specific validation for sessionId format (e.g., UUID) if needed
   ) {
     return {
       error: {
         message:
-          "Invalid payload: missing required fields (sessionId, projectId, stageSlug, currentIterationNumber, and responses array must be provided).",
+          "Invalid payload: missing required fields (sessionId, projectId, stageSlug, and currentIterationNumber must be provided).",
         status: 400,
       },
       status: 400,
     };
   }
-  
+
   const { logger, fileManager } = dependencies;
   const userId = user?.id;
 
@@ -124,69 +117,35 @@ export async function submitStageResponses(
   const project: DialecticProject & { dialectic_domains: { id: string; name: string; description: string | null } | null } = sessionData.project;
   const currentStage: DialecticStage = sessionData.stage;
 
-  // Validate that all originalContributionIds in the payload exist for this session, stage, and iteration.
-  if (payload.responses && payload.responses.length > 0) {
-    const { data: stageContributions, error: stageContributionsError } = await dbClient
-      .from('dialectic_contributions')
-      .select('id')
-      .eq('session_id', payload.sessionId)
-      .eq('stage', currentStage.slug)
-      .eq('iteration_number', payload.currentIterationNumber);
-
-    if (stageContributionsError) {
-      logger.error(`[submitStageResponses] Error fetching contributions for validation:`, { error: stageContributionsError });
-      return { error: { message: "Database error during contribution validation.", status: 500 }, status: 500 };
-    }
-
-    const validContributionIds = new Set(stageContributions?.map(c => c.id) ?? []);
-    for (const response of payload.responses) {
-      if (!validContributionIds.has(response.originalContributionId)) {
-        return {
-          error: { message: `Contribution with ID ${response.originalContributionId} not found for this session, stage, and iteration.`, status: 400 },
-          status: 400,
-        };
-      }
-    }
-  }
-
-  // Additional validation for items in payload.responses
-  for (const responseItem of payload.responses) {
-    if (!responseItem.originalContributionId || typeof responseItem.originalContributionId !== 'string' || responseItem.originalContributionId.trim() === '' ||
-        !responseItem.responseText || typeof responseItem.responseText !== 'string' || responseItem.responseText.trim() === '') {
-      logger.warn('[submitStageResponses] Invalid item in responses array.', { responseItem });
-      return {
-        error: { message: "Invalid response item: missing or empty originalContributionId or responseText.", status: 400 },
-        status: 400,
-      };
-    }
-  }
-
-  if (currentStage.slug !== payload.stageSlug) {
-    logger.error(
-      `[submitStageResponses] Mismatch: Payload stage slug (${payload.stageSlug}) vs session's current stage slug (${currentStage.slug}).`,
-    );
+  function sessionRowToDialecticSession(
+    row: Omit<DialecticSession, 'selected_models'> & { selected_model_ids: string[] },
+  ): DialecticSession {
+    const selected_models: SelectedModels[] = row.selected_model_ids.map((id) => ({
+      id,
+      displayName: id,
+    }));
     return {
-      error: {
-        message: 'Stage slug mismatch with current session stage.',
-        status: 400,
-      },
-      status: 400,
+      id: row.id,
+      project_id: row.project_id,
+      session_description: row.session_description,
+      user_input_reference_url: row.user_input_reference_url,
+      iteration_count: row.iteration_count,
+      status: row.status,
+      associated_chat_id: row.associated_chat_id,
+      current_stage_id: row.current_stage_id,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      selected_models,
     };
   }
-  
-  if (sessionData.iteration_count !== payload.currentIterationNumber) {
-     logger.warn(
-       `[submitStageResponses] Mismatch: Payload iteration number (${payload.currentIterationNumber}) vs session's current iteration (${sessionData.iteration_count}). Using session's.`,
-     );
-     // Use sessionData.iteration_count as the source of truth
+
+  function sessionRowHasSelectedModelIds(
+    row: { selected_model_ids: string[] | null },
+  ): row is { selected_model_ids: string[] } {
+    return row.selected_model_ids !== null && row.selected_model_ids !== undefined;
   }
 
-  const iterationNumber = sessionData.iteration_count;
-
-
-  // 2. Validate user's permissions (if applicable, e.g., only project owner can submit)
-  // For now, assuming if the user can fetch the session, they can submit.
-  // Add more robust checks if needed.
+  // 2. Validate user's permissions (project owner can submit)
   if (userId && project.user_id !== userId) {
     logger.warn(
       `[submitStageResponses] Unauthorized: User ${userId} attempted to submit responses for project ${project.id} owned by ${project.user_id}.`,
@@ -197,74 +156,43 @@ export async function submitStageResponses(
     };
   }
 
-  const createdFeedbackRecords: DialecticFeedback[] = [];
-
-  // 3. Process and store user's feedback for the current stage (if provided)
-  if (payload.userStageFeedback && payload.userStageFeedback.content) {
+  if (currentStage.slug !== payload.stageSlug) {
     logger.info(
-      `[submitStageResponses] Processing userStageFeedback for session ${payload.sessionId}`,
+      `[submitStageResponses] Session already past target stage (payload: ${payload.stageSlug}, current: ${currentStage.slug}). Returning success without advancing.`,
     );
-    const feedbackFileName =
-      `user_feedback_${currentStage.slug}.md`;
-    
-    const feedbackPathContext: PathContext = {
-      projectId: project.id,
-      sessionId: payload.sessionId,
-      iteration: iterationNumber,
-      stageSlug: currentStage.slug,
-      fileType: FileType.UserFeedback,
-      originalFileName: feedbackFileName,
-    };
-
-    const { record: feedbackFileRecord, error: feedbackFileError } =
-      await fileManager.uploadAndRegisterFile({
-        pathContext: feedbackPathContext,
-        fileContent: payload.userStageFeedback.content,
-        mimeType: 'text/markdown',
-        sizeBytes:
-          new TextEncoder().encode(payload.userStageFeedback.content).length,
-        userId: userId || '', 
-        description: `Consolidated user feedback for stage: ${currentStage.display_name}, iteration: ${iterationNumber}`,
-        feedbackTypeForDb: payload.userStageFeedback.feedbackType,
-        resourceDescriptionForDb: payload.userStageFeedback.resourceDescription, 
+    if (!sessionRowHasSelectedModelIds(sessionData)) {
+      logger.error('[submitStageResponses] Session has no selected_model_ids.', {
+        sessionId: payload.sessionId,
       });
-
-    if (feedbackFileError || !feedbackFileRecord) {
-      logger.error(
-        `[submitStageResponses] Failed to save user feedback file for session ${payload.sessionId}.`,
-        { error: feedbackFileError },
-      );
-      // Decide if this is a critical error. For now, log and continue.
-      return { error: { message: "Failed to store user feedback.", status: 500, details: feedbackFileError?.message }, status: 500 };
-    } else {
-      logger.info(
-        `[submitStageResponses] User feedback file saved: ${feedbackFileRecord.id}`,
-      );
-      // The feedbackFileRecord from FileManagerService is from 'dialectic_feedback' table
-      createdFeedbackRecords.push({
-        ...feedbackFileRecord,
-        project_id: project.id,
-        stage_slug: currentStage.slug,
-        feedback_type: payload.userStageFeedback.feedbackType,
-        user_id: userId || '',
-        resource_description: payload.userStageFeedback.resourceDescription,
-        file_name: feedbackFileRecord.file_name || '',
-        mime_type: feedbackFileRecord.mime_type,
-        size_bytes: feedbackFileRecord.size_bytes ?? 0,
-        storage_bucket: feedbackFileRecord.storage_bucket,
-        session_id: payload.sessionId,
-        iteration_number: payload.currentIterationNumber,
-      });
+      return {
+        error: {
+          message: 'Session configuration error: selected_model_ids is required.',
+          status: 500,
+        },
+        status: 500,
+      };
     }
-  } else {
-    logger.info(
-      `[submitStageResponses] No consolidated userStageFeedback provided for session ${payload.sessionId}.`,
-    );
+    return {
+      data: {
+        message: 'Stage responses recorded; session already at a later stage. No advancement.',
+        updatedSession: sessionRowToDialecticSession(sessionData),
+      },
+      status: 200,
+    };
   }
-  
+
+  if (sessionData.iteration_count !== payload.currentIterationNumber) {
+    logger.warn(
+      `[submitStageResponses] Mismatch: Payload iteration number (${payload.currentIterationNumber}) vs session's current iteration (${sessionData.iteration_count}). Using session's.`,
+    );
+    // Use sessionData.iteration_count as the source of truth
+  }
+
+  const iterationNumber = sessionData.iteration_count;
+
   // Critical check: Ensure project has a process_template_id
   // Try to get it from the nested structure (new query) or directly (base table column)
-  const projectProcessTemplateId = sessionData.project.process_template?.id ?? 
+  const projectProcessTemplateId = sessionData.project.process_template?.id ??
     sessionData.project.process_template_id;
 
   if (!projectProcessTemplateId) {
@@ -317,235 +245,227 @@ export async function submitStageResponses(
     );
     // This is a successful completion of the current stage, but no new seed prompt needed.
     // Update session status to reflect completion or a specific terminal state.
-    const { data: updatedTerminalSession, error: terminalUpdateError } = await dbClient
+    const { data: updatedTerminalSession, error: terminalUpdateError } =
+      await dbClient
         .from('dialectic_sessions')
-        .update({ status: `completed_${currentStage.slug}` })
+        .update({ status: `iteration_complete_pending_review` })
         .eq('id', payload.sessionId)
         .select()
         .single();
-    
-    if (terminalUpdateError) {
-        logger.error("[submitStageResponses] Error updating session status for terminal stage:", { error: terminalUpdateError });
-        // Non-critical, proceed with response
-    }
 
+    if (terminalUpdateError) {
+      logger.error(
+        "[submitStageResponses] Error updating session status for terminal stage:",
+        { error: terminalUpdateError },
+      );
+      return {
+        error: {
+          message: 'Failed to update session status for terminal stage.',
+          status: 500,
+          details: terminalUpdateError.message,
+        },
+        status: 500,
+      };
+    }
+    if (
+      updatedTerminalSession === null ||
+      updatedTerminalSession === undefined
+    ) {
+      logger.error(
+        '[submitStageResponses] No session row returned after terminal update.',
+        { sessionId: payload.sessionId },
+      );
+      return {
+        error: {
+          message: 'Failed to retrieve updated session.',
+          status: 500,
+        },
+        status: 500,
+      };
+    }
+    if (!sessionRowHasSelectedModelIds(updatedTerminalSession)) {
+      logger.error('[submitStageResponses] Session has no selected_model_ids.', {
+        sessionId: payload.sessionId,
+      });
+      return {
+        error: {
+          message: 'Session configuration error: selected_model_ids is required.',
+          status: 500,
+        },
+        status: 500,
+      };
+    }
     return {
       data: {
         message: 'Stage responses submitted. Current stage is terminal.',
-        updatedSession: updatedTerminalSession || sessionData, // return updated or original if update failed
-        nextStageSeedPromptPath: null,
-        feedbackRecords: createdFeedbackRecords,
+        updatedSession: sessionRowToDialecticSession(updatedTerminalSession),
       },
       status: 200,
     };
   }
-  
+
   // Ensure nextStageFull is not null before proceeding with assembler logic
   if (!nextStageFull) {
     // This case should ideally be fully covered by the terminal stage logic above.
     // If we reach here, it implies an unexpected state or a logic flaw in terminal stage handling.
-    logger.error("[submitStageResponses] Critical error: nextStageFull is null after terminal stage check. This should not happen.");
-    return { error: { message: "Internal server error: Failed to determine next stage for prompt assembly.", status: 500 }, status: 500 };
-  }
-
-  // 5. Prepare and save the seed prompt for the NEXT stage using PromptAssembler
-  logger.info(
-    `[submitStageResponses] Preparing seed prompt for next stage: ${nextStageFull.display_name}`,
-  );
-
-  // **Perform critical checks for ProjectContext components before instantiation**
-  // Note: initial_prompt_resource_id is now always populated for all projects (both string and file inputs are stored as files)
-
-  // sessionData.project is the raw result of SELECT * from dialectic_projects
-  const rawDbProject = sessionData.project;
-
-  // Check process_template_id directly from rawDbProject
-  if (typeof rawDbProject.process_template_id !== 'string' || !rawDbProject.process_template_id) {
-    logger.error("[submitStageResponses] Critical configuration error: project.process_template_id from DB is missing or invalid.", {details: `ID was: ${rawDbProject.process_template_id}`});
-    return { error: { message: "Project configuration integrity error: Process template ID in DB is invalid.", status: 500 }, status: 500 };
-  }
-
-  if (!project.dialectic_domains || typeof project.dialectic_domains.name !== 'string' || !project.dialectic_domains.name) {
-    logger.error("[submitStageResponses] Critical configuration error: project.dialectic_domains.name is missing or invalid.");
-    return { error: { message: "Project configuration error: Missing or invalid dialectic domain name.", status: 500 }, status: 500 };
-  }
-
-  const assembler = new PromptAssembler(dbClient, (bucket: string, path: string) => dependencies.downloadFromStorage(dbClient, bucket, path));
-
-  const projectContextForAssembler: ProjectContext = {
-      id: project.id, 
-      user_id: project.user_id, 
-      project_name: project.project_name, 
-      initial_user_prompt: project.initial_user_prompt, 
-      initial_prompt_resource_id: project.initial_prompt_resource_id ?? null, 
-      selected_domain_id: project.selected_domain_id, 
-      process_template_id: rawDbProject.process_template_id, // Checked: known to be a non-null string
-      repo_url: null, 
-      status: project.status, 
-      created_at: project.created_at, 
-      updated_at: project.updated_at, 
-      selected_domain_overlay_id: project.selected_domain_overlay_id ?? null, 
-      user_domain_overlay_values: rawDbProject.user_domain_overlay_values ?? null, 
-      dialectic_domains: { name: project.dialectic_domains.name }, 
-  };
-
-  // Omit joined fields (project, stage) from sessionData for SessionContext
-  const { project: _p, stage: _s, ...sessionBaseData } = sessionData;
-  const sessionContextForAssembler: SessionContext = {
-      ...sessionBaseData,
-  };
-  
-  const { data: systemPrompt, error: promptError } = await dbClient
-    .from('system_prompts')
-    .select('id, prompt_text')
-    .eq('id', nextStageFull.default_system_prompt_id || '')
-    .single();
-
-  if (promptError && nextStageFull.default_system_prompt_id) {
-    logger.warn(`Could not fetch system prompt for stage ${nextStageFull.slug}`, { error: promptError });
-  }
-  
-  // Fetch overlays for next stage based on (system_prompt_id, project.selected_domain_id)
-  let overlays: { overlay_values: ProjectContext['user_domain_overlay_values'] }[] | null = null;
-  if (!systemPrompt || !systemPrompt.id || !project.selected_domain_id) {
-    logger.error('[submitStageResponses] Missing required identifiers for overlay fetch.', { system_prompt: systemPrompt, selected_domain_id: project.selected_domain_id });
-    return { error: { message: 'Required domain overlays are missing for this stage.', status: 500, code: 'STAGE_CONFIG_MISSING_OVERLAYS' }, status: 500 };
-  }
-
-  const { data: overlayRows, error: overlaysError } = await dbClient
-    .from('domain_specific_prompt_overlays')
-    .select('overlay_values')
-    .eq('system_prompt_id', systemPrompt.id)
-    .eq('domain_id', project.selected_domain_id);
-
-  if (overlaysError || !overlayRows || overlayRows.length === 0) {
-    logger.error('[submitStageResponses] Overlays missing for next stage.', { overlaysError, system_prompt_id: systemPrompt.id, domain_id: project.selected_domain_id });
-    return { error: { message: 'Required domain overlays are missing for this stage.', status: 500, code: 'STAGE_CONFIG_MISSING_OVERLAYS' }, status: 500 };
-  }
-  overlays = overlayRows as { overlay_values: ProjectContext['user_domain_overlay_values'] }[];
-
-  const stageContextForAssembler: StageContext = {
-    ...nextStageFull,
-    system_prompts: systemPrompt ? { prompt_text: systemPrompt.prompt_text } : null,
-    domain_specific_prompt_overlays: overlays,
-  };
-  
-  // Robust handling for getInitialPromptContent
-  const initialUserPromptData = await getInitialPromptContent(dbClient, projectContextForAssembler, logger, dependencies.downloadFromStorage);
-  if (!initialUserPromptData) {
-      logger.error("[submitStageResponses] Critical error: Initial project prompt data object is missing.");
-      return { error: { message: "Critical error: Initial project prompt data is missing.", status: 500 }, status: 500 };
-  }
-  if (initialUserPromptData.error) {
-      // Ensure errorMessage is always a non-empty string for the ServiceError's message field.
-      const errorMessage = typeof initialUserPromptData.error === 'string' && initialUserPromptData.error.trim() !== ''
-                         ? initialUserPromptData.error
-                         : "Failed to get initial project prompt content due to an unspecified error.";
-      logger.error("[submitStageResponses] Failed to get initial project prompt content due to an error.", { error: initialUserPromptData.error }); 
-      return { error: { message: errorMessage, status: 500 }, status: 500 };
-  }
-  if (typeof initialUserPromptData.content !== 'string') {
-      logger.error("[submitStageResponses] Critical error: Initial project prompt content is invalid (not a string).");
-      return { error: { message: "Critical error: Initial project prompt content is invalid.", status: 500 }, status: 500 };
-  }
-  const projectInitialUserPrompt = initialUserPromptData.content; 
-
-  let assembledSeedPromptText: string;
-  try {
-    assembledSeedPromptText = await assembler.assemble(
-      projectContextForAssembler,
-      sessionContextForAssembler,
-      stageContextForAssembler,
-      projectInitialUserPrompt,
-      iterationNumber
-    );
-    console.log(
-      `[submitStageResponses DBG] Assembled seed prompt text:`,
-      assembledSeedPromptText
-    );
-  } catch (assemblyError) {
     logger.error(
-      `[submitStageResponses] Error assembling seed prompt: ${ (assemblyError instanceof Error) ? assemblyError.message : String(assemblyError) }`, 
-      { error: assemblyError }
+      "[submitStageResponses] Critical error: nextStageFull is null after terminal stage check. This should not happen.",
     );
-    let errorDetailsString: string | undefined = undefined;
-    if (assemblyError instanceof Error) {
-        errorDetailsString = assemblyError.stack || assemblyError.message;
-    } else if (typeof assemblyError === 'string') {
-        errorDetailsString = assemblyError;
-    } else if (assemblyError) {
-        try {
-            errorDetailsString = JSON.stringify(assemblyError);
-        } catch {
-            errorDetailsString = "Could not stringify error details.";
-        }
-    }
     return {
       error: {
-        message: `Failed to assemble seed prompt for next stage: ${(assemblyError instanceof Error) ? assemblyError.message : 'Unknown assembly error'}`,
+        message:
+          "Internal server error: Failed to determine next stage for prompt assembly.",
         status: 500,
-        details: errorDetailsString,
       },
       status: 500,
     };
   }
 
-  if (!assembledSeedPromptText) {
-    logger.error("[submitStageResponses] Critical error: assembledSeedPromptText is null after assembling seed prompt.");
-    return { error: { message: "Internal server error: Failed to assemble seed prompt.", status: 500 }, status: 500 };
+  // Precondition check for the next stage
+  const { data: recipeSteps, error: recipeError } = await dbClient
+    .from('dialectic_stage_recipe_steps')
+    .select('inputs_required')
+    .eq('instance_id', nextStageFull.active_recipe_instance_id ?? '')
+    .order('execution_order', { ascending: true });
+
+  if (recipeError) {
+    logger.error("[submitStageResponses] Error fetching recipe for next stage preconditions:", { error: recipeError });
+    return { error: { message: "Failed to fetch recipe for next stage.", status: 500 }, status: 500 };
   }
 
-  const seedPromptFileName = `seed_prompt.md`;
-  const seedPromptPathContext: PathContext = {
-    projectId: project.id,
-    sessionId: payload.sessionId,
-    iteration: iterationNumber, 
-    stageSlug: nextStageFull.slug, // Use the slug of the NEXT stage
-    fileType: FileType.SeedPrompt,
-    originalFileName: seedPromptFileName,
-  };
+  const firstStep = recipeSteps?.[0];
+  if (firstStep && firstStep.inputs_required) {
+    const inputs = firstStep.inputs_required;
+    
+    if (!Array.isArray(inputs)) {
+      logger.error("[submitStageResponses] Critical error: inputs_required is not an array.");
+      return { error: { message: "Internal server error: inputs_required is not an array.", status: 500 }, status: 500 };
+    }
+    if (inputs.length === 0) {
+      logger.error("[submitStageResponses] Critical error: inputs_required is empty.");
+      return { error: { message: "Internal server error: inputs_required is empty.", status: 500 }, status: 500 };
+    }
+    for (const input of inputs) {
+      if (typeof input !== 'object' || input === null || !('type' in input)) {
+        logger.error("[submitStageResponses] Critical error: input is not an object or is null or missing type.");
+        return { error: { message: "Internal server error: input is not an object or is null.", status: 500 }, status: 500 };
+      }
+      if (input.document_key === undefined || input.document_key === null) {
+        logger.error("[submitStageResponses] Critical error: input.document_key is undefined or null.");
+        return { error: { message: "Internal server error: input.document_key is undefined or null.", status: 500 }, status: 500 };
+      }
+      if (typeof input.slug !== 'string' || input.slug.length === 0) {
+        logger.error("[submitStageResponses] Critical error: input.slug is required and must be a non-empty string.");
+        return { error: { message: "Internal server error: input.slug is required and must be a non-empty string.", status: 500 }, status: 500 };
+      }
+      if (input.required === false) {
+        continue;
+      }
+      if (input.type === 'document') {
+        let resourceQuery = dbClient
+          .from('dialectic_project_resources')
+          .select('id')
+          .eq('project_id', project.id)
+          .eq('resource_type', 'rendered_document')
+          .eq('stage_slug', input.slug);
 
-  const { record: seedPromptFileRecord, error: seedFileError } =
-    await fileManager.uploadAndRegisterFile({
-      pathContext: seedPromptPathContext,
-      fileContent: assembledSeedPromptText,
-      mimeType: 'text/markdown',
-      sizeBytes: new TextEncoder().encode(assembledSeedPromptText).length,
-      userId: userId || '',
-      description: formatResourceDescription({
-        type: 'seed_prompt',
-        session_id: payload.sessionId,
-        stage_slug: nextStageFull.slug,
-        iteration: iterationNumber,
-        original_file_name: seedPromptFileName,
-        project_id: project.id,
-      }),
-    });
+        if (payload.sessionId) {
+          resourceQuery = resourceQuery.eq('session_id', payload.sessionId);
+        }
 
-  if (seedFileError || !seedPromptFileRecord) {
-    logger.error(
-      `[submitStageResponses] Failed to save seed prompt file for next stage ${nextStageFull.slug}.`,
-      { error: seedFileError },
-    );
-    return {
-      error: { message: 'Failed to store seed prompt for next stage.', status: 500, details: seedFileError?.message },
-      status: 500,
-    };
+        if (iterationNumber !== undefined) {
+          resourceQuery = resourceQuery.eq('iteration_number', iterationNumber);
+        }
+
+        resourceQuery = resourceQuery.ilike('file_name', `%${input.document_key}%`);
+
+        const { data: requiredArtifact, error: artifactError } = await resourceQuery
+          .limit(1)
+          .maybeSingle();
+
+        if (artifactError || !requiredArtifact) {
+          logger.warn(`[submitStageResponses] Precondition failed for next stage: missing required document '${input.document_key}'.`);
+          return { error: { message: "Preconditions for the next stage are not met.", status: 412 }, status: 412 };
+        }
+      } else if (input.type === 'contribution') {
+        const contributionQuery = dbClient
+          .from('dialectic_contributions')
+          .select('id')
+          .eq('session_id', payload.sessionId)
+          .eq('iteration_number', iterationNumber)
+          .eq('is_latest_edit', true)
+          .eq('stage', input.slug)
+          .ilike('file_name', `%${input.document_key}%`);
+        const { data: contributionRow, error: contributionError } = await contributionQuery
+          .limit(1)
+          .maybeSingle();
+        if (contributionError || !contributionRow) {
+          logger.warn(`[submitStageResponses] Precondition failed for next stage: missing required contribution '${input.document_key}' (stage: ${input.slug}).`);
+          return { error: { message: "Preconditions for the next stage are not met.", status: 412 }, status: 412 };
+        }
+      } else if (input.type === 'header_context') {
+        const headerQuery = dbClient
+          .from('dialectic_contributions')
+          .select('id')
+          .eq('session_id', payload.sessionId)
+          .eq('iteration_number', iterationNumber)
+          .eq('is_latest_edit', true)
+          .eq('contribution_type', 'header_context')
+          .eq('stage', input.slug)
+          .ilike('file_name', `%${input.document_key}%`);
+        const { data: headerRow, error: headerError } = await headerQuery
+          .limit(1)
+          .maybeSingle();
+        if (headerError || !headerRow) {
+          logger.warn(`[submitStageResponses] Precondition failed for next stage: missing required header_context '${input.document_key}' (stage: ${input.slug}).`);
+          return { error: { message: "Preconditions for the next stage are not met.", status: 412 }, status: 412 };
+        }
+      } else if (input.type === 'feedback') {
+        let feedbackQuery = dbClient
+          .from('dialectic_feedback')
+          .select('id')
+          .eq('session_id', payload.sessionId)
+          .eq('stage_slug', input.slug)
+          .eq('iteration_number', iterationNumber)
+          .eq('user_id', project.user_id);
+        feedbackQuery = feedbackQuery.filter('resource_description->>document_key', 'eq', input.document_key);
+        const { data: feedbackRow, error: feedbackError } = await feedbackQuery
+          .limit(1)
+          .maybeSingle();
+        if (feedbackError || !feedbackRow) {
+          logger.warn(`[submitStageResponses] Precondition failed for next stage: missing required feedback '${input.document_key}' (stage: ${input.slug}).`);
+          return { error: { message: "Preconditions for the next stage are not met.", status: 412 }, status: 412 };
+        }
+      } else if (input.type === 'seed_prompt') {
+        let seedQuery = dbClient
+          .from('dialectic_project_resources')
+          .select('id')
+          .eq('project_id', project.id)
+          .eq('resource_type', 'seed_prompt')
+          .eq('stage_slug', input.slug);
+        if (payload.sessionId) {
+          seedQuery = seedQuery.eq('session_id', payload.sessionId);
+        }
+        if (iterationNumber !== undefined) {
+          seedQuery = seedQuery.eq('iteration_number', iterationNumber);
+        }
+        const { data: seedRow, error: seedError } = await seedQuery
+          .limit(1)
+          .maybeSingle();
+        if (seedError || !seedRow) {
+          logger.warn(`[submitStageResponses] Precondition failed for next stage: missing required seed_prompt (stage: ${input.slug}).`);
+          return { error: { message: "Preconditions for the next stage are not met.", status: 412 }, status: 412 };
+        }
+      }
+    }
   }
+
+  // 5. Update session status to pending for the next stage
+  // Note: The seed prompt is created once at session initiation (thesis stage) and reused across all stages.
+  // Stage-specific prompts are assembled by the worker during job execution, not at stage transition.
   logger.info(
-    `[submitStageResponses] Seed prompt for next stage ${nextStageFull.slug} saved: ${seedPromptFileRecord.id}`,
+    `[submitStageResponses] Advancing session to next stage: ${nextStageFull.display_name}`,
   );
-
-  // Construct full path for nextStageSeedPromptPath
-  let fullSeedPromptPath: string | null = null;
-  if (seedPromptFileRecord && seedPromptFileRecord.storage_path && seedPromptFileRecord.file_name) {
-    const folder = seedPromptFileRecord.storage_path;
-    const file = seedPromptFileRecord.file_name;
-    // Ensure single slash between folder and file
-    fullSeedPromptPath = folder.endsWith('/') ? folder + file : folder + '/' + file;
-  }
-
-  // 6. Update session status to pending for the next stage
   const nextSessionStatus = `pending_${nextStageFull.slug.replace(/\s+/g, '_').toLowerCase()}`;
   const { data: updatedSession, error: updateError } = await dbClient
     .from('dialectic_sessions')
@@ -575,16 +495,38 @@ export async function submitStageResponses(
     };
   }
 
+  if (updatedSession === null || updatedSession === undefined) {
+    logger.error(
+      '[submitStageResponses] No session row returned after stage update.',
+      { sessionId: payload.sessionId },
+    );
+    return {
+      error: {
+        message: 'Failed to retrieve updated session.',
+        status: 500,
+      },
+      status: 500,
+    };
+  }
+  if (!sessionRowHasSelectedModelIds(updatedSession)) {
+    logger.error('[submitStageResponses] Session has no selected_model_ids.', {
+      sessionId: payload.sessionId,
+    });
+    return {
+      error: {
+        message: 'Session configuration error: selected_model_ids is required.',
+        status: 500,
+      },
+      status: 500,
+    };
+  }
   logger.info(
     `[submitStageResponses] Function completed successfully for session ${payload.sessionId}. Next stage: ${nextStageFull.display_name}`,
   );
-
   return {
     data: {
       message: 'Stage responses submitted successfully. Next stage pending.',
-      updatedSession: updatedSession || sessionData, 
-      nextStageSeedPromptPath: fullSeedPromptPath, // Use the constructed full path
-      feedbackRecords: createdFeedbackRecords,
+      updatedSession: sessionRowToDialecticSession(updatedSession),
     },
     status: 200,
   };

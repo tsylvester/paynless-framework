@@ -1,0 +1,35 @@
+business_case, Business Case, "A business case for building the application. Includes market opportunity, user problem validation, competitive analysis, differentiation and value prop, risks and mitigation, basic SWOT, and next steps." 
+
+feature_spec, Feature Specifications, "Features required for the proposed application. Feature names, feature objectives, user stories, acceptance criteria, dependencies, and success metrics for each feature."
+
+success_metrics, Success Metrics, "How to measure if the application is successful. North star metric, primary kpis, leading and lagging indicators, guardrails, measurement plan, risk signals, next steps, data sources, reporting cadence, ownership, and escalation." 
+
+technical_approach, Technical Approach, "An overview for how to build the system. Architecture, layers, boundaries, components, data, deployment, sequencing, risk mitigation, and open questions. For best results, you should edit the file or use the 'Feedback' section to answer the open questions so the agent has explicit direction on how to handle them. If you leave them blank, the agent will make its own choices." 
+
+business_case_critique, "Business Case Critique", "A critical review of the business case. Evaluates the business case's fit to the original request, SWOT, problems, obstacles, omissions, discrepencies, areas for improvement, feasibility, recommendations, and any notes the agent wants to add." 
+
+dependency_map, Dependency Map, "How the parts fit together, and build order. Components, integration points, conflict flags, dependency groups, sequencing, risk mitigation, and open questions. For best results, you should edit the file or use the 'Feedback' section to answer the open questions so the agent has explicit direction on how to handle them. If you leave them blank, the agent will make its own choices." 
+
+non_functional_requirements, Non-Functional Requirements, "Standard requirements for a safe, secure, robust, usable application and good user experience. Security, performance, reliability, scalability, maintainability, compliance, outcome alignments, measurement plan." 
+
+risk_register, Risk Register, "Specific identified risks to the application. Risk, mpact, likelihood, mitigation, affected components, dependencies, sequencing, open questions, guardrails, signals, next steps, notes from the agent." 
+
+technical_feasibility_assessment, Technical Feasibility, "How feasible is it to build the application. Constraints, team, timeline, cost, integration, compliance, findings, architecture, components, data, deployment, sequencing, risk mitigation, open questions. For best results, you should edit the file or use the 'Feedback' section to answer the open questions so the agent has explicit direction on how to handle them. If you leave them blank, the agent will make its own choices." 
+
+product_requirements, Product Requirements, "What the application requires for the product to be successful. One of the most important gating documents for a new project. Minimum viable product description, user problem validation, market opportunity, competitive analysis, differentiation and value proposition, risks and mitigation, SWOT, feature scope and details, feasibility, non-functional alignment, scoring and tradeoffs, outcome alignment and success, decisions and follow-ups on prior open questions, new open questions, next steps, release plan, assumptions, open decisions for the user to respond to, implementation risks, and stakeholder communications. For best results, you should edit the file or use the 'Feedback' section to answer the open questions and follow-ups so the agent has explicit direction on how to handle them. If you leave them blank, the agent will make its own choices."     
+
+system_architecture, System Architecture, "How the application is designed. Structure, services, components, data flows, interfaces, integration points to other systems, dependency resolution, conflict flags, sequencing, risk mitigation, risk signals, security measures, observability, scalability, resilience, compliance controls, open questions, rationale. For best results, you should edit the file or use the 'Feedback' section to answer the open questions so the agent has explicit direction on how to handle them. If you leave them blank, the agent will make its own choices." 
+
+tech_stack, Tech Stack, "What technologies will be used to build the system. Frontend, backend, data platform, devops tooling, security tooling, libraries, services, components, open questions, next steps. For best results, you should edit the file or use the 'Feedback' section to answer the open questions so the agent has explicit direction on how to handle them. If you leave them blank, the agent will make its own choices." 
+
+master_plan, Master Plan, "The high level plan that explains the build. Implementation phases with milestones, dependency resolution, feature scope, features, MVP description, and more. This document summarizes everything that came before it into a cohesive view of the application."
+
+milestone_schema, Milestones, "Work segmentation from the Master Plan. What will be done, in what order, including its context and the reason for those milestones. Each milestone is the middle view between the Master Plan and the actual implementation work." 
+
+technical_requirements, Technical Requirements, "What the application requires to function. One of the most important gating documents for a new project, informs the Master Plan and Milestones. Subsystems, APIs, database schemas, file tree, architecture, feature scope, feasibility insights, non-functional alignment, outcome alignment, north star metric, kpis, guardrails, measurement plan, services, components, data flows, interfaces, integration points, dependencies, security, observability, scalability, resilience, frontend, backend, data platform, devops, libraries, services." 
+
+actionable_checklist, "Work Plan", "What you need to do to build the application, in order. This is the end goal of the entire process. Give this to your dev team or coding agent. Milestones are broken down into specific structured work steps."  
+
+advisor_recommendations, "Recommendations", "The agent's final word on the application. If you ran multiple agents, each agent will compare their final plan to everyone else's and make suggestions. They analyze your options and vote on the best choice to achieve your goals." 
+
+updated_master_plan, "Updated Master Plan", "The Master Plan gave a high level view of milestones to complete the work. The first set of milestones was broken out into your work plan. Now the master plan is updated to show those milestones are in progress, and pick which are the next milestones to work. These next milestones will become your next work plan when you finish the first one." 

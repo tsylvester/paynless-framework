@@ -1,7 +1,7 @@
 import { continueJob } from './continueJob.ts';
 import { assert, assertEquals, assertExists, assertObjectMatch } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { spy } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { type PostgrestError, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { MockLogger } from '../_shared/logger.mock.ts';
 import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from '../_shared/supabase.mock.ts';
 import type { Database, Json } from '../types_db.ts';
@@ -21,7 +21,7 @@ import {
     isDialecticJobRow 
 } from '../_shared/utils/type_guards.ts';
 import { type Messages } from '../_shared/types.ts';
-
+import { FileType } from '../_shared/types/file_manager.types.ts';
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Insert'];
 
@@ -55,6 +55,9 @@ function createMockJob(payload: DialecticJobPayload, overrides: Partial<Job> = {
         started_at: null,
         target_contribution_id: null,
         payload: payload,
+        is_test_job: false,
+        job_type: 'PLAN',
+        idempotency_key: null,
         ...overrides,
     };
   
@@ -68,29 +71,27 @@ Deno.test('continueJob', async (t) => {
     let deps: IContinueJobDeps;
 
     const basePayload: DialecticJobPayload = { 
-    job_type: 'execute',
     sessionId: 'session-1',
     projectId: 'project-1',
     model_id: 'model-1',
     stageSlug: 'test-stage',
     iterationNumber: 1,
-    step_info: { current_step: 0, total_steps: 1 },
-    prompt_template_name: 'test_template',
+    prompt_template_id: 'test_template',
     inputs: { source: 'some_input' },
-    output_type: 'thesis',
+    output_type: FileType.HeaderContext,
     continueUntilComplete: true, 
     continuation_count: 0,
     walletId: 'wallet-1',
     maxRetries: 5,
     canonicalPathParams: {
-        contributionType: 'thesis'
+        contributionType: 'thesis',
+        stageSlug: 'thesis',    
     },
     user_jwt: 'jwt.token.here',
+    idempotencyKey: 'idem-continue-job-1',
 };
-    
-    const baseJob = createMockJob(basePayload);
 
-    const baseSavedContribution: DialecticContributionRow = {
+const baseSavedContribution: DialecticContributionRow = {
         id: 'contrib-1',
         session_id: 'session-1',
         stage: 'test-stage',
@@ -119,6 +120,8 @@ Deno.test('continueJob', async (t) => {
         updated_at: new Date().toISOString(),
         user_id: null,
         document_relationships: { 'test-stage': 'contrib-1' },
+        is_header: false,
+        source_prompt_resource_id: null,
     };
 
     const setup = (mockOverrides?: any) => {
@@ -133,16 +136,22 @@ Deno.test('continueJob', async (t) => {
     // GROUP 1: Basic Continuation Logic - FinishReason Variations
     // =================================================================
     
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is "stop"', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is "stop" (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const aiResponse: UnifiedAIResponse = { finish_reason: 'stop', content: 'final part' };
         const testJob = createMockJob(basePayload);
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0, "Insert should not have been called");
+        assertEquals(insertSpy?.callCount ?? 0, 1, "Insert should have been called");
     });
 
     await t.step('FINISH_REASON: should enqueue when finish_reason is "length"', async () => {
@@ -166,56 +175,80 @@ Deno.test('continueJob', async (t) => {
         assertEquals(insertSpy.callCount, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is "tool_calls"', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is "tool_calls" (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: 'tool_calls', content: 'response with tools' };
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is "content_filter"', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is "content_filter" (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: 'content_filter', content: 'filtered response' };
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is "function_call"', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is "function_call" (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: 'function_call', content: 'function call response' };
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is "error"', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is "error" (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: 'error', content: 'error response' };
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
     await t.step('FINISH_REASON: should enqueue when finish_reason is "unknown"', async () => {
@@ -237,30 +270,42 @@ Deno.test('continueJob', async (t) => {
         assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is null', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is null (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: null, content: 'null finish reason' };
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is undefined', async () => {
-        setup();
+    await t.step('CALLER_TRUST: should enqueue when finish_reason is undefined (caller decided continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { content: undefined } as unknown as UnifiedAIResponse;
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
     // =================================================================
@@ -443,23 +488,23 @@ Deno.test('continueJob', async (t) => {
             },
         });
         const testPayload: DialecticJobPayload = { 
-            job_type: 'execute',
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
             stageSlug: 'test-stage',
             iterationNumber: 1,
-            step_info: { current_step: 0, total_steps: 1 },
-            prompt_template_name: 'test_template',
+            prompt_template_id: 'test_template',
             inputs: { source: 'some_input' },
-            output_type: 'thesis',
+            output_type: FileType.HeaderContext,
             continueUntilComplete: true, 
             continuation_count: 0,
             canonicalPathParams: {
-                contributionType: 'thesis'
+                contributionType: 'thesis',
+                stageSlug: 'test-stage',
             },
             walletId: 'wallet-default',
             user_jwt: 'jwt.token.here',
+            idempotencyKey: 'idem-continue-job-2',
         };
         
         const testJob = createMockJob(testPayload);
@@ -492,23 +537,23 @@ Deno.test('continueJob', async (t) => {
             },
         });
         const testPayload: DialecticJobPayload = { 
-            job_type: 'execute',
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
             stageSlug: 'test-stage',
             iterationNumber: 1,
-            step_info: { current_step: 0, total_steps: 1 },
-            prompt_template_name: 'test_template',
+            prompt_template_id: 'test_template',
             inputs: { source: 'some_input' },
-            output_type: 'thesis',
+            output_type: FileType.HeaderContext,
             continueUntilComplete: true, 
             continuation_count: 0,
             walletId: 'only-wallet-id',
             canonicalPathParams: {
-                contributionType: 'thesis'
+                contributionType: 'thesis',
+                stageSlug: 'test-stage',
             },
             user_jwt: 'jwt.token.here',
+            idempotencyKey: 'idem-continue-job-3',
         };
 
         const testJob = createMockJob(testPayload);
@@ -539,23 +584,24 @@ Deno.test('continueJob', async (t) => {
         });
 
         const testPayload: DialecticJobPayload = {
-            job_type: 'execute',
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
             stageSlug: 'test-stage',
             iterationNumber: 1,
-            step_info: { current_step: 0, total_steps: 1 },
+            prompt_template_id: 'test_template',
             // NOTE: prompt_template_name intentionally omitted
             inputs: { source: 'some_input' },
-            output_type: 'thesis',
+            output_type: FileType.HeaderContext,
             continueUntilComplete: true,
             continuation_count: 0,
             canonicalPathParams: {
-                contributionType: 'thesis'
+                contributionType: 'thesis',
+                stageSlug: 'test-stage',
             },
             walletId: 'wallet-default',
             user_jwt: 'jwt.token.here',
+            idempotencyKey: 'idem-continue-job-4',
         };
 
         const testJob = createMockJob(testPayload);
@@ -596,23 +642,23 @@ Deno.test('continueJob', async (t) => {
         });
 
         const testPayload: DialecticJobPayload = {
-            job_type: 'execute',
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
             stageSlug: 'test-stage',
             iterationNumber: 1,
-            step_info: { current_step: 0, total_steps: 1 },
-            prompt_template_name: 'recipe_template_step1',
+            prompt_template_id: 'test_template',
             inputs: { source: 'some_input' },
-            output_type: 'thesis',
+        output_type: FileType.HeaderContext,
             continueUntilComplete: true,
             continuation_count: 0,
             canonicalPathParams: {
-                contributionType: 'thesis'
+                contributionType: 'thesis',
+                stageSlug: 'test-stage',
             },
             walletId: 'wallet-default',
             user_jwt: 'jwt.token.here',
+            idempotencyKey: 'idem-continue-job-5',
         };
 
         const testJob = createMockJob(testPayload);
@@ -626,7 +672,7 @@ Deno.test('continueJob', async (t) => {
         assert(isJobInsert(newJobData));
 
         if (isDialecticExecuteJobPayload(newJobData.payload)) {
-            assertEquals(newJobData.payload.prompt_template_name, 'recipe_template_step1', 'prompt_template_name should be preserved on continuation for recipe flows');
+            assertEquals(newJobData.payload.prompt_template_id, 'test_template', 'prompt_template_id should be preserved on continuation for recipe flows');
         } else {
             assert(false, 'Payload is not a valid DialecticExecuteJobPayload');
         }
@@ -680,6 +726,28 @@ Deno.test('continueJob', async (t) => {
         assert(isJobInsert(newJobData));
         
         assertEquals(newJobData.parent_job_id, null);
+    });
+
+    await t.step('PREREQ_JOB: should preserve prerequisite_job_id and set job_type to EXECUTE', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
+        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
+        const testJob = createMockJob(payload, { prerequisite_job_id: 'pre-123' });
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+
+        assertEquals(result.enqueued, true);
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        const newJobData = insertSpy!.callsArgs[0][0];
+        assert(isJobInsert(newJobData));
+        assertEquals(newJobData.prerequisite_job_id, 'pre-123');
+        assertEquals(newJobData.job_type, 'EXECUTE');
     });
 
     await t.step('PAYLOAD_CONSTRUCTION: should embed the provided message history into the new job payload', async () => {
@@ -775,7 +843,8 @@ Deno.test('continueJob', async (t) => {
         const newJobData = insertSpy!.callsArgs[0][0];
         assert(isJobInsert(newJobData));
         assert(isDialecticJobPayload(newJobData.payload));
-        
+
+
         if (isDialecticExecuteJobPayload(newJobData.payload)) {
             const newPayload = newJobData.payload;
             
@@ -790,7 +859,7 @@ Deno.test('continueJob', async (t) => {
 
             // Assert that the new canonical path params are correctly formed for a simple continuation
             assertExists(newPayload.canonicalPathParams);
-            assertEquals(newPayload.canonicalPathParams.contributionType, basePayload.output_type);
+            assertEquals(newPayload.canonicalPathParams.contributionType, basePayload.stageSlug);
             assertEquals(newPayload.canonicalPathParams.sourceModelSlugs, undefined);
             assertEquals(newPayload.canonicalPathParams.sourceAnchorType, undefined);
             assertEquals(newPayload.canonicalPathParams.sourceAnchorModelSlug, undefined);
@@ -806,6 +875,8 @@ Deno.test('continueJob', async (t) => {
             status: 'pending_continuation',
             attempt_count: 0
         });
+        // Router compatibility: DB row must declare EXECUTE job type
+        assertEquals(newJobData.job_type, 'EXECUTE');
     });
 
     await t.step('DOCUMENT_RELATIONSHIPS: should carry forward document_relationships unchanged on continuation payload', async () => {
@@ -817,7 +888,7 @@ Deno.test('continueJob', async (t) => {
             },
         });
 
-        const relationships = { parenthesis: 'root-abc', thread: 'xyz-123' };
+        const relationships = { parenthesis: 'root-abc', thread: 'xyz-123', 'test-stage': 'some-contrib-id' };
         const payload: DialecticJobPayload = {
             ...basePayload,
             continueUntilComplete: true,
@@ -950,6 +1021,64 @@ Deno.test('continueJob', async (t) => {
         assertEquals(insertSpy?.callCount ?? 0, 0, 'Should not enqueue when relationships are missing');
     });
 
+    await t.step('DOCUMENT_RELATIONSHIPS: continuation payload must include document_relationships[stageSlug] from saved when trigger has only source_group', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': {
+                    insert: { data: [{ id: 'new-job-id' }] },
+                },
+            },
+        });
+
+        const rootContribId = 'root-contrib-antithesis-123';
+        const sourceGroupId = 'group-uuid-456';
+        const savedWithStageKey: DialecticContributionRow = {
+            ...baseSavedContribution,
+            id: 'first-chunk-contrib-id',
+            document_relationships: {
+                antithesis: rootContribId,
+                source_group: sourceGroupId,
+            },
+        };
+
+        const payloadWithSourceGroupOnly: DialecticJobPayload = {
+            ...basePayload,
+            stageSlug: 'antithesis',
+            continueUntilComplete: true,
+            continuation_count: 0,
+            document_relationships: { source_group: sourceGroupId },
+        };
+
+        const testJob = createMockJob(payloadWithSourceGroupOnly, { stage_slug: 'antithesis' });
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+        const result = await continueJob(
+            deps,
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            testJob,
+            aiResponse,
+            savedWithStageKey,
+            'user-1',
+        );
+
+        assertEquals(result.enqueued, true, 'Should enqueue continuation when saved contribution has document_relationships[stageSlug]');
+
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        const newJobData = insertSpy!.callsArgs[0][0];
+        assert(isJobInsert(newJobData));
+        assert(isDialecticJobPayload(newJobData.payload));
+
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
+            const newPayload = newJobData.payload;
+            assertExists(newPayload.document_relationships, 'continuation payload must have document_relationships');
+            const rels = newPayload.document_relationships as Record<string, string | null>;
+            assertExists(rels.antithesis, 'document_relationships[stageSlug] (antithesis) is required for continuation so executeModelCallAndSave can persist and validate it');
+            assertEquals(rels.antithesis, rootContribId, 'document_relationships.antithesis must be the root contribution id from saved contribution (planner only sets source_group for root jobs)');
+        } else {
+            assert(false, 'Payload is not a valid DialecticExecuteJobPayload');
+        }
+    });
+
     await t.step('PAYLOAD_CONSTRUCTION: should increment continuation_count from existing value', async () => {
         setup({
             genericMockResults: {
@@ -1055,11 +1184,11 @@ Deno.test('continueJob', async (t) => {
         assertExists(errorLogCall, 'Should log database error');
     });
 
-    await t.step('LOGGING: should not log anything when continuation is not needed', async () => {
+    await t.step('LOGGING: should not log continuation when continueUntilComplete is false', async () => {
         setup();
         const infoSpy = spy(mockLogger, 'info');
         const errorSpy = spy(mockLogger, 'error');
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
+        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: false, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: 'stop', content: 'final part' };
         
@@ -1069,14 +1198,13 @@ Deno.test('continueJob', async (t) => {
             call.args[0] && typeof call.args[0] === 'string' &&
             (call.args[0].includes('Continuation') || call.args[0].includes('continuation'))
         );
-        assertEquals(continuationLogCalls.length, 0, 'Should not log anything about continuation when not needed');
+        assertEquals(continuationLogCalls.length, 0, 'Should not log anything about continuation when continueUntilComplete is false');
     });
 });
 
 Deno.test("continueJob enqueues with full original payload preserved and overlays only required fields", async () => {
     // Arrange: build an original execute payload containing many fields that must be preserved
     const originalPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       sessionId: "sess-1",
       projectId: "proj-1",
       model_id: "model-1",
@@ -1086,14 +1214,14 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
       continuation_count: 2,
       walletId: "wallet-123",
       maxRetries: 3,
-      step_info: { current_step: 1, total_steps: 5 },
-      prompt_template_name: "template-A",
-      output_type: "thesis",
-      canonicalPathParams: { contributionType: "thesis" },
+      prompt_template_id: "template-A",
+      output_type: FileType.HeaderContext,
+      canonicalPathParams: { contributionType: "thesis", stageSlug: "test-stage" },
       inputs: { seed_prompt_resource_id: "res-1" },
       document_relationships: { thesis: "contrib-root-1" },
       isIntermediate: false,
       user_jwt: "user.jwt.token",
+      idempotencyKey: 'idem-continue-job-6',
     };
 
     if (!originalPayload.stageSlug) {
@@ -1123,6 +1251,9 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
       parent_job_id: null,
       target_contribution_id: null,
       prerequisite_job_id: null,
+      is_test_job: false,
+      job_type: 'PLAN',
+      idempotency_key: originalPayload.idempotencyKey,
     };
   
     // Contribution just saved from the prior call
@@ -1155,6 +1286,8 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
       updated_at: new Date().toISOString(),
       user_id: "user-1",
       document_relationships: { thesis: "contrib-root-1" },
+      is_header: false,
+      source_prompt_resource_id: null,
     };
   
     const aiResponse: UnifiedAIResponse = {
@@ -1217,11 +1350,10 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
     const payload: DialecticExecuteJobPayload = inserted.payload;
   
     // Overlays expected
-    assertEquals(payload.job_type, "execute");
     assertEquals(payload.target_contribution_id, savedContribution.id);
     assertEquals(payload.continuation_count, (originalPayload.continuation_count ?? 0) + 1);
     assertExists(payload.canonicalPathParams, "canonicalPathParams must exist");
-    assertEquals(payload.canonicalPathParams.contributionType, originalPayload.output_type);
+    assertEquals(payload.canonicalPathParams.contributionType, originalPayload.stageSlug);
   
     // Preserved fields (selected critical ones)
     assertEquals(payload.sessionId, originalPayload.sessionId);
@@ -1231,9 +1363,7 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
     assertEquals(payload.iterationNumber, originalPayload.iterationNumber);
     assertEquals(payload.walletId, originalPayload.walletId);
     assertEquals(payload.maxRetries, originalPayload.maxRetries);
-    assertEquals(payload.step_info.current_step, originalPayload.step_info.current_step);
-    assertEquals(payload.step_info.total_steps, originalPayload.step_info.total_steps);
-    assertEquals(payload.prompt_template_name, originalPayload.prompt_template_name);
+    assertEquals(payload.prompt_template_id, originalPayload.prompt_template_id);
     assertEquals(payload.output_type, originalPayload.output_type);
     assertEquals(payload.inputs.seed_prompt_resource_id, originalPayload.inputs.seed_prompt_resource_id);
     assertEquals(payload.user_jwt, originalPayload.user_jwt);
@@ -1246,23 +1376,22 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
   // (JWT enforcement tests defined below)
 
 Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and does not insert', async () => {
-    const payload: DialecticJobPayload = { 
-        job_type: 'execute',
+    const payload = { 
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
         stageSlug: 'test-stage',
         iterationNumber: 1,
-        step_info: { current_step: 0, total_steps: 1 },
-        prompt_template_name: 'test_template',
+        prompt_template_id: 'test_template',
         inputs: { source: 'some_input' },
-        output_type: 'thesis',
+        output_type: FileType.HeaderContext,
         continueUntilComplete: true, 
         continuation_count: 0,
         walletId: 'wallet-1',
         maxRetries: 5,
-        canonicalPathParams: { contributionType: 'thesis' },
-    };
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        // user_jwt is intentionally omitted to test missing case
+    } as unknown as DialecticJobPayload;
 
     const job = createMockJob(payload);
     const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
@@ -1281,7 +1410,7 @@ Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and do
             is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id, original_model_contribution_id: null,
             processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1,
             storage_bucket: 'b', storage_path: '/p', target_contribution_id: null, tokens_used_input: null, tokens_used_output: null,
-            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' },
+            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
         },
         'user-1',
     );
@@ -1294,21 +1423,19 @@ Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and do
 
 Deno.test('continueJob enforces user_jwt presence: empty user_jwt fails and does not insert', async () => {
     const payload = { 
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
         stageSlug: 'test-stage',
         iterationNumber: 1,
-        step_info: { current_step: 0, total_steps: 1 },
-        prompt_template_name: 'test_template',
+        prompt_template_id: 'test_template',
         inputs: { source: 'some_input' },
         output_type: 'thesis',
         continueUntilComplete: true, 
         continuation_count: 0,
         walletId: 'wallet-1',
         maxRetries: 5,
-        canonicalPathParams: { contributionType: 'thesis' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
         user_jwt: '',
     } as unknown as DialecticJobPayload;
 
@@ -1329,7 +1456,7 @@ Deno.test('continueJob enforces user_jwt presence: empty user_jwt fails and does
             is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id, original_model_contribution_id: null,
             processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1,
             storage_bucket: 'b', storage_path: '/p', target_contribution_id: null, tokens_used_input: null, tokens_used_output: null,
-            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' },
+            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
         },
         'user-1',
     );
@@ -1343,21 +1470,20 @@ Deno.test('continueJob enforces user_jwt presence: empty user_jwt fails and does
 // Explicit preservation test per checklist: payload with user_jwt should enqueue and keep user_jwt unchanged
 Deno.test('JWT_PRESERVATION: when payload.user_jwt is present, continueJob enqueues and preserves it unchanged', async () => {
     const payload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
         stageSlug: 'test-stage',
         iterationNumber: 1,
-        step_info: { current_step: 0, total_steps: 1 },
-        prompt_template_name: 'test_template',
+        prompt_template_id: 'test_template',
         inputs: { source: 'some_input' },
-        output_type: 'thesis',
+        output_type: FileType.HeaderContext,
         continueUntilComplete: true,
         continuation_count: 0,
         walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
         user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-continue-job-7',
     };
     const job = createMockJob(payload);
     const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
@@ -1386,7 +1512,7 @@ Deno.test('JWT_PRESERVATION: when payload.user_jwt is present, continueJob enque
             is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id, original_model_contribution_id: null,
             processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1,
             storage_bucket: 'b', storage_path: '/p', target_contribution_id: null, tokens_used_input: null, tokens_used_output: null,
-            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' },
+            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
         },
         'user-1',
     );
@@ -1425,19 +1551,19 @@ Deno.test('is_test_job propagation', async (t) => {
     };
 
     const basePayload: DialecticExecuteJobPayload = {
-        job_type: 'execute',
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
         stageSlug: 'test-stage',
         iterationNumber: 1,
-        output_type: 'thesis',
+        output_type: FileType.HeaderContext,
         continueUntilComplete: true,
         walletId: 'wallet-1',
         user_jwt: 'jwt.token.here',
-        step_info: { current_step: 0, total_steps: 1 },
-        canonicalPathParams: { contributionType: 'thesis' },
+        prompt_template_id: 'test_template',
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
         inputs: { seed_prompt_resource_id: 'res-1' },
+        idempotencyKey: 'idem-continue-job-8',
     };
 
     const baseSavedContribution: DialecticContributionRow = {
@@ -1457,7 +1583,7 @@ Deno.test('is_test_job propagation', async (t) => {
         storage_path: '/path/to/file',
         updated_at: new Date().toISOString(),
         document_relationships: { 'test-stage': 'contrib-1' },
-        citations: null, error: null, original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: null, target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, user_id: null,
+        citations: null, error: null, original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: null, target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, user_id: null, is_header: false, source_prompt_resource_id: null,
     };
 
     await t.step("continueJob should propagate 'is_test_job' flag from parent to new job", async () => {
@@ -1482,4 +1608,737 @@ Deno.test('is_test_job propagation', async (t) => {
         assert(isDialecticExecuteJobPayload(newPayload));
         assertEquals(newPayload.is_test_job, true, "The 'is_test_job' flag must be propagated to the continuation job");
     });
+});
+
+// =================================================================
+// GROUP 9: Step 7.a Compliance - Continuation Context, Identity, and Omissions
+// =================================================================
+
+Deno.test('CONTINUATION_CONTEXT: enqueues on continuable finish_reason', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload: DialecticExecuteJobPayload = {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        prompt_template_id: 'test_template',
+        inputs: { source: 'some_input' },
+        output_type: FileType.HeaderContext,
+        continueUntilComplete: true,
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-continue-job-9',
+    };
+    const job = createMockJob(payload);
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+    await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        {
+            id: 'contrib-1', session_id: payload.sessionId, stage: payload.stageSlug!,
+            model_name: 'm', file_name: 'f.md', contribution_type: 'model_generated',
+            citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
+            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id,
+            original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null,
+            raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1, storage_bucket: 'b', storage_path: '/p',
+            target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, updated_at: new Date().toISOString(),
+            user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
+        },
+        'user-1',
+    );
+
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    const newRow = insertSpy!.callsArgs[0][0];
+    assert(isJobInsert(newRow));
+});
+
+Deno.test('JSON_MALFORMED: malformed JSON content enqueues continuation (overrides stop)', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload: DialecticExecuteJobPayload = {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        prompt_template_id: 'test_template',
+        inputs: { source: 'some_input' },
+        output_type: FileType.HeaderContext,
+        continueUntilComplete: true,
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-continue-job-10',
+    };
+    const job = createMockJob(payload);
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'stop', content: '{ "incomplete": true' };
+
+    await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        {
+            id: 'contrib-1', session_id: payload.sessionId, stage: payload.stageSlug!,
+            model_name: 'm', file_name: 'f.md', contribution_type: 'model_generated',
+            citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
+            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id,
+            original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null,
+            raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1, storage_bucket: 'b', storage_path: '/p',
+            target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, updated_at: new Date().toISOString(),
+            user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
+        },
+        'user-1',
+    );
+
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    const newRow = insertSpy!.callsArgs[0][0];
+    assert(isJobInsert(newRow));
+});
+
+Deno.test('NO_STEP_INFO: continuation payload must not contain deprecated "step_info"', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const job: DialecticJobRow = createMockJob({
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        prompt_template_id: 'test_template',
+        inputs: { source: 'x' },
+        output_type: FileType.HeaderContext,
+        continueUntilComplete: true,
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-continue-job-11',
+    });
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part' };
+
+    await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        {
+            id: 'contrib-1', session_id: 'session-1', stage: 'test-stage', model_name: 'm', file_name: 'f.md',
+            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
+            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: 'model-1', original_model_contribution_id: null,
+            processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1,
+            storage_bucket: 'b', storage_path: '/p', target_contribution_id: null, tokens_used_input: null, tokens_used_output: null,
+            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
+        },
+        'user-1',
+    );
+
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    const newRow = insertSpy!.callsArgs[0][0];
+    assert(isJobInsert(newRow));
+    if (isRecord(newRow.payload)) {
+        assertEquals(Object.prototype.hasOwnProperty.call(newRow.payload, 'step_info'), false, 'step_info must be omitted');
+    } else {
+        assert(false, 'Payload is not a record');
+    }
+});
+
+Deno.test('STEP_IDENTITY: preserves planner_metadata.recipe_step_id and core identity fields', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const original: DialecticExecuteJobPayload = {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        prompt_template_id: 'test_template',
+        inputs: { source: 'x' },
+        output_type: FileType.HeaderContext,
+        continueUntilComplete: true,
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        user_jwt: 'jwt.token.here',
+        planner_metadata: { recipe_step_id: 'step-123' },
+        idempotencyKey: 'idem-continue-job-12',
+    };
+    const job = createMockJob(original);
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part' };
+
+    await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        {
+            id: 'contrib-1', session_id: original.sessionId, stage: original.stageSlug!, model_name: 'm', file_name: 'f.md',
+            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
+            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: original.model_id,
+            original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null,
+            seed_prompt_url: null, size_bytes: 1, storage_bucket: 'b', storage_path: '/p', target_contribution_id: null,
+            tokens_used_input: null, tokens_used_output: null, updated_at: new Date().toISOString(), user_id: null,
+            document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
+        },
+        'user-1',
+    );
+
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    const newRow = insertSpy!.callsArgs[0][0];
+    assert(isJobInsert(newRow));
+    if (isRecord(newRow.payload)) {
+        assertEquals(newRow.payload['sessionId'], original.sessionId);
+        assertEquals(newRow.payload['projectId'], original.projectId);
+        assertEquals(newRow.payload['model_id'], original.model_id);
+        assertEquals(newRow.payload['stageSlug'], original.stageSlug);
+        assertEquals(newRow.payload['iterationNumber'], original.iterationNumber);
+        assertEquals(newRow.payload['walletId'], original.walletId);
+        assertEquals(newRow.payload['user_jwt'], original.user_jwt);
+        const pm = newRow.payload['planner_metadata'];
+        assert(isRecord(pm), 'planner_metadata must be an object');
+        assertEquals(pm['recipe_step_id'], 'step-123');
+    } else {
+        assert(false, 'Payload is not a record');
+    }
+});
+
+Deno.test('NO_INPUT_RULES: continuation payload omits inputs_required and inputs_relevance (executor re-gathers)', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const job = createMockJob({
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        prompt_template_id: 'test_template',
+        inputs: { source: 'x' },
+        output_type: FileType.HeaderContext,
+        continueUntilComplete: true,
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-continue-job-13',
+    });
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part' };
+
+    await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        {
+            id: 'contrib-1', session_id: 'session-1', stage: 'test-stage', model_name: 'm', file_name: 'f.md',
+            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
+            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: 'model-1',
+            original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null,
+            seed_prompt_url: null, size_bytes: 1, storage_bucket: 'b', storage_path: '/p', target_contribution_id: null,
+            tokens_used_input: null, tokens_used_output: null, updated_at: new Date().toISOString(), user_id: null,
+            document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
+        },
+        'user-1',
+    );
+
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    const newRow = insertSpy!.callsArgs[0][0];
+    assert(isJobInsert(newRow));
+    if (isRecord(newRow.payload)) {
+        assertEquals(Object.prototype.hasOwnProperty.call(newRow.payload, 'inputs_required'), false, 'inputs_required must be omitted');
+        assertEquals(Object.prototype.hasOwnProperty.call(newRow.payload, 'inputs_relevance'), false, 'inputs_relevance must be omitted');
+    } else {
+        assert(false, 'Payload is not a record');
+    }
+});
+
+// =================================================================
+// GROUP 10: Step 74.c - source_group Preservation for Fragment Extraction
+// =================================================================
+
+Deno.test('SOURCE_GROUP_PRESERVATION: should preserve document_relationships.source_group from saved contribution in continuation payload (74.c.i)', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    
+    const sourceGroupUuid = '550e8400-e29b-41d4-a716-446655440000';
+    const rootContributionId = 'root-contrib-123';
+    const stageSlug = 'thesis';
+    
+    const savedContribution: DialecticContributionRow = {
+        id: rootContributionId,
+        session_id: 'session-1',
+        stage: stageSlug,
+        model_name: 'test-model',
+        file_name: 'test.md',
+        contribution_type: 'model_generated',
+        citations: null,
+        created_at: new Date().toISOString(),
+        edit_version: 1,
+        error: null,
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'text/markdown',
+        model_id: 'model-1',
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 100,
+        storage_bucket: 'test-bucket',
+        storage_path: '/path/to/file',
+        target_contribution_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+        updated_at: new Date().toISOString(),
+        user_id: null,
+        document_relationships: { 
+            source_group: sourceGroupUuid,
+            [stageSlug]: rootContributionId 
+        },
+        is_header: false,
+        source_prompt_resource_id: null,
+    };
+    
+    const payload: DialecticJobPayload = {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: stageSlug,
+        iterationNumber: 1,
+        prompt_template_id: 'test_template',
+        inputs: { source: 'some_input' },
+        output_type: FileType.HeaderContext,
+        continueUntilComplete: true,
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        canonicalPathParams: {
+            contributionType: stageSlug,
+            stageSlug: stageSlug,
+        },
+        user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-continue-job-14',
+        // intentionally omit document_relationships on triggering payload
+    };
+    
+    const job = createMockJob(payload);
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedContribution,
+        'user-1',
+    );
+    
+    assertEquals(result.enqueued, true);
+    
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    const newJobData = insertSpy!.callsArgs[0][0];
+    assert(isJobInsert(newJobData));
+    assert(isDialecticJobPayload(newJobData.payload));
+    
+    if (isDialecticExecuteJobPayload(newJobData.payload)) {
+        const newPayload = newJobData.payload;
+        assertExists(newPayload.document_relationships, 'document_relationships should be present on continuation payload');
+        assertExists(newPayload.document_relationships.source_group, 'source_group should be preserved from saved contribution');
+        assertEquals(newPayload.document_relationships.source_group, sourceGroupUuid, 'source_group should equal the saved contribution source_group');
+    } else {
+        assert(false, 'Payload is not a valid DialecticExecuteJobPayload');
+    }
+});
+
+Deno.test('SOURCE_GROUP_PRESERVATION: should preserve document_relationships.source_group when copying from job payload (74.c.ii)', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    
+    const sourceGroupUuid = 'test-uuid-1234-5678-90ab-cdef12345678';
+    const rootId = 'root-id-456';
+    const stageSlug = 'thesis';
+    
+    const payload: DialecticJobPayload = {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: stageSlug,
+        iterationNumber: 1,
+        prompt_template_id: 'test_template',
+        inputs: { source: 'some_input' },
+        output_type: FileType.HeaderContext,
+        continueUntilComplete: true,
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        canonicalPathParams: {
+            contributionType: stageSlug,
+            stageSlug: stageSlug,
+        },
+        user_jwt: 'jwt.token.here',
+        document_relationships: {
+            source_group: sourceGroupUuid,
+            [stageSlug]: rootId,
+        },
+        idempotencyKey: 'idem-continue-job-15',
+    };
+    
+    const job = createMockJob(payload);
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    
+    const baseSavedContribution: DialecticContributionRow = {
+        id: 'contrib-1',
+        session_id: 'session-1',
+        stage: stageSlug,
+        model_name: 'test-model',
+        file_name: 'test.md',
+        contribution_type: 'model_generated',
+        citations: null,
+        created_at: new Date().toISOString(),
+        edit_version: 1,
+        error: null,
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'text/markdown',
+        model_id: 'model-1',
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 100,
+        storage_bucket: 'test-bucket',
+        storage_path: '/path/to/file',
+        target_contribution_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+        updated_at: new Date().toISOString(),
+        user_id: null,
+        document_relationships: { [stageSlug]: 'contrib-1' },
+        is_header: false,
+        source_prompt_resource_id: null,
+    };
+    
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        baseSavedContribution,
+        'user-1',
+    );
+    
+    assertEquals(result.enqueued, true);
+    
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    const newJobData = insertSpy!.callsArgs[0][0];
+    assert(isJobInsert(newJobData));
+    assert(isDialecticJobPayload(newJobData.payload));
+    
+    if (isDialecticExecuteJobPayload(newJobData.payload)) {
+        const newPayload = newJobData.payload;
+        assertExists(newPayload.document_relationships, 'document_relationships should be present on continuation payload');
+        assertExists(newPayload.document_relationships.source_group, 'source_group should be preserved from job payload');
+        assertEquals(newPayload.document_relationships.source_group, sourceGroupUuid, 'source_group should equal the job payload source_group');
+    } else {
+        assert(false, 'Payload is not a valid DialecticExecuteJobPayload');
+    }
+});
+
+Deno.test('SOURCE_GROUP_PRESERVATION: should handle missing source_group gracefully in continuation payload (74.c.iii)', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    
+    const rootContributionId = 'root-contrib-789';
+    const stageSlug = 'thesis';
+    
+    const savedContribution: DialecticContributionRow = {
+        id: rootContributionId,
+        session_id: 'session-1',
+        stage: stageSlug,
+        model_name: 'test-model',
+        file_name: 'test.md',
+        contribution_type: 'model_generated',
+        citations: null,
+        created_at: new Date().toISOString(),
+        edit_version: 1,
+        error: null,
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'text/markdown',
+        model_id: 'model-1',
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 100,
+        storage_bucket: 'test-bucket',
+        storage_path: '/path/to/file',
+        target_contribution_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+        updated_at: new Date().toISOString(),
+        user_id: null,
+        document_relationships: {
+            [stageSlug]: rootContributionId,
+            // intentionally omit source_group
+        },
+        is_header: false,
+        source_prompt_resource_id: null,
+    };
+    
+    const payload: DialecticJobPayload = {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: stageSlug,
+        iterationNumber: 1,
+        prompt_template_id: 'test_template',
+        inputs: { source: 'some_input' },
+        output_type: FileType.HeaderContext,
+        continueUntilComplete: true,
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        canonicalPathParams: {
+            contributionType: stageSlug,
+            stageSlug: stageSlug,
+        },
+        user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-continue-job-16',
+        // intentionally omit document_relationships on triggering payload
+    };
+    
+    const job = createMockJob(payload);
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedContribution,
+        'user-1',
+    );
+    
+    assertEquals(result.enqueued, true);
+    
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    const newJobData = insertSpy!.callsArgs[0][0];
+    assert(isJobInsert(newJobData));
+    assert(isDialecticJobPayload(newJobData.payload));
+    
+    if (isDialecticExecuteJobPayload(newJobData.payload)) {
+        const newPayload = newJobData.payload;
+        assertExists(newPayload.document_relationships, 'document_relationships should be present on continuation payload');
+        // source_group should be undefined/null/absent when not present in saved contribution
+        const sourceGroup = newPayload.document_relationships.source_group;
+        assertEquals(
+            sourceGroup,
+            undefined,
+            'source_group should be undefined when not present in saved contribution document_relationships'
+        );
+    } else {
+        assert(false, 'Payload is not a valid DialecticExecuteJobPayload');
+    }
+});
+
+// =================================================================
+// Idempotency key: continuation job insert and 23505 handling
+// =================================================================
+
+Deno.test('continueJob idempotency: continuation job insert includes idempotency_key derived as job.id_continue_savedContribution.id', async () => {
+    const jobId = 'job-continue-idem-1';
+    const contribId = 'contrib-continue-idem-1';
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload: DialecticExecuteJobPayload = {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        prompt_template_id: 'test_template',
+        inputs: { source: 'some_input' },
+        output_type: FileType.HeaderContext,
+        continueUntilComplete: true,
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-continuation-insert-test',
+    };
+    const job = createMockJob(payload, { id: jobId });
+    const savedContribution: DialecticContributionRow = {
+        id: contribId,
+        session_id: 'session-1',
+        stage: 'test-stage',
+        model_name: 'test-model',
+        file_name: 'test.md',
+        contribution_type: 'model_generated',
+        citations: null,
+        created_at: new Date().toISOString(),
+        edit_version: 1,
+        error: null,
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'text/markdown',
+        model_id: 'model-1',
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 100,
+        storage_bucket: 'test-bucket',
+        storage_path: '/path/to/file',
+        target_contribution_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+        updated_at: new Date().toISOString(),
+        user_id: null,
+        document_relationships: { 'test-stage': contribId },
+        is_header: false,
+        source_prompt_resource_id: null,
+    };
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedContribution,
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, true);
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertSpy);
+    const inserted = insertSpy!.callsArgs[0][0];
+    assert(isJobInsert(inserted));
+    const expectedKey = `${jobId}_continue_${contribId}`;
+    assertEquals(inserted.idempotency_key, expectedKey, 'Insert must include idempotency_key derived as job.id_continue_savedContribution.id');
+});
+
+Deno.test('continueJob idempotency: on unique constraint violation (23505 on idempotency_key) returns enqueued true', async () => {
+    const idempotencyViolationError: PostgrestError = {
+        name: 'PostgrestError',
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "dialectic_generation_jobs_idempotency_key_key"',
+        details: '',
+        hint: '',
+    };
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': {
+                insert: { data: null, error: idempotencyViolationError },
+            },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload: DialecticExecuteJobPayload = {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        model_id: 'model-1',
+        stageSlug: 'test-stage',
+        iterationNumber: 1,
+        prompt_template_id: 'test_template',
+        inputs: { source: 'some_input' },
+        output_type: FileType.HeaderContext,
+        continueUntilComplete: true,
+        continuation_count: 0,
+        walletId: 'wallet-1',
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        user_jwt: 'jwt.token.here',
+        idempotencyKey: 'idem-23505-test',
+    };
+    const job = createMockJob(payload);
+    const savedContribution: DialecticContributionRow = {
+        id: 'contrib-1',
+        session_id: 'session-1',
+        stage: 'test-stage',
+        model_name: 'test-model',
+        file_name: 'test.md',
+        contribution_type: 'model_generated',
+        citations: null,
+        created_at: new Date().toISOString(),
+        edit_version: 1,
+        error: null,
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'text/markdown',
+        model_id: 'model-1',
+        original_model_contribution_id: null,
+        processing_time_ms: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 100,
+        storage_bucket: 'test-bucket',
+        storage_path: '/path/to/file',
+        target_contribution_id: null,
+        tokens_used_input: null,
+        tokens_used_output: null,
+        updated_at: new Date().toISOString(),
+        user_id: null,
+        document_relationships: { 'test-stage': 'contrib-1' },
+        is_header: false,
+        source_prompt_resource_id: null,
+    };
+    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedContribution,
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, true, 'On 23505 for idempotency_key must return enqueued true (continuation already created)');
+    assertEquals(result.error, undefined, 'Must not return error when treating idempotency conflict as success');
 });

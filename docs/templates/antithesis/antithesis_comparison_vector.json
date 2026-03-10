@@ -1,0 +1,18 @@
+{
+  "proposal": {
+    "lineage_key": "{{lineage_key}}",
+    "source_model_slug": "{{source_model_slug}}"
+  },
+  "dimensions": {
+    "feasibility": { "score": 0, "rationale": "{{feasibility_rationale}}" },
+    "complexity": { "score": 0, "rationale": "{{complexity_rationale}}" },
+    "security": { "score": 0, "rationale": "{{security_rationale}}" },
+    "performance": { "score": 0, "rationale": "{{performance_rationale}}" },
+    "maintainability": { "score": 0, "rationale": "{{maintainability_rationale}}" },
+    "scalability": { "score": 0, "rationale": "{{scalability_rationale}}" },
+    "cost": { "score": 0, "rationale": "{{cost_rationale}}" },
+    "time_to_market": { "score": 0, "rationale": "{{time_to_market_rationale}}" },
+    "compliance_risk": { "score": 0, "rationale": "{{compliance_risk_rationale}}" },
+    "alignment_with_constraints": { "score": 0, "rationale": "{{alignment_with_constraints_rationale}}" }
+  }
+}

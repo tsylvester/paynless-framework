@@ -13,6 +13,7 @@ import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import { type SyncDeps } from "./sync_test_contract.ts";
 import { INTERNAL_MODEL_MAP } from "./openai_sync.ts";
 import { AiModelExtendedConfigSchema } from "../chat/zodSchema.ts";
+import type { TiktokenEncoding } from "../_shared/types.ts";
 
 
 const PROVIDER_NAME = 'openai';
@@ -147,6 +148,58 @@ Deno.test("syncOpenAIModels", {
             assembleStub.restore();
         }
     });
+
+    await t.step(`[Provider-Specific] ${PROVIDER_NAME}: enforces correct pricing units and rational defaults`, async () => {
+        // 1. Assert specific model map values (fixing the 1000x error)
+        // Note: The unit is USD per 1 Million tokens.
+        // gpt-5 is $1.25 per 1M tokens. 
+        // Existing map has 1250 (error). Target is 1.25.
+        const gpt5 = INTERNAL_MODEL_MAP.get('openai-gpt-5');
+        assertExists(gpt5, 'gpt-5 should be in the internal map');
+        
+        // This assertion will FAIL until INTERNAL_MODEL_MAP in openai_sync.ts is corrected.
+        assertEquals(gpt5.input_token_cost_rate, 1.25, 'gpt-5 input cost should be 1.25 (USD/1M tokens)');
+        assertEquals(gpt5.output_token_cost_rate, 10.00, 'gpt-5 output cost should be 10.00 (USD/1M tokens)');
+
+        // 2. Assert sync does not spread dummy config (fixing the adapter bug)
+        // If the adapter spreads the dummy config, a new unknown model will have cost 1.
+        // If the adapter behaves correctly (clean state), the assembler should apply rational defaults (> 1).
+        
+        const mockDeps: SyncDeps = {
+            listProviderModels: async (_apiKey: string) => ({
+                models: [
+                    // A model NOT in the internal map, to test defaults
+                    // The adapter should NOT pollute this with dummy values.
+                    { api_identifier: 'openai-gpt-future-42', name: 'Future Model', description: 'Testing defaults' }
+                ],
+                raw: {}
+            }),
+            getCurrentDbModels: async (_client: SupabaseClient<Database>, _provider: string) => [],
+            log: () => {},
+            error: () => {},
+        };
+
+        const { client: mockClient, spies } = createMockSupabaseClient(undefined, {
+            genericMockResults: { ai_providers: { insert: { data: [], error: null, count: 1 } } }
+        });
+
+        // We run the actual syncOpenAIModels (no stubbing assemble) to test the full chain
+        // including the adapter's listModels and the assembler.
+        await syncOpenAIModels(mockClient as unknown as SupabaseClient<Database>, "test-key", mockDeps);
+
+        const insertSpy = spies.fromSpy.calls[0]?.returned.insert;
+        assertExists(insertSpy, 'Should have inserted the new model');
+        const insertedRows = insertSpy.calls[0].args[0];
+        const insertedModel = insertedRows[0];
+        
+        // The dummy config has input/output cost of 1.
+        // The assembler rational defaults are significantly higher (e.g. 15).
+        // If the adapter spreads the dummy config, this will be 1.
+        assert(
+            (insertedModel.config.input_token_cost_rate) > 1, 
+            `New model input cost (${insertedModel.config.input_token_cost_rate}) should be > 1, indicating it did not inherit dummy config`
+        );
+    });
 });
 
 Deno.test("'INTERNAL_MODEL_MAP should contain valid partial configs'", () => {
@@ -167,17 +220,12 @@ Deno.test("'INTERNAL_MODEL_MAP should contain valid partial configs'", () => {
 Deno.test("OpenAI per-model encoding and ChatML flags are mapped correctly", () => {
     // Expected mapping: [modelIdInMap, expectedEncoding, expectedIsChatML]
     const expectations: Array<[string, string, boolean]> = [
-        // 4o family
-        ['openai-gpt-4o', 'o200k_base', true],
-        ['openai-gpt-4o-mini', 'o200k_base', true],
-        ['openai-gpt-4.1', 'o200k_base', true],
-        ['openai-gpt-4.1-mini', 'o200k_base', true],
-        // 4/3.5 classic
-        ['openai-gpt-4', 'cl100k_base', true],
-        ['openai-gpt-4-turbo', 'cl100k_base', true],
-        ['openai-gpt-3.5-turbo', 'cl100k_base', true],
-        // Legacy non-ChatML
-        ['openai-text-davinci-003', 'p50k_base', false],
+        // GPT-5 family (falls back to cl100k_base in current selectOpenAIEncoding implementation)
+        ['openai-gpt-5', 'cl100k_base', true],
+        ['openai-gpt-5-mini', 'cl100k_base', true],
+        ['openai-gpt-5.1', 'cl100k_base', true],
+        ['openai-gpt-5.2', 'cl100k_base', true],
+        
         // Embeddings
         ['openai-text-embedding-3-small', 'cl100k_base', false],
         ['openai-text-embedding-3-large', 'cl100k_base', false],
@@ -186,11 +234,13 @@ Deno.test("OpenAI per-model encoding and ChatML flags are mapped correctly", () 
     for (const [key, expectedEncoding, expectedIsChatML] of expectations) {
         const cfg = INTERNAL_MODEL_MAP.get(key);
         assertExists(cfg, `Missing INTERNAL_MODEL_MAP entry for ${key}`);
-        const strat = (cfg as Partial<AiModelExtendedConfig>).tokenization_strategy;
-        assertExists(strat, `tokenization_strategy missing for ${key}`);
+        if (!cfg.tokenization_strategy) {
+            throw new Error(`tokenization_strategy missing for ${key}`);
+        }
+        const strat: AiModelExtendedConfig['tokenization_strategy'] = cfg.tokenization_strategy;
         // Ensure type is tiktoken and encoding/is_chatml match expectations
-        if ((strat as any).type === 'tiktoken') {
-            const t = strat as { type: 'tiktoken'; tiktoken_encoding_name?: string; is_chatml_model?: boolean };
+        if (strat.type === 'tiktoken') {
+            const t: { type: 'tiktoken'; tiktoken_encoding_name: TiktokenEncoding; is_chatml_model?: boolean } = strat;
             assertEquals(t.tiktoken_encoding_name, expectedEncoding, `${key} should use ${expectedEncoding}`);
             assertEquals(t.is_chatml_model, expectedIsChatML, `${key} is_chatml_model mismatch`);
         } else {
@@ -200,20 +250,18 @@ Deno.test("OpenAI per-model encoding and ChatML flags are mapped correctly", () 
     }
 });
 
-// RED: INTERNAL_MODEL_MAP exposes correct windows for 4.1 and 4o families
-Deno.test("[Provider-Specific] openai: INTERNAL_MODEL_MAP sets expected provider_max_input_tokens for 4.1 and 4o", () => {
+Deno.test("[Provider-Specific] openai: INTERNAL_MODEL_MAP sets expected provider_max_input_tokens for 5 series", () => {
   const expectations: Array<[string, number]> = [
-    ["openai-gpt-4.1", 1_047_576],
-    ["openai-gpt-4.1-mini", 1_047_576],
-    ["openai-gpt-4.1-nano", 1_047_576],
-    ["openai-gpt-4o", 128_000],
-    ["openai-gpt-4o-mini", 128_000],
+    ["openai-gpt-5", 400_000],
+    ["openai-gpt-5-mini", 128_000],
+    ["openai-gpt-5-nano", 128_000],
+    ["openai-gpt-5.2", 400_000],
   ];
 
   for (const [key, expectedMaxIn] of expectations) {
     const cfg = INTERNAL_MODEL_MAP.get(key);
     assertExists(cfg, `Missing INTERNAL_MODEL_MAP entry for ${key}`);
-    const pmi = (cfg as Partial<AiModelExtendedConfig>).provider_max_input_tokens;
+    const pmi: AiModelExtendedConfig['provider_max_input_tokens'] = cfg.provider_max_input_tokens;
     assertExists(pmi, `provider_max_input_tokens missing for ${key}`);
     assertEquals(pmi, expectedMaxIn, `${key} should have provider_max_input_tokens = ${expectedMaxIn}`);
   }

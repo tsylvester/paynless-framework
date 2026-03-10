@@ -542,7 +542,7 @@ $SG$,
   },
   "documents": [
     {
-      "key": "prd",
+      "key": "product_requirements",
       "template_filename": "synthesis_product_requirements_document.md",
       "content_to_include": {
         "mvp_description": "placeholder",
@@ -551,13 +551,13 @@ $SG$,
       }
     },
     {
-      "key": "system_architecture_overview",
-      "template_filename": "synthesis_system_architecture_overview.md",
+      "key": "system_architecture",
+      "template_filename": "synthesis_system_architecture.md",
       "content_to_include": "diagrams/description of services, data flows, storage, auth, and integrations; include rationale for chosen patterns"
     },
     {
-      "key": "tech_stack_recommendations",
-      "template_filename": "synthesis_tech_stack_recommendations.md",
+      "key": "tech_stack",
+      "template_filename": "synthesis_tech_stack.md",
       "content_to_include": [
         {
           "component": "placeholder (e.g., database)",
@@ -569,9 +569,9 @@ $SG$,
     }
   ],
   "files_to_generate": [
-    { "template_filename": "synthesis_product_requirements_document.md", "from_document_key": "prd" },
-    { "template_filename": "synthesis_system_architecture_overview.md", "from_document_key": "system_architecture_overview" },
-    { "template_filename": "synthesis_tech_stack_recommendations.md", "from_document_key": "tech_stack_recommendations" }
+    { "template_filename": "synthesis_product_requirements_document.md", "from_document_key": "product_requirements" },
+    { "template_filename": "synthesis_system_architecture.md", "from_document_key": "system_architecture" },
+    { "template_filename": "synthesis_tech_stack.md", "from_document_key": "tech_stack" }
   ]
 }
 $EOA$::jsonb
@@ -722,8 +722,8 @@ $SG$,
   },
   "documents": [
     {
-      "key": "trd",
-      "template_filename": "parenthesis_trd.md",
+      "key": "technical_requirements",
+      "template_filename": "parenthesis_technical_requirements.md",
       "content_to_include": {
         "subsystems": ["placeholder"],
         "apis": ["placeholder"],
@@ -770,7 +770,7 @@ $SG$,
     }
   ],
   "files_to_generate": [
-    { "template_filename": "parenthesis_trd.md", "from_document_key": "trd" },
+    { "template_filename": "parenthesis_technical_requirements.md", "from_document_key": "technical_requirements" },
     { "template_filename": "parenthesis_master_plan.md", "from_document_key": "master_plan" },
     { "template_filename": "parenthesis_milestone_schema.md", "from_document_key": "milestone_schema" }
   ]

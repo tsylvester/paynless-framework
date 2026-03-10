@@ -90,8 +90,8 @@ describe("listProjects", () => {
 
   it("should return a list of projects for an authenticated user", async () => {
     const mockProjectsData: DialecticProjectWithDomain[] = [
-      { id: "proj-1", user_id: MOCK_USER_ID, project_name: "Project Alpha", created_at: new Date().toISOString(), initial_user_prompt: "prompt1", repo_url: null, selected_domain_id: "domain-1", status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: {}, initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, dialectic_domains: { name: 'Domain A'} },
-      { id: "proj-2", user_id: MOCK_USER_ID, project_name: "Project Beta", created_at: new Date(Date.now() - 100000).toISOString(), initial_user_prompt: "prompt2", repo_url:null, selected_domain_id: "domain-2", status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: null, initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, dialectic_domains: { name: 'Domain B'} },
+      { id: "proj-1", user_id: MOCK_USER_ID, project_name: "Project Alpha", created_at: new Date().toISOString(), initial_user_prompt: "prompt1", repo_url: null, selected_domain_id: "domain-1", status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: {}, initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, dialectic_domains: { name: 'Domain A'}, idempotency_key: null },
+      { id: "proj-2", user_id: MOCK_USER_ID, project_name: "Project Beta", created_at: new Date(Date.now() - 100000).toISOString(), initial_user_prompt: "prompt2", repo_url:null, selected_domain_id: "domain-2", status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: null, initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, dialectic_domains: { name: 'Domain B'}, idempotency_key: null },
     ];
 
     // Restore global stubs before re-initializing and re-stubbing locally

@@ -7,6 +7,7 @@ import type {
     IRagService
 } from './rag_service.interface.ts';
 import type { AiModelExtendedConfig } from '../types.ts';
+import type { RelevanceRule } from '../../dialectic-service/dialectic.interface.ts';
 import { isDialecticChunkMetadata } from '../utils/type_guards.ts';
 import { cosineSimilarity } from '../utils/vector_utils.ts';
 
@@ -54,10 +55,15 @@ export class RagService implements IRagService {
     _modelConfig: AiModelExtendedConfig,
     sessionId: string,
     stageSlug: string,
+    inputsRelevance: RelevanceRule[],
   ): Promise<IRagContextResult> {
     this.deps.logger.info(`[RagService] Starting context retrieval for session ${sessionId}.`);
 
     try {
+        // Guard: inputsRelevance must be provided by callers (explicit empty array allowed)
+        if (!Array.isArray(inputsRelevance)) {
+            throw new RagServiceError('inputsRelevance is required and must be an array.');
+        }
         const indexingResult = await this.ensureDocumentsAreIndexed(sourceDocuments, sessionId);
         if (!indexingResult.success) {
             const err = indexingResult.error || new Error("Unknown indexing failure.");
@@ -67,6 +73,7 @@ export class RagService implements IRagService {
         
         this.deps.logger.info('[RagService] Documents indexed. Proceeding with advanced retrieval.');
         
+        // For now, we do not alter retrieval logic with inputsRelevance; plumb only
         const finalContext = await this.performAdvancedRetrieval(sessionId, stageSlug);
 
         return { context: finalContext, tokensUsedForIndexing: indexingResult.tokensUsed };

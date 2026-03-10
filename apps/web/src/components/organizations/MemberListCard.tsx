@@ -128,14 +128,15 @@ export const MemberListCard: React.FC = () => {
          </Button>
       </CardHeader>
       <CardContent>
-        <Table className="relative w-full overflow-x-auto" data-slot="table-container">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
+        <div className="overflow-x-auto">
+          <Table className="relative w-full min-w-[500px]" data-slot="table-container">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-[200px]">Name</TableHead>
+                <TableHead className="min-w-[100px]">Role</TableHead>
+                <TableHead className="text-right min-w-[120px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
           <TableBody>
             {currentOrganizationMembers.map((member) => {
               const profile = member.user_profiles;
@@ -251,7 +252,8 @@ export const MemberListCard: React.FC = () => {
               );
             })}
           </TableBody>
-        </Table>
+          </Table>
+        </div>
       </CardContent>
       {memberTotalCount > memberPageSize && (
         <CardFooter>

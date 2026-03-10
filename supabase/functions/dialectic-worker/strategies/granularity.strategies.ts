@@ -8,8 +8,11 @@ import { planPairwiseByOrigin } from './planners/planPairwiseByOrigin.ts';
 import { planPerSourceDocument } from './planners/planPerSourceDocument.ts';
 import { planPerSourceGroup } from './planners/planPerSourceGroup.ts';
 import { planAllToOne } from './planners/planAllToOne.ts';
-import type { GranularityPlannerFn, GranularityStrategyMap } from '../../dialectic-service/dialectic.interface.ts';
-
+import type { 
+  GranularityPlannerFn, 
+  GranularityStrategyMap, 
+  GetGranularityPlannerFn 
+} from '../../dialectic-service/dialectic.interface.ts';
 
 export const granularityStrategyMap: GranularityStrategyMap = new Map([
   ['per_source_document', planPerSourceDocument],
@@ -20,7 +23,7 @@ export const granularityStrategyMap: GranularityStrategyMap = new Map([
   ['all_to_one', planAllToOne],
 ]);
 
-export function getGranularityPlanner(strategyId: string | null | undefined): GranularityPlannerFn {
+export const getGranularityPlanner: GetGranularityPlannerFn = (strategyId: string | null | undefined): GranularityPlannerFn => {
     if (!strategyId) {
         return planPerSourceDocument; // Default for null, undefined, or empty string
     }

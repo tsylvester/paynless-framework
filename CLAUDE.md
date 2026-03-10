@@ -1,0 +1,1 @@
+Do not write this file. It is a rehash of existing rules and instructions files that already exist. Stop bloating your context with duplicate information! 

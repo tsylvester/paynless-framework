@@ -1,4 +1,4 @@
-import type { AiProviderAdapter, FactoryDependencies } from '../types.ts';
+import type { AiProviderAdapter, FactoryDependencies, GetAiProviderAdapterFn } from '../types.ts';
 import { OpenAiAdapter } from './openai_adapter.ts';
 import { AnthropicAdapter } from './anthropic_adapter.ts';
 import { GoogleAdapter } from './google_adapter.ts';
@@ -17,9 +17,6 @@ export const testProviderMap: Record<string, AiProviderAdapter> = {
     'anthropic-': DummyAdapter,
     'google-': DummyAdapter,
 };
-
-// Helper type for the adapter instance. An instance is the object returned by calling `new` on a constructable type.
-type AiProviderAdapterInstance = InstanceType<AiProviderAdapter>;
 /**
  * Factory function to get the appropriate AI provider adapter instance.
  *
@@ -30,9 +27,9 @@ type AiProviderAdapterInstance = InstanceType<AiProviderAdapter>;
  * @param providerMap - A map of provider prefixes to their corresponding adapter classes.
  * @returns The corresponding adapter instance, or null if the provider is unknown or configuration is invalid.
  */
-export function getAiProviderAdapter(
+export const getAiProviderAdapter: GetAiProviderAdapterFn = (
     dependencies: FactoryDependencies
-): AiProviderAdapterInstance | null {
+) => {
 
     const { 
         provider, 

@@ -1,5 +1,7 @@
 // Helper function to derive a file extension from a MIME type
-export function getExtensionFromMimeType(mimeType: string): string {
+export type GetExtensionFromMimeTypeFn = (mimeType: string) => string;
+
+export const getExtensionFromMimeType: GetExtensionFromMimeTypeFn = (mimeType: string): string => {
   if (!mimeType || typeof mimeType !== 'string') {
     console.warn('[getExtensionFromMimeType] Invalid mimeType input. Defaulting to .bin');
     return '.bin';

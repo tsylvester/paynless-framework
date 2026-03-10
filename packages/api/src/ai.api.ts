@@ -70,6 +70,143 @@ export class AiApiClient implements IAiApiClient {
     }
 
     /**
+     * Sends a streaming chat message to the backend using Server-Sent Events (SSE).
+     * Returns an EventSource for receiving real-time updates.
+     */
+    async sendStreamingChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<EventSource | { error: ApiError }> {
+        // Validate essential data
+        if (!data.message || !data.providerId || !data.promptId) {
+            const error: ApiError = { code: 'VALIDATION_ERROR', message: 'Missing required fields in streaming chat message request' };
+            return { error };
+        }
+
+        // Add stream flag to request
+        const streamingData = { ...data, stream: true };
+
+        try {
+            // Create URL for the chat endpoint
+            const baseUrl = this.apiClient.getBaseUrl();
+            const url = `${baseUrl}/chat`;
+            
+            // Prepare headers
+            const headers: HeadersInit = {
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream',
+            };
+
+            // Add auth token if provided
+            if (options?.token) {
+                headers['Authorization'] = `Bearer ${options.token}`;
+            }
+
+            // Send POST request to initiate streaming
+            const response = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(streamingData),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                const error: ApiError = { 
+                    code: 'STREAMING_ERROR', 
+                    message: `Streaming request failed: ${response.status} ${errorText}` 
+                };
+                return { error };
+            }
+
+            // For SSE, we need to handle the stream directly rather than using EventSource
+            // since EventSource doesn't support POST requests with bodies
+            return this.createStreamingResponse(response);
+            
+        } catch (err) {
+            const error: ApiError = { 
+                code: 'NETWORK_ERROR', 
+                message: `Failed to establish streaming connection: ${err instanceof Error ? err.message : String(err)}` 
+            };
+            return { error };
+        }
+    }
+
+    /**
+     * Creates a streaming response handler for SSE data
+     */
+    private createStreamingResponse(response: Response): EventSource {
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        
+        // Create a custom EventSource-like object
+        const eventSource = new EventTarget() as EventSource & EventTarget;
+        
+        // Add EventSource properties and methods
+        Object.defineProperties(eventSource, {
+            readyState: { value: 1, writable: false }, // OPEN
+            url: { value: response.url, writable: false },
+            withCredentials: { value: false, writable: false },
+            CONNECTING: { value: 0, writable: false },
+            OPEN: { value: 1, writable: false },
+            CLOSED: { value: 2, writable: false },
+        });
+
+        eventSource.close = () => {
+            if (reader) {
+                reader.cancel();
+            }
+        };
+
+        if (reader) {
+            this.processStream(reader, decoder, eventSource);
+        }
+
+        return eventSource as EventSource;
+    }
+
+    /**
+     * Processes the SSE stream and dispatches events
+     */
+    private async processStream(reader: ReadableStreamDefaultReader<Uint8Array>, decoder: TextDecoder, eventSource: EventSource & EventTarget) {
+        try {
+            let buffer = '';
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                
+                // Process complete messages
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep the last incomplete line in the buffer
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = line.substring(6); // Remove 'data: ' prefix
+                            if (data.trim()) {
+                                const parsedData = JSON.parse(data);
+                                const event = new MessageEvent('message', { data: parsedData });
+                                eventSource.dispatchEvent(event);
+                            }
+                        } catch (parseError) {
+                            logger.error('Failed to parse SSE data:', { error: parseError, line });
+                        }
+                    }
+                }
+            }
+            
+            // Dispatch close event
+            const closeEvent = new Event('close');
+            eventSource.dispatchEvent(closeEvent);
+            
+        } catch (error) {
+            // Dispatch error event
+            const errorEvent = new ErrorEvent('error', { error });
+            eventSource.dispatchEvent(errorEvent);
+        }
+    }
+
+    /**
      * Fetches the chat history list for the current user or an organization.
      * @param token - The user's authentication token.
      * @param organizationId - Optional ID of the organization to fetch history for.

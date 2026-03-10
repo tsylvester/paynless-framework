@@ -15,6 +15,7 @@ import type { AiModelExtendedConfig } from '../types.ts';
 import type { Database } from '../../types_db.ts';
 import { RagService } from './rag_service.ts';
 import { IRagServiceDependencies, IRagSourceDocument } from './rag_service.interface.ts';
+import type { RelevanceRule } from '../../dialectic-service/dialectic.interface.ts';
 import { MockLogger } from '../logger.mock.ts';
 import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockSupabaseDataConfig } from '../supabase.mock.ts';
 import { IEmbeddingClient, IIndexingService } from './indexing_service.interface.ts';
@@ -46,6 +47,12 @@ describe('RagService', () => {
     { id: 'doc1', content: 'This is the first document.' },
     { id: 'doc2', content: 'This is the second document.' },
     { id: 'doc3', content: 'This is the third document.' },
+  ];
+
+  const emptyInputsRelevance: RelevanceRule[] = [];
+  const sampleInputsRelevance: RelevanceRule[] = [
+    { document_key: 'business_case', type: 'document', relevance: 1.0 },
+    { document_key: 'feature_spec', type: 'document', relevance: 0.9 },
   ];
 
   const mockModelConfig: AiModelExtendedConfig = {
@@ -94,7 +101,7 @@ describe('RagService', () => {
       initializeService(config);
       const indexDocumentSpy = spy(deps.indexingService, 'indexDocument');
 
-      await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis');
+      await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis', sampleInputsRelevance);
 
       assertEquals(indexDocumentSpy.calls.length, 2);
       assertEquals(indexDocumentSpy.calls[0].args[1], 'doc2');
@@ -115,7 +122,7 @@ describe('RagService', () => {
         initializeService(config);
         const indexDocumentSpy = spy(deps.indexingService, 'indexDocument');
   
-        await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis');
+        await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis', emptyInputsRelevance);
   
         assertEquals(indexDocumentSpy.calls.length, 0);
     });
@@ -148,7 +155,7 @@ describe('RagService', () => {
         const embeddingSpy = spy(deps.embeddingClient, 'getEmbedding');
         const rpcSpy = setup.spies.rpcSpy;
 
-        const result = await service.getContextForModel([], mockModelConfig, 'session-123', 'synthesis');
+        const result = await service.getContextForModel([], mockModelConfig, 'session-123', 'synthesis', emptyInputsRelevance);
 
         assert(embeddingSpy.calls.length >= 2, "Should have generated embeddings for multiple queries");
         assertEquals(rpcSpy.calls.length, 3, "Should have called the RPC for each generated query");
@@ -173,7 +180,7 @@ describe('RagService', () => {
       service = new RagService(deps);
       const embeddingSpy = spy(deps.embeddingClient, 'getEmbedding');
 
-      await service.getContextForModel([], mockModelConfig, 'session-wallet', 'synthesis');
+      await service.getContextForModel([], mockModelConfig, 'session-wallet', 'synthesis', emptyInputsRelevance);
 
       // Desired behavior: a wallet debit per query embedding generated
       const expectedDebits = embeddingSpy.calls.length;
@@ -210,7 +217,7 @@ describe('RagService', () => {
             }
         });
 
-        const result = await service.getContextForModel([], mockModelConfig, 'session-123', 'synthesis');
+        const result = await service.getContextForModel([], mockModelConfig, 'session-123', 'synthesis', emptyInputsRelevance);
         
         assertExists(result.context);
         // 1. The highest ranked item is always selected first.
@@ -234,10 +241,21 @@ describe('RagService', () => {
             }
         });
 
-        const result = await service.getContextForModel([], mockModelConfig, 'session-123', 'synthesis');
+        const result = await service.getContextForModel([], mockModelConfig, 'session-123', 'synthesis', emptyInputsRelevance);
 
         assertEquals(result.context, "No relevant context was found for this stage.");
         assertEquals(result.error, undefined);
+    });
+  });
+
+  describe('Signature enforcement', () => {
+    it('accepts empty inputsRelevance array', async () => {
+      initializeService({
+        genericMockResults: { dialectic_memory: { select: { data: [], error: null } } },
+        rpcResults: { match_dialectic_chunks: { data: [], error: null } },
+      });
+      const res = await service.getContextForModel([], mockModelConfig, 'session-123', 'synthesis', emptyInputsRelevance);
+      assertEquals(res.error, undefined);
     });
   });
 
@@ -261,7 +279,7 @@ describe('RagService', () => {
       initializeService(config);
       const indexDocumentSpy = spy(deps.indexingService, 'indexDocument');
       
-      const result = await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis');
+      const result = await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis', emptyInputsRelevance);
 
       assert(result.context !== null);
       assertEquals(result.error, undefined);
@@ -280,7 +298,7 @@ describe('RagService', () => {
         initializeService(config);
         const indexDocumentSpy = spy(deps.indexingService, 'indexDocument');
 
-        const result = await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis');
+        const result = await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis', emptyInputsRelevance);
 
         assertEquals(result.context, null);
         assertExists(result.error);
@@ -307,7 +325,7 @@ describe('RagService', () => {
             return Promise.resolve({ success: true, tokensUsed: 0 });
         });
 
-        const result = await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis');
+        const result = await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis', emptyInputsRelevance);
         
         assertEquals(result.error, undefined);
         assert(result.context !== null);
@@ -327,7 +345,7 @@ describe('RagService', () => {
             return Promise.resolve({ success: true, tokensUsed: 0 });
         });
     
-        const result = await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis');
+        const result = await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis', emptyInputsRelevance);
     
         assertExists(result.error);
         assertEquals(result.context, null);
@@ -360,9 +378,8 @@ describe('RagService', () => {
             { id: 'doc2', content: 'Needs indexing.' },
         ];
 
-        const result = await service.getContextForModel(documentsToIndex, mockModelConfig, 'session-123', 'synthesis');
+        const result = await service.getContextForModel(documentsToIndex, mockModelConfig, 'session-123', 'synthesis', emptyInputsRelevance);
 
-        // This test will fail because the property doesn't exist on the interface yet.
         assertEquals(result.tokensUsedForIndexing, 123);
     });
   });
@@ -374,6 +391,7 @@ Deno.test("RagService issues RPC with 3072-d query embedding and returns non-emp
   const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", logger);
   const embeddingClient = new EmbeddingClient(dummyAdapter);
   const returnedId = crypto.randomUUID();
+  const emptyInputsRelevance: RelevanceRule[] = [];
 
   const { client, spies } = createMockSupabaseClient(undefined, {
     rpcResults: {
@@ -391,7 +409,7 @@ Deno.test("RagService issues RPC with 3072-d query embedding and returns non-emp
     logger,
     indexingService: {
       indexDocument: async () => ({ success: true, tokensUsed: 10 }),
-    } as any,
+    },
     embeddingClient,
   };
 
@@ -404,13 +422,13 @@ Deno.test("RagService issues RPC with 3072-d query embedding and returns non-emp
     input_token_cost_rate: 1,
     output_token_cost_rate: 1,
     tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
-  } as any, "sess-1", "thesis");
+  }, "sess-1", "thesis", emptyInputsRelevance);
 
   // Assert: rpc was called with a 3072-d query_embedding
   const rpcCalls = spies.rpcSpy.calls;
   assert(rpcCalls.length >= 1);
   const firstRpcArgs = rpcCalls[0].args;
-  const params = firstRpcArgs[1] as Record<string, unknown>;
+  const params = firstRpcArgs[1];
   const embStr = String(params.query_embedding ?? "");
   const parsed = JSON.parse(embStr);
   assert(Array.isArray(parsed) && parsed.length === 3072);
@@ -423,6 +441,7 @@ Deno.test("RagService issues RPC with 3072-d query embedding and returns non-emp
 Deno.test("RagService guard: rejects when query embedding dim != 3072 and does not call RPC", async () => {
   // Arrange: embedding client that returns 32-d vectors
   const logger = new MockLogger();
+  const emptyInputsRelevance: RelevanceRule[] = [];
   class WrongDimEmbeddingClient implements IEmbeddingClient {
     async getEmbedding(text: string) {
       const embedding = Array.from({ length: 32 }, () => 0);
@@ -447,6 +466,7 @@ Deno.test("RagService guard: rejects when query embedding dim != 3072 and does n
     { api_identifier: "dummy", input_token_cost_rate: 1, output_token_cost_rate: 1, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
     "sess-guard",
     "thesis",
+    emptyInputsRelevance,
   );
 
   // Assert: expect failure and no RPC call

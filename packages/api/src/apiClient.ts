@@ -87,6 +87,14 @@ export class ApiClient {
         return this.functionsUrl;
     }
 
+    /**
+     * Returns the base URL for Supabase Edge Functions used by this client.
+     * @returns {string} The functions base URL.
+     */
+    public getBaseUrl(): string {
+        return this.functionsUrl;
+    }
+
     private async getToken(): Promise<string | undefined> {
         logger.debug('[ApiClient.getToken] Attempting to get session...');
 

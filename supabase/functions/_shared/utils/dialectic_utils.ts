@@ -1,17 +1,21 @@
-import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database } from '../../types_db.ts';
-import { isResourceDescription, type SeedPromptData } from '../../dialectic-service/dialectic.interface.ts';
-import type { DownloadStorageResult } from '../supabase_storage_utils.ts';
+import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import {
+	GetSeedPromptForStageFn,
+	isResourceDescription,
+	SeedPromptData,
+} from '../../dialectic-service/dialectic.interface.ts';
+import { Database } from '../../types_db.ts';
+import { DownloadFromStorageFn } from '../supabase_storage_utils.ts';
 
 
-export async function getSeedPromptForStage(
+export const getSeedPromptForStage: GetSeedPromptForStageFn = async (
   dbClient: SupabaseClient<Database>,
   projectId: string,
   sessionId: string,
   stageSlug: string,
   iterationNumber: number,
-  downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>
-): Promise<SeedPromptData> {
+  downloadFromStorage: DownloadFromStorageFn
+): Promise<SeedPromptData> => {
   const { data: projectResources, error: projectResourcesError } = await dbClient
     .from('dialectic_project_resources')
     .select('storage_bucket, storage_path, resource_description, file_name')
@@ -22,32 +26,14 @@ export async function getSeedPromptForStage(
   }
 
   const seedPromptResource = projectResources.find(resource => {
-    if (typeof resource.resource_description !== 'string') {
-      if (resource.resource_description && typeof resource.resource_description === 'object' && !Array.isArray(resource.resource_description)) {
-        const desc = resource.resource_description; // No cast needed
-        if (isResourceDescription(desc)) {
-          return desc.type === 'seed_prompt' &&
-                 desc.session_id === sessionId &&
-                 desc.stage_slug === stageSlug &&
-                 desc.iteration === iterationNumber;
-        }
-      }
-      return false;
+    const desc = resource.resource_description;
+    if (desc && typeof desc === 'object' && !Array.isArray(desc) && isResourceDescription(desc)) {
+      return desc.type === 'seed_prompt' &&
+             desc.session_id === sessionId &&
+             desc.stage_slug === stageSlug &&
+             desc.iteration === iterationNumber;
     }
-    try {
-      const desc = JSON.parse(resource.resource_description);
-      if (isResourceDescription(desc)) {
-        return desc.type === 'seed_prompt' &&
-               desc.session_id === sessionId &&
-               desc.stage_slug === stageSlug &&
-               desc.iteration === iterationNumber;
-      }
-      return false;
-    } catch (e) {
-      // Log parsing failure but continue search
-      console.debug(`Failed to parse resource_description for resource ${resource.file_name}`, { error: e });
-      return false;
-    }
+    return false;
   });
 
   if (!seedPromptResource) {
@@ -68,7 +54,7 @@ export async function getSeedPromptForStage(
   const cleanedFileName = seedPromptFileName.startsWith('/') ? seedPromptFileName.slice(1) : seedPromptFileName;
   const fullSeedPromptPath = `${cleanedDir}/${cleanedFileName}`;
 
-  const { data: promptContentBuffer, error: promptDownloadError } = await downloadFromStorage(seedPromptBucketName, fullSeedPromptPath);
+  const { data: promptContentBuffer, error: promptDownloadError } = await downloadFromStorage(dbClient, seedPromptBucketName, fullSeedPromptPath);
 
   if (promptDownloadError || !promptContentBuffer) {
     throw new Error(`Could not retrieve the seed prompt for this stage. Details: ${promptDownloadError?.message}`);

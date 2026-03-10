@@ -9,7 +9,7 @@ export async function handleUpdateSessionModels(
   payload: UpdateSessionModelsPayload,
   userId: string,
 ): Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }> {
-  const { sessionId, selectedModelIds } = payload;
+  const { sessionId, selectedModels }: UpdateSessionModelsPayload = payload;
 
   logger.info(`[handleUpdateSessionModels] Attempting to update models for session ${sessionId} by user ${userId}.`, { payload });
 
@@ -32,7 +32,7 @@ export async function handleUpdateSessionModels(
   }
 
   // Now verify project ownership
-   const { data: projectData, error: projectFetchError } = await dbClient
+   const { data: _projectData, error: projectFetchError } = await dbClient
     .from('dialectic_projects')
     .select('id, user_id')
     .eq('id', sessionData.project_id)
@@ -53,7 +53,7 @@ export async function handleUpdateSessionModels(
   // Proceed with the update
   const { data: updatedSession, error: updateError } = await dbClient
     .from('dialectic_sessions')
-    .update({ selected_model_ids: selectedModelIds })
+    .update({ selected_model_ids: selectedModels.map(model => model.id) })
     .eq('id', sessionId)
     .select(
       `
@@ -80,8 +80,49 @@ export async function handleUpdateSessionModels(
   if (!updatedSession) {
     logger.error('[handleUpdateSessionModels] Session not found after update (should not happen if update was successful without error):', { sessionId });
     return { error: { message: 'Failed to retrieve session after update.', status: 500, code: 'SESSION_RETRIEVAL_FAILED' }, status: 500 };
-}
+  }
 
-  logger.info(`[handleUpdateSessionModels] Successfully updated models for session ${sessionId}.`, { updatedSession });
-  return { data: updatedSession as DialecticSession, status: 200 };
+  const rawIds = updatedSession.selected_model_ids;
+  const ids: string[] = rawIds === null || rawIds === undefined ? [] : rawIds;
+  const displayNameById = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: catalogRows, error: catalogError } = await dbClient
+      .from('ai_providers')
+      .select('id, name')
+      .in('id', ids);
+    if (catalogError) {
+      logger.error('[handleUpdateSessionModels] Error fetching model display names from ai_providers', { sessionId, error: catalogError });
+      return { error: { message: 'Failed to fetch model details.', status: 500, code: 'DB_ERROR', details: catalogError.message }, status: 500 };
+    }
+    if (catalogRows !== null && catalogRows !== undefined) {
+      for (const catalogRow of catalogRows) {
+        if (catalogRow !== null && catalogRow !== undefined && catalogRow.id != null && catalogRow.name != null) {
+          displayNameById.set(catalogRow.id, catalogRow.name);
+        }
+      }
+    }
+    const missingIds = ids.filter((id: string) => !displayNameById.has(id));
+    if (missingIds.length > 0) {
+      logger.error('[handleUpdateSessionModels] Selected model ids not found in ai_providers catalog', { sessionId, missingIds });
+      return { error: { message: 'Selected model details not found in catalog.', status: 500, code: 'DB_ERROR', details: `Missing display names for model ids: ${missingIds.join(', ')}` }, status: 500 };
+    }
+  }
+
+
+  const data: DialecticSession = {
+    id: updatedSession.id,
+    project_id: updatedSession.project_id,
+    session_description: updatedSession.session_description,
+    user_input_reference_url: updatedSession.user_input_reference_url,
+    iteration_count: updatedSession.iteration_count,
+    selected_models: selectedModels,
+    status: updatedSession.status,
+    associated_chat_id: updatedSession.associated_chat_id,
+    current_stage_id: updatedSession.current_stage_id,
+    created_at: updatedSession.created_at,
+    updated_at: updatedSession.updated_at,
+  };
+
+  logger.info(`[handleUpdateSessionModels] Successfully updated models for session ${sessionId}.`, { data });
+  return { data, status: 200 };
 } 

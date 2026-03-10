@@ -112,7 +112,6 @@ Deno.test("'INTERNAL_MODEL_MAP should contain valid partial configs'", () => {
     assertEquals(failures.length, 0, `Found ${failures.length} invalid configs in INTERNAL_MODEL_MAP: ${JSON.stringify(failures, null, 2)}`);
 });
 
-// --- NEW: Step 34 RED ---
 Deno.test("INTERNAL_MODEL_MAP sets google_gemini_tokenizer with default ratio 4.0", () => {
     const ids = [
         'google-gemini-2.5-pro',
@@ -123,17 +122,15 @@ Deno.test("INTERNAL_MODEL_MAP sets google_gemini_tokenizer with default ratio 4.
     for (const id of ids) {
         const cfg = INTERNAL_MODEL_MAP.get(id);
         assert(cfg, `Config missing for ${id}`);
-        const strat = cfg!.tokenization_strategy as AiModelExtendedConfig['tokenization_strategy'] | undefined;
+        const strat = cfg.tokenization_strategy;
         assert(strat && 'type' in strat && strat.type === 'google_gemini_tokenizer', `tokenization_strategy.type should be 'google_gemini_tokenizer' for ${id}`);
-        // RED: expect default ratio present and equal to 4.0
-        // deno-lint-ignore no-explicit-any
-        const ratio = (strat as any).chars_per_token_ratio;
+        const ratio = strat.chars_per_token_ratio;
         assertEquals(ratio, 4.0, `chars_per_token_ratio should be 4.0 for ${id}`);
     }
 });
 
 // RED: INTERNAL_MODEL_MAP exposes correct windows for Gemini 2.5 families
-Deno.test("[Provider-Specific] google: INTERNAL_MODEL_MAP sets provider_max_input_tokens = 1,048,576 for Gemini 2.5", () => {
+Deno.test("[Provider-Specific] google: INTERNAL_MODEL_MAP sets provider_max_input_tokens = 1,000,000 for Gemini 2.5", () => {
     const ids = [
         'google-gemini-2.5-pro',
         'google-gemini-2.5-flash',
@@ -143,8 +140,8 @@ Deno.test("[Provider-Specific] google: INTERNAL_MODEL_MAP sets provider_max_inpu
     for (const id of ids) {
         const cfg = INTERNAL_MODEL_MAP.get(id);
         assert(cfg, `Config missing for ${id}`);
-        const pmi = (cfg as Partial<AiModelExtendedConfig>).provider_max_input_tokens;
+        const pmi = cfg.provider_max_input_tokens;
         assert(typeof pmi === 'number', `provider_max_input_tokens missing for ${id}`);
-        assertEquals(pmi, 1_048_576, `${id} should have provider_max_input_tokens = 1,048,576`);
+        assertEquals(pmi, 1000000, `${id} should have provider_max_input_tokens = 1,000,000`);
     }
 });

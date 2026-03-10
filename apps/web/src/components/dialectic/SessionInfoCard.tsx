@@ -1,208 +1,213 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState } from "react";
 import {
-  useDialecticStore,
-  selectIsStageReadyForSessionIteration,
-  selectGenerateContributionsError,
-  selectGeneratingSessionsForSession,
-} from '@paynless/store';
-import { DialecticProject, DialecticSession, DialecticStage } from '@paynless/types';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Skeleton } from '@/components/ui/skeleton';
-import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
-import { Loader2, ArrowLeft, ChevronDown } from 'lucide-react';
-import { WalletSelector } from '../ai/WalletSelector';
-import { ChatContextSelector } from '../ai/ChatContextSelector';
-import { AIModelSelector } from './AIModelSelector';
-import { GenerateContributionButton } from './GenerateContributionButton';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { ContinueUntilCompleteToggle } from '../common/ContinueUntilCompleteToggle';
-import { DynamicProgressBar } from '../common/DynamicProgressBar';
-
+	useDialecticStore,
+	selectGenerateContributionsError,
+	selectUnifiedProjectProgress,
+	selectSelectedModels,
+} from "@paynless/store";
+import {
+	DialecticProject,
+	DialecticSession,
+} from "@paynless/types";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { ChevronDown, Download, MoreVertical, Cpu } from "lucide-react";
+import { WalletSelector } from "../ai/WalletSelector";
+import { AIModelSelector } from "./AIModelSelector";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { ExportProjectButton } from "./ExportProjectButton";
+import { ContinueUntilCompleteToggle } from "../common/ContinueUntilCompleteToggle";
+import { DynamicProgressBar } from "../common/DynamicProgressBar";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+	DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 interface SessionInfoCardProps {
-  // REMOVED: session?: DialecticSession;
+	// REMOVED: session?: DialecticSession;
 }
 
-export const SessionInfoCard: React.FC<SessionInfoCardProps> = (/* REMOVED: { session } */) => {
-  const project: DialecticProject | null = useDialecticStore(state => state.currentProjectDetail);
-  const session: DialecticSession | null = useDialecticStore(state => state.activeSessionDetail);
-  const activeStage: DialecticStage | null = useDialecticStore(state => state.activeContextStage);
-  const sessionProgress = useDialecticStore(state => session ? state.sessionProgress[session.id] : undefined);
-  const fetchInitialPromptContent = useDialecticStore(state => state.fetchInitialPromptContent);
-  const generateContributionsError = useDialecticStore(selectGenerateContributionsError);
-  const navigate = useNavigate();
-  const [isPromptOpen, setIsPromptOpen] = useState(false);
+export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
+	/* REMOVED: { session } */
+) => {
+	const project: DialecticProject | null = useDialecticStore(
+		(state) => state.currentProjectDetail,
+	);
+	const session: DialecticSession | null = useDialecticStore(
+		(state) => state.activeSessionDetail,
+	);
+	const unifiedProgress = useDialecticStore((state) =>
+		state.activeSessionDetail
+			? selectUnifiedProjectProgress(state, state.activeSessionDetail.id)
+			: null,
+	);
+	const generateContributionsError = useDialecticStore(selectGenerateContributionsError);
+	const navigate = useNavigate();
+	const [isPromptOpen, setIsPromptOpen] = useState(false);
+	const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
+	const activeSeedPrompt = useDialecticStore((state) => state.activeSeedPrompt);
+	const isLoading = useDialecticStore(state => state.isLoadingActiveSessionDetail);
 
-  // Use the new, more specific selector. This is the key to reactivity.
-  const generatingJobs = useDialecticStore(state => 
-    session ? selectGeneratingSessionsForSession(state, session.id) : []
-  );
-  const isGenerating = generatingJobs.length > 0;
+	// Get selected model count
+	const selectedModels = useDialecticStore(selectSelectedModels);
+	const uniqueModelCount = new Set(selectedModels.map((model) => model.id)).size;
 
-  const isStageReady = useDialecticStore(state => {
-    if (!project || !session || !activeStage) {
-      return false;
-    }
-    return selectIsStageReadyForSessionIteration(
-      state,
-      project.id,
-      session.id,
-      activeStage.slug,
-      session.iteration_count
-    );
-  });
+	if (!project || !session) {
+		return (
+			<div className="space-y-2 pl-14 py-4">
+				<Skeleton className="h-8 w-48" />
+				<div className="flex items-center gap-4">
+					<Skeleton className="h-10 w-32" />
+					<Skeleton className="h-10 w-32" />
+				</div>
+				<Skeleton className="h-10 w-full" />
+			</div>
+		);
+	}
 
-  const iterationUserPromptResourceId = useMemo(() => {
-    if (!project?.id || !session?.id || !activeStage?.slug) return null;
-    const projectResources = project.resources || [];
-    
-    const seedPromptResource = projectResources.find(r => {
-      if (!r.resource_description) return false;
-      
-      if (typeof r.resource_description === 'string' && r.resource_description.trim().startsWith('{') && r.resource_description.trim().endsWith('}')) {
-        try {
-          const desc = JSON.parse(r.resource_description);
-          return desc.type === 'seed_prompt' &&
-                 desc.session_id === session.id &&
-                 desc.stage_slug === activeStage.slug &&
-                 desc.iteration === session.iteration_count;
-        } catch (e) {
-          return false;
-        }
-      } else {
-        return false;
-      }
-    });
-    return seedPromptResource?.id;
-  }, [project?.id, project?.resources, session?.id, session?.iteration_count, activeStage?.slug]);
+	return (
+		<div
+			className="space-y-2 pl-14"
+			aria-labelledby={`session-info-title-${session.id}`}
+		>
+			{/* Row 1: Back | Session name | Iteration badge | Status badge | spacer | ... dropdown */}
+			<div className="flex items-center gap-3 flex-wrap">
+				<Button
+					variant="ghost"
+					size="sm"
+					onClick={() => project && navigate(`/dialectic/${project.id}`)}
+					disabled={!project}
+					className="text-muted-foreground hover:text-foreground transition-colors duration-200 -ml-3"
+				>
+					← Back
+				</Button>
+				<h1
+					className="text-xl font-light tracking-tight"
+					data-testid={`session-info-title-${session.id}`}
+				>
+					{session.session_description || "Untitled Session"}
+				</h1>
+				<Badge
+					variant="outline"
+					className="font-normal border-0 px-2.5 py-0.5 bg-muted/50 text-muted-foreground"
+				>
+					Iteration {session.iteration_count}
+				</Badge>
+				<div className="flex-1 min-w-4" />
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button
+							variant="ghost"
+							size="sm"
+							className="h-9 w-9 p-0"
+						>
+							<MoreVertical className="h-4 w-4" />
+							<span className="sr-only">More actions</span>
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end">
+						<DropdownMenuItem asChild>
+							<ExportProjectButton
+								projectId={project.id}
+								variant="ghost"
+								size="sm"
+								className="w-full justify-start cursor-pointer"
+							>
+								<Download className="mr-2 h-4 w-4" />
+								Export Project
+							</ExportProjectButton>
+						</DropdownMenuItem>
+						<DropdownMenuSeparator />
+						<div className="px-2 py-1.5">
+							<ContinueUntilCompleteToggle />
+						</div>
+						<DropdownMenuItem onClick={() => setIsPromptOpen((p) => !p)}>
+							{isPromptOpen ? "Hide Seed Prompt" : "Show Seed Prompt"}
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</div>
 
-  const iterationPromptCacheEntry = useDialecticStore(state => {
-    if (!iterationUserPromptResourceId) return undefined;
-    return state.initialPromptContentCache?.[iterationUserPromptResourceId];
-  });
+			{/* Row 2: Model Selector | Wallet Selector | DynamicProgressBar */}
+			<div className="flex items-center gap-4 flex-wrap">
+				<Popover open={isModelSelectorOpen} onOpenChange={setIsModelSelectorOpen}>
+					<PopoverTrigger asChild>
+						<Button
+							variant="outline"
+							size="sm"
+							className={cn(
+								"h-9 px-3 gap-2",
+								uniqueModelCount === 0 && "ring-2 ring-primary animate-pulse",
+							)}
+						>
+							<Cpu className="h-4 w-4" />
+							<span>
+								{uniqueModelCount > 0
+									? `${uniqueModelCount} model${uniqueModelCount !== 1 ? "s" : ""}`
+									: "Select models"}
+							</span>
+							<ChevronDown className="h-3.5 w-3.5 opacity-50" />
+						</Button>
+					</PopoverTrigger>
+					<PopoverContent className="w-[420px] p-0 bg-background border shadow-lg" align="start">
+						<div className="p-3 border-b bg-background">
+							<p className="text-sm font-medium">AI Models</p>
+							<p className="text-xs text-muted-foreground">Select models for generation</p>
+						</div>
+						<div className="p-3 bg-background">
+							<AIModelSelector />
+						</div>
+					</PopoverContent>
+				</Popover>
+				<div className="w-48">
+					<WalletSelector />
+				</div>
+				{unifiedProgress && unifiedProgress.totalStages > 0 && (
+					<div className="flex-1 min-w-0">
+						<DynamicProgressBar sessionId={session.id} />
+					</div>
+				)}
+			</div>
 
-  useEffect(() => {
-    if (activeStage && isStageReady && iterationUserPromptResourceId && 
-        (!iterationPromptCacheEntry || (!iterationPromptCacheEntry.content && !iterationPromptCacheEntry.isLoading && !iterationPromptCacheEntry.error))) {
-      fetchInitialPromptContent(iterationUserPromptResourceId);
-    }
-  }, [activeStage, isStageReady, iterationUserPromptResourceId, iterationPromptCacheEntry, fetchInitialPromptContent]);
+			{generateContributionsError && (
+				<Alert variant="destructive" data-testid="generate-contributions-error">
+					<AlertTitle>Error Generating Contributions</AlertTitle>
+					<AlertDescription>
+						{generateContributionsError.message}
+					</AlertDescription>
+				</Alert>
+			)}
 
-  if (!project || !session) {
-    return (
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Loading Session Information...</CardTitle>
-          <CardDescription>Waiting for project and session data from context...</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-4 w-1/2 mb-2" />
-          <Skeleton className="h-4 w-3/4 mb-2" />
-          <Skeleton className="h-10 w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="mb-6" aria-labelledby={`session-info-title-${session.id}`}>
-      <CardHeader>
-        <CardTitle data-testid={`session-info-title-${session.id}`} className="text-xl flex flex-col items-start gap-2">
-          <div className="w-full flex items-center flex-wrap gap-x-4 gap-y-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => project && navigate(`/dialectic/${project.id}`)}
-              disabled={!project}
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Sessions
-            </Button>
-            <div className="flex items-center gap-2">
-              {session.session_description || 'Session Information'} |
-              <Badge variant={session.status?.includes('error') ? 'destructive' : 'secondary'}>{session.status || 'N/A'}</Badge> |
-              Iteration: {session.iteration_count}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button variant="ghost" size="sm" className="flex items-center gap-1" onClick={() => setIsPromptOpen(p => !p)}>
-              Review Stage Seed Prompt
-              <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isPromptOpen ? 'rotate-180' : ''}`} />
-            </Button> |           
-            <ChatContextSelector /> |
-            <WalletSelector /> |
-            <ContinueUntilCompleteToggle /> |
-            <AIModelSelector /> |
-            <GenerateContributionButton />
-
-          </div>
-        </CardTitle>
-        {sessionProgress && sessionProgress.current_step < sessionProgress.total_steps && (
-            <div className="mt-4">
-                <DynamicProgressBar
-                    sessionId={session.id}
-                />
-            </div>
-        )}
-        {isGenerating && !sessionProgress && (
-          <div className="flex items-center text-sm text-muted-foreground mt-2" data-testid="generating-contributions-indicator">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Generating contributions, please wait... ({generatingJobs.length} running)
-          </div>
-        )}
-        {generateContributionsError && (
-          <Alert variant="destructive" className="mt-2" data-testid="generate-contributions-error">
-            <AlertTitle>Error Generating Contributions</AlertTitle>
-            <AlertDescription>{generateContributionsError.message}</AlertDescription>
-          </Alert>
-        )}
-      </CardHeader>
-      {isPromptOpen && (
-        <CardContent>
-          {activeStage && !isStageReady && (
-            <Alert className="mb-4">
-              <AlertTitle>Stage Not Ready</AlertTitle>
-              <AlertDescription>
-                Stage not ready. Please complete prior stages or ensure the seed prompt for this stage and iteration is available.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {activeStage && isStageReady && (
-            <div className="mt-2">
-              {iterationPromptCacheEntry?.isLoading && (
-                <div data-testid="iteration-prompt-loading">
-                  <Skeleton className="h-4 w-1/4 mb-2" />
-                  <Skeleton className="h-8 w-full" />
-                </div>
-              )}
-              {iterationPromptCacheEntry?.error && (
-                <Alert variant="destructive" className="mt-2">
-                  <AlertTitle>Error Loading Prompt</AlertTitle>
-                  <AlertDescription>{iterationPromptCacheEntry.error.message}</AlertDescription>
-                </Alert>
-              )}
-              {iterationPromptCacheEntry && !iterationPromptCacheEntry.isLoading && !iterationPromptCacheEntry.error && (
-                iterationPromptCacheEntry.content ? (
-                  <div className="p-2 border rounded-md bg-muted/30">
-                    <MarkdownRenderer content={iterationPromptCacheEntry.content} />
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground italic">No specific prompt was set for this iteration.</p>
-                )
-              )}
-              {!iterationUserPromptResourceId && (
-                <p className="text-sm text-muted-foreground italic">No specific prompt is configured for this iteration/stage.</p>
-              )}
-              {iterationUserPromptResourceId && !iterationPromptCacheEntry?.content && !iterationPromptCacheEntry?.isLoading && !iterationPromptCacheEntry?.error && (
-                <p className="text-sm text-muted-foreground italic">Loading iteration prompt...</p>
-              )}
-            </div>
-          )}
-        </CardContent>
-      )}
-    </Card>
-  );
-}; 
+			{/* Prompt Display Section */}
+			{isPromptOpen && (
+				<div className="bg-card rounded-lg p-4 border">
+					{isLoading ? (
+						<div data-testid="iteration-prompt-loading">
+							<Skeleton className="h-4 w-1/4 mb-2" />
+							<Skeleton className="h-8 w-full" />
+						</div>
+					) : activeSeedPrompt ? (
+						<div className="p-2 rounded-md bg-muted/30">
+							<MarkdownRenderer content={activeSeedPrompt.promptContent} />
+						</div>
+					) : (
+						<p className="text-sm text-muted-foreground italic">
+							No seed prompt available for this session.
+						</p>
+					)}
+				</div>
+			)}
+		</div>
+	);
+};

@@ -61,7 +61,7 @@ describe('HomePage', () => {
   });
 
 
-  it('should call loadAiConfig and startNewChat on mount', () => {
+  it('should not call loadAiConfig or startNewChat when user is not authenticated', () => {
     const loadAiConfig = vi.fn();
     const startNewChat = vi.fn();
     mockUseAiStore.mockReturnValue({
@@ -70,6 +70,27 @@ describe('HomePage', () => {
       availableProviders: [],
     });
     mockUseAuthStore.mockReturnValue({ user: null });
+
+    renderComponent();
+
+    expect(loadAiConfig).not.toHaveBeenCalled();
+    expect(startNewChat).not.toHaveBeenCalled();
+  });
+
+  it('should call loadAiConfig and startNewChat when user is authenticated', () => {
+    const loadAiConfig = vi.fn();
+    const startNewChat = vi.fn();
+    mockUseAiStore.mockReturnValue({
+      loadAiConfig,
+      startNewChat,
+      availableProviders: [],
+    });
+    const mockUser: User = {
+      id: '123',
+      email: 'test@test.com',
+      created_at: new Date().toISOString(),
+    };
+    mockUseAuthStore.mockReturnValue({ user: mockUser });
 
     renderComponent();
 

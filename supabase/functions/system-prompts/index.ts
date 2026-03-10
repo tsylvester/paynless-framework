@@ -1,74 +1,82 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@^2'
 // Import shared response/error handlers instead of static headers
 import { 
     handleCorsPreflightRequest, 
     createErrorResponse, 
     createSuccessResponse 
-} from '../_shared/cors-headers.ts'; 
+} from '../_shared/cors-headers.ts';
+import { Database } from '../types_db.ts';
 
-console.log(`Function "system-prompts" up and running!`)
+interface SystemPromptsDependencies {
+  createSupabaseClient: (authHeader: string) => SupabaseClient<Database>;
+}
 
-serve(async (req) => {
-  // Handle CORS preflight requests using the shared helper
-  const corsResponse = handleCorsPreflightRequest(req);
-  if (corsResponse) return corsResponse;
+export const createSystemPromptsHandler = (dependencies: SystemPromptsDependencies) => {
+  const { createSupabaseClient } = dependencies;
 
-  // Check if the method is GET, otherwise return Method Not Allowed
-  if (req.method !== 'GET') {
-    return createErrorResponse('Method Not Allowed', 405, req);
-  }
+  return async (req: Request) => {
+    const corsResponse = handleCorsPreflightRequest(req);
+    if (corsResponse) return corsResponse;
 
-  try {
-    const authHeader = req.headers.get('Authorization');
-    console.log('[system-prompts] Received Authorization header:', authHeader ? 'Present' : 'MISSING_OR_NULL');
-    // Optionally, log the token itself for debugging (be careful with sensitive data in production logs)
-    // if (authHeader) {
-    //   console.log('[system-prompts] Auth Token:', authHeader);
-    // }
+    if (req.method !== 'GET') {
+      return createErrorResponse('Method Not Allowed', 405, req);
+    }
 
-    // Create a Supabase client with the Auth context of the logged in user.
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: { headers: { Authorization: authHeader! } }, // Use the captured authHeader
+    try {
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader) {
+        return createErrorResponse('User not authenticated', 401, req);
       }
-    )
+      
+      const supabaseClient = createSupabaseClient(authHeader);
 
-    // Fetch active system prompts
-    const { data: prompts, error } = await supabaseClient
-      .from('system_prompts')
-      .select('*')
-      .eq('is_active', true)
+      const { data: prompts, error } = await supabaseClient
+        .from('system_prompts')
+        .select('*')
+        .eq('is_active', true)
+        .eq('user_selectable', true);
 
-    if (error) {
-      console.error('[system-prompts] Error fetching system prompts:', error)
-      // Check for RLS errors (adjust code/message as needed)
-      if (error.code === 'PGRST116' || error.message.includes('permission denied')) {
-         return createErrorResponse('Unauthorized: RLS policy prevented access.', 403, req, error);
-      } 
-      throw error // Re-throw other errors to be caught below
+      if (error) {
+        console.error('[system-prompts] Error fetching system prompts:', error);
+        if (error.code === 'PGRST116' || error.message.includes('permission denied')) {
+           return createErrorResponse('Unauthorized: RLS policy prevented access.', 403, req, error);
+        } 
+        return createErrorResponse('Internal Server Error', 500, req, error);
+      }
+
+      return createSuccessResponse({ prompts }, 200, req);
+
+    } catch (error) {
+      console.error('[system-prompts] Caught error in system-prompts function:', error) 
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      
+      let status = 500;
+      if (error instanceof Response) { 
+        status = error.status;
+      } else if (typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number') {
+        status = error.status;
+      }
+  
+      return createErrorResponse(errorMessage, status, req, error);
     }
+  };
+};
 
-    console.log(`[system-prompts] Fetched ${prompts ? prompts.length : 0} prompts from DB.`);
+const defaultCreateSupabaseClient = (authHeader: string): SupabaseClient<Database> => {
+    return createClient<Database>(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        {
+            global: { headers: { Authorization: authHeader } },
+        }
+    );
+};
 
-    // Use shared success response helper
-    return createSuccessResponse({ prompts }, 200, req);
+const systemPromptsHandler = createSystemPromptsHandler({
+    createSupabaseClient: defaultCreateSupabaseClient,
+});
 
-  } catch (error) {
-    console.error('[system-prompts] Caught error in system-prompts function:', error) 
-    const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
-    
-    let status = 500;
-    if (error instanceof Response) { 
-      status = error.status;
-    } else if (typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number') {
-      status = error.status;
-    }
-
-    return createErrorResponse(errorMessage, status, req, error);
-  }
-}) 
+serve(systemPromptsHandler); 

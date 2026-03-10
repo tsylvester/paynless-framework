@@ -367,6 +367,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@biomejs/biome@2.1.1",
         "npm:@nx/eslint@20.7.1",
         "npm:@nx/vite@20.7.1",
         "npm:@nx/web@20.7.1",

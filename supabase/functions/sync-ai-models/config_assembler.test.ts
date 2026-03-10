@@ -218,7 +218,7 @@ Deno.test({
     assertEquals(finalConfig.config.tokenization_strategy.model, "claude-3-opus-20240229");
     
     // Assert that a value from the base defaults persisted
-    assertEquals(finalConfig.config.hard_cap_output_tokens, 4096, "Default data should persist for unprovided fields.");
+    assertEquals(finalConfig.config.hard_cap_output_tokens, 65536, "Default data should persist for unprovided fields.");
   },
 });
 
@@ -248,8 +248,21 @@ Deno.test({
     const finalConfig = result[0].config;
 
     // Check that properties from the defaults were correctly applied.
+    // Rational defaults for 2026:
+    // - Context Window: 128k (standard modern baseline)
+    // - Input Cost: 15 (safe high default, e.g. Opus-tier)
+    // - Output Cost: 75 (safe high default)
+    // - Tokenization: rough_char_count (failsafe)
     assertEquals(finalConfig.api_identifier, "default-only-model");
-    assertEquals(finalConfig.input_token_cost_rate, 0.000075);
+    
+    // Assert rational defaults instead of legacy 8k/tiny-cost values
+    assertEquals(finalConfig.input_token_cost_rate, 15, "Default input cost should be rational ($15/1M)");
+    assertEquals(finalConfig.output_token_cost_rate, 75, "Default output cost should be rational ($75/1M)");
+    assertEquals(finalConfig.context_window_tokens, 128000, "Default context window should be modern (128k)");
+    assertEquals(finalConfig.provider_max_input_tokens, 128000, "Default max input should match context window");
+    assertEquals(finalConfig.hard_cap_output_tokens, 65536, "Default hard cap output should be rational (64k)");
+    assertEquals(finalConfig.provider_max_output_tokens, 65536, "Default max output should be rational (64k)");
+    
     assertEquals(finalConfig.tokenization_strategy.type, 'rough_char_count');
   },
 });

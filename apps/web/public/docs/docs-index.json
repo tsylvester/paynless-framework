@@ -1,0 +1,11 @@
+{
+  "documents": [
+    {
+      "slug": "getting-started",
+      "title": "Getting Started",
+      "description": "Learn the basics of using the Paynless Framework",
+      "category": "Basics",
+      "order": 2
+    }
+  ]
+}

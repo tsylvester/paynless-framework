@@ -1,4 +1,6 @@
 # supabase/scripts/test_sync_stripe_plans.ps1
+# Invokes the sync-stripe-plans Edge Function. The Supabase CLI has no "functions invoke" command;
+# use this script or curl after starting functions with: supabase functions serve
 
 # --- Configuration ---
 # Attempt to read Supabase Service Role Key from supabase/.env
@@ -78,36 +80,29 @@ function Invoke-SyncRequest {
 }
 
 # --- Test Scenarios ---
+# Contract: POST with Content-Type: application/json, Authorization: Bearer <service_role_key>,
+# and body { isTestMode: boolean } (required). Response: { success, synced, failed, errors }.
 
-# Test 1: Explicitly request TEST mode via request body
-# This assumes STRIPE_SECRET_TEST_KEY is correctly set in your Supabase Edge Function environment (e.g., supabase/.env).
+# Test 1: Sync with Test Mode
+# Requires STRIPE_SECRET_TEST_KEY and STRIPE_TEST_WEBHOOK_SECRET in Supabase Edge Function environment.
 Write-Host "Test 1: Sync with Test Mode (via Request Body)"
-Write-Host "Expected: Syncs plans using Stripe TEST data. Check logs for 'Stripe client initialized in TEST mode'."
+Write-Host "Expected: Syncs plans using Stripe TEST data."
 $test1Body = @{ isTestMode = $true }
-Invoke-SyncRequest -TestName "Test Mode Sync (Body Param)" -Body $test1Body -Endpoint $SyncPlansEndpoint
+Invoke-SyncRequest -TestName "Test Mode Sync" -Body $test1Body -Endpoint $SyncPlansEndpoint
 
-# Test 2: Rely on STRIPE_TEST_MODE environment variable
-# This test's behavior depends on how STRIPE_TEST_MODE is set in your Supabase Edge Function environment (supabase/.env).
-# - If STRIPE_TEST_MODE is "true" or not set (or set to anything other than "false"), it should use TEST Stripe keys.
-# - If STRIPE_TEST_MODE is set to "false", this will use LIVE Stripe keys (BE CAREFUL).
-Write-Host "Test 2: Sync using STRIPE_TEST_MODE Environment Variable (from supabase/.env)"
-Write-Host "Expected: Syncs plans using Stripe data based on STRIPE_TEST_MODE env var value."
-Write-Host "Check logs for Stripe mode initialization message to confirm which keys were used."
-Invoke-SyncRequest -TestName "Env Var Mode Sync" -Endpoint $SyncPlansEndpoint # No body, relies on env var logic in function
-
-# Test 3: Explicitly request LIVE mode via request body (USE WITH EXTREME CAUTION)
+# Test 2: Explicitly request LIVE mode (USE WITH EXTREME CAUTION)
 # WARNING: This will interact with your LIVE Stripe account if STRIPE_SECRET_LIVE_KEY is configured 
 #          in your Supabase Edge Function environment. It could modify data if there are discrepancies.
 #          ONLY RUN THIS IF YOU ARE ABSOLUTELY SURE AND HAVE BACKUPS OR ARE IN A SAFE TEST/STAGING LIVE ENVIRONMENT.
 # This test is commented out by default for safety.
 <# 
-Write-Host "Test 3: Sync with Live Mode (via Request Body - CAUTION!)" -ForegroundColor Yellow
+Write-Host "Test 2: Sync with Live Mode (CAUTION!)" -ForegroundColor Yellow
 Write-Host "WARNING: THIS WILL INTERACT WITH YOUR LIVE STRIPE DATA IF CONFIGURED!" -ForegroundColor Red
-Write-Host "Expected: Syncs plans using Stripe LIVE data. Check logs for 'Stripe client initialized in LIVE mode'."
-$test3Body = @{ isTestMode = $false }
-Invoke-SyncRequest -TestName "Live Mode Sync (Body Param - CAUTION)" -Body $test3Body -Endpoint $SyncPlansEndpoint
+Write-Host "Expected: Syncs plans using Stripe LIVE data."
+$test2Body = @{ isTestMode = $false }
+Invoke-SyncRequest -TestName "Live Mode Sync (CAUTION)" -Body $test2Body -Endpoint $SyncPlansEndpoint
 #>
-Write-Host "Test 3 (Live Mode Sync via Body Param) is commented out by default for safety." -ForegroundColor Yellow
+Write-Host "Test 2 (Live Mode Sync) is commented out by default for safety." -ForegroundColor Yellow
 Write-Host "Uncomment the section in the script if you need to run it, and understand the risks."
 Write-Host ("-" * 60)
 

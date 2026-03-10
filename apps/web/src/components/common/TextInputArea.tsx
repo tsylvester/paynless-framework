@@ -38,25 +38,24 @@ export interface TextInputAreaProps {
 /**
  * A reusable textarea input component with a label, optional markdown preview, and optional file upload.
  */
-export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputAreaProps>(
-  ({
-    value,
-    onChange,
-    disabled = false,
-    label,
-    placeholder,
-    id = 'textInputArea',
-    rows = 4,
-    dataTestId,
-    textAreaClassName,
-    showPreviewToggle = false,
-    showFileUpload = false,
-    fileUploadConfig,
-    onFileLoad,
-    dropZoneLabel = "Drag & drop a file or click to select",
-    initialPreviewMode = false,
-    onPreviewModeChange,
-  }, externalRef) => {
+export const TextInputArea: React.FC<TextInputAreaProps> = ({
+  value,
+  onChange,
+  disabled = false,
+  label,
+  placeholder,
+  id = 'textInputArea',
+  rows = 4,
+  dataTestId,
+  textAreaClassName,
+  showPreviewToggle = false,
+  showFileUpload = false,
+  fileUploadConfig,
+  onFileLoad,
+  dropZoneLabel = "Drag & drop a file or click to select",
+  initialPreviewMode = false,
+  onPreviewModeChange,
+}) => {
     const minHeightStyle = '30vh';//`${Math.max(rows * 20, 80)}px`;
 
     const [isPreviewMode, setIsPreviewMode] = useState<boolean>(initialPreviewMode);
@@ -64,7 +63,6 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
     
     const containerRef = useRef<HTMLDivElement>(null);
     const internalTextAreaRef = useRef<HTMLTextAreaElement>(null);
-    const resolvedRef = externalRef || internalTextAreaRef;
 
     useEffect(() => {
       setIsPreviewMode(initialPreviewMode);
@@ -187,7 +185,7 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
                 textAreaClassName
               )}
               // style prop for minHeight removed, now h-full
-              ref={resolvedRef}
+              ref={internalTextAreaRef}
             />
           )}
           {showFileUpload && currentFileUploadConfig && onFileLoad && (
@@ -204,6 +202,4 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
         </div>
       </div>
     );
-  }
-);
-TextInputArea.displayName = 'TextInputArea'; 
+}; 

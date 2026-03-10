@@ -154,6 +154,7 @@ describe('getContributionContentHandler', () => {
       storage_path: 'path',
       mime_type: 'text/plain',
       size_bytes: 100,
+      file_name: 'file.txt',
       dialectic_sessions: {
         project_id: 'proj-1',
         dialectic_projects: {
@@ -195,9 +196,11 @@ describe('getContributionContentHandler', () => {
   it('should return an error if contribution is missing storage information (bucket)', async () => {
     const contributionData = {
       id: 'contrib-id-missing-bucket',
+      storage_bucket: null,
       storage_path: 'path/to/file.txt',
       mime_type: 'text/plain',
       size_bytes: 12345,
+      file_name: 'file.txt',
       dialectic_sessions: {
         project_id: 'proj-1',
         dialectic_projects: { user_id: 'test-user-id' }
@@ -234,8 +237,10 @@ describe('getContributionContentHandler', () => {
     const contributionData = {
       id: 'contrib-id-missing-path',
       storage_bucket: 'test-bucket',
+      storage_path: null,
       mime_type: 'text/plain',
       size_bytes: 12345,
+      file_name: 'file.txt',
       dialectic_sessions: {
         project_id: 'proj-1',
         dialectic_projects: { user_id: 'test-user-id' }

@@ -1,26 +1,25 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Badge } from "@/components/ui/badge"
+import { useAuthStore, useNotificationStore } from "@paynless/store";
+import { useQuery } from "@tanstack/react-query";
 
 import {
-	BadgeCheck,
 	Bell,
 	ChevronsUpDown,
 	CreditCard,
 	LogOut,
+	Moon,
 	Sparkles,
 	Sun,
-	Moon,
+	User,
 } from "lucide-react";
-import { SimpleDropdown } from "@/components/ui/SimpleDropdown";
-import { useAuthStore, useNotificationStore } from "@paynless/store";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-
-import { SidebarMenuButton } from "@/components/ui/sidebar";
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { SimpleDropdown } from "@/components/ui/SimpleDropdown";
+import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { useTheme } from "../../hooks/useTheme";
 
 export function NavUser({
@@ -34,14 +33,15 @@ export function NavUser({
 
 	// const { isMobile } = useSidebar();
 	const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
-	const { 
-		// notifications, 
-		unreadCount, fetchNotifications } =
-		useNotificationStore((state) => ({
-			// notifications: state.notifications,
-			unreadCount: state.unreadCount,
-			fetchNotifications: state.fetchNotifications,
-		}));
+	const {
+		// notifications,
+		unreadCount,
+		fetchNotifications,
+	} = useNotificationStore((state) => ({
+		// notifications: state.notifications,
+		unreadCount: state.unreadCount,
+		fetchNotifications: state.fetchNotifications,
+	}));
 
 	const { logout } = useAuthStore((state) => ({
 		logout: state.logout,
@@ -49,7 +49,10 @@ export function NavUser({
 
 	useQuery({
 		queryKey: ["notifications"],
-		queryFn: () => fetchNotifications(),
+		queryFn: async () => {
+			const result = await fetchNotifications();
+			return result || [];
+		},
 	});
 
 	const handleOpenChange = useCallback((open: boolean) => {
@@ -66,16 +69,17 @@ export function NavUser({
 
 	return (
 		<div>
-			<div className={`flex items-center justify-center w-full ${isSwitcherOpen && "hidden"}`}>
+			<div
+				className={`flex items-center justify-center w-full ${isSwitcherOpen && "hidden"}`}
+			>
 				<Button
 					variant="ghost"
 					onClick={() => navigate("/notifications")}
 					className="p-2 rounded-lg text-textSecondary hover:bg-surface hover:text-textPrimary"
-					aria-label={
-						"Notifications"
-					}
+					aria-label={"Notifications"}
 				>
-					<Bell /><Badge className="ml-1 text-xs" >{unreadCount}</Badge>
+					<Bell />
+					<Badge className="ml-1 text-xs text-white">{unreadCount}</Badge>
 				</Button>
 
 				<Button
@@ -92,8 +96,8 @@ export function NavUser({
 				</Button>
 			</div>
 			<SimpleDropdown
-				align="end"
-				contentClassName="w-full p-1 overflow-hidden"
+				align="start"
+				contentClassName="w-full p-1 bottom-full mb-2"
 				onOpenChange={handleOpenChange}
 				trigger={
 					<SidebarMenuButton
@@ -113,9 +117,7 @@ export function NavUser({
 					</SidebarMenuButton>
 				}
 			>
-				<div
-					className={"flex flex-col fixed mt-[-250px] animate-slide-up-spring"}
-				>
+				<div className="flex flex-col space-y-1 p-1">
 					<Button
 						variant="ghost"
 						className="w-full justify-start hover:underline"
@@ -125,14 +127,6 @@ export function NavUser({
 						Upgrade to Pro
 					</Button>
 
-					<Button
-						variant="ghost"
-						className="w-full justify-start hover:underline"
-						onClick={() => navigate("/organizations")}
-					>
-						<BadgeCheck />
-						Account
-					</Button>
 					<Button
 						variant="ghost"
 						className="w-full justify-start hover:underline"
@@ -148,6 +142,14 @@ export function NavUser({
 					>
 						<Bell />
 						Notifications ({unreadCount})
+					</Button>
+					<Button
+						variant="ghost"
+						className="w-full justify-start hover:underline"
+						onClick={() => navigate("/profile")}
+					>
+						<User />
+						Profile
 					</Button>
 
 					<Button

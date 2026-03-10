@@ -1,0 +1,236 @@
+{
+  "header_response": {
+    "documents": [
+      { "key": "technical_requirements", "status": "[✅]" },
+      { "key": "master_plan", "status": "[ ]" },
+      { "key": "milestone_schema", "status": "[ ]" }
+    ],
+    "checklists": []
+  },
+  "content": {
+    "index": [
+      "1. Executive Summary",
+      "2. Subsystems & Components",
+      "3. API Specifications",
+      "4. Data Schema Definitions",
+      "5. Technical Stack & Tooling",
+      "6. Quality & Performance Guardrails"
+    ],
+    "subsystems": [
+      {
+        "name": "Identity & Access Management (IAM)",
+        "objective": "Provide secure, low-friction entry via Magic Link authentication.",
+        "implementation_notes": "Utilizes Supabase Auth with PKCE flow for secure server-side session management. Middleware enforces protection on all (dashboard) routes."
+      },
+      {
+        "name": "Deterministic NLP Engine",
+        "objective": "Transform unstructured text into structured task metadata with sub-100ms latency.",
+        "implementation_notes": "Wraps Chrono.js in a custom parser library. Executed within Next.js Server Actions on the Edge to ensure high performance."
+      },
+      {
+        "name": "Temporal Persistence Layer",
+        "objective": "Manage user-specific tasks and notes with strict data isolation.",
+        "implementation_notes": "PostgreSQL database with Row Level Security (RLS) enabled. Prisma ORM handles type-safe interactions and migrations."
+      },
+      {
+        "name": "Proactive Messaging Subsystem",
+        "objective": "Deliver time-sensitive reminders across devices.",
+        "implementation_notes": "Leverages the Web Push standard. Service workers manage background sync and notification display for PWA parity."
+      }
+    ],
+    "apis": [
+      {
+        "name": "Task Orchestration API (Server Actions)",
+        "description": "Internal server actions handling the lifecycle of task objects.",
+        "contracts": [
+          "createTask(content: string, parsedData: TaskSchema): Promise<ActionResult>",
+          "toggleTask(id: string): Promise<ActionResult>",
+          "deleteTask(id: string): Promise<ActionResult>",
+          "updateTask(id: string, updates: Partial<TaskSchema>): Promise<ActionResult>"
+        ]
+      },
+      {
+        "name": "Notification Registry API",
+        "description": "Handles the storage and rotation of VAPID push subscriptions.",
+        "contracts": [
+          "registerSubscription(userId: string, subscription: PushSubscription): Promise<void>",
+          "revokeSubscription(endpoint: string): Promise<void>"
+        ]
+      }
+    ],
+    "schemas": [
+      {
+        "name": "profiles",
+        "columns": [
+          "id: uuid (PK, references auth.users)",
+          "updated_at: timestamp",
+          "username: text",
+          "full_name: text",
+          "avatar_url: text"
+        ],
+        "indexes": [
+          "username_unique_idx"
+        ],
+        "rls": [
+          "Profiles are viewable by the owner only.",
+          "Users can update only their own profile."
+        ]
+      },
+      {
+        "name": "tasks",
+        "columns": [
+          "id: uuid (PK)",
+          "user_id: uuid (references profiles.id)",
+          "content: text (not null)",
+          "due_at: timestamp (with time zone)",
+          "completed_at: timestamp (null if active)",
+          "created_at: timestamp (default now())"
+        ],
+        "indexes": [
+          "tasks_user_id_idx",
+          "tasks_due_at_idx"
+        ],
+        "rls": [
+          "SELECT: restricted to auth.uid() == user_id",
+          "INSERT: authenticated users only, user_id must match auth.uid()",
+          "UPDATE/DELETE: restricted to auth.uid() == user_id"
+        ]
+      },
+      {
+        "name": "notes",
+        "columns": [
+          "id: uuid (PK)",
+          "user_id: uuid (references profiles.id)",
+          "content: text",
+          "created_at: timestamp"
+        ],
+        "indexes": [
+          "notes_user_id_idx"
+        ],
+        "rls": [
+          "Strict isolation via auth.uid() check."
+        ]
+      }
+    ],
+    "proposed_file_tree": "```text\nsrc/\n├── app/\n│   ├── (auth)/\n│   │   ├── login/page.tsx\n│   │   └── callback/route.ts\n│   ├── (dashboard)/\n│   │   ├── layout.tsx\n│   │   └── page.tsx\n│   └── api/\n│       └── push/route.ts\n├── components/\n│   ├── nlp/\n│   │   ├── capture-input.tsx\n│   │   └── confirmation-badge.tsx\n│   ├── ritual/\n│   │   ├── greeting-header.tsx\n│   │   └── activity-feed.tsx\n│   └── ui/\n├── hooks/\n│   ├── use-tasks.ts\n│   └── use-push-notifications.ts\n├── lib/\n│   ├── parser/\n│   │   ├── chrono-wrapper.ts\n│   │   └── types.ts\n│   ├── supabase/\n│   │   ├── client.ts\n│   │   └── server.ts\n│   └── utils.ts\n└── types/\n    └── database.ts\n```",
+    "delta_summary": "Initial baseline technical requirements. Established the move to Next.js 14 App Router and Supabase RLS as the core security model.",
+    "iteration_notes": "Focused heavily on ensuring the NLP engine (Chrono.js) can run in edge environments to hit the <500ms FCP target. Magic Link auth chosen to maintain the 'minimalist' brand identity.",
+    "feature_scope": [
+      "1. NLP-based Task Capture with visual confirmation.",
+      "2. Personalized Ritual Greeting (Time-of-day logic).",
+      "3. Unified Activity Feed (Tasks + Notes).",
+      "4. Cross-platform Reminders via PWA/Web Push."
+    ],
+    "feasibility_insights": [
+      "Chrono.js is highly compatible with Vercel Edge Runtime due to zero native dependencies.",
+      "Web Push API support on iOS 16.4+ enables mobile parity for the PWA strategy.",
+      "PostgreSQL RLS provides sufficient multi-tenant isolation without complex application logic."
+    ],
+    "non_functional_alignment": [
+      "Performance: P95 FCP < 500ms via Edge Rendering.",
+      "Security: 100% RLS policy coverage on all tables.",
+      "Availability: 99.9% via Supabase and Vercel infrastructure."
+    ],
+    "outcome_alignment": "Technical choices (Edge runtime, deterministic NLP, RLS) are optimized for the North Star metric of Weekly Active Task Completion (WATC) by minimizing entry friction and latency.",
+    "north_star_metric": "Weekly Active Task Completion (WATC)",
+    "primary_kpis": [
+      "7-day Retention Rate",
+      "Task Creation Velocity (items per session)",
+      "Dashboard Engagement (ritual completion frequency)"
+    ],
+    "guardrails": [
+      "Zero external LLM calls on the critical path to prevent latency bloat.",
+      "Mandatory Zod validation for all Server Action payloads.",
+      "Standard shadcn/ui primitives only to ensure design consistency."
+    ],
+    "measurement_plan": "Instrumentation of PostHog events for: 'task_captured', 'nlp_confirmed', 'ritual_viewed', and 'notification_clicked'. Vercel Speed Insights for real-time performance monitoring.",
+    "services": [
+      "Supabase (Auth, DB, Realtime)",
+      "Vercel (Hosting, Edge Functions, Cron)",
+      "Postmark/Resend (Transactional Emails)",
+      "PostHog (Product Analytics)"
+    ],
+    "components": [
+      "CommandInput (NLP-enabled field)",
+      "GreetingHeader (Dynamic ritual UI)",
+      "ActivityFeed (Chronological task list)",
+      "ConfirmationBadge (Temporal metadata display)"
+    ],
+    "data_flows": [
+      "User Input -> lib/parser -> UI Confirmation -> Server Action -> Postgres RLS -> UI Success State",
+      "Supabase Auth Callback -> Middleware Session Check -> Edge Redirect -> Dashboard Hydration"
+    ],
+    "interfaces": [
+      "Mobile PWA (Installable manifest)",
+      "Desktop Browser (Chrome/Safari/Firefox)"
+    ],
+    "integration_points": [
+      "Resend for Magic Link delivery",
+      "Sentry for Edge-side exception tracking",
+      "PostHog for behavioral event ingestion"
+    ],
+    "dependency_resolution": [
+      "Database schema must be deployed before Server Actions can be tested.",
+      "Supabase Auth config must be finalized before Middleware implementation.",
+      "NLP library unit tests must pass before UI integration."
+    ],
+    "security_measures": [
+      "PostgreSQL Row Level Security (RLS)",
+      "Zod Schema Validation",
+      "CSRF protection via Next.js Server Actions",
+      "Content Security Policy (CSP) headers"
+    ],
+    "observability_strategy": [
+      "Exception monitoring via Sentry",
+      "Performance metrics via Vercel Speed Insights",
+      "Custom logging for NLP parsing failure rates"
+    ],
+    "scalability_plan": [
+      "Horizontal scaling via Vercel Serverless Functions",
+      "Connection pooling via Supabase/PgBouncer",
+      "Edge-side caching for the 'Ritual' dashboard shell"
+    ],
+    "resilience_strategy": [
+      "Optimistic UI updates for task creation/toggling",
+      "Offline read-only access via Service Worker caching",
+      "Automatic retries for transient Magic Link failures"
+    ],
+    "frontend_stack": {
+      "framework": "Next.js 14 (App Router)",
+      "styling": "Tailwind CSS",
+      "ui": "shadcn/ui (Radix UI)"
+    },
+    "backend_stack": {
+      "runtime": "Node.js (Edge Preferred)",
+      "language": "TypeScript"
+    },
+    "data_platform": {
+      "database": "PostgreSQL",
+      "baas": "Supabase"
+    },
+    "devops_tooling": {
+      "hosting": "Vercel",
+      "ci": "GitHub Actions"
+    },
+    "security_tooling": {
+      "auth": "Supabase PKCE",
+      "validation": "Zod"
+    },
+    "shared_libraries": [
+      "Chrono.js",
+      "date-fns",
+      "Lucide React"
+    ],
+    "third_party_services": [
+      "Postmark/Resend",
+      "PostHog",
+      "Sentry"
+    ],
+    "architecture": "A serverless multi-tier architecture using Next.js for the presentation and orchestration layers, and Supabase for the persistence and identity tiers. All data access is gated by database-level RLS policies.",
+    "architecture_overview": "Next.js App Router acting as the unified framework for Edge-side rendering and Server Actions, communicating with a Supabase PostgreSQL backend. Deterministic NLP logic is kept local to the runtime to avoid external API latency.",
+    "architecture_summary": "High-performance, latency-minimized PWA stack optimized for mobile parity and secure multi-tenancy.",
+    "executive_summary": "Technical requirements for the Hello World Productivity Suite, specifying a serverless Next.js 14 and Supabase architecture. The system prioritizes speed and security through deterministic NLP (Chrono.js), PostgreSQL RLS, and Edge-first deployment to deliver a high-velocity task management experience."
+  },
+  "continuation_needed": false,
+  "stop_reason": "complete"
+}

@@ -24,12 +24,28 @@ import type {
   DialecticDomain,
   DialecticProcessTemplate,
   DialecticStage,
+  DialecticStageRecipe,
+  DialecticStageRecipeStep,
   GenerateContributionsPayload,
   GenerateContributionsResponse,
   ContributionGenerationStatus,
   GetSessionDetailsResponse,
   DialecticLifecycleEvent,
+  SaveContributionEditPayload,
+  SaveContributionEditSuccessResponse,
+  EditedDocumentResource,
+  DialecticContribution,
+  StageDocumentCompositeKey,
+  SelectedModels,
+  GetAllStageProgressPayload,
+  ListStageDocumentsPayload,
+  ListStageDocumentsResponse,
+  StageProgressEntry,
+  SubmitStageResponsesPayload,
+  StageDocumentContentState,
 } from '@paynless/types';
+import { getStageRunDocumentKey, getStageDocumentKey } from './dialecticStore.documents';
+import { useAuthStore } from './authStore';
 
 // Add the mock call here
 vi.mock('@paynless/api', async () => {
@@ -98,6 +114,14 @@ describe('useDialecticStore', () => {
             expect(state.activeSessionDetail).toBe(initialDialecticStateValues.activeSessionDetail);
             expect(state.isLoadingActiveSessionDetail).toBe(initialDialecticStateValues.isLoadingActiveSessionDetail);
             expect(state.activeSessionDetailError).toBe(initialDialecticStateValues.activeSessionDetailError);
+
+            expect(state.progressHydrationStatus).toEqual(initialDialecticStateValues.progressHydrationStatus);
+            expect(state.progressHydrationError).toEqual(initialDialecticStateValues.progressHydrationError);
+        });
+
+        it('initialDialecticStateValues includes progressHydrationStatus and progressHydrationError as empty records', () => {
+            expect(initialDialecticStateValues.progressHydrationStatus).toEqual({});
+            expect(initialDialecticStateValues.progressHydrationError).toEqual({});
         });
     });
 
@@ -129,17 +153,172 @@ describe('useDialecticStore', () => {
         });
     });
 
-    describe('resetSelectedModelId action', () => {
-        it('should set selectedModelIds to an empty array', () => {
-            // Set an initial state for selectedModelIds
-            useDialecticStore.setState({ selectedModelIds: ['model-1', 'model-2'] });
+    describe('resetSelectedModels action', () => {
+        it('should set selectedModels to an empty array', () => {
+            const initialSelectedModels: SelectedModels[] = [
+                { id: 'model-1', displayName: 'Model One' },
+                { id: 'model-2', displayName: 'Model Two' },
+            ];
+            useDialecticStore.setState({ selectedModels: initialSelectedModels });
             let state = useDialecticStore.getState();
-            expect(state.selectedModelIds).not.toEqual([]);
+            expect(state.selectedModels).toEqual(initialSelectedModels);
 
-            // Call the reset action
-            state.resetSelectedModelId();
-            state = useDialecticStore.getState(); // Re-fetch state after action
-            expect(state.selectedModelIds).toEqual([]);
+            state.resetSelectedModels();
+            state = useDialecticStore.getState();
+            expect(state.selectedModels).toEqual([]);
+        });
+    });
+
+
+        describe('setSelectedModels action', () => {
+        it('should set selectedModels to the provided array', () => {
+            const { setSelectedModels } = useDialecticStore.getState();
+            const newModels: SelectedModels[] = [
+                { id: 'model-1', displayName: 'Model One' },
+                { id: 'model-2', displayName: 'Model Two' },
+            ];
+            setSelectedModels(newModels);
+            const state = useDialecticStore.getState();
+            expect(state.selectedModels).toEqual(newModels);
+        });
+    });
+
+    describe('setModelMultiplicity action', () => {
+        it('should add and remove full SelectedModels objects correctly', () => {
+            const modelA: SelectedModels = { id: 'model-a', displayName: 'Model A' };
+            const modelB: SelectedModels = { id: 'model-b', displayName: 'Model B' };
+            const modelC: SelectedModels = { id: 'model-c', displayName: 'Model C' };
+
+            useDialecticStore.setState({
+                selectedModels: [modelA, modelB],
+                modelCatalog: [
+                    {
+                        id: 'model-a',
+                        model_name: 'Model A',
+                        provider_name: 'P',
+                        api_identifier: 'ma',
+                        created_at: '',
+                        updated_at: '',
+                        context_window_tokens: 1000,
+                        input_token_cost_usd_millionths: 1,
+                        output_token_cost_usd_millionths: 1,
+                        max_output_tokens: 500,
+                        is_active: true,
+                        description: null,
+                        strengths: null,
+                        weaknesses: null,
+                        is_default_generation: true,
+                    },
+                    {
+                        id: 'model-b',
+                        model_name: 'Model B',
+                        provider_name: 'P',
+                        api_identifier: 'mb',
+                        created_at: '',
+                        updated_at: '',
+                        context_window_tokens: 1000,
+                        input_token_cost_usd_millionths: 1,
+                        output_token_cost_usd_millionths: 1,
+                        max_output_tokens: 500,
+                        is_active: true,
+                        description: null,
+                        strengths: null,
+                        weaknesses: null,
+                        is_default_generation: true,
+                    },
+                    {
+                        id: 'model-c',
+                        model_name: 'Model C',
+                        provider_name: 'P',
+                        api_identifier: 'mc',
+                        created_at: '',
+                        updated_at: '',
+                        context_window_tokens: 1000,
+                        input_token_cost_usd_millionths: 1,
+                        output_token_cost_usd_millionths: 1,
+                        max_output_tokens: 500,
+                        is_active: true,
+                        description: null,
+                        strengths: null,
+                        weaknesses: null,
+                        is_default_generation: true,
+                    },
+                ],
+            });
+            const { setModelMultiplicity } = useDialecticStore.getState();
+
+            // Increase multiplicity
+            setModelMultiplicity(modelA, 2);
+            let state = useDialecticStore.getState();
+            expect(state.selectedModels).toBeDefined();
+            if (state.selectedModels) {
+                expect(state.selectedModels).toHaveLength(3);
+                expect(state.selectedModels.filter((m) => m.id === 'model-a')).toHaveLength(2);
+                expect(state.selectedModels.filter((m) => m.id === 'model-b')).toHaveLength(1);
+            }
+
+            // Decrease multiplicity
+            setModelMultiplicity(modelA, 1);
+            state = useDialecticStore.getState();
+            expect(state.selectedModels).toBeDefined();
+            if (state.selectedModels) {
+                expect(state.selectedModels).toHaveLength(2);
+                expect(state.selectedModels.filter((m) => m.id === 'model-a')).toHaveLength(1);
+            }
+
+            // Remove completely
+            setModelMultiplicity(modelB, 0);
+            state = useDialecticStore.getState();
+            expect(state.selectedModels).toBeDefined();
+            if (state.selectedModels) {
+                expect(state.selectedModels).toHaveLength(1);
+                expect(state.selectedModels[0].id).toBe('model-a');
+            }
+
+            // Add new model
+            setModelMultiplicity(modelC, 1);
+            state = useDialecticStore.getState();
+            expect(state.selectedModels).toBeDefined();
+            if (state.selectedModels) {
+                expect(state.selectedModels).toHaveLength(2);
+                expect(state.selectedModels.find((m) => m.id === 'model-c')).toEqual(modelC);
+            }
+        });
+
+        it('should preserve displayName when changing multiplicity', () => {
+            const modelX: SelectedModels = { id: 'model-x', displayName: 'Model X Display' };
+            useDialecticStore.setState({
+                selectedModels: [modelX],
+                modelCatalog: [
+                    {
+                        id: 'model-x',
+                        model_name: 'Model X Display',
+                        provider_name: 'P',
+                        api_identifier: 'mx',
+                        created_at: '',
+                        updated_at: '',
+                        context_window_tokens: 1000,
+                        input_token_cost_usd_millionths: 1,
+                        output_token_cost_usd_millionths: 1,
+                        max_output_tokens: 500,
+                        is_active: true,
+                        description: null,
+                        strengths: null,
+                        weaknesses: null,
+                        is_default_generation: true,
+                    },
+                ],
+            });
+            const { setModelMultiplicity } = useDialecticStore.getState();
+            setModelMultiplicity(modelX, 2);
+
+            const state = useDialecticStore.getState();
+            expect(state.selectedModels).toBeDefined();
+            if (state.selectedModels) {
+                expect(state.selectedModels).toHaveLength(2);
+                expect(state.selectedModels[0].displayName).toBe('Model X Display');
+                expect(state.selectedModels[1].displayName).toBe('Model X Display');
+            }
         });
     });
 
@@ -194,7 +373,7 @@ describe('useDialecticStore', () => {
                     current_stage_id: 'stage-1',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
-                    selected_model_ids: [],
+                    selected_models: [],
                     dialectic_contributions: [],
                     feedback: [],
                     session_description: null,
@@ -255,8 +434,10 @@ describe('useDialecticStore', () => {
                 created_at: new Date().toISOString(), 
                 display_name: 'Test Stage', 
                 default_system_prompt_id: null, 
-                expected_output_artifacts: {}, 
-                input_artifact_rules: {} 
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                minimum_balance: 0,
             };
             setActiveContextStage(testStage);
             expect(useDialecticStore.getState().activeContextStage).toEqual(testStage);
@@ -276,8 +457,10 @@ describe('useDialecticStore', () => {
                     created_at: new Date().toISOString(),
                     display_name: 'Context Stage',
                     default_system_prompt_id: null,
-                    expected_output_artifacts: {},
-                    input_artifact_rules: {}
+                    expected_output_template_ids: [],
+                    recipe_template_id: null,
+                    active_recipe_instance_id: null,
+                    minimum_balance: 0,
                 },
             };
             setActiveDialecticContext(testContext);
@@ -344,6 +527,366 @@ describe('useDialecticStore', () => {
         });
     });
 
+    describe('saveContributionEdit thunk', () => {
+        const payload: SaveContributionEditPayload = {
+            originalContributionIdToEdit: 'contrib-1',
+            editedContentText: 'Edited content.',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            originalModelContributionId: 'contrib-1',
+            responseText: 'Edited content.',
+            documentKey: 'feature_spec',
+            resourceType: 'rendered_document',
+        };
+
+        const mockResource: EditedDocumentResource = {
+            id: 'resource-1',
+            resource_type: 'rendered_document',
+            project_id: payload.projectId,
+            session_id: payload.sessionId,
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            document_key: payload.documentKey,
+            source_contribution_id: payload.originalContributionIdToEdit,
+            storage_bucket: 'bucket',
+            storage_path: 'path',
+            file_name: 'file.md',
+            mime_type: 'text/markdown',
+            size_bytes: 100,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+
+        const mockSuccessResponse: ApiResponse<SaveContributionEditSuccessResponse> = {
+            data: { resource: mockResource, sourceContributionId: payload.originalContributionIdToEdit },
+            status: 201,
+        };
+
+        it('should call api.dialectic().saveContributionEdit with payload including documentKey and resourceType and return success', async () => {
+            getMockDialecticClient().saveContributionEdit.mockResolvedValue(mockSuccessResponse);
+
+            const { saveContributionEdit } = useDialecticStore.getState();
+            const result = await saveContributionEdit(payload);
+
+            expect(getMockDialecticClient().saveContributionEdit).toHaveBeenCalledWith(payload);
+            expect(result.error).toBeUndefined();
+            expect(result.status).toBe(201);
+            expect(result.data?.resource.id).toBe(mockResource.id);
+            const state = useDialecticStore.getState();
+            expect(state.isSavingContributionEdit).toBe(false);
+            expect(state.saveContributionEditError).toBeNull();
+        });
+
+        it('should set saveContributionEditError when API returns error', async () => {
+            const mockError: ApiError = { code: 'SAVE_ERROR', message: 'Save failed' };
+            getMockDialecticClient().saveContributionEdit.mockResolvedValue({ error: mockError, status: 500 });
+
+            const { saveContributionEdit } = useDialecticStore.getState();
+            const result = await saveContributionEdit(payload);
+
+            expect(getMockDialecticClient().saveContributionEdit).toHaveBeenCalledWith(payload);
+            expect(result.error).toEqual(mockError);
+            const state = useDialecticStore.getState();
+            expect(state.isSavingContributionEdit).toBe(false);
+            expect(state.saveContributionEditError).toEqual(mockError);
+        });
+
+        it('should use payload.documentKey for stageDocumentContent composite key, not resource.document_key or originalContribution.contribution_type', async () => {
+            const sessionId = 'sess-payload-key';
+            const originalContributionIdToEdit = 'contrib-payload-key';
+            const payloadDocumentKey = 'feature_spec';
+
+            const originalContribution: DialecticContribution = {
+                id: originalContributionIdToEdit,
+                session_id: sessionId,
+                user_id: 'user-1',
+                stage: 'synthesis',
+                iteration_number: 1,
+                model_id: 'model-1',
+                job_id: 'job-1',
+                status: 'completed',
+                original_model_contribution_id: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                model_name: 'Test Model',
+                prompt_template_id_used: 'prompt-1',
+                seed_prompt_url: 'path/to/seed.md',
+                edit_version: 0,
+                is_latest_edit: true,
+                raw_response_storage_path: 'path/to/raw.json',
+                target_contribution_id: null,
+                tokens_used_input: 10,
+                tokens_used_output: 20,
+                processing_time_ms: 100,
+                error: null,
+                citations: null,
+                contribution_type: 'synthesis',
+                file_name: 'synthesis.md',
+                storage_bucket: 'bucket',
+                storage_path: 'path',
+                size_bytes: 100,
+                mime_type: 'text/markdown',
+            };
+
+            const projectWithSession: DialecticProject = {
+                id: 'proj-payload-key',
+                user_id: 'user-1',
+                project_name: 'Test',
+                selected_domain_id: 'domain-1',
+                dialectic_domains: { name: 'Domain' },
+                selected_domain_overlay_id: null,
+                repo_url: null,
+                status: 'active',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                dialectic_process_templates: null,
+                process_template_id: 'pt-1',
+                isLoadingProcessTemplate: false,
+                processTemplateError: null,
+                contributionGenerationStatus: 'idle',
+                generateContributionsError: null,
+                isSubmittingStageResponses: false,
+                submitStageResponsesError: null,
+                isSavingContributionEdit: false,
+                saveContributionEditError: null,
+                dialectic_sessions: [{
+                    id: sessionId,
+                    dialectic_contributions: [originalContribution],
+                    iteration_count: 1,
+                    project_id: 'proj-payload-key',
+                    session_description: 'Session',
+                    user_input_reference_url: null,
+                    selected_models: [],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    status: 'pending_hypothesis',
+                    associated_chat_id: null,
+                    current_stage_id: 'thesis',
+                }],
+            };
+
+            const resourceWithDifferentDocumentKey: EditedDocumentResource = {
+                id: 'resource-payload-key',
+                resource_type: 'rendered_document',
+                project_id: 'proj-payload-key',
+                session_id: sessionId,
+                stage_slug: 'synthesis',
+                iteration_number: 1,
+                document_key: 'other_key',
+                source_contribution_id: originalContributionIdToEdit,
+                storage_bucket: 'bucket',
+                storage_path: 'path',
+                file_name: 'file.md',
+                mime_type: 'text/markdown',
+                size_bytes: 100,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+
+            const payloadWithDocumentKey: SaveContributionEditPayload = {
+                originalContributionIdToEdit,
+                editedContentText: 'Edited by payload key test.',
+                projectId: 'proj-payload-key',
+                sessionId,
+                originalModelContributionId: originalContributionIdToEdit,
+                responseText: 'Edited by payload key test.',
+                documentKey: payloadDocumentKey,
+                resourceType: 'rendered_document',
+            };
+
+            getMockDialecticClient().saveContributionEdit.mockResolvedValue({
+                data: { resource: resourceWithDifferentDocumentKey, sourceContributionId: originalContributionIdToEdit },
+                status: 201,
+            });
+
+            useDialecticStore.setState({
+                currentProjectDetail: projectWithSession,
+                stageDocumentContent: {},
+            });
+
+            const { saveContributionEdit } = useDialecticStore.getState();
+            await saveContributionEdit(payloadWithDocumentKey);
+
+            const finalState = useDialecticStore.getState();
+            const expectedKey = `${sessionId}:synthesis:1:model-1:${payloadDocumentKey}`;
+            const documentEntry = finalState.stageDocumentContent[expectedKey];
+
+            expect(documentEntry).toBeDefined();
+            expect(documentEntry?.baselineMarkdown).toBe(payloadWithDocumentKey.editedContentText);
+            expect(documentEntry?.currentDraftMarkdown).toBe(payloadWithDocumentKey.editedContentText);
+        });
+    });
+
+    describe('submitStageResponses thunk', () => {
+        const projectId = 'proj-submit';
+        const sessionId = 'sess-submit';
+        const stageSlug = 'thesis';
+        const iterationNumber = 1;
+        const modelId = 'model-1';
+        const documentKey = 'doc_a';
+        const serializedKey = `${sessionId}:${stageSlug}:${iterationNumber}:${modelId}:${documentKey}`;
+
+        const mockProject: DialecticProject = {
+            id: projectId,
+            user_id: 'user-1',
+            project_name: 'Submit Test Project',
+            selected_domain_id: 'domain-1',
+            dialectic_domains: { name: 'Domain' },
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            status: 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            dialectic_process_templates: null,
+            process_template_id: 'pt-1',
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
+            dialectic_sessions: [{
+                id: sessionId,
+                dialectic_contributions: [],
+                iteration_count: 1,
+                project_id: projectId,
+                session_description: 'Session',
+                user_input_reference_url: null,
+                selected_models: [],
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                status: 'pending_antithesis',
+                associated_chat_id: null,
+                current_stage_id: stageSlug,
+            }],
+        };
+
+        const payload: SubmitStageResponsesPayload = {
+            projectId,
+            sessionId,
+            stageSlug,
+            currentIterationNumber: iterationNumber,
+        };
+
+        it('submitStageResponses edit path reads content.sourceContributionId and content.resourceType and succeeds without stageDocumentResources', async () => {
+            const documentContent: StageDocumentContentState = {
+                baselineMarkdown: 'Baseline',
+                currentDraftMarkdown: 'Edited content',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: null,
+                pendingDiff: 'Edited content',
+                lastAppliedVersionHash: null,
+                sourceContributionId: 'contrib-edit-1',
+                feedbackDraftMarkdown: undefined,
+                feedbackIsDirty: false,
+                resourceType: 'rendered_document',
+            };
+            useDialecticStore.setState({
+                currentProjectDetail: mockProject,
+                stageDocumentContent: {
+                    [serializedKey]: documentContent,
+                },
+            });
+            getMockDialecticClient().saveContributionEdit.mockResolvedValue({
+                data: { resource: { id: 'res-1', resource_type: 'rendered_document', project_id: projectId, session_id: sessionId, stage_slug: stageSlug, iteration_number: iterationNumber, document_key: documentKey, source_contribution_id: 'contrib-edit-1', storage_bucket: 'b', storage_path: 'p', file_name: 'f.md', mime_type: 'text/markdown', size_bytes: 1, created_at: '', updated_at: '' }, sourceContributionId: 'contrib-edit-1' },
+                status: 201,
+            });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({ data: { updatedSession: mockProject.dialectic_sessions![0] }, status: 200 });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            expect(getMockDialecticClient().saveContributionEdit).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    originalContributionIdToEdit: 'contrib-edit-1',
+                    documentKey,
+                    resourceType: 'rendered_document',
+                    editedContentText: 'Edited content',
+                }),
+            );
+            expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
+        });
+
+        it('submitStageResponses feedback path reads content.sourceContributionId and succeeds without prior save (load-only flow)', async () => {
+            useAuthStore.setState({ user: { id: 'user-feedback-1' } });
+            const documentContent: StageDocumentContentState = {
+                baselineMarkdown: 'Baseline',
+                currentDraftMarkdown: 'Baseline',
+                isDirty: false,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: null,
+                pendingDiff: null,
+                lastAppliedVersionHash: null,
+                sourceContributionId: 'contrib-load-only',
+                feedbackDraftMarkdown: 'Feedback text',
+                feedbackIsDirty: true,
+                resourceType: null,
+            };
+            useDialecticStore.setState({
+                currentProjectDetail: mockProject,
+                stageDocumentContent: {
+                    [serializedKey]: documentContent,
+                },
+            });
+            getMockDialecticClient().submitStageDocumentFeedback.mockResolvedValue({ data: { success: true }, status: 200 });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({ data: { updatedSession: mockProject.dialectic_sessions![0] }, status: 200 });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            expect(getMockDialecticClient().submitStageDocumentFeedback).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    sourceContributionId: 'contrib-load-only',
+                    feedbackContent: 'Feedback text',
+                    documentKey,
+                }),
+            );
+            expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
+        });
+
+        it('submitStageResponses submits both dirty edit and dirty feedback for same key in a single call', async () => {
+            useAuthStore.setState({ user: { id: 'user-both-1' } });
+            const documentContent: StageDocumentContentState = {
+                baselineMarkdown: 'Baseline',
+                currentDraftMarkdown: 'Edited',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: null,
+                pendingDiff: 'Edited',
+                lastAppliedVersionHash: null,
+                sourceContributionId: 'contrib-both-1',
+                feedbackDraftMarkdown: 'Feedback',
+                feedbackIsDirty: true,
+                resourceType: 'rendered_document',
+            };
+            useDialecticStore.setState({
+                currentProjectDetail: mockProject,
+                stageDocumentContent: {
+                    [serializedKey]: documentContent,
+                },
+            });
+            getMockDialecticClient().saveContributionEdit.mockResolvedValue({
+                data: { resource: { id: 'res-both', resource_type: 'rendered_document', project_id: projectId, session_id: sessionId, stage_slug: stageSlug, iteration_number: iterationNumber, document_key: documentKey, source_contribution_id: 'contrib-both-1', storage_bucket: 'b', storage_path: 'p', file_name: 'f.md', mime_type: 'text/markdown', size_bytes: 1, created_at: '', updated_at: '' }, sourceContributionId: 'contrib-both-1' },
+                status: 201,
+            });
+            getMockDialecticClient().submitStageDocumentFeedback.mockResolvedValue({ data: { success: true }, status: 200 });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({ data: { updatedSession: mockProject.dialectic_sessions![0] }, status: 200 });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            expect(getMockDialecticClient().saveContributionEdit).toHaveBeenCalledTimes(1);
+            expect(getMockDialecticClient().submitStageDocumentFeedback).toHaveBeenCalledTimes(1);
+            expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
+        });
+    });
+
     describe('fetchProcessTemplate thunk', () => {
         const mockTemplate: DialecticProcessTemplate = {
             id: 'pt1',
@@ -385,6 +928,296 @@ describe('useDialecticStore', () => {
             expect(state.isLoadingProcessTemplate).toBe(false);
             expect(state.currentProcessTemplate).toBeNull();
             expect(state.processTemplateError).toEqual(mockError);
+        });
+    });
+
+    describe('hydrateAllStageProgress thunk', () => {
+        const validGetAllStageProgressData: { dagProgress: { completedStages: number; totalStages: number }; stages: StageProgressEntry[] } = {
+            dagProgress: { completedStages: 0, totalStages: 0 },
+            stages: [
+                {
+                    stageSlug: 'thesis',
+                    status: 'not_started',
+                    modelCount: null,
+                    progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+                    steps: [],
+                    documents: [],
+                    jobs: [],
+                    edges: [],
+                },
+            ],
+        };
+
+        it('hydrateAllStageProgress action exists', () => {
+            const state = useDialecticStore.getState();
+            expect(typeof state.hydrateAllStageProgress).toBe('function');
+        });
+
+        it('hydrateAllStageProgress calls getAllStageProgress with payload', async () => {
+            const payload: GetAllStageProgressPayload = {
+                sessionId: 'session-1',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            getMockDialecticClient().getAllStageProgress.mockResolvedValue({
+                data: validGetAllStageProgressData,
+                status: 200,
+            });
+
+            const { hydrateAllStageProgress } = useDialecticStore.getState();
+            await hydrateAllStageProgress(payload);
+
+            expect(getMockDialecticClient().getAllStageProgress).toHaveBeenCalledTimes(1);
+            expect(getMockDialecticClient().getAllStageProgress).toHaveBeenCalledWith(payload);
+        });
+
+        it('hydrateAllStageProgress sets progressHydrationStatus[runKey] to pending before calling logic', async () => {
+            const payload: GetAllStageProgressPayload = {
+                sessionId: 'session-1',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const runKey = `${payload.sessionId}:${payload.iterationNumber}`;
+            let resolveApi: (value: ApiResponse<typeof validGetAllStageProgressData>) => void;
+            const apiPromise = new Promise<ApiResponse<typeof validGetAllStageProgressData>>((resolve) => {
+                resolveApi = resolve;
+            });
+            getMockDialecticClient().getAllStageProgress.mockImplementation(() => apiPromise);
+
+            const { hydrateAllStageProgress } = useDialecticStore.getState();
+            const promise = hydrateAllStageProgress(payload);
+
+            await Promise.resolve();
+            const stateBefore = useDialecticStore.getState();
+            expect(stateBefore.progressHydrationStatus[runKey]).toBe('pending');
+
+            resolveApi!({ data: validGetAllStageProgressData, status: 200 });
+            await promise;
+        }, 3000);
+
+        it('hydrateAllStageProgress sets progressHydrationStatus[runKey] to success when logic completes without throwing', async () => {
+            const payload: GetAllStageProgressPayload = {
+                sessionId: 'session-1',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const runKey = `${payload.sessionId}:${payload.iterationNumber}`;
+            getMockDialecticClient().getAllStageProgress.mockResolvedValue({
+                data: validGetAllStageProgressData,
+                status: 200,
+            });
+
+            const { hydrateAllStageProgress } = useDialecticStore.getState();
+            await hydrateAllStageProgress(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.progressHydrationStatus[runKey]).toBe('success');
+        });
+
+        it('hydrateAllStageProgress sets progressHydrationStatus[runKey] to failed and progressHydrationError[runKey] when logic throws', async () => {
+            const payload: GetAllStageProgressPayload = {
+                sessionId: 'session-1',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const runKey = `${payload.sessionId}:${payload.iterationNumber}`;
+            getMockDialecticClient().getAllStageProgress.mockResolvedValue({
+                error: { code: 'SERVER_ERROR', message: 'Backend error' },
+                status: 500,
+            });
+
+            const { hydrateAllStageProgress } = useDialecticStore.getState();
+            await hydrateAllStageProgress(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.progressHydrationStatus[runKey]).toBe('failed');
+            expect(state.progressHydrationError[runKey]).toBeDefined();
+            expect(typeof state.progressHydrationError[runKey]).toBe('string');
+        });
+    });
+
+    describe('hydrateStageProgress thunk', () => {
+        it('hydrateStageProgress action exists', () => {
+            const state = useDialecticStore.getState();
+            expect(typeof state.hydrateStageProgress).toBe('function');
+        });
+
+        it('hydrateStageProgress sets progressHydrationStatus[progressKey] to pending before calling logic', async () => {
+            const payload: ListStageDocumentsPayload = {
+                sessionId: 'session-1',
+                stageSlug: 'thesis',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const progressKey = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+            let resolveApi: (value: ApiResponse<ListStageDocumentsResponse>) => void;
+            const apiPromise = new Promise<ApiResponse<ListStageDocumentsResponse>>((resolve) => {
+                resolveApi = resolve;
+            });
+            getMockDialecticClient().listStageDocuments.mockImplementation(() => apiPromise);
+
+            const { hydrateStageProgress } = useDialecticStore.getState();
+            const promise = hydrateStageProgress(payload);
+
+            await Promise.resolve();
+            const stateBefore = useDialecticStore.getState();
+            expect(stateBefore.progressHydrationStatus[progressKey]).toBe('pending');
+
+            resolveApi!({ data: [], status: 200 });
+            await promise;
+        }, 3000);
+
+        it('hydrateStageProgress sets progressHydrationStatus[progressKey] to success when logic completes without throwing', async () => {
+            const payload: ListStageDocumentsPayload = {
+                sessionId: 'session-1',
+                stageSlug: 'thesis',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const progressKey = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+            getMockDialecticClient().listStageDocuments.mockResolvedValue({
+                data: [],
+                status: 200,
+            });
+
+            const { hydrateStageProgress } = useDialecticStore.getState();
+            await hydrateStageProgress(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.progressHydrationStatus[progressKey]).toBe('success');
+        });
+
+        it('hydrateStageProgress sets progressHydrationStatus[progressKey] to failed and error when logic throws', async () => {
+            const payload: ListStageDocumentsPayload = {
+                sessionId: 'session-1',
+                stageSlug: 'thesis',
+                iterationNumber: 1,
+                userId: 'user-1',
+                projectId: 'project-1',
+            };
+            const progressKey = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+            getMockDialecticClient().listStageDocuments.mockResolvedValue({
+                error: { code: 'SERVER_ERROR', message: 'Backend error' },
+                status: 500,
+            });
+
+            const { hydrateStageProgress } = useDialecticStore.getState();
+            await hydrateStageProgress(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.progressHydrationStatus[progressKey]).toBe('failed');
+            expect(state.progressHydrationError[progressKey]).toBeDefined();
+            expect(typeof state.progressHydrationError[progressKey]).toBe('string');
+        });
+    });
+
+    describe('fetchStageRecipe thunk', () => {
+        it('fetchStageRecipe throws when API returns error response', async () => {
+            const mockError: ApiError = { code: 'NOT_FOUND', message: 'Stage recipe not found' };
+            getMockDialecticClient().fetchStageRecipe.mockResolvedValue({
+                error: mockError,
+                status: 404,
+            });
+
+            const { fetchStageRecipe } = useDialecticStore.getState();
+            await expect(fetchStageRecipe('thesis')).rejects.toThrow();
+        });
+
+        it('fetchStageRecipe throws when API returns null data', async () => {
+            getMockDialecticClient().fetchStageRecipe.mockResolvedValue({
+                data: undefined,
+                status: 200,
+            });
+
+            const { fetchStageRecipe } = useDialecticStore.getState();
+            await expect(fetchStageRecipe('thesis')).rejects.toThrow();
+        });
+
+        it('fetchStageRecipe sets recipe in store on success', async () => {
+            const mockRecipe: DialecticStageRecipe = {
+                stageSlug: 'thesis',
+                instanceId: 'inst-1',
+                steps: [],
+                edges: [],
+            };
+            getMockDialecticClient().fetchStageRecipe.mockResolvedValue({
+                data: mockRecipe,
+                status: 200,
+            });
+
+            const { fetchStageRecipe } = useDialecticStore.getState();
+            await fetchStageRecipe('thesis');
+
+            const state = useDialecticStore.getState();
+            expect(state.recipesByStageSlug['thesis']).toEqual(mockRecipe);
+        });
+    });
+
+    describe('ensureRecipeForActiveStage thunk', () => {
+        it('ensureRecipeForActiveStage throws when recipe is not in store', async () => {
+            useDialecticStore.setState({ recipesByStageSlug: {} });
+
+            const { ensureRecipeForActiveStage } = useDialecticStore.getState();
+            await expect(
+                ensureRecipeForActiveStage('session-1', 'thesis', 1),
+            ).rejects.toThrow(/Recipe not loaded for stage: thesis/);
+        });
+
+        it('ensureRecipeForActiveStage initializes progress snapshot when recipe exists', async () => {
+            const mockStep: DialecticStageRecipeStep = {
+                id: 'step-1',
+                step_key: 'step_a',
+                step_slug: 'step-a',
+                step_name: 'Step A',
+                execution_order: 0,
+                job_type: 'EXECUTE',
+                prompt_type: 'Turn',
+                output_type: 'rendered_document',
+                granularity_strategy: 'all_to_one',
+                inputs_required: [],
+            };
+            const mockRecipe: DialecticStageRecipe = {
+                stageSlug: 'thesis',
+                instanceId: 'inst-1',
+                steps: [mockStep],
+                edges: [],
+            };
+            useDialecticStore.setState({ recipesByStageSlug: { thesis: mockRecipe } });
+
+            const { ensureRecipeForActiveStage } = useDialecticStore.getState();
+            await ensureRecipeForActiveStage('session-1', 'thesis', 1);
+
+            const state = useDialecticStore.getState();
+            const progressKey = 'session-1:thesis:1';
+            const progress = state.stageRunProgress[progressKey];
+            expect(progress).toBeDefined();
+            expect(progress?.stepStatuses['step_a']).toBe('not_started');
+            expect(progress?.progress.completedSteps).toBe(0);
+            expect(progress?.progress.totalSteps).toBe(0);
+            expect(progress?.progress.failedSteps).toBe(0);
+        });
+    });
+
+    describe('resetProgressHydrationStatus', () => {
+        it('resetProgressHydrationStatus clears status and error for the given key', () => {
+            const runKey = 'session-1:1';
+            useDialecticStore.setState({
+                progressHydrationStatus: { [runKey]: 'failed' },
+                progressHydrationError: { [runKey]: 'Some error message' },
+            });
+
+            const { resetProgressHydrationStatus } = useDialecticStore.getState();
+            resetProgressHydrationStatus(runKey);
+
+            const state = useDialecticStore.getState();
+            expect(state.progressHydrationStatus[runKey]).toBeUndefined();
+            expect(state.progressHydrationError[runKey]).toBeUndefined();
         });
     });
 
@@ -455,6 +1288,7 @@ describe('useDialecticStore', () => {
         };
 
         const mockPayload: CreateProjectPayload = {
+            idempotencyKey: 'test-idem-create-project',
             projectName: 'Test Project',
             initialUserPrompt: 'Test prompt',
             selectedDomainId: 'domain-1',
@@ -544,6 +1378,7 @@ describe('useDialecticStore', () => {
 
     describe('generateContributions action', () => {
         const mockPayload: GenerateContributionsPayload = {
+            idempotencyKey: 'test-idem-generate-contributions',
             sessionId: 'sess-generate-123',
             projectId: 'proj-generate-abc',
             iterationNumber: 1,
@@ -566,7 +1401,7 @@ describe('useDialecticStore', () => {
                 project_id: mockPayload.projectId,
                 iteration_count: 1,
                 session_description: 'A session for testing generation',
-                selected_model_ids: ['model-1', 'model-2'],
+                selected_models: [{ id: 'model-1', displayName: 'Test Model 1' }, { id: 'model-2', displayName: 'Test Model 2' }],
                 dialectic_contributions: [],
                 status: 'active',
                 user_input_reference_url: null,
@@ -593,16 +1428,20 @@ describe('useDialecticStore', () => {
         };
 
         const mockModelCatalog: AIModelCatalogEntry[] = [
-            { id: 'model-1', model_name: 'Test Model 1', provider_name: 'Provider A', api_identifier: 'm1', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null },
-            { id: 'model-2', model_name: 'Test Model 2', provider_name: 'Provider B', api_identifier: 'm2', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null },
+            { id: 'model-1', model_name: 'Test Model 1', provider_name: 'Provider A', api_identifier: 'm1', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null, is_default_generation: true },
+            { id: 'model-2', model_name: 'Test Model 2', provider_name: 'Provider B', api_identifier: 'm2', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null, is_default_generation: true },
         ];
 
 
+        const selectedModelsForGeneration: SelectedModels[] = [
+            { id: 'model-1', displayName: 'Test Model 1' },
+            { id: 'model-2', displayName: 'Test Model 2' },
+        ];
+
         beforeEach(() => {
-            // Set the essential state needed for the action to run
             useDialecticStore.setState({ 
                 currentProjectDetail: JSON.parse(JSON.stringify(mockProject)),
-                selectedModelIds: ['model-1', 'model-2'],
+                selectedModels: selectedModelsForGeneration,
                 modelCatalog: mockModelCatalog,
             });
         });
@@ -710,6 +1549,133 @@ describe('useDialecticStore', () => {
             expect(finalContributions?.[0].status).toBe('failed');
             expect(finalContributions?.[1].status).toBe('failed');
         });
+
+        it('should include idempotencyKey in the payload sent to generateContributions API', async () => {
+            getMockDialecticClient().generateContributions.mockResolvedValue({
+                data: {
+                    sessionId: mockPayload.sessionId,
+                    projectId: mockPayload.projectId,
+                    stage: mockPayload.stageSlug,
+                    iteration: mockPayload.iterationNumber,
+                    status: 'pending',
+                    job_ids: ['job-1', 'job-2'],
+                    successfulContributions: [],
+                    failedAttempts: [],
+                },
+                status: 202,
+            });
+
+            const { generateContributions } = useDialecticStore.getState();
+            await generateContributions(mockPayload);
+
+            expect(getMockDialecticClient().generateContributions).toHaveBeenCalledTimes(1);
+            const callPayload: GenerateContributionsPayload = getMockDialecticClient().generateContributions.mock.calls[0][0];
+            expect(callPayload.idempotencyKey).toBeTruthy();
+            expect(callPayload.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+        });
+    });
+
+    describe('clearFocusedStageDocument', () => {
+        it('clears only the targeted document draft when focus is lost (progress.documents keyed by composite key)', () => {
+            const firstKey: StageDocumentCompositeKey = {
+                sessionId: 's1',
+                stageSlug: 'thesis',
+                iterationNumber: 1,
+                modelId: 'model-1',
+                documentKey: 'doc_a',
+            };
+            const secondKey: StageDocumentCompositeKey = {
+                sessionId: 's1',
+                stageSlug: 'thesis',
+                iterationNumber: 1,
+                modelId: 'model-2',
+                documentKey: 'doc_b',
+            };
+            const firstSerialized = getStageDocumentKey(firstKey);
+            const secondSerialized = getStageDocumentKey(secondKey);
+            const firstFocusKey = 's1:thesis:model-1';
+            const secondFocusKey = 's1:thesis:model-2';
+
+            const firstDocumentContent: StageDocumentContentState = {
+                baselineMarkdown: 'Doc A baseline',
+                currentDraftMarkdown: 'Doc A baseline\nSome edits for A',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: {
+                    resourceId: 'res-a',
+                    versionHash: 'a1',
+                    updatedAt: new Date().toISOString(),
+                },
+                pendingDiff: 'Some edits for A',
+                lastAppliedVersionHash: 'a1',
+                sourceContributionId: null,
+                feedbackDraftMarkdown: undefined,
+                feedbackIsDirty: false,
+                resourceType: null,
+            };
+
+            const secondDocumentContent: StageDocumentContentState = {
+                baselineMarkdown: 'Doc B baseline',
+                currentDraftMarkdown: 'Doc B baseline\nSome edits for B',
+                isDirty: true,
+                isLoading: false,
+                error: null,
+                lastBaselineVersion: {
+                    resourceId: 'res-b',
+                    versionHash: 'b1',
+                    updatedAt: new Date().toISOString(),
+                },
+                pendingDiff: 'Some edits for B',
+                lastAppliedVersionHash: 'b1',
+                sourceContributionId: null,
+                feedbackDraftMarkdown: undefined,
+                feedbackIsDirty: false,
+                resourceType: null,
+            };
+
+            useDialecticStore.setState({
+                stageDocumentContent: {
+                    [firstSerialized]: firstDocumentContent,
+                    [secondSerialized]: secondDocumentContent,
+                },
+                focusedStageDocument: {
+                    [firstFocusKey]: { modelId: 'model-1', documentKey: 'doc_a' },
+                    [secondFocusKey]: { modelId: 'model-2', documentKey: 'doc_b' },
+                },
+                stageRunProgress: {
+                    's1:thesis:1': {
+                        documents: {
+                            [getStageRunDocumentKey('doc_a', 'model-1')]: {
+                                status: 'completed',
+                                job_id: 'job-a',
+                                latestRenderedResourceId: 'res-a',
+                                modelId: 'model-1',
+                                versionHash: 'a1',
+                                lastRenderedResourceId: 'res-a',
+                                lastRenderAtIso: new Date().toISOString(),
+                            },
+                        },
+                        stepStatuses: {},
+                        jobProgress: {},
+                        progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+                        jobs: [],
+                    },
+                },
+            });
+
+            useDialecticStore.getState().clearFocusedStageDocument({
+                sessionId: 's1',
+                stageSlug: 'thesis',
+                modelId: 'model-1',
+            });
+
+            const state = useDialecticStore.getState();
+            expect(state.focusedStageDocument[firstFocusKey]).toBeNull();
+            expect(state.stageDocumentContent[firstSerialized]).toBeUndefined();
+            expect(state.focusedStageDocument[secondFocusKey]).toBeDefined();
+            expect(state.stageDocumentContent[secondSerialized]).toBeDefined();
+        });
     });
 
     describe('activateProjectAndSessionContextForDeepLink', () => {
@@ -745,8 +1711,10 @@ describe('useDialecticStore', () => {
                     created_at: new Date().toISOString(), 
                     display_name: 'Thesis', 
                     default_system_prompt_id: null, 
-                    expected_output_artifacts: {}, 
-                    input_artifact_rules: {} 
+                    expected_output_template_ids: [],
+                    recipe_template_id: null,
+                    active_recipe_instance_id: null,
+                    minimum_balance: 0,
                 }]
             },
             dialectic_sessions: [{ 
@@ -755,7 +1723,7 @@ describe('useDialecticStore', () => {
                 created_at: new Date().toISOString(), 
                 updated_at: new Date().toISOString(), 
                 current_stage_id: 'stage-1', 
-                selected_model_ids: [], 
+                selected_models: [], 
                 dialectic_contributions: [], 
                 feedback: [], 
                 session_description: null, 
@@ -771,7 +1739,7 @@ describe('useDialecticStore', () => {
                 created_at: new Date().toISOString(), 
                 updated_at: new Date().toISOString(), 
                 current_stage_id: 'stage-1', 
-                selected_model_ids: [], 
+                selected_models: [], 
                 dialectic_contributions: [], 
                 feedback: [], 
                 session_description: null, 
@@ -798,7 +1766,7 @@ describe('useDialecticStore', () => {
             current_stage_id: 'stage-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            selected_model_ids: [],
+            selected_models: [],
             dialectic_contributions: [],
             feedback: [],
             session_description: null,
@@ -816,8 +1784,10 @@ describe('useDialecticStore', () => {
             created_at: new Date().toISOString(),
             display_name: 'Thesis',
             default_system_prompt_id: null,
-            expected_output_artifacts: {},
-            input_artifact_rules: {}
+            expected_output_template_ids: [],
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+            minimum_balance: 0,
         };
 
         it('should fetch project, then session, and set all context', async () => {
@@ -831,6 +1801,7 @@ describe('useDialecticStore', () => {
                 data: {
                     session: mockSession,
                     currentStageDetails: mockStage,
+                    activeSeedPrompt: null,
                 },
                 status: 200,
             });
@@ -838,6 +1809,11 @@ describe('useDialecticStore', () => {
             // Mock the template fetch that is triggered by getting project details
             getMockDialecticClient().fetchProcessTemplate.mockResolvedValue({
                 data: mockProject.dialectic_process_templates ?? undefined,
+                status: 200,
+            });
+            // fetchProcessTemplate then fetches recipes for each stage; mock so it completes and sets currentProcessTemplate
+            getMockDialecticClient().fetchStageRecipe.mockResolvedValue({
+                data: { stageSlug: 'thesis', instanceId: 'inst-1', steps: [], edges: [] },
                 status: 200,
             });
             getMockDialecticClient().updateSessionModels.mockResolvedValue({
@@ -852,7 +1828,7 @@ describe('useDialecticStore', () => {
             // Assert
             const state = useDialecticStore.getState();
             expect(getMockDialecticClient().getProjectDetails).toHaveBeenCalledWith(mockProjectId);
-            expect(getMockDialecticClient().getSessionDetails).toHaveBeenCalledWith(mockSessionId);
+            expect(getMockDialecticClient().getSessionDetails).toHaveBeenCalledWith(mockSessionId, false);
 
             expect(state.currentProjectDetail).toEqual(mockProject);
             expect(state.activeSessionDetail).toEqual(expect.objectContaining(mockSession));
@@ -888,7 +1864,7 @@ describe('useDialecticStore', () => {
                         current_stage_id: 'stage-1',
                         created_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),
-                        selected_model_ids: [],
+                        selected_models: [],
                         feedback: [],
                         session_description: null,
                         user_input_reference_url: null,

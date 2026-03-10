@@ -1,0 +1,19 @@
+{
+  "feature_scope": [],
+  "feasibility_insights": [],
+  "non_functional_alignment": [],
+  "score_adjustments": [],
+  "features": [
+    {
+      "feature_name": "",
+      "feature_objective": "",
+      "user_stories": [],
+      "acceptance_criteria": [],
+      "dependencies": [],
+      "success_metrics": [],
+      "risk_mitigation": "",
+      "open_questions": []
+    }
+  ],
+  "tradeoffs": []
+}

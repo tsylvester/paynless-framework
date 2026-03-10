@@ -1,124 +1,141 @@
 import { render, screen, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type {
+  UnifiedProjectProgress,
+  DialecticStage,
+  DialecticProcessTemplate,
+} from '@paynless/types';
 import { DynamicProgressBar } from './DynamicProgressBar';
-import { setDialecticStateValues, resetDialecticStoreMock } from '../../mocks/dialecticStore.mock';
+import {
+  initializeMockDialecticState,
+  resetDialecticStoreMock,
+  selectUnifiedProjectProgress,
+} from '../../mocks/dialecticStore.mock';
 
-// Redirect any imports from the actual store to our controlled mock
 vi.mock('@paynless/store', () => import('../../mocks/dialecticStore.mock'));
+
+const defaultProgress: UnifiedProjectProgress = {
+  totalStages: 0,
+  completedStages: 0,
+  currentStageSlug: 'thesis',
+  overallPercentage: 0,
+  currentStage: null,
+  projectStatus: 'not_started',
+  stageDetails: [],
+  hydrationReady: true,
+};
+
+const defaultStages: DialecticStage[] = [
+  { id: '1', display_name: 'Thesis', slug: 'thesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, minimum_balance: 0 },
+  { id: '2', display_name: 'Antithesis', slug: 'antithesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, minimum_balance: 0 },
+  { id: '3', display_name: 'Synthesis', slug: 'synthesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, minimum_balance: 0 },
+  { id: '4', display_name: 'Paralysis', slug: 'paralysis', created_at: '', default_system_prompt_id: null, description: null, expected_output_template_ids: [], recipe_template_id: null, active_recipe_instance_id: null, minimum_balance: 0 },
+];
+const defaultProcessTemplate: DialecticProcessTemplate = {
+  id: 'p1',
+  name: 'Test Process',
+  starting_stage_id: null,
+  stages: defaultStages,
+  transitions: [],
+  created_at: '',
+  description: null,
+};
 
 describe('DynamicProgressBar', () => {
   const sessionId = 'test-session-1';
 
   beforeEach(() => {
-    // Reset the entire mock store to its initial state before each test
     resetDialecticStoreMock();
+    initializeMockDialecticState({ currentProcessTemplate: defaultProcessTemplate });
+    selectUnifiedProjectProgress.mockReturnValue(defaultProgress);
   });
 
-  it('should render null when no progress data is available for the session', () => {
-    const { container } = render(<DynamicProgressBar sessionId={sessionId} />);
-    expect(container.firstChild).toBeNull();
-  });
-
-  it('should render null if total_steps is 0 to avoid division by zero', () => {
-    // Set the state using the helper from the mock file
-    setDialecticStateValues({
-      sessionProgress: {
-        [sessionId]: {
-          current_step: 0,
-          total_steps: 0,
-          message: 'Initializing...',
-        },
-      },
-    });
-
-    const { container } = render(<DynamicProgressBar sessionId={sessionId} />);
-    expect(container.firstChild).toBeNull();
-  });
-
-  it('should render the progress bar with the correct message and percentage', () => {
-    const message = 'Processing step 3 of 15';
-    setDialecticStateValues({
-      sessionProgress: {
-        [sessionId]: {
-          current_step: 3,
-          total_steps: 15,
-          message: message,
-        },
-      },
-    });
+  it('renders 0% progress bar for new project', () => {
+    const progress: UnifiedProjectProgress = {
+      totalStages: 5,
+      completedStages: 0,
+      currentStageSlug: 'thesis',
+      overallPercentage: 0,
+      currentStage: null,
+      projectStatus: 'not_started',
+      stageDetails: [],
+      hydrationReady: true,
+    };
+    selectUnifiedProjectProgress.mockReturnValue(progress);
 
     render(<DynamicProgressBar sessionId={sessionId} />);
 
-    expect(screen.getByText(message)).toBeInTheDocument();
-    expect(screen.getByText('20%')).toBeInTheDocument();
-
-    const progressBar = screen.getByRole('progressbar');
-    const progressBarIndicator = progressBar.querySelector('[data-slot="progress-indicator"]');
-    expect(progressBarIndicator).toBeInTheDocument();
-    expect(progressBarIndicator).toHaveStyle({ transform: 'translateX(-80%)' });
+    expect(screen.getByText('0%')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
-  it('should correctly display 100% when current_step equals total_steps', () => {
-    const message = 'All steps completed!';
-    setDialecticStateValues({
-      sessionProgress: {
-        [sessionId]: {
-          current_step: 10,
-          total_steps: 10,
-          message: message,
-        },
-      },
-    });
+  it('renders overall percentage from selectUnifiedProjectProgress.overallPercentage', () => {
+    const progress: UnifiedProjectProgress = {
+      totalStages: 5,
+      completedStages: 2,
+      currentStageSlug: 'synthesis',
+      overallPercentage: 40,
+      currentStage: null,
+      projectStatus: 'in_progress',
+      stageDetails: [],
+      hydrationReady: true,
+    };
+    selectUnifiedProjectProgress.mockReturnValue(progress);
 
     render(<DynamicProgressBar sessionId={sessionId} />);
 
-    expect(screen.getByText(message)).toBeInTheDocument();
-    expect(screen.getByText('100%')).toBeInTheDocument();
-
-    const progressBar = screen.getByRole('progressbar');
-    const progressBarIndicator = progressBar.querySelector('[data-slot="progress-indicator"]');
-    expect(progressBarIndicator).toBeInTheDocument();
-    expect(progressBarIndicator).toHaveStyle({ transform: 'translateX(-0%)' });
+    expect(screen.getByText('40%')).toBeInTheDocument();
   });
 
-  it('should not display anything for a different, unrelated session ID', () => {
-    const message = 'Active session progress';
-    setDialecticStateValues({
-      sessionProgress: {
-        [sessionId]: {
-          current_step: 5,
-          total_steps: 10,
-          message: message,
-        },
-      },
-    });
-
-    const { container } = render(<DynamicProgressBar sessionId="unrelated-session-id" />);
-    expect(container.firstChild).toBeNull();
-    expect(screen.queryByText(message)).not.toBeInTheDocument();
-  });
-
-  it('should clamp the progress at 100% if current_step exceeds total_steps', () => {
-    const message = 'Unexpected state: 12 of 10';
-    setDialecticStateValues({
-      sessionProgress: { [sessionId]: { current_step: 12, total_steps: 10, message },
-      },
-    });
+  it('renders current stage display_name in progress bar label', () => {
+    const progress: UnifiedProjectProgress = {
+      totalStages: 5,
+      completedStages: 1,
+      currentStageSlug: 'thesis',
+      overallPercentage: 20,
+      currentStage: null,
+      projectStatus: 'in_progress',
+      stageDetails: [],
+      hydrationReady: true,
+    };
+    selectUnifiedProjectProgress.mockReturnValue(progress);
 
     render(<DynamicProgressBar sessionId={sessionId} />);
 
-    expect(screen.getByText('100%')).toBeInTheDocument();
-    const progressBar = screen.getByRole('progressbar');
-    const progressBarIndicator = progressBar.querySelector('[data-slot="progress-indicator"]');
-    expect(progressBarIndicator).toHaveStyle({ transform: 'translateX(-0%)' });
+    expect(screen.getByText(/Stage 1\/5: Thesis/)).toBeInTheDocument();
   });
 
-  it('should apply the passed className to the root element', () => {
-    setDialecticStateValues({
-      sessionProgress: {
-        [sessionId]: { current_step: 1, total_steps: 2, message: 'Test' },
-      },
-    });
+  it('displays step detail (stage X/Y)', () => {
+    const progress: UnifiedProjectProgress = {
+      totalStages: 5,
+      completedStages: 2,
+      currentStageSlug: 'synthesis',
+      overallPercentage: 40,
+      currentStage: null,
+      projectStatus: 'in_progress',
+      stageDetails: [],
+      hydrationReady: true,
+    };
+    selectUnifiedProjectProgress.mockReturnValue(progress);
+
+    render(<DynamicProgressBar sessionId={sessionId} />);
+
+    expect(screen.getByText(/2/)).toBeInTheDocument();
+    expect(screen.getByText(/5/)).toBeInTheDocument();
+  });
+
+  it('applies the passed className to the root element', () => {
+    const progress: UnifiedProjectProgress = {
+      totalStages: 5,
+      completedStages: 2,
+      currentStageSlug: 'thesis',
+      overallPercentage: 50,
+      currentStage: null,
+      projectStatus: 'in_progress',
+      stageDetails: [],
+      hydrationReady: true,
+    };
+    selectUnifiedProjectProgress.mockReturnValue(progress);
 
     const { container } = render(
       <DynamicProgressBar sessionId={sessionId} className="my-custom-class" />
@@ -127,47 +144,227 @@ describe('DynamicProgressBar', () => {
     expect(container.firstChild).toHaveClass('my-custom-class');
   });
 
-  it('should react to store updates and render progress dynamically', () => {
+  it('updates in real-time as selector output changes (job notifications processed)', () => {
+    selectUnifiedProjectProgress.mockReturnValue(defaultProgress);
+
     const { rerender } = render(<DynamicProgressBar sessionId={sessionId} />);
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+
+    expect(screen.getByText('0%')).toBeInTheDocument();
+
+    const progress: UnifiedProjectProgress = {
+      totalStages: 5,
+      completedStages: 2,
+      currentStageSlug: 'thesis',
+      overallPercentage: 40,
+      currentStage: null,
+      projectStatus: 'in_progress',
+      stageDetails: [],
+      hydrationReady: true,
+    };
 
     act(() => {
-        setDialecticStateValues({
-          sessionProgress: {
-            [sessionId]: { current_step: 4, total_steps: 10, message: 'Updated' },
-          },
-        });
+      selectUnifiedProjectProgress.mockReturnValue(progress);
     });
-    
+
     rerender(<DynamicProgressBar sessionId={sessionId} />);
 
     expect(screen.getByText('40%')).toBeInTheDocument();
-    expect(screen.getByText('Updated')).toBeInTheDocument();
   });
 
-  describe('Default Messages', () => {
-    it('should show "Initializing..." if message is missing and step is 0', () => {
-      setDialecticStateValues({
-        sessionProgress: { [sessionId]: { current_step: 0, total_steps: 10, message: '' } },
-      });
-      render(<DynamicProgressBar sessionId={sessionId} />);
-      expect(screen.getByText('Initializing...')).toBeInTheDocument();
-    });
+  it('renders step progress as completedJobs/totalJobs for current stage steps', () => {
+    const progress: UnifiedProjectProgress = {
+      totalStages: 2,
+      completedStages: 0,
+      currentStageSlug: 'thesis',
+      overallPercentage: 25,
+      currentStage: null,
+      projectStatus: 'in_progress',
+      stageDetails: [
+        {
+          stageSlug: 'thesis',
+          totalSteps: 2,
+          completedSteps: 1,
+          failedSteps: 0,
+          stagePercentage: 50,
+          stageStatus: 'in_progress',
+          totalDocuments: 0,
+          completedDocuments: 0,
+          stepsDetail: [
+            {
+              stepKey: 'plan',
+              stepName: 'Plan',
+              status: 'completed',
+            },
+            {
+              stepKey: 'execute',
+              stepName: 'Execute',
+              status: 'in_progress',
+            },
+          ],
+        },
+      ],
+      hydrationReady: true,
+    };
+    selectUnifiedProjectProgress.mockReturnValue(progress);
 
-    it('should show "Finalizing..." if message is missing and step is >= total_steps', () => {
-      setDialecticStateValues({
-        sessionProgress: { [sessionId]: { current_step: 10, total_steps: 10, message: '' } },
-      });
-      render(<DynamicProgressBar sessionId={sessionId} />);
-      expect(screen.getByText('Finalizing...')).toBeInTheDocument();
-    });
+    render(<DynamicProgressBar sessionId={sessionId} />);
 
-    it('should show "Processing..." with fraction if message is missing and in progress', () => {
-      setDialecticStateValues({
-        sessionProgress: { [sessionId]: { current_step: 5, total_steps: 10, message: '' } },
-      });
-      render(<DynamicProgressBar sessionId={sessionId} />);
-      expect(screen.getByText('Processing... (5/10)')).toBeInTheDocument();
-    });
+    expect(screen.getByText('25%')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
+
+  it('renders 0% when jobProgress is empty (no jobs started)', () => {
+    const progress: UnifiedProjectProgress = {
+      totalStages: 2,
+      completedStages: 0,
+      currentStageSlug: 'thesis',
+      overallPercentage: 0,
+      currentStage: null,
+      projectStatus: 'not_started',
+      stageDetails: [
+        {
+          stageSlug: 'thesis',
+          totalSteps: 2,
+          completedSteps: 0,
+          failedSteps: 0,
+          stagePercentage: 0,
+          stageStatus: 'not_started',
+          totalDocuments: 0,
+          completedDocuments: 0,
+          stepsDetail: [
+            {
+              stepKey: 'plan',
+              stepName: 'Plan',
+              status: 'not_started',
+            },
+            {
+              stepKey: 'execute',
+              stepName: 'Execute',
+              status: 'not_started',
+            },
+          ],
+        },
+      ],
+      hydrationReady: true,
+    };
+    selectUnifiedProjectProgress.mockReturnValue(progress);
+
+    render(<DynamicProgressBar sessionId={sessionId} />);
+
+    expect(screen.getByText('0%')).toBeInTheDocument();
+  });
+
+  it('renders 100% when all jobs completed for all stages', () => {
+    const progress: UnifiedProjectProgress = {
+      totalStages: 2,
+      completedStages: 2,
+      currentStageSlug: 'paralysis',
+      overallPercentage: 100,
+      currentStage: null,
+      projectStatus: 'completed',
+      stageDetails: [
+        {
+          stageSlug: 'thesis',
+          totalSteps: 1,
+          completedSteps: 1,
+          failedSteps: 0,
+          stagePercentage: 100,
+          stageStatus: 'completed',
+          totalDocuments: 0,
+          completedDocuments: 0,
+          stepsDetail: [
+            {
+              stepKey: 'plan',
+              stepName: 'Plan',
+              status: 'completed',
+            },
+          ],
+        },
+        {
+          stageSlug: 'paralysis',
+          totalSteps: 1,
+          completedSteps: 1,
+          failedSteps: 0,
+          stagePercentage: 100,
+          stageStatus: 'completed',
+          totalDocuments: 0,
+          completedDocuments: 0,
+          stepsDetail: [
+            {
+              stepKey: 'plan',
+              stepName: 'Plan',
+              status: 'completed',
+            },
+          ],
+        },
+      ],
+      hydrationReady: true,
+    };
+    selectUnifiedProjectProgress.mockReturnValue(progress);
+
+    render(<DynamicProgressBar sessionId={sessionId} />);
+
+    expect(screen.getByText('100%')).toBeInTheDocument();
+  });
+
+  it('does not reference selectedModels', () => {
+    const progress: UnifiedProjectProgress = {
+      totalStages: 1,
+      completedStages: 0,
+      currentStageSlug: 'thesis',
+      overallPercentage: 0,
+      currentStage: null,
+      projectStatus: 'in_progress',
+      stageDetails: [],
+      hydrationReady: true,
+    };
+    selectUnifiedProjectProgress.mockReturnValue(progress);
+
+    render(<DynamicProgressBar sessionId={sessionId} />);
+
+    expect(selectUnifiedProjectProgress).toHaveBeenCalled();
+    expect(screen.getByText('0%')).toBeInTheDocument();
+  });
+
+  it('shows stage display_name in progress bar label when stage is in sorted stages', () => {
+    const stage: DialecticStage = {
+      id: '1',
+      display_name: 'Review',
+      slug: 'antithesis',
+      created_at: '',
+      default_system_prompt_id: null,
+      description: null,
+      expected_output_template_ids: [],
+      recipe_template_id: null,
+      active_recipe_instance_id: null,
+      minimum_balance: 0,
+    };
+    const processTemplate: DialecticProcessTemplate = {
+      id: 'p1',
+      name: 'Test Process',
+      starting_stage_id: null,
+      stages: [stage],
+      transitions: [],
+      created_at: '',
+      description: null,
+    };
+    initializeMockDialecticState({ currentProcessTemplate: processTemplate });
+
+    const progress: UnifiedProjectProgress = {
+      totalStages: 5,
+      completedStages: 2,
+      currentStageSlug: 'antithesis',
+      overallPercentage: 40,
+      currentStage: null,
+      projectStatus: 'in_progress',
+      stageDetails: [],
+      hydrationReady: true,
+    };
+    selectUnifiedProjectProgress.mockReturnValue(progress);
+
+    render(<DynamicProgressBar sessionId={sessionId} />);
+
+    expect(screen.getByText(/Stage 2\/5: Review/)).toBeInTheDocument();
+  });
+
 });

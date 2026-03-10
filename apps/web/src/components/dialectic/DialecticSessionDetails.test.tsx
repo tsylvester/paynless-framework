@@ -101,8 +101,9 @@ const mockThesisStage: DialecticStage = {
   created_at: new Date().toISOString(),
   default_system_prompt_id: 'sys-prompt-thesis',
   description: 'Thesis stage',
-  expected_output_artifacts: [],
-  input_artifact_rules: [],
+  expected_output_template_ids: [],
+  recipe_template_id: null,
+  active_recipe_instance_id: null,
 };
 
 const mockAntithesisStage: DialecticStage = {
@@ -112,8 +113,9 @@ const mockAntithesisStage: DialecticStage = {
   created_at: new Date().toISOString(),
   default_system_prompt_id: 'sys-prompt-antithesis',
   description: 'Antithesis stage',
-  expected_output_artifacts: [],
-  input_artifact_rules: [],
+  expected_output_template_ids: [],
+  recipe_template_id: null,
+  active_recipe_instance_id: null,
 };
 
 const mockProcessTemplate: DialecticProcessTemplate = {
@@ -326,6 +328,36 @@ describe('DialecticSessionDetails', () => {
     expect(screen.getByTestId('mock-session-contributions-display-card')).toBeInTheDocument();
   });
 
+  it('positions stage and document panels inside dedicated layout regions', () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+
+    initializeMockDialecticState({
+      currentProjectDetail: mockFullProject,
+      isLoadingProjectDetail: false,
+      projectDetailError: null,
+      currentProcessTemplate: mockProcessTemplate,
+      activeContextStage: mockThesisStage,
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+    });
+
+    render(<DialecticSessionDetails />);
+
+    const layoutRoot = screen.getByTestId('dialectic-session-details-layout');
+    expect(layoutRoot.className).toContain('grid');
+
+    const stageColumn = screen.getByTestId('dialectic-session-stage-column');
+    expect(stageColumn).toBeInTheDocument();
+    expect(stageColumn).toContainElement(screen.getByTestId('mock-stage-tab-card'));
+
+    const documentColumn = screen.getByTestId('dialectic-session-document-column');
+    expect(documentColumn).toBeInTheDocument();
+    expect(documentColumn).toContainElement(
+      screen.getByTestId('mock-session-contributions-display-card'),
+    );
+  });
+
   it('does NOT render SessionContributionsDisplayCard if activeContextStage is null', () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
     initializeMockDialecticState({
@@ -343,7 +375,7 @@ describe('DialecticSessionDetails', () => {
     expect(screen.queryByTestId('mock-session-contributions-display-card')).not.toBeInTheDocument();
   });
 
-  it('renders "No contributions" message if session has no contributions AND activeContextStage is set', () => {
+  it('renders the document workspace even when legacy contribution data is absent', () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
     const sessionWithoutContributions = {
       ...mockSession,
@@ -364,6 +396,8 @@ describe('DialecticSessionDetails', () => {
     });
 
     render(<DialecticSessionDetails />);
-    expect(screen.getByText('No contributions found for this session yet.')).toBeInTheDocument();
+    const documentColumn = screen.getByTestId('dialectic-session-document-column');
+    expect(documentColumn).toBeInTheDocument();
+    expect(screen.getByTestId('mock-session-contributions-display-card')).toBeInTheDocument();
   });
 }); 

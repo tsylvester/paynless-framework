@@ -16,10 +16,16 @@ const PROVIDER_NAME = 'google';
 // Cost rates are the application's normalized cost for 1 million units (tokens).
 // Source: https://ai.google.dev/gemini-api/docs/pricing
 export const INTERNAL_MODEL_MAP: Map<string, Partial<AiModelExtendedConfig>> = new Map(Object.entries({
+    // --- Gemini 3 Series ---
+    'google-gemini-3.1': { input_token_cost_rate: 2.00, output_token_cost_rate: 12.00, provider_max_input_tokens: 1_000_000, provider_max_output_tokens: 64_000 },
+    'google-gemini-3': { input_token_cost_rate: 2.00, output_token_cost_rate: 12.00, provider_max_input_tokens: 1_000_000, provider_max_output_tokens: 64_000 },
+    'google-gemini-3-flash': { input_token_cost_rate: 0.50, output_token_cost_rate: 3.00, provider_max_input_tokens: 1_000_000, provider_max_output_tokens: 64_000 },
+
     // --- Gemini 2.5 Series ---
-    'google-gemini-2.5-pro': { input_token_cost_rate: 2.50, output_token_cost_rate: 15.00, provider_max_input_tokens: 1_048_576, provider_max_output_tokens: 65_536 },
-    'google-gemini-2.5-flash': { input_token_cost_rate: 1.00, output_token_cost_rate: 2.50, provider_max_input_tokens: 1_048_576, provider_max_output_tokens: 65_536 },
-    'google-gemini-2.5-flash-lite': { input_token_cost_rate: 0.30, output_token_cost_rate: 0.40, provider_max_input_tokens: 1_048_576, provider_max_output_tokens: 65_536 },
+    'google-gemini-2.5': { input_token_cost_rate: 1.25, output_token_cost_rate: 10.00, provider_max_input_tokens: 1_000_000, provider_max_output_tokens: 64_000 },
+    'google-gemini-2.5-pro': { input_token_cost_rate: 2.50, output_token_cost_rate: 15.00, provider_max_input_tokens: 1_000_000, provider_max_output_tokens: 65_536 },
+    'google-gemini-2.5-flash': { input_token_cost_rate: 0.30, output_token_cost_rate: 2.50, provider_max_input_tokens: 1_000_000, provider_max_output_tokens: 64_000 },
+    'google-gemini-2.5-flash-lite': { input_token_cost_rate: 0.30, output_token_cost_rate: 0.40, provider_max_input_tokens: 1_000_000, provider_max_output_tokens: 65_536 },
 
     // --- Gemini 1.5 Series ---
     'google-gemini-1.5-pro-latest': { input_token_cost_rate: 2.50, output_token_cost_rate: 10.00 },

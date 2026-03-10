@@ -1,27 +1,25 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type SpyInstance } from 'vitest';
-import { useAiStore, initialAiStateValues } from './aiStore';
-import { AiApiClient } from '@paynless/api'; 
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useAiStore } from './aiStore';
 import { 
     MockedAiApiClient, 
-    createMockAiApiClient, 
-    resetMockAiApiClient 
+    resetMockAiApiClient,
+    createMockAiApiClient
 } from '@paynless/api/mocks'; 
 import { act } from '@testing-library/react';
 import {
     AiProvider,
+    initialAiStateValues,
     SystemPrompt,
-    type ApiResponse as PaynlessApiResponse
+    User,
+    Session,
 } from '@paynless/types';
 import { useAuthStore } from './authStore';
 
-let mockAiApiInstance: MockedAiApiClient;
-
 vi.mock('@paynless/api', async (importOriginal) => {
     const actualApiModule = await importOriginal<typeof import('@paynless/api')>();
+    const { createMockAiApiClient } = await import('@paynless/api/mocks');
     
-    const { createMockAiApiClient: actualCreator } = await import('@paynless/api/mocks');
-    
-    const instance = actualCreator();
+    const instance = createMockAiApiClient();
 
     const mockSupabaseAuth = {
         getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'mock-token' } }, error: null }),
@@ -58,13 +56,17 @@ vi.mock('@paynless/api', async (importOriginal) => {
         AiApiClient: vi.fn(() => instance),
         getApiClient: vi.fn(() => mockApiClientInstance),
         initializeApiClient: vi.fn(),
-        __mockAiApiInstance: instance,
         
         api: {
             ai: () => instance,
         }
     };
 });
+
+const getMockAiApiInstance = async () => {
+    const { api } = await import('@paynless/api');
+    return vi.mocked(api.ai());
+};
 
 vi.mock('./authStore');
 
@@ -74,27 +76,72 @@ const resetAiStore = () => {
 
 const mockNavigateGlobal = vi.fn();
 
+const mockUser: User = {
+    id: 'test-user-id',
+    email: 'test@example.com',
+};
+
+const mockSession: Session = {
+    access_token: 'mock-token',
+    refresh_token: 'mock-refresh-token',
+    expiresAt: Date.now() + 3600000,
+};
+
 const fullyTypedMockProviders: AiProvider[] = [
-    { id: 'p1', name: 'P1', description: 'Provider 1', api_identifier: 'mock-config-id-1', config: null, created_at: new Date().toISOString(), is_active: true, is_enabled: true, provider: 'provider_type_1', updated_at: new Date().toISOString() }
+    { 
+        id: 'p1', 
+        name: 'P1', 
+        description: 'Provider 1', 
+        api_identifier: 'mock-config-id-1', 
+        config: null, 
+        created_at: new Date().toISOString(), 
+        is_active: true, 
+        is_enabled: true, 
+        provider: 'provider_type_1', 
+        updated_at: new Date().toISOString(),
+        is_default_embedding: false
+    }
 ];
 const fullyTypedMockPrompts: SystemPrompt[] = [
-    { id: 's1', name: 'S1', prompt_text: 'System Prompt 1', created_at: new Date().toISOString(), is_active: true, updated_at: new Date().toISOString() }
+    { 
+        id: 's1', 
+        name: 'S1', 
+        prompt_text: 'System Prompt 1', 
+        created_at: new Date().toISOString(), 
+        is_active: true, 
+        updated_at: new Date().toISOString(),
+        description: 'System Prompt 1',
+        document_template_id: null,
+        user_selectable: true,
+        version: 1
+    }
 ];
 
 describe('aiStore - loadAiConfig', () => {
     beforeEach(async () => {
-        const { __mockAiApiInstance } = await import('@paynless/api') as any;
-        mockAiApiInstance = __mockAiApiInstance as MockedAiApiClient;
-
+        const mockAiApiInstance = await getMockAiApiInstance();
+        
         vi.clearAllMocks(); 
         vi.restoreAllMocks();
-        if (mockAiApiInstance) {
-            resetMockAiApiClient(mockAiApiInstance); 
-        }
+        resetMockAiApiClient(mockAiApiInstance); 
+        
         act(() => {
              resetAiStore();
              const initialAuthState = useAuthStore.getInitialState ? useAuthStore.getInitialState() : { user: null, session: null, profile: null, isLoading: false, error: null, navigate: null };
-             useAuthStore.setState({ ...initialAuthState, navigate: mockNavigateGlobal }, true); 
+             if (vi.isMockFunction(useAuthStore.getState)) {
+                 vi.mocked(useAuthStore.getState).mockReturnValue({
+                     ...initialAuthState,
+                     user: mockUser,
+                     session: mockSession,
+                     navigate: mockNavigateGlobal
+                 });
+             }
+             useAuthStore.setState({ 
+                 ...initialAuthState, 
+                 user: mockUser,
+                 session: mockSession,
+                 navigate: mockNavigateGlobal 
+             }, true); 
         });
         
         mockAiApiInstance.getAiProviders.mockResolvedValue({ 
@@ -120,6 +167,7 @@ describe('aiStore - loadAiConfig', () => {
     });
 
     it('should call getAiProviders and getSystemPrompts via mocked api', async () => {
+        const mockAiApiInstance = await getMockAiApiInstance();
         await useAiStore.getState().loadAiConfig();
         expect(mockAiApiInstance.getAiProviders).toHaveBeenCalledTimes(1);
         expect(mockAiApiInstance.getSystemPrompts).toHaveBeenCalledTimes(1);
@@ -134,6 +182,7 @@ describe('aiStore - loadAiConfig', () => {
     });
 
     it('should set aiError if getAiProviders fails', async () => {
+        const mockAiApiInstance = await getMockAiApiInstance();
         const errorMsg = 'Failed to load AI providers.';
         mockAiApiInstance.getAiProviders.mockResolvedValue({ 
             data: undefined, status: 500, error: { message: errorMsg, code: 'PROVIDER_LOAD_ERROR' }
@@ -147,6 +196,7 @@ describe('aiStore - loadAiConfig', () => {
     });
 
      it('should set aiError if getSystemPrompts fails', async () => {
+        const mockAiApiInstance = await getMockAiApiInstance();
         const errorMsg = 'Failed to load system prompts.';
         mockAiApiInstance.getSystemPrompts.mockResolvedValue({ 
             data: undefined, status: 500, error: { message: errorMsg, code: 'PROMPT_LOAD_ERROR' }
@@ -160,6 +210,7 @@ describe('aiStore - loadAiConfig', () => {
     });
 
     it('should set combined aiError if both getAiProviders and getSystemPrompts fail', async () => {
+        const mockAiApiInstance = await getMockAiApiInstance();
         const providersErrorMsg = 'Provider fetch failed.';
         const promptsErrorMsg = 'Prompt fetch failed.';
         mockAiApiInstance.getAiProviders.mockResolvedValue({ 
@@ -178,6 +229,7 @@ describe('aiStore - loadAiConfig', () => {
     });
 
     it('should clear aiError on successful subsequent loadAiConfig', async () => {
+        const mockAiApiInstance = await getMockAiApiInstance();
         const errorMsg = 'Initial load failure.';
         mockAiApiInstance.getAiProviders.mockResolvedValue({
             data: undefined,
@@ -205,5 +257,36 @@ describe('aiStore - loadAiConfig', () => {
         expect(state.aiError).toBeNull();
         expect(state.availableProviders).toEqual(fullyTypedMockProviders);
         expect(state.availablePrompts).toEqual(fullyTypedMockPrompts);
+    });
+
+    it('should not make API calls when user is not authenticated', async () => {
+        const mockAiApiInstance = await getMockAiApiInstance();
+        
+        act(() => {
+            if (vi.isMockFunction(useAuthStore.getState)) {
+                vi.mocked(useAuthStore.getState).mockReturnValue({
+                    user: null,
+                    session: null,
+                    profile: null,
+                    isLoading: false,
+                    error: null,
+                    navigate: mockNavigateGlobal
+                });
+            }
+            useAuthStore.setState({ user: null, session: null, profile: null, isLoading: false, error: null, navigate: mockNavigateGlobal }, true);
+        });
+        
+        vi.clearAllMocks();
+        resetMockAiApiClient(mockAiApiInstance);
+        
+        await useAiStore.getState().loadAiConfig();
+        
+        expect(mockAiApiInstance.getAiProviders).not.toHaveBeenCalled();
+        expect(mockAiApiInstance.getSystemPrompts).not.toHaveBeenCalled();
+        
+        const state = useAiStore.getState();
+        expect(state.availableProviders).toEqual([]);
+        expect(state.availablePrompts).toEqual([]);
+        expect(state.isConfigLoading).toBe(false);
     });
 });

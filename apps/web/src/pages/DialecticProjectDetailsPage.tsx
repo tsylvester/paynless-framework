@@ -55,10 +55,12 @@ export function DialecticProjectDetailsPage() {
       toast.error("Initial stage for the project has not been determined yet. Please wait a moment and try again.");
       return;
     }
+    const idempotencyKey: string = crypto.randomUUID();
     const result = await startDialecticSession({
       projectId: project.id,
-      selectedModelIds: [],
+      selectedModels: [],
       stageSlug: initialStage.slug,
+      idempotencyKey,
     });
 
     const newSession = result.data;

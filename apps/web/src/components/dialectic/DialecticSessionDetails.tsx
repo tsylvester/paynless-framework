@@ -10,7 +10,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Terminal } from 'lucide-react';
-import { DialecticContribution, DialecticSession, DialecticStore } from '@paynless/types';
+import { DialecticSession, DialecticStore } from '@paynless/types';
 import { StageTabCard } from './StageTabCard';
 import { SessionInfoCard } from './SessionInfoCard';
 import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard'
@@ -71,32 +71,31 @@ export const DialecticSessionDetails: React.FC = () => {
     );
   }
   
-  const contributionsByStage: Record<string, DialecticContribution[]> = {};
-  session.dialectic_contributions?.forEach((contrib: DialecticContribution) => {
-    const stageSlug = contrib.stage;
-    if (stageSlug) {
-      if (!contributionsByStage[stageSlug]) {
-        contributionsByStage[stageSlug] = [];
-      }
-      contributionsByStage[stageSlug].push(contrib);
-    }
-  });
-
   return (
     <div className="p-4 space-y-6">
       <SessionInfoCard />
 
-      <div className="flex space-x-2 overflow-x-auto pb-4">
-        <StageTabCard />
-      </div>
-      
-      {activeContextStage && (
-        <SessionContributionsDisplayCard />
-      )}
+      <section
+        data-testid="dialectic-session-details-layout"
+        aria-label="Dialectic session workspace layout"
+        className="grid gap-6 lg:grid-cols-[minmax(260px,320px)_1fr] xl:grid-cols-[320px_1fr]"
+      >
+        <section
+          data-testid="dialectic-session-stage-column"
+          aria-label="Stage selection"
+          className="space-y-4"
+        >
+          <StageTabCard />
+        </section>
 
-      {Object.keys(contributionsByStage).length === 0 && (
-        <p>No contributions found for this session yet.</p>
-      )}
+        <section
+          data-testid="dialectic-session-document-column"
+          aria-label="Stage document workspace"
+          className="space-y-6"
+        >
+          {activeContextStage && <SessionContributionsDisplayCard />}
+        </section>
+      </section>
     </div>
   );
 }; 

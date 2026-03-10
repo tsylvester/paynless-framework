@@ -1,0 +1,165 @@
+{
+  "content": {
+    "index": [
+      "1. Executive Summary",
+      "2. Pipeline Context",
+      "3. Selection Criteria",
+      "4. Shared Infrastructure",
+      "5. Milestone M1: Foundation & Multi-Tenant Architecture",
+      "6. Milestone M2: Deterministic NLP Capture Engine",
+      "7. Iteration Semantics"
+    ],
+    "pipeline_context": "This Milestone Schema acts as the 'Middle Zoom' artifact, bridging the high-level Master Plan with low-level Implementation Checklists. It decomposes strategic milestones into discrete architectural work nodes. Each node defines a specific module's path, role, and the capabilities it provides to the system, ensuring that developers and automated agents have a clear blueprint for component integration and dependency resolution.",
+    "selection_criteria": "The selection is focused on the **Dependency Frontier**. Milestone M1 (Foundation) has no dependencies and is selected for immediate architectural definition. Milestone M2 (NLP Engine) depends on M1 and is included in this batch to establish the core logic-to-data flow early in the lifecycle. Milestones M3 and M4 are deferred as their dependencies (M2) are currently [ ].",
+    "shared_infrastructure": [
+      "1. [CONFIG] Next.js 14 App Router (src/app) with Edge Runtime preference.",
+      "2. [DB] Supabase client-side and server-side initialization utilities (src/lib/supabase).",
+      "3. [UI] Tailwind CSS and shadcn/ui configuration (src/components/ui).",
+      "4. [BE] Zod-based shared validation schemas (src/types/schemas).",
+      "5. [API] Standardized Server Action response envelope for consistent error handling."
+    ],
+    "milestones": [
+      {
+        "id": "M1",
+        "title": "Foundation & Multi-Tenant Architecture",
+        "status": "[ ]",
+        "objective": "Establish a secure, multi-tenant baseline using Supabase Auth and PostgreSQL Row Level Security (RLS).",
+        "nodes": [
+          {
+            "path": "prisma/schema.prisma",
+            "title": "Relational Schema Definition",
+            "objective": "Define the core Profiles, Tasks, and Notes tables with explicit relationships.",
+            "role": "[DB]",
+            "module": "Persistence",
+            "deps": [],
+            "provides": [
+              "Prisma Client Types",
+              "Database Migrations"
+            ],
+            "directionality": "DB -> BE",
+            "requirements": [
+              "Supabase connection string",
+              "Prisma CLI"
+            ]
+          },
+          {
+            "path": "supabase/migrations/",
+            "title": "RLS Security Policy Deployment",
+            "objective": "Inject raw SQL migrations to enable RLS and define per-user access policies.",
+            "role": "[RLS]",
+            "module": "Security",
+            "deps": [
+              "Relational Schema Definition"
+            ],
+            "provides": [
+              "Multi-tenant Data Isolation",
+              "Secure SELECT/INSERT/UPDATE policies"
+            ],
+            "directionality": "DB -> Infra",
+            "requirements": [
+              "Supabase CLI linked to project"
+            ]
+          },
+          {
+            "path": "src/middleware.ts",
+            "title": "Auth & Session Orchestration",
+            "objective": "Implement edge-side session validation and route protection.",
+            "role": "[BE]",
+            "module": "Identity",
+            "deps": [],
+            "provides": [
+              "Route Guarding",
+              "Server-side Session Context"
+            ],
+            "directionality": "Infra -> BE",
+            "requirements": [
+              "Supabase Auth Environment Variables"
+            ]
+          },
+          {
+            "path": "src/app/(auth)/login/",
+            "title": "Magic Link Flow UI",
+            "objective": "Build the minimalist landing and login interface for identity entry.",
+            "role": "[UI]",
+            "module": "Identity",
+            "deps": [
+              "Auth & Session Orchestration"
+            ],
+            "provides": [
+              "User Login Interface",
+              "Magic Link Triggering"
+            ],
+            "directionality": "UI -> BE",
+            "requirements": [
+              "shadcn/ui Button and Input components"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "M2",
+        "title": "Deterministic NLP Capture Engine",
+        "status": "[ ]",
+        "objective": "Implement the core logic for task extraction from unstructured text using Chrono.js.",
+        "nodes": [
+          {
+            "path": "src/lib/parser/chrono-wrapper.ts",
+            "title": "Chrono.js Integration Layer",
+            "objective": "Wrap Chrono.js with localized logic for deterministic date/time extraction.",
+            "role": "[BE]",
+            "module": "Intelligence",
+            "deps": [],
+            "provides": [
+              "parseContent() function",
+              "Temporal Metadata Extraction"
+            ],
+            "directionality": "Logic -> API",
+            "requirements": [
+              "chrono-node npm package"
+            ]
+          },
+          {
+            "path": "src/app/actions/tasks.ts",
+            "title": "Task Life-cycle Server Actions",
+            "objective": "Create type-safe functions for task persistence with RLS enforcement.",
+            "role": "[API]",
+            "module": "Logic",
+            "deps": [
+              "Relational Schema Definition",
+              "Chrono.js Integration Layer"
+            ],
+            "provides": [
+              "createTask() Server Action",
+              "Optimistic Update Handlers"
+            ],
+            "directionality": "BE -> DB",
+            "requirements": [
+              "Zod schemas for Task inputs"
+            ]
+          },
+          {
+            "path": "src/components/nlp/capture-input.tsx",
+            "title": "NLP Capture UI Component",
+            "objective": "Build the high-velocity input field with real-time feedback.",
+            "role": "[UI]",
+            "module": "Capture",
+            "deps": [
+              "Task Life-cycle Server Actions"
+            ],
+            "provides": [
+              "Deterministic Input Field",
+              "Visual Confirmation Badge logic"
+            ],
+            "directionality": "UI -> Logic",
+            "requirements": [
+              "Lucide React icons",
+              "useOptimistic React hook"
+            ]
+          }
+        ]
+      }
+    ],
+    "iteration_semantics": "This schema replaces any prior architectural drafts for the selected milestones. It serves as the single source of truth for the 'Middle Zoom' stage. Subsequent iterations will refine these nodes based on implementation feedback, while maintaining the specified module boundaries and role assignments.",
+    "executive_summary": "The Milestone Schema for the Hello World Productivity Suite establishes a robust path through Phase 1 (Foundation) and Phase 2 (Intelligence). Key architectural decisions include prioritizing PostgreSQL RLS for multi-tenant isolation and implementing a deterministic parsing engine via Chrono.js within Next.js Server Actions. By batching M1 and M2, we ensure that the security layer is validated by the actual logic tier (Task Creation) immediately, reducing architectural drift and ensuring a 'Secure-by-Design' utility loop."
+  }
+}

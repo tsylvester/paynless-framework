@@ -4,9 +4,10 @@ import type { ApiClient } from './apiClient';
 import type {
   ApiResponse,
   DialecticSession,
-  ApiError as ApiErrorType,
+  ApiError,
   GetSessionDetailsResponse,
   DialecticStage,
+  AssembledPrompt,
 } from '@paynless/types';
 
 // Mock the base ApiClient consistent with other API client tests
@@ -67,14 +68,14 @@ describe('DialecticApiClient - Session Methods', () => {
       // template_stage_id: 'original-template-stage-id' // Removed
       // Add properties that ARE part of DialecticStage (Database['public']['Tables']['dialectic_stages']['Row'])
       // For example, if 'expected_output_artifacts' and 'input_artifact_rules' are required and are of type Json:
-      expected_output_artifacts: {}, // or null if nullable, or valid Json
-      input_artifact_rules: {}, // or null if nullable, or valid Json
+      expected_output_template_ids: [],
+      active_recipe_instance_id: null,
+      recipe_template_id: null
     };
 
-    it('should call apiClient.post with correct parameters for getSessionDetails', async () => {
-      // Mock with the new GetSessionDetailsResponse structure
+    it('should call apiClient.post with sessionId only when skipSeedPrompt is not provided', async () => {
       mockApiClientPost.mockResolvedValueOnce({ 
-        data: { session: mockSessionData, currentStageDetails: mockStageData }, 
+        data: { session: mockSessionData, currentStageDetails: mockStageData, activeSeedPrompt: null }, 
         error: null, 
         status: 200 
       });
@@ -90,14 +91,93 @@ describe('DialecticApiClient - Session Methods', () => {
       );
     });
 
-    it('should return session data on successful fetch', async () => {
-      // Updated expectedResponse to use GetSessionDetailsResponse
-      const mockApiResponseData: GetSessionDetailsResponse = { 
-        session: mockSessionData, 
-        currentStageDetails: mockStageData 
+    it('should call apiClient.post with skipSeedPrompt true when skipSeedPrompt parameter is true', async () => {
+      mockApiClientPost.mockResolvedValueOnce({ 
+        data: { session: mockSessionData, currentStageDetails: mockStageData, activeSeedPrompt: null }, 
+        error: null, 
+        status: 200 
+      });
+
+      await dialecticApiClient.getSessionDetails(sessionId, true);
+
+      expect(mockApiClientPost).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'getSessionDetails',
+          payload: { sessionId, skipSeedPrompt: true },
+        }
+      );
+    });
+
+    it('should call apiClient.post with skipSeedPrompt false when skipSeedPrompt parameter is false', async () => {
+      mockApiClientPost.mockResolvedValueOnce({ 
+        data: { session: mockSessionData, currentStageDetails: mockStageData, activeSeedPrompt: null }, 
+        error: null, 
+        status: 200 
+      });
+
+      await dialecticApiClient.getSessionDetails(sessionId, false);
+
+      expect(mockApiClientPost).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'getSessionDetails',
+          payload: { sessionId, skipSeedPrompt: false },
+        }
+      );
+    });
+
+    it('should return session data with activeSeedPrompt when skipSeedPrompt is false', async () => {
+      const mockActiveSeedPrompt: AssembledPrompt = {
+        promptContent: 'Mock seed prompt content',
+        source_prompt_resource_id: 'resource-123',
       };
       const expectedResponse: ApiResponse<GetSessionDetailsResponse> = { 
-        data: mockApiResponseData, 
+        data: { session: mockSessionData, currentStageDetails: mockStageData, activeSeedPrompt: mockActiveSeedPrompt }, 
+        error: undefined, 
+        status: 200 
+      };
+      mockApiClientPost.mockResolvedValueOnce(expectedResponse);
+
+      const result = await dialecticApiClient.getSessionDetails(sessionId, false);
+
+      expect(mockApiClientPost).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'getSessionDetails',
+          payload: { sessionId, skipSeedPrompt: false },
+        }
+      );
+      expect(result.data?.activeSeedPrompt).toEqual(mockActiveSeedPrompt);
+    });
+
+    it('should return session data with activeSeedPrompt null when skipSeedPrompt is true', async () => {
+      const expectedResponse: ApiResponse<GetSessionDetailsResponse> = { 
+        data: { session: mockSessionData, currentStageDetails: mockStageData, activeSeedPrompt: null }, 
+        error: undefined, 
+        status: 200 
+      };
+      mockApiClientPost.mockResolvedValueOnce(expectedResponse);
+
+      const result = await dialecticApiClient.getSessionDetails(sessionId, true);
+
+      expect(mockApiClientPost).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'getSessionDetails',
+          payload: { sessionId, skipSeedPrompt: true },
+        }
+      );
+      expect(result.data?.activeSeedPrompt).toBeNull();
+    });
+
+    it('should return session data with activeSeedPrompt when skipSeedPrompt is not provided', async () => {
+      const mockActiveSeedPrompt: AssembledPrompt = {
+        promptContent: 'Default behavior seed prompt',
+        source_prompt_resource_id: 'resource-789',
+      };
+      const expectedResponse: ApiResponse<GetSessionDetailsResponse> = { 
+        data: { session: mockSessionData, currentStageDetails: mockStageData, activeSeedPrompt: mockActiveSeedPrompt }, 
         error: undefined, 
         status: 200 
       };
@@ -105,11 +185,11 @@ describe('DialecticApiClient - Session Methods', () => {
 
       const result = await dialecticApiClient.getSessionDetails(sessionId);
 
-      expect(result).toEqual(expectedResponse);
+      expect(result.data?.activeSeedPrompt).toEqual(mockActiveSeedPrompt);
     });
 
     it('should return an error if apiClient.post returns an error', async () => {
-      const apiError: ApiErrorType = { message: 'Failed to fetch session', code: 'API_ERROR' };
+      const apiError: ApiError = { message: 'Failed to fetch session', code: 'API_ERROR' };
       // Return type for error remains ApiResponse<GetSessionDetailsResponse> but data is undefined
       const expectedResponse: ApiResponse<GetSessionDetailsResponse> = { 
         data: undefined, 

@@ -1,9 +1,11 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { DashboardPage } from './Chat';
-import { useAuthStore, useWalletStore } from '@paynless/store';
+import { DashboardPage } from './Dashboard.tsx';
+import { useAuthStore, useWalletStore, useAiStore, useDialecticStore } from '@paynless/store';
 import type { User, UserProfile, TokenWallet } from '@paynless/types';
+import { selectDialecticProjects, selectIsLoadingProjects } from '@paynless/store';
 
 // --- Mocks ---
 vi.mock('react-router-dom', async (importOriginal) => {
@@ -11,13 +13,24 @@ vi.mock('react-router-dom', async (importOriginal) => {
   return {
     ...actual,
     Navigate: ({ to }: { to: string }) => <div data-testid="navigate">Redirecting to {to}</div>,
-    Link: ({ to, children }: { to: string, children: React.ReactNode }) => <a href={to}>{children}</a>,
+    Link: React.forwardRef<HTMLAnchorElement, { to: string; children: React.ReactNode }>(
+      ({ to, children, ...props }, ref) => (
+        <a href={to} {...props} ref={ref}>
+          {children}
+        </a>
+      ),
+    ),
   };
 });
 
 vi.mock('@paynless/store', () => ({
   useAuthStore: vi.fn(),
   useWalletStore: vi.fn(),
+  useAiStore: vi.fn(),
+  useDialecticStore: vi.fn(),
+  selectDialecticProjects: vi.fn(),
+  selectIsLoadingProjects: vi.fn(),
+  selectActiveChatWalletInfo: vi.fn(),
 }));
 
 vi.mock('../components/dialectic/CreateDialecticProjectForm', () => ({
@@ -43,14 +56,20 @@ const mockProfile: UserProfile = {
   role: 'admin',
   created_at: new Date('2023-01-01T00:00:00Z').toISOString(),
   updated_at: new Date('2023-01-02T00:00:00Z').toISOString(),
+  chat_context: {},
+  has_seen_welcome_modal: false,
+  is_subscribed_to_newsletter: false,
+  last_selected_org_id: null,
+  profile_privacy_setting: 'public',
 };
 
 const mockWallet: TokenWallet = {
     walletId: 'wallet-123',
-    balance: 100000,
-    ownerId: 'user-abc',
-    walletType: 'personal',
-    lastTransactionDate: new Date().toISOString(),
+    balance: '100000',
+    userId: 'user-abc',
+    currency: 'AI_TOKEN',
+    createdAt: new Date(),
+    updatedAt: new Date(),
 };
 
 // Helper to render with router
@@ -73,6 +92,22 @@ describe('DashboardPage Component', () => {
       isLoadingPersonalWallet: false,
       personalWalletError: null,
       loadPersonalWallet: vi.fn(),
+      activeChatWalletInfo: { balance: mockWallet.balance },
+    });
+    vi.mocked(useAiStore).mockReturnValue({
+      chats: [],
+      loadChatHistory: vi.fn(),
+    });
+    vi.mocked(useDialecticStore).mockImplementation((selector) => {
+      if (selector === selectDialecticProjects) {
+        return [];
+      }
+      if (selector === selectIsLoadingProjects) {
+        return false;
+      }
+      return {
+        fetchDialecticProjects: vi.fn(),
+      };
     });
   });
 
@@ -90,37 +125,40 @@ describe('DashboardPage Component', () => {
 
   it('should render dashboard card titles', () => {
     renderWithRouter(<DashboardPage />);
-    expect(screen.getByRole('heading', { name: /Account Summary/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Recent Activity/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Quick Actions/i })).toBeInTheDocument();
-  });
+    const tokensCard = screen.getByText(/Tokens Remaining/i).closest('div[data-slot="card"]');
+    const chatsCard = screen.getByText(/Active Chats/i).closest('div[data-slot="card"]');
+    const projectsCardTitle = screen.getAllByText(/Projects/i).find(el => el.closest('div[data-slot="card-title"]'));
+    expect(projectsCardTitle).toBeInTheDocument();
+    const projectsCard = projectsCardTitle?.closest('div[data-slot="card"]');
 
-  describe('Display Role Logic', () => {
-    it('should display profile role if available', () => {
-      renderWithRouter(<DashboardPage />);
-      expect(screen.getByText(/Role: admin/i)).toBeInTheDocument();
-    });
 
-    it('should display default role "user" if profile and user roles are missing', () => {
-      const profileWithoutRole = { ...mockProfile, role: null };
-      vi.mocked(useAuthStore).mockReturnValue({ user: { ...mockUser, role: undefined }, profile: profileWithoutRole, isLoading: false });
-      renderWithRouter(<DashboardPage />);
-      expect(screen.getByText(/Role: user/i)).toBeInTheDocument();
-    });
+    expect(tokensCard).toBeInTheDocument();
+    expect(chatsCard).toBeInTheDocument();
+    expect(projectsCard).toBeInTheDocument();
   });
 
   it('should render account summary details correctly', () => {
     renderWithRouter(<DashboardPage />);
-    expect(screen.getByText(/User ID: user-abc/i)).toBeInTheDocument();
-    expect(screen.getByText(/Email: test@example.com/i)).toBeInTheDocument();
-    expect(screen.getByText(/Role: admin/i)).toBeInTheDocument();
-    expect(screen.getByText(/Created: \d{1,2}\/\d{1,2}\/\d{4}/i)).toBeInTheDocument();
+    expect(screen.getByText(/Welcome back, Testy/i)).toBeInTheDocument();
+    expect(screen.getByText(/Tokens Remaining/i)).toBeInTheDocument();
+    expect(screen.getByText(/100,000/i)).toBeInTheDocument();
   });
 
-  it('should render the WalletSelector and CreateDialecticProjectForm', () => {
+  it('should render quick actions', () => {
     renderWithRouter(<DashboardPage />);
-    expect(screen.getByTestId('wallet-selector')).toBeInTheDocument();
-    expect(screen.getByText(/tokens remaining/i)).toBeInTheDocument();
-    expect(screen.getByTestId('create-dialectic-form')).toBeInTheDocument();
+    const quickActionsCard = screen.getByText(/Quick Actions/i).closest('div[data-slot="card"]');
+    expect(quickActionsCard).toBeInTheDocument();
+
+    function isHTMLElement(element: Element | null): element is HTMLElement {
+      return element instanceof HTMLElement;
+    }
+
+    if (isHTMLElement(quickActionsCard)) {
+      const quickActions = within(quickActionsCard);
+      expect(quickActions.getByText(/Start Chat/i)).toBeInTheDocument();
+      expect(quickActions.getByText(/New Project/i)).toBeInTheDocument();
+      expect(quickActions.getByText(/Organizations/i)).toBeInTheDocument();
+      expect(quickActions.getByText(/Upgrade/i)).toBeInTheDocument();
+    }
   });
 }); 

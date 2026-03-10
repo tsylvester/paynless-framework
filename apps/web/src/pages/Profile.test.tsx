@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach, SpyInstance } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { ProfilePage } from './Profile';
-import { useAuthStore } from '@paynless/store';
-import type { UserProfile } from '@paynless/types';
+import {
+	mockSetAuthError,
+	mockSetAuthIsLoading,
+	mockSetAuthProfile,
+	resetAuthStoreMock,
+} from '../mocks/authStore.mock';
+import { mockUserProfile } from '../mocks/profile.mock';
 
 // Mock child components
 vi.mock('../components/profile/EditName', () => ({ 
@@ -28,11 +33,10 @@ vi.mock('../components/common/CardSkeleton', () => ({
   )
 }));
 
-// Mock Zustand store
-const mockUpdateProfile = vi.fn();
-vi.mock('@paynless/store', () => ({
-  useAuthStore: vi.fn(),
-}));
+vi.mock('@paynless/store', async () => {
+  const authMock = await import('../mocks/authStore.mock');
+  return { useAuthStore: authMock.useAuthStore };
+});
 
 // Mock logger (if used directly in ProfilePage, otherwise can be removed if only ErrorBoundary uses it)
 vi.mock('@paynless/utils', () => ({
@@ -43,29 +47,6 @@ vi.mock('@paynless/utils', () => ({
     debug: vi.fn(),
   },
 }));
-
-// Mock profile data
-const mockUserProfile: UserProfile = {
-  id: 'user-123',
-  // name: 'Initial Name', // Not part of UserProfile type
-  // email: 'initial@example.com', // Not part of UserProfile type, comes from auth.user
-  first_name: 'Initial',
-  last_name: 'User',
-  role: 'user',
-  created_at: 'somedate',
-  updated_at: 'somedate',
-  chat_context: {},
-  has_seen_welcome_modal: false,
-  is_subscribed_to_newsletter: false,
-  last_selected_org_id: null,
-  profile_privacy_setting: 'public',
-  // avatar_url: '', // Ensure all fields from type are present or optional
-  // username: 'initialuser',
-  // onboarded: true,
-  // org_id: null,
-  // user_metadata: {}, 
-  // profile_privacy_setting: 'private', // Ensure this exists if used
-};
 
 const renderProfilePage = () => {
   return render(<ProfilePage />);
@@ -86,19 +67,13 @@ describe('ProfilePage Component', () => {
     });
 
     vi.useFakeTimers();
-    vi.resetModules(); // Add this to ensure fresh modules and mocks for each test
-    vi.resetAllMocks(); // Reset all mocks, including useAuthStore
+    vi.resetModules();
+    vi.clearAllMocks();
 
-    // Default successful load for useAuthStore (will be re-applied after resetModules)
-    vi.mocked(useAuthStore).mockReturnValue({
-      profile: mockUserProfile,
-      isLoading: false,
-      error: null,
-      updateProfile: mockUpdateProfile, // if ProfilePage itself calls it
-      // Ensure all properties accessed by ProfilePage or its direct children (if not mocked out) are here
-      user: { email: 'test@example.com' }, // Add mock user if EditEmail or others need it from authStore
-      updateUser: vi.fn(), 
-    }); // Use `as any` carefully or provide a more complete mock type
+    resetAuthStoreMock();
+    mockSetAuthProfile(mockUserProfile);
+    mockSetAuthIsLoading(false);
+    mockSetAuthError(null);
   });
 
   afterEach(() => {
@@ -108,11 +83,9 @@ describe('ProfilePage Component', () => {
   });
 
   it('should render loading state initially with skeletons', () => {
-    vi.mocked(useAuthStore).mockReturnValue({
-      profile: null,
-      isLoading: true,
-      error: null,
-    });
+    mockSetAuthProfile(null);
+    mockSetAuthIsLoading(true);
+    mockSetAuthError(null);
     renderProfilePage();
     const skeletonContainer = screen.getByTestId('profile-grid-skeleton-container');
     expect(skeletonContainer).toBeInTheDocument();
@@ -126,11 +99,9 @@ describe('ProfilePage Component', () => {
 
   it('should render error state if profile loading fails with authError', () => {
     const testError = new Error('Network request failed');
-    vi.mocked(useAuthStore).mockReturnValue({
-      profile: null,
-      isLoading: false,
-      error: testError,
-    });
+    mockSetAuthProfile(null);
+    mockSetAuthIsLoading(false);
+    mockSetAuthError(testError);
     renderProfilePage();
     expect(screen.getByText('Could not load Profile Page')).toBeInTheDocument(); // Card Title
     expect(screen.getByText(`Profile data could not be loaded. ${testError.message}`)).toBeInTheDocument();
@@ -138,11 +109,9 @@ describe('ProfilePage Component', () => {
   });
 
   it('should render error state if profile is null even without a specific authError message', () => {
-    vi.mocked(useAuthStore).mockReturnValue({
-      profile: null,
-      isLoading: false,
-      error: null, // No specific error object, but profile is null
-    });
+    mockSetAuthProfile(null);
+    mockSetAuthIsLoading(false);
+    mockSetAuthError(null);
     renderProfilePage();
     expect(screen.getByText('Profile Unavailable')).toBeInTheDocument(); // Card Title
     expect(screen.getByText('Profile data is unavailable. Please ensure you are logged in and try refreshing the page.')).toBeInTheDocument();
@@ -171,15 +140,9 @@ describe('ProfilePage Component', () => {
     // Dynamically import ProfilePage AFTER the mock is set up
     const { ProfilePage: ProfilePageWithMockedError } = await import('./Profile');
 
-    // Reset useAuthStore to a successful state for this specific test run
-    vi.mocked(useAuthStore).mockReturnValue({
-      profile: mockUserProfile,
-      isLoading: false,
-      error: null, 
-      user: { email: 'test@example.com' },
-      updateProfile: mockUpdateProfile, // ensure all needed functions are present
-      updateUser: vi.fn() 
-    });
+    mockSetAuthProfile(mockUserProfile);
+    mockSetAuthIsLoading(false);
+    mockSetAuthError(null);
 
     render(<ProfilePageWithMockedError />);
 

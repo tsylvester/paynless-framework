@@ -66,6 +66,7 @@ export async function updateSeedFile() {
       "provider",
       "is_enabled",
       "is_default_embedding",
+      "is_default_generation",
     ];
 
     const tuples: string[] = [];

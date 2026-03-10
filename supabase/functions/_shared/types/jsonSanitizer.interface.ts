@@ -1,0 +1,20 @@
+/**
+ * Represents the result of sanitizing JSON content.
+ * 
+ * This type establishes the contract for the sanitization utility and enables
+ * consumers to log sanitization events without exposing implementation details.
+ */
+export interface JsonSanitizationResult {
+    /** The sanitized JSON string content. */
+    sanitized: string;
+    /** A flag indicating whether any sanitization operations were performed (removal of wrappers, trimming, etc.). */
+    wasSanitized: boolean;
+    /** A flag indicating whether structural fixes were applied (adding missing braces/brackets). */
+    wasStructurallyFixed: boolean;
+    /** A flag indicating whether duplicate keys were detected and resolved. */
+    hasDuplicateKeys: boolean;
+    /** Unique key names that were found duplicated and merged. */
+    duplicateKeysResolved: string[];
+    /** The original content length before sanitization for debugging/logging purposes. */
+    originalLength: number;
+}

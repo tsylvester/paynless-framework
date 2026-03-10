@@ -4,3 +4,4 @@ export * from './ai-parsers';
 export * from './stringUtils';
 export * from './pendingAction';
 export * from './type_guards';
+export * from './dialecticUtils';

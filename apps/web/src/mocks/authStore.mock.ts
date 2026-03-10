@@ -9,6 +9,8 @@ export type MockedUseAuthStoreHook = (<TResult>(
     setState: (newState: Partial<AuthStore>) => void;
 };
 
+// Reference to the real auth store for integration test sync
+let _realAuthStore: { setState: (state: Partial<AuthStore>) => void } | null = null;
 
 // Use the full AuthStore type for the internal state
 let internalMockAuthStoreState: AuthStore;
@@ -52,6 +54,7 @@ const initializeMockAuthState = (): AuthStore => ({
   updateProfileWithAvatar: vi.fn().mockResolvedValue(undefined),
   updateSubscriptionAndDismissWelcome: vi.fn(),
   toggleNewsletterSubscription: vi.fn().mockResolvedValue(undefined),
+  updatePassword: vi.fn().mockResolvedValue(undefined),
   
 });
 
@@ -60,6 +63,25 @@ internalMockAuthStoreState = initializeMockAuthState();
 
 // Getter for the current state
 export const internalMockAuthStoreGetState = (): AuthStore => internalMockAuthStoreState;
+
+/**
+ * Captures the real useAuthStore instance (from importOriginal in vi.mock).
+ * Call this in vi.mock factories that use importOriginal for @paynless/store.
+ * After calling this, every mockSetAuthUser / setState on the mock will
+ * also push state to the real store that dialecticStore.ts reads internally.
+ * 
+ * @example
+ * vi.mock('@paynless/store', async (importOriginal) => {
+ *   const actual = await importOriginal<typeof import('@paynless/store')>();
+ *   captureRealAuthStore(actual.useAuthStore);
+ *   return { ...actual, useAuthStore: mockedUseAuthStoreHookLogic };
+ * });
+ */
+export const captureRealAuthStore = (
+  realStore: { setState: (state: Partial<AuthStore>) => void },
+): void => {
+  _realAuthStore = realStore;
+};
 
 // The main hook logic, now using AuthStore
 export const mockedUseAuthStoreHookLogic: MockedUseAuthStoreHook = <TResult>(
@@ -77,6 +99,10 @@ mockedUseAuthStoreHookLogic.setState = (newState: Partial<AuthStore>) => {
         ...internalMockAuthStoreState,
         ...newState,
     };
+    // Sync to real auth store if captured (for integration tests using real dialectic store)
+    if (_realAuthStore) {
+        _realAuthStore.setState(newState);
+    }
 };
 
 // --- Helper Functions for Test Setup (Update to modify the new internal state structure) ---
@@ -132,6 +158,8 @@ export const mockUpdateProfile = (profile: UserProfile) => {
 export const resetAuthStoreMock = () => {
   // Re-initialize to get fresh vi.fn() mocks for actions and reset state
   internalMockAuthStoreState = initializeMockAuthState();
+  // Clear the captured real store reference
+  _realAuthStore = null;
 };
 
 // mockAuthStoreActions is no longer strictly necessary if state includes actions,

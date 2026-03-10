@@ -1,7 +1,16 @@
 import '@testing-library/jest-dom/vitest';
 import { vi, beforeEach, afterEach, afterAll } from 'vitest';
 // Import the official mock creator from the api package using a relative path
-import { createMockSupabaseClient } from '../../../../packages/api/src/mocks/supabase.mock.ts'; 
+import { createMockSupabaseClient } from '../../../../packages/api/src/mocks/supabase.mock.ts';
+import {
+  mockStripeGetSubscriptionPlans,
+  mockStripeGetUserSubscription,
+  mockStripeCreatePortalSession,
+  mockStripeCancelSubscription,
+  mockStripeResumeSubscription,
+  mockStripeGetUsageMetrics,
+  resetStripeMocks,
+} from '../../../../packages/api/src/mocks/stripe.mock';
 import { cleanup } from '@testing-library/react';
 
 // Polyfill for PointerEvent
@@ -28,7 +37,6 @@ const ResizeObserverMock = vi.fn(() => ({
 }));
 vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 
-// The core mocked 'api' object that stores will use
 const mockedApiObject = {
   get: vi.fn(),
   post: vi.fn(),
@@ -63,9 +71,26 @@ const mockedApiObject = {
     getNotifications: vi.fn().mockResolvedValue({ data: [], error: null }),
     // ... mock notification methods
   }),
-  billing: () => ({
-    createCheckoutSession: vi.fn().mockResolvedValue({ data: null, error: null }),
-    // ... mock billing methods
+  billing: vi.fn(() => ({
+    getSubscriptionPlans: mockStripeGetSubscriptionPlans,
+    getUserSubscription: mockStripeGetUserSubscription,
+    createPortalSession: mockStripeCreatePortalSession,
+    cancelSubscription: mockStripeCancelSubscription,
+    resumeSubscription: mockStripeResumeSubscription,
+    getUsageMetrics: mockStripeGetUsageMetrics,
+  })),
+  wallet: vi.fn(() => ({
+    getWalletInfo: vi.fn().mockResolvedValue({
+      data: { walletId: 'test-wallet', balance: '0' },
+      error: null,
+    }),
+  })),
+  dialectic: () => ({
+    getStageDocumentFeedback: vi.fn().mockResolvedValue({ data: [], error: null }),
+    submitStageDocumentFeedback: vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
+    getProjectResourceContent: vi.fn().mockResolvedValue({ data: { content: '' }, error: null }),
+    getAllStageProgress: vi.fn().mockResolvedValue({ data: [], error: null }),
+    listStageDocuments: vi.fn().mockResolvedValue({ data: [], error: null }),
   }),
 };
 
@@ -115,9 +140,14 @@ vi.mock('@paynless/utils', async (importOriginal) => {
 // Global test hooks
 beforeEach(() => {
   vi.clearAllMocks();
-  // Re-apply the mock implementation for getSupabaseClient after clearAllMocks
-  // because clearAllMocks also clears mock implementations.
+  resetStripeMocks();
   mockedApiObject.getSupabaseClient.mockImplementation(createMockSupabaseClient);
+  mockedApiObject.wallet.mockImplementation(() => ({
+    getWalletInfo: vi.fn().mockResolvedValue({
+      data: { walletId: 'test-wallet', balance: '0' },
+      error: null,
+    }),
+  }));
 });
 
 afterEach(() => {

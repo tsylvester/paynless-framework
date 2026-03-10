@@ -1,13 +1,19 @@
-import { 
+import {
     ChatContextPreferences,
     UserRole,
-    AiProvidersApiResponse, // Correctly from @paynless/types
-    SystemPromptsApiResponse, // Correctly from @paynless/types
+    AiProvidersApiResponse,
+    SystemPromptsApiResponse,
     DialecticContribution,
     ApiError,
     ChatRole,
     WalletDecisionOutcome,
     DialecticNotificationTypes,
+    AssembledPrompt,
+    StageRenderedDocumentChecklistEntry,
+    DagProgressDto,
+    StepProgressDto,
+    GetAllStageProgressResponse,
+    DialecticRecipeEdge,
 } from '@paynless/types';
 
 export function isUserRole(role: unknown): role is UserRole {
@@ -59,6 +65,17 @@ export function isApiError(obj: unknown): obj is ApiError {
     );
 }
 
+// Type guard for AssembledPrompt
+export function isAssembledPrompt(obj: unknown): obj is AssembledPrompt {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+    return (
+        'promptContent' in obj && typeof obj['promptContent'] === 'string' &&
+        'source_prompt_resource_id' in obj && typeof obj['source_prompt_resource_id'] === 'string'
+    );
+}
+
 export function isAiProvidersApiResponse(obj: unknown): obj is AiProvidersApiResponse {
     return (
         typeof obj === 'object' &&
@@ -106,12 +123,87 @@ export function isOrgWalletUnavailableByPolicy(x: unknown): x is Extract<WalletD
   return typeof x === 'object' && x !== null && 'outcome' in x && x.outcome === 'org_wallet_not_available_policy_org' && hasOrgId(x);
 }
 
+export function isStageRenderedDocumentChecklistEntry(
+    doc: unknown,
+): doc is StageRenderedDocumentChecklistEntry {
+    if (typeof doc !== 'object' || doc === null) {
+        return false;
+    }
+    if (!('documentKey' in doc) || typeof doc.documentKey !== 'string' || doc.documentKey.length === 0) return false;
+    if (!('modelId' in doc) || typeof doc.modelId !== 'string' || doc.modelId.length === 0) return false;
+    if (!('jobId' in doc) || typeof doc.jobId !== 'string' || doc.jobId.length === 0) return false;
+    if (!('latestRenderedResourceId' in doc) || typeof doc.latestRenderedResourceId !== 'string' || doc.latestRenderedResourceId.length === 0) return false;
+    if (!('status' in doc) || typeof doc.status !== 'string') return false;
+    const validStatus =
+        doc.status === 'idle' ||
+        doc.status === 'generating' ||
+        doc.status === 'retrying' ||
+        doc.status === 'failed' ||
+        doc.status === 'completed' ||
+        doc.status === 'continuing' ||
+        doc.status === 'not_started';
+    if (!validStatus) return false;
+    return true;
+}
+
+export function isDagProgressDto(obj: unknown): obj is DagProgressDto {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+    const o: Record<string, unknown> = Object.fromEntries(Object.entries(obj));
+    return typeof o['completedStages'] === 'number' && typeof o['totalStages'] === 'number';
+}
+
+const UNIFIED_PROJECT_STATUS_VALUES: readonly string[] = ['not_started', 'in_progress', 'completed', 'failed'];
+
+export function isStepProgressDto(obj: unknown): obj is StepProgressDto {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+    const o: Record<string, unknown> = Object.fromEntries(Object.entries(obj));
+    const stepKey = o['stepKey'];
+    const status = o['status'];
+    return typeof stepKey === 'string' && stepKey.length > 0 && typeof status === 'string' && UNIFIED_PROJECT_STATUS_VALUES.includes(status);
+}
+
+export function isGetAllStageProgressResponse(obj: unknown): obj is GetAllStageProgressResponse {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+    const o: Record<string, unknown> = Object.fromEntries(Object.entries(obj));
+    return isDagProgressDto(o['dagProgress']) && Array.isArray(o['stages']);
+}
+
+export function isDialecticRecipeEdge(obj: unknown): obj is DialecticRecipeEdge {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+    const o: Record<string, unknown> = Object.fromEntries(Object.entries(obj));
+    const fromStepId = o['from_step_id'];
+    const toStepId = o['to_step_id'];
+    return typeof fromStepId === 'string' && fromStepId.trim() !== '' && typeof toStepId === 'string' && toStepId.trim() !== '';
+}
+
 // Dialectic lifecycle event type guard
 // Note: we intentionally avoid enumerating all values to keep this future-proof.
 
 export function isDialecticLifecycleEventType(x: unknown): x is DialecticNotificationTypes {
   if (typeof x !== 'string' || x.length === 0) return false;
   if (x === 'dialectic_progress_update') return true;
+
+  if (
+    x === 'planner_started'
+    || x === 'document_started'
+    || x === 'document_chunk_completed'
+    || x === 'document_completed'
+    || x === 'execute_started'
+    || x === 'execute_chunk_completed'
+    || x === 'execute_completed'
+    || x === 'render_completed'
+    || x === 'job_failed'
+  ) {
+    return true;
+  }
 
   const cgPrefix = 'contribution_generation_';
   if (x.startsWith(cgPrefix)) {
@@ -120,7 +212,8 @@ export function isDialecticLifecycleEventType(x: unknown): x is DialecticNotific
       || suffix === 'retrying'
       || suffix === 'failed'
       || suffix === 'complete'
-      || suffix === 'continued';
+      || suffix === 'continued'
+      || suffix === 'paused_nsf';
   }
 
   const dcPrefix = 'dialectic_contribution_';

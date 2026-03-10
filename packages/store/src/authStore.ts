@@ -368,6 +368,35 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         }
       },
 
+      updatePassword: async (newPassword: string): Promise<boolean> => {
+        set({ error: null, isLoading: true });
+
+        try {
+          const supabase = api.getSupabaseClient();
+          if (!supabase) {
+            throw new Error('Supabase client not available');
+          }
+
+          const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+          if (error) {
+            throw error;
+          }
+
+          logger.info('[AuthStore] Password updated successfully.');
+          set({ error: null, isLoading: false });
+          return true;
+        } catch (error) {
+          const finalError =
+            error instanceof Error ? error : new Error('Unknown error updating password');
+          logger.error('[AuthStore] updatePassword action failed:', {
+            message: finalError.message,
+          });
+          set({ error: finalError, isLoading: false });
+          return false;
+        }
+      },
+
       updateEmail: async (newEmail: string): Promise<boolean> => {
         set({ error: null })
         const token = get().session?.access_token
@@ -448,9 +477,15 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         return false;
       },
 
-      handleOAuthLogin: async (_provider: 'google' | 'github'): Promise<void> => {
-        // Implementation for handling OAuth login
-        // This is a placeholder and should be implemented
+      handleOAuthLogin: async (provider: 'google' | 'github'): Promise<void> => {
+        switch (provider) {
+          case 'google':
+            return get().loginWithGoogle();
+          case 'github':
+            throw new Error('GitHub OAuth not implemented yet');
+          default:
+            throw new Error(`Unsupported OAuth provider: ${provider}`);
+        }
       },
 
       updateProfileWithAvatar: async (

@@ -1,0 +1,19 @@
+{
+  "thesis_document": "technical_approach",
+  "risk_document": "risk_register",
+  "dependency_document": "dependency_map",
+  "architecture": "",
+  "components": [],
+  "data": "",
+  "deployment": "",
+  "sequencing": "",
+  "architecture_alignment": [],
+  "risk_mitigations": [],
+  "dependency_resolution": [],
+  "open_questions": [],
+  "lineage_key": "<derived from thesis artifact>",
+  "source_model_slug": "<derived from thesis artifact>",
+  "match_keys": [
+    "<derived from antithesis reviewer or reviewer combination>"
+  ]
+}

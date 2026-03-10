@@ -1,0 +1,22 @@
+{
+  "thesis_document": "success_metrics",
+  "critique_document": "business_case_critique",
+  "comparison_signal": "comparison_vector",
+  "outcome_alignment": "",
+  "north_star_metric": "",
+  "primary_kpis": [],
+  "leading_indicators": [],
+  "lagging_indicators": [],
+  "guardrails": [],
+  "measurement_plan": "",
+  "risk_signals": [],
+  "next_steps": "",
+  "metric_alignment": [],
+  "tradeoffs": [],
+  "validation_checks": [],
+  "lineage_key": "<derived from thesis artifact>",
+  "source_model_slug": "<derived from thesis artifact>",
+  "match_keys": [
+    "<derived from antithesis reviewer or reviewer combination>"
+  ]
+}

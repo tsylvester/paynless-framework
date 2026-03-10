@@ -20,6 +20,7 @@ import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { ChatApiRequestSchema } from './zodSchema.ts';
 import { handlePostRequest } from './handlePostRequest.ts';
+import { handleStreamingRequest } from './handleStreamingRequest.ts';
 import { prepareChatContext } from './prepareChatContext.ts';
 import { handleNormalPath } from './handleNormalPath.ts';
 import { handleRewindPath } from './handleRewindPath.ts';
@@ -110,19 +111,31 @@ export async function handler(
             const requestBody = parsedResult.data;
             logger.info('Received chat POST request (validated):', { body: requestBody });
 
-            // Pass the adminClient to handlePostRequest if it needs it
-            if (!effectiveDeps.handlePostRequest) {
-                throw new Error('handlePostRequest is not defined in the dependencies.');
-            }
-            const result = await effectiveDeps.handlePostRequest(requestBody, userClient, userId, { ...effectiveDeps, tokenWalletService });
+            // Check if streaming is requested
+            const acceptHeader = req.headers.get('Accept');
+            const isStreamingRequest = acceptHeader?.includes('text/event-stream') || requestBody.stream === true;
 
-            if (result && 'error' in result && result.error) {
-                const { message, status } = result.error;
-                logger.warn('handlePostRequest returned an error.', { message, status: status || 500 });
-                return createErrorResponse(message, status || 500, req);
-            }
+            if (isStreamingRequest) {
+                // Handle SSE streaming
+                if (!effectiveDeps.handleStreamingRequest) {
+                    throw new Error('handleStreamingRequest is not defined in the dependencies.');
+                }
+                return await effectiveDeps.handleStreamingRequest(requestBody, userClient, userId, { ...effectiveDeps, tokenWalletService });
+            } else {
+                // Handle regular POST request
+                if (!effectiveDeps.handlePostRequest) {
+                    throw new Error('handlePostRequest is not defined in the dependencies.');
+                }
+                const result = await effectiveDeps.handlePostRequest(requestBody, userClient, userId, { ...effectiveDeps, tokenWalletService });
 
-            return createSuccessResponse(result, 200, req);
+                if (result && 'error' in result && result.error) {
+                    const { message, status } = result.error;
+                    logger.warn('handlePostRequest returned an error.', { message, status: status || 500 });
+                    return createErrorResponse(message, status || 500, req);
+                }
+
+                return createSuccessResponse(result, 200, req);
+            }
         } catch (err) {
             logger.error('Unhandled error in POST mainHandler:', { error: err instanceof Error ? err.stack : String(err) });
             const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred processing the chat request.';
@@ -190,6 +203,7 @@ export const defaultDeps: ChatHandlerDeps = {
     handleDialecticPath: handleDialecticPath,
     debitTokens: debitTokens,
     handlePostRequest: handlePostRequest,
+    handleStreamingRequest: handleStreamingRequest,
 };
 
 // This factory creates the main request handler, injecting dependencies.

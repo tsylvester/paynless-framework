@@ -16,7 +16,6 @@ import {
 } from 'lucide-react'
 import { Notifications } from '../notifications/Notifications'
 import { SimpleDropdown } from '../ui/SimpleDropdown'
-import { OrganizationSwitcher } from '../organizations/OrganizationSwitcher'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { getInitials } from '@paynless/utils'
 
@@ -110,7 +109,6 @@ export function Header() {
 
             {user ? (
               <>
-                <OrganizationSwitcher />
                 <Notifications />
                 <SimpleDropdown
                   align="end"
@@ -268,9 +266,6 @@ export function Header() {
               >
                 Dialectic
               </Link>
-              <div className="px-4 py-2">
-                <OrganizationSwitcher />
-              </div>
               <Link
                 to="/profile"
                 className="block px-4 py-2 text-base font-medium text-textSecondary hover:bg-primary/5 hover:text-textPrimary"

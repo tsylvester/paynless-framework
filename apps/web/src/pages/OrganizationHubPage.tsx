@@ -98,9 +98,9 @@ export const OrganizationHubPage: React.FC = () => {
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-semibold mb-6">{/* TODO: Text here if desired */}</h1>
       {/* Use flex layout for responsiveness */}
-      <div className="flex flex-col md:flex-row gap-4">
-        {/* Column 1: Organization List (Fixed width on medium screens and up) */}
-        <div className="md:w-1/3 lg:w-1/4 flex-shrink-0"> {/* Adjust width as needed */}
+      <div className="flex flex-col lg:flex-row gap-4">
+        {/* Column 1: Organization List (Fixed width on large screens and up) */}
+        <div className="lg:w-80 xl:w-96 flex-shrink-0">
           <ErrorBoundary fallback="Could not load the organization list.">
             <OrganizationListCard />
           </ErrorBoundary>
@@ -131,7 +131,7 @@ export const OrganizationHubPage: React.FC = () => {
               </Alert>
             ) : (
               // Loading finished and no error, render the actual cards
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 <ErrorBoundary fallback="Could not load organization details.">
                   <OrganizationDetailsCard />
                 </ErrorBoundary>

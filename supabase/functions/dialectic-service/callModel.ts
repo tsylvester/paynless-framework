@@ -1,6 +1,6 @@
-// deno-lint-ignore-file no-explicit-any
-import { 
+import {
     UnifiedAIResponse,
+    CallUnifiedAIModelFn,
   } from "./dialectic.interface.ts";
   // Removed unused import: createSupabaseAdminClient
   import type {
@@ -10,17 +10,13 @@ import {
 import { isTokenUsage } from "../_shared/utils/type_guards.ts";
 import { CallModelDependencies } from "./dialectic.interface.ts";
 
-  console.log("callModel function started");
-  
-  // Initialize Supabase admin client once
-  // const supabaseAdmin = createSupabaseAdminClient(); // Removed as it's unused in this function and causes test issues
-  
+console.log("callModel function started");
 
-export async function callUnifiedAIModel(
+export const callUnifiedAIModel: CallUnifiedAIModelFn = async (
     chatApiRequest: ChatApiRequest,
     authToken: string,        // User's JWT for calling /chat
     dependencies: CallModelDependencies = {},
-  ): Promise<UnifiedAIResponse> {
+  ): Promise<UnifiedAIResponse> => {
     const { fetch = globalThis.fetch, isTest = false } = dependencies;
     console.log(`callUnifiedAIModel invoked for ai_providers.id (providerId): ${chatApiRequest.providerId}, chatId: ${chatApiRequest.chatId}`);
     const startTime = Date.now();
