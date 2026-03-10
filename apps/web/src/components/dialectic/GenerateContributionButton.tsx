@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useDialecticStore } from "@paynless/store";
-import { Loader2, RefreshCcw } from "lucide-react";
+import { Pause, RefreshCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StageDAGProgressDialog } from "./StageDAGProgressDialog";
 import { useStartContributionGeneration } from "@/hooks/useStartContributionGeneration";
@@ -17,12 +17,14 @@ export const GenerateContributionButton: React.FC<
 	const {
 		startContributionGeneration,
 		isDisabled,
-		isSessionGenerating,
+		isPauseMode,
 		isWalletReady,
 		isStageReady,
 		balanceMeetsThreshold,
 		areAnyModelsSelected,
 		hasPausedNsfJobs,
+		hasPausedUserJobs,
+		pauseGeneration,
 		didGenerationFail,
 		contributionsForStageAndIterationExist,
 		showBalanceCallout,
@@ -42,6 +44,8 @@ export const GenerateContributionButton: React.FC<
 	);
 
 	const [dagDialogOpen, setDagDialogOpen] = useState(false);
+	const [isDebouncing, setIsDebouncing] = useState(false);
+	const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	useEffect(() => {
 		if (shouldOpenDagProgress) {
@@ -50,22 +54,36 @@ export const GenerateContributionButton: React.FC<
 		}
 	}, [shouldOpenDagProgress, setShouldOpenDagProgress]);
 
+	useEffect(() => {
+		return () => {
+			if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+		};
+	}, []);
+
 	const handleClick = () => {
-		startContributionGeneration(() => setDagDialogOpen(true));
+		const onOpenDag = (): void => setDagDialogOpen(true);
+		if (isPauseMode) {
+			pauseGeneration(onOpenDag);
+		} else {
+			startContributionGeneration(onOpenDag);
+		}
+		setIsDebouncing(true);
+		debounceTimerRef.current = setTimeout(() => setIsDebouncing(false), 500);
 	};
 
 	const getButtonText = (): React.ReactNode => {
-		if (isSessionGenerating)
-			return (
-				<>
-					<Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...
-				</>
-			);
 		if (!areAnyModelsSelected) return "Choose AI Models";
 		if (!isWalletReady) return "Wallet Not Ready";
 		if (!activeStage || !activeSession) return "Stage Not Ready";
 		if (!isStageReady) return "Previous Stage Incomplete";
 		const displayName = activeStage.display_name;
+		if (isPauseMode)
+			return (
+				<>
+					<Pause className="mr-2 h-4 w-4" /> Pause {displayName}
+				</>
+			);
+		if (hasPausedUserJobs) return `Resume ${displayName}`;
 		if (hasPausedNsfJobs) return `Resume ${displayName}`;
 		if (!balanceMeetsThreshold) return "Insufficient Balance";
 		if (didGenerationFail) return `Retry ${displayName}`;
@@ -78,10 +96,20 @@ export const GenerateContributionButton: React.FC<
 	const formattedThreshold = new Intl.NumberFormat("en-US").format(stageThreshold);
 
 	return (
-		<div className="relative inline-flex flex-col items-end">
+		<div className="flex w-full flex-col items-stretch">
+			<Button
+				onClick={handleClick}
+				disabled={isDisabled || isDebouncing}
+				variant="outline"
+				size="sm"
+				className={cn(className, "w-full text-sm")}
+				data-testid={`generate-${activeStage?.slug ?? "unknown"}-button`}
+			>
+				{isPauseMode ? getButtonText() : <><RefreshCcw className="mr-2 h-4 w-4" />{" "}{getButtonText()}</>}
+			</Button>
 			{showBalanceCallout && activeStage && (
 				<p
-					className="absolute bottom-full right-0 mb-1.5 z-10 max-w-[280px] rounded-md border border-primary/60 bg-primary/15 px-3 py-2 text-center text-xs font-medium text-primary shadow-md animate-pulse"
+					className="mt-1.5 max-w-[280px] rounded-md border border-primary/60 bg-primary/15 px-3 py-2 text-center text-xs font-medium text-primary shadow-md animate-pulse"
 					data-testid="generate-button-balance-callout"
 				>
 					<Link
@@ -92,15 +120,6 @@ export const GenerateContributionButton: React.FC<
 					</Link>
 				</p>
 			)}
-			<Button
-				onClick={handleClick}
-				disabled={isDisabled}
-				variant="outline"
-				className={cn(className)}
-				data-testid={`generate-${activeStage?.slug ?? "unknown"}-button`}
-			>
-				<RefreshCcw /> {getButtonText()}
-			</Button>
 			{activeStage &&
 				activeSession &&
 				activeContextSessionId !== null &&

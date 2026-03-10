@@ -69,6 +69,9 @@ vi.mock('../components/dialectic/StageTabCard', () => ({
   StageTabCard: () => <div data-testid="mock-stage-tab-card" />,
 }));
 vi.mock('../components/dialectic/SessionContributionsDisplayCard', () => ({ SessionContributionsDisplayCard: () => <div data-testid="mock-session-contributions-display-card" /> }));
+vi.mock('../components/dialectic/GenerateContributionButton', () => ({
+  GenerateContributionButton: () => <div data-testid="mock-generate-contribution-button" />,
+}));
 vi.mock('../components/common/DynamicProgressBar', () => ({
   DynamicProgressBar: ({ sessionId }: { sessionId: string }) => (
     <div data-testid="dynamic-progress-bar-mock" data-session-id={sessionId} />
@@ -81,8 +84,8 @@ const mockSessionId = 'session-abc';
 const mockOtherSessionId = 'session-xyz';
 
 const mockStages: DialecticStage[] = [
-    { id: 'stage-1', slug: 'hypothesis', display_name: 'Hypothesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', recipe_template_id: 'rt-1', expected_output_template_ids: ['ot-1'], active_recipe_instance_id: null },
-    { id: 'stage-2', slug: 'antithesis', display_name: 'Antithesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', recipe_template_id: 'rt-1', expected_output_template_ids: ['ot-1'], active_recipe_instance_id: null },
+    { id: 'stage-1', slug: 'hypothesis', display_name: 'Hypothesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', recipe_template_id: 'rt-1', expected_output_template_ids: ['ot-1'], active_recipe_instance_id: null, minimum_balance: 0 },
+    { id: 'stage-2', slug: 'antithesis', display_name: 'Antithesis', description: 'desc', created_at: 'now', default_system_prompt_id: 'p1', recipe_template_id: 'rt-1', expected_output_template_ids: ['ot-1'], active_recipe_instance_id: null, minimum_balance: 0 },
 ];
 
 const mockProcessTemplate: DialecticProcessTemplate = {
@@ -461,5 +464,77 @@ describe('DialecticSessionDetailsPage', () => {
       onOpenDagProgress();
       expect(setShouldOpenDagProgress).toHaveBeenCalledWith(true);
     });
+  });
+
+  it('renders GenerateContributionButton in the sidebar above StageTabCard', async () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    setDialecticStateValues({
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      activeStageSlug: mockStages[0].slug,
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
+    });
+
+    renderWithRouter({});
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-generate-contribution-button')).toBeInTheDocument();
+      expect(screen.getByTestId('mock-stage-tab-card')).toBeInTheDocument();
+    });
+    const sidebar = document.querySelector('.lg\\:col-span-1');
+    expect(sidebar).toBeInTheDocument();
+    const buttonEl = screen.getByTestId('mock-generate-contribution-button');
+    const tabCardEl = screen.getByTestId('mock-stage-tab-card');
+    expect(sidebar?.compareDocumentPosition(buttonEl)).toBe(Node.DOCUMENT_POSITION_FOLLOWING | Node.DOCUMENT_POSITION_CONTAINED_BY);
+    expect(sidebar?.compareDocumentPosition(tabCardEl)).toBe(Node.DOCUMENT_POSITION_FOLLOWING | Node.DOCUMENT_POSITION_CONTAINED_BY);
+    expect(buttonEl.compareDocumentPosition(tabCardEl)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('does not render the Process Stages static label', async () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    setDialecticStateValues({
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
+    });
+
+    renderWithRouter({});
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Process Stages')).not.toBeInTheDocument();
+  });
+
+  it('sidebar layout contains both GenerateContributionButton and stage tab list', async () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    setDialecticStateValues({
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
+      currentProjectDetail: mockProject,
+      currentProcessTemplate: mockProcessTemplate,
+      isLoadingActiveSessionDetail: false,
+      activeSessionDetailError: null,
+    });
+
+    renderWithRouter({});
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-generate-contribution-button')).toBeInTheDocument();
+      expect(screen.getByTestId('mock-stage-tab-card')).toBeInTheDocument();
+    });
+    const sidebar = document.querySelector('.lg\\:col-span-1');
+    expect(sidebar).toBeInTheDocument();
+    expect(sidebar).toContainElement(screen.getByTestId('mock-generate-contribution-button'));
+    expect(sidebar).toContainElement(screen.getByTestId('mock-stage-tab-card'));
   });
 }); 

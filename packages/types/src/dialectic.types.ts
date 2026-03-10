@@ -1134,6 +1134,9 @@ export interface UseStartContributionGenerationReturn {
   balanceMeetsThreshold: boolean;
   areAnyModelsSelected: boolean;
   hasPausedNsfJobs: boolean;
+  hasPausedUserJobs: boolean;
+  isPauseMode: boolean;
+  pauseGeneration: (onOpenDagProgress?: () => void) => Promise<void>;
   didGenerationFail: boolean;
   contributionsForStageAndIterationExist: boolean;
   showBalanceCallout: boolean;

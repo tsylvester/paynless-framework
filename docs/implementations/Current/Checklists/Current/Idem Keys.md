@@ -1398,7 +1398,9 @@ The regenerate feature currently lives inline in `StageRunChecklist.tsx`. We ext
 ## Expand paused_nsf for general pause/resume
 - Add explicit "Pause" condition that sets all jobs to "paused" and can be restarted.
 - Users can pause and resume jobs at any time
-- Jobs may need new JWT set when resumed for handler to accept them
+- Jobs may need new JWT set when resumed for handler to accept 
+- Move "Generate" button into StageRunCard left hand side where the icons are 
+
 
 ### Phase 1: Database Infrastructure
 
@@ -1778,114 +1780,280 @@ The regenerate feature currently lives inline in `StageRunChecklist.tsx`. We ext
 
 ### Phase 5: Frontend Hook & UI
 
-*   `[ ]`   [UI] apps/web/src/hooks/`useStartContributionGeneration.ts` **Add pause capability and distinguish `paused_user` from `paused_nsf` in resume logic**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Expose `pauseActiveJobs` from the store so the button can call it during generation
-    *   `[ ]`   Add `hasPausedUserJobs` state variable derived from `activeStageProgress?.stageStatus === 'paused_user'`
-    *   `[ ]`   Update `isResumeMode` to be true when either: (a) `hasPausedNsfJobs && balanceMeetsThreshold`, or (b) `hasPausedUserJobs` (no balance requirement)
-    *   `[ ]`   Add `isPauseMode` state variable: true when `isSessionGenerating` (generation is active and can be paused)
-    *   `[ ]`   Update `isDisabled` to NOT disable the button when `isSessionGenerating` — the button should remain enabled during generation so the user can pause
-    *   `[ ]`   Add `pauseGeneration` function that calls `pauseActiveJobs` with `sessionId`, `stageSlug`, `iterationNumber`
-    *   `[ ]`   Update the return type `UseStartContributionGenerationReturn` in `dialectic.types.ts` to include new fields
-  *   `[ ]`   `role`
-    *   `[ ]`   App — React hook orchestrating generation control state for the UI button
-  *   `[ ]`   `module`
-    *   `[ ]`   `apps/web/hooks/useStartContributionGeneration` — generation control hook
-    *   `[ ]`   Boundary: reads from dialectic/wallet/AI stores, provides state and actions to `GenerateContributionButton`
-  *   `[ ]`   `deps`
-    *   `[ ]`   `dialecticStore.pauseActiveJobs` — app layer, inward (created in prior node)
-    *   `[ ]`   `dialecticStore.resumePausedNsfJobs` — app layer, inward (existing)
-    *   `[ ]`   `UseStartContributionGenerationReturn` in `dialectic.types.ts` — domain type, inward (needs update)
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   `pauseActiveJobs` from dialectic store
-    *   `[ ]`   `activeStageProgress?.stageStatus` for pause state detection
-    *   `[ ]`   `isSessionGenerating` for pause-mode detection
-  *   `[ ]`   interface/`dialectic.types.ts` (packages/types)
-    *   `[ ]`   Add to `UseStartContributionGenerationReturn` (lines 1117-1130):
-        *   `[ ]`   `hasPausedUserJobs: boolean` — true when stage status is `'paused_user'`
-        *   `[ ]`   `isPauseMode: boolean` — true when generation is active and pausable
-        *   `[ ]`   `pauseGeneration: (onOpenDagProgress?: () => void) => Promise<void>` — action to pause active jobs
-  *   `[ ]`   unit/`useStartContributionGeneration.test.ts`
-    *   `[ ]`   Test: `isPauseMode` is true when `isSessionGenerating` is true
-    *   `[ ]`   Test: `isPauseMode` is false when not generating
-    *   `[ ]`   Test: `hasPausedUserJobs` is true when `activeStageProgress.stageStatus === 'paused_user'`
-    *   `[ ]`   Test: `isResumeMode` is true when `hasPausedUserJobs` is true (no balance check)
-    *   `[ ]`   Test: `isResumeMode` is true when `hasPausedNsfJobs` is true AND `balanceMeetsThreshold` is true
-    *   `[ ]`   Test: `isResumeMode` is false when `hasPausedNsfJobs` is true AND `balanceMeetsThreshold` is false
-    *   `[ ]`   Test: `isDisabled` is false when `isSessionGenerating` is true (button remains enabled for pause)
-    *   `[ ]`   Test: `pauseGeneration` calls `pauseActiveJobs` with correct `sessionId`, `stageSlug`, `iterationNumber`
-    *   `[ ]`   Test: existing resume flow for `paused_nsf` still works unchanged
-  *   `[ ]`   `useStartContributionGeneration.ts`
-    *   `[ ]`   Add `const pauseActiveJobs = useDialecticStore((state) => state.pauseActiveJobs);` (near line 29-31)
-    *   `[ ]`   Add `const hasPausedUserJobs = activeStageProgress?.stageStatus === 'paused_user';` (near line 101)
-    *   `[ ]`   Update `isResumeMode`: `const isResumeMode = (hasPausedNsfJobs && balanceMeetsThreshold) || hasPausedUserJobs;` (line 114)
-    *   `[ ]`   Add `const isPauseMode = isSessionGenerating;`
-    *   `[ ]`   Update `isDisabled` (lines 133-140): remove `isSessionGenerating` from the disabled conditions. The button should be enabled during generation (for pausing). Keep all other disabled conditions
-    *   `[ ]`   Add `pauseGeneration` async function: calls `pauseActiveJobs({ sessionId: activeSession.id, stageSlug: activeStage.slug, iterationNumber })`, shows `toast.info("Pausing generation...")`
-    *   `[ ]`   Add `hasPausedUserJobs`, `isPauseMode`, `pauseGeneration` to the return object (lines 244-260)
-  *   `[ ]`   `directionality`
-    *   `[ ]`   App layer — orchestrates store actions for UI consumption
-    *   `[ ]`   All dependencies are inward-facing (stores, types)
-    *   `[ ]`   All provides are outward-facing (consumed by GenerateContributionButton)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Button is NOT disabled during generation — pause is available
-    *   `[ ]`   `paused_user` resume does NOT require balance check
-    *   `[ ]`   `paused_nsf` resume still requires balance check
-    *   `[ ]`   Both pause states can coexist; `paused_nsf` takes priority in `isResumeMode` logic
-    *   `[ ]`   Existing generation and NSF resume flows are preserved
+*   `[✅]`   [UI] apps/web/src/hooks/`useStartContributionGeneration.ts` **Add pause capability and distinguish `paused_user` from `paused_nsf` in resume logic**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Expose `pauseActiveJobs` from the store so the button can call it during generation
+    *   `[✅]`   Add `hasPausedUserJobs` state variable derived from `activeStageProgress?.stageStatus === 'paused_user'`
+    *   `[✅]`   Update `isResumeMode` to be true when either: (a) `hasPausedNsfJobs && balanceMeetsThreshold`, or (b) `hasPausedUserJobs` (no balance requirement)
+    *   `[✅]`   Add `isPauseMode` state variable: true when `isSessionGenerating` (generation is active and can be paused)
+    *   `[✅]`   Update `isDisabled` to NOT disable the button when `isSessionGenerating` — the button should remain enabled during generation so the user can pause
+    *   `[✅]`   Add `pauseGeneration` function that calls `pauseActiveJobs` with `sessionId`, `stageSlug`, `iterationNumber`
+    *   `[✅]`   Update the return type `UseStartContributionGenerationReturn` in `dialectic.types.ts` to include new fields
+  *   `[✅]`   `role`
+    *   `[✅]`   App — React hook orchestrating generation control state for the UI button
+  *   `[✅]`   `module`
+    *   `[✅]`   `apps/web/hooks/useStartContributionGeneration` — generation control hook
+    *   `[✅]`   Boundary: reads from dialectic/wallet/AI stores, provides state and actions to `GenerateContributionButton`
+  *   `[✅]`   `deps`
+    *   `[✅]`   `dialecticStore.pauseActiveJobs` — app layer, inward (created in prior node)
+    *   `[✅]`   `dialecticStore.resumePausedNsfJobs` — app layer, inward (existing)
+    *   `[✅]`   `UseStartContributionGenerationReturn` in `dialectic.types.ts` — domain type, inward (needs update)
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   `pauseActiveJobs` from dialectic store
+    *   `[✅]`   `activeStageProgress?.stageStatus` for pause state detection
+    *   `[✅]`   `isSessionGenerating` for pause-mode detection
+  *   `[✅]`   interface/`dialectic.types.ts` (packages/types)
+    *   `[✅]`   Add to `UseStartContributionGenerationReturn` (lines 1117-1130):
+        *   `[✅]`   `hasPausedUserJobs: boolean` — true when stage status is `'paused_user'`
+        *   `[✅]`   `isPauseMode: boolean` — true when generation is active and pausable
+        *   `[✅]`   `pauseGeneration: (onOpenDagProgress?: () => void) => Promise<void>` — action to pause active jobs
+  *   `[✅]`   unit/`useStartContributionGeneration.test.ts`
+    *   `[✅]`   Test: `isPauseMode` is true when `isSessionGenerating` is true
+    *   `[✅]`   Test: `isPauseMode` is false when not generating
+    *   `[✅]`   Test: `hasPausedUserJobs` is true when `activeStageProgress.stageStatus === 'paused_user'`
+    *   `[✅]`   Test: `isResumeMode` is true when `hasPausedUserJobs` is true (no balance check)
+    *   `[✅]`   Test: `isResumeMode` is true when `hasPausedNsfJobs` is true AND `balanceMeetsThreshold` is true
+    *   `[✅]`   Test: `isResumeMode` is false when `hasPausedNsfJobs` is true AND `balanceMeetsThreshold` is false
+    *   `[✅]`   Test: `isDisabled` is false when `isSessionGenerating` is true (button remains enabled for pause)
+    *   `[✅]`   Test: `pauseGeneration` calls `pauseActiveJobs` with correct `sessionId`, `stageSlug`, `iterationNumber`
+    *   `[✅]`   Test: existing resume flow for `paused_nsf` still works unchanged
+  *   `[✅]`   `useStartContributionGeneration.ts`
+    *   `[✅]`   Add `const pauseActiveJobs = useDialecticStore((state) => state.pauseActiveJobs);` (near line 29-31)
+    *   `[✅]`   Add `const hasPausedUserJobs = activeStageProgress?.stageStatus === 'paused_user';` (near line 101)
+    *   `[✅]`   Update `isResumeMode`: `const isResumeMode = (hasPausedNsfJobs && balanceMeetsThreshold) || hasPausedUserJobs;` (line 114)
+    *   `[✅]`   Add `const isPauseMode = isSessionGenerating;`
+    *   `[✅]`   Update `isDisabled` (lines 133-140): remove `isSessionGenerating` from the disabled conditions. The button should be enabled during generation (for pausing). Keep all other disabled conditions
+    *   `[✅]`   Add `pauseGeneration` async function: calls `pauseActiveJobs({ sessionId: activeSession.id, stageSlug: activeStage.slug, iterationNumber })`, shows `toast.info("Pausing generation...")`
+    *   `[✅]`   Add `hasPausedUserJobs`, `isPauseMode`, `pauseGeneration` to the return object (lines 244-260)
+  *   `[✅]`   `directionality`
+    *   `[✅]`   App layer — orchestrates store actions for UI consumption
+    *   `[✅]`   All dependencies are inward-facing (stores, types)
+    *   `[✅]`   All provides are outward-facing (consumed by GenerateContributionButton)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Button is NOT disabled during generation — pause is available
+    *   `[✅]`   `paused_user` resume does NOT require balance check
+    *   `[✅]`   `paused_nsf` resume still requires balance check
+    *   `[✅]`   Both pause states can coexist; `paused_nsf` takes priority in `isResumeMode` logic
+    *   `[✅]`   Existing generation and NSF resume flows are preserved
 
-*   `[ ]`   [UI] apps/web/src/components/dialectic/`GenerateContributionButton.tsx` **Update button to show Pause while generating, Resume when paused, with debounce**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Update `getButtonText()` to show "Pause {stage}" with a pause icon when `isPauseMode` is true (currently shows disabled "Generating..." spinner)
-    *   `[ ]`   Update `getButtonText()` to show "Resume {stage}" when `hasPausedUserJobs` is true (in addition to existing `hasPausedNsfJobs` resume text)
-    *   `[ ]`   Update `handleClick` to call `pauseGeneration` when `isPauseMode` is true, and `startContributionGeneration` otherwise
-    *   `[ ]`   Add debounce protection: after a click, disable the button for 500ms to prevent accidental rapid pause/unpause toggling. Use a `useRef` timer or `useState` flag with `setTimeout`
-  *   `[ ]`   `role`
-    *   `[ ]`   Adapter — UI component rendering the generation control button
-  *   `[ ]`   `module`
-    *   `[ ]`   `apps/web/components/dialectic/GenerateContributionButton` — generation control button
-    *   `[ ]`   Boundary: consumes state from `useStartContributionGeneration` hook, renders button with contextual text and actions
-  *   `[ ]`   `deps`
-    *   `[ ]`   `useStartContributionGeneration` hook — app layer, inward (updated in prior node)
-    *   `[ ]`   `isPauseMode`, `hasPausedUserJobs`, `pauseGeneration` from hook return — new fields
-    *   `[ ]`   `Pause` icon from `lucide-react` — UI library (add import alongside existing `Loader2`, `RefreshCcw`)
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Destructured return from `useStartContributionGeneration()`: add `isPauseMode`, `hasPausedUserJobs`, `pauseGeneration` to the existing destructure (lines 17-32)
-  *   `[ ]`   unit/`GenerateContributionButton.test.tsx`
-    *   `[ ]`   Test: when `isPauseMode` is true, button text shows "Pause {displayName}" with pause icon
-    *   `[ ]`   Test: when `isPauseMode` is true, clicking button calls `pauseGeneration`
-    *   `[ ]`   Test: when `hasPausedUserJobs` is true, button text shows "Resume {displayName}"
-    *   `[ ]`   Test: when `hasPausedUserJobs` is true, clicking button calls `startContributionGeneration` (which internally routes to resume)
-    *   `[ ]`   Test: after clicking, button is disabled for 500ms debounce period
-    *   `[ ]`   Test: existing NSF resume button text "Resume {displayName}" still shows for `hasPausedNsfJobs`
-    *   `[ ]`   Test: button state priority: `isPauseMode` (generating) > `hasPausedNsfJobs` > `hasPausedUserJobs` > other states
-  *   `[ ]`   `GenerateContributionButton.tsx`
-    *   `[ ]`   Add `isPauseMode`, `hasPausedUserJobs`, `pauseGeneration` to the destructure from `useStartContributionGeneration()` (lines 17-32)
-    *   `[ ]`   Add debounce state: `const [isDebouncing, setIsDebouncing] = useState(false);` and `const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);`
-    *   `[ ]`   Update `handleClick`: if `isPauseMode`, call `pauseGeneration(() => setDagDialogOpen(true))` then set debounce. Otherwise call `startContributionGeneration(...)` then set debounce. Debounce: `setIsDebouncing(true); debounceTimerRef.current = setTimeout(() => setIsDebouncing(false), 500);`
-    *   `[ ]`   Add cleanup: `useEffect(() => { return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current); }; }, []);`
-    *   `[ ]`   Update `getButtonText()` (lines 57-75):
-        *   `[ ]`   Replace the `isSessionGenerating` branch: instead of disabled spinner, show `<><Pause className="mr-2 h-4 w-4" /> Pause {displayName}</>` when `isPauseMode` is true
-        *   `[ ]`   Add `hasPausedUserJobs` branch: show `Resume {displayName}` (before or alongside `hasPausedNsfJobs` check)
-    *   `[ ]`   Update button `disabled` prop: `disabled={isDisabled || isDebouncing}` — `isDisabled` from hook no longer includes `isSessionGenerating`, debounce adds temporary disable after clicks
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Adapter layer (UI) — renders state from app layer hook
-    *   `[ ]`   All dependencies are inward-facing (hook, types, icons)
-    *   `[ ]`   All provides are outward-facing (rendered UI to the user)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Button shows "Pause {stage}" during generation instead of disabled "Generating..."
-    *   `[ ]`   Button shows "Resume {stage}" when `paused_user` (no balance gate)
-    *   `[ ]`   Button shows "Resume {stage}" when `paused_nsf` and balance sufficient (existing behavior preserved)
-    *   `[ ]`   500ms debounce prevents rapid pause/unpause toggling
-    *   `[ ]`   Debounce timer is cleaned up on component unmount
-    *   `[ ]`   All existing button states (Choose AI Models, Wallet Not Ready, Stage Not Ready, etc.) are preserved
-    *   `[ ]`   Button icon changes contextually: Pause icon when pausing, existing RefreshCcw for other states
-  *   `[ ]`   **Commit** `feat(ui): add voluntary pause/resume button — Pause during generation, Resume for paused_user, 500ms debounce`
-    *   `[ ]`   `useStartContributionGeneration.ts`: pause mode, pause action, updated isDisabled
-    *   `[ ]`   `dialectic.types.ts`: updated `UseStartContributionGenerationReturn`
-    *   `[ ]`   `GenerateContributionButton.tsx`: pause/resume button states, debounce
+*   `[✅]`   [UI] apps/web/src/components/dialectic/`GenerateContributionButton.tsx` **Restyle for sidebar placement, add Pause while generating, Resume when paused, with debounce**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Restyle component for sidebar placement (280px width) — compact size, smaller text, full-width layout
+    *   `[✅]`   Update `getButtonText()` to show "Pause" with a pause icon when `isPauseMode` is true (currently shows disabled "Generating..." spinner)
+    *   `[✅]`   Update `getButtonText()` to show "Resume" when `hasPausedUserJobs` is true (in addition to existing `hasPausedNsfJobs` resume text)
+    *   `[✅]`   Update `handleClick` to call `pauseGeneration` when `isPauseMode` is true, and `startContributionGeneration` otherwise
+    *   `[✅]`   Add debounce protection: after a click, disable the button for 500ms to prevent accidental rapid pause/unpause toggling. Use a `useRef` timer or `useState` flag with `setTimeout`
+    *   `[✅]`   Reposition balance callout for sidebar context — convert from absolute-positioned `<p>` to a tooltip or constrained inline element that fits within 280px
+  *   `[✅]`   `role`
+    *   `[✅]`   Adapter — UI component rendering the generation control button, now positioned in the sidebar above the stage tab list
+  *   `[✅]`   `module`
+    *   `[✅]`   `apps/web/components/dialectic/GenerateContributionButton` — generation control button
+    *   `[✅]`   Boundary: consumes state from `useStartContributionGeneration` hook, renders button with contextual text and actions
+  *   `[✅]`   `deps`
+    *   `[✅]`   `useStartContributionGeneration` hook — app layer, inward (updated in prior node)
+    *   `[✅]`   `isPauseMode`, `hasPausedUserJobs`, `pauseGeneration` from hook return — new fields
+    *   `[✅]`   `Pause` icon from `lucide-react` — UI library (add import alongside existing `Loader2`, `RefreshCcw`)
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Destructured return from `useStartContributionGeneration()`: add `isPauseMode`, `hasPausedUserJobs`, `pauseGeneration` to the existing destructure (lines 17-32)
+  *   `[✅]`   unit/`GenerateContributionButton.test.tsx`
+    *   `[✅]`   Test: when `isPauseMode` is true, button text shows "Pause" with pause icon
+    *   `[✅]`   Test: when `isPauseMode` is true, clicking button calls `pauseGeneration`
+    *   `[✅]`   Test: when `hasPausedUserJobs` is true, button text shows "Resume"
+    *   `[✅]`   Test: when `hasPausedUserJobs` is true, clicking button calls `startContributionGeneration` (which internally routes to resume)
+    *   `[✅]`   Test: after clicking, button is disabled for 500ms debounce period
+    *   `[✅]`   Test: existing NSF resume button text "Resume" still shows for `hasPausedNsfJobs`
+    *   `[✅]`   Test: button state priority: `isPauseMode` (generating) > `hasPausedNsfJobs` > `hasPausedUserJobs` > other states
+    *   `[✅]`   Test: button renders at compact size (`size="sm"`, full-width) suitable for sidebar
+    *   `[✅]`   Test: button text does NOT include stage display_name (stage context is provided by surrounding StageTabCard)
+  *   `[✅]`   `GenerateContributionButton.tsx`
+    *   `[✅]`   Add `isPauseMode`, `hasPausedUserJobs`, `pauseGeneration` to the destructure from `useStartContributionGeneration()` (lines 17-32)
+    *   `[✅]`   Add debounce state: `const [isDebouncing, setIsDebouncing] = useState(false);` and `const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);`
+    *   `[✅]`   Update `handleClick`: if `isPauseMode`, call `pauseGeneration(() => setDagDialogOpen(true))` then set debounce. Otherwise call `startContributionGeneration(...)` then set debounce. Debounce: `setIsDebouncing(true); debounceTimerRef.current = setTimeout(() => setIsDebouncing(false), 500);`
+    *   `[✅]`   Add cleanup: `useEffect(() => { return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current); }; }, []);`
+    *   `[✅]`   Update `getButtonText()` (lines 57-75):
+        *   `[✅]`   Replace the `isSessionGenerating` branch: show `<><Pause className="mr-2 h-4 w-4" /> Pause</>` when `isPauseMode` is true
+        *   `[✅]`   Add `hasPausedUserJobs` branch: show `Resume` (before or alongside `hasPausedNsfJobs` check)
+        *   `[✅]`   Remove `displayName` from all button text variants — "Generate", "Regenerate", "Pause", "Resume", "Retry" (stage name is now contextually obvious from sidebar placement)
+    *   `[✅]`   Restyle button: `size="sm"`, `className="w-full"`, compact text size (`text-xs` or `text-sm`), ensure it fits within 280px sidebar width
+    *   `[✅]`   Restyle balance callout: convert from absolute-positioned `<p>` (lines 82-94) to a tooltip on the button or a constrained inline element below the button, fitting within 280px
+    *   `[✅]`   Update button `disabled` prop: `disabled={isDisabled || isDebouncing}` — `isDisabled` from hook no longer includes `isSessionGenerating`, debounce adds temporary disable after clicks
+    *   `[✅]`   Remove outer `<div className="relative inline-flex flex-col items-end">` wrapper — replace with sidebar-appropriate full-width wrapper
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Adapter layer (UI) — renders state from app layer hook
+    *   `[✅]`   All dependencies are inward-facing (hook, types, icons)
+    *   `[✅]`   All provides are outward-facing (rendered UI to the user)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Button shows "Pause" during generation instead of disabled "Generating..."
+    *   `[✅]`   Button shows "Resume" when `paused_user` (no balance gate)
+    *   `[✅]`   Button shows "Resume" when `paused_nsf` and balance sufficient (existing behavior preserved)
+    *   `[✅]`   Button text does NOT include stage display_name (redundant in sidebar context)
+    *   `[✅]`   Button renders at compact size suitable for 280px sidebar
+    *   `[✅]`   Balance callout fits within 280px sidebar without overflow
+    *   `[✅]`   500ms debounce prevents rapid pause/unpause toggling
+    *   `[✅]`   Debounce timer is cleaned up on component unmount
+    *   `[✅]`   All existing button states (Choose AI Models, Wallet Not Ready, Stage Not Ready, etc.) are preserved
+    *   `[✅]`   Button icon changes contextually: Pause icon when pausing, existing RefreshCcw for other states
+
+*   `[✅]`   [UI] apps/web/src/pages/`DialecticSessionDetailsPage.tsx` **Replace "Process Stages" label with GenerateContributionButton in sidebar**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Replace the static `<h3>Process Stages</h3>` label (lines 190-192) with `<GenerateContributionButton />` — the button's contextual text ("Generate", "Pause", "Resume", etc.) serves as both action and active-stage indicator
+    *   `[✅]`   The button occupies the same position and full sidebar width (280px) where the label was, above the `<StageTabCard />` tab list
+  *   `[✅]`   `role`
+    *   `[✅]`   Adapter — page-level layout component orchestrating sidebar composition
+  *   `[✅]`   `module`
+    *   `[✅]`   `apps/web/pages/DialecticSessionDetailsPage` — dialectic session detail page
+    *   `[✅]`   Boundary: composes sidebar layout from `GenerateContributionButton` and `StageTabCard`
+  *   `[✅]`   `deps`
+    *   `[✅]`   `GenerateContributionButton` — adapter layer, lateral (already imported? verify; if not, add import)
+    *   `[✅]`   `StageTabCard` — adapter layer, lateral (existing)
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   No new store reads — `GenerateContributionButton` is self-contained via its hook
+  *   `[✅]`   unit/`DialecticSessionDetailsPage.test.tsx`
+    *   `[✅]`   Test: `GenerateContributionButton` renders in the sidebar above `StageTabCard`
+    *   `[✅]`   Test: "Process Stages" static label no longer renders
+    *   `[✅]`   Test: sidebar layout contains both `GenerateContributionButton` and stage tab list
+  *   `[✅]`   `DialecticSessionDetailsPage.tsx`
+    *   `[✅]`   Add `import { GenerateContributionButton } from "../components/dialectic/GenerateContributionButton";` (if not already imported)
+    *   `[✅]`   Replace lines 189-192 (the `<div className="space-y-2">` containing `<h3>Process Stages</h3>`) with `<GenerateContributionButton />` followed by the existing `<div role="tablist">` containing `<StageTabCard />`
+    *   `[✅]`   Preserve the `space-y-2` wrapper so the button and tab list have consistent spacing
+    *   `[✅]`   Remove `useStartContributionGeneration` import if it was only used for auto-start logic that has been relocated (verify before removing)
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Adapter layer (UI page) — composes child adapter components
+    *   `[✅]`   All dependencies are inward-facing or lateral (child components, store)
+    *   `[✅]`   All provides are outward-facing (rendered page to the router)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `GenerateContributionButton` renders in the sidebar above the stage tab list
+    *   `[✅]`   Static "Process Stages" label is removed
+    *   `[✅]`   Button occupies full sidebar width (280px on desktop, full-width on mobile)
+    *   `[✅]`   Sidebar spacing between button and stage list is consistent with existing design
+
+*   `[✅]`   [UI] apps/web/src/components/dialectic/`SessionInfoCard.tsx` **Consolidate to 2-row toolbar, remove GenerateContributionButton and Submit & Advance, absorb [✅] toggle into dropdown**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Consolidate from 5 rows (Back, Title, Config, Actions, Progress) to 2 rows:
+        *   `[✅]`   **Row 1:** `← Back` | `Session Name` | `Iteration N` badge | `Status` badge | `...` dropdown (Export, Continue Until Complete, Show/Hide Seed Prompt)
+        *   `[✅]`   **Row 2:** `Model Selector` popover | `Wallet Selector` | `DynamicProgressBar` (fills remaining width)
+    *   `[✅]`   Remove `<GenerateContributionButton />` — moved to sidebar in `DialecticSessionDetailsPage`
+    *   `[✅]`   Remove Submit & Advance button and all supporting logic (lines 86-162) — `SubmitResponsesButton` already renders in `SessionContributionsDisplayCard` header and footer
+    *   `[✅]`   Move "Show/Hide seed prompt" toggle into the `...` dropdown as a `DropdownMenuItem`
+    *   `[✅]`   Add left padding (`pl-14` or equivalent) to clear the fixed `SidebarTrigger` (40x40px at `ml-2 mt-2 z-10` from `Layout.tsx`) when the app sidebar is collapsed
+    *   `[✅]`   Reduce vertical spacing: replace `space-y-4` with `space-y-2` or tighter, reclaiming vertical real estate for the main interaction area
+  *   `[✅]`   `role`
+    *   `[✅]`   Adapter — UI component rendering compact session header toolbar with identity, configuration, and secondary actions
+  *   `[✅]`   `module`
+    *   `[✅]`   `apps/web/components/dialectic/SessionInfoCard` — session header toolbar
+    *   `[✅]`   Boundary: renders session metadata, configuration controls, and secondary actions; no longer renders primary generation or submit actions
+  *   `[✅]`   `deps`
+    *   `[✅]`   Remove `GenerateContributionButton` import (line 27) — no longer a dependency
+    *   `[✅]`   Remove `SubmitStageResponsesPayload` type import — no longer needed
+    *   `[✅]`   Remove `selectIsStageReadyForSessionIteration`, `selectActiveStageSlug`, `selectSortedStages` store selector imports — only used for Submit & Advance logic
+    *   `[✅]`   Remove `ApiError` type import if no other references remain
+    *   `[✅]`   Keep `DynamicProgressBar`, `WalletSelector`, `AIModelSelector`, `ExportProjectButton`, `ContinueUntilCompleteToggle`, `MarkdownRenderer`
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Remove store reads for submit logic: `activeStageSlug`, `sortedStages`, `setActiveStage`, `submitStageResponses`, `isSubmittingStageResponses`, `isStageReady` (lines 87-154)
+    *   `[✅]`   Remove `isFinalStageInProcess` memo and `canShowSubmitButton` derived state (lines 98-162)
+    *   `[✅]`   Remove `handleSubmitResponses` handler (lines 104-141)
+    *   `[✅]`   Keep store reads for: `project`, `session`, `activeStage`, `unifiedProgress`, `generateContributionsError`, `activeSeedPrompt`, `isLoading`, `selectedModels`
+  *   `[✅]`   unit/`SessionInfoCard.test.tsx`
+    *   `[✅]`   Test: `GenerateContributionButton` does NOT render
+    *   `[✅]`   Test: Submit & Advance button does NOT render
+    *   `[✅]`   Test: Row 1 renders Back button, session name, iteration badge, status badge, and `...` dropdown in a single flex row
+    *   `[✅]`   Test: Row 2 renders Model Selector popover, Wallet Selector, and DynamicProgressBar in a single flex row
+    *   `[✅]`   Test: `...` dropdown contains Export, Continue Until Complete, and Show/Hide Seed Prompt toggle
+    *   `[✅]`   Test: clicking seed prompt dropdown item toggles the collapsible seed prompt section
+    *   `[✅]`   Test: header has sufficient left padding to clear the app sidebar trigger (verify `pl-14` or equivalent class)
+    *   `[✅]`   Test: error alert for `generateContributionsError` still renders when error is present
+    *   `[✅]`   Test: seed prompt collapsible section still renders below the rows when toggled open
+  *   `[✅]`   `SessionInfoCard.tsx`
+    *   `[✅]`   Remove `import { GenerateContributionButton } from "./GenerateContributionButton";` (line 27)
+    *   `[✅]`   Remove Submit & Advance related imports: `selectIsStageReadyForSessionIteration`, `selectActiveStageSlug`, `selectSortedStages` from `@paynless/store`; `SubmitStageResponsesPayload`, `ApiError` from `@paynless/types` (verify no other usages first)
+    *   `[✅]`   Remove submit-related store reads and derived state (lines 86-162): `activeStageSlug`, `sortedStages`, `setActiveStage`, `submitStageResponses`, `isSubmitting`, `isFinalStageInProcess`, `handleSubmitResponses`, `isStageReady`, `canShowSubmitButton`
+    *   `[✅]`   Replace outer `<div className="space-y-4">` with `<div className="space-y-2 pl-14">` to tighten vertical gaps and clear the fixed SidebarTrigger
+    *   `[✅]`   **Row 1:** Merge Back button and Title row into a single `<div className="flex items-center gap-3 flex-wrap">`: `← Back` button | `<h1>` session name (shrink to `text-lg` or `text-xl`) | Iteration badge | Status badge | flex spacer | `...` dropdown (pushed right)
+    *   `[✅]`   **Row 1 dropdown:** Move seed prompt toggle into the `...` `DropdownMenu` as a new `DropdownMenuItem` that calls `setIsPromptOpen(p => !p)` with text "Show Seed Prompt" / "Hide Seed Prompt". Remove the standalone seed prompt `<Button>` from its current position
+    *   `[✅]`   **Row 2:** Merge Config row and Progress into a single `<div className="flex items-center gap-4 flex-wrap">`: Model Selector popover | Wallet Selector (`w-48`) | `<div className="flex-1 min-w-0">` containing `DynamicProgressBar` (fills remaining space, collapses gracefully)
+    *   `[✅]`   Remove the standalone Actions row (lines 283-355) entirely — its contents are either removed (GenerateContributionButton, Submit & Advance) or absorbed (seed prompt toggle into dropdown, dropdown stays in Row 1)
+    *   `[✅]`   Remove the standalone `DynamicProgressBar` conditional section (lines 357-360) — it moves inline into Row 2
+    *   `[✅]`   Keep error alert section (lines 361-368) and seed prompt collapsible section (lines 370-388) below the rows
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Adapter layer (UI) — renders session header toolbar
+    *   `[✅]`   All dependencies are inward-facing (store, types, child components)
+    *   `[✅]`   All provides are outward-facing (rendered UI to the page)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   `GenerateContributionButton` no longer renders in session header
+    *   `[✅]`   `GenerateContributionButton` import is removed (no dead imports)
+    *   `[✅]`   Submit & Advance button no longer renders in session header (already present in `SessionContributionsDisplayCard`)
+    *   `[✅]`   All submit-related store reads, handlers, derived state, and type imports are removed (no dead code)
+    *   `[✅]`   Header consolidates to 2 rows from 5 rows, significantly reducing vertical height
+    *   `[✅]`   Seed prompt toggle is accessible via the `...` dropdown; collapsible section still renders below rows
+    *   `[✅]`   Left padding (`pl-14`) clears the fixed `SidebarTrigger` when the app sidebar is collapsed
+    *   `[✅]`   Both rows use `flex-wrap` so elements reflow within the viewport on narrow screens instead of forcing horizontal scroll
+    *   `[✅]`   `DynamicProgressBar` fills remaining Row 2 width and collapses gracefully via `min-w-0`
+    *   `[✅]`   Model Selector, Wallet Selector, session badges, error alert, and seed prompt display are all preserved
+    *   `[✅]`   No elements overlap or tuck under the fixed app sidebar trigger at any viewport width
+  *   `[✅]`   **Commit** `feat(ui): move GenerateContributionButton to sidebar, consolidate SessionInfoCard to 2-row toolbar`
+    *   `[✅]`   `useStartContributionGeneration.ts`: pause mode, pause action, updated isDisabled
+    *   `[✅]`   `dialectic.types.ts`: updated `UseStartContributionGenerationReturn`
+    *   `[✅]`   `GenerateContributionButton.tsx`: restyled for sidebar, pause/resume button states, debounce, removed stage name from text
+    *   `[✅]`   `DialecticSessionDetailsPage.tsx`: replaced "Process Stages" label with `GenerateContributionButton` in sidebar
+    *   `[✅]`   `SessionInfoCard.tsx`: consolidated to 2-row toolbar, removed GenerateContributionButton and Submit & Advance, absorbed seed prompt toggle into dropdown, added sidebar trigger clearance
+
+*   `[✅]`   apps/web/src/components/dialectic/SubmitResponsesButton **Guard submit button against already-advanced stages**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Prevent the "Submit Responses & Advance Stage" button from appearing when the user navigates back to a previously-completed stage whose subsequent stage has already been started or completed
+        *   `[✅]`   Button must only render when ALL of: current stage is completed, next stage prerequisites are met, current stage is not the final stage, next stage has no generated content yet, current stage belongs to the current iteration, and no active/paused jobs exist on the current stage
+    *   `[✅]`   `role`
+        *   `[✅]`   UI component — presentation logic gating a user action
+    *   `[✅]`   `module`
+        *   `[✅]`   Dialectic stage advancement — controls when the user may trigger stage transition
+        *   `[✅]`   Boundary: reads from store selectors only; delegates mutation to `submitStageResponses` action
+    *   `[✅]`   `deps`
+        *   `[✅]`   `selectSortedStages` — store/selectors — provides ordered stage list to identify next stage slug — read-only
+        *   `[✅]`   `selectUnifiedProjectProgress` — store/selectors — provides per-stage `StageProgressDetail` (including `completedDocuments`, `totalDocuments`, `stageStatus`) for both current and next stage — read-only
+        *   `[✅]`   `selectStageRunProgress` — store/selectors — provides `StageRunProgressSnapshot` including `jobs: JobProgressDto[]` and `stepStatuses` for current stage job/pause detection — read-only
+        *   `[✅]`   `activeSessionDetail.iteration_count` — store state — confirms iteration alignment — read-only
+        *   `[✅]`   Confirm no reverse dependency is introduced (component is a leaf consumer)
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   From `selectSortedStages`: ordered `DialecticStage[]` to find next stage by index
+        *   `[✅]`   From `selectUnifiedProjectProgress`: `stageDetails` array to read `completedDocuments`, `totalDocuments`, and `stageStatus` for next stage
+        *   `[✅]`   From `selectStageRunProgress`: `StageRunProgressSnapshot` for current stage — `jobs` array and `stepStatuses` to detect active/paused work
+        *   `[✅]`   From `activeSessionDetail`: `iteration_count` as `number`
+        *   `[✅]`   Confirm no concrete imports from higher or lateral layers
+    *   `[✅]`   unit/`SubmitResponsesButton.test.tsx`
+        *   `[✅]`   Test: button renders when current stage complete, next stage not started, not final stage, no active jobs
+        *   `[✅]`   Test: button hidden when next stage already has generated documents (`completedDocuments > 0` or `totalDocuments > 0`)
+        *   `[✅]`   Test: button hidden when next stage `stageStatus` is not `not_started`
+        *   `[✅]`   Test: button hidden when current stage has active jobs (`status !== 'completed' && status !== 'failed'` in `jobs` array)
+        *   `[✅]`   Test: button hidden when current stage has paused jobs (`paused_user` or `paused_nsf` in `stepStatuses`)
+        *   `[✅]`   Test: button hidden on final stage (existing behavior preserved)
+        *   `[✅]`   Test: button disabled when `allDocumentsAvailable` is false (existing behavior preserved)
+    *   `[✅]`   `construction`
+        *   `[✅]`   No new constructors — component consumes store hooks
+        *   `[✅]`   Prohibited: direct API calls, direct state mutation
+        *   `[✅]`   All new guard values derived inside existing `useDialecticStore` selector callbacks
+    *   `[✅]`   `SubmitResponsesButton.tsx`
+        *   `[✅]`   Add `nextStageStarted` guard: use `selectSortedStages` to find next stage slug, then check `selectUnifiedProjectProgress` for that stage's `stageDetails` entry — true if `totalDocuments > 0` or `stageStatus !== 'not_started'`
+        *   `[✅]`   Add `currentStageHasActiveJobs` guard: use `selectStageRunProgress` for current stage — true if any job in `jobs` has status not in `['completed', 'failed']` or any `stepStatuses` value is `'in_progress'`, `'paused_user'`, or `'paused_nsf'`
+        *   `[✅]`   Update `canShowButton` from `!isFinalStage` to `!isFinalStage && !nextStageStarted && !currentStageHasActiveJobs`
+        *   `[✅]`   Preserve all existing behavior: `shouldPulse`, `allDocumentsAvailable` disabled check, unsaved changes display, confirmation dialog
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: UI (adapter)
+        *   `[✅]`   All dependencies are inward-facing (store selectors, types)
+        *   `[✅]`   All provides are outward-facing (rendered UI only, no exports consumed by other modules)
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Button renders only when: `!isFinalStage && allDocumentsAvailable && !nextStageStarted && !currentStageHasActiveJobs`
+        *   `[✅]`   Button disabled state unchanged: `isSubmitting || !allDocumentsAvailable`
+        *   `[✅]`   Navigating back to a completed stage whose next stage is already generated must hide the button entirely
+        *   `[✅]`   Active or paused jobs on the current stage must hide the button to prevent premature advancement
+        *   `[✅]`   All existing submit, toast, and stage-advance behavior preserved when button is visible and clicked
+    *   `[✅]`   **Commit** `fix(ui): guard SubmitResponsesButton against re-advancement of already-progressed stages`
+        *   `[✅]`   Add `nextStageStarted` and `currentStageHasActiveJobs` guards to `SubmitResponsesButton.tsx`
+        *   `[✅]`   Update `canShowButton` logic to incorporate new guards
+        *   `[✅]`   Add unit tests covering all new guard conditions
+
 
 ## n/n Done only hydrates on page refresh, not dynamic, and sometimes overcounts 
 - Check if n/n Done is calculating correctly
@@ -2012,8 +2180,6 @@ AND/OR
 
 ## Ensure front end components use friendly names 
 - SessionInfoCard uses formal names instead of friendly names 
-
-## Move "Generate" button into StageRunCard left hand side where the icons are 
 
 ## 504 Gateway Timeout on back end  
 - Not failed, not running 
