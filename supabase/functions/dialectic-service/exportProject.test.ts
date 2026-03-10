@@ -90,7 +90,7 @@ describe("exportProject", () => {
     }
 
     beforeEach(async () => {
-        projectData = {
+        const projectData: Tables<'dialectic_projects'> = {
             id: mockProjectId,
             user_id: mockUser.id,
             project_name: mockProjectName,
@@ -104,8 +104,9 @@ describe("exportProject", () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             initial_prompt_resource_id: null,
+            idempotency_key: null,
         };
-        bucketResourceData = {
+        const bucketResourceData: Tables<'dialectic_project_resources'> = {
             id: "res-bucket",
             project_id: mockProjectId,
             user_id: mockUser.id,
@@ -126,7 +127,7 @@ describe("exportProject", () => {
         readmeContentBuffer = await new Blob(["# Project readme"]).arrayBuffer();
         resourceInFolderContentBuffer = await new Blob(["Resource 1 content"]).arrayBuffer();
 
-        mockFileRecordForZip = {
+        const mockFileRecordForZip: FileRecord = {
             id: "zip-export-file-id-123",
             project_id: mockProjectId,
             user_id: mockUser.id,

@@ -63,7 +63,7 @@ export class NotificationApiClient {
   async markNotificationRead(notificationId: string): Promise<ApiResponse<null>> {
     logger.debug(`[NotificationApiClient] Marking notification ${notificationId} as read...`);
     // Endpoint expects /notifications/:id for PUT
-    const response = await this.apiClient.put<null, null>(`notifications/${notificationId}`, null);
+    const response = await this.apiClient.put<null, Record<string, never>>(`notifications/${notificationId}`, {});
     if (!response.error) {
       logger.info(`[NotificationApiClient] Marked notification ${notificationId} as read successfully.`);
     } else {
@@ -78,7 +78,7 @@ export class NotificationApiClient {
   async markAllNotificationsAsRead(): Promise<ApiResponse<null>> {
     logger.debug('[NotificationApiClient] Marking all notifications as read...');
     // Endpoint expects /notifications/mark-all-read for POST
-    const response = await this.apiClient.post<null, null>(`notifications/mark-all-read`, null);
+    const response = await this.apiClient.post<null, Record<string, never>>(`notifications/mark-all-read`, {});
     if (!response.error) {
       logger.info('[NotificationApiClient] Marked all notifications as read successfully.');
     } else {

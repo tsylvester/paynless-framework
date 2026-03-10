@@ -532,9 +532,54 @@ export interface ResumePausedNsfJobsResult {
 	status?: number;
 }
 
+export interface ResumePausedNsfJobsDeps {
+	adminClient: SupabaseClient<Database>;
+}
+
+export interface ResumePausedNsfJobsParams {
+	user: User | null;
+	authToken: string;
+}
+
+export type ResumePausedNsfJobsFn = (
+	payload: ResumePausedNsfJobsPayload,
+	params: ResumePausedNsfJobsParams,
+	deps: ResumePausedNsfJobsDeps,
+) => Promise<ResumePausedNsfJobsResult>;
+
 type ResumePausedNsfJobsAction = {
 	action: "resumePausedNsfJobs";
 	payload: ResumePausedNsfJobsPayload;
+};
+
+export interface PauseActiveJobsPayload {
+	sessionId: string;
+	stageSlug: string;
+	iterationNumber: number;
+}
+
+export interface PauseActiveJobsResponse {
+	pausedCount: number;
+}
+
+export interface PauseActiveJobsResult {
+	data?: PauseActiveJobsResponse;
+	error?: ServiceError;
+	status?: number;
+}
+
+export interface PauseActiveJobsDeps {}
+
+export type PauseActiveJobsFn = (
+	payload: PauseActiveJobsPayload,
+	deps: PauseActiveJobsDeps,
+	adminClient: SupabaseClient,
+	user: User | null,
+) => Promise<PauseActiveJobsResult>;
+
+type PauseActiveJobsAction = {
+	action: "pauseActiveJobs";
+	payload: PauseActiveJobsPayload;
 };
 
 export interface RegenerateDocumentPayload {
@@ -542,6 +587,7 @@ export interface RegenerateDocumentPayload {
 	stageSlug: string;
 	iterationNumber: number;
 	documents: Array<{ documentKey: string; modelId: string }>;
+	idempotencyKey: string;
 }
 
 export interface RegenerateDocumentResponse {
@@ -682,6 +728,7 @@ export type DialecticServiceRequest =
 	| ListStageDocumentsAction
 	| GetAllStageProgressAction
 	| ResumePausedNsfJobsAction
+	| PauseActiveJobsAction
 	| RegenerateDocumentAction
 	| GetStageDocumentFeedbackAction
 	| SubmitStageDocumentFeedbackAction;
@@ -738,7 +785,8 @@ export type UnifiedStageStatus =
 	| "in_progress"
 	| "completed"
 	| "failed"
-	| "paused_nsf";
+	| "paused_nsf"
+	| "paused_user";
 
 export interface DagProgressDto {
 	completedStages: number;
@@ -884,6 +932,7 @@ export interface StartSessionPayload {
 	selectedModels: SelectedModels[];
 	originatingChatId?: string | null;
 	stageSlug?: string;
+	idempotencyKey: string;
 }
 
 export interface UpdateSessionModelsPayload {
@@ -968,6 +1017,7 @@ export interface GenerateContributionsPayload {
 	user_jwt: string;
 	is_test_job?: boolean;
 	model_slug?: string;
+	idempotencyKey: string;
 }
 
 /**

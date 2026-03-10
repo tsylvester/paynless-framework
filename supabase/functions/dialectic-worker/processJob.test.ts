@@ -36,6 +36,7 @@ Deno.test('processJob - dispatches by job.job_type: PLAN routes to processComple
         model_id: 'model-id',
         walletId: 'wallet-id-plan-dispatch',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(executeShapedPayload)) throw new Error('Test setup failed: executeShapedPayload not Json');
 
@@ -59,6 +60,7 @@ Deno.test('processJob - dispatches by job.job_type: PLAN routes to processComple
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -94,6 +96,7 @@ Deno.test('processJob - dispatches by job.job_type: EXECUTE routes to processSim
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
 
@@ -117,6 +120,7 @@ Deno.test('processJob - dispatches by job.job_type: EXECUTE routes to processSim
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'EXECUTE',
+        idempotency_key: "idempotency-key-1",
     };
 
     // Provide a stage stub that would have driven legacy logic to complex, ensuring RED against new expectation
@@ -156,6 +160,7 @@ Deno.test('processJob - ignores processing_strategy; PLAN always routes to proce
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(planPayload)) throw new Error('Test setup failed: planPayload not Json');
 
@@ -179,6 +184,7 @@ Deno.test('processJob - ignores processing_strategy; PLAN always routes to proce
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     // Legacy code would look at input_artifact_rules.processing_strategy and route simple if unsupported
@@ -220,6 +226,7 @@ Deno.test('processJob - PLAN passes job unchanged and propagates args', async ()
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(planPayload)) throw new Error('Test setup failed: planPayload not Json');
 
@@ -243,6 +250,7 @@ Deno.test('processJob - PLAN passes job unchanged and propagates args', async ()
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -282,6 +290,7 @@ Deno.test('processJob - EXECUTE passes job unchanged and propagates args', async
         model_id: 'model-id-exec',
         walletId: 'wallet-id-exec',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(planShaped)) throw new Error('Test setup failed: planShaped not Json');
 
@@ -305,6 +314,7 @@ Deno.test('processJob - EXECUTE passes job unchanged and propagates args', async
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'EXECUTE',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -343,6 +353,7 @@ Deno.test('processJob - PLAN does not query dialectic_stages in router', async (
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
@@ -366,6 +377,7 @@ Deno.test('processJob - PLAN does not query dialectic_stages in router', async (
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -401,6 +413,7 @@ Deno.test('processJob - EXECUTE does not query dialectic_stages in router', asyn
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
@@ -424,6 +437,7 @@ Deno.test('processJob - EXECUTE does not query dialectic_stages in router', asyn
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'EXECUTE',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -459,6 +473,7 @@ Deno.test('processJob - null job_type should throw and not dispatch', async () =
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
@@ -482,6 +497,7 @@ Deno.test('processJob - null job_type should throw and not dispatch', async () =
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: null,
+        idempotency_key: null,
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -520,6 +536,7 @@ Deno.test('processJob - bubbles errors from downstream processor', async () => {
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
@@ -543,6 +560,7 @@ Deno.test('processJob - bubbles errors from downstream processor', async () => {
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'EXECUTE',
+        idempotency_key: "idempotency-key-1",
     };
 
     // Make the EXECUTE processor throw
@@ -588,6 +606,7 @@ Deno.test('processJob - dispatches by job.job_type: RENDER routes to processRend
         model_id: 'model-id',
         walletId: 'wallet-id-render-dispatch',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
 
@@ -611,6 +630,7 @@ Deno.test('processJob - dispatches by job.job_type: RENDER routes to processRend
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'RENDER',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -647,6 +667,7 @@ Deno.test('processJob - RENDER passes job unchanged and propagates args', async 
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
 
@@ -670,6 +691,7 @@ Deno.test('processJob - RENDER passes job unchanged and propagates args', async 
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'RENDER',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -709,6 +731,7 @@ Deno.test('processJob - RENDER does not query dialectic_stages in router', async
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
 
@@ -732,6 +755,7 @@ Deno.test('processJob - RENDER does not query dialectic_stages in router', async
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'RENDER',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -768,6 +792,7 @@ Deno.test('processJob - slices to IExecuteJobContext for EXECUTE jobs', async ()
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
@@ -791,6 +816,7 @@ Deno.test('processJob - slices to IExecuteJobContext for EXECUTE jobs', async ()
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'EXECUTE',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -841,6 +867,7 @@ Deno.test('processJob - slices to IPlanJobContext for PLAN jobs', async () => {
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
@@ -864,6 +891,7 @@ Deno.test('processJob - slices to IPlanJobContext for PLAN jobs', async () => {
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -915,6 +943,7 @@ Deno.test('processJob - slices to IRenderJobContext for RENDER jobs', async () =
         model_id: 'model-id',
         walletId: 'wallet-id',
         user_jwt: 'jwt.token.here',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
@@ -938,6 +967,7 @@ Deno.test('processJob - slices to IRenderJobContext for RENDER jobs', async () =
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'RENDER',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockSupabase = createMockSupabaseClient();

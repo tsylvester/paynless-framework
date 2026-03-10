@@ -32,6 +32,18 @@ export async function createProject(
   console.log("createProject function invoked");
 
   try {
+    const idempotencyKeyRaw = payload.get('idempotencyKey');
+    if (idempotencyKeyRaw === null || idempotencyKeyRaw === undefined) {
+      return { error: { message: "idempotencyKey is required", status: 400 } };
+    }
+    if (typeof idempotencyKeyRaw !== 'string') {
+      return { error: { message: "idempotencyKey is required", status: 400 } };
+    }
+    const idempotencyKey = idempotencyKeyRaw.trim();
+    if (idempotencyKey.length === 0) {
+      return { error: { message: "idempotencyKey is required", status: 400 } };
+    }
+
     const projectName = payload.get('projectName');
     const initialUserPromptText = payload.get('initialUserPromptText');
     const selectedDomainId = payload.get('selectedDomainId');
@@ -78,6 +90,7 @@ export async function createProject(
         process_template_id: defaultProcessTemplateId,
         status: 'new',
         initial_prompt_resource_id: null, // Will be set after file upload
+        idempotency_key: idempotencyKey,
       })
       .select(`
         *,
@@ -89,6 +102,44 @@ export async function createProject(
 
     if (createError) {
       console.error("Error creating project (initial insert):", createError);
+      if (createError.code === '23505' && createError.message.includes('idempotency_key')) {
+        const { data: existingProject, error: selectError } = await dbAdminClient
+          .from('dialectic_projects')
+          .select(`
+            *,
+            domain:dialectic_domains (
+              name
+            ),
+            process_template:dialectic_process_templates (
+              *
+            )
+          `)
+          .eq('idempotency_key', idempotencyKey)
+          .eq('user_id', user.id)
+          .single();
+        if (!selectError && existingProject) {
+          if (!existingProject.domain || !existingProject.process_template) {
+            console.error("Existing project missing required join data (domain or process_template)");
+            return { error: { message: "Failed to return existing project", status: 500 } };
+          }
+          const responseData: DialecticProject = {
+            id: existingProject.id,
+            user_id: existingProject.user_id,
+            project_name: existingProject.project_name,
+            initial_user_prompt: existingProject.initial_user_prompt,
+            initial_prompt_resource_id: existingProject.initial_prompt_resource_id,
+            selected_domain_id: existingProject.selected_domain_id,
+            domain_name: existingProject.domain.name,
+            process_template: existingProject.process_template,
+            selected_domain_overlay_id: existingProject.selected_domain_overlay_id,
+            repo_url: existingProject.repo_url,
+            status: existingProject.status,
+            created_at: existingProject.created_at,
+            updated_at: existingProject.updated_at,
+          };
+          return { data: responseData };
+        }
+      }
       if (createError.code === '23503') { // foreign_key_violation
         if (createError.message.includes('selected_domain_id')) {
           return { error: { message: "Invalid selectedDomainId. The specified domain does not exist.", details: createError.message, status: 400 } };

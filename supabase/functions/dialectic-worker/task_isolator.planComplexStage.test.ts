@@ -149,9 +149,9 @@ describe('planComplexStage', () => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 contribution_type: 'header_context',
-                file_name: 'header.json',
+                file_name: 'model-1_1_header_context.json',
                 storage_bucket: 'test-bucket',
-                storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage/_work/context',
+                storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
                 size_bytes: 80,
                 mime_type: 'application/json',
                 document_relationships: null,
@@ -398,6 +398,7 @@ describe('planComplexStage', () => {
                 maxRetries: 3,
                 continuation_count: 0,
                 user_jwt: 'parent-jwt-default',
+                idempotencyKey: "idempotency-key-1",
             },
             created_at: new Date().toISOString(),
             user_id: 'user-123',
@@ -415,6 +416,7 @@ describe('planComplexStage', () => {
             target_contribution_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: "idempotency-key-1",
         };
 
         mockRecipeStep = {
@@ -537,6 +539,7 @@ describe('planComplexStage', () => {
                 stageSlug: 'test-stage',
             },
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         };
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
         const planCtx = makePlanCtx(plannerFn);
@@ -717,6 +720,7 @@ describe('planComplexStage', () => {
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         };
         const malformedPayload = { an_invalid: 'payload' };
 
@@ -789,7 +793,7 @@ describe('planComplexStage', () => {
 
         // Arrange: Set up a planner that captures the documents it receives.
         let receivedDocs: SourceDocument[] | undefined;
-        const plannerFn: GranularityPlannerFn = (sourceDocs, _parentJob, _recipeStep, _authToken) => {
+        const plannerFn: GranularityPlannerFn = (sourceDocs: SourceDocument[]) => {
             receivedDocs = sourceDocs;
             // Return a simple payload to confirm the workflow completes.
             return [{
@@ -807,6 +811,7 @@ describe('planComplexStage', () => {
                 continuation_count: 0,
                 canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
                 user_jwt: 'user-jwt-123',
+                idempotencyKey: "idempotency-key-1",
             }];
         };
         const planCtx = makePlanCtx(plannerFn);
@@ -1134,6 +1139,7 @@ describe('planComplexStage', () => {
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
             user_jwt: mockParentJob.payload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         };
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
         const planCtx = makePlanCtx(plannerFn);
@@ -1182,6 +1188,7 @@ describe('planComplexStage', () => {
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
             user_jwt: mockParentJob.payload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         };
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
         const planCtx = makePlanCtx(plannerFn);
@@ -1232,6 +1239,7 @@ describe('planComplexStage', () => {
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         }];
         const planCtx = makePlanCtx(plannerFn);
 
@@ -1267,6 +1275,7 @@ describe('planComplexStage', () => {
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         }];
         const planCtx = makePlanCtx(plannerFn);
 
@@ -1302,6 +1311,7 @@ describe('planComplexStage', () => {
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         }];
         const planCtx = makePlanCtx(plannerFn);
 
@@ -1345,6 +1355,7 @@ describe('planComplexStage', () => {
             continuation_count: 0,
             canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         }];
         const planCtx = makePlanCtx(plannerFn);
 
@@ -1420,6 +1431,7 @@ describe('planComplexStage', () => {
 
         // Arrange: Mock a planner that returns PLAN payload (like planAllToOne when recipeStep.job_type === 'PLAN')
         const planPayload: DialecticPlanJobPayload = {
+            idempotencyKey: "idempotency-key-1",
             projectId: mockParentJob.payload.projectId,
             sessionId: mockParentJob.payload.sessionId,
             stageSlug: mockParentJob.payload.stageSlug,

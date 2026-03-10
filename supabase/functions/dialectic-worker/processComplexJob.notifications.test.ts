@@ -133,6 +133,7 @@ describe('processComplexJob - PLAN lifecycle notifications', () => {
             model_id: 'model-id-complex',
             walletId: 'wallet-id-complex',
             user_jwt: 'user-jwt-complex',
+            idempotencyKey: 'idem-plan-complex',
         };
 
         if (!isJson(mockPayload)) {
@@ -159,6 +160,7 @@ describe('processComplexJob - PLAN lifecycle notifications', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: 'idem-plan-complex',
         };
     });
 
@@ -183,6 +185,7 @@ describe('processComplexJob - PLAN lifecycle notifications', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
         const params = {
             ...createMockJobContextParams(),
@@ -222,6 +225,7 @@ describe('processComplexJob - PLAN lifecycle notifications', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
         const params = {
             ...createMockJobContextParams(),
@@ -263,6 +267,7 @@ describe('processComplexJob - PLAN lifecycle notifications', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
         const params = {
             ...createMockJobContextParams(),
@@ -390,6 +395,7 @@ describe('processComplexJob - PLAN lifecycle notifications', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-execute-1',
         };
         const params = {
             ...createMockJobContextParams(),

@@ -109,6 +109,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
 		model_id: 'gpt-4',
 		walletId: 'wallet-default',
 		user_jwt: 'parent-jwt-default',
+		idempotencyKey: "idempotency-key-1",
 	},
 	attempt_count: 0,
 	completed_at: null,
@@ -123,6 +124,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
 	target_contribution_id: null,
 	is_test_job: false,
 	job_type: 'PLAN',
+	idempotency_key: "idempotency-key-1",
 };
 
 const MOCK_RECIPE_STEP: DialecticStageRecipeStep = {
@@ -372,6 +374,7 @@ Deno.test('planPerSourceDocument Test Case A: EXECUTE jobs inherit model_id from
 			model_id: 'parent-model-id', // Parent has different model_id than source docs
 			walletId: 'wallet-default',
 			user_jwt: 'parent-jwt-default',
+			idempotencyKey: "idempotency-key-1",
 		},
 		attempt_count: 0,
 		completed_at: null,
@@ -386,6 +389,7 @@ Deno.test('planPerSourceDocument Test Case A: EXECUTE jobs inherit model_id from
 		target_contribution_id: null,
 		is_test_job: false,
 		job_type: 'PLAN',
+		idempotency_key: "idempotency-key-1",
 	};
 
 	// MOCK_SOURCE_DOCS have model_id: 'gpt-4', which differs from parent's 'parent-model-id'
@@ -426,6 +430,7 @@ Deno.test('planPerSourceDocument Test Case B: EXECUTE jobs inherit model_id from
 			model_id: 'gpt-4', // Matches MOCK_SOURCE_DOCS model_id
 			walletId: 'wallet-default',
 			user_jwt: 'parent-jwt-default',
+			idempotencyKey: "idempotency-key-1",
 		},
 		attempt_count: 0,
 		completed_at: null,
@@ -440,6 +445,7 @@ Deno.test('planPerSourceDocument Test Case B: EXECUTE jobs inherit model_id from
 		target_contribution_id: null,
 		is_test_job: false,
 		job_type: 'PLAN',
+		idempotency_key: "idempotency-key-1",
 	};
 
 	const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, parentJobWithMatchingModel, MOCK_RECIPE_STEP, 'user-jwt-123');
@@ -516,6 +522,7 @@ Deno.test('planPerSourceDocument inherits model_slug from parent job payload', (
 			model_slug: 'parent-model-slug',
 			walletId: 'wallet-default',
 			user_jwt: 'parent-jwt-token',
+			idempotencyKey: "idempotency-key-1",
 		},
 		attempt_count: 0,
 		completed_at: null,
@@ -530,6 +537,7 @@ Deno.test('planPerSourceDocument inherits model_slug from parent job payload', (
 		target_contribution_id: null,
 		is_test_job: false,
 		job_type: 'PLAN',
+		idempotency_key: "idempotency-key-1",
 	};
 
 	const childPayloads = planPerSourceDocument(
@@ -1041,6 +1049,7 @@ Deno.test('planPerSourceDocument EXECUTE branch must not set document_relationsh
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -1233,8 +1242,9 @@ Deno.test('planPerSourceDocument uses relevance-selected anchor for canonical pa
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
-			job_type: 'PLAN' as const,
+			job_type: 'PLAN',
 			is_test_job: false,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -1434,6 +1444,7 @@ Deno.test('planPerSourceDocument handles no_document_inputs_required by passing 
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -1596,6 +1607,7 @@ Deno.test('planPerSourceDocument handles anchor_found by using result.document',
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -1816,6 +1828,7 @@ Deno.test('planPerSourceDocument throws on anchor_not_found', async () => {
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -1991,6 +2004,7 @@ Deno.test('planPerSourceDocument 95.c.i: Given 3 header_contexts from 3 differen
 			model_id: 'model-a',
 			walletId: MOCK_PARENT_JOB.payload.walletId,
 			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 		attempt_count: MOCK_PARENT_JOB.attempt_count,
 		completed_at: MOCK_PARENT_JOB.completed_at,
@@ -2005,6 +2019,7 @@ Deno.test('planPerSourceDocument 95.c.i: Given 3 header_contexts from 3 differen
 		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
 		is_test_job: MOCK_PARENT_JOB.is_test_job,
 		job_type: MOCK_PARENT_JOB.job_type,
+		idempotency_key: "idempotency-key-1",
 	};
 
 	const parentJobForModelB: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
@@ -2021,6 +2036,7 @@ Deno.test('planPerSourceDocument 95.c.i: Given 3 header_contexts from 3 differen
 			model_id: 'model-b',
 			walletId: MOCK_PARENT_JOB.payload.walletId,
 			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 		attempt_count: MOCK_PARENT_JOB.attempt_count,
 		completed_at: MOCK_PARENT_JOB.completed_at,
@@ -2035,6 +2051,7 @@ Deno.test('planPerSourceDocument 95.c.i: Given 3 header_contexts from 3 differen
 		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
 		is_test_job: MOCK_PARENT_JOB.is_test_job,
 		job_type: MOCK_PARENT_JOB.job_type,
+		idempotency_key: "idempotency-key-1",
 	};
 
 	const parentJobForModelC: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
@@ -2051,6 +2068,7 @@ Deno.test('planPerSourceDocument 95.c.i: Given 3 header_contexts from 3 differen
 			model_id: 'model-c',
 			walletId: MOCK_PARENT_JOB.payload.walletId,
 			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 		attempt_count: MOCK_PARENT_JOB.attempt_count,
 		completed_at: MOCK_PARENT_JOB.completed_at,
@@ -2065,6 +2083,7 @@ Deno.test('planPerSourceDocument 95.c.i: Given 3 header_contexts from 3 differen
 		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
 		is_test_job: MOCK_PARENT_JOB.is_test_job,
 		job_type: MOCK_PARENT_JOB.job_type,
+		idempotency_key: "idempotency-key-1",
 	};
 
 	const executeRecipeStepWithHeaderContext: DialecticStageRecipeStep = {
@@ -2202,6 +2221,7 @@ Deno.test('planPerSourceDocument 95.c.ii: Given header_context from model A and 
 			model_id: 'model-b', // Parent is for model B, but source doc is from model A
 			walletId: MOCK_PARENT_JOB.payload.walletId,
 			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 		attempt_count: MOCK_PARENT_JOB.attempt_count,
 		completed_at: MOCK_PARENT_JOB.completed_at,
@@ -2216,6 +2236,7 @@ Deno.test('planPerSourceDocument 95.c.ii: Given header_context from model A and 
 		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
 		is_test_job: MOCK_PARENT_JOB.is_test_job,
 		job_type: MOCK_PARENT_JOB.job_type,
+		idempotency_key: "idempotency-key-1",
 	};
 
 	const executeRecipeStepWithHeaderContext: DialecticStageRecipeStep = {
@@ -2282,6 +2303,7 @@ Deno.test('planPerSourceDocument 95.c.iii: Given multiple docs from same model, 
 			model_id: 'model-a',
 			walletId: MOCK_PARENT_JOB.payload.walletId,
 			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 		attempt_count: MOCK_PARENT_JOB.attempt_count,
 		completed_at: MOCK_PARENT_JOB.completed_at,
@@ -2296,6 +2318,7 @@ Deno.test('planPerSourceDocument 95.c.iii: Given multiple docs from same model, 
 		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
 		is_test_job: MOCK_PARENT_JOB.is_test_job,
 		job_type: MOCK_PARENT_JOB.job_type,
+		idempotency_key: "idempotency-key-1",
 	};
 
 	const sourceDocs = [doc1ModelA, doc2ModelA, doc3ModelA];
@@ -2346,6 +2369,7 @@ Deno.test('planPerSourceDocument 95.c.iv: Model filtering applies only when sour
 			model_id: 'model-a',
 			walletId: MOCK_PARENT_JOB.payload.walletId,
 			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 		attempt_count: MOCK_PARENT_JOB.attempt_count,
 		completed_at: MOCK_PARENT_JOB.completed_at,
@@ -2360,6 +2384,7 @@ Deno.test('planPerSourceDocument 95.c.iv: Model filtering applies only when sour
 		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
 		is_test_job: MOCK_PARENT_JOB.is_test_job,
 		job_type: MOCK_PARENT_JOB.job_type,
+		idempotency_key: "idempotency-key-1",
 	};
 
 	const sourceDocs = [docWithoutModelId, docWithModelId];
@@ -2405,6 +2430,7 @@ Deno.test('planPerSourceDocument 95.c.v: EXECUTE jobs inherit model_id from the 
 			model_id: 'model-a', // Parent is for model A
 			walletId: MOCK_PARENT_JOB.payload.walletId,
 			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 		attempt_count: MOCK_PARENT_JOB.attempt_count,
 		completed_at: MOCK_PARENT_JOB.completed_at,
@@ -2419,6 +2445,7 @@ Deno.test('planPerSourceDocument 95.c.v: EXECUTE jobs inherit model_id from the 
 		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
 		is_test_job: MOCK_PARENT_JOB.is_test_job,
 		job_type: MOCK_PARENT_JOB.job_type,
+		idempotency_key: "idempotency-key-1",
 	};
 
 	// Only docModelA should pass filtering (matches parent model_id)
@@ -2491,6 +2518,7 @@ Deno.test('planPerSourceDocument: When ONLY header_contexts exist (matching pare
 			model_id: 'model-a',
 			walletId: MOCK_PARENT_JOB.payload.walletId,
 			user_jwt: MOCK_PARENT_JOB.payload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 		attempt_count: MOCK_PARENT_JOB.attempt_count,
 		completed_at: MOCK_PARENT_JOB.completed_at,
@@ -2505,6 +2533,7 @@ Deno.test('planPerSourceDocument: When ONLY header_contexts exist (matching pare
 		target_contribution_id: MOCK_PARENT_JOB.target_contribution_id,
 		is_test_job: MOCK_PARENT_JOB.is_test_job,
 		job_type: MOCK_PARENT_JOB.job_type,
+		idempotency_key: "idempotency-key-1",
 	};
 
 	const executeRecipeStepWithHeaderContext: DialecticStageRecipeStep = {
@@ -2579,6 +2608,7 @@ Deno.test('planPerSourceDocument selects anchor from ALL source documents, not j
 			model_id: 'model-b', // The critiquing model
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 

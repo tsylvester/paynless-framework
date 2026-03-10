@@ -6,6 +6,8 @@ import userEvent from '@testing-library/user-event';
 
 import { useDialecticStore, initialDialecticStateValues, selectActiveChatWalletInfo } from '@paynless/store';
 import type {
+  CreateProjectAndAutoStartPayload,
+  CreateProjectAutoStartResult,
   DialecticStore,
   DialecticProject,
   ApiError,
@@ -84,6 +86,10 @@ vi.mock('@/components/dialectic/DomainSelector', () => ({
 }));
 
 const mockCreateDialecticProject = vi.fn();
+const mockCreateProjectAndAutoStart = vi.fn(async (payload: CreateProjectAndAutoStartPayload): Promise<CreateProjectAutoStartResult> => {
+  mockCreateDialecticProject(payload);
+  return { projectId: 'autostart-proj-id', sessionId: 'autostart-sess-id', hasDefaultModels: true };
+});
 const mockResetCreateProjectError = vi.fn();
 const mockNavigate = vi.fn();
 
@@ -127,6 +133,7 @@ const createMockStoreState = (overrides: Partial<DialecticStore>): DialecticStor
     isCreatingProject: false,
     createProjectError: null,
     createDialecticProject: mockCreateDialecticProject,
+    createProjectAndAutoStart: mockCreateProjectAndAutoStart,
     isStartingSession: false,
     startSessionError: null,
     startDialecticSession: vi.fn(),
@@ -263,7 +270,7 @@ describe('CreateDialecticProjectForm', () => {
     expect(screen.getByTestId('text-input-area-for-prompt-previewtoggle-indicator')).toBeInTheDocument();
   });
 
-  it('submits with placeholder values when form fields are empty', async () => {
+  it('Manual path: submits with placeholder values and sends only idempotencyKey to createDialecticProject', async () => {
     const user = userEvent.setup();
     const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
     mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain, modelCatalog: modelCatalogWithDefault });
@@ -286,16 +293,50 @@ describe('CreateDialecticProjectForm', () => {
           projectName: projectNamePlaceholder,
           initialUserPrompt: initialUserPromptPlaceholder,
           selectedDomainId: mockSelectedDomain.id,
+          idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
         })
       );
     });
+    const manualPayload = mockCreateDialecticProject.mock.calls[0][0];
+    expect(manualPayload).not.toHaveProperty('sessionIdempotencyKey');
 
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith(`/dialectic/${mockSuccessfulProject.id}`);
     });
   });
 
-  it('calls createDialecticProject with form data on submit', async () => {
+  it('Autostart path: submits with placeholder values and sends both idempotency keys to createProjectAndAutoStart', async () => {
+    const user = userEvent.setup();
+    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
+    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain, modelCatalog: modelCatalogWithDefault });
+    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
+
+    renderForm();
+
+    const submitButton = screen.getByRole('button', { name: /Create Project/i });
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(mockCreateProjectAndAutoStart).toHaveBeenCalledTimes(1);
+    });
+    const autoStartPayload = mockCreateProjectAndAutoStart.mock.calls[0][0];
+    expect(autoStartPayload.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    expect(autoStartPayload.sessionIdempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    expect(mockCreateDialecticProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectName: projectNamePlaceholder,
+        initialUserPrompt: initialUserPromptPlaceholder,
+        selectedDomainId: mockSelectedDomain.id,
+        idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+        sessionIdempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+      })
+    );
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/dialectic/autostart-proj-id/session/autostart-sess-id', expect.any(Object));
+    });
+  });
+
+  it('Manual path: calls createDialecticProject with form data and only idempotencyKey on submit', async () => {
     const user = userEvent.setup();
     const testData = { projectName: 'Test Project', initialUserPrompt: 'Test Prompt' };
     const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
@@ -345,16 +386,19 @@ describe('CreateDialecticProjectForm', () => {
           projectName: testData.projectName,
           initialUserPrompt: testData.initialUserPrompt,
           selectedDomainId: mockSelectedDomain.id,
+          idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
         })
       );
     });
+    const manualPayload = mockCreateDialecticProject.mock.calls[0][0];
+    expect(manualPayload).not.toHaveProperty('sessionIdempotencyKey');
 
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith(`/dialectic/${mockSuccessfulProject.id}`);
     });
   });
 
-  it('uploads promptFile if present after successful project creation', async () => {
+  it('Manual path: uploads promptFile and sends only idempotencyKey to createDialecticProject', async () => {
     const user = userEvent.setup();
     const markdownContent = '# My Project From File';
     const file = new File([markdownContent], 'test.md', { type: 'text/markdown' });
@@ -407,9 +451,12 @@ describe('CreateDialecticProjectForm', () => {
           initialUserPrompt: markdownContent,
           promptFile: file,
           selectedDomainId: 'domain-1',
+          idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
         })
       );
     });
+    const manualPayload = mockCreateDialecticProject.mock.calls[0][0];
+    expect(manualPayload).not.toHaveProperty('sessionIdempotencyKey');
 
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith(`/dialectic/${mockCreatedProject.id}`);

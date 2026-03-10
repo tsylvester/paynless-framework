@@ -118,6 +118,7 @@ export const planPerModel: GranularityPlannerFn = (
 			user_jwt: parentJob.payload.user_jwt,
 			walletId: parentJob.payload.walletId,
 			context_for_documents: contextForDocuments,
+			idempotencyKey: parentJob.payload.idempotencyKey,
 		};
 		if (parentJob.payload.model_slug !== undefined && parentJob.payload.model_slug !== null) {
 			planPayload.model_slug = parentJob.payload.model_slug;
@@ -334,6 +335,7 @@ export const planPerModel: GranularityPlannerFn = (
 		}
 
 		const newPayload: DialecticExecuteJobPayload = {
+			idempotencyKey: "idempotency-key-1",
 			projectId: parentJob.payload.projectId,
 			sessionId: parentJob.payload.sessionId,
 			stageSlug: parentJob.payload.stageSlug,

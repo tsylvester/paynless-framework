@@ -1,20 +1,23 @@
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { SessionInfoCard } from './SessionInfoCard';
-import { DialecticSession, DialecticStage, DialecticProjectResource, DialecticProject, DialecticStateValues, ApiError, AssembledPrompt } from '@paynless/types';
+import { DialecticSession, DialecticStage, DialecticProjectResource, DialecticProject, DialecticStateValues, ApiError, AssembledPrompt, UnifiedProjectProgress } from '@paynless/types';
 import {
   initializeMockDialecticState,
 } from '@/mocks/dialecticStore.mock';
 import { resetAiStoreMock } from '@/mocks/aiStore.mock';
 import { initializeMockWalletStore } from '@/mocks/walletStore.mock';
-import {
-  useDialecticStore,
-  selectUnifiedProjectProgress,
-} from '@paynless/store';
+import { useDialecticStore } from '@paynless/store';
 
-// Explicitly mock the @paynless/store to use our mock implementation
+const { selectUnifiedProjectProgressMock } = vi.hoisted(() => ({
+  selectUnifiedProjectProgressMock: vi.fn<
+    [DialecticStateValues, string],
+    UnifiedProjectProgress
+  >(),
+}));
+
 vi.mock('@paynless/store', async () => {
   const dialecticMockModule = await vi.importActual<
     typeof import('@/mocks/dialecticStore.mock')
@@ -26,7 +29,12 @@ vi.mock('@paynless/store', async () => {
   const aiStoreMockModule = await vi.importActual<typeof import('@/mocks/aiStore.mock')>('@/mocks/aiStore.mock');
   const walletStoreMockModule = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStore.mock');
   const typesModule = await vi.importActual<typeof import('@paynless/types')>('@paynless/types');
-  
+
+  selectUnifiedProjectProgressMock.mockImplementation(
+    (state: DialecticStateValues, sessionId: string): UnifiedProjectProgress =>
+      dialecticMockModule.selectUnifiedProjectProgress(state, sessionId),
+  );
+
   return {
     useDialecticStore: dialecticMockModule.useDialecticStore,
     useOrganizationStore: organizationStoreMockModule.useOrganizationStore,
@@ -38,7 +46,7 @@ vi.mock('@paynless/store', async () => {
     selectContributionGenerationStatus: actualOriginalStoreModule.selectContributionGenerationStatus,
     selectGenerateContributionsError: actualOriginalStoreModule.selectGenerateContributionsError,
     selectGeneratingSessionsForSession: actualOriginalStoreModule.selectGeneratingSessionsForSession,
-    selectUnifiedProjectProgress: dialecticMockModule.selectUnifiedProjectProgress,
+    selectUnifiedProjectProgress: selectUnifiedProjectProgressMock,
     selectSelectedModels: dialecticMockModule.selectSelectedModels,
     selectPersonalWallet: walletStoreMockModule.selectPersonalWallet,
     selectIsLoadingPersonalWallet: walletStoreMockModule.selectIsLoadingPersonalWallet,
@@ -98,6 +106,7 @@ const mockStage: DialecticStage = {
     recipe_template_id: null,
     active_recipe_instance_id: null,
     created_at: 'now',
+    minimum_balance: 0,
 }
 
 const createMockSeedPromptResource = (
@@ -187,13 +196,14 @@ const mockProjectWithStages: DialecticProject = {
   },
 };
 
-const mockUnifiedProgressWithBar = {
+const mockUnifiedProgressWithBar: UnifiedProjectProgress = {
   totalStages: 1,
   completedStages: 0,
   currentStageSlug: mockStageSlug,
   overallPercentage: 0,
   currentStage: mockStage,
-  projectStatus: 'not_started' as const,
+  projectStatus: 'not_started',
+  hydrationReady: true,
   stageDetails: [],
 };
 
@@ -229,11 +239,13 @@ describe('SessionInfoCard', () => {
     );
   };
 
-  const openAccordionAndWaitForContent = async () => {
-    const accordionTrigger = await screen.findByText(/Show seed prompt/i);
-    fireEvent.click(accordionTrigger);
-    // The content is now conditionally rendered inside a CardContent, not a specific Accordion component.
-    // The individual tests will wait for specific content to appear.
+  const openSeedPromptViaDropdown = async () => {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /more actions/i }));
+    const seedPromptItem = await screen.findByRole('menuitem', {
+      name: /show seed prompt|hide seed prompt/i,
+    });
+    await user.click(seedPromptItem);
   };
 
   describe('New: with activeSeedPrompt from store', () => {
@@ -250,7 +262,7 @@ describe('SessionInfoCard', () => {
       });
 
       renderComponent();
-      await openAccordionAndWaitForContent();
+      await openSeedPromptViaDropdown();
 
       const markdownRenderer = await screen.findByTestId('markdown-renderer-mock');
       expect(markdownRenderer).toHaveTextContent(mockAssembledPrompt.promptContent);
@@ -279,7 +291,7 @@ describe('SessionInfoCard', () => {
       });
 
       renderComponent();
-      await openAccordionAndWaitForContent();
+      await openSeedPromptViaDropdown();
 
       expect(await screen.findByText('No seed prompt available for this session.')).toBeInTheDocument();
     });
@@ -293,7 +305,7 @@ describe('SessionInfoCard', () => {
       useDialecticStore.setState({ fetchInitialPromptContent: mockFetch });
 
       renderComponent();
-      await openAccordionAndWaitForContent();
+      await openSeedPromptViaDropdown();
 
       expect(mockFetch).not.toHaveBeenCalled();
     });
@@ -322,13 +334,12 @@ describe('SessionInfoCard', () => {
         }
       );
       renderComponent();
-      await openAccordionAndWaitForContent();
+      await openSeedPromptViaDropdown();
 
       const cardTitleElement = await screen.findByTestId(`session-info-title-${mockSession.id}`);
       expect(cardTitleElement).toBeInTheDocument();
       expect(cardTitleElement).toHaveTextContent(new RegExp(mockSession.session_description!));
       expect(screen.getByText(/Iteration\s+1/)).toBeInTheDocument();
-      expect(screen.getByText(/Not Started/i)).toBeInTheDocument();
 
       expect(screen.queryByText('Loading Session Information...')).toBeNull();
     });
@@ -340,9 +351,7 @@ describe('SessionInfoCard', () => {
       });
 
       renderComponent();
-
-      const accordionTrigger = await screen.findByText(/Show seed prompt/i);
-      fireEvent.click(accordionTrigger);
+      await openSeedPromptViaDropdown();
 
       expect(
         await screen.findByText('No seed prompt available for this session.'),
@@ -360,7 +369,7 @@ describe('SessionInfoCard', () => {
     });
 
     it('when generating, displays DynamicProgressBar as single progress display', () => {
-      selectUnifiedProjectProgress.mockReturnValue(mockUnifiedProgressWithBar);
+      selectUnifiedProjectProgressMock.mockReturnValue(mockUnifiedProgressWithBar);
       setupMockStore({
         currentProjectDetail: mockProjectWithStages,
         generatingSessions: { [mockSessionId]: ['job-1', 'job-2'] },
@@ -407,7 +416,7 @@ describe('SessionInfoCard', () => {
       vi.clearAllMocks();
       resetAiStoreMock();
       initializeMockWalletStore();
-      selectUnifiedProjectProgress.mockReturnValue(mockUnifiedProgressWithBar);
+      selectUnifiedProjectProgressMock.mockReturnValue(mockUnifiedProgressWithBar);
     });
 
     it('displays single unified progress indicator from SSOT', () => {
@@ -417,30 +426,13 @@ describe('SessionInfoCard', () => {
       expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
     });
 
-    it('title bar status text reflects SSOT projectStatus', () => {
+    it('session title and iteration badge are shown when project is loaded', () => {
       setupMockStore({ currentProjectDetail: mockProjectWithStages });
       renderComponent();
-      expect(screen.getByText(/Not Started/i)).toBeInTheDocument();
-    });
-
-    it('status badge reflects SSOT projectStatus', () => {
-      setupMockStore({ currentProjectDetail: mockProjectWithStages });
-      renderComponent();
-      const notStartedElements = screen.getAllByText(/Not Started/i);
-      expect(notStartedElements.length).toBeGreaterThanOrEqual(1);
-      const badgeElement = notStartedElements.find((el) =>
-        el.closest('[data-slot="badge"]')
+      expect(screen.getByTestId(`session-info-title-${mockSession.id}`)).toHaveTextContent(
+        mockSession.session_description!,
       );
-      expect(badgeElement).toBeDefined();
-      expect(badgeElement).toHaveTextContent(/Not Started/i);
-    });
-
-    it('title bar and badge show identical status', () => {
-      setupMockStore({ currentProjectDetail: mockProjectWithStages });
-      renderComponent();
-      const statusTexts = screen.getAllByText(/Not Started/i);
-      expect(statusTexts.length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText(/Not Started/i)).toBeInTheDocument();
+      expect(screen.getByText(/Iteration\s+1/)).toBeInTheDocument();
     });
 
     it('removes duplicate Generating contributions... indicator when progress bar is active', () => {
@@ -454,13 +446,10 @@ describe('SessionInfoCard', () => {
       expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
     });
 
-    it('all status displays (title, badge, progress bar) agree with each other', () => {
+    it('progress bar is visible when unified progress has stages', () => {
       setupMockStore({ currentProjectDetail: mockProjectWithStages });
       renderComponent();
-      expect(screen.getByText(/Not Started/i)).toBeInTheDocument();
       expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
-      const allNotStarted = screen.getAllByText(/Not Started/i);
-      expect(allNotStarted.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -504,6 +493,7 @@ describe('SessionInfoCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: 'now',
+        minimum_balance: 0,
       };
 
       const projectWithFinalStage: DialecticProject = {
@@ -579,6 +569,7 @@ describe('SessionInfoCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: 'now',
+        minimum_balance: 0,
       };
 
       const projectWithFinalStage: DialecticProject = {
@@ -638,6 +629,7 @@ describe('SessionInfoCard', () => {
         recipe_template_id: null,
         active_recipe_instance_id: null,
         created_at: 'now',
+        minimum_balance: 0,
       };
 
       const projectWithNonFinalStage: DialecticProject = {
@@ -682,6 +674,138 @@ describe('SessionInfoCard', () => {
       const exportAction = await screen.findByText('Export Project');
       expect(exportAction).toBeInTheDocument();
       expect(exportAction).not.toHaveTextContent('Export Final');
+    });
+  });
+
+  describe('2-row toolbar consolidation', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      resetAiStoreMock();
+      initializeMockWalletStore();
+      selectUnifiedProjectProgressMock.mockReturnValue(mockUnifiedProgressWithBar);
+    });
+
+    it('Row 1 renders Back button, session name, iteration badge, and ... dropdown in a single flex row', () => {
+      setupMockStore({ currentProjectDetail: mockProjectWithStages });
+      renderComponent();
+
+      const backButton = screen.getByRole('button', { name: /back/i });
+      const title = screen.getByTestId(`session-info-title-${mockSession.id}`);
+      const iterationBadge = screen.getByText(/Iteration\s+1/);
+      const moreActionsButton = screen.getByRole('button', { name: /more actions/i });
+
+      expect(backButton).toBeInTheDocument();
+      expect(title).toBeInTheDocument();
+      expect(iterationBadge).toBeInTheDocument();
+      expect(moreActionsButton).toBeInTheDocument();
+
+      const row1 = backButton.closest('.flex');
+      expect(row1).toBeInTheDocument();
+      expect(row1).toContainElement(title);
+      expect(row1).toContainElement(iterationBadge);
+      expect(row1).toContainElement(moreActionsButton);
+    });
+
+    it('Row 2 renders Model Selector popover, Wallet Selector, and DynamicProgressBar in a single flex row', () => {
+      setupMockStore({ currentProjectDetail: mockProjectWithStages });
+      renderComponent();
+
+      const modelSelectorTrigger = screen.getByRole('button', { name: /select models|(\d+) model/i });
+      const walletSelector = screen.getByTestId('mock-wallet-selector');
+      const progressBar = screen.getByTestId('dynamic-progress-bar-mock');
+
+      expect(modelSelectorTrigger).toBeInTheDocument();
+      expect(walletSelector).toBeInTheDocument();
+      expect(progressBar).toBeInTheDocument();
+
+      const row2 = progressBar.closest('.flex');
+      expect(row2).toBeInTheDocument();
+      expect(row2).toContainElement(modelSelectorTrigger);
+      expect(row2).toContainElement(walletSelector);
+    });
+
+    it('... dropdown contains Export, Continue Until Complete, and Show/Hide Seed Prompt toggle', async () => {
+      setupMockStore({ currentProjectDetail: mockProjectWithStages });
+      renderComponent();
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: /more actions/i }));
+
+      expect(await screen.findByText('Export Project')).toBeInTheDocument();
+      expect(screen.getByTestId('mock-continue-toggle')).toBeInTheDocument();
+      expect(
+        screen.getByRole('menuitem', { name: /show seed prompt|hide seed prompt/i })
+      ).toBeInTheDocument();
+    });
+
+    it('clicking seed prompt dropdown item toggles the collapsible seed prompt section', async () => {
+      setupMockStore({
+        currentProjectDetail: mockProjectWithStages,
+        activeSeedPrompt: mockAssembledPrompt,
+      });
+      renderComponent();
+
+      const user = userEvent.setup();
+      expect(screen.queryByTestId('markdown-renderer-mock')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /more actions/i }));
+      const seedPromptItem = await screen.findByRole('menuitem', {
+        name: /show seed prompt|hide seed prompt/i,
+      });
+      await user.click(seedPromptItem);
+
+      expect(await screen.findByTestId('markdown-renderer-mock')).toBeInTheDocument();
+      expect(screen.getByTestId('markdown-renderer-mock')).toHaveTextContent(
+        mockAssembledPrompt.promptContent
+      );
+
+      await user.click(screen.getByRole('button', { name: /more actions/i }));
+      const hideItem = await screen.findByRole('menuitem', { name: /hide seed prompt/i });
+      await user.click(hideItem);
+
+      expect(screen.queryByTestId('markdown-renderer-mock')).not.toBeInTheDocument();
+    });
+
+    it('header has sufficient left padding to clear the app sidebar trigger (pl-14 or equivalent)', () => {
+      setupMockStore({ currentProjectDetail: mockProjectWithStages });
+      const { container } = renderComponent();
+
+      const headerWrapper = container.querySelector('[aria-labelledby]');
+      expect(headerWrapper).toBeInTheDocument();
+      expect(headerWrapper?.className).toMatch(/pl-14/);
+    });
+
+    it('error alert for generateContributionsError still renders when error is present', () => {
+      const error: ApiError = { message: 'Toolbar consolidation test error', code: 'TEST_ERR' };
+      setupMockStore({
+        currentProjectDetail: mockProjectWithStages,
+        generateContributionsError: error,
+      });
+      renderComponent();
+
+      const errorAlert = screen.getByTestId('generate-contributions-error');
+      expect(errorAlert).toBeInTheDocument();
+      expect(within(errorAlert).getByText('Error Generating Contributions')).toBeInTheDocument();
+      expect(within(errorAlert).getByText(error.message)).toBeInTheDocument();
+    });
+
+    it('seed prompt collapsible section still renders below the rows when toggled open', async () => {
+      setupMockStore({
+        currentProjectDetail: mockProjectWithStages,
+        activeSeedPrompt: mockAssembledPrompt,
+      });
+      renderComponent();
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: /more actions/i }));
+      const seedPromptItem = await screen.findByRole('menuitem', {
+        name: /show seed prompt|hide seed prompt/i,
+      });
+      await user.click(seedPromptItem);
+
+      const seedSection = await screen.findByTestId('markdown-renderer-mock');
+      expect(seedSection).toBeInTheDocument();
+      expect(seedSection.closest('.rounded-lg')).toBeInTheDocument();
     });
   });
 }); 

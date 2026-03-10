@@ -2354,4 +2354,62 @@ describe('StageRunChecklist', () => {
         const row = screen.getByTestId('document-synthesis_document_rendered');
         expect(row).toHaveTextContent('Synthesis Document Rendered');
     });
+
+    it('renders RegenerateDocumentButton for each document row', () => {
+        const recipe = createRecipe([buildRenderStep(), buildSecondaryRenderStep()]);
+        selectValidMarkdownDocumentKeys.mockReturnValue(
+            new Set(['synthesis_document_rendered', 'synthesis_document_secondary']),
+        );
+        const stepStatuses: StepStatuses = {
+            render_document: 'completed',
+            render_document_secondary: 'completed',
+        };
+        const documents: StageRunDocuments = {
+            [makeStageRunDocumentKey('synthesis_document_rendered', modelIdA)]: {
+                status: 'completed',
+                job_id: 'job-render',
+                latestRenderedResourceId: 'resource-render',
+                modelId: modelIdA,
+                versionHash: 'hash-render',
+                lastRenderedResourceId: 'resource-render',
+                lastRenderAtIso: '2025-01-01T00:00:00.000Z',
+            },
+            [makeStageRunDocumentKey('synthesis_document_secondary', modelIdA)]: {
+                status: 'completed',
+                job_id: 'job-secondary',
+                latestRenderedResourceId: 'resource-secondary',
+                modelId: modelIdA,
+                versionHash: 'hash-secondary',
+                lastRenderedResourceId: 'resource-secondary',
+                lastRenderAtIso: '2025-01-01T00:00:01.000Z',
+            },
+        };
+        const progressEntry = createProgressEntry(stepStatuses, documents, [
+            buildJobProgressDto({
+                id: 'job-render',
+                status: 'completed',
+                modelId: modelIdA,
+                documentKey: 'synthesis_document_rendered',
+                modelName: 'Model A',
+            }),
+            buildJobProgressDto({
+                id: 'job-secondary',
+                status: 'completed',
+                modelId: modelIdA,
+                documentKey: 'synthesis_document_secondary',
+                modelName: 'Model A',
+            }),
+        ]);
+        setChecklistState(recipe, progressEntry);
+
+        act(() => {
+            render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
+        });
+
+        const documentList = screen.getByTestId('stage-run-checklist-documents');
+        const documentRows = within(documentList).getAllByRole('listitem');
+        const regenerateButtons = screen.getAllByRole('button', { name: /Regenerate document/i });
+        expect(documentRows).toHaveLength(2);
+        expect(regenerateButtons).toHaveLength(2);
+    });
 });

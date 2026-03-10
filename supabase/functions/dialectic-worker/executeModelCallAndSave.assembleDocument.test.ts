@@ -47,6 +47,7 @@ const mockRenderJob: Tables<'dialectic_generation_jobs'> = {
     prerequisite_job_id: null,
     target_contribution_id: null,
     max_retries: 0,
+    idempotency_key: null,
 };
 
 /**

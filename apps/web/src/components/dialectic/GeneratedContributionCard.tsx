@@ -18,7 +18,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { TextInputArea } from "@/components/common/TextInputArea";
-import { Badge } from "@/components/ui/badge";
 import { Loader2, ChevronDown, Info, Download } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -41,36 +40,6 @@ interface GeneratedContributionCardProps {
 	modelId: string;
 	className?: string;
 }
-const formatStatusLabel = (value: string | undefined): string => {
-	if (!value) {
-		return "Unknown";
-	}
-
-	const mapping: Record<string, string> = {
-		completed: "Completed",
-		in_progress: "In Progress",
-		not_started: "Not Started",
-		waiting_for_children: "Waiting for Children",
-		failed: "Failed",
-		generating: "Generating",
-		continuing: "Continuing",
-		retrying: "Retrying",
-		idle: "Idle",
-	};
-
-	if (mapping[value]) {
-		return mapping[value];
-	}
-
-	return value
-		.split("_")
-		.map((segment) =>
-			segment.length > 0
-				? `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`
-				: segment,
-		)
-		.join(" ");
-};
 
 export const GeneratedContributionCard: React.FC<
 	GeneratedContributionCardProps
@@ -593,23 +562,6 @@ export const GeneratedContributionCard: React.FC<
 								) : null}
 							</div>
 						</div>
-					</div>
-
-					{/* Status Badge */}
-					<div className="flex items-center gap-3">
-						{documentDescriptor && isValidMarkdownDocument && (
-							<Badge
-								variant="secondary"
-								className={cn(
-									"font-normal",
-									documentDescriptor.status === "completed" && "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
-									documentDescriptor.status === "failed" && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
-									documentDescriptor.status === "generating" && "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-								)}
-							>
-								{formatStatusLabel(documentDescriptor.status)}
-							</Badge>
-						)}
 					</div>
 				</div>
 			</CardHeader>

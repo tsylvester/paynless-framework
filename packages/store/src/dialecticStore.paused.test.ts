@@ -5,6 +5,7 @@ import type {
   DialecticLifecycleEvent,
   DialecticProject,
   GetAllStageProgressPayload,
+  PauseActiveJobsPayload,
   ResumePausedNsfJobsPayload,
   User,
 } from '@paynless/types';
@@ -21,7 +22,7 @@ vi.mock('@paynless/api', async () => {
   };
 });
 
-describe('dialecticStore NSF pause and resume', () => {
+describe('dialecticStore pause and resume', () => {
   const sessionId = 'session-nsf-1';
   const projectId = 'project-nsf-1';
   const stageSlug = 'antithesis';
@@ -56,9 +57,9 @@ describe('dialecticStore NSF pause and resume', () => {
       data: {
         dagProgress: { completedStages: 0, totalStages: 3 },
         stages: [
-          { stageSlug: 'thesis', status: 'completed', modelCount: 1, steps: [], progress: progressComplete, documents: [] },
-          { stageSlug: 'antithesis', status: 'paused_nsf', modelCount: 1, steps: [], progress: progressNone, documents: [] },
-          { stageSlug: 'synthesis', status: 'not_started', modelCount: 1, steps: [], progress: progressNone, documents: [] },
+          { stageSlug: 'thesis', status: 'completed', modelCount: 1, steps: [], progress: progressComplete, documents: [], jobs: [], edges: [] },
+          { stageSlug: 'antithesis', status: 'paused_nsf', modelCount: 1, steps: [], progress: progressNone, documents: [], jobs: [], edges: [] },
+          { stageSlug: 'synthesis', status: 'not_started', modelCount: 1, steps: [], progress: progressNone, documents: [], jobs: [], edges: [] },
         ],
       },
       status: 200,
@@ -138,7 +139,7 @@ describe('dialecticStore NSF pause and resume', () => {
       const minimalProject: DialecticProject = {
         id: projectId,
         user_id: userId,
-        project_name: 'NSF Test Project',
+        project_name: 'Pause Test Project',
         selected_domain_id: 'domain-1',
         dialectic_domains: { name: 'Tech' },
         selected_domain_overlay_id: null,
@@ -199,6 +200,98 @@ describe('dialecticStore NSF pause and resume', () => {
       const state = useDialecticStore.getState();
       expect(state.contributionGenerationStatus).toBe(initialDialecticStateValues.contributionGenerationStatus);
       expect(state.resumePausedNsfJobs).toBeDefined();
+    });
+  });
+
+  describe('pauseActiveJobs', () => {
+    const pausePayload: PauseActiveJobsPayload = {
+      sessionId,
+      stageSlug,
+      iterationNumber,
+    };
+
+    it('calls api.dialectic().pauseActiveJobs(payload) with correct sessionId, stageSlug, iterationNumber', async () => {
+      getMockDialecticClient().pauseActiveJobs.mockResolvedValue({
+        data: { pausedCount: 3 },
+        status: 200,
+      });
+
+      await useDialecticStore.getState().pauseActiveJobs(pausePayload);
+
+      expect(getMockDialecticClient().pauseActiveJobs).toHaveBeenCalledTimes(1);
+      expect(getMockDialecticClient().pauseActiveJobs).toHaveBeenCalledWith(pausePayload);
+      expect(getMockDialecticClient().pauseActiveJobs.mock.calls[0][0]).toEqual({
+        sessionId,
+        stageSlug,
+        iterationNumber,
+      });
+    });
+
+    it('on successful API response, calls hydrateAllStageProgress to refresh progress data', async () => {
+      const minimalProject: DialecticProject = {
+        id: projectId,
+        user_id: userId,
+        project_name: 'Pause Test Project',
+        selected_domain_id: 'domain-1',
+        dialectic_domains: { name: 'Tech' },
+        selected_domain_overlay_id: null,
+        repo_url: null,
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        dialectic_sessions: [],
+        process_template_id: null,
+        dialectic_process_templates: null,
+        isLoadingProcessTemplate: false,
+        processTemplateError: null,
+        contributionGenerationStatus: 'idle',
+        generateContributionsError: null,
+        isSubmittingStageResponses: false,
+        submitStageResponsesError: null,
+        isSavingContributionEdit: false,
+        saveContributionEditError: null,
+      };
+      useDialecticStore.setState({ currentProjectDetail: minimalProject });
+
+      getMockDialecticClient().pauseActiveJobs.mockResolvedValue({
+        data: { pausedCount: 2 },
+        status: 200,
+      });
+
+      await useDialecticStore.getState().pauseActiveJobs(pausePayload);
+
+      expect(getMockDialecticClient().getAllStageProgress).toHaveBeenCalled();
+      const hydrateCall: GetAllStageProgressPayload = getMockDialecticClient().getAllStageProgress.mock.calls[0][0];
+      expect(hydrateCall.sessionId).toBe(sessionId);
+      expect(hydrateCall.iterationNumber).toBe(iterationNumber);
+      expect(hydrateCall.projectId).toBeDefined();
+    });
+
+    it('on API failure, logs error and returns error response', async () => {
+      getMockDialecticClient().pauseActiveJobs.mockResolvedValue({
+        error: { message: 'RPC failed', code: 'PAUSE_ACTIVE_JOBS_FAILED' },
+        status: 500,
+      });
+
+      const result = await useDialecticStore.getState().pauseActiveJobs(pausePayload);
+
+      expect(result.error).toEqual({ message: 'RPC failed', code: 'PAUSE_ACTIVE_JOBS_FAILED' });
+      expect(result.status).toBe(500);
+      expect(getMockDialecticClient().getAllStageProgress).not.toHaveBeenCalled();
+    });
+
+    it('does not call hydrateAllStageProgress when userId or projectId is missing', async () => {
+      useAuthStore.setState({ user: null });
+      useDialecticStore.setState({ currentProjectDetail: undefined });
+
+      getMockDialecticClient().pauseActiveJobs.mockResolvedValue({
+        data: { pausedCount: 1 },
+        status: 200,
+      });
+
+      await useDialecticStore.getState().pauseActiveJobs(pausePayload);
+
+      expect(getMockDialecticClient().getAllStageProgress).not.toHaveBeenCalled();
     });
   });
 });

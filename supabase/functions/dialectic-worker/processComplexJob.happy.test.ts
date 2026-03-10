@@ -5,7 +5,7 @@ import {
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { spy } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 import type { Database } from '../types_db.ts';
-import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
+import { createMockSupabaseClient, type PostgresError } from '../_shared/supabase.mock.ts';
 import { processComplexJob } from './processComplexJob.ts';
 import { 
     DialecticJobRow, 
@@ -17,6 +17,7 @@ import {
 } from '../dialectic-service/dialectic.interface.ts';
 import { createMockJobProcessors, MockJobProcessorsSpies } from '../_shared/dialectic.mock.ts';
 import { isRecord, isJson } from '../_shared/utils/type_guards.ts';
+import { isDialecticJobRowArray } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { logger } from '../_shared/logger.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
@@ -162,6 +163,7 @@ describe('processComplexJob', () => {
             model_id: 'model-id-complex',
             walletId: 'wallet-id-complex',
             user_jwt: 'user-jwt-complex',
+            idempotencyKey: 'idem-plan-complex',
         };
 
         if (!isJson(mockPayload)) {
@@ -173,7 +175,7 @@ describe('processComplexJob', () => {
             user_id: 'user-id-complex',
             session_id: 'session-id-complex',
             stage_slug: 'antithesis',
-            payload: mockPayload, // No cast needed now
+            payload: mockPayload,
             iteration_number: 1,
             status: 'processing',
             attempt_count: 0,
@@ -188,6 +190,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: null,
         };
 
         const mockParams = {
@@ -208,6 +211,7 @@ describe('processComplexJob', () => {
             target_contribution_id: null, prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: null,
         };
         const mockChildJob2: DialecticJobRow = {
             id: 'child-2', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
@@ -217,6 +221,7 @@ describe('processComplexJob', () => {
             target_contribution_id: null, prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: null,
         };
 
         const testMockParams = {
@@ -235,7 +240,14 @@ describe('processComplexJob', () => {
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         assertExists(insertSpy);
         assertEquals(insertSpy.callCount, 1, 'Should have inserted the child jobs');
-        assertEquals(insertSpy.callsArgs[0][0], [mockChildJob1, mockChildJob2]);
+        const insertedRows = insertSpy.callsArgs[0][0];
+        assert(isDialecticJobRowArray(insertedRows) && insertedRows.length === 2, 'Insert should receive two DialecticJobRow child jobs');
+        const row1 = insertedRows[0];
+        const row2 = insertedRows[1];
+        assertEquals(row1.id, mockChildJob1.id, 'First inserted row should match first child id');
+        assertEquals(row2.id, mockChildJob2.id, 'Second inserted row should match second child id');
+        assert(typeof row1.idempotency_key === 'string' && row1.idempotency_key.length > 0, 'Each inserted child job must include non-empty idempotency_key');
+        assert(typeof row2.idempotency_key === 'string' && row2.idempotency_key.length > 0, 'Each inserted child job must include non-empty idempotency_key');
 
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);
@@ -313,6 +325,7 @@ describe('processComplexJob', () => {
             target_contribution_id: null, prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: null,
         };
         const insertFailMockParams = {
             ...createMockJobContextParams(),
@@ -359,6 +372,7 @@ describe('processComplexJob', () => {
             attempt_count: 0, max_retries: 3, created_at: new Date().toISOString(), started_at: null,
             completed_at: null, results: null, error_details: null, parent_job_id: mockParentJob.id,
             target_contribution_id: null, prerequisite_job_id: null, is_test_job: false, job_type: 'PLAN',
+            idempotency_key: null,
         };
         const updateFailMockParams = {
             ...createMockJobContextParams(),
@@ -454,7 +468,8 @@ describe('processComplexJob', () => {
             completed_at: null, results: null, error_details: null, parent_job_id: mockParentJob.id,
             target_contribution_id: null, prerequisite_job_id: null,
             is_test_job: false,
-            job_type: 'EXECUTE', // Child jobs are for execution
+            job_type: 'EXECUTE',
+            idempotency_key: null,
         };
         const happyMockParams = {
             ...createMockJobContextParams(),
@@ -477,11 +492,15 @@ describe('processComplexJob', () => {
         assertEquals(mockProcessorSpies.planComplexStage.calls.length, 1);
         assertEquals(mockProcessorSpies.planComplexStage.calls[0].args[3], firstStep);
 
-        // - The database 'insert' spy was called with the correct child jobs.
+        // - The database 'insert' spy was called with the correct child jobs (with idempotency_key set).
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         assertExists(insertSpy);
         assertEquals(insertSpy.callCount, 1);
-        assertEquals(insertSpy.callsArgs[0][0], [mockChildJob]);
+        const insertedRows = insertSpy.callsArgs[0][0];
+        assert(isDialecticJobRowArray(insertedRows) && insertedRows.length === 1, 'Insert should receive one DialecticJobRow child job');
+        const row = insertedRows[0];
+        assertEquals(row.id, mockChildJob.id, 'Inserted row should match child id');
+        assert(typeof row.idempotency_key === 'string' && row.idempotency_key.length > 0, 'Inserted child job must include non-empty idempotency_key');
 
         // - The database 'update' spy was called to set the parent job status to 'waiting_for_children'.
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
@@ -503,6 +522,7 @@ describe('processComplexJob', () => {
             target_contribution_id: null, prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: null,
         };
         const notificationMockParams = {
             ...createMockJobContextParams(),
@@ -555,12 +575,13 @@ describe('processComplexJob', () => {
             continueUntilComplete: false,
             walletId: 'wallet-id-complex',
             user_jwt: 'user-jwt-123',
+            idempotencyKey: 'idem-step-1-complete',
             canonicalPathParams: {
                 contributionType: 'thesis',
                 stageSlug: 'antithesis',
             },
             planner_metadata: {
-                recipe_step_id: firstStep.id, // New logic uses planner_metadata.recipe_step_id
+                recipe_step_id: firstStep.id,
                 recipe_template_id: 'template-uuid-1',
             },
         };
@@ -576,6 +597,7 @@ describe('processComplexJob', () => {
             target_contribution_id: null, prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-step-1-complete',
         };
         
         const customSupabase = createMockSupabaseClient(wakingJob.user_id, {
@@ -628,12 +650,13 @@ describe('processComplexJob', () => {
                 continueUntilComplete: false,
                 walletId: 'wallet-id-complex',
                 user_jwt: 'user-jwt-123',
+                idempotencyKey: `idem-all-steps-${step.id}`,
                 canonicalPathParams: {
                     contributionType: 'thesis',
                     stageSlug: 'antithesis',
                 },
                 planner_metadata: {
-                    recipe_step_id: step.id, // New logic uses planner_metadata.recipe_step_id
+                    recipe_step_id: step.id,
                     recipe_template_id: 'template-uuid-1',
                 },
             };
@@ -649,6 +672,7 @@ describe('processComplexJob', () => {
                 target_contribution_id: null, prerequisite_job_id: null,
                 is_test_job: false,
                 job_type: 'EXECUTE',
+                idempotency_key: `idem-all-steps-${step.id}`,
             };
         });
 
@@ -756,12 +780,13 @@ describe('processComplexJob', () => {
             continueUntilComplete: false,
             walletId: 'wallet-id-complex',
             user_jwt: 'user-jwt-123',
+            idempotencyKey: 'idem-header-context-track',
             canonicalPathParams: {
                 contributionType: 'thesis',
                 stageSlug: 'antithesis',
             },
             planner_metadata: {
-                recipe_step_id: 'header-context-step-id', // This is what processComplexJob should use
+                recipe_step_id: 'header-context-step-id',
                 recipe_template_id: 'template-uuid-1',
             },
         };
@@ -789,6 +814,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-header-context-track',
         };
 
         const wakingJob = { ...mockParentJob, status: 'waiting_for_children' };
@@ -905,12 +931,13 @@ describe('processComplexJob', () => {
             continueUntilComplete: false,
             walletId: 'wallet-id-complex',
             user_jwt: 'user-jwt-123',
+            idempotencyKey: 'idem-build-stage-header',
             canonicalPathParams: {
                 contributionType: 'thesis',
                 stageSlug: 'antithesis',
             },
             planner_metadata: {
-                recipe_step_id: 'build-stage-header-step-id', // Matches the step's id
+                recipe_step_id: 'build-stage-header-step-id',
                 recipe_template_id: 'template-uuid-1',
             },
         };
@@ -939,6 +966,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-build-stage-header',
         };
 
         const wakingJob = { ...mockParentJob, status: 'pending_next_step' };
@@ -993,6 +1021,7 @@ describe('processComplexJob', () => {
                 continueUntilComplete: false,
                 walletId: 'wallet-id-complex',
                 user_jwt: 'user-jwt-123',
+                idempotencyKey: `idem-complete-all-${step.id}`,
                 canonicalPathParams: {
                     contributionType: 'thesis',
                     stageSlug: 'antithesis',
@@ -1025,6 +1054,7 @@ describe('processComplexJob', () => {
                 prerequisite_job_id: null,
                 is_test_job: false,
                 job_type: 'EXECUTE',
+                idempotency_key: `idem-complete-all-${step.id}`,
             };
         });
 
@@ -1078,12 +1108,13 @@ describe('processComplexJob', () => {
             continueUntilComplete: false,
             walletId: 'wallet-id-complex',
             user_jwt: 'user-jwt-123',
+            idempotencyKey: 'idem-mismatch',
             canonicalPathParams: {
                 contributionType: 'thesis',
                 stageSlug: 'antithesis',
             },
             planner_metadata: {
-                recipe_step_id: 'non-existent-step-id', // This doesn't match any step's id
+                recipe_step_id: 'non-existent-step-id',
                 recipe_template_id: 'template-uuid-1',
             },
         };
@@ -1112,6 +1143,7 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'EXECUTE',
+            idempotency_key: 'idem-mismatch',
         };
 
         const customSupabase = createMockSupabaseClient(mockParentJob.user_id, {
@@ -1158,6 +1190,7 @@ describe('processComplexJob', () => {
                 continueUntilComplete: false,
                 walletId: 'wallet-id-complex',
                 user_jwt: 'user-jwt-123',
+                idempotencyKey: `idem-final-${step.id}`,
                 canonicalPathParams: {
                     contributionType: 'thesis',
                     stageSlug: 'antithesis',
@@ -1190,6 +1223,7 @@ describe('processComplexJob', () => {
                 prerequisite_job_id: null,
                 is_test_job: false,
                 job_type: 'EXECUTE',
+                idempotency_key: `idem-final-${step.id}`,
             };
         });
 
@@ -1225,5 +1259,187 @@ describe('processComplexJob', () => {
 
         assert(isRecord(lastUpdateArgs), "Last update call arguments should be a record.");
         assertEquals(lastUpdateArgs.status, 'completed', "The final status of the parent job should be 'completed'.");
+    });
+
+    it('child jobs inserted by main planner include idempotency_key derived as parentJobId_stepSlug_modelId for EXECUTE', async () => {
+        const firstStep = mockTemplateRecipeSteps[0];
+        const modelId = 'model-exec-idem';
+        const execPayload: DialecticExecuteJobPayload = {
+            prompt_template_id: firstStep.prompt_template_id!,
+            inputs: {},
+            output_type: firstStep.output_type,
+            projectId: mockParentJob.payload.projectId,
+            sessionId: mockParentJob.payload.sessionId,
+            stageSlug: mockParentJob.payload.stageSlug,
+            model_id: modelId,
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: mockParentJob.payload.walletId,
+            user_jwt: 'user-jwt-123',
+            idempotencyKey: 'idem-exec-derivation-test',
+            canonicalPathParams: { contributionType: 'thesis', stageSlug: 'antithesis' },
+            planner_metadata: { recipe_step_id: firstStep.id, recipe_template_id: 'template-uuid-1' },
+        };
+        if (!isJson(execPayload)) {
+            throw new Error('Test setup: execPayload is not valid JSON');
+        }
+        const mockChildJob: DialecticJobRow = {
+            id: 'child-exec-idem',
+            user_id: mockParentJob.user_id,
+            session_id: mockParentJob.session_id,
+            stage_slug: mockParentJob.stage_slug,
+            payload: execPayload,
+            iteration_number: 1,
+            status: 'pending',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: null,
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+            idempotency_key: null,
+        };
+        const mockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => [mockChildJob],
+            notificationService: mockNotificationService,
+        };
+        const ctx = createPlanJobContext(createJobContext(mockParams));
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, ctx, 'user-jwt-123');
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        assertExists(insertSpy);
+        const insertedRows = insertSpy.callsArgs[0][0];
+        assert(isDialecticJobRowArray(insertedRows) && insertedRows.length === 1);
+        const expectedKey = `${mockParentJob.id}_${firstStep.step_slug}_${modelId}`;
+        assertEquals(insertedRows[0].idempotency_key, expectedKey, 'EXECUTE child must have idempotency_key derived as parentJobId_stepSlug_modelId');
+    });
+
+    it('on unique constraint violation (23505 on idempotency_key) during child job insert, existing child jobs are queried and processing continues without throwing', async () => {
+        const firstStep = mockTemplateRecipeSteps[0];
+        const existingChildId = 'existing-child-23505';
+        const idemKey = 'idem-23505-key';
+        const execPayload23505: DialecticExecuteJobPayload = {
+            prompt_template_id: firstStep.prompt_template_id!,
+            inputs: {},
+            output_type: firstStep.output_type,
+            projectId: mockParentJob.payload.projectId,
+            sessionId: mockParentJob.payload.sessionId,
+            stageSlug: mockParentJob.payload.stageSlug,
+            model_id: 'model-23505',
+            iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: mockParentJob.payload.walletId,
+            user_jwt: 'user-jwt-123',
+            idempotencyKey: idemKey,
+            canonicalPathParams: { contributionType: 'thesis', stageSlug: 'antithesis' },
+            planner_metadata: { recipe_step_id: firstStep.id, recipe_template_id: 'template-uuid-1' },
+        };
+        if (!isJson(execPayload23505)) {
+            throw new Error('Test setup failed: execPayload23505 is not valid JSON');
+        }
+        const mockChildJob: DialecticJobRow = {
+            id: 'child-new-23505',
+            user_id: mockParentJob.user_id,
+            session_id: mockParentJob.session_id,
+            stage_slug: mockParentJob.stage_slug,
+            payload: execPayload23505,
+            iteration_number: 1,
+            status: 'pending',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: null,
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+            idempotency_key: null,
+        };
+        if (!isJson(execPayload23505)) {
+            throw new Error('Test setup failed: execPayload23505 is not valid JSON');
+        }
+        const existingChildRow: DialecticJobRow = {
+            id: existingChildId,
+            user_id: mockParentJob.user_id,
+            session_id: mockParentJob.session_id,
+            stage_slug: mockParentJob.stage_slug,
+            payload: execPayload23505,
+            iteration_number: 1,
+            status: 'pending',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: null,
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: mockParentJob.id,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+            is_test_job: false,
+            job_type: 'EXECUTE',
+            idempotency_key: idemKey,
+        };
+        const postgres23505: PostgresError = {
+            name: 'PostgrestError',
+            message: 'duplicate key value violates unique constraint "dialectic_generation_jobs_idempotency_key_key"',
+            code: '23505',
+            details: 'idempotency_key',
+            hint: undefined,
+        };
+        let selectCallCount = 0;
+        const supabase23505 = createMockSupabaseClient(mockParentJob.user_id, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [mockStageRow], error: null } },
+                'dialectic_stage_recipe_instances': { select: { data: [mockInstanceRow_NotCloned], error: null } },
+                'dialectic_recipe_template_steps': { select: { data: mockTemplateRecipeSteps, error: null } },
+                'dialectic_recipe_template_edges': { select: { data: mockTemplateRecipeEdges, error: null } },
+                'dialectic_generation_jobs': {
+                    insert: () => Promise.resolve({ data: null, error: postgres23505, count: 0, status: 409, statusText: 'Conflict' }),
+                    select: (state: { filters: { column?: string; type: string }[] }) => {
+                        selectCallCount += 1;
+                        const isRecoverySelect = state.filters.some((f) => f.column === 'idempotency_key' && f.type === 'in');
+                        return Promise.resolve({
+                            data: isRecoverySelect ? [existingChildRow] : [],
+                            error: null,
+                            count: isRecoverySelect ? 1 : 0,
+                            status: 200,
+                            statusText: 'OK',
+                        });
+                    },
+                    update: (state: { updateData: object | null }) =>
+                        Promise.resolve({
+                            data: state.updateData != null ? [state.updateData] : [],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK',
+                        }),
+                },
+            },
+        });
+        const mockParams = {
+            ...createMockJobContextParams(),
+            planComplexStage: async () => [mockChildJob],
+            notificationService: mockNotificationService,
+        };
+        const ctx = createPlanJobContext(createJobContext(mockParams));
+        await processComplexJob(supabase23505.client as unknown as SupabaseClient<Database>, mockParentJob, mockParentJob.user_id, ctx, 'user-jwt-123');
+        const updateSpy = supabase23505.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+        assertExists(updateSpy, 'Parent should be updated to waiting_for_children on 23505 recovery');
+        assert(updateSpy.callCount >= 1, 'At least one update call (parent to waiting_for_children)');
+        const lastUpdateArgs = updateSpy.callsArgs[updateSpy.callCount - 1][0];
+        assert(isRecord(lastUpdateArgs) && lastUpdateArgs.status === 'waiting_for_children', 'On 23505, parent must be set to waiting_for_children');
+        assert(selectCallCount >= 1, 'Select by idempotency_key should be called to fetch existing child jobs');
     });
 });

@@ -313,7 +313,7 @@ Deno.test("Type Guard: isStepProgressDto", async (t) => {
 	});
 
 	await t.step("returns true for each valid UnifiedStageStatus", () => {
-		const statuses: StepProgressDto["status"][] = ["not_started", "in_progress", "completed", "failed", "paused_nsf"];
+		const statuses: StepProgressDto["status"][] = ["not_started", "in_progress", "completed", "failed", "paused_nsf", "paused_user"];
 		for (const status of statuses) {
 			const s: StepProgressDto = { stepKey: validStep.stepKey, status };
 			assertEquals(isStepProgressDto(s), true);
@@ -372,6 +372,8 @@ Deno.test("Type Guard: isStageProgressEntry", async (t) => {
 		progress: { completedSteps: 5, totalSteps: 13, failedSteps: 0 },
 		steps: [validStep],
 		documents: [],
+		jobs: [],
+		edges: [],
 	};
 
 	await t.step("returns true for valid StageProgressEntry with stageSlug, status, modelCount, progress (completedSteps, totalSteps, failedSteps), steps, documents", () => {
@@ -459,6 +461,8 @@ Deno.test("Type Guard: isGetAllStageProgressResponse", async (t) => {
 		progress: { completedSteps: 13, totalSteps: 13, failedSteps: 0 },
 		steps: [],
 		documents: [],
+		jobs: [],
+		edges: [],
 	};
 	const validResponse: GetAllStageProgressResponse = {
 		dagProgress: validDag,

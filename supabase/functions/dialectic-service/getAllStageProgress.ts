@@ -19,6 +19,7 @@ import {
 } from "./dialectic.interface.ts";
 import { isGranularityStrategy, isJobTypeEnum } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
 import { isRecord } from "../_shared/utils/type-guards/type_guards.common.ts";
+import type { Tables } from "../types_db.ts";
 
 export async function getAllStageProgress(
   deps: GetAllStageProgressDeps,
@@ -185,7 +186,7 @@ export async function getAllStageProgress(
     return { status: 500, error };
   }
 
-  const jobsSelect = "id, status, payload, stage_slug, job_type, parent_job_id, results, session_id, iteration_number, user_id, created_at, is_test_job, attempt_count, max_retries, prerequisite_job_id, target_contribution_id, started_at, completed_at, error_details";
+  const jobsSelect = "id, status, payload, stage_slug, job_type, parent_job_id, results, session_id, iteration_number, user_id, created_at, is_test_job, attempt_count, max_retries, prerequisite_job_id, target_contribution_id, started_at, completed_at, error_details, idempotency_key";
   const jobsResponse = await dbClient
     .from("dialectic_generation_jobs")
     .select(jobsSelect)
@@ -199,12 +200,12 @@ export async function getAllStageProgress(
     return { status: 500, error };
   }
 
-  const jobsDataUnknown: DialecticJobRow[] | null = jobsResponse.data;
+  const jobsDataUnknown: Tables<'dialectic_generation_jobs'>[] | null = jobsResponse.data;
   if (!jobsDataUnknown) {
     const error = { message: "Failed to fetch jobs: null data", status: 500 };
     return { status: 500, error };
   }
-  const jobsData: DialecticJobRow[] = jobsDataUnknown;
+  const jobsData: Tables<'dialectic_generation_jobs'>[] = jobsDataUnknown;
 
   const stageSlugSet: Set<string> = new Set<string>();
   for (const job of jobsData) {
@@ -219,7 +220,7 @@ export async function getAllStageProgress(
 
   const stagesResponse = await dbClient
     .from("dialectic_stages")
-    .select("id, slug, active_recipe_instance_id, created_at, display_name, description, expected_output_template_ids, default_system_prompt_id, recipe_template_id")
+    .select("id, slug, active_recipe_instance_id, created_at, display_name, description, expected_output_template_ids, default_system_prompt_id, recipe_template_id, minimum_balance")
     .in("id", templateStageIds);
 
   const stagesError = stagesResponse.error;
@@ -228,7 +229,7 @@ export async function getAllStageProgress(
     return { status: 500, error };
   }
 
-  const stagesDataUnknown: DialecticStage[] | null = stagesResponse.data;
+  const stagesDataUnknown: Tables<'dialectic_stages'>[] | null = stagesResponse.data;
   if (!stagesDataUnknown) {
     const error = { message: "Failed to fetch stages: null data", status: 500 };
     return { status: 500, error };
@@ -845,12 +846,14 @@ export async function getAllStageProgress(
     let completedSteps: number = 0;
     let failedSteps: number = 0;
     let pausedNsfSteps: number = 0;
+    let pausedUserSteps: number = 0;
     const stepDtos: StepProgressDto[] = [];
     for (const step of steps) {
       const status: UnifiedStageStatus = stepStatusMap.get(step.step_key) ?? "not_started";
       if (status === "completed") completedSteps += 1;
       if (status === "failed") failedSteps += 1;
       if (status === "paused_nsf") pausedNsfSteps += 1;
+      if (status === "paused_user") pausedUserSteps += 1;
       stepDtos.push({ stepKey: step.step_key, status });
     }
 
@@ -859,6 +862,8 @@ export async function getAllStageProgress(
       stageStatus = "failed";
     } else if (pausedNsfSteps > 0) {
       stageStatus = "paused_nsf";
+    } else if (pausedUserSteps > 0) {
+      stageStatus = "paused_user";
     } else if (completedSteps === totalSteps && failedSteps === 0) {
       stageStatus = "completed";
     } else if (completedSteps > 0 || failedSteps > 0) {

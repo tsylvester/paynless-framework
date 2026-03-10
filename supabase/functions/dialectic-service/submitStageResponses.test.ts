@@ -56,6 +56,7 @@ Deno.test("submitStageResponses", async (t) => {
     expected_output_template_ids: [],
     active_recipe_instance_id: null,
     recipe_template_id: null,
+    minimum_balance: 0,
   };
 
   const mockAntithesisStage: DialecticStage = {
@@ -68,6 +69,7 @@ Deno.test("submitStageResponses", async (t) => {
     expected_output_template_ids: [],
     active_recipe_instance_id: null,
     recipe_template_id: null,
+    minimum_balance: 0,
   };
 
   const mockParalysisStage: DialecticStage = {
@@ -80,6 +82,7 @@ Deno.test("submitStageResponses", async (t) => {
     expected_output_template_ids: [],
     active_recipe_instance_id: null,
     recipe_template_id: null,
+    minimum_balance: 0,
   };
 
   const defaultSelectedModels: SelectedModels[] = [
@@ -755,6 +758,7 @@ Deno.test("submitStageResponses", async (t) => {
         expected_output_template_ids: [],
         active_recipe_instance_id: testRecipeInstanceId,
         recipe_template_id: null,
+        minimum_balance: 0,
       };
 
       const preconditionInputRules: InputRule[] = [
@@ -1272,6 +1276,7 @@ Deno.test("submitStageResponses", async (t) => {
         expected_output_template_ids: [],
         active_recipe_instance_id: testRecipeInstanceId,
         recipe_template_id: null,
+        minimum_balance: 0,
       };
 
       const basePayload: SubmitStageResponsesPayload = {
