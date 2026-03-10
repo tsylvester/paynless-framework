@@ -18,13 +18,13 @@ import type {
   ActiveChatWalletInfo,
   AiState,
 } from '@paynless/types';
-import { STAGE_BALANCE_THRESHOLDS } from '@paynless/types';
 import {
   initializeMockDialecticState,
   getDialecticStoreState,
   selectUnifiedProjectProgress,
   selectIsStageReadyForSessionIteration,
   mockResumePausedNsfJobs,
+  mockPauseActiveJobs,
 } from '@/mocks/dialecticStore.mock';
 import { selectActiveChatWalletInfo, initializeMockWalletStore } from '@/mocks/walletStore.mock';
 import { useDialecticStore, initialDialecticStateValues, selectSessionById } from '@paynless/store';
@@ -79,6 +79,7 @@ vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    info: vi.fn(),
   },
 }));
 
@@ -92,6 +93,7 @@ const mockThesisStage: DialecticStage = {
   expected_output_template_ids: [],
   recipe_template_id: null,
   active_recipe_instance_id: null,
+  minimum_balance: 100000,
 };
 
 const createMockSession = (
@@ -212,7 +214,7 @@ const defaultWalletInfo: ActiveChatWalletInfo = {
   type: 'personal',
   walletId: 'wallet-1',
   orgId: null,
-  balance: String(STAGE_BALANCE_THRESHOLDS['thesis']),
+  balance: String(mockThesisStage.minimum_balance),
   message: undefined,
   isLoadingPrimaryWallet: false,
 };
@@ -255,7 +257,9 @@ describe('useStartContributionGeneration', () => {
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
     vi.mocked(toast.success).mockClear();
     vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.info).mockClear();
     mockResumePausedNsfJobs.mockClear();
+    mockPauseActiveJobs.mockClear();
   });
 
   it('returns { success: false, error } and shows error toast when activeSession is null', async () => {
@@ -421,7 +425,7 @@ describe('useStartContributionGeneration', () => {
       type: 'personal',
       walletId: 'custom-wallet-id',
       orgId: null,
-      balance: String(STAGE_BALANCE_THRESHOLDS['thesis']),
+      balance: String(mockThesisStage.minimum_balance),
       message: undefined,
       isLoadingPrimaryWallet: false,
     };
@@ -489,7 +493,7 @@ describe('useStartContributionGeneration', () => {
     expect(result.current.isDisabled).toBe(false);
   });
 
-  it('isResumeMode is true only when hasPausedNsfJobs && balanceMeetsThreshold', () => {
+  it('isResumeMode is true when hasPausedNsfJobs && balanceMeetsThreshold', () => {
     const pausedNsfStageDetail: StageProgressDetail = {
       ...defaultStageDetail,
       stageStatus: 'paused_nsf',
@@ -501,10 +505,36 @@ describe('useStartContributionGeneration', () => {
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(progressPausedNsf);
     const { result } = renderHook(() => useStartContributionGeneration());
     expect(result.current.isResumeMode).toBe(true);
+  });
 
+  it('isResumeMode is false when hasPausedNsfJobs is true AND balanceMeetsThreshold is false', () => {
+    const pausedNsfStageDetail: StageProgressDetail = {
+      ...defaultStageDetail,
+      stageStatus: 'paused_nsf',
+    };
+    const progressPausedNsf: UnifiedProjectProgress = {
+      ...defaultUnifiedProgress,
+      stageDetails: [pausedNsfStageDetail],
+    };
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(progressPausedNsf);
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue(lowBalanceWalletInfo);
-    const { result: r2 } = renderHook(() => useStartContributionGeneration());
-    expect(r2.current.isResumeMode).toBe(false);
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isResumeMode).toBe(false);
+  });
+
+  it('isResumeMode is true when hasPausedUserJobs is true (no balance check)', () => {
+    const pausedUserStageDetail: StageProgressDetail = {
+      ...defaultStageDetail,
+      stageStatus: 'paused_user',
+    };
+    const progressPausedUser: UnifiedProjectProgress = {
+      ...defaultUnifiedProgress,
+      stageDetails: [pausedUserStageDetail],
+    };
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(progressPausedUser);
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(lowBalanceWalletInfo);
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isResumeMode).toBe(true);
   });
 
   it('derived state values correctly reflect store state (each derived field tested with known inputs)', () => {
@@ -512,10 +542,107 @@ describe('useStartContributionGeneration', () => {
     expect(result.current.activeStage).toEqual(mockThesisStage);
     expect(result.current.activeSession).not.toBeNull();
     expect(result.current.activeSession?.id).toBe('sess-1');
-    expect(result.current.stageThreshold).toBe(STAGE_BALANCE_THRESHOLDS['thesis']);
+    expect(result.current.stageThreshold).toBe(mockThesisStage.minimum_balance);
     expect(result.current.areAnyModelsSelected).toBe(true);
     expect(result.current.isWalletReady).toBe(true);
     expect(result.current.isStageReady).toBe(true);
     expect(result.current.balanceMeetsThreshold).toBe(true);
+  });
+
+  it('isPauseMode is true when isSessionGenerating is true', () => {
+    setDialecticState({
+      currentProjectDetail: defaultProject,
+      currentProcessTemplate: defaultProcessTemplate,
+      activeContextSessionId: 'sess-1',
+      activeStageSlug: 'thesis',
+      selectedModels: defaultSelectedModels,
+      generatingSessions: { 'sess-1': ['run-1'] },
+    });
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isPauseMode).toBe(true);
+  });
+
+  it('isPauseMode is false when not generating', () => {
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isPauseMode).toBe(false);
+  });
+
+  it('hasPausedUserJobs is true when activeStageProgress.stageStatus is paused_user', () => {
+    const pausedUserStageDetail: StageProgressDetail = {
+      ...defaultStageDetail,
+      stageStatus: 'paused_user',
+    };
+    const progressPausedUser: UnifiedProjectProgress = {
+      ...defaultUnifiedProgress,
+      stageDetails: [pausedUserStageDetail],
+    };
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(progressPausedUser);
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.hasPausedUserJobs).toBe(true);
+  });
+
+  it('hasPausedUserJobs is false when activeStageProgress.stageStatus is not paused_user', () => {
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.hasPausedUserJobs).toBe(false);
+  });
+
+  it('isDisabled is false when isSessionGenerating is true (button remains enabled for pause)', () => {
+    setDialecticState({
+      currentProjectDetail: defaultProject,
+      currentProcessTemplate: defaultProcessTemplate,
+      activeContextSessionId: 'sess-1',
+      activeStageSlug: 'thesis',
+      selectedModels: defaultSelectedModels,
+      generatingSessions: { 'sess-1': ['run-1'] },
+    });
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isSessionGenerating).toBe(true);
+    expect(result.current.isDisabled).toBe(false);
+  });
+
+  it('pauseGeneration calls pauseActiveJobs with correct sessionId, stageSlug, iterationNumber', async () => {
+    const { result } = renderHook(() => useStartContributionGeneration());
+    await act(async () => {
+      await result.current.pauseGeneration();
+    });
+    expect(mockPauseActiveJobs).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      stageSlug: 'thesis',
+      iterationNumber: 1,
+    });
+  });
+
+  it('pauseGeneration shows toast.info when called', async () => {
+    const { result } = renderHook(() => useStartContributionGeneration());
+    await act(async () => {
+      await result.current.pauseGeneration();
+    });
+    expect(toast.info).toHaveBeenCalledWith('Pausing generation...');
+  });
+
+  it('existing resume flow for paused_nsf still works unchanged', async () => {
+    const pausedNsfStageDetail: StageProgressDetail = {
+      ...defaultStageDetail,
+      stageStatus: 'paused_nsf',
+    };
+    const progressPausedNsf: UnifiedProjectProgress = {
+      ...defaultUnifiedProgress,
+      stageDetails: [pausedNsfStageDetail],
+    };
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(progressPausedNsf);
+    const onOpenDagProgress = vi.fn();
+    const { result } = renderHook(() => useStartContributionGeneration());
+
+    await act(async () => {
+      await result.current.startContributionGeneration(onOpenDagProgress);
+    });
+
+    expect(toast.success).toHaveBeenCalledWith('Resuming generation...');
+    expect(onOpenDagProgress).toHaveBeenCalledTimes(1);
+    expect(mockResumePausedNsfJobs).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      stageSlug: 'thesis',
+      iterationNumber: 1,
+    });
   });
 });

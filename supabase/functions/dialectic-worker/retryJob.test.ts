@@ -44,6 +44,7 @@ Deno.test('retryJob', async (t) => {
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const failedAttempts: FailedAttemptError[] = [

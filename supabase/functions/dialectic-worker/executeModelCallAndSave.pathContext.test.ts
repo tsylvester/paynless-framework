@@ -44,6 +44,7 @@ Deno.test('executeModelCallAndSave - pathContext validation - 41.b.i: ALL requir
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -138,6 +139,7 @@ Deno.test('executeModelCallAndSave - notification document_key - 41.b.ii: execut
     );
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.feature_spec,
@@ -196,6 +198,7 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.a: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -249,6 +252,7 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.b: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -302,6 +306,7 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.c: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -357,6 +362,7 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.d: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -412,6 +418,7 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.e: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -465,6 +472,7 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.f: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -520,6 +528,7 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.g: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -577,6 +586,7 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.h: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -630,6 +640,7 @@ Deno.test('executeModelCallAndSave - validation errors - 41.b.iii.i: throws erro
     const deps = getMockDeps();
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.business_case,
@@ -696,6 +707,7 @@ Deno.test('executeModelCallAndSave - non-document file types - 41.b.iv: does NOT
     );
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.HeaderContext,
@@ -750,6 +762,7 @@ Deno.test('executeModelCallAndSave propagates sourceAnchorModelSlug from canonic
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.HeaderContext,
@@ -826,6 +839,7 @@ Deno.test('executeModelCallAndSave - pathContext validation - 101.c: extracts do
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.AssembledDocumentJson,
@@ -900,6 +914,7 @@ Deno.test('executeModelCallAndSave passes documentKey to pathContext uncondition
     fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
 
     const payload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         prompt_template_id: 'test-prompt',
         inputs: {},
         output_type: FileType.HeaderContext,

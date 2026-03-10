@@ -90,9 +90,11 @@ const getMockParentJob = (): DialecticJobRow & { payload: DialecticPlanJobPayloa
         model_id: 'model-a-id',
         walletId: 'wallet-default',
         user_jwt: 'user-jwt-123',
+        idempotencyKey: "idempotency-key-1",
     },
     is_test_job: false,
     job_type: 'PLAN',
+    idempotency_key: "idempotency-key-1",
 });
 
 const getMockRecipeStep = (): DialecticStageRecipeStep => ({
@@ -352,9 +354,11 @@ Deno.test('planPerSourceDocumentByLineage should treat a doc without a source_gr
             model_id: 'model-a-id',
             walletId: 'wallet-default',
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         },
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     });
 
     const getMockRecipeStep = (): DialecticRecipeStep => ({
@@ -502,9 +506,11 @@ Deno.test('planPerSourceDocumentByLineage surfaces sourceContributionId for line
             model_id: 'model-a-id',
             walletId: 'wallet-default',
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         },
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockRecipeStep: DialecticRecipeStep = {
@@ -635,9 +641,11 @@ Deno.test('planPerSourceDocumentByLineage includes planner_metadata with recipe_
             model_id: 'model-a-id',
             walletId: 'wallet-default',
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         },
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockRecipeStepWithId: DialecticRecipeStep = {
@@ -762,9 +770,11 @@ Deno.test('planPerSourceDocumentByLineage should inherit all fields from parent 
             model_slug: 'parent-model-slug',
             user_jwt: 'parent-jwt-token',
             walletId: 'wallet-default',
+            idempotencyKey: "idempotency-key-1",
         },
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const mockRecipeStep: DialecticRecipeStep = {
@@ -887,9 +897,11 @@ Deno.test('planPerSourceDocumentByLineage sets document_key in payload when reci
             model_id: 'model-a-id',
             walletId: 'wallet-default',
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         },
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const recipeStepWithDocumentKey: DialecticRecipeStep = {
@@ -1008,9 +1020,11 @@ Deno.test('planPerSourceDocumentByLineage does NOT set document_key when outputs
             model_id: 'model-a-id',
             walletId: 'wallet-default',
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         },
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const recipeStepWithEmptyDocuments: DialecticRecipeStep = {
@@ -1118,9 +1132,11 @@ Deno.test('planPerSourceDocumentByLineage does NOT set document_key when outputs
             model_id: 'model-a-id',
             walletId: 'wallet-default',
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         },
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const recipeStepWithoutDocumentsProperty = {
@@ -1233,9 +1249,11 @@ Deno.test('planPerSourceDocumentByLineage throws error when outputs_required.doc
             model_id: 'model-a-id',
             walletId: 'wallet-default',
             user_jwt: 'user-jwt-123',
+            idempotencyKey: "idempotency-key-1",
         },
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const recipeStepWithoutDocumentKey = {
@@ -1640,6 +1658,7 @@ Deno.test('planPerSourceDocumentByLineage EXECUTE branch must not set document_r
 			model_id: parentPayload.model_id,
 			walletId: parentPayload.walletId,
 			user_jwt: parentPayload.user_jwt,
+			idempotencyKey: "idempotency-key-1",
 		},
 	};
 
@@ -1826,6 +1845,7 @@ Deno.test('planPerSourceDocumentByLineage extracts sourceAnchorModelSlug from mo
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -1977,6 +1997,7 @@ Deno.test('planPerSourceDocumentByLineage EXECUTE branch uses relevance-selected
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -2127,6 +2148,7 @@ Deno.test('planPerSourceDocumentByLineage throws when recipe has no relevance me
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -2625,9 +2647,11 @@ Deno.test('planPerSourceDocumentByLineage includes shared global documents (seed
             model_slug: 'Full DAG Test Model C',
             walletId: '5a5f8d55-582a-4ebb-89f9-c36aabff93bf',
             user_jwt: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+            idempotencyKey: "idempotency-key-1",
         },
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     // REAL recipe step from antithesis_stage.sql migration
@@ -2913,9 +2937,11 @@ Deno.test('planPerSourceDocumentByLineage throws error when any lineage group is
             model_slug: 'Full DAG Test Model C',
             walletId: '5a5f8d55-582a-4ebb-89f9-c36aabff93bf',
             user_jwt: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+            idempotencyKey: "idempotency-key-1",
         },
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const planRecipeStep: DialecticStageRecipeStep = {

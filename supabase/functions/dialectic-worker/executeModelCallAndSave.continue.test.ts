@@ -140,6 +140,7 @@ Deno.test('executeModelCallAndSave - missing payload.user_jwt causes immediate f
     },
     is_test_job: false,
     job_type: 'PLAN',
+    idempotency_key: null,
   };
 
   let threw = false;
@@ -430,6 +431,7 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
         throw new Error('contributionType is null');
     }
     const continuationPayload: DialecticExecuteJobPayload = {
+        idempotencyKey: 'job-id-123_execute',
         projectId: 'proj-123',
         sessionId: 'sess-123',
         iterationNumber: 1,
@@ -549,6 +551,7 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
     // This job represents the final step in a continuation chain.
     const mockFinalContinuationJob: DialecticJobRow = {
       id: 'job-id-789',
+      idempotency_key: 'job-id-123_execute',
       payload: mockFinalContinuationPayload,
       status: 'pending',
       created_at: new Date().toISOString(),

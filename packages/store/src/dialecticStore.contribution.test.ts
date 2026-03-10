@@ -203,6 +203,7 @@ describe('useDialecticStore', () => {
 
     describe('generateContributions thunk', () => {
         const mockPayload: GenerateContributionsPayload = {
+            idempotencyKey: 'test-idem-contribution',
             sessionId: 'sess-generate-123',
             projectId: 'proj-generate-abc',
             iterationNumber: 1,

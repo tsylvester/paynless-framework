@@ -210,6 +210,7 @@ export async function getSessionDetails(
           active_recipe_instance_id: dialectic_stages.active_recipe_instance_id,
           recipe_template_id: dialectic_stages.recipe_template_id,
           created_at: dialectic_stages.created_at,
+          minimum_balance: dialectic_stages.minimum_balance,
         }
       : null;
 

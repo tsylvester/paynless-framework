@@ -19,6 +19,7 @@ const validUnifiedStageStatus = new Set<string>([
 	"completed",
 	"failed",
 	"paused_nsf",
+	"paused_user",
 ]);
 
 function isFiniteNonNegativeInteger(n: unknown): n is number {

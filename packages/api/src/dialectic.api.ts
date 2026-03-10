@@ -38,6 +38,8 @@ import type {
     GetAllStageProgressResponse,
     ResumePausedNsfJobsPayload,
     ResumePausedNsfJobsResponse,
+    PauseActiveJobsPayload,
+    PauseActiveJobsResponse,
     RegenerateDocumentPayload,
     RegenerateDocumentResponse,
 } from '@paynless/types';
@@ -695,6 +697,20 @@ export class DialecticApiClient {
             logger.error('Error resuming paused NSF jobs:', { error: response.error, ...payload });
         } else {
             logger.info('Successfully resumed paused NSF jobs', { ...payload });
+        }
+        return response;
+    }
+
+    async pauseActiveJobs(payload: PauseActiveJobsPayload): Promise<ApiResponse<PauseActiveJobsResponse>> {
+        logger.info('Pausing active jobs', { ...payload });
+        const response = await this.apiClient.post<PauseActiveJobsResponse, DialecticServiceActionPayload>(
+            'dialectic-service',
+            { action: 'pauseActiveJobs', payload }
+        );
+        if (response.error) {
+            logger.error('Error pausing active jobs:', { error: response.error, ...payload });
+        } else {
+            logger.info('Successfully paused active jobs', { ...payload });
         }
         return response;
     }

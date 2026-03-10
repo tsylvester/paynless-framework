@@ -24,6 +24,7 @@ import type {
 	StageRunDocumentStatus,
 	StageRunProgressSnapshot,
 	JobProgressEntry,
+	JobProgressDto,
 	ExecuteStartedPayload,
 	IKeyValueStorage,
 } from '@paynless/types';
@@ -107,6 +108,19 @@ function jobStatusToDisplayStatus(
 	if (FAILED_JOB_STATUSES.includes(status)) return 'failed';
 	if (status === 'pending') return 'pending';
 	return 'in_progress';
+}
+
+function documentStatusToJobStatus(docStatus: StageRunDocumentStatus): string {
+	if (docStatus === 'completed') return 'completed';
+	if (docStatus === 'failed') return 'failed';
+	if (
+		docStatus === 'generating' ||
+		docStatus === 'continuing' ||
+		docStatus === 'retrying'
+	) {
+		return 'processing';
+	}
+	return 'pending';
 }
 
 const ensureJobProgressEntry = (
@@ -1687,6 +1701,43 @@ export const hydrateStageProgressLogic = async (
 				descriptor.stepKey = doc.stepKey;
 			}
 		});
+
+		const jobs: JobProgressDto[] = data
+			.filter(isStageRenderedDocumentChecklistEntry)
+			.map((doc) => ({
+				id: doc.jobId,
+				status: documentStatusToJobStatus(doc.status),
+				jobType: 'RENDER' as const,
+				stepKey: doc.stepKey ?? null,
+				modelId: doc.modelId,
+				documentKey: doc.documentKey,
+				parentJobId: null,
+				createdAt: '',
+				startedAt: null,
+				completedAt: null,
+				modelName: null,
+			}));
+		progress.jobs = jobs;
+
+		for (const job of jobs) {
+			if (job.stepKey === null) continue;
+			const jobEntry = ensureJobProgressEntry(progress, job.stepKey);
+			jobEntry.totalJobs += 1;
+			if (job.status === 'completed') {
+				jobEntry.completedJobs += 1;
+			} else if (FAILED_JOB_STATUSES.includes(job.status)) {
+				jobEntry.failedJobs += 1;
+			} else if (ACTIVE_JOB_STATUSES.includes(job.status)) {
+				jobEntry.inProgressJobs += 1;
+			}
+			if (job.modelId !== null) {
+				if (!jobEntry.modelJobStatuses) {
+					jobEntry.modelJobStatuses = {};
+				}
+				jobEntry.modelJobStatuses[job.modelId] =
+					jobStatusToDisplayStatus(job.status);
+			}
+		}
 	});
 };
 

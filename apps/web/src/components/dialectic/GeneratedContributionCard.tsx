@@ -18,8 +18,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { TextInputArea } from "@/components/common/TextInputArea";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, ChevronDown, Info } from "lucide-react";
+import { Loader2, ChevronDown, Info, Download } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { isDocumentHighlighted } from "@paynless/utils";
@@ -41,36 +40,6 @@ interface GeneratedContributionCardProps {
 	modelId: string;
 	className?: string;
 }
-const formatStatusLabel = (value: string | undefined): string => {
-	if (!value) {
-		return "Unknown";
-	}
-
-	const mapping: Record<string, string> = {
-		completed: "Completed",
-		in_progress: "In Progress",
-		not_started: "Not Started",
-		waiting_for_children: "Waiting for Children",
-		failed: "Failed",
-		generating: "Generating",
-		continuing: "Continuing",
-		retrying: "Retrying",
-		idle: "Idle",
-	};
-
-	if (mapping[value]) {
-		return mapping[value];
-	}
-
-	return value
-		.split("_")
-		.map((segment) =>
-			segment.length > 0
-				? `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`
-				: segment,
-		)
-		.join(" ");
-};
 
 export const GeneratedContributionCard: React.FC<
 	GeneratedContributionCardProps
@@ -518,6 +487,19 @@ export const GeneratedContributionCard: React.FC<
 		return null;
 	}, [lastBaselineVersion?.updatedAt, showDocument]);
 
+	const handleDownload = useCallback(() => {
+		const content = documentResourceState?.currentDraftMarkdown ?? baselineContent;
+		if (!content) return;
+
+		const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = `${selectedDocumentKey ?? "document"}-${modelName || "unknown"}.md`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}, [documentResourceState?.currentDraftMarkdown, baselineContent, selectedDocumentKey, modelName]);
+
 	if (!hasStageContext) {
 		return (
 			<Card className={cn("p-4", className)}>
@@ -580,23 +562,6 @@ export const GeneratedContributionCard: React.FC<
 								) : null}
 							</div>
 						</div>
-					</div>
-
-					{/* Status Badge */}
-					<div className="flex items-center gap-3">
-						{documentDescriptor && isValidMarkdownDocument && (
-							<Badge
-								variant="secondary"
-								className={cn(
-									"font-normal",
-									documentDescriptor.status === "completed" && "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
-									documentDescriptor.status === "failed" && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
-									documentDescriptor.status === "generating" && "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-								)}
-							>
-								{formatStatusLabel(documentDescriptor.status)}
-							</Badge>
-						)}
 					</div>
 				</div>
 			</CardHeader>
@@ -690,20 +655,33 @@ export const GeneratedContributionCard: React.FC<
 													{saveContributionEditError && (
 														<span className="text-xs text-destructive">{saveContributionEditError.message}</span>
 													)}
-													<Button
-														onClick={handleSaveEdit}
-														disabled={!canSaveEdit || isSavingContributionEdit || isDraftLoading}
-														size="sm"
-													>
-														{isSavingContributionEdit ? (
-															<>
-																<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-																Saving...
-															</>
-														) : (
-															"Save Edit"
-														)}
-													</Button>
+													<div className="flex items-center gap-2">
+														<Button
+															onClick={handleDownload}
+															disabled={!baselineContent && !documentResourceState?.currentDraftMarkdown}
+															size="icon"
+															variant="outline"
+															className="shrink-0"
+															aria-label="Download"
+														>
+															<Download className="h-4 w-4" />
+														</Button>
+														<Button
+															onClick={handleSaveEdit}
+															disabled={!canSaveEdit || isSavingContributionEdit || isDraftLoading}
+															size="sm"
+															className="flex-1 min-w-0"
+														>
+															{isSavingContributionEdit ? (
+																<>
+																	<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+																	Saving...
+																</>
+															) : (
+																"Save Edit"
+															)}
+														</Button>
+													</div>
 												</div>
 											</div>
 										</ResizablePanel>
@@ -774,20 +752,33 @@ export const GeneratedContributionCard: React.FC<
 											{saveContributionEditError && (
 												<span className="text-xs text-destructive">{saveContributionEditError.message}</span>
 											)}
-											<Button
-												onClick={handleSaveEdit}
-												disabled={!canSaveEdit || isSavingContributionEdit || isDraftLoading}
-												size="sm"
-											>
-												{isSavingContributionEdit ? (
-													<>
-														<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-														Saving...
-													</>
-												) : (
-													"Save Edit"
-												)}
-											</Button>
+											<div className="flex items-center gap-2">
+												<Button
+													onClick={handleDownload}
+													disabled={!baselineContent && !documentResourceState?.currentDraftMarkdown}
+													size="icon"
+													variant="outline"
+													className="shrink-0"
+													aria-label="Download"
+												>
+													<Download className="h-4 w-4" />
+												</Button>
+												<Button
+													onClick={handleSaveEdit}
+													disabled={!canSaveEdit || isSavingContributionEdit || isDraftLoading}
+													size="sm"
+													className="flex-1 min-w-0"
+												>
+													{isSavingContributionEdit ? (
+														<>
+															<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+															Saving...
+														</>
+													) : (
+														"Save Edit"
+													)}
+												</Button>
+											</div>
 										</div>
 									</div>
 

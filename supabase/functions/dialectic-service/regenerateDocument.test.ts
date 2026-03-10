@@ -46,6 +46,7 @@ const jobId2 = "job-id-2";
 const cloneId1 = "clone-id-1";
 const cloneId2 = "clone-id-2";
 const authToken = "test-auth-token";
+const idempotencyKey = "regen-idem-key";
 
 interface MockJobRow {
   id: string;
@@ -75,6 +76,12 @@ function getDocIdentityFromSelectState(state: MockQueryBuilderState): { document
   if (!docKeyF?.value || !modelIdF?.value || typeof docKeyF.value !== "string" || typeof modelIdF.value !== "string")
     return null;
   return { documentKey: docKeyF.value, modelId: modelIdF.value };
+}
+
+function getIdempotencyKeyFromSelectState(state: MockQueryBuilderState): string | null {
+  const f = state.filters.find((x) => x.type === "eq" && x.column === "idempotency_key");
+  if (!f || typeof f.value !== "string") return null;
+  return f.value;
 }
 
 function createMockJobRow(overrides: Partial<MockJobRow> & { id: string }): MockJobRow {
@@ -150,6 +157,7 @@ describe("regenerateDocument", () => {
       sessionId,
       stageSlug,
       iterationNumber,
+      idempotencyKey,
       documents: [{ documentKey, modelId }],
     };
     const user: User = getMockUser(userId);
@@ -165,7 +173,7 @@ describe("regenerateDocument", () => {
     const data: RegenerateDocumentResponse = result.data;
     assertEquals(data.jobIds.length, 1);
     assertEquals(data.jobIds[0], cloneId1);
-    const updateSpy = mockSetup.client.getSpiesForTableQueryMethod("dialectic_generation_jobs", "update", 1);
+    const updateSpy = mockSetup.client.getSpiesForTableQueryMethod("dialectic_generation_jobs", "update", 2);
     assertExists(updateSpy);
     assertEquals(updateSpy.calls[0]?.args[0]?.status, "superseded");
   });
@@ -220,6 +228,7 @@ describe("regenerateDocument", () => {
       sessionId,
       stageSlug,
       iterationNumber,
+      idempotencyKey,
       documents: [
         { documentKey: "business_case", modelId: "model-1" },
         { documentKey: "feature_spec", modelId: "model-2" },
@@ -258,6 +267,7 @@ describe("regenerateDocument", () => {
       sessionId,
       stageSlug,
       iterationNumber,
+      idempotencyKey,
       documents: [{ documentKey: "business_case", modelId: "model-1" }],
     };
     const user: User = getMockUser(userId);
@@ -297,6 +307,7 @@ describe("regenerateDocument", () => {
       sessionId,
       stageSlug,
       iterationNumber,
+      idempotencyKey,
       documents: [{ documentKey: "business_case", modelId: "model-1" }],
     };
     const user: User = getMockUser(userId);
@@ -346,6 +357,7 @@ describe("regenerateDocument", () => {
       sessionId,
       stageSlug,
       iterationNumber,
+      idempotencyKey,
       documents: [{ documentKey: "business_case", modelId: "model-1" }],
     };
     const user: User = getMockUser(userId);
@@ -393,6 +405,7 @@ describe("regenerateDocument", () => {
       sessionId,
       stageSlug,
       iterationNumber,
+      idempotencyKey,
       documents: [{ documentKey: "business_case", modelId: "model-1" }],
     };
     const user: User = getMockUser(userId);
@@ -441,6 +454,7 @@ describe("regenerateDocument", () => {
       sessionId,
       stageSlug,
       iterationNumber,
+      idempotencyKey,
       documents: [{ documentKey: "business_case", modelId: "model-1" }],
     };
     const user: User = getMockUser(userId);
@@ -503,6 +517,7 @@ describe("regenerateDocument", () => {
       sessionId,
       stageSlug,
       iterationNumber,
+      idempotencyKey,
       documents: [{ documentKey: "business_case", modelId: "model-1" }],
     };
     const user: User = getMockUser(userId);
@@ -571,6 +586,7 @@ describe("regenerateDocument", () => {
       sessionId,
       stageSlug,
       iterationNumber: 2,
+      idempotencyKey,
       documents: [{ documentKey: "business_case", modelId: "model-xyz" }],
     };
     const user: User = getMockUser(userId);
@@ -636,6 +652,7 @@ describe("regenerateDocument", () => {
       sessionId,
       stageSlug,
       iterationNumber,
+      idempotencyKey,
       documents: [{ documentKey: "business_case", modelId: "model-1" }],
     };
     const user: User = getMockUser(userId);
@@ -651,5 +668,314 @@ describe("regenerateDocument", () => {
     const clonePayload: unknown = capturedInsert["payload"];
     assert(isRecord(clonePayload), "clone payload must be a record");
     assertEquals(clonePayload["user_jwt"], providedToken);
+  });
+
+  it("rejects request when idempotencyKey is missing from payload (400 via isValidRegeneratePayload)", async () => {
+    const payloadMissingKey = {
+      sessionId,
+      stageSlug,
+      iterationNumber,
+      documents: [{ documentKey: "business_case", modelId: "model-1" }],
+    } as RegenerateDocumentPayload;
+    mockSetup = createMockSupabaseClient(userId, {});
+    const user: User = getMockUser(userId);
+
+    const result: RegenerateDocumentResult = await regenerateDocument(
+      payloadMissingKey,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
+    );
+
+    assertEquals(result.status, 400);
+    assertExists(result.error);
+    assertEquals(result.error?.status, 400);
+  });
+
+  it("rejects request when idempotencyKey is empty string (400 via isValidRegeneratePayload)", async () => {
+    const payload: RegenerateDocumentPayload = {
+      sessionId,
+      stageSlug,
+      iterationNumber,
+      idempotencyKey: "",
+      documents: [{ documentKey: "business_case", modelId: "model-1" }],
+    };
+    mockSetup = createMockSupabaseClient(userId, {});
+    const user: User = getMockUser(userId);
+
+    const result: RegenerateDocumentResult = await regenerateDocument(
+      payload,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
+    );
+
+    assertEquals(result.status, 400);
+    assertExists(result.error);
+    assertEquals(result.error?.status, 400);
+  });
+
+  it("derives per-document key as idempotencyKey_documentKey_modelId and includes it in each cloned job insert", async () => {
+    const documentKey = "business_case";
+    const modelId = "model-1";
+    const keyForTest = "idem-derive-key";
+    const originalJob: MockJobRow = createMockJobRow({
+      id: jobId1,
+      payload: { document_key: documentKey, model_id: modelId },
+    });
+    let capturedInsert: object | unknown[] | null = null;
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        dialectic_sessions: {
+          select: {
+            data: [{ id: sessionId, current_stage: { slug: stageSlug } }],
+            error: null,
+            count: 1,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+        dialectic_generation_jobs: {
+          select: async (state: MockQueryBuilderState) => {
+            const docId = getDocIdentityFromSelectState(state);
+            if (docId && docId.documentKey === documentKey && docId.modelId === modelId) {
+              return { data: [originalJob], error: null, count: 1, status: 200, statusText: "OK" };
+            }
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          },
+          update: { data: [], error: null, count: 1, status: 200, statusText: "OK" },
+          insert: async (state: MockQueryBuilderState) => {
+            capturedInsert = state.insertData;
+            return {
+              data: [{ ...state.insertData, id: cloneId1 }],
+              error: null,
+              count: 1,
+              status: 201,
+              statusText: "Created",
+            };
+          },
+        },
+      },
+    };
+    mockSetup = createMockSupabaseClient(userId, config);
+    const payload: RegenerateDocumentPayload = {
+      sessionId,
+      stageSlug,
+      iterationNumber,
+      idempotencyKey: keyForTest,
+      documents: [{ documentKey, modelId }],
+    };
+    const user: User = getMockUser(userId);
+
+    await regenerateDocument(
+      payload,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
+    );
+
+    assertExists(capturedInsert);
+    assert(isRecord(capturedInsert), "insert data must be a record");
+    const expectedKey: string = `${keyForTest}_${documentKey}_${modelId}`;
+    assertEquals(capturedInsert["idempotency_key"], expectedKey);
+  });
+
+  it("on unique constraint violation (23505 on idempotency_key) returns existing job IDs", async () => {
+    const documentKey = "business_case";
+    const modelId = "model-1";
+    const keyForTest = "idem-23505-key";
+    const existingCloneId = "existing-clone-id-23505";
+    const originalJob: MockJobRow = createMockJobRow({
+      id: jobId1,
+      payload: { document_key: documentKey, model_id: modelId },
+    });
+    const uniqueViolationError: Error & { code: string } = Object.assign(
+      new Error("duplicate key value violates unique constraint on idempotency_key"),
+      { code: "23505" },
+    );
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        dialectic_sessions: {
+          select: {
+            data: [{ id: sessionId, current_stage: { slug: stageSlug } }],
+            error: null,
+            count: 1,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+        dialectic_generation_jobs: {
+          select: async (state: MockQueryBuilderState) => {
+            const idemKey = getIdempotencyKeyFromSelectState(state);
+            if (idemKey === `${keyForTest}_${documentKey}_${modelId}`) {
+              return { data: [{ id: existingCloneId }], error: null, count: 1, status: 200, statusText: "OK" };
+            }
+            const docId = getDocIdentityFromSelectState(state);
+            if (docId && docId.documentKey === documentKey && docId.modelId === modelId) {
+              return { data: [originalJob], error: null, count: 1, status: 200, statusText: "OK" };
+            }
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          },
+          update: { data: [], error: null, count: 1, status: 200, statusText: "OK" },
+          insert: { data: null, error: uniqueViolationError },
+        },
+      },
+    };
+    mockSetup = createMockSupabaseClient(userId, config);
+    const payload: RegenerateDocumentPayload = {
+      sessionId,
+      stageSlug,
+      iterationNumber,
+      idempotencyKey: keyForTest,
+      documents: [{ documentKey, modelId }],
+    };
+    const user: User = getMockUser(userId);
+
+    const result: RegenerateDocumentResult = await regenerateDocument(
+      payload,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
+    );
+
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    assertEquals(result.data.jobIds.length, 1);
+    assertEquals(result.data.jobIds[0], existingCloneId);
+  });
+
+  it("normal successful regeneration still works with unique idempotency key", async () => {
+    const documentKey = "business_case";
+    const modelId = "model-1";
+    const keyForTest = "idem-unique-success";
+    const originalJob: MockJobRow = createMockJobRow({
+      id: jobId1,
+      payload: { document_key: documentKey, model_id: modelId },
+    });
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        dialectic_sessions: {
+          select: {
+            data: [{ id: sessionId, current_stage: { slug: stageSlug } }],
+            error: null,
+            count: 1,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+        dialectic_generation_jobs: {
+          select: async (state: MockQueryBuilderState) => {
+            const docId = getDocIdentityFromSelectState(state);
+            if (docId && docId.documentKey === documentKey && docId.modelId === modelId) {
+              return { data: [originalJob], error: null, count: 1, status: 200, statusText: "OK" };
+            }
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          },
+          update: { data: [originalJob], error: null, count: 1, status: 200, statusText: "OK" },
+          insert: {
+            data: [{ ...originalJob, id: cloneId1, status: "pending", attempt_count: 0, started_at: null, completed_at: null, results: null, error_details: null, target_contribution_id: null }],
+            error: null,
+            count: 1,
+            status: 201,
+            statusText: "Created",
+          },
+        },
+      },
+    };
+    mockSetup = createMockSupabaseClient(userId, config);
+    const payload: RegenerateDocumentPayload = {
+      sessionId,
+      stageSlug,
+      iterationNumber,
+      idempotencyKey: keyForTest,
+      documents: [{ documentKey, modelId }],
+    };
+    const user: User = getMockUser(userId);
+
+    const result: RegenerateDocumentResult = await regenerateDocument(
+      payload,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
+    );
+
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    assertEquals(result.data.jobIds.length, 1);
+    assertEquals(result.data.jobIds[0], cloneId1);
+  });
+
+  it("superseded status update on the old job is not duplicated on retry", async () => {
+    const documentKey = "business_case";
+    const modelId = "model-1";
+    const keyForTest = "idem-superseded-once";
+    const existingCloneId = "existing-clone-retry";
+    const originalJob: MockJobRow = createMockJobRow({
+      id: jobId1,
+      payload: { document_key: documentKey, model_id: modelId },
+    });
+    let selectByIdempotencyKeyCallCount = 0;
+    const config: MockSupabaseDataConfig = {
+      genericMockResults: {
+        dialectic_sessions: {
+          select: {
+            data: [{ id: sessionId, current_stage: { slug: stageSlug } }],
+            error: null,
+            count: 1,
+            status: 200,
+            statusText: "OK",
+          },
+        },
+        dialectic_generation_jobs: {
+          select: async (state: MockQueryBuilderState) => {
+            const idemKey = getIdempotencyKeyFromSelectState(state);
+            if (idemKey === `${keyForTest}_${documentKey}_${modelId}`) {
+              selectByIdempotencyKeyCallCount += 1;
+              return selectByIdempotencyKeyCallCount >= 2
+                ? { data: [{ id: existingCloneId }], error: null, count: 1, status: 200, statusText: "OK" }
+                : { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+            }
+            const docId = getDocIdentityFromSelectState(state);
+            if (docId && docId.documentKey === documentKey && docId.modelId === modelId) {
+              return { data: [originalJob], error: null, count: 1, status: 200, statusText: "OK" };
+            }
+            return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+          },
+          update: { data: [], error: null, count: 1, status: 200, statusText: "OK" },
+          insert: {
+            data: [{ ...originalJob, id: existingCloneId, status: "pending", attempt_count: 0 }],
+            error: null,
+            count: 1,
+            status: 201,
+            statusText: "Created",
+          },
+        },
+      },
+    };
+    mockSetup = createMockSupabaseClient(userId, config);
+    const payload: RegenerateDocumentPayload = {
+      sessionId,
+      stageSlug,
+      iterationNumber,
+      idempotencyKey: keyForTest,
+      documents: [{ documentKey, modelId }],
+    };
+    const user: User = getMockUser(userId);
+
+    const result1: RegenerateDocumentResult = await regenerateDocument(
+      payload,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
+    );
+    const result2: RegenerateDocumentResult = await regenerateDocument(
+      payload,
+      { user, authToken },
+      { dbClient: mockSetup.client as unknown as SupabaseClient<Database>, logger },
+    );
+
+    assertEquals(result1.status, 200);
+    assertExists(result1.data);
+    assertEquals(result1.data.jobIds[0], existingCloneId);
+    assertEquals(result2.status, 200);
+    assertExists(result2.data);
+    assertEquals(result2.data.jobIds[0], existingCloneId);
+    const updateSpy = mockSetup.client.getSpiesForTableQueryMethod("dialectic_generation_jobs", "update", 2);
+    assertExists(updateSpy);
+    assertEquals(updateSpy.calls.length, 1, "update (superseded) should be called only once across both requests");
   });
 });

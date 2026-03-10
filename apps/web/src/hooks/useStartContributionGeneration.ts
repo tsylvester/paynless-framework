@@ -11,7 +11,6 @@ import {
   selectActiveChatWalletInfo,
 } from "@paynless/store";
 import {
-  STAGE_BALANCE_THRESHOLDS,
   type DialecticSession,
   type GenerateContributionsPayload,
   type StartContributionGenerationResult,
@@ -29,6 +28,9 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
   );
   const resumePausedNsfJobs = useDialecticStore(
     (state) => state.resumePausedNsfJobs,
+  );
+  const pauseActiveJobs = useDialecticStore(
+    (state) => state.pauseActiveJobs,
   );
   const generatingSessions = useDialecticStore(
     (state) => state.generatingSessions,
@@ -100,11 +102,11 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
   }, [unifiedProgress, activeStage]);
 
   const hasPausedNsfJobs = activeStageProgress?.stageStatus === "paused_nsf";
+  const hasPausedUserJobs = activeStageProgress?.stageStatus === "paused_user";
 
   const stageThreshold: number | undefined = useMemo(() => {
     if (!activeStage) return undefined;
-    const value = STAGE_BALANCE_THRESHOLDS[activeStage.slug];
-    return typeof value === "number" ? value : undefined;
+    return activeStage.minimum_balance;
   }, [activeStage]);
 
   const balanceMeetsThreshold = useMemo((): boolean => {
@@ -113,7 +115,8 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     return !Number.isNaN(balanceNum) && balanceNum >= stageThreshold;
   }, [stageThreshold, activeWalletInfo.balance]);
 
-  const isResumeMode = hasPausedNsfJobs && balanceMeetsThreshold;
+  const isResumeMode = (hasPausedNsfJobs && balanceMeetsThreshold) || hasPausedUserJobs;
+  const isPauseMode = isSessionGenerating;
 
   const contributionsForStageAndIterationExist = useMemo((): boolean => {
     if (!activeSession || !activeStage) return false;
@@ -133,7 +136,6 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
   }, [activeSession, activeStage]);
 
   const isDisabled =
-    isSessionGenerating ||
     !areAnyModelsSelected ||
     activeStage == null ||
     activeSession == null ||
@@ -213,6 +215,7 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
         iterationNumber,
         continueUntilComplete,
         walletId,
+        idempotencyKey: '',
       };
 
       try {
@@ -243,6 +246,20 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     ],
   );
 
+  const pauseGeneration = useCallback(
+    async (onOpenDagProgress?: () => void): Promise<void> => {
+      if (activeSession == null || activeStage == null) return;
+      onOpenDagProgress?.();
+      toast.info("Pausing generation...");
+      await pauseActiveJobs({
+        sessionId: activeSession.id,
+        stageSlug: activeStage.slug,
+        iterationNumber: activeSession.iteration_count,
+      });
+    },
+    [activeSession, activeStage, pauseActiveJobs],
+  );
+
   return {
     startContributionGeneration,
     isDisabled,
@@ -253,6 +270,9 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     balanceMeetsThreshold,
     areAnyModelsSelected,
     hasPausedNsfJobs,
+    hasPausedUserJobs,
+    isPauseMode,
+    pauseGeneration,
     didGenerationFail,
     contributionsForStageAndIterationExist,
     showBalanceCallout,

@@ -10,40 +10,6 @@ export interface UpdateProjectDomainPayload {
 
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
-export enum DialecticStages {
-  thesis = 'Proposal',
-  antithesis = 'Review',
-  synthesis = 'Refinement',
-  parenthesis = 'Planning',
-  paralysis = 'Implementation',
-}
-
-export function isDialecticStageSlug(slug: string): slug is keyof typeof DialecticStages {
-  return (
-    slug === 'thesis' ||
-    slug === 'antithesis' ||
-    slug === 'synthesis' ||
-    slug === 'parenthesis' ||
-    slug === 'paralysis'
-  );
-}
-
-export function getDisplayName(slug: string): string {
-  if (!isDialecticStageSlug(slug)) {
-    throw new Error(`Unknown stage slug: ${slug}`);
-  }
-  return DialecticStages[slug];
-}
-
-/** Per-stage minimum wallet balance (token count) required before generating. Values from product owner. */
-export const STAGE_BALANCE_THRESHOLDS: Record<string, number> = {
-  thesis: 200_000,
-  antithesis: 400_000,
-  synthesis: 1_000_000,
-  parenthesis: 250_000,
-  paralysis: 250_000,
-};
-
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
 
 export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'] & {
@@ -103,12 +69,18 @@ export interface DialecticProject {
 }
 
 export interface CreateProjectPayload {
+    idempotencyKey: string;
     projectName: string;
     initialUserPrompt?: string | null;
     selectedDomainId: string;
     selectedDomainOverlayId?: string | null;
     promptTemplateId?: string | null;
     promptFile?: File | null;
+}
+
+/** Payload for createProjectAndAutoStart: requires both project and session idempotency keys from the UI (permanent keys, one per user intent). */
+export interface CreateProjectAndAutoStartPayload extends CreateProjectPayload {
+    sessionIdempotencyKey: string;
 }
 
 export interface DeleteProjectPayload {
@@ -132,6 +104,7 @@ export interface GetContributionContentDataResponse {
 }
 
 export interface StartSessionPayload {
+  idempotencyKey: string;
   projectId: string;
   sessionDescription?: string | null;
   selectedModels: SelectedModels[];
@@ -248,6 +221,16 @@ export interface OutputRequirement {
   artifact_class: 'header_context' | 'assembled_json' | 'rendered_document';
   file_type: 'json' | 'markdown';
   template_filename?: string;
+  /** From DB/recipe JSONB; used for document display metadata. */
+  display_name?: string;
+  /** From DB/recipe JSONB; used for document display metadata. */
+  description?: string;
+}
+
+/** Display metadata for a document key, derived from recipe outputs_required (display_name, description). */
+export interface DocumentDisplayMetadata {
+  displayName: string;
+  description: string;
 }
 
 export interface DialecticStageRecipeStep {
@@ -265,7 +248,8 @@ export interface DialecticStageRecipeStep {
   granularity_strategy: RecipeGranularity;
   inputs_required: InputRequirement[];
   inputs_relevance?: InputsRelevanceItem[];
-  outputs_required?: OutputRequirement[];
+  /** Recipe step outputs; may be string when JSONB is unparsed. */
+  outputs_required?: OutputRequirement[] | string;
 }
 
 export interface DialecticRecipeEdge {
@@ -580,7 +564,7 @@ export interface JobProgressEntry {
 export type StepJobProgress = Record<string, JobProgressEntry>;
 
 export interface StageRunProgressSnapshot {
-  stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed' | 'paused_nsf'>;
+  stepStatuses: Record<string, 'not_started' | 'in_progress' | 'waiting_for_children' | 'completed' | 'failed' | 'paused_nsf' | 'paused_user'>;
   /** Keyed by StageRunDocumentKey (documentKey:modelId). One document key can have N descriptors. */
   documents: Record<StageRunDocumentKey, StageRunDocumentDescriptor>;
   jobProgress: StepJobProgress;
@@ -588,7 +572,7 @@ export interface StageRunProgressSnapshot {
   jobs: JobProgressDto[];
 }
 
-export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed' | 'paused_nsf';
+export type UnifiedProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'failed' | 'paused_nsf' | 'paused_user';
 
 export interface StepProgressDetail {
   stepKey: string;
@@ -691,7 +675,7 @@ export interface DialecticActions {
   startDialecticSession: (payload: StartSessionPayload) => Promise<ApiResponse<StartSessionSuccessResponse>>;
   updateSessionModels: (payload: UpdateSessionModelsPayload) => Promise<ApiResponse<DialecticSession>>;
   fetchAIModelCatalog: () => Promise<void>;
-  createProjectAndAutoStart: (payload: CreateProjectPayload) => Promise<CreateProjectAutoStartResult>;
+  createProjectAndAutoStart: (payload: CreateProjectAndAutoStartPayload) => Promise<CreateProjectAutoStartResult>;
   setShouldOpenDagProgress: (open: boolean) => void;
 
   fetchContributionContent: (contributionId: string) => Promise<void>;
@@ -733,6 +717,7 @@ export interface DialecticActions {
   generateContributions: (payload: GenerateContributionsPayload) => Promise<ApiResponse<GenerateContributionsResponse>>;
 
   resumePausedNsfJobs: (payload: ResumePausedNsfJobsPayload) => Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
+  pauseActiveJobs: (payload: PauseActiveJobsPayload) => Promise<ApiResponse<PauseActiveJobsResponse>>;
   regenerateDocument: (payload: RegenerateDocumentPayload) => Promise<ApiResponse<RegenerateDocumentResponse>>;
 
   // Actions for submitting stage responses and preparing next seed (plan 1.2.Y / 1.5.6.4)
@@ -1107,6 +1092,7 @@ export interface DialecticApiClient {
   submitStageDocumentFeedback(payload: SubmitStageDocumentFeedbackPayload): Promise<ApiResponse<{ success: boolean }>>;
   listStageDocuments(payload: ListStageDocumentsPayload): Promise<ApiResponse<ListStageDocumentsResponse>>;
   resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
+  pauseActiveJobs(payload: PauseActiveJobsPayload): Promise<ApiResponse<PauseActiveJobsResponse>>;
   regenerateDocument(payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>>;
 }
 
@@ -1124,6 +1110,7 @@ export interface CreateProjectAutoStartResult {
 }
 
 export interface GenerateContributionsPayload {
+  idempotencyKey: string;
   sessionId: string;
   projectId: string;
   stageSlug: DialecticStage['slug'];
@@ -1147,6 +1134,9 @@ export interface UseStartContributionGenerationReturn {
   balanceMeetsThreshold: boolean;
   areAnyModelsSelected: boolean;
   hasPausedNsfJobs: boolean;
+  hasPausedUserJobs: boolean;
+  isPauseMode: boolean;
+  pauseGeneration: (onOpenDagProgress?: () => void) => Promise<void>;
   didGenerationFail: boolean;
   contributionsForStageAndIterationExist: boolean;
   showBalanceCallout: boolean;
@@ -1240,7 +1230,18 @@ export interface ResumePausedNsfJobsResponse {
   resumedCount: number;
 }
 
+export interface PauseActiveJobsPayload {
+  sessionId: string;
+  stageSlug: string;
+  iterationNumber: number;
+}
+
+export interface PauseActiveJobsResponse {
+  pausedCount: number;
+}
+
 export interface RegenerateDocumentPayload {
+  idempotencyKey: string;
   sessionId: string;
   stageSlug: string;
   iterationNumber: number;
@@ -1387,6 +1388,9 @@ export type DialecticServiceActionPayload = {
 } | {
   action: 'resumePausedNsfJobs';
   payload: ResumePausedNsfJobsPayload;
+} | {
+  action: 'pauseActiveJobs';
+  payload: PauseActiveJobsPayload;
 } | {
   action: 'regenerateDocument';
   payload: RegenerateDocumentPayload;

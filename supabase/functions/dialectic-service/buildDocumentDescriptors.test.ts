@@ -54,6 +54,7 @@ function job(
 		parent_job_id: overrides?.parent_job_id ?? null,
 		prerequisite_job_id: null,
 		is_test_job: false,
+		idempotency_key: null,
 	};
 	return row;
 }
@@ -88,6 +89,7 @@ Deno.test("buildDocumentDescriptors", async (t) => {
 			documentKey: FileType.business_case,
 			sourceContributionId: "contrib-1",
 			template_filename: "template.md",
+			idempotencyKey: "idempotency-key-1",
 		};
 		const renderJob: DialecticJobRow = job("render-1", "RENDER", "completed", renderPayload, null);
 		const resourceIdBySourceContributionId: Map<string, string> = new Map([["contrib-1", "resource-1"]]);
@@ -123,6 +125,7 @@ Deno.test("buildDocumentDescriptors", async (t) => {
 			documentKey: FileType.business_case,
 			sourceContributionId: "contrib-1",
 			template_filename: "template.md",
+			idempotencyKey: "idempotency-key-1",
 		};
 		const renderJob: DialecticJobRow = job("render-1", "RENDER", "in_progress", renderPayload, null);
 		const resourceIdBySourceContributionId: Map<string, string> = new Map([["contrib-1", "resource-1"]]);
@@ -151,6 +154,7 @@ Deno.test("buildDocumentDescriptors", async (t) => {
 			documentKey: FileType.business_case,
 			sourceContributionId: "contrib-missing",
 			template_filename: "template.md",
+			idempotencyKey: "idempotency-key-1",
 		};
 		const renderJob: DialecticJobRow = job("render-1", "RENDER", "completed", renderPayload, null);
 		const resourceIdBySourceContributionId: Map<string, string> = new Map<string, string>();
@@ -185,6 +189,7 @@ Deno.test("buildDocumentDescriptors", async (t) => {
 			output_type: FileType.business_case,
 			canonicalPathParams: { contributionType: "thesis", stageSlug: STAGE_SLUG, sourceModelSlugs: [] },
 			inputs: {},
+			idempotencyKey: "idempotency-key-1",
 		};
 		const executeJob: DialecticJobRow = job("exec-1", "EXECUTE", "completed", execPayload, null);
 		const renderPayload: DialecticRenderJobPayload = {
@@ -199,6 +204,7 @@ Deno.test("buildDocumentDescriptors", async (t) => {
 			documentKey: FileType.business_case,
 			sourceContributionId: "contrib-1",
 			template_filename: "template.md",
+			idempotencyKey: "idempotency-key-1",
 		};
 		const renderJob: DialecticJobRow = job("render-1", "RENDER", "completed", renderPayload, null, { parent_job_id: "exec-1" });
 		const resourceIdBySourceContributionId: Map<string, string> = new Map([["contrib-1", "resource-1"]]);
@@ -232,6 +238,7 @@ Deno.test("buildDocumentDescriptors", async (t) => {
 			documentKey: FileType.business_case,
 			sourceContributionId: "contrib-a",
 			template_filename: "template.md",
+			idempotencyKey: "idempotency-key-1",
 		};
 		const renderPayloadB: DialecticRenderJobPayload = {
 			sessionId: SESSION_ID,
@@ -245,6 +252,7 @@ Deno.test("buildDocumentDescriptors", async (t) => {
 			documentKey: FileType.business_case,
 			sourceContributionId: "contrib-b",
 			template_filename: "template.md",
+			idempotencyKey: "idempotency-key-1",
 		};
 		const renderJobA: DialecticJobRow = job("render-a", "RENDER", "completed", renderPayloadA, null, { stage_slug: "thesis" });
 		const renderJobB: DialecticJobRow = job("render-b", "RENDER", "completed", renderPayloadB, null, { stage_slug: "antithesis" });

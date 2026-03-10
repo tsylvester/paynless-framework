@@ -10,7 +10,7 @@ import {
   selectDomains,
   selectSelectedDomain,
 } from "@paynless/store";
-import type { CreateProjectPayload } from "@paynless/types";
+import type { CreateProjectAndAutoStartPayload } from "@paynless/types";
 import { logger } from "@paynless/utils";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -50,10 +50,14 @@ export const CreateProjectFromChatButton: React.FC = () => {
       firstUserMessage?.content?.split("\n")[0]?.trim() ?? "";
     const projectName: string =
       firstLine.length > 0 ? firstLine.slice(0, 50) : "Chat Project";
-    const payload: CreateProjectPayload = {
+    const idempotencyKey: string = crypto.randomUUID();
+    const sessionIdempotencyKey: string = crypto.randomUUID();
+    const payload: CreateProjectAndAutoStartPayload = {
       projectName,
       initialUserPrompt,
       selectedDomainId,
+      idempotencyKey,
+      sessionIdempotencyKey,
     };
     try {
       const result = await createProjectAndAutoStart(payload);

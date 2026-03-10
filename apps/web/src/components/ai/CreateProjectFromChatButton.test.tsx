@@ -237,7 +237,11 @@ describe('CreateProjectFromChatButton', () => {
 
     await waitFor(() => {
       expect(createProjectAndAutoStartMock).toHaveBeenCalledWith(
-        expect.objectContaining({ selectedDomainId: 'domain-other' })
+        expect.objectContaining({
+          selectedDomainId: 'domain-other',
+          idempotencyKey: expect.any(String),
+          sessionIdempotencyKey: expect.any(String),
+        })
       );
     });
   });
@@ -337,12 +341,14 @@ describe('CreateProjectFromChatButton', () => {
         expect.objectContaining({
           projectName: longFirstLine.slice(0, 50),
           selectedDomainId: 'domain-general',
+          idempotencyKey: expect.any(String),
+          sessionIdempotencyKey: expect.any(String),
         })
       );
     });
   });
 
-  it('on click, calls createProjectAndAutoStart with { projectName, initialUserPrompt, selectedDomainId }', async () => {
+  it('on click, calls createProjectAndAutoStart with { projectName, initialUserPrompt, selectedDomainId, idempotencyKey, sessionIdempotencyKey }', async () => {
     const user = userEvent.setup();
     setDialecticStateValues({ selectedDomain: generalDomain, domains: [generalDomain] });
     const createProjectAndAutoStartMock = getDialecticStoreActionMock('createProjectAndAutoStart');
@@ -366,8 +372,38 @@ describe('CreateProjectFromChatButton', () => {
           projectName: expect.any(String),
           initialUserPrompt: expect.any(String),
           selectedDomainId: 'domain-general',
+          idempotencyKey: expect.any(String),
+          sessionIdempotencyKey: expect.any(String),
         })
       );
+    });
+  });
+
+  it('on click, passes distinct idempotencyKey and sessionIdempotencyKey (permanent keys from UI)', async () => {
+    const user = userEvent.setup();
+    setDialecticStateValues({ selectedDomain: generalDomain, domains: [generalDomain] });
+    const createProjectAndAutoStartMock = getDialecticStoreActionMock('createProjectAndAutoStart');
+    const result: CreateProjectAutoStartResult = {
+      projectId: 'proj-1',
+      sessionId: 'sess-1',
+      hasDefaultModels: true,
+    };
+    vi.mocked(createProjectAndAutoStartMock).mockResolvedValue(result);
+
+    render(
+      <MemoryRouter>
+        <CreateProjectFromChatButton />
+      </MemoryRouter>
+    );
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(createProjectAndAutoStartMock).toHaveBeenCalledTimes(1);
+      const payload: { idempotencyKey: string; sessionIdempotencyKey: string } =
+        vi.mocked(createProjectAndAutoStartMock).mock.calls[0][0];
+      expect(payload.idempotencyKey).toBeTruthy();
+      expect(payload.sessionIdempotencyKey).toBeTruthy();
+      expect(payload.idempotencyKey).not.toBe(payload.sessionIdempotencyKey);
     });
   });
 

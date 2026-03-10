@@ -67,6 +67,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
         walletId: 'wallet-default',
         is_test_job: false,
         user_jwt: 'user-jwt-123',
+        idempotencyKey: "idempotency-key-1",
     },
     attempt_count: 0, 
     completed_at: null, 
@@ -77,7 +78,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
     prerequisite_job_id: null, 
     results: null, 
     started_at: null, 
-    status: 'pending', target_contribution_id: null, is_test_job: false, job_type: 'PLAN'
+    status: 'pending', target_contribution_id: null, is_test_job: false, job_type: 'PLAN', idempotency_key: "idempotency-key-1",
 };
 
 const MOCK_RECIPE_STEP: DialecticRecipeStep = {
@@ -246,6 +247,7 @@ Deno.test('planPerSourceGroup should inherit all fields from parent job payload 
             is_test_job: false,
             model_slug: 'parent-model-slug',
             user_jwt: 'parent-jwt-token',
+            idempotencyKey: "idempotency-key-1",
         },
         attempt_count: 0,
         completed_at: null,
@@ -260,6 +262,7 @@ Deno.test('planPerSourceGroup should inherit all fields from parent job payload 
         target_contribution_id: null,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 
     const childJobs = planPerSourceGroup(MOCK_SOURCE_DOCS, parent, MOCK_RECIPE_STEP, 'ignored.jwt');
@@ -703,6 +706,7 @@ Deno.test('planPerSourceGroup EXECUTE branch must not set document_relationships
             walletId: parentPayload.walletId,
             is_test_job: parentPayload.is_test_job,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -788,8 +792,9 @@ Deno.test('planPerSourceGroup uses relevance-selected anchor for canonical path 
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
-            job_type: 'PLAN' as const,
+            job_type: 'PLAN',
             is_test_job: parentPayload.is_test_job,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -992,6 +997,7 @@ Deno.test('planPerSourceGroup handles no_document_inputs_required by passing nul
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -1154,6 +1160,7 @@ Deno.test('planPerSourceGroup handles anchor_found by using result.document', ()
             model_id: parentPayload.model_id,
             walletId: parentPayload.walletId,
             user_jwt: parentPayload.user_jwt,
+            idempotencyKey: "idempotency-key-1",
         },
     };
 
@@ -1328,6 +1335,7 @@ Deno.test('planPerSourceGroup throws on anchor_not_found', async () => {
         ...MOCK_PARENT_JOB,
         stage_slug: 'thesis',
         payload: {
+            idempotencyKey: "idempotency-key-1",
             projectId: parentPayload.projectId,
             sessionId: parentPayload.sessionId,
             stageSlug: 'thesis',

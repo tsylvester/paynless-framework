@@ -61,6 +61,7 @@ const mockRenderJob: Tables<'dialectic_generation_jobs'> = {
     prerequisite_job_id: null,
     target_contribution_id: null,
     max_retries: 0,
+    idempotency_key: null,
 };
 
 /**
@@ -211,6 +212,7 @@ Deno.test('executeModelCallAndSave enforces document_relationships[stageSlug] = 
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -368,6 +370,7 @@ Deno.test('executeModelCallAndSave does not overwrite document_relationships[sta
         active_recipe_instance_id: 'instance-1',
         expected_output_template_ids: [],
         created_at: new Date().toISOString(),
+        minimum_balance: 0,
     };
 
     const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {

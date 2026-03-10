@@ -266,6 +266,7 @@ export const planPerSourceDocumentByLineageInternal: IPlanPerSourceDocumentByLin
             }
 
             const executePayload: DialecticExecuteJobPayload = {
+                idempotencyKey: parentJob.payload.idempotencyKey,
                 // Inherit ALL fields from parent job payload (defensive programming)
                 projectId: parentJob.payload.projectId,
                 sessionId: parentJob.payload.sessionId,
@@ -423,6 +424,7 @@ export const planPerSourceDocumentByLineageInternal: IPlanPerSourceDocumentByLin
                 throw new Error(`Invalid output_type for planPerSourceDocumentByLineage: ${recipeStep.output_type}`);
             }
             const newPayload: DialecticExecuteJobPayload = {
+                idempotencyKey: "idempotency-key-1",
                 // Inherit ALL fields from parent job payload (defensive programming)
                 projectId: parentJob.payload.projectId,
                 sessionId: parentJob.payload.sessionId,

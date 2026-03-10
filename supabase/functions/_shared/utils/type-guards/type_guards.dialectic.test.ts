@@ -524,6 +524,7 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         walletId: 'wallet-abc',
         stageSlug: 'thesis',
         iterationNumber: 1,
+        idempotencyKey: 'test-idempotency-key',
         output_type: FileType.business_case,
         canonicalPathParams: {
             contributionType: 'thesis',
@@ -942,6 +943,7 @@ Deno.test('Type Guard: isDialecticJobRow', async (t) => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN',
+            idempotency_key: 'test-idempotency-key',
         };
         assert(isDialecticJobRow(job));
     });
@@ -967,6 +969,7 @@ Deno.test('Type Guard: isDialecticJobRow', async (t) => {
             prerequisite_job_id: null,
             is_test_job: false,
             job_type: 'PLAN' as Database["public"]["Enums"]["dialectic_job_type_enum"],
+            idempotency_key: 'test-idempotency-key',
         };
         assert(!isDialecticJobRow(job));
     });
@@ -1077,6 +1080,7 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
                 prerequisite_job_id: null,
                 is_test_job: false,
                 job_type: 'PLAN',
+                idempotency_key: 'test-idempotency-key',
             },
             {
                 id: 'job-2',
@@ -1098,6 +1102,7 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
                 prerequisite_job_id: null,
                 is_test_job: false,
                 job_type: 'EXECUTE',
+                idempotency_key: 'test-idempotency-key',
             },
         ];
         assert(isDialecticJobRowArray(jobs));
@@ -1124,6 +1129,7 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
             results: null,
             error_details: null,
             parent_job_id: null,
+            idempotency_key: 'test-idempotency-key',
         }];
         assert(isDialecticJobRowArray(jobs));
     });
@@ -1204,7 +1210,7 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
             user_jwt: 'test-jwt',
             is_test_job: false,
             model_slug: 'test-model-slug',
-
+            idempotencyKey: 'test-idempotency-key',
             // Properties from DialecticBaseJobPayload
             model_id: 'model-123',
             sourceContributionId: 'source-id',
@@ -1248,6 +1254,7 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
             target_contribution_id: 'target-id',
             is_test_job: false,
             sourceContributionId: 'source-id',
+            idempotencyKey: 'test-idempotency-key',
         };
         assert(isDialecticPlanJobPayload(payload));
     });
@@ -1301,6 +1308,7 @@ Deno.test('Type Guard: isDialecticSkeletonJobPayload', async (t) => {
                 current_step: 1,
                 total_steps: 1,
             },
+            idempotencyKey: 'test-idempotency-key',
         };
         assert(isDialecticSkeletonJobPayload(payload));
     });
@@ -1623,6 +1631,7 @@ Deno.test('Type Guard: isStageWithRecipeSteps', async (t) => {
         id: 'stage-1',
         recipe_template_id: 'template-1',
         slug: 'synthesis',
+        minimum_balance: 0,
     };
 
     const mockInstanceData: Tables<'dialectic_stage_recipe_instances'> = {
@@ -1709,6 +1718,7 @@ Deno.test('Type Guard: isDatabaseRecipeSteps', async (t) => {
         id: 'stage-1',
         recipe_template_id: 'template-1',
         slug: 'synthesis',
+        minimum_balance: 0,
     };
 
     const mockInstanceData: Tables<'dialectic_stage_recipe_instances'> = {
@@ -3557,6 +3567,7 @@ Deno.test('Type Guard: isDialecticRenderJobPayload', async (t) => {
         documentKey: FileType.business_case,
         sourceContributionId: 'source-contribution-123',
         template_filename: 'thesis_business_case.md',
+        idempotencyKey: 'test-idempotency-key',
     };
 
     await t.step('should return true for a valid render job payload with all required fields', () => {

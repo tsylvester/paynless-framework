@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, within, act } from '@testing-library/react';
+import { render, screen, fireEvent, within, act, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { StageTabCard } from './StageTabCard';
 import type { UnifiedProjectStatus } from '@paynless/types';
@@ -8,10 +9,12 @@ import {
   DialecticStage,
   DialecticStateValues,
   DialecticProcessTemplate,
+  JobProgressDto,
   OutputRequirement,
   SelectedModels,
   StageRunChecklistProps,
   StageRunDocumentDescriptor,
+  STAGE_RUN_DOCUMENT_KEY_SEPARATOR,
   DialecticStageRecipe,
   DialecticStageRecipeStep,
 } from '@paynless/types';
@@ -36,6 +39,7 @@ const mockStages: DialecticStage[] = [
     slug: 'thesis',
     display_name: 'Proposal',
     description: 'Formulate a hypothesis.',
+    minimum_balance: 100000,
     created_at: new Date().toISOString(),
     default_system_prompt_id: 'd-1',
     expected_output_template_ids: [],
@@ -47,6 +51,7 @@ const mockStages: DialecticStage[] = [
     slug: 'antithesis',
     display_name: 'Review',
     description: 'Analyze the results.',
+    minimum_balance: 200000,
     created_at: new Date().toISOString(),
     default_system_prompt_id: 'd-2',
     expected_output_template_ids: [],
@@ -117,8 +122,12 @@ const createStageRunProgressEntry = (
 ): StageRunProgressEntry => {
   const documents: StageRunProgressEntry['documents'] = {};
   const builtStepStatuses: StageRunProgressEntry['stepStatuses'] = { ...stepStatuses };
+  const jobs: JobProgressDto[] = [];
   const nowIso = new Date().toISOString();
+  let completedSteps = 0;
+  let failedSteps = 0;
   for (const [documentKey, status] of Object.entries(documentStatuses)) {
+    const compositeKey = `${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelIdForDocuments}`;
     const descriptor: StageRunDocumentDescriptor = {
       status,
       job_id: `job-${documentKey}`,
@@ -128,16 +137,33 @@ const createStageRunProgressEntry = (
       lastRenderedResourceId: `${documentKey}.resource`,
       lastRenderAtIso: nowIso,
     };
-    documents[documentKey] = descriptor;
+    documents[compositeKey] = descriptor;
     const stepStatus: UnifiedProjectStatus =
       status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'generating' ? 'in_progress' : 'not_started';
     builtStepStatuses[`generate_${documentKey}`] = stepStatus;
+    if (status === 'completed') completedSteps += 1;
+    if (status === 'failed') failedSteps += 1;
+    jobs.push({
+      id: `job-${documentKey}`,
+      status: status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'in_progress',
+      jobType: 'EXECUTE',
+      stepKey: `generate_${documentKey}`,
+      modelId: modelIdForDocuments,
+      documentKey,
+      parentJobId: null,
+      createdAt: nowIso,
+      startedAt: nowIso,
+      completedAt: status === 'completed' || status === 'failed' ? nowIso : null,
+      modelName: null,
+    });
   }
+  const totalSteps = Object.keys(documentStatuses).length;
   return {
     documents,
     stepStatuses: builtStepStatuses,
     jobProgress: {},
-    progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+    progress: { completedSteps, totalSteps, failedSteps },
+    jobs,
   };
 };
 
@@ -568,5 +594,40 @@ describe('StageTabCard', () => {
     });
     renderComponent();
     expect(storeActions.setActiveStage).toHaveBeenCalledWith('thesis');
+  });
+
+  it('renders stage card label from stage display_name', () => {
+    setupStore();
+    renderComponent();
+    expect(screen.getByText('Proposal')).toBeInTheDocument();
+    expect(screen.getByText('Review')).toBeInTheDocument();
+  });
+
+  it('shows tooltip on hover with stage description', async () => {
+    const user = userEvent.setup();
+    setupStore();
+    renderComponent();
+    const tooltipTrigger = screen.getByTestId('stage-tooltip-trigger-thesis');
+    await user.hover(tooltipTrigger);
+    await waitFor(() => {
+      const tooltipContent = document.querySelector('[data-slot="tooltip-content"]');
+      expect(tooltipContent).toBeTruthy();
+      expect(tooltipContent?.textContent).toContain(mockStages[0].description);
+    });
+  });
+
+  it('shows formatted minimum balance in stage tooltip', async () => {
+    const user = userEvent.setup();
+    setupStore();
+    renderComponent();
+    const tooltipTrigger = screen.getByTestId('stage-tooltip-trigger-antithesis');
+    await user.hover(tooltipTrigger);
+    await waitFor(() => {
+      const tooltipContent = document.querySelector('[data-slot="tooltip-content"]');
+      expect(tooltipContent).toBeTruthy();
+      const text = tooltipContent?.textContent ?? '';
+      expect(text).toMatch(/200,000/);
+      expect(text).toMatch(/tokens/i);
+    });
   });
 });

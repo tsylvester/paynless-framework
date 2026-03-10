@@ -541,6 +541,7 @@ export type Database = {
           created_at: string
           error_details: Json | null
           id: string
+          idempotency_key: string | null
           is_test_job: boolean
           iteration_number: number
           job_type:
@@ -564,6 +565,7 @@ export type Database = {
           created_at?: string
           error_details?: Json | null
           id?: string
+          idempotency_key?: string | null
           is_test_job?: boolean
           iteration_number: number
           job_type?:
@@ -587,6 +589,7 @@ export type Database = {
           created_at?: string
           error_details?: Json | null
           id?: string
+          idempotency_key?: string | null
           is_test_job?: boolean
           iteration_number?: number
           job_type?:
@@ -798,6 +801,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          idempotency_key: string | null
           initial_prompt_resource_id: string | null
           initial_user_prompt: string
           process_template_id: string | null
@@ -813,6 +817,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          idempotency_key?: string | null
           initial_prompt_resource_id?: string | null
           initial_user_prompt: string
           process_template_id?: string | null
@@ -828,6 +833,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          idempotency_key?: string | null
           initial_prompt_resource_id?: string | null
           initial_user_prompt?: string
           process_template_id?: string | null
@@ -1040,6 +1046,7 @@ export type Database = {
           created_at: string
           current_stage_id: string
           id: string
+          idempotency_key: string | null
           iteration_count: number
           project_id: string
           selected_model_ids: string[] | null
@@ -1053,6 +1060,7 @@ export type Database = {
           created_at?: string
           current_stage_id: string
           id?: string
+          idempotency_key?: string | null
           iteration_count?: number
           project_id: string
           selected_model_ids?: string[] | null
@@ -1066,6 +1074,7 @@ export type Database = {
           created_at?: string
           current_stage_id?: string
           id?: string
+          idempotency_key?: string | null
           iteration_count?: number
           project_id?: string
           selected_model_ids?: string[] | null
@@ -1343,6 +1352,7 @@ export type Database = {
           display_name: string
           expected_output_template_ids: string[]
           id: string
+          minimum_balance: number
           recipe_template_id: string | null
           slug: string
         }
@@ -1354,6 +1364,7 @@ export type Database = {
           display_name: string
           expected_output_template_ids?: string[]
           id?: string
+          minimum_balance?: number
           recipe_template_id?: string | null
           slug: string
         }
@@ -1365,6 +1376,7 @@ export type Database = {
           display_name?: string
           expected_output_template_ids?: string[]
           id?: string
+          minimum_balance?: number
           recipe_template_id?: string | null
           slug?: string
         }

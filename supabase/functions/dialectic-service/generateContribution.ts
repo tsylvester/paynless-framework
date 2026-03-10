@@ -20,8 +20,22 @@ export async function generateContributions(
     authToken: string,
 ): Promise<{ success: boolean; data?: { job_ids: string[] }; error?: { message: string; status?: number; details?: string; code?: string } }> {
 
-    const { sessionId, iterationNumber = 1, stageSlug, continueUntilComplete, maxRetries = 3 } = payload;
+    const { sessionId, iterationNumber = 1, stageSlug, continueUntilComplete, maxRetries = 3, idempotencyKey } = payload;
     logger.info(`[generateContributions] Enqueuing job for session ID: ${sessionId}, stage: ${stageSlug}, iteration: ${iterationNumber}, continueUntilComplete: ${continueUntilComplete}`);
+
+    if (idempotencyKey === null || idempotencyKey === undefined) {
+        logger.warn("[generateContributions] idempotencyKey is required in the payload.", { payload });
+        return { success: false, error: { message: "idempotencyKey is required", status: 400 } };
+    }
+    if (typeof idempotencyKey !== 'string') {
+        logger.warn("[generateContributions] idempotencyKey is required in the payload.", { payload });
+        return { success: false, error: { message: "idempotencyKey is required", status: 400 } };
+    }
+    const idempotencyKeyTrimmed: string = idempotencyKey.trim();
+    if (idempotencyKeyTrimmed.length === 0) {
+        logger.warn("[generateContributions] idempotencyKey is required in the payload.", { payload });
+        return { success: false, error: { message: "idempotencyKey is required", status: 400 } };
+    }
 
     if (!stageSlug) {
       logger.warn("[generateContributions] stageSlug is required in the payload.", { payload });
@@ -160,6 +174,7 @@ export async function generateContributions(
                 logger.error(`[generateContributions] Job payload is not a valid JSON object.`, { jobPayload });
                 return { success: false, error: { message: `Job payload is not a valid JSON object.`, status: 500 } };
             }
+            const jobIdempotencyKey: string = `${idempotencyKeyTrimmed}_${modelId}`;
             const jobToInsert: TablesInsert<'dialectic_generation_jobs'> = {
                 session_id: sessionId,
                 user_id: user.id,
@@ -169,6 +184,7 @@ export async function generateContributions(
                 status: 'pending',
                 max_retries: maxRetries,
                 job_type: jobType, // Add the mandatory top-level job_type
+                idempotency_key: jobIdempotencyKey,
             };
 
             if (payload.is_test_job === true) {
@@ -181,8 +197,21 @@ export async function generateContributions(
                 .insert(jobToInsert)
                 .select('id')
                 .single();
-        
+
             if (insertError) {
+                if (insertError.code === '23505' && insertError.message.includes('idempotency_key')) {
+                    const { data: existingJob, error: selectError } = await dbClient
+                        .from('dialectic_generation_jobs')
+                        .select('id')
+                        .eq('idempotency_key', jobIdempotencyKey)
+                        .eq('session_id', sessionId)
+                        .single();
+                    if (!selectError && existingJob) {
+                        jobIds.push(existingJob.id);
+                        logger.info(`[generateContributions] Idempotent replay: returning existing job ${existingJob.id} for session ${sessionId}, model ${modelId}.`);
+                        continue;
+                    }
+                }
                 logger.error(`[generateContributions] Failed to enqueue job for session ${sessionId}, model ${modelId}.`, { error: insertError, payload });
                 // Return failure for the entire operation if any job fails to enqueue
                 return { success: false, error: { message: `Failed to create job for model ${modelId}: ${insertError.message}`, status: 500, details: insertError.details, code: insertError.code } };

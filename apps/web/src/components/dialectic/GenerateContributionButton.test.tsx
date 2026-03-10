@@ -17,7 +17,6 @@ import type {
   StageDAGProgressDialogProps,
   UseStartContributionGenerationReturn,
 } from '@paynless/types';
-import { STAGE_BALANCE_THRESHOLDS } from '@paynless/types';
 
 // Import utilities from the actual mock file
 import { 
@@ -80,6 +79,7 @@ vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    info: vi.fn(),
   },
 }));
 
@@ -108,13 +108,14 @@ const renderWithRouter = (ui: React.ReactElement) =>
 const mockThesisStage: DialecticStage = {
   id: 'stage-1',
   slug: 'thesis',
-  display_name: 'Thesis',
+  display_name: 'Proposal',
   description: 'Initial hypothesis generation',
   default_system_prompt_id: 'prompt-1',
   created_at: new Date().toISOString(),
   expected_output_template_ids: [],
   recipe_template_id: null,
   active_recipe_instance_id: null,
+  minimum_balance: 100000,
 };
 
 // Helper to create a complete DialecticProject mock
@@ -193,12 +194,15 @@ function getDefaultHookReturn(
     balanceMeetsThreshold: true,
     areAnyModelsSelected: true,
     hasPausedNsfJobs: false,
+    hasPausedUserJobs: false,
+    isPauseMode: false,
+    pauseGeneration: vi.fn().mockResolvedValue(undefined),
     didGenerationFail: false,
     contributionsForStageAndIterationExist: false,
     showBalanceCallout: false,
     activeStage: mockThesisStage,
     activeSession: defaultSession,
-    stageThreshold: STAGE_BALANCE_THRESHOLDS['thesis'],
+    stageThreshold: mockThesisStage.minimum_balance,
     ...overrides,
   };
 }
@@ -228,8 +232,9 @@ describe('GenerateContributionButton', () => {
     mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
     vi.mocked(toast.success).mockClear();
     vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.info).mockClear();
 
-    const thesisMinBalance = STAGE_BALANCE_THRESHOLDS['thesis'];
+    const thesisMinBalance = mockThesisStage.minimum_balance;
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
       status: 'ok',
       type: 'personal',
@@ -245,10 +250,7 @@ describe('GenerateContributionButton', () => {
   });
 
   it('renders "Generate [StageName]" when models are selected and no other conditions met', () => {
-    // We now need to explicitly mock the stage readiness check to return true
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
-
-    // beforeEach already sets up models selected and a basic project/session in the store
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).not.toBeDisabled();
@@ -297,17 +299,23 @@ describe('GenerateContributionButton', () => {
     expect(screen.getByRole('button')).not.toBeDisabled();
   });
 
-  it('renders "Generating..." and is disabled when that specific session is generating', () => {
+  it('when isPauseMode is true, button shows "Pause [StageName]" with pause icon and is not disabled (for pause action)', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ isSessionGenerating: true, isDisabled: true })
+      getDefaultHookReturn({
+        isSessionGenerating: true,
+        isPauseMode: true,
+        isDisabled: false,
+      })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toHaveTextContent(/Generating.../i);
-    expect(screen.getByRole('button')).toBeDisabled();
+    const button = screen.getByRole('button');
+    expect(button).toHaveTextContent('Pause');
+    expect(button).toHaveTextContent('Proposal');
+    expect(button).not.toBeDisabled();
   });
 
-  it('renders "Regenerate" when contributions for the current stage/iteration already exist', () => {
+  it('renders "Regenerate [StageName]" when contributions for the current stage/iteration already exist', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     mockUseStartContributionGeneration.mockReturnValue(
       getDefaultHookReturn({
@@ -343,7 +351,7 @@ describe('GenerateContributionButton', () => {
     expect(screen.getByRole('button')).toBeDisabled();
     expect(screen.queryByRole('button', { name: /Regenerate Proposal/i })).not.toBeInTheDocument();
   });
-  
+
   it('handles currentProjectDetail being null gracefully by being disabled', () => {
     mockUseStartContributionGeneration.mockReturnValue(
       getDefaultHookReturn({ stageThreshold: undefined })
@@ -366,7 +374,7 @@ describe('GenerateContributionButton', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
 
     // Selector returns ok only when ctx === 'personal'; otherwise loading
-    const thesisMinBalance = STAGE_BALANCE_THRESHOLDS['thesis'];
+    const thesisMinBalance = mockThesisStage.minimum_balance;
     vi.mocked(selectActiveChatWalletInfo).mockImplementation((state, ctx) => {
       void state;
       if (ctx === 'personal') {
@@ -391,7 +399,6 @@ describe('GenerateContributionButton', () => {
     });
 
     renderWithRouter(<GenerateContributionButton />);
-    // Desired behavior: with personal context, button should be enabled and say Generate
     expect(screen.getByRole('button', { name: /Generate Proposal/i })).not.toBeDisabled();
   });
 
@@ -537,5 +544,129 @@ describe('GenerateContributionButton', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
     });
+  });
+
+  it('when isPauseMode is true, clicking button calls pauseGeneration with callback', async () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const pauseGeneration = vi.fn().mockResolvedValue(undefined);
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isSessionGenerating: true,
+        isPauseMode: true,
+        isDisabled: false,
+        pauseGeneration,
+      })
+    );
+    const user = userEvent.setup();
+    renderWithRouter(<GenerateContributionButton />);
+    const button = screen.getByRole('button', { name: /Pause/i });
+    await user.click(button);
+    await waitFor(() => {
+      expect(pauseGeneration).toHaveBeenCalledTimes(1);
+      expect(pauseGeneration).toHaveBeenCalledWith(expect.any(Function));
+    });
+  });
+
+  it('when hasPausedUserJobs is true, button text shows "Resume [StageName]"', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        hasPausedUserJobs: true,
+        isResumeMode: true,
+        isDisabled: false,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeInTheDocument();
+  });
+
+  it('when hasPausedUserJobs is true, clicking button calls startContributionGeneration (resume path)', async () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const startContributionGeneration = vi.fn().mockResolvedValue({ success: true });
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        hasPausedUserJobs: true,
+        isResumeMode: true,
+        isDisabled: false,
+        startContributionGeneration,
+      })
+    );
+    const user = userEvent.setup();
+    renderWithRouter(<GenerateContributionButton />);
+    await user.click(screen.getByRole('button', { name: /Resume Proposal/i }));
+    await waitFor(() => {
+      expect(startContributionGeneration).toHaveBeenCalledTimes(1);
+      expect(startContributionGeneration).toHaveBeenCalledWith(expect.any(Function));
+    });
+  });
+
+  it('when hasPausedNsfJobs is true and balanceMeetsThreshold, button shows "Resume [StageName]"', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        hasPausedNsfJobs: true,
+        isResumeMode: true,
+        balanceMeetsThreshold: true,
+        isDisabled: false,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeInTheDocument();
+  });
+
+  it('after click, button is disabled for 500ms debounce period', async () => {
+    vi.useFakeTimers();
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderWithRouter(<GenerateContributionButton />);
+    const button = screen.getByRole('button', { name: /Generate Proposal/i });
+    await user.click(button);
+    expect(button).toBeDisabled();
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button')).not.toBeDisabled();
+    });
+    vi.useRealTimers();
+  });
+
+  it('button state priority: isPauseMode (generating) over hasPausedNsfJobs and hasPausedUserJobs', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isPauseMode: true,
+        hasPausedNsfJobs: true,
+        hasPausedUserJobs: true,
+        isDisabled: false,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    const button = screen.getByRole('button');
+    expect(button).toHaveTextContent('Pause');
+    expect(button).toHaveTextContent('Proposal');
+  });
+
+  it('button renders at compact size (size sm) and full width suitable for sidebar', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    renderWithRouter(<GenerateContributionButton />);
+    const button = screen.getByRole('button');
+    expect(button).toBeInTheDocument();
+    expect(button.className).toMatch(/w-full|width.*100/);
+  });
+
+  it('button text includes stage display_name so the exact stage is explicit', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        didGenerationFail: true,
+        isDisabled: false,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    const button = screen.getByRole('button');
+    expect(button).toHaveTextContent('Retry');
+    expect(button).toHaveTextContent('Proposal');
   });
 }); 

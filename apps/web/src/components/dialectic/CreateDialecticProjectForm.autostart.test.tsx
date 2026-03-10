@@ -13,11 +13,12 @@ import type {
   DialecticProjectRow,
   ApiError,
   DialecticDomain,
+  DialecticStage,
+  DialecticProcessTemplate,
   CreateProjectAutoStartResult,
   AIModelCatalogEntry,
   ActiveChatWalletInfo,
 } from '@paynless/types';
-import { STAGE_BALANCE_THRESHOLDS } from '@paynless/types';
 import { usePlatform } from '@paynless/platform';
 import type { CapabilitiesContextValue, PlatformCapabilities } from '@paynless/types';
 import { toast } from 'sonner';
@@ -113,6 +114,31 @@ const defaultWalletInfo: ActiveChatWalletInfo = {
   orgId: null,
   balance: '300000',
   isLoadingPrimaryWallet: false,
+};
+
+const firstStageMinBalanceForAutostartTest = 100000;
+
+const stageThesisForAutostart: DialecticStage = {
+  id: 'stage-thesis-autostart',
+  slug: 'thesis',
+  display_name: 'Proposal',
+  description: 'First stage for autostart balance test.',
+  created_at: new Date().toISOString(),
+  default_system_prompt_id: null,
+  expected_output_template_ids: [],
+  recipe_template_id: null,
+  active_recipe_instance_id: null,
+  minimum_balance: firstStageMinBalanceForAutostartTest,
+};
+
+const processTemplateForAutostartBalanceTest: DialecticProcessTemplate = {
+  id: 'pt-autostart-balance',
+  name: 'Autostart balance test template',
+  description: null,
+  created_at: new Date().toISOString(),
+  starting_stage_id: stageThesisForAutostart.id,
+  stages: [stageThesisForAutostart],
+  transitions: [],
 };
 
 const defaultCatalogWithDefaultModel: AIModelCatalogEntry[] = [
@@ -400,13 +426,14 @@ describe('CreateDialecticProjectForm (autostart)', () => {
   it('defaults to Autoconfig (half-checked) when wallet balance below thesis threshold and shows explanatory text', async () => {
     const lowBalance: ActiveChatWalletInfo = {
       ...defaultWalletInfo,
-      balance: String(STAGE_BALANCE_THRESHOLDS['thesis'] - 1),
+      balance: String(firstStageMinBalanceForAutostartTest - 1),
     };
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue(lowBalance);
     initializeMockDialecticState({
       selectedDomain: mockSelectedDomain,
       modelCatalog: defaultCatalogWithDefaultModel,
       isLoadingModelCatalog: false,
+      currentProcessTemplate: processTemplateForAutostartBalanceTest,
     });
 
     renderForm();

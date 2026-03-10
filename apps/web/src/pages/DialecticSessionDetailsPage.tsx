@@ -13,6 +13,7 @@ import { DialecticSession, DialecticProject, ApiError } from "@paynless/types";
 import { useStartContributionGeneration } from "@/hooks/useStartContributionGeneration";
 
 // New Component Imports
+import { GenerateContributionButton } from "../components/dialectic/GenerateContributionButton";
 import { SessionInfoCard } from "../components/dialectic/SessionInfoCard";
 import { StageTabCard } from "../components/dialectic/StageTabCard";
 import { SessionContributionsDisplayCard } from "../components/dialectic/SessionContributionsDisplayCard";
@@ -187,9 +188,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 							{/* <DynamicProgressBar sessionId={activeSessionDetail.id} /> */}
 							{/* Stage Navigation */}
 							<div className="space-y-2">
-								<h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1">
-									Process Stages
-								</h3>
+								<GenerateContributionButton />
 								<div role="tablist" aria-label="Dialectic Stages">
 									<StageTabCard />
 								</div>

@@ -924,7 +924,8 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
         'prompt_template_name', 'sourceContributionId', 'document_key', 'branch_key', 'parallel_group', 'planner_metadata',
         'document_relationships', 'isIntermediate', 'user_jwt', 'target_contribution_id', 'context_for_documents',
         // Base job payload fields that may be present on execute jobs
-        'continueUntilComplete', 'maxRetries', 'continuation_count', 'is_test_job', 'model_slug'
+        'continueUntilComplete', 'maxRetries', 'continuation_count', 'is_test_job', 'model_slug',
+        'idempotencyKey',
     ]);
 
     const unknownKeys = Object.keys(payload).filter(key => !allowedKeys.has(key));
@@ -1142,6 +1143,7 @@ export function isDialecticRenderJobPayload(payload: unknown): payload is Dialec
         'documentIdentity', 'documentKey', 'sourceContributionId', 'user_jwt', 'template_filename',
         // Base job payload fields that may be present on render jobs
         'continueUntilComplete', 'maxRetries', 'continuation_count', 'target_contribution_id', 'is_test_job', 'model_slug',
+        'idempotencyKey',
     ]);
 
     const unknownKeys = Object.keys(payload).filter(key => !allowedKeys.has(key));
@@ -1350,6 +1352,9 @@ export function validatePayload(payload: Json): DialecticJobPayload {
     continuation_count: ('continuation_count' in payload && typeof payload.continuation_count === 'number') ? payload.continuation_count : undefined,
     target_contribution_id: ('target_contribution_id' in payload && typeof payload.target_contribution_id === 'string') ? payload.target_contribution_id : undefined,
     user_jwt: ('user_jwt' in payload && typeof payload.user_jwt === 'string') ? payload.user_jwt : '',
+    idempotencyKey: ('idempotencyKey' in payload && typeof payload.idempotencyKey === 'string') ? payload.idempotencyKey : '',
+    planner_metadata: {},
+    step_info: {},
   };
   
   return validatedPayload;

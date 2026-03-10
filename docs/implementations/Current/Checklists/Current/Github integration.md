@@ -4,208 +4,14 @@
 
 ## Problem Statement
 
-
 ## Objectives
 
 ## Expected Outcome
-
 
 # Instructions for Agent
 * Read `docs/Instructions for Agent.md` before every turn.
 
 # Work Breakdown Structure
-
-## Chat to Project
-
-*   `[✅]`   [UI] apps/web/src/utils/formatChatMessagesAsPrompt **Format selected chat messages into a project initial prompt string**
-  *   `[✅]`   `objective`
-    *   `[✅]`   Create a pure utility function that accepts `ChatMessage[]` and returns a single formatted `string` suitable for `CreateProjectPayload.initialUserPrompt`
-    *   `[✅]`   Output format is a structured conversation transcript: each message prefixed with its capitalised role label (`User:`, `Assistant:`, `System:`), messages separated by double newlines
-    *   `[✅]`   Empty input array returns empty string
-    *   `[✅]`   Messages are emitted in the order received (chronological, matching the array order from `selectSelectedChatMessages`)
-  *   `[✅]`   `role`
-    *   `[✅]`   App layer utility — pure formatting function bridging AI chat messages to dialectic project input
-  *   `[✅]`   `module`
-    *   `[✅]`   Chat-to-Project bridge: message content formatting
-    *   `[✅]`   Boundary: receives `ChatMessage[]` (AI chat domain), produces `string` (dialectic project domain `initialUserPrompt`)
-  *   `[✅]`   `deps`
-    *   `[✅]`   `ChatMessage` from `@paynless/types` — domain type, `Database['public']['Tables']['chat_messages']['Row'] & { status?: ... }` — fields used: `role: string`, `content: string`
-    *   `[✅]`   Confirm no reverse dependency is introduced — pure function with no store, hook, or side-effect imports
-  *   `[✅]`   `context_slice`
-    *   `[✅]`   Input: `ChatMessage[]` — only `role` and `content` fields are read
-    *   `[✅]`   Output: `string` — formatted transcript
-    *   `[✅]`   No store reads, no side effects, no concrete imports from higher or lateral layers
-  *   `[✅]`   unit/`apps/web/src/utils/formatChatMessagesAsPrompt.test.ts`
-    *   `[✅]`   Test: returns empty string when input array is empty
-    *   `[✅]`   Test: single user message formats as `"User: <content>"`
-    *   `[✅]`   Test: single assistant message formats as `"Assistant: <content>"`
-    *   `[✅]`   Test: single system message formats as `"System: <content>"`
-    *   `[✅]`   Test: multiple messages are separated by double newlines (`\n\n`)
-    *   `[✅]`   Test: preserves message order (chronological)
-    *   `[✅]`   Test: capitalises the first letter of the role label regardless of input casing
-    *   `[✅]`   Test: preserves multi-line content within a single message
-    *   `[✅]`   Test: handles unknown role values gracefully (uses role as-is with capitalisation)
-  *   `[✅]`   `construction`
-    *   `[✅]`   Signature: `export function formatChatMessagesAsPrompt(messages: ChatMessage[]): string`
-    *   `[✅]`   No class, no factory — single exported function
-    *   `[✅]`   Pure function — no side effects, no closures over external state
-  *   `[✅]`   `formatChatMessagesAsPrompt.ts`
-    *   `[✅]`   Import `ChatMessage` from `@paynless/types`
-    *   `[✅]`   Map each message: capitalise `message.role` → label, concatenate `"${label}: ${message.content}"`
-    *   `[✅]`   Join mapped strings with `"\n\n"`
-    *   `[✅]`   Return joined string, or empty string if array is empty
-  *   `[✅]`   `directionality`
-    *   `[✅]`   App layer (utility)
-    *   `[✅]`   Dependencies inward: `ChatMessage` type from domain layer
-    *   `[✅]`   Provides outward: formatting function to `CreateProjectFromChatButton` (UI layer consumer)
-  *   `[✅]`   `requirements`
-    *   `[✅]`   Function is pure — no store reads, no side effects
-    *   `[✅]`   Output is human-readable and preserves the conversational structure
-    *   `[✅]`   Empty input produces empty string (not null, not undefined)
-    *   `[✅]`   All unit tests pass
-    *   `[✅]`   `apps/web/src/utils/` directory created if it does not exist
-
-*   `[✅]`   [UI] apps/web/src/components/ai/CreateProjectFromChatButton **Create Project button that feeds selected chat messages into autostart**
-  *   `[✅]`   `objective`
-    *   `[✅]`   Create a self-contained React button component that gathers the user's selected chat messages, formats them as `initialUserPrompt`, resolves a domain, derives a project name, and calls the existing `createProjectAndAutoStart` store action
-    *   `[✅]`   On success, navigates to `/dialectic/${projectId}/session/${sessionId}` with `state: { autoStartGeneration: true }` — identical to the navigation path used by `CreateDialecticProjectForm`
-    *   `[✅]`   On success with no default models (`hasDefaultModels: false`), navigates to `/dialectic/${projectId}` so the user can configure manually
-    *   `[✅]`   Shows progressive loading state via `isAutoStarting` and `autoStartStep` from the dialectic store
-    *   `[✅]`   Disabled when no messages are selected, when already auto-starting, or when domain resolution fails
-    *   `[✅]`   No duplication: calls the same `createProjectAndAutoStart` action that `CreateDialecticProjectForm` calls — no new store actions, no new types, no parallel orchestration logic
-  *   `[✅]`   `role`
-    *   `[✅]`   UI layer — cross-store bridge component connecting AI chat to dialectic project creation
-  *   `[✅]`   `module`
-    *   `[✅]`   AI chat interface: project creation action trigger
-    *   `[✅]`   Boundary: reads selected messages from AI store, reads domain and autostart state from dialectic store, calls dialectic store action, navigates via `react-router-dom`
-  *   `[✅]`   `deps`
-    *   `[✅]`   `formatChatMessagesAsPrompt` from `@/utils/formatChatMessagesAsPrompt` — Node 1, app layer, formats `ChatMessage[]` → `string`
-    *   `[✅]`   `useAiStore` from `@paynless/store` — AI store hook (app layer)
-    *   `[✅]`   `selectSelectedChatMessages` from `@paynless/store` — selector returning `ChatMessage[]` of user-selected messages (app layer)
-    *   `[✅]`   `selectCurrentChatSelectionState` from `@paynless/store` — selector returning `'all' | 'some' | 'none' | 'empty'` for disable logic (app layer)
-    *   `[✅]`   `useDialecticStore` from `@paynless/store` — dialectic store hook (app layer)
-    *   `[✅]`   `selectDomains` from `@paynless/store` — selector returning `DialecticDomain[]` (app layer)
-    *   `[✅]`   `selectSelectedDomain` from `@paynless/store` — selector returning `DialecticDomain | null` (app layer)
-    *   `[✅]`   `CreateProjectPayload` from `@paynless/types` — `{ projectName: string; initialUserPrompt?: string | null; selectedDomainId: string; ... }` (domain layer)
-    *   `[✅]`   `CreateProjectAutoStartResult` from `@paynless/types` — return type from `createProjectAndAutoStart` (domain layer)
-    *   `[✅]`   `useNavigate` from `react-router-dom` — navigation (infra layer)
-    *   `[✅]`   `toast` from `sonner` — error feedback (infra layer)
-    *   `[✅]`   `Button` from `@/components/ui/button` — UI primitive (UI layer)
-    *   `[✅]`   `Loader2` from `lucide-react` — loading spinner icon (UI layer)
-    *   `[✅]`   `logger` from `@paynless/utils` — logging (infra layer)
-    *   `[✅]`   Confirm no reverse dependency is introduced — component reads from stores via hooks, does not write to AI store
-  *   `[✅]`   `context_slice`
-    *   `[✅]`   From `useAiStore`: `selectSelectedChatMessages` → `ChatMessage[]` — the messages to format
-    *   `[✅]`   From `useAiStore`: `selectCurrentChatSelectionState` → `'all' | 'some' | 'none' | 'empty'` — for disable state (`'none'` or `'empty'` → disabled)
-    *   `[✅]`   From `useDialecticStore`: `createProjectAndAutoStart` action, `fetchDomains` action, `isAutoStarting: boolean`, `autoStartStep: string | null`
-    *   `[✅]`   From `useDialecticStore`: `selectDomains` → `DialecticDomain[]`, `selectSelectedDomain` → `DialecticDomain | null`
-    *   `[✅]`   Output: navigation side effect on success, toast side effect on error
-    *   `[✅]`   No concrete imports from higher or lateral layers
-  *   `[✅]`   unit/`apps/web/src/components/ai/CreateProjectFromChatButton.test.tsx`
-    *   `[✅]`   Test: renders a button with text "Create Project"
-    *   `[✅]`   Test: button is disabled when selection state is `'none'` or `'empty'`
-    *   `[✅]`   Test: button is disabled when `isAutoStarting` is `true`
-    *   `[✅]`   Test: button is enabled when selection state is `'all'` or `'some'` and not auto-starting
-    *   `[✅]`   Test: on click, calls `fetchDomains` if `domains` array is empty
-    *   `[✅]`   Test: on click, uses `selectedDomain.id` as `selectedDomainId` when a domain is already selected
-    *   `[✅]`   Test: on click, falls back to the domain named `'General'` from `domains` list when `selectedDomain` is null
-    *   `[✅]`   Test: on click, shows error toast if no domain can be resolved (empty domains list, no selectedDomain)
-    *   `[✅]`   Test: on click, calls `formatChatMessagesAsPrompt` with the selected messages
-    *   `[✅]`   Test: on click, derives `projectName` from first user message content (first line, truncated to 50 chars)
-    *   `[✅]`   Test: on click, calls `createProjectAndAutoStart` with `{ projectName, initialUserPrompt, selectedDomainId }`
-    *   `[✅]`   Test: on success with `sessionId !== null` and `hasDefaultModels: true`, navigates to `/dialectic/${projectId}/session/${sessionId}` with `state: { autoStartGeneration: true }`
-    *   `[✅]`   Test: on success with `sessionId !== null` and `hasDefaultModels: false`, navigates to `/dialectic/${projectId}/session/${sessionId}` without `autoStartGeneration` state
-    *   `[✅]`   Test: on success with `sessionId === null`, navigates to `/dialectic/${projectId}`
-    *   `[✅]`   Test: on error from `createProjectAndAutoStart`, shows error toast and remains on chat page
-    *   `[✅]`   Test: displays loading spinner and `autoStartStep` text while `isAutoStarting` is `true`
-    *   `[✅]`   Test: does not call `createDialecticProject` directly (only calls `createProjectAndAutoStart`)
-  *   `[✅]`   `construction`
-    *   `[✅]`   Signature: `export const CreateProjectFromChatButton: React.FC`
-    *   `[✅]`   No props — reads all state from stores via hooks
-    *   `[✅]`   Click handler is `async` — awaits `createProjectAndAutoStart`, then navigates or toasts
-    *   `[✅]`   Domain resolution order: `selectedDomain?.id` → `domains.find(d => d.name === 'General')?.id` → error toast
-    *   `[✅]`   Project name derivation: find first message with `role === 'user'` in selected messages, take first line of `content`, truncate to 50 chars; fallback to `'Chat Project'`
-  *   `[✅]`   `CreateProjectFromChatButton.tsx`
-    *   `[✅]`   Import `formatChatMessagesAsPrompt` from `@/utils/formatChatMessagesAsPrompt`
-    *   `[✅]`   Import `useAiStore`, `selectSelectedChatMessages`, `selectCurrentChatSelectionState` from `@paynless/store`
-    *   `[✅]`   Import `useDialecticStore`, `selectDomains`, `selectSelectedDomain` from `@paynless/store`
-    *   `[✅]`   Import `useNavigate` from `react-router-dom`
-    *   `[✅]`   Import `toast` from `sonner`, `logger` from `@paynless/utils`
-    *   `[✅]`   Import `Button` from `@/components/ui/button`, `Loader2` from `lucide-react`
-    *   `[✅]`   Import `CreateProjectPayload` from `@paynless/types`
-    *   `[✅]`   Read `selectedMessages` via `useAiStore(selectSelectedChatMessages)`
-    *   `[✅]`   Read `selectionState` via `useAiStore(selectCurrentChatSelectionState)`
-    *   `[✅]`   Read `createProjectAndAutoStart`, `fetchDomains`, `isAutoStarting`, `autoStartStep` from `useDialecticStore`
-    *   `[✅]`   Read `domains` via `useDialecticStore(selectDomains)`, `selectedDomain` via `useDialecticStore(selectSelectedDomain)`
-    *   `[✅]`   Compute `isDisabled`: `selectionState === 'none' || selectionState === 'empty' || isAutoStarting`
-    *   `[✅]`   Click handler:
-      *   `[✅]`   If `domains.length === 0`, await `fetchDomains()`; re-read domains from `useDialecticStore.getState()`
-      *   `[✅]`   Resolve `selectedDomainId`: `selectedDomain?.id ?? domains.find(d => d.name === 'General')?.id`; if null, toast error and return
-      *   `[✅]`   Format `initialUserPrompt` via `formatChatMessagesAsPrompt(selectedMessages)`
-      *   `[✅]`   Derive `projectName` from first user message, truncated to 50 chars, fallback `'Chat Project'`
-      *   `[✅]`   Build `payload: CreateProjectPayload` with `{ projectName, initialUserPrompt, selectedDomainId }`
-      *   `[✅]`   `const result = await createProjectAndAutoStart(payload)`
-      *   `[✅]`   If `result.error`, `toast.error(result.error.message ?? 'Failed to create project')` and return
-      *   `[✅]`   If `result.sessionId !== null`, navigate to `/dialectic/${result.projectId}/session/${result.sessionId}` with `state: { autoStartGeneration: result.hasDefaultModels }`
-      *   `[✅]`   Else navigate to `/dialectic/${result.projectId}`
-    *   `[✅]`   Render: `<Button>` with loading state — when `isAutoStarting`, show `<Loader2>` spinner and `autoStartStep` text; otherwise show `"Create Project"`
-  *   `[✅]`   `directionality`
-    *   `[✅]`   UI layer (React component)
-    *   `[✅]`   Dependencies inward: utility function (app layer), store hooks and selectors (app layer), types (domain layer), UI primitives (UI layer), infra (`react-router-dom`, `sonner`, `logger`)
-    *   `[✅]`   Provides outward: rendered button to `ChatInput` (UI layer consumer)
-  *   `[✅]`   `requirements`
-    *   `[✅]`   Calls the same `createProjectAndAutoStart` store action used by `CreateDialecticProjectForm` — zero orchestration duplication
-    *   `[✅]`   Navigation path and state match the form's autostart success path exactly
-    *   `[✅]`   Domain resolution uses existing store state with "General" fallback — no new domain selector UI
-    *   `[✅]`   Progressive loading feedback via existing `isAutoStarting` and `autoStartStep` store fields
-    *   `[✅]`   Disabled when no messages selected or during autostart
-    *   `[✅]`   Error feedback via toast — user stays on chat page to retry or continue chatting
-    *   `[✅]`   All unit tests pass
-
-*   `[✅]`   [UI] apps/web/src/components/ai/ChatInput **Render CreateProjectFromChatButton in chat input controls area**
-  *   `[✅]`   `objective`
-    *   `[✅]`   Add `CreateProjectFromChatButton` to the controls area of `ChatInput`, alongside the existing `MessageSelectionControls` and `ContinueUntilCompleteToggle`
-    *   `[✅]`   Minimal change: one import, one render call — no logic changes to `ChatInput` itself
-  *   `[✅]`   `role`
-    *   `[✅]`   UI layer — chat input controls composition
-  *   `[✅]`   `module`
-    *   `[✅]`   AI chat input: control surface composition
-    *   `[✅]`   Boundary: renders child components in the controls area, no new state or logic
-  *   `[✅]`   `deps`
-    *   `[✅]`   `CreateProjectFromChatButton` from `./CreateProjectFromChatButton` — Node 2, UI layer, the new button component
-    *   `[✅]`   All existing imports unchanged
-    *   `[✅]`   Confirm no reverse dependency is introduced
-  *   `[✅]`   `context_slice`
-    *   `[✅]`   No new store reads — `CreateProjectFromChatButton` is self-contained and reads its own store state
-    *   `[✅]`   Render only — no new props, state, or effects in `ChatInput`
-    *   `[✅]`   No concrete imports from higher or lateral layers
-  *   `[✅]`   unit/`apps/web/src/components/ai/ChatInput.test.tsx`
-    *   `[✅]`   Add mock for `CreateProjectFromChatButton`: `vi.mock('./CreateProjectFromChatButton', () => ({ CreateProjectFromChatButton: () => <div data-testid="mock-create-project-button"></div> }))`
-    *   `[✅]`   Test: `CreateProjectFromChatButton` mock renders in the controls area (verify `data-testid="mock-create-project-button"` is present in the document)
-    *   `[✅]`   Existing tests continue to pass unchanged
-  *   `[✅]`   `construction`
-    *   `[✅]`   Add import: `import { CreateProjectFromChatButton } from "./CreateProjectFromChatButton";`
-    *   `[✅]`   Add render: `<CreateProjectFromChatButton />` inside the controls `<div>` at line ~263–266, alongside `MessageSelectionControls` and `ContinueUntilCompleteToggle`
-  *   `[✅]`   `ChatInput.tsx`
-    *   `[✅]`   Add import line for `CreateProjectFromChatButton`
-    *   `[✅]`   Add `<CreateProjectFromChatButton />` render inside `<div className="flex items-center space-x-4">` in the controls area (line ~263)
-    *   `[✅]`   No other changes to `ChatInput` — no new state, props, effects, or logic
-  *   `[✅]`   `directionality`
-    *   `[✅]`   UI layer (React component)
-    *   `[✅]`   Dependencies inward: `CreateProjectFromChatButton` (UI layer, same level — justified as component composition)
-    *   `[✅]`   Provides outward: complete chat input control surface to `AiChatbox` (UI layer consumer)
-  *   `[✅]`   `requirements`
-    *   `[✅]`   `CreateProjectFromChatButton` renders in the controls area alongside existing controls
-    *   `[✅]`   No existing `ChatInput` behavior is changed
-    *   `[✅]`   Existing `ChatInput` tests pass without modification (beyond adding the new component mock)
-    *   `[✅]`   New component mock is present in test output
-  *   `[✅]`   **Commit** `feat(ui): add Chat to Project button — create dialectic project from selected chat messages`
-    *   `[✅]`   `apps/web/src/utils/formatChatMessagesAsPrompt.ts` — new pure utility formatting `ChatMessage[]` into prompt string
-    *   `[✅]`   `apps/web/src/utils/formatChatMessagesAsPrompt.test.ts` — unit tests for the formatter
-    *   `[✅]`   `apps/web/src/components/ai/CreateProjectFromChatButton.tsx` — new button component bridging AI chat to dialectic autostart
-    *   `[✅]`   `apps/web/src/components/ai/CreateProjectFromChatButton.test.tsx` — unit tests for the button
-    *   `[✅]`   `apps/web/src/components/ai/ChatInput.tsx` — render `CreateProjectFromChatButton` in controls area
-    *   `[✅]`   `apps/web/src/components/ai/ChatInput.test.tsx` — add mock for new child component, verify render
 
 ## Add Github login & sync
 - Enable Github for login 
@@ -1009,27 +815,6 @@
     *   `[ ]`   `apps/web/src/components/dialectic/SyncToGitHubButton.tsx` — sync trigger button
     *   `[ ]`   `apps/web/src/pages/DialecticProjectDetailsPage.tsx` — render repo settings and sync button
 
-## Download Each Document
-- Add a "download" button to file view in GeneratedContributionsCard so that each file can be downloaded separately. 
-- Add toggle for Export Project to export full project OR only export finished documents 
-
-## Fix GeneratedContributionCard
-- GeneratedContributionCard tries to display header_context, which it should never even acknowledge since it's not a document and isn't available to the FE 
-- Never try to display header_context during generation
-
-## Add onHover eye to each stage and document
-- What is the purpose
-- What do you get
-- ELIF, give the user engagement 
-
-## Expand paused_nsf for general pause/resume
-- Add explicit "Pause" condition that sets all jobs to "paused" and can be restarted. 
-- Users can pause and resume jobs at any time 
-- Jobs may need new JWT set when resumed for handler to accept them 
-
-## n/n Done only hydrates on page refresh, not dynamic, and sometimes overcounts 
-- Check if n/n Done is calculating correctly
-- Ensure n/n Done updates from notifications, not just page refresh 
 
 ## StageDAGProgressDialog does not color nodes correctly, probably relies on explicit hydration instead of dynamic hydration from notifications
 - Update StageDAGProgressDialog to use notifications to change color too 
@@ -1037,8 +822,6 @@
 ## Highlight the chosen Chat or Project in the left sidebar 
 - Currently the sidebar gives no indication of which Chat or Project the user has focused
 - Outline and/or highlight the chosen Chat or Project in the left sidebar
-
-# ToDo
 
 ## New user sign in banner doesn't display, throws console error  
 - Chase, diagnose, fix 
@@ -1083,11 +866,7 @@ AND/OR
 - A "generate next set of work" for the implementation stage 
 
 ## Ensure front end components use friendly names 
-- DynamicProgressBar uses formal names instead of friendly names
-- SessionContributionsDisplayCard uses formal names instead of friendly names 
 - SessionInfoCard uses formal names instead of friendly names 
-
-## Move "Generate" button into StageRunCard left hand side where the icons are 
 
 ## 504 Gateway Timeout on back end  
 - Not failed, not running 
@@ -1096,3 +875,4 @@ AND/OR
 ## Set Free accounts to Gemini Flash only 
 - Claude & ChatGPT only for paid
 - Paying customers get BYOK (heavy lift)
+

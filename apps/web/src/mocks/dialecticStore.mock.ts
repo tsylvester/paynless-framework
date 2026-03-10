@@ -57,6 +57,7 @@ import {
   updateStageDocumentDraftLogic,
   upsertStageDocumentVersionLogic,
 } from '../../../../packages/store/src/dialecticStore.documents';
+import { selectDocumentDisplayMetadata } from '../../../../packages/store/src/dialecticStore.selectors';
 import { internalMockAuthStoreGetState } from './authStore.mock';
 
 // ---- START: Define ALL controllable selectors as top-level vi.fn() mocks ----
@@ -311,6 +312,8 @@ export const selectStageProgressSummary = (
   };
 };
 
+export { selectDocumentDisplayMetadata };
+
 // ---- END: Controllable selectors ----
 
 // Define and export the mock for the new thunk
@@ -318,6 +321,7 @@ export const mockActivateProjectAndSessionContextForDeepLink = vi.fn().mockResol
 export const mockFetchAndSetCurrentSessionDetails = vi.fn().mockResolvedValue(undefined);
 
 export const mockResumePausedNsfJobs = vi.fn().mockResolvedValue({ data: { resumedCount: 0 }, error: undefined, status: 200 });
+export const mockPauseActiveJobs = vi.fn().mockResolvedValue({ data: { pausedCount: 0 }, error: undefined, status: 200 });
 
 // Mock Session (used in some action mocks)
 const mockSession: DialecticSession = {
@@ -529,6 +533,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       fetchInitialPromptContent: vi.fn().mockResolvedValue(undefined),
       generateContributions: vi.fn().mockResolvedValue({ data: { message: 'ok', contributions: [] }, error: undefined, status: 200 }),
       resumePausedNsfJobs: mockResumePausedNsfJobs,
+      pauseActiveJobs: mockPauseActiveJobs,
       submitStageResponses: vi.fn().mockResolvedValue({ data: { message: 'ok', userFeedbackStoragePath: '/path', nextStageSeedPromptStoragePath: '/path', updatedSession: mockSession }, error: undefined, status: 200 }),
       setSubmittingStageResponses: vi.fn((isLoading: boolean) => set({ isSubmittingStageResponses: isLoading })),
       setSubmitStageResponsesError: vi.fn((error: ApiError | null) => set({ submitStageResponsesError: error })),

@@ -123,10 +123,12 @@ describe('DialecticApiClient', () => {
             default_system_prompt_id: null, 
             expected_output_template_ids: [], 
             active_recipe_instance_id: null,
-            recipe_template_id: null
+            recipe_template_id: null,
+            minimum_balance: 0,
         };
         
             const validPayload: GenerateContributionsPayload = {
+            idempotencyKey: 'test-idem-gen-1',
             sessionId: 'sess-456',
             projectId: 'proj-123',
             stageSlug: mockStageObject.slug,
@@ -188,6 +190,15 @@ describe('DialecticApiClient', () => {
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
             expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+        });
+
+        it('should include idempotencyKey in payload sent to post', async () => {
+            mockApiClientPost.mockResolvedValue({ data: mockSuccessResponse, status: 200 });
+            await dialecticApiClient.generateContributions(validPayload);
+            expect(mockApiClientPost).toHaveBeenCalledWith(
+                endpoint,
+                expect.objectContaining({ payload: expect.objectContaining({ idempotencyKey: validPayload.idempotencyKey }) })
+            );
         });
 
         it('should return the generation response on successful execution', async () => {
@@ -426,6 +437,7 @@ describe('DialecticApiClient', () => {
             is_active: true,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            is_default_generation: false,
         };
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
@@ -537,6 +549,7 @@ describe('DialecticApiClient', () => {
     describe('startSession', () => {
         const endpoint = 'dialectic-service';
         const validPayload: StartSessionPayload = {
+            idempotencyKey: 'test-idem-session-1',
             projectId: 'proj-123',
             sessionDescription: 'Kicking off a new session',
             selectedModels: [{ id: 'model-abc', displayName: 'Model ABC' }, { id: 'model-def', displayName: 'Model DEF' }],
@@ -554,6 +567,15 @@ describe('DialecticApiClient', () => {
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
             expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+        });
+
+        it('should include idempotencyKey in payload sent to post', async () => {
+            mockApiClientPost.mockResolvedValue({ data: mockDialecticSession, status: 201 });
+            await dialecticApiClient.startSession(validPayload);
+            expect(mockApiClientPost).toHaveBeenCalledWith(
+                endpoint,
+                expect.objectContaining({ payload: expect.objectContaining({ idempotencyKey: validPayload.idempotencyKey }) })
+            );
         });
 
         it('should return the created session data on successful response', async () => {

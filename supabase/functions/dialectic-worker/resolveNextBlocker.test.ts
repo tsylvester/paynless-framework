@@ -73,6 +73,7 @@ function createRenderJob(
         documentKey: documentKey,
         sourceContributionId: 'source-contribution-id',
         template_filename: 'template.md',
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(payload)) {
         throw new Error('Test setup failed: payload is not valid JSON');
@@ -97,6 +98,7 @@ function createRenderJob(
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'RENDER',
+        idempotency_key: "idempotency-key-1",
     };
 }
 
@@ -123,6 +125,7 @@ function createExecuteJob(
             sourceModelSlugs: [],
         },
         inputs: {},
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(payload)) {
         throw new Error('Test setup failed: payload is not valid JSON');
@@ -147,6 +150,7 @@ function createExecuteJob(
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'EXECUTE',
+        idempotency_key: "idempotency-key-1",
     };
 }
 
@@ -172,6 +176,7 @@ function createSkeletonPlanJob(
             current_step: 1,
             total_steps: 1,
         },
+        idempotencyKey: "idempotency-key-1",
     };
     if (!isJson(payload)) {
         throw new Error('Test setup failed: payload is not valid JSON');
@@ -196,6 +201,7 @@ function createSkeletonPlanJob(
         prerequisite_job_id: null,
         is_test_job: false,
         job_type: 'PLAN',
+        idempotency_key: "idempotency-key-1",
     };
 }
 

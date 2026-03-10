@@ -594,6 +594,7 @@ describe("cloneProject", () => {
             created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
             process_template_id: "pt-deep", selected_domain_id: "domain-deep",
             initial_prompt_resource_id: null, repo_url: null, selected_domain_overlay_id: null, user_domain_overlay_values: null,
+            idempotency_key: null,
         };
 
         const originalSessionId = "orig-session-uuid-1";
@@ -605,6 +606,7 @@ describe("cloneProject", () => {
                 iteration_count: 1, status: "in_progress", current_stage_id: "stage_1_thesis",
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 selected_model_ids: ["mc_claude_3_opus"], user_input_reference_url: null, associated_chat_id: null,
+                idempotency_key: null,
             }
         ];
         
