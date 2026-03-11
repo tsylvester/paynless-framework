@@ -4566,7 +4566,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 		vi.restoreAllMocks();
 	});
 
-	it('handlePlannerStartedLogic initializes jobProgress[step_key] with totalJobs=1, inProgressJobs=1, completedJobs=0, failedJobs=0', () => {
+	it('handlePlannerStartedLogic upserts job with status processing and jobType PLAN into progress.jobs', () => {
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = plannerRecipe;
 			state.stageRunProgress[progressKey] = { documents: {}, stepStatuses: {}, jobProgress: {}, jobs: [], progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 } };
@@ -4586,15 +4586,16 @@ describe('jobProgress tracking in stageRunProgress', () => {
 		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
 
 		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
-		expect(progress?.jobProgress['plan_step']).toEqual({
-			totalJobs: 1,
-			inProgressJobs: 1,
-			completedJobs: 0,
-			failedJobs: 0,
-		});
+		expect(progress?.jobs).toHaveLength(1);
+		expect(progress?.jobs[0].id).toBe('job-plan-1');
+		expect(progress?.jobs[0].status).toBe('processing');
+		expect(progress?.jobs[0].jobType).toBe('PLAN');
+		expect(progress?.jobs[0].stepKey).toBe('plan_step');
+		expect(progress?.jobs[0].documentKey).toBeNull();
+		expect(progress?.jobs[0].modelId).toBeNull();
 	});
 
-	it('handlePlannerCompletedLogic updates jobProgress[step_key] to completedJobs=1, inProgressJobs=0', () => {
+	it('handlePlannerCompletedLogic upserts job with status completed and jobType PLAN into progress.jobs', () => {
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = plannerRecipe;
 			state.stageRunProgress[progressKey] = {
@@ -4625,12 +4626,10 @@ describe('jobProgress tracking in stageRunProgress', () => {
 		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
 
 		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
-		expect(progress?.jobProgress['plan_step']).toEqual({
-			totalJobs: 1,
-			inProgressJobs: 0,
-			completedJobs: 1,
-			failedJobs: 0,
-		});
+		expect(progress?.jobs).toHaveLength(1);
+		expect(progress?.jobs[0].id).toBe('job-plan-1');
+		expect(progress?.jobs[0].status).toBe('completed');
+		expect(progress?.jobs[0].jobType).toBe('PLAN');
 	});
 
 	it('handleExecuteStartedLogic increments jobProgress[step_key].totalJobs and inProgressJobs, adds modelId to modelJobStatuses with in_progress', () => {
@@ -4685,7 +4684,7 @@ describe('jobProgress tracking in stageRunProgress', () => {
 		expect(progress?.jobProgress['execute_step'].modelJobStatuses).toBeUndefined();
 	});
 
-	it('handleJobFailedLogic updates jobProgress counts for PLAN job failure without document_key or modelId', () => {
+	it('handleJobFailedLogic upserts job with status failed into progress.jobs for PLAN job without document_key or modelId', () => {
 		useDialecticStore.setState((state) => {
 			state.recipesByStageSlug[stageSlug] = plannerRecipe;
 			state.stageRunProgress[progressKey] = {
@@ -4717,9 +4716,9 @@ describe('jobProgress tracking in stageRunProgress', () => {
 		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
 
 		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
-		expect(progress?.jobProgress['plan_step'].inProgressJobs).toBe(0);
-		expect(progress?.jobProgress['plan_step'].failedJobs).toBe(1);
-		expect(progress?.jobProgress['plan_step'].modelJobStatuses).toBeUndefined();
+		expect(progress?.jobs).toHaveLength(1);
+		expect(progress?.jobs[0].id).toBe('job-plan-1');
+		expect(progress?.jobs[0].status).toBe('failed');
 	});
 
 	it('handleDocumentCompletedLogic decrements inProgressJobs, increments completedJobs, updates modelJobStatuses[modelId] to completed', () => {

@@ -2250,7 +2250,7 @@ describe('useDialecticStore', () => {
                 });
             });
 
-            it('planner_started upserts job with status processing and jobType PLAN', () => {
+            it("planner_started upserts job with status 'processing' and jobType 'PLAN'", () => {
                 const event: DialecticLifecycleEvent = {
                     type: 'planner_started',
                     sessionId: 'session-123',
@@ -2265,9 +2265,12 @@ describe('useDialecticStore', () => {
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('processing');
                 expect(job?.jobType).toBe('PLAN');
+                expect(job?.stepKey).toBe('plan');
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
             });
 
-            it('planner_completed upserts job with status completed and jobType PLAN', () => {
+            it("planner_completed upserts job with status 'completed' and jobType 'PLAN'", () => {
                 const event: DialecticLifecycleEvent = {
                     type: 'planner_completed',
                     sessionId: 'session-123',
@@ -2282,28 +2285,12 @@ describe('useDialecticStore', () => {
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('completed');
                 expect(job?.jobType).toBe('PLAN');
+                expect(job?.stepKey).toBe('plan');
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
             });
 
-            it('execute_started with document_key upserts; without document_key calls updateJobStatusById', () => {
-                useDialecticStore.setState((state) => {
-                    const snap = state.stageRunProgress[progressKey];
-                    if (snap?.jobs) {
-                        snap.jobs.push({
-                            id: 'job-exec-1',
-                            status: 'pending',
-                            jobType: 'EXECUTE',
-                            stepKey: 'step_a',
-                            modelId: 'model-1',
-                            documentKey: null,
-                            parentJobId: null,
-                            createdAt: new Date().toISOString(),
-                            startedAt: null,
-                            completedAt: null,
-                            modelName: null,
-                        });
-                    }
-                    return state;
-                });
+            it("execute_started upserts job with status 'processing' and jobType 'EXECUTE' (with or without document_key — same path)", () => {
                 const eventNoDoc: DialecticLifecycleEvent = {
                     type: 'execute_started',
                     sessionId: 'session-123',
@@ -2318,9 +2305,13 @@ describe('useDialecticStore', () => {
                 const job = progress?.jobs?.find((j) => j.id === 'job-exec-1');
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('processing');
+                expect(job?.jobType).toBe('EXECUTE');
+                expect(job?.stepKey).toBe('step_a');
+                expect(job?.modelId).toBe('model-1');
+                expect(job?.documentKey).toBeNull();
             });
 
-            it('execute_completed with document_key upserts completed; without calls updateJobStatusById', () => {
+            it("execute_completed upserts job with status 'completed' and jobType 'EXECUTE' (with or without document_key — same path)", () => {
                 useDialecticStore.setState((state) => {
                     const snap = state.stageRunProgress[progressKey];
                     if (snap?.jobs) {
@@ -2330,7 +2321,7 @@ describe('useDialecticStore', () => {
                             jobType: 'EXECUTE',
                             stepKey: 'step_a',
                             modelId: 'model-1',
-                            documentKey: 'doc-1',
+                            documentKey: null,
                             parentJobId: null,
                             createdAt: new Date().toISOString(),
                             startedAt: null,
@@ -2354,28 +2345,13 @@ describe('useDialecticStore', () => {
                 const job = progress?.jobs?.find((j) => j.id === 'job-exec-done');
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('completed');
+                expect(job?.jobType).toBe('EXECUTE');
+                expect(job?.stepKey).toBe('step_a');
+                expect(job?.modelId).toBe('model-1');
+                expect(job?.documentKey).toBeNull();
             });
 
-            it('render_chunk_completed calls updateJobStatusById to processing', () => {
-                useDialecticStore.setState((state) => {
-                    const snap = state.stageRunProgress[progressKey];
-                    if (snap?.jobs) {
-                        snap.jobs.push({
-                            id: 'job-render-chunk',
-                            status: 'pending',
-                            jobType: 'RENDER',
-                            stepKey: null,
-                            modelId: 'model-1',
-                            documentKey: 'doc-1',
-                            parentJobId: null,
-                            createdAt: new Date().toISOString(),
-                            startedAt: null,
-                            completedAt: null,
-                            modelName: null,
-                        });
-                    }
-                    return state;
-                });
+            it("render_chunk_completed upserts job with status 'processing'", () => {
                 const event: DialecticLifecycleEvent = {
                     type: 'render_chunk_completed',
                     sessionId: 'session-123',
@@ -2391,9 +2367,13 @@ describe('useDialecticStore', () => {
                 const job = progress?.jobs?.find((j) => j.id === 'job-render-chunk');
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('processing');
+                expect(job?.jobType).toBe('RENDER');
+                expect(job?.stepKey).toBe('render');
+                expect(job?.modelId).toBe('model-1');
+                expect(job?.documentKey).toBe('doc-1');
             });
 
-            it('job_failed with document_key upserts failed; without calls updateJobStatusById', () => {
+            it("job_failed upserts job with status 'failed' (with or without document_key — same path)", () => {
                 useDialecticStore.setState((state) => {
                     const snap = state.stageRunProgress[progressKey];
                     if (snap?.jobs) {
@@ -2420,18 +2400,21 @@ describe('useDialecticStore', () => {
                     iterationNumber: 1,
                     job_id: 'job-fail-1',
                     step_key: 'step_a',
-                    document_key: '',
                     modelId: 'model-1',
                     error: { code: 'FAILED', message: 'Job failed' },
-                };
+                } as DialecticLifecycleEvent;
                 useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
                 const progress = useDialecticStore.getState().stageRunProgress[progressKey];
                 const job = progress?.jobs?.find((j) => j.id === 'job-fail-1');
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('failed');
+                expect(job?.jobType).toBeNull();
+                expect(job?.stepKey).toBe('step_a');
+                expect(job?.modelId).toBe('model-1');
+                expect(job?.documentKey).toBeNull();
             });
 
-            it('contribution_generation_started calls updateJobStatusById to processing', () => {
+            it("contribution_generation_started upserts job with status 'processing'", () => {
                 useDialecticStore.setState((state) => {
                     const snap = state.stageRunProgress[progressKey];
                     if (snap?.jobs) {
@@ -2463,9 +2446,13 @@ describe('useDialecticStore', () => {
                 const job = progress?.jobs?.find((j) => j.id === 'job-cg-1');
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('processing');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
             });
 
-            it('dialectic_contribution_started calls updateJobStatusById to processing', () => {
+            it("dialectic_contribution_started upserts job with status 'processing'", () => {
                 useDialecticStore.setState((state) => {
                     const snap = state.stageRunProgress[progressKey];
                     if (snap?.jobs) {
@@ -2497,9 +2484,13 @@ describe('useDialecticStore', () => {
                 const job = progress?.jobs?.find((j) => j.id === 'job-dc-1');
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('processing');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
             });
 
-            it('contribution_generation_retrying calls updateJobStatusById to retrying', () => {
+            it("contribution_generation_retrying upserts job with status 'retrying'", () => {
                 useDialecticStore.setState((state) => {
                     const snap = state.stageRunProgress[progressKey];
                     if (snap?.jobs) {
@@ -2532,9 +2523,13 @@ describe('useDialecticStore', () => {
                 const job = progress?.jobs?.find((j) => j.id === 'job-retry-1');
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('retrying');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
             });
 
-            it('dialectic_contribution_received calls updateJobStatusById to processing', () => {
+            it("dialectic_contribution_received upserts job with status 'processing'", () => {
                 useDialecticStore.setState((state) => {
                     const snap = state.stageRunProgress[progressKey];
                     if (snap?.jobs) {
@@ -2594,9 +2589,13 @@ describe('useDialecticStore', () => {
                 const job = progress?.jobs?.find((j) => j.id === 'job-recv-1');
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('processing');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
             });
 
-            it('contribution_generation_complete calls updateJobStatusById to completed', () => {
+            it("contribution_generation_complete upserts job with status 'completed'", () => {
                 useDialecticStore.setState((state) => {
                     const snap = state.stageRunProgress[progressKey];
                     if (snap?.jobs) {
@@ -2627,9 +2626,13 @@ describe('useDialecticStore', () => {
                 const job = progress?.jobs?.find((j) => j.id === 'job-complete-1');
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('completed');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
             });
 
-            it('contribution_generation_continued calls updateJobStatusById to continuing', () => {
+            it("contribution_generation_continued upserts job with status 'continuing'", () => {
                 useDialecticStore.setState((state) => {
                     const snap = state.stageRunProgress[progressKey];
                     if (snap?.jobs) {
@@ -2692,9 +2695,13 @@ describe('useDialecticStore', () => {
                 const job = progress?.jobs?.find((j) => j.id === 'job-cont-1');
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('continuing');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
             });
 
-            it('contribution_generation_failed calls updateJobStatusById to failed', () => {
+            it("contribution_generation_failed upserts job with status 'failed'", () => {
                 useDialecticStore.setState((state) => {
                     const snap = state.stageRunProgress[progressKey];
                     if (snap?.jobs) {
@@ -2726,6 +2733,10 @@ describe('useDialecticStore', () => {
                 const job = progress?.jobs?.find((j) => j.id === 'job-fail-cg-1');
                 expect(job).toBeDefined();
                 expect(job?.status).toBe('failed');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
             });
 
             it('contribution_generation_paused_nsf does NOT upsert (no job_id on payload)', () => {
@@ -2742,34 +2753,53 @@ describe('useDialecticStore', () => {
                 expect(jobsAfter).toBe(jobsBefore);
             });
 
-            it('progress.jobs entry is updated not duplicated when same job_id arrives across start then complete sequence', () => {
+            it("progress.jobs entry is updated (not duplicated) when same job_id arrives across start→chunk→complete sequence", () => {
                 const eventStart: DialecticLifecycleEvent = {
-                    type: 'planner_started',
+                    type: 'execute_started',
                     sessionId: 'session-123',
                     stageSlug: 'thesis',
                     iterationNumber: 1,
-                    job_id: 'job-seq-1',
-                    step_key: 'plan',
+                    job_id: 'job-seq-exec-1',
+                    step_key: 'step_a',
+                    modelId: 'model-1',
                 };
                 useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventStart);
                 const progressAfterStart = useDialecticStore.getState().stageRunProgress[progressKey];
-                const jobsAfterStart = progressAfterStart?.jobs?.filter((j) => j.id === 'job-seq-1') ?? [];
+                const jobsAfterStart = progressAfterStart?.jobs?.filter((j) => j.id === 'job-seq-exec-1') ?? [];
                 expect(jobsAfterStart).toHaveLength(1);
                 expect(jobsAfterStart[0]?.status).toBe('processing');
+                expect(jobsAfterStart[0]?.jobType).toBe('EXECUTE');
 
-                const eventComplete: DialecticLifecycleEvent = {
-                    type: 'planner_completed',
+                const eventChunk: DialecticLifecycleEvent = {
+                    type: 'execute_chunk_completed',
                     sessionId: 'session-123',
                     stageSlug: 'thesis',
                     iterationNumber: 1,
-                    job_id: 'job-seq-1',
-                    step_key: 'plan',
+                    job_id: 'job-seq-exec-1',
+                    step_key: 'step_a',
+                    modelId: 'model-1',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventChunk);
+                const progressAfterChunk = useDialecticStore.getState().stageRunProgress[progressKey];
+                const jobsAfterChunk = progressAfterChunk?.jobs?.filter((j) => j.id === 'job-seq-exec-1') ?? [];
+                expect(jobsAfterChunk).toHaveLength(1);
+                expect(jobsAfterChunk[0]?.status).toBe('processing');
+
+                const eventComplete: DialecticLifecycleEvent = {
+                    type: 'execute_completed',
+                    sessionId: 'session-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-seq-exec-1',
+                    step_key: 'step_a',
+                    modelId: 'model-1',
                 };
                 useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventComplete);
                 const progressAfterComplete = useDialecticStore.getState().stageRunProgress[progressKey];
-                const jobsAfterComplete = progressAfterComplete?.jobs?.filter((j) => j.id === 'job-seq-1') ?? [];
+                const jobsAfterComplete = progressAfterComplete?.jobs?.filter((j) => j.id === 'job-seq-exec-1') ?? [];
                 expect(jobsAfterComplete).toHaveLength(1);
                 expect(jobsAfterComplete[0]?.status).toBe('completed');
+                expect(jobsAfterComplete[0]?.jobType).toBe('EXECUTE');
             });
         });
     });

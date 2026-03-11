@@ -1,7 +1,7 @@
-import { Draft } from 'immer';
 import { SystemPrompt } from './ai.types';
 import type { ApiError, ApiResponse } from './api.types';
 import type { Database } from '@paynless/db-types';
+import type { Draft } from 'immer';
 
 // Define UpdateProjectDomainPayload before its use in DialecticApiClient
 export interface UpdateProjectDomainPayload {
@@ -1205,14 +1205,19 @@ export interface JobProgressDto {
   modelName: string | null;
 }
 
-/** Params for upsertJobFromLifecycleEvent (event fields + target status). */
+/** Params for upsertJobFromLifecycleEvent (event fields + target status). Any field present is written; any absent is dropped (null). */
 export interface UpsertJobFromLifecycleEventParams {
   jobId: string;
-  documentKey: string | null;
-  modelId: string | null;
-  stepKey: string | null;
-  jobType: RecipeJobType | null;
+  documentKey?: string | null;
+  modelId?: string | null;
+  stepKey?: string | null;
+  jobType?: RecipeJobType | null;
   status: string;
+  parentJobId?: string | null;
+  createdAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  modelName?: string | null;
 }
 
 /** Payload for upsertJobFromLifecycleEvent (draft progress snapshot to mutate). */
@@ -1224,28 +1229,10 @@ export type UpsertJobFromLifecycleEventReturn = void;
 export interface UpsertJobFromLifecycleEventDeps {}
 
 export type UpsertJobFromLifecycleEventSignature = (
+  deps: UpsertJobFromLifecycleEventDeps,
   payload: UpsertJobFromLifecycleEventPayload,
   params: UpsertJobFromLifecycleEventParams,
 ) => UpsertJobFromLifecycleEventReturn;
-
-/** Params for updateJobStatusById (job id + new status). */
-export interface UpdateJobStatusByIdParams {
-  jobId: string;
-  status: string;
-}
-
-/** Payload for updateJobStatusById (draft progress snapshot to mutate). */
-export type UpdateJobStatusByIdPayload = Draft<StageRunProgressSnapshot>;
-
-export type UpdateJobStatusByIdReturn = void;
-
-/** No injected dependencies (pure function). */
-export interface UpdateJobStatusByIdDeps {}
-
-export type UpdateJobStatusByIdSignature = (
-  payload: UpdateJobStatusByIdPayload,
-  params: UpdateJobStatusByIdParams,
-) => UpdateJobStatusByIdReturn;
 
 export interface StageProgressEntry {
   stageSlug: string;

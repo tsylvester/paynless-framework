@@ -764,7 +764,7 @@ export const handleRenderStartedLogic = (
 			jobType: 'RENDER',
 			status: 'processing',
 		};
-		upsertJobFromLifecycleEvent(progress, params);
+		upsertJobFromLifecycleEvent({}, progress, params);
 	});
 };
 
@@ -821,7 +821,7 @@ export const handleDocumentStartedLogic = (
 			jobType: 'EXECUTE',
 			status: 'processing',
 		};
-		upsertJobFromLifecycleEvent(progress, params);
+		upsertJobFromLifecycleEvent({}, progress, params);
 
 		// Handle planner outputs (JSON artifacts) without rendered resources
 		if (!requiresRendering && !hasLatestRenderedResourceId) {
@@ -995,7 +995,7 @@ export const handleDocumentChunkCompletedLogic = (
 			jobType: 'EXECUTE',
 			status: 'processing',
 		};
-		upsertJobFromLifecycleEvent(progress, params);
+		upsertJobFromLifecycleEvent({}, progress, params);
 		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
 		const documentEntry = progress.documents[documentsKey];
 		if (!documentEntry) {
@@ -1115,7 +1115,7 @@ export const handleRenderCompletedLogic = (
 			jobType: 'RENDER',
 			status: 'completed',
 		};
-		upsertJobFromLifecycleEvent(progress, params);
+		upsertJobFromLifecycleEvent({}, progress, params);
 		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
 		const existingDescriptor = progress.documents[documentsKey];
 		const statusToUse: StageRunDocumentStatus =
@@ -1202,7 +1202,7 @@ export const handleDocumentCompletedLogic = (
 			jobType: 'EXECUTE',
 			status: 'completed',
 		};
-		upsertJobFromLifecycleEvent(progress, params);
+		upsertJobFromLifecycleEvent({}, progress, params);
 
 		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
 		const documentEntry = progress.documents[documentsKey];

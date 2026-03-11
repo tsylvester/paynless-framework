@@ -57,7 +57,7 @@ import {
   StartSessionSuccessResponse,
   type CreateProjectAutoStartResult,
   UpsertJobFromLifecycleEventParams,
-  UpdateJobStatusByIdParams,
+  type UpsertJobFromLifecycleEventPayload,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useAuthStore } from './authStore';
@@ -98,7 +98,7 @@ import {
 	getStageRunDocumentKey,
 	initializeFeedbackDraftLogic,
 } from './dialecticStore.documents';
-import { upsertJobFromLifecycleEvent, updateJobStatusById } from './upsertJobFromLifecycleEvent';
+import { upsertJobFromLifecycleEvent } from './upsertJobFromLifecycleEvent';
 
 type FocusedDocumentKeyParams = Pick<SetFocusedStageDocumentPayload, 'sessionId' | 'stageSlug' | 'modelId'>;
 
@@ -1610,7 +1610,7 @@ export const useDialecticStore = create<DialecticStore>()(
                         jobType: 'PLAN',
                         status: 'processing',
                     };
-                    upsertJobFromLifecycleEvent(progress, params);
+                    upsertJobFromLifecycleEvent({}, progress, params);
                 }
             });
             break;
@@ -1629,7 +1629,7 @@ export const useDialecticStore = create<DialecticStore>()(
                         jobType: 'PLAN',
                         status: 'completed',
                     };
-                    upsertJobFromLifecycleEvent(progress, params);
+                    upsertJobFromLifecycleEvent({}, progress, params);
                 }
             });
             break;
@@ -1658,8 +1658,15 @@ export const useDialecticStore = create<DialecticStore>()(
                 set(state => {
                     const progress = state.stageRunProgress[progressKeyExecStart];
                     if (progress) {
-                        const updateParams: UpdateJobStatusByIdParams = { jobId: payload.job_id, status: 'processing' };
-                        updateJobStatusById(progress, updateParams);
+                        const params: UpsertJobFromLifecycleEventParams = {
+                            jobId: payload.job_id,
+                            stepKey: payload.step_key ?? null,
+                            modelId: payload.modelId ?? null,
+                            documentKey: payload.document_key ?? null,
+                            jobType: 'EXECUTE',
+                            status: 'processing',
+                        };
+                        upsertJobFromLifecycleEvent({}, progress, params);
                     }
                 });
             }
@@ -1686,8 +1693,15 @@ export const useDialecticStore = create<DialecticStore>()(
                 set(state => {
                     const progress = state.stageRunProgress[progressKeyChunk];
                     if (progress) {
-                        const updateParams: UpdateJobStatusByIdParams = { jobId: payload.job_id, status: 'processing' };
-                        updateJobStatusById(progress, updateParams);
+                        const params: UpsertJobFromLifecycleEventParams = {
+                            jobId: payload.job_id,
+                            stepKey: payload.step_key ?? null,
+                            modelId: payload.modelId ?? null,
+                            documentKey: payload.document_key ?? null,
+                            jobType: null,
+                            status: 'processing',
+                        };
+                        upsertJobFromLifecycleEvent({}, progress, params);
                     }
                 });
             }
@@ -1715,8 +1729,15 @@ export const useDialecticStore = create<DialecticStore>()(
                 set(state => {
                     const progress = state.stageRunProgress[progressKeyExecDone];
                     if (progress) {
-                        const updateParams: UpdateJobStatusByIdParams = { jobId: payload.job_id, status: 'completed' };
-                        updateJobStatusById(progress, updateParams);
+                        const params: UpsertJobFromLifecycleEventParams = {
+                            jobId: payload.job_id,
+                            stepKey: payload.step_key ?? null,
+                            modelId: payload.modelId ?? null,
+                            documentKey: payload.document_key ?? null,
+                            jobType: 'EXECUTE',
+                            status: 'completed',
+                        };
+                        upsertJobFromLifecycleEvent({}, progress, params);
                     }
                 });
             }
@@ -1730,8 +1751,15 @@ export const useDialecticStore = create<DialecticStore>()(
             set(state => {
                 const progress = state.stageRunProgress[progressKeyRenderChunk];
                 if (progress) {
-                    const updateParams: UpdateJobStatusByIdParams = { jobId: payload.job_id, status: 'processing' };
-                    updateJobStatusById(progress, updateParams);
+                    const params: UpsertJobFromLifecycleEventParams = {
+                        jobId: payload.job_id,
+                        stepKey: payload.step_key ?? null,
+                        modelId: payload.modelId ?? null,
+                        documentKey: payload.document_key ?? null,
+                        jobType: 'RENDER',
+                        status: 'processing',
+                    };
+                    upsertJobFromLifecycleEvent({}, progress, params);
                 }
             });
             break;
@@ -1747,8 +1775,15 @@ export const useDialecticStore = create<DialecticStore>()(
                 set(state => {
                     const progress = state.stageRunProgress[progressKeyFailed];
                     if (progress) {
-                        const updateParams: UpdateJobStatusByIdParams = { jobId: payload.job_id, status: 'failed' };
-                        updateJobStatusById(progress, updateParams);
+                        const params: UpsertJobFromLifecycleEventParams = {
+                            jobId: payload.job_id,
+                            stepKey: payload.step_key ?? null,
+                            modelId: payload.modelId ?? null,
+                            documentKey: payload.document_key ?? null,
+                            jobType: null,
+                            status: 'failed',
+                        };
+                        upsertJobFromLifecycleEvent({}, progress, params);
                     }
                 });
             }
@@ -1823,14 +1858,29 @@ export const useDialecticStore = create<DialecticStore>()(
       if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
         state.activeSessionDetail = { ...session };
       }
+      const params: UpsertJobFromLifecycleEventParams = {
+        jobId: event.job_id,
+        stepKey: null,
+        modelId: null,
+        documentKey: null,
+        jobType: null,
+        status: 'processing',
+      };
+      let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
       for (const key of Object.keys(state.stageRunProgress)) {
         if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${event.iterationNumber}`)) {
           const progress = state.stageRunProgress[key];
-          if (progress) {
-            const updateParams: UpdateJobStatusByIdParams = { jobId: event.job_id, status: 'processing' };
-            updateJobStatusById(progress, updateParams);
+          if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+            targetProgress = progress;
+            break;
+          }
+          if (!targetProgress) {
+            targetProgress = progress;
           }
         }
+      }
+      if (targetProgress) {
+        upsertJobFromLifecycleEvent({}, targetProgress, params);
       }
     });
   },
@@ -1839,24 +1889,37 @@ export const useDialecticStore = create<DialecticStore>()(
     set(state => {
       const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
       if (session?.dialectic_contributions) {
-        // Find placeholder by job_id
         const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
         if (placeholder) {
           placeholder.status = 'generating';
         }
       }
-      // Sync with activeSessionDetail if it's the same session
       if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
         state.activeSessionDetail = { ...session };
       }
+      const params: UpsertJobFromLifecycleEventParams = {
+        jobId: event.job_id,
+        stepKey: null,
+        modelId: null,
+        documentKey: null,
+        jobType: null,
+        status: 'processing',
+      };
+      let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
       for (const key of Object.keys(state.stageRunProgress)) {
         if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${event.iterationNumber}`)) {
           const progress = state.stageRunProgress[key];
-          if (progress) {
-            const updateParams: UpdateJobStatusByIdParams = { jobId: event.job_id, status: 'processing' };
-            updateJobStatusById(progress, updateParams);
+          if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+            targetProgress = progress;
+            break;
+          }
+          if (!targetProgress) {
+            targetProgress = progress;
           }
         }
+      }
+      if (targetProgress) {
+        upsertJobFromLifecycleEvent({}, targetProgress, params);
       }
     });
   },
@@ -1865,28 +1928,44 @@ export const useDialecticStore = create<DialecticStore>()(
     set(state => {
       const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
       if (session?.dialectic_contributions) {
-        // Find placeholder by job_id
         const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
         if (placeholder) {
           placeholder.status = 'retrying';
-          placeholder.error = { 
+          placeholder.error = {
               message: event.error || 'An error occurred during generation. Retrying...',
-              code: 'CONTRIBUTION_RETRYING' 
+              code: 'CONTRIBUTION_RETRYING'
           };
         }
       }
-      // Sync with activeSessionDetail if it's the same session
       if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
         state.activeSessionDetail = { ...session };
       }
+      const params: UpsertJobFromLifecycleEventParams = {
+        jobId: event.job_id,
+        stepKey: null,
+        modelId: null,
+        documentKey: null,
+        jobType: null,
+        status: 'retrying',
+      };
       for (const key of Object.keys(state.stageRunProgress)) {
         if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${event.iterationNumber}`)) {
           const progress = state.stageRunProgress[key];
-          if (progress) {
-            const updateParams: UpdateJobStatusByIdParams = { jobId: event.job_id, status: 'retrying' };
-            updateJobStatusById(progress, updateParams);
+          if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+            upsertJobFromLifecycleEvent({}, progress, params);
+            break;
           }
         }
+      }
+      let firstProgress: UpsertJobFromLifecycleEventPayload | undefined;
+      for (const key of Object.keys(state.stageRunProgress)) {
+        if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${event.iterationNumber}`)) {
+          firstProgress = state.stageRunProgress[key];
+          break;
+        }
+      }
+      if (firstProgress) {
+        upsertJobFromLifecycleEvent({}, firstProgress, params);
       }
     });
   },
@@ -1944,14 +2023,29 @@ export const useDialecticStore = create<DialecticStore>()(
 
       const iterNum = event.contribution?.iteration_number;
       if (typeof iterNum === 'number') {
+        const params: UpsertJobFromLifecycleEventParams = {
+          jobId: event.job_id,
+          stepKey: null,
+          modelId: null,
+          documentKey: null,
+          jobType: null,
+          status: 'processing',
+        };
+        let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
         for (const key of Object.keys(state.stageRunProgress)) {
           if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${iterNum}`)) {
             const progress = state.stageRunProgress[key];
-            if (progress) {
-              const updateParams: UpdateJobStatusByIdParams = { jobId: event.job_id, status: 'processing' };
-              updateJobStatusById(progress, updateParams);
+            if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+              targetProgress = progress;
+              break;
+            }
+            if (!targetProgress) {
+              targetProgress = progress;
             }
           }
+        }
+        if (targetProgress) {
+          upsertJobFromLifecycleEvent({}, targetProgress, params);
         }
       }
     });
@@ -2000,14 +2094,29 @@ export const useDialecticStore = create<DialecticStore>()(
 
       const iterNum = event.contribution?.iteration_number;
       if (typeof iterNum === 'number') {
+        const params: UpsertJobFromLifecycleEventParams = {
+          jobId: event.job_id,
+          stepKey: null,
+          modelId: null,
+          documentKey: null,
+          jobType: null,
+          status: 'continuing',
+        };
+        let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
         for (const key of Object.keys(state.stageRunProgress)) {
           if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${iterNum}`)) {
             const progress = state.stageRunProgress[key];
-            if (progress) {
-              const updateParams: UpdateJobStatusByIdParams = { jobId: event.job_id, status: 'continuing' };
-              updateJobStatusById(progress, updateParams);
+            if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+              targetProgress = progress;
+              break;
+            }
+            if (!targetProgress) {
+              targetProgress = progress;
             }
           }
+        }
+        if (targetProgress) {
+          upsertJobFromLifecycleEvent({}, targetProgress, params);
         }
       }
     });
@@ -2055,14 +2164,29 @@ export const useDialecticStore = create<DialecticStore>()(
       }
 
       if (event.job_id) {
+        const params: UpsertJobFromLifecycleEventParams = {
+          jobId: event.job_id,
+          stepKey: null,
+          modelId: null,
+          documentKey: null,
+          jobType: null,
+          status: 'failed',
+        };
+        let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
         for (const key of Object.keys(state.stageRunProgress)) {
           if (key.startsWith(`${event.sessionId}:`)) {
             const progress = state.stageRunProgress[key];
-            if (progress) {
-              const updateParams: UpdateJobStatusByIdParams = { jobId: event.job_id, status: 'failed' };
-              updateJobStatusById(progress, updateParams);
+            if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+              targetProgress = progress;
+              break;
+            }
+            if (!targetProgress) {
+              targetProgress = progress;
             }
           }
+        }
+        if (targetProgress) {
+          upsertJobFromLifecycleEvent({}, targetProgress, params);
         }
       }
     });
@@ -2071,15 +2195,30 @@ export const useDialecticStore = create<DialecticStore>()(
   _handleContributionGenerationComplete: (event: ContributionGenerationCompletePayload) => {
     set(state => {
       const jobIds: string[] = state.generatingSessions[event.sessionId] ?? [];
-      for (const key of Object.keys(state.stageRunProgress)) {
-        if (key.startsWith(`${event.sessionId}:`)) {
-          const progress = state.stageRunProgress[key];
-          if (progress) {
-            for (const jobId of jobIds) {
-              const updateParams: UpdateJobStatusByIdParams = { jobId, status: 'completed' };
-              updateJobStatusById(progress, updateParams);
+      for (const jobId of jobIds) {
+        const params: UpsertJobFromLifecycleEventParams = {
+          jobId,
+          stepKey: null,
+          modelId: null,
+          documentKey: null,
+          jobType: null,
+          status: 'completed',
+        };
+        let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
+        for (const key of Object.keys(state.stageRunProgress)) {
+          if (key.startsWith(`${event.sessionId}:`)) {
+            const progress = state.stageRunProgress[key];
+            if (progress?.jobs?.some((j) => j.id === jobId)) {
+              targetProgress = progress;
+              break;
+            }
+            if (!targetProgress) {
+              targetProgress = progress;
             }
           }
+        }
+        if (targetProgress) {
+          upsertJobFromLifecycleEvent({}, targetProgress, params);
         }
       }
       // Remove the session from the generating list

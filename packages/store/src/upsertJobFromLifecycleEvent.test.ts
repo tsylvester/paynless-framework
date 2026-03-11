@@ -1,207 +1,194 @@
 import { describe, it, expect } from 'vitest';
-import { produce } from 'immer';
-import {
-	upsertJobFromLifecycleEvent,
-	updateJobStatusById,
-} from './upsertJobFromLifecycleEvent.ts';
 import type {
-	StageRunProgressSnapshot,
-	JobProgressDto,
+	UpsertJobFromLifecycleEventDeps,
 	UpsertJobFromLifecycleEventParams,
-	UpdateJobStatusByIdParams,
+	UpsertJobFromLifecycleEventPayload,
+	JobProgressDto,
 } from '@paynless/types';
+import { upsertJobFromLifecycleEvent } from './upsertJobFromLifecycleEvent';
 
-function createEmptyProgress(): StageRunProgressSnapshot {
-	return {
+const deps: UpsertJobFromLifecycleEventDeps = {};
+
+function createPayload(initialJobs: JobProgressDto[] = []): UpsertJobFromLifecycleEventPayload {
+	const payload: UpsertJobFromLifecycleEventPayload = {
 		stepStatuses: {},
 		documents: {},
 		jobProgress: {},
 		progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
-		jobs: [],
+		jobs: initialJobs.length > 0 ? initialJobs : [],
 	};
-}
-
-function createJob(overrides: Partial<JobProgressDto>): JobProgressDto {
-	return {
-		id: '',
-		status: '',
-		jobType: null,
-		stepKey: null,
-		modelId: null,
-		documentKey: null,
-		parentJobId: null,
-		createdAt: '',
-		startedAt: null,
-		completedAt: null,
-		modelName: null,
-		...overrides,
-	};
+	return payload;
 }
 
 describe('upsertJobFromLifecycleEvent', () => {
 	it('upserts new job when no matching job_id exists in progress.jobs', () => {
-		const base = createEmptyProgress();
+		const payload = createPayload();
 		const params: UpsertJobFromLifecycleEventParams = {
 			jobId: 'job-1',
-			documentKey: 'doc_a',
+			documentKey: 'doc-a',
 			modelId: 'model-x',
 			stepKey: 'execute_step',
 			jobType: 'EXECUTE',
 			status: 'processing',
 		};
-		const result = produce(base, (draft) => {
-			upsertJobFromLifecycleEvent(draft, params);
-		});
-		expect(result.jobs).toHaveLength(1);
-		expect(result.jobs[0].id).toBe('job-1');
-		expect(result.jobs[0].status).toBe('processing');
-		expect(result.jobs[0].documentKey).toBe('doc_a');
-		expect(result.jobs[0].modelId).toBe('model-x');
-		expect(result.jobs[0].stepKey).toBe('execute_step');
-		expect(result.jobs[0].jobType).toBe('EXECUTE');
+
+		upsertJobFromLifecycleEvent(deps, payload, params);
+
+		expect(payload.jobs).toHaveLength(1);
+		expect(payload.jobs[0].id).toBe('job-1');
+		expect(payload.jobs[0].status).toBe('processing');
 	});
 
-	it('updates status in-place when job_id already exists (retry scenario)', () => {
-		const existingJob = createJob({
+	it('overwrites existing job when job_id already exists (retry scenario)', () => {
+		const existingJob: JobProgressDto = {
 			id: 'job-retry',
 			status: 'processing',
-			documentKey: 'd1',
-			modelId: 'm1',
-			stepKey: 's1',
 			jobType: 'EXECUTE',
-		});
-		const base: StageRunProgressSnapshot = {
-			...createEmptyProgress(),
-			jobs: [existingJob],
+			stepKey: 'execute_step',
+			modelId: 'model-1',
+			documentKey: 'doc-1',
+			parentJobId: null,
+			createdAt: '2020-01-01T00:00:00.000Z',
+			startedAt: null,
+			completedAt: null,
+			modelName: null,
 		};
+		const payload = createPayload([existingJob]);
 		const params: UpsertJobFromLifecycleEventParams = {
 			jobId: 'job-retry',
-			documentKey: 'd1',
-			modelId: 'm1',
-			stepKey: 's1',
+			documentKey: 'doc-1',
+			modelId: 'model-1',
+			stepKey: 'execute_step',
 			jobType: 'EXECUTE',
-			status: 'retrying',
+			status: 'completed',
 		};
-		const result = produce(base, (draft) => {
-			upsertJobFromLifecycleEvent(draft, params);
-		});
-		expect(result.jobs).toHaveLength(1);
-		expect(result.jobs[0].id).toBe('job-retry');
-		expect(result.jobs[0].status).toBe('retrying');
+
+		upsertJobFromLifecycleEvent(deps, payload, params);
+
+		expect(payload.jobs).toHaveLength(1);
+		expect(payload.jobs[0].id).toBe('job-retry');
+		expect(payload.jobs[0].status).toBe('completed');
 	});
 
 	it('sets jobType, stepKey, modelId, documentKey correctly on new entry', () => {
-		const base = createEmptyProgress();
+		const payload = createPayload();
 		const params: UpsertJobFromLifecycleEventParams = {
 			jobId: 'job-render',
-			documentKey: 'out.md',
-			modelId: 'model-render',
+			documentKey: 'doc-b',
+			modelId: 'model-y',
 			stepKey: 'render_step',
 			jobType: 'RENDER',
 			status: 'processing',
 		};
-		const result = produce(base, (draft) => {
-			upsertJobFromLifecycleEvent(draft, params);
-		});
-		expect(result.jobs[0].jobType).toBe('RENDER');
-		expect(result.jobs[0].stepKey).toBe('render_step');
-		expect(result.jobs[0].modelId).toBe('model-render');
-		expect(result.jobs[0].documentKey).toBe('out.md');
+
+		upsertJobFromLifecycleEvent(deps, payload, params);
+
+		expect(payload.jobs).toHaveLength(1);
+		expect(payload.jobs[0].jobType).toBe('RENDER');
+		expect(payload.jobs[0].stepKey).toBe('render_step');
+		expect(payload.jobs[0].modelId).toBe('model-y');
+		expect(payload.jobs[0].documentKey).toBe('doc-b');
 	});
 
 	it('does not duplicate jobs on repeated calls with same job_id', () => {
-		const base = createEmptyProgress();
+		const payload = createPayload();
 		const params: UpsertJobFromLifecycleEventParams = {
 			jobId: 'job-same',
-			documentKey: 'doc',
-			modelId: 'm',
-			stepKey: 's',
+			documentKey: 'doc-c',
+			modelId: 'model-z',
+			stepKey: 'execute_step',
 			jobType: 'EXECUTE',
 			status: 'processing',
 		};
-		const result = produce(base, (draft) => {
-			upsertJobFromLifecycleEvent(draft, params);
-			upsertJobFromLifecycleEvent(draft, params);
-			upsertJobFromLifecycleEvent(draft, { ...params, status: 'completed' });
-		});
-		expect(result.jobs).toHaveLength(1);
-		expect(result.jobs[0].status).toBe('completed');
+
+		upsertJobFromLifecycleEvent(deps, payload, params);
+		upsertJobFromLifecycleEvent(deps, payload, params);
+		const completedParams: UpsertJobFromLifecycleEventParams = {
+			jobId: params.jobId,
+			documentKey: params.documentKey,
+			modelId: params.modelId,
+			stepKey: params.stepKey,
+			jobType: params.jobType,
+			status: 'completed',
+		};
+		upsertJobFromLifecycleEvent(deps, payload, completedParams);
+
+		expect(payload.jobs).toHaveLength(1);
+		expect(payload.jobs[0].id).toBe('job-same');
+		expect(payload.jobs[0].status).toBe('completed');
 	});
 
 	it('handles empty progress.jobs array', () => {
-		const base = createEmptyProgress();
-		expect(base.jobs).toHaveLength(0);
+		const payload = createPayload();
+		expect(payload.jobs).toHaveLength(0);
+
 		const params: UpsertJobFromLifecycleEventParams = {
 			jobId: 'job-first',
-			documentKey: 'x',
-			modelId: 'y',
-			stepKey: 'z',
-			jobType: 'EXECUTE',
+			documentKey: null,
+			modelId: null,
+			stepKey: 'plan_step',
+			jobType: 'PLAN',
 			status: 'processing',
 		};
-		const result = produce(base, (draft) => {
-			upsertJobFromLifecycleEvent(draft, params);
-		});
-		expect(result.jobs).toHaveLength(1);
-		expect(result.jobs[0].id).toBe('job-first');
+
+		upsertJobFromLifecycleEvent(deps, payload, params);
+
+		expect(payload.jobs).toHaveLength(1);
+		expect(payload.jobs[0].id).toBe('job-first');
 	});
 
 	it('upserts with null documentKey/modelId for planner jobs', () => {
-		const base = createEmptyProgress();
+		const payload = createPayload();
 		const params: UpsertJobFromLifecycleEventParams = {
 			jobId: 'job-planner',
 			documentKey: null,
 			modelId: null,
-			stepKey: 'planner_step',
+			stepKey: 'plan_step',
 			jobType: 'PLAN',
-			status: 'processing',
+			status: 'completed',
 		};
-		const result = produce(base, (draft) => {
-			upsertJobFromLifecycleEvent(draft, params);
-		});
-		expect(result.jobs).toHaveLength(1);
-		expect(result.jobs[0].id).toBe('job-planner');
-		expect(result.jobs[0].documentKey).toBeNull();
-		expect(result.jobs[0].modelId).toBeNull();
-		expect(result.jobs[0].jobType).toBe('PLAN');
-	});
-});
 
-describe('updateJobStatusById', () => {
-	it('updates status of existing job found by job_id', () => {
-		const existingJob = createJob({
-			id: 'job-update-me',
+		upsertJobFromLifecycleEvent(deps, payload, params);
+
+		expect(payload.jobs).toHaveLength(1);
+		expect(payload.jobs[0].id).toBe('job-planner');
+		expect(payload.jobs[0].documentKey).toBeNull();
+		expect(payload.jobs[0].modelId).toBeNull();
+		expect(payload.jobs[0].jobType).toBe('PLAN');
+	});
+
+	it('overwrites existing entry with new notification (null params replace prior values)', () => {
+		const existingJob: JobProgressDto = {
+			id: 'job-overwrite',
 			status: 'processing',
-			documentKey: 'd',
-			modelId: 'm',
-			stepKey: 's',
 			jobType: 'EXECUTE',
-		});
-		const base: StageRunProgressSnapshot = {
-			...createEmptyProgress(),
-			jobs: [existingJob],
+			stepKey: 'execute_step',
+			modelId: 'model-1',
+			documentKey: 'doc-1',
+			parentJobId: null,
+			createdAt: '2020-01-01T00:00:00.000Z',
+			startedAt: null,
+			completedAt: null,
+			modelName: null,
 		};
-		const params: UpdateJobStatusByIdParams = {
-			jobId: 'job-update-me',
+		const payload = createPayload([existingJob]);
+		const params: UpsertJobFromLifecycleEventParams = {
+			jobId: 'job-overwrite',
+			documentKey: null,
+			modelId: null,
+			stepKey: null,
+			jobType: null,
 			status: 'completed',
 		};
-		const result = produce(base, (draft) => {
-			updateJobStatusById(draft, params);
-		});
-		expect(result.jobs).toHaveLength(1);
-		expect(result.jobs[0].status).toBe('completed');
-		expect(result.jobs[0].id).toBe('job-update-me');
-	});
 
-	it('is a no-op when job_id is not found (no insert)', () => {
-		const base = createEmptyProgress();
-		const params: UpdateJobStatusByIdParams = {
-			jobId: 'job-nonexistent',
-			status: 'completed',
-		};
-		const result = produce(base, (draft) => {
-			updateJobStatusById(draft, params);
-		});
-		expect(result.jobs).toHaveLength(0);
+		upsertJobFromLifecycleEvent(deps, payload, params);
+
+		expect(payload.jobs).toHaveLength(1);
+		expect(payload.jobs[0].id).toBe('job-overwrite');
+		expect(payload.jobs[0].status).toBe('completed');
+		expect(payload.jobs[0].documentKey).toBeNull();
+		expect(payload.jobs[0].modelId).toBeNull();
+		expect(payload.jobs[0].stepKey).toBeNull();
+		expect(payload.jobs[0].jobType).toBeNull();
 	});
 });

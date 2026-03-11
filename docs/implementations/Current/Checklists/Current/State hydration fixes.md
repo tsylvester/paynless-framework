@@ -49,12 +49,6 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
             *   `[✅]`   Params: `UpsertJobFromLifecycleEventParams` — `{ jobId: string, documentKey: string | null, modelId: string | null, stepKey: string | null, jobType: RecipeJobType | null, status: string }`
             *   `[✅]`   Payload: `UpsertJobFromLifecycleEventPayload` — `Draft<StageRunProgressSnapshot>` (the data structure being mutated)
             *   `[✅]`   Return: `UpsertJobFromLifecycleEventReturn` — `void`
-        *   `[✅]`   **updateJobStatusById**
-            *   `[✅]`   Signature: `UpdateJobStatusByIdSignature` — `(payload: UpdateJobStatusByIdPayload, params: UpdateJobStatusByIdParams) => void`
-            *   `[✅]`   Deps: `UpdateJobStatusByIdDeps` — none (pure function, no injected dependencies)
-            *   `[✅]`   Params: `UpdateJobStatusByIdParams` — `{ jobId: string, status: string }`
-            *   `[✅]`   Payload: `UpdateJobStatusByIdPayload` — `Draft<StageRunProgressSnapshot>` (the data structure being mutated)
-            *   `[✅]`   Return: `UpdateJobStatusByIdReturn` — `void` (no-op if jobId not found)
         *   `[✅]`   Uses existing types: `JobProgressDto`, `StageRunProgressSnapshot`, `RecipeJobType` from @paynless/types
     *   `[✅]`   unit/`upsertJobFromLifecycleEvent.test.ts`
         *   `[✅]`   Test: upserts new job when no matching job_id exists in progress.jobs
@@ -63,21 +57,18 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
         *   `[✅]`   Test: does not duplicate jobs on repeated calls with same job_id
         *   `[✅]`   Test: handles empty progress.jobs array
         *   `[✅]`   Test: upserts with null documentKey/modelId for planner jobs
-        *   `[✅]`   Test: updateJobStatusById updates status of existing job found by job_id
-        *   `[✅]`   Test: updateJobStatusById is a no-op when job_id is not found (no insert)
     *   `[✅]`   `construction`
         *   `[✅]`   Pure exported functions, no constructor or factory
         *   `[✅]`   Prohibited: must not be instantiated as a class, must not hold module-level mutable state
         *   `[✅]`   No initialization order — stateless helpers, callable in any sequence from any handler
     *   `[✅]`   `upsertJobFromLifecycleEvent.ts`
         *   `[✅]`   Find existing job by id in progress.jobs
-        *   `[✅]`   If found: update status field
-        *   `[✅]`   If not found: construct JobProgressDto from fields and append to progress.jobs
-        *   `[✅]`   Export secondary helper `updateJobStatusById`: find by job_id, update status only, no-op if not found — used for continuation events that lack document_key but whose original job was already inserted by a prior execute_started event
+        *   `[✅]`   If found: update status field AND merge any non-null fields from the incoming event into the existing entry (later events may provide stepKey, documentKey, modelId that were null on creation)
+        *   `[✅]`   If not found: construct JobProgressDto from fields (null for any fields the event lacks) and append to progress.jobs
     *   `[✅]`   `directionality`
         *   `[✅]`   Layer: domain
         *   `[✅]`   All dependencies inward (types only)
-        *   `[✅]`   Provides: consumed by lifecycle event handlers in dialecticStore.documents.ts
+        *   `[✅]`   Provides: consumed by lifecycle event handlers in dialecticStore.documents.ts and dialecticStore.ts
     *   `[✅]`   `requirements`
         *   `[✅]`   progress.jobs is mutated consistently whether event arrives before or after hydration
         *   `[✅]`   Retries (same job_id, new status) update in-place, never duplicate
@@ -129,72 +120,73 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
     *   `[✅]`   `objective`
         *   `[✅]`   Lifecycle handlers in dialecticStore.ts that are NOT delegated to dialecticStore.documents.ts also need to upsert into progress.jobs
         *   `[✅]`   Two payload families handled here:
-            *   `[✅]`   **JobNotificationEvent payloads** (have stageSlug, step_key, job_id): planner_started, planner_completed, execute_started (branching), execute_chunk_completed (branching), execute_completed (branching), render_chunk_completed, job_failed (branching)
+            *   `[✅]`   **JobNotificationEvent payloads** (have stageSlug, step_key, job_id): planner_started, planner_completed, execute_started, execute_chunk_completed, execute_completed, render_chunk_completed, job_failed
             *   `[✅]`   **Contribution-level payloads** (have job_id but lack document_key/step_key): contribution_generation_started, dialectic_contribution_started, contribution_generation_retrying, dialectic_contribution_received, contribution_generation_complete, contribution_generation_continued, contribution_generation_failed, contribution_generation_paused_nsf
+        *   `[✅]`   Every event with a job_id calls upsertJobFromLifecycleEvent — one path, no branching, no second function. Pass whatever fields the event provides and null for the rest.
     *   `[✅]`   `role`
         *   `[✅]`   Adapter — wiring domain helper into store-level event handlers
     *   `[✅]`   `module`
         *   `[✅]`   packages/store/src/dialecticStore.ts — main store lifecycle handlers and switch cases
     *   `[✅]`   `deps`
-        *   `[✅]`   upsertJobFromLifecycleEvent, updateJobStatusById from packages/store/src — producer from node 1
+        *   `[✅]`   upsertJobFromLifecycleEvent from packages/store/src — producer from node 1
         *   `[✅]`   No reverse dependencies introduced
     *   `[✅]`   `context_slice`
         *   `[✅]`   Each handler has access to get/set and the event payload
         *   `[✅]`   progressKey is computable from event.sessionId, event.stageSlug, event.iterationNumber (for JobNotificationEvent payloads)
-        *   `[✅]`   Contribution-level payloads lack stageSlug — updateJobStatusById searches all progress snapshots by job_id
+        *   `[✅]`   Contribution-level payloads lack stageSlug — look up the job's existing entry across all progress snapshots by job_id to find which snapshot it belongs to, then upsert into that snapshot
     *   `[✅]`   `event-to-action mapping (15 events handled in this file)`
-        *   `[✅]`   **JobNotificationEvent payloads (full upsert or branching):**
-            *   `[✅]`   `planner_started` → full upsert, status `processing`, jobType `PLAN` (has step_key but no document_key or modelId — upsert with null document_key/modelId)
-            *   `[✅]`   `planner_completed` → full upsert, status `completed`, jobType `PLAN`
-            *   `[✅]`   `execute_started` → if document_key present: full upsert, status `processing`, jobType `EXECUTE`; else: updateJobStatusById → `processing`
-            *   `[✅]`   `execute_chunk_completed` → if document_key present: full upsert, status `processing`; else: updateJobStatusById → `processing`
-            *   `[✅]`   `execute_completed` → if document_key present: full upsert, status `completed`, jobType `EXECUTE`; else: updateJobStatusById → `completed`
-            *   `[✅]`   `render_chunk_completed` → updateJobStatusById → `processing` (handled inline in switch, not via dedicated handler)
-            *   `[✅]`   `job_failed` → if document_key present: full upsert, status `failed`; else: updateJobStatusById → `failed`
-        *   `[✅]`   **Contribution-level payloads (status-only update via updateJobStatusById):**
-            *   `[✅]`   `contribution_generation_started` → updateJobStatusById → `processing`
-            *   `[✅]`   `dialectic_contribution_started` → updateJobStatusById → `processing`
-            *   `[✅]`   `contribution_generation_retrying` → updateJobStatusById → `retrying`
-            *   `[✅]`   `dialectic_contribution_received` → updateJobStatusById → `processing`
-            *   `[✅]`   `contribution_generation_complete` → updateJobStatusById → `completed`
-            *   `[✅]`   `contribution_generation_continued` → updateJobStatusById → `continuing`
-            *   `[✅]`   `contribution_generation_failed` → updateJobStatusById → `failed`
+        *   `[✅]`   **JobNotificationEvent payloads (all use upsertJobFromLifecycleEvent):**
+            *   `[✅]`   `planner_started` → upsert, status `processing`, jobType `PLAN` (has step_key but no document_key or modelId — upsert with null document_key/modelId)
+            *   `[✅]`   `planner_completed` → upsert, status `completed`, jobType `PLAN`
+            *   `[✅]`   `execute_started` → upsert, status `processing`, jobType `EXECUTE` (document_key may or may not be present — pass it as-is, null if absent)
+            *   `[✅]`   `execute_chunk_completed` → upsert, status `processing` (document_key may or may not be present — pass as-is)
+            *   `[✅]`   `execute_completed` → upsert, status `completed`, jobType `EXECUTE` (document_key may or may not be present — pass as-is)
+            *   `[✅]`   `render_chunk_completed` → upsert, status `processing` (has job_id — upsert with whatever fields are on the event)
+            *   `[✅]`   `job_failed` → upsert, status `failed` (document_key may or may not be present — pass as-is)
+        *   `[✅]`   **Contribution-level payloads (all use upsertJobFromLifecycleEvent with whatever fields the event provides, null for the rest):**
+            *   `[✅]`   `contribution_generation_started` → upsert, status `processing`
+            *   `[✅]`   `dialectic_contribution_started` → upsert, status `processing`
+            *   `[✅]`   `contribution_generation_retrying` → upsert, status `retrying`
+            *   `[✅]`   `dialectic_contribution_received` → upsert, status `processing`
+            *   `[✅]`   `contribution_generation_complete` → upsert, status `completed`
+            *   `[✅]`   `contribution_generation_continued` → upsert, status `continuing`
+            *   `[✅]`   `contribution_generation_failed` → upsert, status `failed`
             *   `[✅]`   `contribution_generation_paused_nsf` → no job_id on payload, no upsert possible (status tracked via stepStatuses only)
     *   `[✅]`   unit/`dialecticStore.test.ts`
         *   `[✅]`   Test: planner_started upserts job with status 'processing' and jobType 'PLAN'
         *   `[✅]`   Test: planner_completed upserts job with status 'completed' and jobType 'PLAN'
-        *   `[✅]`   Test: execute_started with document_key upserts, without document_key calls updateJobStatusById
-        *   `[✅]`   Test: execute_completed with document_key upserts 'completed', without calls updateJobStatusById
-        *   `[✅]`   Test: render_chunk_completed calls updateJobStatusById → 'processing'
-        *   `[✅]`   Test: job_failed with document_key upserts 'failed', without calls updateJobStatusById
-        *   `[✅]`   Test: contribution_generation_started calls updateJobStatusById → 'processing'
-        *   `[✅]`   Test: dialectic_contribution_started calls updateJobStatusById → 'processing'
-        *   `[✅]`   Test: contribution_generation_retrying calls updateJobStatusById → 'retrying'
-        *   `[✅]`   Test: dialectic_contribution_received calls updateJobStatusById → 'processing'
-        *   `[✅]`   Test: contribution_generation_complete calls updateJobStatusById → 'completed'
-        *   `[✅]`   Test: contribution_generation_continued calls updateJobStatusById → 'continuing'
-        *   `[✅]`   Test: contribution_generation_failed calls updateJobStatusById → 'failed'
+        *   `[✅]`   Test: execute_started upserts job with status 'processing' and jobType 'EXECUTE' (with or without document_key — same path)
+        *   `[✅]`   Test: execute_completed upserts job with status 'completed' and jobType 'EXECUTE' (with or without document_key — same path)
+        *   `[✅]`   Test: render_chunk_completed upserts job with status 'processing'
+        *   `[✅]`   Test: job_failed upserts job with status 'failed' (with or without document_key — same path)
+        *   `[✅]`   Test: contribution_generation_started upserts job with status 'processing'
+        *   `[✅]`   Test: dialectic_contribution_started upserts job with status 'processing'
+        *   `[✅]`   Test: contribution_generation_retrying upserts job with status 'retrying'
+        *   `[✅]`   Test: dialectic_contribution_received upserts job with status 'processing'
+        *   `[✅]`   Test: contribution_generation_complete upserts job with status 'completed'
+        *   `[✅]`   Test: contribution_generation_continued upserts job with status 'continuing'
+        *   `[✅]`   Test: contribution_generation_failed upserts job with status 'failed'
         *   `[✅]`   Test: contribution_generation_paused_nsf does NOT upsert (no job_id on payload)
         *   `[✅]`   Test: progress.jobs entry is updated (not duplicated) when same job_id arrives across start→chunk→complete sequence
     *   `[✅]`   `dialecticStore.ts`
         *   `[✅]`   In planner_started case: upsertJobFromLifecycleEvent(progress, { jobId, stepKey, modelId: null, documentKey: null, jobType: 'PLAN' }, 'processing')
         *   `[✅]`   In planner_completed case: upsertJobFromLifecycleEvent(progress, ..., 'completed')
-        *   `[✅]`   In execute_started case: branch on document_key presence — full upsert if present, updateJobStatusById if absent
-        *   `[✅]`   In execute_chunk_completed case: branch on document_key presence
-        *   `[✅]`   In execute_completed case: branch on document_key presence
-        *   `[✅]`   In render_chunk_completed case: updateJobStatusById(progress, event.job_id, 'processing')
-        *   `[✅]`   In job_failed case: branch on document_key presence
-        *   `[✅]`   In _handleContributionGenerationStarted: updateJobStatusById(progress, event.job_id, 'processing')
-        *   `[✅]`   In _handleDialecticContributionStarted: updateJobStatusById(progress, event.job_id, 'processing')
-        *   `[✅]`   In _handleContributionGenerationRetrying: updateJobStatusById(progress, event.job_id, 'retrying')
-        *   `[✅]`   In _handleDialecticContributionReceived: updateJobStatusById(progress, event.job_id, 'processing')
-        *   `[✅]`   In _handleContributionGenerationComplete: updateJobStatusById(progress, event.job_id, 'completed')
-        *   `[✅]`   In _handleContributionGenerationContinued: updateJobStatusById(progress, event.job_id, 'continuing')
-        *   `[✅]`   In _handleContributionGenerationFailed: updateJobStatusById(progress, event.job_id, 'failed')
+        *   `[✅]`   In execute_started case: upsertJobFromLifecycleEvent(progress, { jobId, stepKey, modelId: event.modelId ?? null, documentKey: event.document_key ?? null, jobType: 'EXECUTE' }, 'processing')
+        *   `[✅]`   In execute_chunk_completed case: upsertJobFromLifecycleEvent(progress, { jobId, stepKey: event.step_key ?? null, modelId: event.modelId ?? null, documentKey: event.document_key ?? null, jobType: null }, 'processing')
+        *   `[✅]`   In execute_completed case: upsertJobFromLifecycleEvent(progress, { jobId, stepKey, modelId: event.modelId ?? null, documentKey: event.document_key ?? null, jobType: 'EXECUTE' }, 'completed')
+        *   `[✅]`   In render_chunk_completed case: upsertJobFromLifecycleEvent(progress, { jobId: event.job_id, stepKey: event.step_key ?? null, modelId: event.modelId ?? null, documentKey: event.document_key ?? null, jobType: 'RENDER' }, 'processing')
+        *   `[✅]`   In job_failed case: upsertJobFromLifecycleEvent(progress, { jobId, stepKey: event.step_key ?? null, modelId: event.modelId ?? null, documentKey: event.document_key ?? null, jobType: null }, 'failed')
+        *   `[✅]`   In _handleContributionGenerationStarted: upsertJobFromLifecycleEvent(progress, { jobId: event.job_id, stepKey: null, modelId: null, documentKey: null, jobType: null }, 'processing')
+        *   `[✅]`   In _handleDialecticContributionStarted: upsertJobFromLifecycleEvent(progress, { jobId: event.job_id, stepKey: null, modelId: null, documentKey: null, jobType: null }, 'processing')
+        *   `[✅]`   In _handleContributionGenerationRetrying: upsertJobFromLifecycleEvent(progress, { jobId: event.job_id, stepKey: null, modelId: null, documentKey: null, jobType: null }, 'retrying')
+        *   `[✅]`   In _handleDialecticContributionReceived: upsertJobFromLifecycleEvent(progress, { jobId: event.job_id, stepKey: null, modelId: null, documentKey: null, jobType: null }, 'processing')
+        *   `[✅]`   In _handleContributionGenerationComplete: upsertJobFromLifecycleEvent(progress, { jobId: event.job_id, stepKey: null, modelId: null, documentKey: null, jobType: null }, 'completed')
+        *   `[✅]`   In _handleContributionGenerationContinued: upsertJobFromLifecycleEvent(progress, { jobId: event.job_id, stepKey: null, modelId: null, documentKey: null, jobType: null }, 'continuing')
+        *   `[✅]`   In _handleContributionGenerationFailed: upsertJobFromLifecycleEvent(progress, { jobId: event.job_id, stepKey: null, modelId: null, documentKey: null, jobType: null }, 'failed')
         *   `[✅]`   In _handleContributionGenerationPausedNsf: no upsert (payload has no job_id)
     *   `[✅]`   `directionality`
         *   `[✅]`   Layer: adapter (store)
-        *   `[✅]`   Depends on: upsertJobFromLifecycleEvent, updateJobStatusById (domain, inward)
+        *   `[✅]`   Depends on: upsertJobFromLifecycleEvent (domain, inward)
         *   `[✅]`   Provides: updated progress.jobs visible to selectors
     *   `[✅]`   `requirements`
         *   `[✅]`   All 15 lifecycle event types handled in this file result in a progress.jobs upsert or documented exemption
@@ -203,9 +195,11 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
 
 *   `[✅]`   [STORE] packages/store/src/`dialecticStore.selectors.ts` **Gate 'completed' stageStatus on document completion**
     *   `[✅]`   `objective`
-        *   `[✅]`   In selectUnifiedProjectProgress, stageStatus 'completed' currently fires when completedSteps === totalSteps (line 921). This is wrong — steps completing does not prove documents exist. Gate 'completed' on document sets: completedDocumentsForStage === totalDocumentsForStage && totalDocumentsForStage > 0
-        *   `[✅]`   Progress statuses (in_progress, failed, paused, not_started) remain derived from step statuses — steps/jobs are how we measure progress
-        *   `[✅]`   Documents are how we prove completion. A document set is one logical document key fully rendered across all selected models.
+        *   `[✅]`   The store already has everything needed to track both progress and completion: the recipe DAG (steps, edges, inputs_required, outputs_required) is in recipesByStageSlug, step statuses are in progress.stepStatuses (driven by lifecycle events from ALL jobs), job entries are in progress.jobs (populated by nodes 1-3 for every job type), and document descriptors are in progress.documents (fetched when rendered documents complete)
+        *   `[✅]`   A recipe is a DAG of PLAN and EXECUTE steps. Each step spawns jobs based on its granularity_strategy. Most jobs produce intermediate artifacts (header_context, assembled_json) and do NOT have a document_key — that is expected. RENDER is a system operation (not a recipe step) that produces the final user-facing markdown documents after EXECUTE.
+        *   `[✅]`   **Progress** is derived from step statuses, which reflect ALL jobs in the DAG — planners, intermediate executions, terminal executions, everything. This is how the user knows work is happening.
+        *   `[✅]`   **Completion** is proven by rendered documents. The recipe defines how many rendered markdown documents the stage must produce (totalDocumentsForStage, a fixed count from selectValidMarkdownDocumentKeys). Each document must be rendered for every selected model. Only when every document set is fully rendered is the stage complete. Steps and jobs completing is necessary but not sufficient — RENDER must finish and produce the documents.
+        *   `[✅]`   The bug: line 921 sets stageStatus = 'completed' when completedSteps === totalSteps. This fires when all steps finish, but RENDER may not have produced all documents yet. Fix: gate 'completed' on completedDocumentsForStage === totalDocumentsForStage && totalDocumentsForStage > 0
     *   `[✅]`   `role`
         *   `[✅]`   Domain — selector producing derived state
     *   `[✅]`   `module`
@@ -213,19 +207,23 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
         *   `[✅]`   Boundary: pure function, no side effects
     *   `[✅]`   `deps`
         *   `[✅]`   Existing types: StageProgressDetail, UnifiedProjectProgress, UnifiedProjectStatus from @paynless/types
-        *   `[✅]`   progress.jobs now populated by lifecycle events (producer: nodes 1-3)
+        *   `[✅]`   progress.jobs populated by lifecycle events (producer: nodes 1-3) — ALL job types, not just document-bearing jobs
+        *   `[✅]`   progress.stepStatuses driven by all lifecycle events — reflects every job in the DAG regardless of document_key
+        *   `[✅]`   progress.documents populated when rendered documents are fetched
+        *   `[✅]`   recipesByStageSlug provides the recipe DAG including outputs_required per step
         *   `[✅]`   No reverse dependencies introduced
     *   `[✅]`   `context_slice`
         *   `[✅]`   Reads: stageRunProgress, recipesByStageSlug, currentProcessTemplate from state
     *   `[✅]`   unit/`dialecticStore.selectors.test.ts`
-        *   `[✅]`   Test: stageStatus is NOT 'completed' when all steps are done but not all document sets are complete
+        *   `[✅]`   Test: stageStatus is NOT 'completed' when all steps are done but not all document sets are complete (steps finishing does not prove RENDER produced documents)
         *   `[✅]`   Test: stageStatus is 'completed' when completedDocumentsForStage === totalDocumentsForStage && totalDocumentsForStage > 0
-        *   `[✅]`   Test: stageStatus is 'not_started' when totalDocuments is 0 (no jobs yet)
-        *   `[✅]`   Test: progress statuses (in_progress, failed, paused) still derived from step statuses
-        *   `[✅]`   Test: "n/n" reflects completedDocumentsForStage / totalDocumentsForStage (document set counts)
+        *   `[✅]`   Test: stageStatus is 'in_progress' when jobs are running mid-DAG (PLAN, intermediate EXECUTE) even though no rendered documents exist yet — progress comes from step statuses, not documents
+        *   `[✅]`   Test: progress statuses (in_progress, failed, paused) derived from step statuses, which reflect ALL jobs including those without document_key
+        *   `[✅]`   Test: "n/n" reflects completedDocumentsForStage / totalDocumentsForStage — totalDocuments is a fixed count from the recipe's expected rendered markdown outputs, completedDocuments is how many document sets are fully rendered across all selected models
     *   `[✅]`   `dialecticStore.selectors.ts`
         *   `[✅]`   Replace line 921 step-based completion check with document-based: if totalDocumentsForStage > 0 && completedDocumentsForStage === totalDocumentsForStage then 'completed'
-        *   `[✅]`   Preserve 'failed' status derivation from step statuses (a failed step is still relevant)
+        *   `[✅]`   Existing document counting logic (lines 926-953) already iterates validMarkdownKeys and filters progress.jobs for entries with matching documentKey — only the subset of jobs with document_key contribute to document completion counting; most jobs lack document_key and that is correct
+        *   `[✅]`   Preserve 'failed' status derivation from step statuses (a failed step is still relevant — step statuses reflect all jobs)
         *   `[✅]`   Preserve 'in_progress', 'paused_nsf', 'paused_user' from step statuses
     *   `[✅]`   `directionality`
         *   `[✅]`   Layer: domain
@@ -233,7 +231,8 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
         *   `[✅]`   Provides: consumed by StageTabCard, SubmitResponsesButton, SessionContributionsDisplayCard
     *   `[✅]`   `requirements`
         *   `[✅]`   "Done" label and "n/n" count always agree because both derive from document completion
-        *   `[✅]`   No defaults or guesses — if data is missing, status is 'not_started'
+        *   `[✅]`   Progress statuses reflect all jobs in the DAG via step statuses, regardless of document_key
+        *   `[✅]`   No defaults or guesses
     *   `[✅]`   **Commit** `fix(store): realtime job tracking and document-based stage completion`
         *   `[✅]`   upsertJobFromLifecycleEvent.ts created with tests
         *   `[✅]`   All lifecycle handlers wired to upsert progress.jobs
