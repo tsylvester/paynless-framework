@@ -350,7 +350,7 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
         *   `[✅]`   Add updateViewingStage to DialecticApiClientInterface
     *   `[✅]`   unit/`dialectic.api.session.test.ts`
         *   `[✅]`   Test: updateViewingStage sends correct action and payload
-        *   `[✅]`   Test: returns ApiResponse<DialecticSession>
+        *   `[✅]`   Test: returns ApiResponse<DialecticSessionRow>
     *   `[✅]`   `dialectic.api.ts`
         *   `[✅]`   Add updateViewingStage method following updateSessionModels pattern
     *   `[✅]`   `directionality`
@@ -371,12 +371,10 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
         *   `[ ]`   packages/store/src/dialecticStore.ts — setActiveStage, fetchSessionDetails paths
     *   `[ ]`   `deps`
         *   `[ ]`   updateViewingStage from @paynless/api — port, inward
-        *   `[ ]`   DialecticSession type (now includes viewing_stage_id) — domain, inward
     *   `[ ]`   `context_slice`
         *   `[ ]`   setActiveStage receives slug, needs to resolve to stage id for the API call
         *   `[ ]`   activeSessionDetail and currentProcessTemplate available via get()
     *   `[ ]`   interface/`dialectic.types.ts`
-        *   `[ ]`   DialecticSession: add viewing_stage_id: string | null field
         *   `[ ]`   DialecticStateActions: add updateViewingStage action if needed as a separate callable
     *   `[ ]`   unit/`dialecticStore.test.ts`
         *   `[ ]`   Test: setActiveStage calls api.dialectic().updateViewingStage with correct sessionId and stageId
@@ -413,7 +411,6 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
         *   `[ ]`   packages/store/src/dialecticStore.ts — submitStageResponses success path
     *   `[ ]`   `deps`
         *   `[ ]`   SubmitStageResponsesResponse type (contains updatedSession) — domain, inward
-        *   `[ ]`   DialecticSession type — domain, inward
         *   `[ ]`   No reverse dependencies introduced
     *   `[ ]`   `context_slice`
         *   `[ ]`   response.data.updatedSession available after successful API call
