@@ -10,7 +10,9 @@ import type {
 	StageDocumentVersionInfo,
 	ApiError,
 	RenderCompletedPayload,
+	RenderStartedPayload,
 	DocumentCompletedPayload,
+	DocumentChunkCompletedPayload,
 	DialecticStageRecipe,
 	ListStageDocumentsPayload,
 	ListStageDocumentsResponse,
@@ -4925,5 +4927,280 @@ describe('jobProgress tracking in stageRunProgress', () => {
 		expect(progress?.stepStatuses['execute_step']).toBe('in_progress');
 		expect(progress?.progress).toEqual({ completedSteps: 1, totalSteps: 2, failedSteps: 0 });
 		expect(progress?.jobProgress).toEqual({});
+	});
+});
+
+describe('lifecycle handlers upsert progress.jobs', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetApiMock();
+		useDialecticStore.setState(initialDialecticStateValues);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	const sessionId = 'session-jobs';
+	const stageSlug = 'thesis';
+	const iterationNumber = 1;
+	const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+	const documentKey = 'business_case';
+	const modelId = 'model-a';
+	const jobId = 'job-1';
+	const stepKey = 'execute_step';
+
+	const mockRecipe: DialecticStageRecipe = {
+		stageSlug,
+		instanceId: 'instance-jobs',
+		steps: [
+			{
+				id: 'step-1',
+				step_key: stepKey,
+				step_slug: 'execute',
+				step_name: 'Execute',
+				execution_order: 1,
+				job_type: 'EXECUTE',
+				prompt_type: 'Turn',
+				output_type: 'rendered_document',
+				granularity_strategy: 'per_source_document',
+				inputs_required: [],
+				outputs_required: [],
+			},
+		],
+		edges: [],
+	};
+
+	const seedProgress = (): void => {
+		useDialecticStore.setState((state) => {
+			state.recipesByStageSlug[stageSlug] = mockRecipe;
+			state.stageRunProgress[progressKey] = {
+				documents: {},
+				stepStatuses: {},
+				jobProgress: {},
+				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
+			};
+		});
+	};
+
+	it('handleRenderCompletedLogic upserts job with status completed into progress.jobs', () => {
+		seedProgress();
+		useDialecticStore.setState((state) => {
+			const progress = state.stageRunProgress[progressKey];
+			if (progress) {
+				progress.documents[stageRunDocKey(documentKey, modelId)] = {
+					descriptorType: 'rendered',
+					status: 'generating',
+					job_id: jobId,
+					latestRenderedResourceId: 'res-old',
+					modelId,
+					versionHash: 'h',
+					lastRenderedResourceId: 'res-old',
+					lastRenderAtIso: new Date().toISOString(),
+					stepKey,
+				};
+			}
+		});
+
+		const event: RenderCompletedPayload = {
+			type: 'render_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: stepKey,
+			latestRenderedResourceId: 'res-new',
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(progress?.jobs).toHaveLength(1);
+		expect(progress?.jobs[0].id).toBe(jobId);
+		expect(progress?.jobs[0].status).toBe('completed');
+		expect(progress?.jobs[0].jobType).toBe('RENDER');
+	});
+
+	it('handleDocumentStartedLogic upserts job with status processing into progress.jobs', () => {
+		seedProgress();
+
+		const event: DocumentStartedPayload = {
+			type: 'document_started',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: stepKey,
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(progress?.jobs).toHaveLength(1);
+		expect(progress?.jobs[0].id).toBe(jobId);
+		expect(progress?.jobs[0].status).toBe('processing');
+		expect(progress?.jobs[0].jobType).toBe('EXECUTE');
+	});
+
+	it('handleRenderStartedLogic upserts job with status processing into progress.jobs', () => {
+		seedProgress();
+
+		const event: RenderStartedPayload = {
+			type: 'render_started',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: stepKey,
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(progress?.jobs).toHaveLength(1);
+		expect(progress?.jobs[0].id).toBe(jobId);
+		expect(progress?.jobs[0].status).toBe('processing');
+		expect(progress?.jobs[0].jobType).toBe('RENDER');
+	});
+
+	it('handleDocumentCompletedLogic upserts job with status completed into progress.jobs', () => {
+		seedProgress();
+		useDialecticStore.setState((state) => {
+			const progress = state.stageRunProgress[progressKey];
+			if (progress) {
+				progress.documents[stageRunDocKey(documentKey, modelId)] = {
+					descriptorType: 'rendered',
+					status: 'generating',
+					job_id: jobId,
+					latestRenderedResourceId: 'res-1',
+					modelId,
+					versionHash: 'h',
+					lastRenderedResourceId: 'res-1',
+					lastRenderAtIso: new Date().toISOString(),
+					stepKey,
+				};
+			}
+		});
+
+		const event: DocumentCompletedPayload = {
+			type: 'document_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: stepKey,
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(progress?.jobs).toHaveLength(1);
+		expect(progress?.jobs[0].id).toBe(jobId);
+		expect(progress?.jobs[0].status).toBe('completed');
+		expect(progress?.jobs[0].jobType).toBe('EXECUTE');
+	});
+
+	it('handleDocumentChunkCompletedLogic upserts job with status processing into progress.jobs', () => {
+		seedProgress();
+		useDialecticStore.setState((state) => {
+			const progress = state.stageRunProgress[progressKey];
+			if (progress) {
+				progress.documents[stageRunDocKey(documentKey, modelId)] = {
+					descriptorType: 'rendered',
+					status: 'continuing',
+					job_id: jobId,
+					latestRenderedResourceId: 'res-1',
+					modelId,
+					versionHash: 'h',
+					lastRenderedResourceId: 'res-1',
+					lastRenderAtIso: new Date().toISOString(),
+					stepKey,
+				};
+			}
+		});
+
+		const event: DocumentChunkCompletedPayload = {
+			type: 'document_chunk_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: stepKey,
+			latestRenderedResourceId: 'res-2',
+			isFinalChunk: false,
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+		const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(progress?.jobs).toHaveLength(1);
+		expect(progress?.jobs[0].id).toBe(jobId);
+		expect(progress?.jobs[0].status).toBe('processing');
+	});
+
+	it('progress.jobs entry is updated (not duplicated) when same job_id arrives in start then complete sequence', () => {
+		seedProgress();
+		useDialecticStore.setState((state) => {
+			const progress = state.stageRunProgress[progressKey];
+			if (progress) {
+				progress.documents[stageRunDocKey(documentKey, modelId)] = {
+					descriptorType: 'rendered',
+					status: 'generating',
+					job_id: jobId,
+					latestRenderedResourceId: 'res-1',
+					modelId,
+					versionHash: 'h',
+					lastRenderedResourceId: 'res-1',
+					lastRenderAtIso: new Date().toISOString(),
+					stepKey,
+				};
+			}
+		});
+
+		const documentStartedEvent: DocumentStartedPayload = {
+			type: 'document_started',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: stepKey,
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(documentStartedEvent);
+
+		let progress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(progress?.jobs).toHaveLength(1);
+		expect(progress?.jobs[0].status).toBe('processing');
+
+		const documentCompletedEvent: DocumentCompletedPayload = {
+			type: 'document_completed',
+			sessionId,
+			stageSlug,
+			iterationNumber,
+			job_id: jobId,
+			document_key: documentKey,
+			modelId,
+			step_key: stepKey,
+		};
+
+		useDialecticStore.getState()._handleDialecticLifecycleEvent?.(documentCompletedEvent);
+
+		progress = useDialecticStore.getState().stageRunProgress[progressKey];
+		expect(progress?.jobs).toHaveLength(1);
+		expect(progress?.jobs[0].id).toBe(jobId);
+		expect(progress?.jobs[0].status).toBe('completed');
 	});
 });

@@ -63,7 +63,14 @@
 * When reviewing work against the checklist, do not assume the checklist is correct. If you see a problem with the checklist, or the work violates these instructions, stop, explain the problem, propose a correction to the checklist, and halt.
 * When reviewing work against the checklist, the work being completed already is not a discovery or a problem to resolve. Do not propose undoing the work you are reviewing. Do not propose undoing a GREEN state to prove a RED state. "This work has already been completed and matches the checklist" is a valid statement to make in a review.
 
-## 5. Strict Typing & Object Construction
+## 5. Strict Typing & Object 
+* Every function has: 
+  * A function signature
+  * A typed return
+  * A deps object
+  * A params object
+  * A payload object
+  * Agents cannot place deps inside params, blob params and payload, or invent other types to define the function. 
 * Use explicit types everywhere. No `any`, `as`, `as const`, inline ad-hoc types, or casts. The only exceptions to strict typing are for Supabase clients and intentionally malformed objects in error-handling tests. Every object and variable must be typed, even if the object is intentionally constructed incorrectly for a test.
 * Always construct full objects that satisfy existing interfaces/tuples from the relevant type file. Compose complex objects from smaller typed components; never rely on defaults, fallbacks, or backfilling to “heal” missing data.
 * Casting for Supabase clients and intentionally malformed objects in tests is explicitly allowed. Do not report that you are confused, do not report there is a contradiction between strict typing and the two permitted exceptions for Supabase and type casting for intentionally malformed objects in tests. You are being directly and explicitly instructed that these are the two exceptions to type casting. Do not pretend you cannot understand this exception. Do not ask the user to clarify about this exception. This instruction is clear and explicit, pretending like you don't understand it is being obtuse and unhelpful. 

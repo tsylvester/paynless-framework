@@ -1,3 +1,4 @@
+import { Draft } from 'immer';
 import { SystemPrompt } from './ai.types';
 import type { ApiError, ApiResponse } from './api.types';
 import type { Database } from '@paynless/db-types';
@@ -1203,6 +1204,48 @@ export interface JobProgressDto {
   completedAt: string | null;
   modelName: string | null;
 }
+
+/** Params for upsertJobFromLifecycleEvent (event fields + target status). */
+export interface UpsertJobFromLifecycleEventParams {
+  jobId: string;
+  documentKey: string | null;
+  modelId: string | null;
+  stepKey: string | null;
+  jobType: RecipeJobType | null;
+  status: string;
+}
+
+/** Payload for upsertJobFromLifecycleEvent (draft progress snapshot to mutate). */
+export type UpsertJobFromLifecycleEventPayload = Draft<StageRunProgressSnapshot>;
+
+export type UpsertJobFromLifecycleEventReturn = void;
+
+/** No injected dependencies (pure function). */
+export interface UpsertJobFromLifecycleEventDeps {}
+
+export type UpsertJobFromLifecycleEventSignature = (
+  payload: UpsertJobFromLifecycleEventPayload,
+  params: UpsertJobFromLifecycleEventParams,
+) => UpsertJobFromLifecycleEventReturn;
+
+/** Params for updateJobStatusById (job id + new status). */
+export interface UpdateJobStatusByIdParams {
+  jobId: string;
+  status: string;
+}
+
+/** Payload for updateJobStatusById (draft progress snapshot to mutate). */
+export type UpdateJobStatusByIdPayload = Draft<StageRunProgressSnapshot>;
+
+export type UpdateJobStatusByIdReturn = void;
+
+/** No injected dependencies (pure function). */
+export interface UpdateJobStatusByIdDeps {}
+
+export type UpdateJobStatusByIdSignature = (
+  payload: UpdateJobStatusByIdPayload,
+  params: UpdateJobStatusByIdParams,
+) => UpdateJobStatusByIdReturn;
 
 export interface StageProgressEntry {
   stageSlug: string;

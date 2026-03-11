@@ -27,11 +27,13 @@ import type {
 	JobProgressDto,
 	ExecuteStartedPayload,
 	IKeyValueStorage,
+	UpsertJobFromLifecycleEventParams,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger, isStageRenderedDocumentChecklistEntry } from '@paynless/utils';
 import { selectValidMarkdownDocumentKeys } from './dialecticStore.selectors';
+import { upsertJobFromLifecycleEvent } from './upsertJobFromLifecycleEvent';
 
 export const computeVersionHash = (input: string): string => {
   let hash = 0;
@@ -749,6 +751,21 @@ export const handleRenderStartedLogic = (
 		return;
 	}
 	setStepStatusLogic(get, set, progressKey, stepKey, 'in_progress');
+	set((state) => {
+		const progress = state.stageRunProgress[progressKey];
+		if (!progress) {
+			return;
+		}
+		const params: UpsertJobFromLifecycleEventParams = {
+			jobId: event.job_id,
+			documentKey: event.document_key,
+			modelId: event.modelId,
+			stepKey: stepKey ?? null,
+			jobType: 'RENDER',
+			status: 'processing',
+		};
+		upsertJobFromLifecycleEvent(progress, params);
+	});
 };
 
 export const handleDocumentStartedLogic = (
@@ -795,6 +812,16 @@ export const handleDocumentStartedLogic = (
 		if (stepKey !== undefined) {
 			progress.stepStatuses[stepKey] = 'in_progress';
 		}
+
+		const params: UpsertJobFromLifecycleEventParams = {
+			jobId: event.job_id,
+			documentKey: event.document_key,
+			modelId: event.modelId,
+			stepKey: stepKey ?? null,
+			jobType: 'EXECUTE',
+			status: 'processing',
+		};
+		upsertJobFromLifecycleEvent(progress, params);
 
 		// Handle planner outputs (JSON artifacts) without rendered resources
 		if (!requiresRendering && !hasLatestRenderedResourceId) {
@@ -960,6 +987,15 @@ export const handleDocumentChunkCompletedLogic = (
 		if (!progress) {
 			return;
 		}
+		const params: UpsertJobFromLifecycleEventParams = {
+			jobId: event.job_id,
+			documentKey: event.document_key,
+			modelId: event.modelId,
+			stepKey: event.step_key ?? null,
+			jobType: 'EXECUTE',
+			status: 'processing',
+		};
+		upsertJobFromLifecycleEvent(progress, params);
 		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
 		const documentEntry = progress.documents[documentsKey];
 		if (!documentEntry) {
@@ -1071,6 +1107,15 @@ export const handleRenderCompletedLogic = (
 		if (stepKey !== undefined) {
 			progress.stepStatuses[stepKey] = 'completed';
 		}
+		const params: UpsertJobFromLifecycleEventParams = {
+			jobId: event.job_id,
+			documentKey: event.document_key,
+			modelId: event.modelId,
+			stepKey: stepKey ?? null,
+			jobType: 'RENDER',
+			status: 'completed',
+		};
+		upsertJobFromLifecycleEvent(progress, params);
 		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
 		const existingDescriptor = progress.documents[documentsKey];
 		const statusToUse: StageRunDocumentStatus =
@@ -1148,6 +1193,16 @@ export const handleDocumentCompletedLogic = (
 		if (!progress) {
 			return;
 		}
+
+		const params: UpsertJobFromLifecycleEventParams = {
+			jobId: event.job_id,
+			documentKey: event.document_key,
+			modelId: event.modelId,
+			stepKey: event.step_key ?? null,
+			jobType: 'EXECUTE',
+			status: 'completed',
+		};
+		upsertJobFromLifecycleEvent(progress, params);
 
 		const documentsKey = getStageRunDocumentKey(event.document_key, event.modelId);
 		const documentEntry = progress.documents[documentsKey];

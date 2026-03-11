@@ -918,7 +918,6 @@ export const selectUnifiedProjectProgress = (
         const totalStepsForStage = progress.progress.totalSteps;
         const completedStepsForStage = progress.progress.completedSteps;
         const failedStepsForStage = progress.progress.failedSteps;
-        if (totalStepsForStage > 0 && stageStatus === 'not_started' && completedStepsForStage === totalStepsForStage) stageStatus = 'completed';
 
         const stagePercentage =
             totalStepsForStage > 0 ? (completedStepsForStage / totalStepsForStage) * 100 : 0;
@@ -951,6 +950,8 @@ export const selectUnifiedProjectProgress = (
                 completedDocumentsForStage += 1;
             }
         }
+
+        if (stageStatus === 'not_started' && totalDocumentsForStage > 0 && completedDocumentsForStage === totalDocumentsForStage) stageStatus = 'completed';
 
         stageDetails.push({
             stageSlug,
