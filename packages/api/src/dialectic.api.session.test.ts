@@ -8,7 +8,12 @@ import type {
   GetSessionDetailsResponse,
   DialecticStage,
   AssembledPrompt,
+  UpdateViewingStagePayload,
+  UpdateViewingStageParams,
+  UpdateViewingStageDeps,
+  UpdateViewingStageReturn,
 } from '@paynless/types';
+import { Database } from '@paynless/db-types';
 
 // Mock the base ApiClient consistent with other API client tests
 const mockApiClientPost = vi.fn();
@@ -38,7 +43,7 @@ describe('DialecticApiClient - Session Methods', () => {
       project_id: 'project-abc-123',
       session_description: 'Test session details',
       iteration_count: 1,
-      selected_model_ids: [],
+      selected_models: [],
       status: 'active',
       current_stage_id: 'stage-1',
       created_at: new Date().toISOString(),
@@ -70,7 +75,8 @@ describe('DialecticApiClient - Session Methods', () => {
       // For example, if 'expected_output_artifacts' and 'input_artifact_rules' are required and are of type Json:
       expected_output_template_ids: [],
       active_recipe_instance_id: null,
-      recipe_template_id: null
+      recipe_template_id: null,
+      minimum_balance: 0,
     };
 
     it('should call apiClient.post with sessionId only when skipSeedPrompt is not provided', async () => {
@@ -215,6 +221,64 @@ describe('DialecticApiClient - Session Methods', () => {
         message: networkError.message,
       });
       expect(result.status).toBe(0);
+    });
+  });
+
+  describe('updateViewingStage', () => {
+    const endpoint = 'dialectic-service';
+    const validPayload: UpdateViewingStagePayload = {
+      sessionId: 'sess-view-456',
+      viewingStageId: 'stage-view-789',
+    };
+    const requestBody = { action: 'updateViewingStage', payload: validPayload };
+    const mockUpdatedSession: Database["public"]["Tables"]["dialectic_sessions"]["Row"] = {
+      id: validPayload.sessionId,
+      project_id: 'project-abc-123',
+      session_description: 'Test session',
+      iteration_count: 1,
+      selected_model_ids: [],
+      status: 'active',
+      current_stage_id: 'stage-1',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_input_reference_url: null,
+      associated_chat_id: null,
+      viewing_stage_id: validPayload.viewingStageId,  
+      idempotency_key: null,
+    };
+
+    it('should call apiClient.post with the correct endpoint and body', async () => {
+      const mockResponse: UpdateViewingStageReturn = {
+        data: mockUpdatedSession,
+        error: null,
+        status: 200,
+      };
+      mockApiClientPost.mockResolvedValueOnce(mockResponse);
+
+      const deps: UpdateViewingStageDeps = {};
+      const params: UpdateViewingStageParams = {userId: 'user-123' };
+      
+      await dialecticApiClient.updateViewingStage(deps, params, validPayload);
+
+      expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+      expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+    });
+
+    it('should return ApiResponse<DialecticSession> on success', async () => {
+      const mockResponse: UpdateViewingStageReturn = {
+        data: mockUpdatedSession,
+        error: null,
+        status: 200,
+      };
+      mockApiClientPost.mockResolvedValueOnce(mockResponse);
+
+      const deps: UpdateViewingStageDeps = {};
+      const params: UpdateViewingStageParams = {userId: 'user-123' };
+      const result = await dialecticApiClient.updateViewingStage(deps, params, validPayload);
+
+      expect(result.data).toEqual(mockUpdatedSession);
+      expect(result.status).toBe(200);
+      expect(result.error).toBeNull();
     });
   });
 }); 

@@ -1095,6 +1095,8 @@ export interface DialecticApiClient {
   resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
   pauseActiveJobs(payload: PauseActiveJobsPayload): Promise<ApiResponse<PauseActiveJobsResponse>>;
   regenerateDocument(payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>>;
+
+  updateViewingStage: UpdateViewingStageFn;
 }
 
 
@@ -1233,6 +1235,29 @@ export type UpsertJobFromLifecycleEventSignature = (
   payload: UpsertJobFromLifecycleEventPayload,
   params: UpsertJobFromLifecycleEventParams,
 ) => UpsertJobFromLifecycleEventReturn;
+
+export interface UpdateViewingStageDeps {}
+
+export interface UpdateViewingStageParams {
+  userId: string;
+}
+
+export interface UpdateViewingStagePayload {
+  sessionId: string;
+  viewingStageId: string;
+}
+
+export interface UpdateViewingStageReturn {
+  data?: Database["public"]["Tables"]["dialectic_sessions"]["Row"];
+  error: ApiError | null;
+  status: number;
+}
+
+export type UpdateViewingStageFn = (
+  deps: UpdateViewingStageDeps,
+  params: UpdateViewingStageParams,
+  payload: UpdateViewingStagePayload,
+) => Promise<UpdateViewingStageReturn>;
 
 export interface StageProgressEntry {
   stageSlug: string;
@@ -1425,9 +1450,9 @@ export type DialecticServiceActionPayload = {
   action: 'regenerateDocument';
   payload: RegenerateDocumentPayload;
 }
-
-export interface DialecticServiceResponsePayload {
-  // ... existing code ...
+| {
+  action: 'updateViewingStage';
+  payload: UpdateViewingStagePayload;
 }
 
 export type UpdateProjectInitialPromptPayload = {

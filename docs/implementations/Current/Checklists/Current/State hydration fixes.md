@@ -240,125 +240,125 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
 
 ## Phase 2: Server-persisted viewing stage (Issues 3 & 6)
 
-*   `[ ]`   [DB] supabase/migrations/`*_add_viewing_stage_id.sql` **Add viewing_stage_id column to dialectic_sessions**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Add a nullable uuid column `viewing_stage_id` to `dialectic_sessions` that references `dialectic_stages.id`
-        *   `[ ]`   Nullable because on session creation the viewing stage can default to the starting stage via the backend, not the frontend
-    *   `[ ]`   `role`
-        *   `[ ]`   Infrastructure — database schema
-    *   `[ ]`   `module`
-        *   `[ ]`   supabase/migrations — schema changes
-        *   `[ ]`   Boundary: database DDL only
-    *   `[ ]`   `deps`
-        *   `[ ]`   dialectic_sessions table — exists
-        *   `[ ]`   dialectic_stages table — exists, for FK reference
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   ALTER TABLE only
-    *   `[ ]`   `*_add_viewing_stage_id.sql`
-        *   `[ ]`   ALTER TABLE dialectic_sessions ADD COLUMN viewing_stage_id uuid REFERENCES dialectic_stages(id)
-        *   `[ ]`   Update RLS policies if needed (viewing_stage_id should be readable/writable by session owner)
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: infrastructure
-        *   `[ ]`   Provides: column available to edge functions and API
-    *   `[ ]`   `requirements`
-        *   `[ ]`   Column exists, nullable, FK to dialectic_stages
-        *   `[ ]`   Existing sessions unaffected (null = use current_stage_id as initial viewing stage on first load)
+*   `[✅]`   [DB] supabase/migrations/`*_add_viewing_stage_id.sql` **Add viewing_stage_id column to dialectic_sessions**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Add a nullable uuid column `viewing_stage_id` to `dialectic_sessions` that references `dialectic_stages.id`
+        *   `[✅]`   Nullable because on session creation the viewing stage can default to the starting stage via the backend, not the frontend
+    *   `[✅]`   `role`
+        *   `[✅]`   Infrastructure — database schema
+    *   `[✅]`   `module`
+        *   `[✅]`   supabase/migrations — schema changes
+        *   `[✅]`   Boundary: database DDL only
+    *   `[✅]`   `deps`
+        *   `[✅]`   dialectic_sessions table — exists
+        *   `[✅]`   dialectic_stages table — exists, for FK reference
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   ALTER TABLE only
+    *   `[✅]`   `*_add_viewing_stage_id.sql`
+        *   `[✅]`   ALTER TABLE dialectic_sessions ADD COLUMN viewing_stage_id uuid REFERENCES dialectic_stages(id)
+        *   `[✅]`   Update RLS policies if needed (viewing_stage_id should be readable/writable by session owner)
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: infrastructure
+        *   `[✅]`   Provides: column available to edge functions and API
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Column exists, nullable, FK to dialectic_stages
+        *   `[✅]`   Existing sessions unaffected (null = use current_stage_id as initial viewing stage on first load)
 
-*   `[ ]`   [BE] supabase/functions/dialectic-service/`updateViewingStage.ts` **Edge function to update viewing_stage_id on dialectic_sessions**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Accept { sessionId, viewingStageId } payload and update dialectic_sessions.viewing_stage_id
-        *   `[ ]`   Follow existing pattern from updateSessionModels.ts
-    *   `[ ]`   `role`
-        *   `[ ]`   Adapter — edge function handler
-    *   `[ ]`   `module`
-        *   `[ ]`   supabase/functions/dialectic-service — edge function handlers
-        *   `[ ]`   Boundary: receives authenticated request, updates single column, returns updated session
-    *   `[ ]`   `deps`
-        *   `[ ]`   SupabaseClient from supabase-js — infrastructure, inward
-        *   `[ ]`   dialectic_sessions table — infrastructure, inward
-        *   `[ ]`   No reverse dependencies introduced
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   Receives: dbClient (SupabaseClient), payload (UpdateViewingStagePayload), userId (string)
-    *   `[ ]`   interface/`dialectic.interface.ts`
-        *   `[ ]`   **updateViewingStage**
-            *   `[ ]`   Signature: `UpdateViewingStageSignature` — `(deps: UpdateViewingStageDeps, params: UpdateViewingStageParams, payload: UpdateViewingStagePayload) => Promise<UpdateViewingStageReturn>`
-            *   `[ ]`   Deps: `UpdateViewingStageDeps` — `{ dbClient: SupabaseClient }`
-            *   `[ ]`   Params: `UpdateViewingStageParams` — `{ userId: string }`
-            *   `[ ]`   Payload: `UpdateViewingStagePayload` — `{ sessionId: string, viewingStageId: string }`
-            *   `[ ]`   Return: `UpdateViewingStageReturn` — `DialecticSession` (updated session row)
-    *   `[ ]`   unit/`updateViewingStage.test.ts`
-        *   `[ ]`   Test: updates viewing_stage_id in database and returns updated session
-        *   `[ ]`   Test: returns error if session not found
-        *   `[ ]`   Test: returns error if user is not session owner
-    *   `[ ]`   `updateViewingStage.ts`
-        *   `[ ]`   Validate sessionId and viewingStageId are non-empty strings
-        *   `[ ]`   Update dialectic_sessions set viewing_stage_id = viewingStageId where id = sessionId
-        *   `[ ]`   Return updated session row
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: adapter
-        *   `[ ]`   Depends on: database (infrastructure, inward)
-        *   `[ ]`   Provides: consumed by index.ts handler router
-    *   `[ ]`   `requirements`
-        *   `[ ]`   viewing_stage_id is persisted to database
-        *   `[ ]`   Only the session owner can update their own viewing stage
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`updateViewingStage.ts` **Edge function to update viewing_stage_id on dialectic_sessions**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Accept { sessionId, viewingStageId } payload and update dialectic_sessions.viewing_stage_id
+        *   `[✅]`   Follow existing pattern from updateSessionModels.ts
+    *   `[✅]`   `role`
+        *   `[✅]`   Adapter — edge function handler
+    *   `[✅]`   `module`
+        *   `[✅]`   supabase/functions/dialectic-service — edge function handlers
+        *   `[✅]`   Boundary: receives authenticated request, updates single column, returns updated session
+    *   `[✅]`   `deps`
+        *   `[✅]`   SupabaseClient from supabase-js — infrastructure, inward
+        *   `[✅]`   dialectic_sessions table — infrastructure, inward
+        *   `[✅]`   No reverse dependencies introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   Receives: dbClient (SupabaseClient), payload (UpdateViewingStagePayload), userId (string)
+    *   `[✅]`   interface/`dialectic.interface.ts`
+        *   `[✅]`   **updateViewingStage**
+            *   `[✅]`   Signature: `UpdateViewingStageSignature` — `(deps: UpdateViewingStageDeps, params: UpdateViewingStageParams, payload: UpdateViewingStagePayload) => Promise<UpdateViewingStageReturn>`
+            *   `[✅]`   Deps: `UpdateViewingStageDeps` — `{ dbClient: SupabaseClient }`
+            *   `[✅]`   Params: `UpdateViewingStageParams` — `{ userId: string }`
+            *   `[✅]`   Payload: `UpdateViewingStagePayload` — `{ sessionId: string, viewingStageId: string }`
+            *   `[✅]`   Return: `UpdateViewingStageReturn` — `Database["public"]["Tables"]["dialectic_sessions"]["Row"]` (updated session row)
+    *   `[✅]`   unit/`updateViewingStage.test.ts`
+        *   `[✅]`   Test: updates viewing_stage_id in database and returns updated session
+        *   `[✅]`   Test: returns error if session not found
+        *   `[✅]`   Test: returns error if user is not session owner
+    *   `[✅]`   `updateViewingStage.ts`
+        *   `[✅]`   Validate sessionId and viewingStageId are non-empty strings
+        *   `[✅]`   Update dialectic_sessions set viewing_stage_id = viewingStageId where id = sessionId
+        *   `[✅]`   Return updated session row
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: adapter
+        *   `[✅]`   Depends on: database (infrastructure, inward)
+        *   `[✅]`   Provides: consumed by index.ts handler router
+    *   `[✅]`   `requirements`
+        *   `[✅]`   viewing_stage_id is persisted to database
+        *   `[✅]`   Only the session owner can update their own viewing stage
 
-*   `[ ]`   [BE] supabase/functions/dialectic-service/`index.ts` **Register updateViewingStage action in edge function router**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Add 'updateViewingStage' case to the action switch in index.ts, following the updateSessionModels pattern
-    *   `[ ]`   `role`
-        *   `[ ]`   Adapter — edge function router
-    *   `[ ]`   `module`
-        *   `[ ]`   supabase/functions/dialectic-service/index.ts
-    *   `[ ]`   `deps`
-        *   `[ ]`   updateViewingStage handler from prior node
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   Existing switch/case pattern, existing handlers map
-    *   `[ ]`   unit/`index.test.ts`
-        *   `[ ]`   Test: 'updateViewingStage' action routes to handler and returns response
-    *   `[ ]`   `index.ts`
-        *   `[ ]`   Add import for updateViewingStage handler
-        *   `[ ]`   Add case 'updateViewingStage' to switch
-        *   `[ ]`   Add to handlers map
-        *   `[ ]`   Add to allowedActions array
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: adapter
-        *   `[ ]`   Depends on: updateViewingStage (adapter, inward)
-    *   `[ ]`   `requirements`
-        *   `[ ]`   Action is routable and authenticated
+*   `[✅]`   [BE] supabase/functions/dialectic-service/`index.ts` **Register updateViewingStage action in edge function router**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Add 'updateViewingStage' case to the action switch in index.ts, following the updateSessionModels pattern
+    *   `[✅]`   `role`
+        *   `[✅]`   Adapter — edge function router
+    *   `[✅]`   `module`
+        *   `[✅]`   supabase/functions/dialectic-service/index.ts
+    *   `[✅]`   `deps`
+        *   `[✅]`   updateViewingStage handler from prior node
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   Existing switch/case pattern, existing handlers map
+    *   `[✅]`   unit/`index.test.ts`
+        *   `[✅]`   Test: 'updateViewingStage' action routes to handler and returns response
+    *   `[✅]`   `index.ts`
+        *   `[✅]`   Add import for updateViewingStage handler
+        *   `[✅]`   Add case 'updateViewingStage' to switch
+        *   `[✅]`   Add to handlers map
+        *   `[✅]`   Add to allowedActions array
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: adapter
+        *   `[✅]`   Depends on: updateViewingStage (adapter, inward)
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Action is routable and authenticated
 
-*   `[ ]`   [API] packages/api/src/`dialectic.api.ts` **Add updateViewingStage method to DialecticApiClient**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Add updateViewingStage(payload) method that POSTs action 'updateViewingStage' to dialectic-service
-        *   `[ ]`   Follow existing pattern from updateSessionModels
-    *   `[ ]`   `role`
-        *   `[ ]`   Port — API client method
-    *   `[ ]`   `module`
-        *   `[ ]`   packages/api/src/dialectic.api.ts
-    *   `[ ]`   `deps`
-        *   `[ ]`   UpdateViewingStagePayload from @paynless/types — domain type
-        *   `[ ]`   DialecticServiceActionPayload union — needs new member
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   this.apiClient.post pattern
-    *   `[ ]`   interface/`dialectic.types.ts`
-        *   `[ ]`   **updateViewingStage** (class method on DialecticApiClient)
-            *   `[ ]`   Signature: `UpdateViewingStageApiSignature` — `(payload: UpdateViewingStagePayload) => Promise<ApiResponse<DialecticSession>>`
-            *   `[ ]`   Deps: `UpdateViewingStageApiDeps` — none at method level (uses `this.apiClient` from class construction)
-            *   `[ ]`   Params: none beyond payload
-            *   `[ ]`   Payload: `UpdateViewingStagePayload` — `{ sessionId: string, viewingStageId: string }` (reuse from backend)
-            *   `[ ]`   Return: `UpdateViewingStageApiReturn` — `ApiResponse<DialecticSession>`
-        *   `[ ]`   Add UpdateViewingStagePayload to DialecticServiceActionPayload union
-        *   `[ ]`   Add updateViewingStage to DialecticApiClientInterface
-    *   `[ ]`   unit/`dialectic.api.session.test.ts`
-        *   `[ ]`   Test: updateViewingStage sends correct action and payload
-        *   `[ ]`   Test: returns ApiResponse<DialecticSession>
-    *   `[ ]`   `dialectic.api.ts`
-        *   `[ ]`   Add updateViewingStage method following updateSessionModels pattern
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: port
-        *   `[ ]`   Depends on: types (domain, inward), ApiClient (infrastructure, inward)
-        *   `[ ]`   Provides: consumed by dialecticStore
-    *   `[ ]`   `requirements`
-        *   `[ ]`   Method callable from store, returns typed response
+*   `[✅]`   [API] packages/api/src/`dialectic.api.ts` **Add updateViewingStage method to DialecticApiClient**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Add updateViewingStage(payload) method that POSTs action 'updateViewingStage' to dialectic-service
+        *   `[✅]`   Follow existing pattern from updateSessionModels
+    *   `[✅]`   `role`
+        *   `[✅]`   Port — API client method
+    *   `[✅]`   `module`
+        *   `[✅]`   packages/api/src/dialectic.api.ts
+    *   `[✅]`   `deps`
+        *   `[✅]`   UpdateViewingStagePayload from @paynless/types — domain type
+        *   `[✅]`   DialecticServiceActionPayload union — needs new member
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   this.apiClient.post pattern
+    *   `[✅]`   interface/`dialectic.types.ts`
+        *   `[✅]`   **updateViewingStage** (class method on DialecticApiClient)
+            *   `[✅]`   Signature: `UpdateViewingStageFn` — `(payload: UpdateViewingStagePayload) => Promise<ApiResponse<UpdateViewingStageReturn>>`
+            *   `[✅]`   Deps: `UpdateViewingStageDeps` — none at method level (uses `this.apiClient` from class construction)
+            *   `[✅]`   Params: none beyond payload
+            *   `[✅]`   Payload: `UpdateViewingStagePayload` — `{ sessionId: string, viewingStageId: string }` (reuse from backend)
+            *   `[✅]`   Return: `UpdateViewingStageReturn` — `ApiResponse<>`
+        *   `[✅]`   Add UpdateViewingStagePayload to DialecticServiceActionPayload union
+        *   `[✅]`   Add updateViewingStage to DialecticApiClientInterface
+    *   `[✅]`   unit/`dialectic.api.session.test.ts`
+        *   `[✅]`   Test: updateViewingStage sends correct action and payload
+        *   `[✅]`   Test: returns ApiResponse<DialecticSession>
+    *   `[✅]`   `dialectic.api.ts`
+        *   `[✅]`   Add updateViewingStage method following updateSessionModels pattern
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: port
+        *   `[✅]`   Depends on: types (domain, inward), ApiClient (infrastructure, inward)
+        *   `[✅]`   Provides: consumed by dialecticStore
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Method callable from store, returns typed response
 
 *   `[ ]`   [STORE] packages/store/src/`dialecticStore.ts` **Add updateViewingStage store action and wire into setActiveStage**
     *   `[ ]`   `objective`
