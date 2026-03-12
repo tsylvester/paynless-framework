@@ -57,7 +57,10 @@ import {
   updateStageDocumentDraftLogic,
   upsertStageDocumentVersionLogic,
 } from '../../../../packages/store/src/dialecticStore.documents';
-import { selectDocumentDisplayMetadata } from '../../../../packages/store/src/dialecticStore.selectors';
+import {
+  selectDocumentDisplayMetadata,
+  selectCanAdvanceStage,
+} from '../../../../packages/store/src/dialecticStore.selectors';
 import { internalMockAuthStoreGetState } from './authStore.mock';
 
 // ---- START: Define ALL controllable selectors as top-level vi.fn() mocks ----
@@ -326,7 +329,7 @@ export const selectStageProgressSummary = (
   };
 };
 
-export { selectDocumentDisplayMetadata };
+export { selectDocumentDisplayMetadata, selectCanAdvanceStage };
 
 // ---- END: Controllable selectors ----
 

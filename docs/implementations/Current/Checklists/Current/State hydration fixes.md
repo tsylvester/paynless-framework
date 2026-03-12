@@ -438,107 +438,129 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
 
 ## Phase 4: Rewrite SubmitResponsesButton (Issue 4)
 
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore.selectors.ts` **Add selectCanAdvanceStage selector implementing 6 conditions**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Create a single selector that evaluates all 6 conditions for stage advancement and returns a typed result with the individual condition booleans and an overall canAdvance boolean
-        *   `[ ]`   Condition 1: session.current_stage_id === stage resolved from session.viewing_stage_id (logical === viewing)
-        *   `[ ]`   Condition 2: all T×M documents completed for current stage (outputs_required satisfied)
-        *   `[ ]`   Condition 3: all inputs_required for next stage are available (prior outputs exist)
-        *   `[ ]`   Condition 4: current stage has no jobs paused, running, or failed
-        *   `[ ]`   Condition 5: next stage has no progress (no jobs started, paused, running, or failed)
-        *   `[ ]`   Condition 6: next stage exists (current stage has outgoing transition)
-        *   `[ ]`   If any precondition data is unavailable (template, session, etc.), return canAdvance: false with a reason field
-    *   `[ ]`   `role`
-        *   `[ ]`   Domain — selector producing derived state
-    *   `[ ]`   `module`
-        *   `[ ]`   packages/store/src/dialecticStore.selectors.ts
-        *   `[ ]`   Boundary: pure function, reads from state, no side effects
-    *   `[ ]`   `deps`
-        *   `[ ]`   selectUnifiedProjectProgress — domain, inward (now fixed by Phase 1)
-        *   `[ ]`   selectStageRunProgress — domain, inward
-        *   `[ ]`   recipesByStageSlug — state, inward
-        *   `[ ]`   currentProcessTemplate (stages, transitions) — state, inward
-        *   `[ ]`   activeSessionDetail — state, inward
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   Full DialecticStateValues
-    *   `[ ]`   interface/`dialectic.types.ts`
-        *   `[ ]`   **selectCanAdvanceStage**
-            *   `[ ]`   Signature: `SelectCanAdvanceStageFn` — `(state: DialecticStateValues) => SelectCanAdvanceStageReturn`
-            *   `[ ]`   Deps: `SelectCanAdvanceStageDeps` — none (pure selector, reads from state)
-            *   `[ ]`   Params: none beyond state
-            *   `[ ]`   Payload: `SelectCanAdvanceStagePayload` — `activeSessionDetail: DialecticSession | null`, `currentProcessTemplate: DialecticProcessTemplate | null`, `stageRunProgress: Record<string, StageRunProgressSnapshot>`, `recipesByStageSlug: Record<string, DialecticStageRecipe>`
-            *   `[ ]`   Return: `SelectCanAdvanceStageReturn` — `CanAdvanceStageResult`
-        *   `[ ]`   `CanAdvanceStageResult` — `{ canAdvance: boolean, conditions: { logicalMatchesViewing: boolean, currentStageComplete: boolean, nextStageInputsReady: boolean, currentStageNoActiveJobs: boolean, nextStageNoProgress: boolean, nextStageExists: boolean }, reason: string | null }`
-    *   `[ ]`   interface/tests/`dialectic.types.interface.test.ts`
-        *   `[ ]`   Test: CanAdvanceStageResult has all required fields typed correctly
-    *   `[ ]`   interface/guards/`dialectic.types.guards.ts`
-        *   `[ ]`   Guard: isCanAdvanceStageResult type guard
-    *   `[ ]`   unit/`dialecticStore.selectors.test.ts`
-        *   `[ ]`   Test: returns canAdvance: false when session is null
-        *   `[ ]`   Test: returns canAdvance: false when template is null
-        *   `[ ]`   Test: condition 1 false when viewing_stage_id !== current_stage_id
-        *   `[ ]`   Test: condition 2 false when not all documents completed
-        *   `[ ]`   Test: condition 3 false when next stage inputs_required not satisfied
-        *   `[ ]`   Test: condition 4 false when current stage has active/failed jobs
-        *   `[ ]`   Test: condition 5 false when next stage has existing progress
-        *   `[ ]`   Test: condition 6 false when current stage has no outgoing transition
-        *   `[ ]`   Test: returns canAdvance: true when all 6 conditions satisfied
-        *   `[ ]`   Test: reason field explains which condition failed
-    *   `[ ]`   `dialecticStore.selectors.ts`
-        *   `[ ]`   Implement selectCanAdvanceStage reading all required state
-        *   `[ ]`   Evaluate each condition independently
-        *   `[ ]`   Return typed result with all conditions and overall canAdvance
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: domain
-        *   `[ ]`   Depends on: types, existing selectors (inward)
-        *   `[ ]`   Provides: consumed by SubmitResponsesButton
-    *   `[ ]`   `requirements`
-        *   `[ ]`   All 6 conditions evaluated explicitly — no defaults, no guesses
-        *   `[ ]`   If data is missing, canAdvance is false with explanatory reason
-        *   `[ ]`   Each condition independently testable
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore.selectors.ts` **Add selectCanAdvanceStage selector implementing 6 conditions**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Create a single selector that evaluates all 6 conditions for stage advancement and returns a typed result with the individual condition booleans and an overall canAdvance boolean
+        *   `[✅]`   Condition 1: session.current_stage_id === stage resolved from session.viewing_stage_id (logical === viewing)
+        *   `[✅]`   Condition 2: all T×M documents completed for current stage (outputs_required satisfied)
+        *   `[✅]`   Condition 3: all inputs_required for next stage are available (prior outputs exist)
+        *   `[✅]`   Condition 4: current stage has no jobs paused, running, or failed
+        *   `[✅]`   Condition 5: next stage has no progress (no jobs started, paused, running, or failed)
+        *   `[✅]`   Condition 6: next stage exists (current stage has outgoing transition)
+        *   `[✅]`   If any precondition data is unavailable (template, session, etc.), return canAdvance: false with a reason field
+    *   `[✅]`   `role`
+        *   `[✅]`   Domain — selector producing derived state
+    *   `[✅]`   `module`
+        *   `[✅]`   packages/store/src/dialecticStore.selectors.ts
+        *   `[✅]`   Boundary: pure function, reads from state, no side effects
+    *   `[✅]`   `deps`
+        *   `[✅]`   selectUnifiedProjectProgress — domain, inward (now fixed by Phase 1)
+        *   `[✅]`   selectStageRunProgress — domain, inward
+        *   `[✅]`   recipesByStageSlug — state, inward
+        *   `[✅]`   currentProcessTemplate (stages, transitions) — state, inward
+        *   `[✅]`   activeSessionDetail — state, inward
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   Full DialecticStateValues
+    *   `[✅]`   interface/`dialectic.types.ts`
+        *   `[✅]`   **selectCanAdvanceStage**
+            *   `[✅]`   Signature: `SelectCanAdvanceStageFn` — `(state: DialecticStateValues) => SelectCanAdvanceStageReturn`
+            *   `[✅]`   Deps: `SelectCanAdvanceStageDeps` — none (pure selector, reads from state)
+            *   `[✅]`   Params: none beyond state
+            *   `[✅]`   Payload: `SelectCanAdvanceStagePayload` — `activeSessionDetail: DialecticSession | null`, `currentProcessTemplate: DialecticProcessTemplate | null`, `stageRunProgress: Record<string, StageRunProgressSnapshot>`, `recipesByStageSlug: Record<string, DialecticStageRecipe>`
+            *   `[✅]`   Return: `SelectCanAdvanceStageReturn` — `CanAdvanceStageResult`
+        *   `[✅]`   `CanAdvanceStageResult` — `{ canAdvance: boolean, conditions: { logicalMatchesViewing: boolean, currentStageComplete: boolean, nextStageInputsReady: boolean, currentStageNoActiveJobs: boolean, nextStageNoProgress: boolean, nextStageExists: boolean }, reason: string | null }`
+    *   `[✅]`   interface/tests/`dialectic.types.interface.test.ts`
+        *   `[✅]`   Test: CanAdvanceStageResult has all required fields typed correctly
+    *   `[✅]`   interface/guards/`dialectic.types.guards.ts`
+        *   `[✅]`   Guard: isCanAdvanceStageResult type guard
+    *   `[✅]`   unit/`dialecticStore.selectors.test.ts`
+        *   `[✅]`   Test: returns canAdvance: false when session is null
+        *   `[✅]`   Test: returns canAdvance: false when template is null
+        *   `[✅]`   Test: condition 1 false when viewing_stage_id !== current_stage_id
+        *   `[✅]`   Test: condition 2 false when not all documents completed
+        *   `[✅]`   Test: condition 3 false when next stage inputs_required not satisfied
+        *   `[✅]`   Test: condition 4 false when current stage has active/failed jobs
+        *   `[✅]`   Test: condition 5 false when next stage has existing progress
+        *   `[✅]`   Test: condition 6 false when current stage has no outgoing transition
+        *   `[✅]`   Test: returns canAdvance: true when all 6 conditions satisfied
+        *   `[✅]`   Test: reason field explains which condition failed
+    *   `[✅]`   `dialecticStore.selectors.ts`
+        *   `[✅]`   Implement selectCanAdvanceStage reading all required state
+        *   `[✅]`   Evaluate each condition independently
+        *   `[✅]`   Return typed result with all conditions and overall canAdvance
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: domain
+        *   `[✅]`   Depends on: types, existing selectors (inward)
+        *   `[✅]`   Provides: consumed by SubmitResponsesButton
+    *   `[✅]`   `requirements`
+        *   `[✅]`   All 6 conditions evaluated explicitly — no defaults, no guesses
+        *   `[✅]`   If data is missing, canAdvance is false with explanatory reason
+        *   `[✅]`   Each condition independently testable
 
-*   `[ ]`   [UI] apps/web/src/components/dialectic/`SubmitResponsesButton.tsx` **Rewrite button to consume selectCanAdvanceStage**
-    *   `[ ]`   `objective`
-        *   `[ ]`   Replace all existing visibility and disabled logic with a single call to selectCanAdvanceStage
-        *   `[ ]`   Button renders if and only if canAdvance is true
-        *   `[ ]`   Remove: viewedStageMatchesAppStage, isFinalStage, nextStageStarted, currentStageHasActiveJobs, allDocumentsAvailable, isReviewStage special case, all debug console.logs for visibility conditions
-        *   `[ ]`   Preserve: submit handler logic, confirmation dialog, error display, pulse animation
-    *   `[ ]`   `role`
-        *   `[ ]`   UI — React component
-    *   `[ ]`   `module`
-        *   `[ ]`   apps/web/src/components/dialectic/SubmitResponsesButton.tsx
-        *   `[ ]`   Boundary: consumes store selector, renders button or null
-    *   `[ ]`   `deps`
-        *   `[ ]`   selectCanAdvanceStage from @paynless/store — domain, inward
-        *   `[ ]`   CanAdvanceStageResult type — domain, inward
-        *   `[ ]`   submitStageResponses action — app, inward
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   useDialecticStore(selectCanAdvanceStage) for visibility
-        *   `[ ]`   useDialecticStore for session, project, submitStageResponses
-    *   `[ ]`   unit/`SubmitResponsesButton.test.tsx`
-        *   `[ ]`   Test: renders null when canAdvance is false
-        *   `[ ]`   Test: renders button when canAdvance is true
-        *   `[ ]`   Test: button is enabled when canAdvance is true
-        *   `[ ]`   Test: submit calls submitStageResponses with correct payload
-    *   `[ ]`   `SubmitResponsesButton.tsx`
-        *   `[ ]`   Remove all existing condition computation (viewedStageMatchesAppStage, isFinalStage, nextStageStarted, etc.)
-        *   `[ ]`   Replace with single selectCanAdvanceStage call
-        *   `[ ]`   if (!canAdvanceResult.canAdvance) return null
-        *   `[ ]`   Preserve handleSubmit, confirmation dialog, error display
-        *   `[ ]`   Remove isReviewStage special case
-        *   `[ ]`   Remove all debug console.logs related to button visibility
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: UI
-        *   `[ ]`   Depends on: selectors (domain, inward), store actions (app, inward)
-        *   `[ ]`   Provides: user-facing button
-    *   `[ ]`   `requirements`
-        *   `[ ]`   Button visibility driven by exactly 6 conditions, no more, no less
-        *   `[ ]`   No guessing, no defaults, no special-case stage names
-        *   `[ ]`   Readable, minimal component — all logic lives in the selector
-    *   `[ ]`   **Commit** `fix(ui): rewrite SubmitResponsesButton with explicit 6-condition selector`
+*   `[✅]`   [UI] apps/web/src/components/dialectic/`SubmitResponsesButton.tsx` **Rewrite button to consume selectCanAdvanceStage and auto-trigger generation on advance**
+    *   `[✅]`   `objective`
+        *   `[✅]`   Replace all existing visibility and disabled logic with a single call to selectCanAdvanceStage
+        *   `[✅]`   Button renders if and only if canAdvance is true
+        *   `[✅]`   Remove: viewedStageMatchesAppStage, isFinalStage, nextStageStarted, currentStageHasActiveJobs, allDocumentsAvailable, isReviewStage special case, all debug console.logs for visibility conditions
+        *   `[✅]`   Preserve: confirmation dialog, error display, pulse animation
+        *   `[✅]`   After successful stage advance, automatically call `startContributionGeneration()` from `useStartContributionGeneration` to begin generating the next stage — the user should not need to understand the two-phase advance-then-generate flow
+        *   `[✅]`   If auto-generation fails or cannot start (missing models, wallet not ready, balance insufficient, stage not ready), display a persistent inline Alert below the button area explaining exactly what the user needs to fix — do NOT rely on toasts since they disappear before the user can act
+        *   `[✅]`   The persistent Alert must map `useStartContributionGeneration` return fields to user-actionable messages: e.g. `!areAnyModelsSelected` → "Select at least one AI model to continue", `!isWalletReady` → "Connect a wallet to continue", `!balanceMeetsThreshold` → "Your balance is below the minimum required for this stage", `!isStageReady` → "Stage prerequisites are not yet met"
+    *   `[✅]`   `role`
+        *   `[✅]`   UI — React component
+    *   `[✅]`   `module`
+        *   `[✅]`   apps/web/src/components/dialectic/SubmitResponsesButton.tsx
+        *   `[✅]`   Boundary: consumes store selector and generation hook, renders button or null, renders persistent failure guidance
+    *   `[✅]`   `deps`
+        *   `[✅]`   selectCanAdvanceStage from @paynless/store — domain, inward
+        *   `[✅]`   CanAdvanceStageResult type — domain, inward
+        *   `[✅]`   submitStageResponses action — app, inward
+        *   `[✅]`   useStartContributionGeneration from apps/web/src/hooks — app, inward
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   useDialecticStore(selectCanAdvanceStage) for visibility
+        *   `[✅]`   useDialecticStore for session, project, submitStageResponses, setViewingStage
+        *   `[✅]`   useStartContributionGeneration() for startContributionGeneration, isDisabled diagnostic fields
+    *   `[✅]`   unit/`SubmitResponsesButton.test.tsx`
+        *   `[✅]`   Test: renders null when canAdvance is false
+        *   `[✅]`   Test: renders button when canAdvance is true
+        *   `[✅]`   Test: button is enabled when canAdvance is true
+        *   `[✅]`   Test: submit calls submitStageResponses with correct payload
+        *   `[✅]`   Test: after successful submitStageResponses, calls startContributionGeneration
+        *   `[✅]`   Test: after successful submitStageResponses, advances viewingStage to next stage
+        *   `[✅]`   Test: when startContributionGeneration returns { success: false }, renders persistent Alert with actionable guidance
+        *   `[✅]`   Test: persistent Alert displays correct message when models not selected
+        *   `[✅]`   Test: persistent Alert displays correct message when wallet not ready
+        *   `[✅]`   Test: persistent Alert displays correct message when balance below threshold
+        *   `[✅]`   Test: persistent Alert is not rendered when auto-generation succeeds
+    *   `[✅]`   `SubmitResponsesButton.tsx`
+        *   `[✅]`   Remove all existing condition computation (viewedStageMatchesAppStage, isFinalStage, nextStageStarted, etc.)
+        *   `[✅]`   Replace with single selectCanAdvanceStage call
+        *   `[✅]`   if (!canAdvanceResult.canAdvance) return null
+        *   `[✅]`   Remove isReviewStage special case
+        *   `[✅]`   Remove all debug console.logs related to button visibility
+        *   `[✅]`   In handleSubmit success path: after setViewingStage to next stage, call startContributionGeneration()
+        *   `[✅]`   Store auto-generation result in component state (e.g. `autoGenResult` via useState)
+        *   `[✅]`   If autoGenResult indicates failure, render a persistent Alert (variant="default", not destructive) below the button area with a user-actionable message derived from useStartContributionGeneration diagnostic fields (areAnyModelsSelected, isWalletReady, balanceMeetsThreshold, isStageReady)
+        *   `[✅]`   Message mapping: `!areAnyModelsSelected` → "Select at least one AI model to begin generating this stage.", `!isWalletReady` → "Connect a wallet to begin generating this stage.", `!balanceMeetsThreshold` → "Your wallet balance is below the minimum required for this stage. Add funds to continue.", `!isStageReady` → "This stage's prerequisites are not yet met.", fallback → the error string from startContributionGeneration result
+        *   `[✅]`   The persistent Alert clears when the user navigates away or when a subsequent generation attempt succeeds
+        *   `[✅]`   Preserve confirmation dialog, error display for submitStageResponses failures
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: UI
+        *   `[✅]`   Depends on: selectors (domain, inward), store actions (app, inward), useStartContributionGeneration hook (app, inward)
+        *   `[✅]`   Provides: user-facing button with automatic generation trigger and persistent failure guidance
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Button visibility driven by exactly 6 conditions, no more, no less
+        *   `[✅]`   No guessing, no defaults, no special-case stage names
+        *   `[✅]`   Readable, minimal component — all logic lives in the selector
+        *   `[✅]`   After successful advance, generation starts automatically without user intervention
+        *   `[✅]`   If auto-generation cannot proceed, user sees a persistent, actionable explanation of what to fix — not a transient toast
+        *   `[✅]`   Failure messages are specific to the exact precondition that failed, not generic
+    *   `[ ]`   **Commit** `fix(ui): rewrite SubmitResponsesButton with explicit 6-condition selector and auto-generation`
         *   `[ ]`   selectCanAdvanceStage selector with full test coverage
         *   `[ ]`   SubmitResponsesButton rewritten to consume it
         *   `[ ]`   All legacy visibility logic removed
+        *   `[ ]`   Auto-triggers startContributionGeneration on successful stage advance
+        *   `[ ]`   Persistent inline Alert for generation precondition failures with actionable user guidance
 
 ## Phase 5: Cleanup
 

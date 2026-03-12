@@ -5,6 +5,7 @@ import type {
     ApiError,
     DomainOverlayDescriptor,
     DialecticStage,
+    DialecticSession,
     DialecticContribution,
     DialecticDomain,
     DialecticFeedback,
@@ -23,6 +24,7 @@ import type {
     UnifiedProjectStatus,
     DialecticProcessTemplate,
     SelectedModels,
+    SelectCanAdvanceStageReturn,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import { createSelector } from 'reselect';
@@ -991,6 +993,250 @@ export const selectUnifiedProjectProgress = (
         projectStatus,
         hydrationReady,
         stageDetails,
+    };
+};
+
+/**
+ * Returns whether the user can advance from the current stage to the next.
+ * Reads activeSessionDetail, currentProcessTemplate, stageRunProgress, recipesByStageSlug from state.
+ * Evaluates six conditions; if any precondition is missing or any condition fails, returns canAdvance: false with reason.
+ */
+export const selectCanAdvanceStage = (state: DialecticStateValues): SelectCanAdvanceStageReturn => {
+    const session: DialecticSession | null = state.activeSessionDetail;
+    const template = state.currentProcessTemplate;
+    const stageRunProgress = state.stageRunProgress;
+    const recipesByStageSlug = state.recipesByStageSlug;
+
+    if (!session) {
+        return {
+            canAdvance: false,
+            conditions: {
+                logicalMatchesViewing: false,
+                currentStageComplete: false,
+                nextStageInputsReady: false,
+                currentStageNoActiveJobs: false,
+                nextStageNoProgress: false,
+                nextStageExists: false,
+            },
+            reason: 'session missing',
+        };
+    }
+    if (!template) {
+        return {
+            canAdvance: false,
+            conditions: {
+                logicalMatchesViewing: false,
+                currentStageComplete: false,
+                nextStageInputsReady: false,
+                currentStageNoActiveJobs: false,
+                nextStageNoProgress: false,
+                nextStageExists: false,
+            },
+            reason: 'template missing',
+        };
+    }
+
+    const sessionId: string = session.id;
+    const iterationNumber: number = typeof session.iteration_count === 'number' ? session.iteration_count : 0;
+    const currentStageId: string | null = session.current_stage_id;
+    const viewingStageId: string | null = session.viewing_stage_id;
+
+    if (currentStageId == null) {
+        return {
+            canAdvance: false,
+            conditions: {
+                logicalMatchesViewing: false,
+                currentStageComplete: false,
+                nextStageInputsReady: false,
+                currentStageNoActiveJobs: false,
+                nextStageNoProgress: false,
+                nextStageExists: false,
+            },
+            reason: 'session current_stage_id missing',
+        };
+    }
+
+    const currentStage: DialecticStage | undefined = template.stages?.find((s) => s.id === currentStageId);
+    if (!currentStage) {
+        return {
+            canAdvance: false,
+            conditions: {
+                logicalMatchesViewing: false,
+                currentStageComplete: false,
+                nextStageInputsReady: false,
+                currentStageNoActiveJobs: false,
+                nextStageNoProgress: false,
+                nextStageExists: false,
+            },
+            reason: 'current stage not found in template',
+        };
+    }
+
+    const logicalMatchesViewing: boolean = currentStageId === viewingStageId;
+
+    const transition = template.transitions?.find((t) => t.source_stage_id === currentStageId);
+    const nextStageId: string | null = transition?.target_stage_id ?? null;
+    const nextStageExists: boolean = nextStageId != null;
+    const nextStage: DialecticStage | null =
+        nextStageId && template.stages ? (template.stages.find((s) => s.id === nextStageId) ?? null) : null;
+
+    if (!selectSessionById(state, sessionId)) {
+        return {
+            canAdvance: false,
+            conditions: {
+                logicalMatchesViewing,
+                currentStageComplete: false,
+                nextStageInputsReady: false,
+                currentStageNoActiveJobs: false,
+                nextStageNoProgress: false,
+                nextStageExists,
+            },
+            reason: 'session not in project',
+        };
+    }
+
+    let unified: UnifiedProjectProgress;
+    try {
+        unified = selectUnifiedProjectProgress(state, sessionId);
+    } catch {
+        return {
+            canAdvance: false,
+            conditions: {
+                logicalMatchesViewing,
+                currentStageComplete: false,
+                nextStageInputsReady: false,
+                currentStageNoActiveJobs: false,
+                nextStageNoProgress: false,
+                nextStageExists,
+            },
+            reason: 'unified progress unavailable',
+        };
+    }
+
+    const currentStageDetail: StageProgressDetail | undefined = unified.stageDetails.find(
+        (d) => d.stageSlug === currentStage.slug
+    );
+    const currentStageComplete: boolean = Boolean(
+        currentStageDetail &&
+            currentStageDetail.stageStatus === 'completed' &&
+            currentStageDetail.completedDocuments === currentStageDetail.totalDocuments
+    );
+
+    const currentProgress = selectStageRunProgress(state, sessionId, currentStage.slug, iterationNumber);
+    const activeJobStatuses: string[] = [
+        'processing',
+        'retrying',
+        'waiting_for_children',
+        'paused_nsf',
+        'paused_user',
+        'failed',
+    ];
+    const currentStageNoActiveJobs: boolean =
+        !currentProgress ||
+        (Object.values(currentProgress.stepStatuses).every(
+            (s) => s !== 'in_progress' && s !== 'waiting_for_children' && s !== 'failed' && s !== 'paused_nsf' && s !== 'paused_user'
+        ) &&
+            (!currentProgress.jobs || currentProgress.jobs.every((j) => !activeJobStatuses.includes(j.status))));
+
+    const nextProgress = nextStage
+        ? selectStageRunProgress(state, sessionId, nextStage.slug, iterationNumber)
+        : undefined;
+    const nextStageNoProgress: boolean =
+        !nextProgress ||
+        (Object.values(nextProgress.stepStatuses).every((s) => s === 'not_started') &&
+            (!nextProgress.jobs || nextProgress.jobs.length === 0));
+
+    const deriveRequirementStageSlug = (slugValue: string | undefined, fallback: string): string => {
+        if (typeof slugValue === 'string' && slugValue.length > 0) {
+            const separatorIndex = slugValue.indexOf('.');
+            if (separatorIndex > 0) {
+                return slugValue.slice(0, separatorIndex);
+            }
+            return slugValue;
+        }
+        return fallback;
+    };
+
+    let nextStageInputsReady: boolean = true;
+    if (nextStage) {
+        const recipeNext = recipesByStageSlug[nextStage.slug];
+        if (recipeNext?.steps) {
+            for (const step of recipeNext.steps) {
+                const requirements = step.inputs_required ?? [];
+                for (const req of requirements) {
+                    if (req.required === false) continue;
+                    if (req.type === 'document') {
+                        const sourceStageSlug: string = deriveRequirementStageSlug(req.slug, currentStage.slug);
+                        const sourceProgressKey: string = `${sessionId}:${sourceStageSlug}:${iterationNumber}`;
+                        const sourceProgress = stageRunProgress[sourceProgressKey];
+                        if (!sourceProgress?.documents) {
+                            nextStageInputsReady = false;
+                            break;
+                        }
+                        let hasCompleted: boolean = false;
+                        for (const compositeKey of Object.keys(sourceProgress.documents)) {
+                            const logicalKey: string = compositeKey.includes(STAGE_RUN_DOCUMENT_KEY_SEPARATOR)
+                                ? compositeKey.slice(0, compositeKey.indexOf(STAGE_RUN_DOCUMENT_KEY_SEPARATOR))
+                                : compositeKey;
+                            if (logicalKey !== req.document_key) continue;
+                            const descriptor = sourceProgress.documents[compositeKey];
+                            if (descriptor && descriptor.status === 'completed') {
+                                hasCompleted = true;
+                                break;
+                            }
+                        }
+                        if (!hasCompleted) {
+                            nextStageInputsReady = false;
+                            break;
+                        }
+                    }
+                }
+                if (!nextStageInputsReady) break;
+            }
+        }
+    }
+
+    const canAdvance: boolean =
+        logicalMatchesViewing &&
+        currentStageComplete &&
+        nextStageInputsReady &&
+        currentStageNoActiveJobs &&
+        nextStageNoProgress &&
+        nextStageExists;
+
+    if (!canAdvance) {
+        let reason: string;
+        if (!logicalMatchesViewing) reason = 'current_stage_id does not match viewing_stage_id';
+        else if (!currentStageComplete) reason = 'current stage not all documents completed';
+        else if (!nextStageInputsReady) reason = 'next stage inputs_required not satisfied';
+        else if (!currentStageNoActiveJobs) reason = 'current stage has jobs paused, running, or failed';
+        else if (!nextStageNoProgress) reason = 'next stage has existing progress';
+        else reason = 'next stage does not exist';
+        return {
+            canAdvance: false,
+            conditions: {
+                logicalMatchesViewing,
+                currentStageComplete,
+                nextStageInputsReady,
+                currentStageNoActiveJobs,
+                nextStageNoProgress,
+                nextStageExists,
+            },
+            reason,
+        };
+    }
+
+    return {
+        canAdvance: true,
+        conditions: {
+            logicalMatchesViewing,
+            currentStageComplete,
+            nextStageInputsReady,
+            currentStageNoActiveJobs,
+            nextStageNoProgress,
+            nextStageExists,
+        },
+        reason: null,
     };
 };
 
