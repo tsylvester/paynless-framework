@@ -400,41 +400,41 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
 
 ## Phase 3: submitStageResponses applies updatedSession (Issue 5)
 
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore.ts` **Apply updatedSession from submitStageResponses response to store**
-    *   `[ ]`   `objective`
-        *   `[ ]`   When submitStageResponses succeeds, response.data.updatedSession contains the session with new current_stage_id. Apply it immediately to activeSessionDetail and to the matching entry in currentProjectDetail.dialectic_sessions
-        *   `[ ]`   If the user's viewing_stage_id matched current_stage_id before advancement (viewing === logical), advance viewing_stage_id to the new current_stage_id as well. If viewing !== logical, preserve the user's viewing choice
-    *   `[ ]`   `role`
-        *   `[ ]`   App — store action
-    *   `[ ]`   `module`
-        *   `[ ]`   packages/store/src/dialecticStore.ts — submitStageResponses success path
-    *   `[ ]`   `deps`
-        *   `[ ]`   SubmitStageResponsesResponse type (contains updatedSession) — domain, inward
-        *   `[ ]`   No reverse dependencies introduced
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   response.data.updatedSession available after successful API call
-        *   `[ ]`   state.activeSessionDetail, state.currentProjectDetail.dialectic_sessions available in set()
-    *   `[ ]`   unit/`dialecticStore.test.ts`
-        *   `[ ]`   Test: after successful submitStageResponses, activeSessionDetail.current_stage_id matches updatedSession.current_stage_id
-        *   `[ ]`   Test: after successful submitStageResponses, currentProjectDetail.dialectic_sessions entry is updated
-        *   `[ ]`   Test: if viewing_stage_id === old current_stage_id before submit, both viewing_stage_id and activeStageSlug advance to new stage
-        *   `[ ]`   Test: if viewing_stage_id !== old current_stage_id before submit, viewing_stage_id and activeStageSlug are preserved
-    *   `[ ]`   `dialecticStore.ts`
-        *   `[ ]`   In submitStageResponses success branch (after line 2384): apply response.data.updatedSession to activeSessionDetail
-        *   `[ ]`   Update the matching session in currentProjectDetail.dialectic_sessions
-        *   `[ ]`   Check if viewing was same as logical before advancement; if so, advance activeStageSlug and persist viewing_stage_id
-        *   `[ ]`   Remove the fetchDialecticProjectDetails(preserveContext: true) call — the session is already up to date from the response
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: app
-        *   `[ ]`   Depends on: types (domain, inward)
-        *   `[ ]`   Provides: correct session state for all downstream selectors and components
-    *   `[ ]`   `requirements`
-        *   `[ ]`   activeSessionDetail.current_stage_id is never stale after successful stage advancement
-        *   `[ ]`   User's viewing choice is respected (don't force focus change if user chose a different stage)
-        *   `[ ]`   No reliance on background refetch or lifecycle events for session state
-    *   `[ ]`   **Commit** `fix(store): apply updatedSession from submitStageResponses immediately`
-        *   `[ ]`   submitStageResponses applies response.data.updatedSession to store
-        *   `[ ]`   Viewing stage advances only if it matched logical stage before submit
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore.ts` **Apply updatedSession from submitStageResponses response to store**
+    *   `[✅]`   `objective`
+        *   `[✅]`   When submitStageResponses succeeds, response.data.updatedSession contains the session with new current_stage_id. Apply it immediately to activeSessionDetail and to the matching entry in currentProjectDetail.dialectic_sessions
+        *   `[✅]`   If the user's viewing_stage_id matched current_stage_id before advancement (viewing === logical), advance viewing_stage_id to the new current_stage_id as well. If viewing !== logical, preserve the user's viewing choice
+    *   `[✅]`   `role`
+        *   `[✅]`   App — store action
+    *   `[✅]`   `module`
+        *   `[✅]`   packages/store/src/dialecticStore.ts — submitStageResponses success path
+    *   `[✅]`   `deps`
+        *   `[✅]`   SubmitStageResponsesResponse type (contains updatedSession) — domain, inward
+        *   `[✅]`   No reverse dependencies introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   response.data.updatedSession available after successful API call
+        *   `[✅]`   state.activeSessionDetail, state.currentProjectDetail.dialectic_sessions available in set()
+    *   `[✅]`   unit/`dialecticStore.test.ts`
+        *   `[✅]`   Test: after successful submitStageResponses, activeSessionDetail.current_stage_id matches updatedSession.current_stage_id
+        *   `[✅]`   Test: after successful submitStageResponses, currentProjectDetail.dialectic_sessions entry is updated
+        *   `[✅]`   Test: if viewing_stage_id === old current_stage_id before submit, both viewing_stage_id and activeStageSlug advance to new stage
+        *   `[✅]`   Test: if viewing_stage_id !== old current_stage_id before submit, viewing_stage_id and activeStageSlug are preserved
+    *   `[✅]`   `dialecticStore.ts`
+        *   `[✅]`   In submitStageResponses success branch (after line 2384): apply response.data.updatedSession to activeSessionDetail
+        *   `[✅]`   Update the matching session in currentProjectDetail.dialectic_sessions
+        *   `[✅]`   Check if viewing was same as logical before advancement; if so, advance activeStageSlug and persist viewing_stage_id
+        *   `[✅]`   Remove the fetchDialecticProjectDetails(preserveContext: true) call — the session is already up to date from the response
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: app
+        *   `[✅]`   Depends on: types (domain, inward)
+        *   `[✅]`   Provides: correct session state for all downstream selectors and components
+    *   `[✅]`   `requirements`
+        *   `[✅]`   activeSessionDetail.current_stage_id is never stale after successful stage advancement
+        *   `[✅]`   User's viewing choice is respected (don't force focus change if user chose a different stage)
+        *   `[✅]`   No reliance on background refetch or lifecycle events for session state
+    *   `[✅]`   **Commit** `fix(store): apply updatedSession from submitStageResponses immediately`
+        *   `[✅]`   submitStageResponses applies response.data.updatedSession to store
+        *   `[✅]`   Viewing stage advances only if it matched logical stage before submit
 
 ## Phase 4: Rewrite SubmitResponsesButton (Issue 4)
 
@@ -463,10 +463,10 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
         *   `[ ]`   Full DialecticStateValues
     *   `[ ]`   interface/`dialectic.types.ts`
         *   `[ ]`   **selectCanAdvanceStage**
-            *   `[ ]`   Signature: `SelectCanAdvanceStageSignature` — `(state: DialecticStateValues) => SelectCanAdvanceStageReturn`
+            *   `[ ]`   Signature: `SelectCanAdvanceStageFn` — `(state: DialecticStateValues) => SelectCanAdvanceStageReturn`
             *   `[ ]`   Deps: `SelectCanAdvanceStageDeps` — none (pure selector, reads from state)
             *   `[ ]`   Params: none beyond state
-            *   `[ ]`   Payload: `SelectCanAdvanceStagePayload` — `DialecticStateValues` (the store state being read)
+            *   `[ ]`   Payload: `SelectCanAdvanceStagePayload` — `activeSessionDetail: DialecticSession | null`, `currentProcessTemplate: DialecticProcessTemplate | null`, `stageRunProgress: Record<string, StageRunProgressSnapshot>`, `recipesByStageSlug: Record<string, DialecticStageRecipe>`
             *   `[ ]`   Return: `SelectCanAdvanceStageReturn` — `CanAdvanceStageResult`
         *   `[ ]`   `CanAdvanceStageResult` — `{ canAdvance: boolean, conditions: { logicalMatchesViewing: boolean, currentStageComplete: boolean, nextStageInputsReady: boolean, currentStageNoActiveJobs: boolean, nextStageNoProgress: boolean, nextStageExists: boolean }, reason: string | null }`
     *   `[ ]`   interface/tests/`dialectic.types.interface.test.ts`

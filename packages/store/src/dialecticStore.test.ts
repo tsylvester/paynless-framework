@@ -890,6 +890,189 @@ describe('useDialecticStore', () => {
             expect(getMockDialecticClient().submitStageDocumentFeedback).toHaveBeenCalledTimes(1);
             expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
         });
+
+        it('after successful submitStageResponses, activeSessionDetail.current_stage_id matches updatedSession.current_stage_id', async () => {
+            const session: DialecticSession = mockProject.dialectic_sessions![0];
+            const updatedSession: DialecticSession = {
+                ...session,
+                current_stage_id: 'antithesis',
+                viewing_stage_id: session.viewing_stage_id,
+            };
+            useDialecticStore.setState({
+                currentProjectDetail: mockProject,
+                activeSessionDetail: session,
+                activeContextSessionId: sessionId,
+                activeContextProjectId: projectId,
+            });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({
+                data: { updatedSession },
+                status: 200,
+            });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetail?.current_stage_id).toBe(updatedSession.current_stage_id);
+        });
+
+        it('after successful submitStageResponses, currentProjectDetail.dialectic_sessions entry is updated', async () => {
+            const session: DialecticSession = mockProject.dialectic_sessions![0];
+            const updatedSession: DialecticSession = {
+                ...session,
+                current_stage_id: 'antithesis',
+                viewing_stage_id: session.viewing_stage_id,
+            };
+            useDialecticStore.setState({
+                currentProjectDetail: mockProject,
+                activeSessionDetail: session,
+                activeContextSessionId: sessionId,
+                activeContextProjectId: projectId,
+            });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({
+                data: { updatedSession },
+                status: 200,
+            });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            const state = useDialecticStore.getState();
+            const entry = state.currentProjectDetail?.dialectic_sessions?.find((s) => s.id === sessionId);
+            expect(entry?.current_stage_id).toBe(updatedSession.current_stage_id);
+        });
+
+        it('if viewing_stage_id === old current_stage_id before submit, both viewing_stage_id and viewingStageSlug advance to new stage', async () => {
+            const thesisStage: DialecticStage = {
+                id: 'thesis',
+                slug: 'thesis',
+                display_name: 'Thesis',
+                description: '',
+                default_system_prompt_id: null,
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: new Date().toISOString(),
+                minimum_balance: 0,
+            };
+            const antithesisStage: DialecticStage = {
+                id: 'antithesis',
+                slug: 'antithesis',
+                display_name: 'Antithesis',
+                description: '',
+                default_system_prompt_id: null,
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: new Date().toISOString(),
+                minimum_balance: 0,
+            };
+            const template: DialecticProcessTemplate = {
+                id: 'pt-1',
+                name: 'Test',
+                starting_stage_id: 'thesis',
+                created_at: new Date().toISOString(),
+                stages: [thesisStage, antithesisStage],
+                description: null,
+            };
+            const session: DialecticSession = {
+                ...mockProject.dialectic_sessions![0],
+                current_stage_id: 'thesis',
+                viewing_stage_id: 'thesis',
+            };
+            const updatedSession: DialecticSession = {
+                ...session,
+                current_stage_id: 'antithesis',
+                viewing_stage_id: 'antithesis',
+            };
+            const projectWithSession: DialecticProject = {
+                ...mockProject,
+                dialectic_sessions: [session],
+            };
+            useDialecticStore.setState({
+                currentProjectDetail: projectWithSession,
+                activeSessionDetail: session,
+                activeContextSessionId: sessionId,
+                activeContextProjectId: projectId,
+                currentProcessTemplate: template,
+                viewingStageSlug: 'thesis',
+            });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({
+                data: { updatedSession },
+                status: 200,
+            });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetail?.viewing_stage_id).toBe('antithesis');
+            expect(state.viewingStageSlug).toBe('antithesis');
+        });
+
+        it('if viewing_stage_id !== old current_stage_id before submit, viewing_stage_id and viewingStageSlug are preserved', async () => {
+            const thesisStage: DialecticStage = {
+                id: 'thesis',
+                slug: 'thesis',
+                display_name: 'Thesis',
+                description: '',
+                default_system_prompt_id: null,
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: new Date().toISOString(),
+                minimum_balance: 0,
+            };
+            const antithesisStage: DialecticStage = {
+                id: 'antithesis',
+                slug: 'antithesis',
+                display_name: 'Antithesis',
+                description: '',
+                default_system_prompt_id: null,
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: new Date().toISOString(),
+                minimum_balance: 0,
+            };
+            const template: DialecticProcessTemplate = {
+                id: 'pt-1',
+                name: 'Test',
+                starting_stage_id: 'thesis',
+                created_at: new Date().toISOString(),
+                stages: [thesisStage, antithesisStage],
+                description: null,
+            };
+            const session: DialecticSession = {
+                ...mockProject.dialectic_sessions![0],
+                current_stage_id: 'antithesis',
+                viewing_stage_id: 'thesis',
+            };
+            const updatedSession: DialecticSession = {
+                ...session,
+                current_stage_id: 'antithesis',
+                viewing_stage_id: 'thesis',
+            };
+            const projectWithSession: DialecticProject = {
+                ...mockProject,
+                dialectic_sessions: [session],
+            };
+            useDialecticStore.setState({
+                currentProjectDetail: projectWithSession,
+                activeSessionDetail: session,
+                activeContextSessionId: sessionId,
+                activeContextProjectId: projectId,
+                currentProcessTemplate: template,
+                viewingStageSlug: 'thesis',
+            });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({
+                data: { updatedSession },
+                status: 200,
+            });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetail?.viewing_stage_id).toBe('thesis');
+            expect(state.viewingStageSlug).toBe('thesis');
+        });
     });
 
     describe('fetchProcessTemplate thunk', () => {

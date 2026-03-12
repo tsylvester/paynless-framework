@@ -1576,3 +1576,31 @@ export interface AssembledPrompt {
 export interface StartSessionSuccessResponse extends DialecticSession {
   seedPrompt: AssembledPrompt;
 }
+
+export interface SelectCanAdvanceStageDeps {}
+
+export interface SelectCanAdvanceStageParams {}
+
+export interface SelectCanAdvanceStagePayload {
+  activeSessionDetail: DialecticSession | null;
+  currentProcessTemplate: DialecticProcessTemplate | null;
+  stageRunProgress: Record<string, StageRunProgressSnapshot>;
+  recipesByStageSlug: Record<string, DialecticStageRecipe>;
+}
+
+export interface SelectCanAdvanceStageReturn {
+  canAdvance: boolean;
+  conditions: {
+    logicalMatchesViewing: boolean;
+    currentStageComplete: boolean;
+    nextStageInputsReady: boolean;
+    currentStageNoActiveJobs: boolean;
+    nextStageNoProgress: boolean; 
+    nextStageExists: boolean;
+  };
+  reason: string | null;
+}
+
+export interface SelectCanAdvanceStageFn {
+  (deps: SelectCanAdvanceStageDeps, params: SelectCanAdvanceStageParams, payload: SelectCanAdvanceStagePayload): SelectCanAdvanceStageReturn;
+}

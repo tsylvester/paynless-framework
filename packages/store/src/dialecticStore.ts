@@ -2678,15 +2678,122 @@ export const useDialecticStore = create<DialecticStore>()(
 				logger.info("[DialecticStore] Successfully advanced stage.", {
 					response: response.data,
 				});
-				set({
-					isSubmittingStageResponses: false,
-					submitStageResponsesError: null,
-				});
+				const updatedSession: DialecticSession | undefined = response.data?.updatedSession;
+				if (updatedSession) {
+					const state = get();
+					const session: DialecticSession | undefined =
+						state.activeSessionDetail?.id === payload.sessionId
+							? state.activeSessionDetail
+							: state.currentProjectDetail?.dialectic_sessions?.find(
+									(s) => s.id === payload.sessionId,
+								);
+					const oldCurrentStageId: string | null = session?.current_stage_id ?? null;
+					const oldViewingStageId: string | null = session?.viewing_stage_id ?? null;
+					const viewingMatchedLogical: boolean =
+						oldViewingStageId !== null && oldViewingStageId === oldCurrentStageId;
 
-				logger.info(
-					`[DialecticStore] Stage advanced for project ${payload.projectId}. Refetching project details.`,
-				);
-				await get().fetchDialecticProjectDetails(payload.projectId, { preserveContext: true });
+					set((s) => {
+						let newCurrentProjectDetail = s.currentProjectDetail;
+						let newActiveSessionDetail = s.activeSessionDetail;
+						if (!s.currentProjectDetail?.dialectic_sessions) {
+							return {
+								isSubmittingStageResponses: false,
+								submitStageResponsesError: null,
+							};
+						}
+						const sessionIndex = s.currentProjectDetail.dialectic_sessions.findIndex(
+							(entry) => entry.id === updatedSession.id,
+						);
+						if (sessionIndex === -1) {
+							return {
+								isSubmittingStageResponses: false,
+								submitStageResponsesError: null,
+							};
+						}
+						const newSessions = [...s.currentProjectDetail.dialectic_sessions];
+						const existing = newSessions[sessionIndex];
+						let mergedSession: DialecticSession = {
+							...existing,
+							...updatedSession,
+						};
+						if (
+							viewingMatchedLogical &&
+							updatedSession.current_stage_id !== null &&
+							updatedSession.current_stage_id !== undefined
+						) {
+							mergedSession = {
+								...mergedSession,
+								viewing_stage_id: updatedSession.current_stage_id,
+							};
+						}
+						newSessions[sessionIndex] = mergedSession;
+						newCurrentProjectDetail = {
+							...s.currentProjectDetail,
+							dialectic_sessions: newSessions,
+						};
+						if (s.activeSessionDetail?.id === updatedSession.id) {
+							newActiveSessionDetail = mergedSession;
+						}
+						return {
+							currentProjectDetail: newCurrentProjectDetail,
+							activeSessionDetail: newActiveSessionDetail,
+							isSubmittingStageResponses: false,
+							submitStageResponsesError: null,
+						};
+					});
+
+					if (
+						viewingMatchedLogical &&
+						updatedSession.current_stage_id !== null &&
+						updatedSession.current_stage_id !== undefined
+					) {
+						const template = get().currentProcessTemplate;
+						const stage = template?.stages?.find(
+							(s) => s.id === updatedSession.current_stage_id,
+						);
+						if (stage) {
+							set({ viewingStageSlug: stage.slug });
+							const userId = useAuthStore.getState().user?.id;
+							if (userId) {
+								const deps: UpdateViewingStageDeps = {};
+								const params: UpdateViewingStageParams = { userId };
+								const updateViewingPayload: UpdateViewingStagePayload = {
+									sessionId: payload.sessionId,
+									viewingStageId: updatedSession.current_stage_id,
+								};
+								api
+									.dialectic()
+									.updateViewingStage(deps, params, updateViewingPayload)
+									.then((updateResponse) => {
+										if (updateResponse.error) {
+											logger.error(
+												"[DialecticStore] Failed to persist viewing stage after advance",
+												{
+													sessionId: payload.sessionId,
+													viewingStageId: updatedSession.current_stage_id,
+													error: updateResponse.error,
+												},
+											);
+										}
+									})
+									.catch((err: unknown) => {
+										logger.error(
+											"[DialecticStore] Network error persisting viewing stage after advance",
+											{
+												sessionId: payload.sessionId,
+												error: err,
+											},
+										);
+									});
+							}
+						}
+					}
+				} else {
+					set({
+						isSubmittingStageResponses: false,
+						submitStageResponsesError: null,
+					});
+				}
 			}
 			return response;
 		} catch (error: unknown) {
