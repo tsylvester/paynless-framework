@@ -118,6 +118,7 @@ export const selectActiveContextSessionId = (state: DialecticStateValues): strin
 export const selectViewingStageSlug = (state: DialecticStateValues): string | null => state.viewingStageSlug;
 export const selectSessionById = (state: DialecticStateValues, sessionId: string): DialecticSession | undefined => state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
 export const selectCurrentProcessTemplate = (state: DialecticStateValues): DialecticProcessTemplate | null => state.currentProcessTemplate;
+export const selectViewingStage = (state: DialecticStateValues): DialecticStage | null => state.activeViewingStage;
 export const selectOverlay = vi.fn();
 export const setFocusedStageDocument = vi.fn();
 export const submitStageDocumentFeedback = vi.fn();
@@ -267,6 +268,9 @@ export const selectStageProgressSummary = (
   totalDocuments: number;
   completedDocuments: number;
   outstandingDocuments: string[];
+  hasFailed: boolean;
+  failedDocuments: number;
+  failedDocumentKeys: string[];
 } => {
   const progress = selectStageRunProgress(state, sessionId, stageSlug, iterationNumber);
   if (!progress) {
@@ -275,6 +279,9 @@ export const selectStageProgressSummary = (
       totalDocuments: 0,
       completedDocuments: 0,
       outstandingDocuments: [],
+      hasFailed: false,
+      failedDocuments: 0,
+      failedDocumentKeys: [],
     };
   }
 
@@ -286,6 +293,7 @@ export const selectStageProgressSummary = (
 
   let completedDocuments = 0;
   const outstandingDocuments: string[] = [];
+  const failedDocumentKeys: string[] = [];
 
   for (const documentKey of documentKeys) {
     const descriptor = progress.documents[documentKey];
@@ -294,6 +302,8 @@ export const selectStageProgressSummary = (
     }
     if (descriptor.status === 'completed') {
       completedDocuments += 1;
+    } else if (descriptor.status === 'failed') {
+      failedDocumentKeys.push(documentKey);
     } else {
       outstandingDocuments.push(documentKey);
     }
@@ -303,12 +313,16 @@ export const selectStageProgressSummary = (
   const isComplete = totalDocuments > 0 && completedDocuments === totalDocuments;
 
   outstandingDocuments.sort();
+  failedDocumentKeys.sort();
 
   return {
     isComplete,
     totalDocuments,
     completedDocuments,
     outstandingDocuments,
+    hasFailed: failedDocumentKeys.length > 0,
+    failedDocuments: failedDocumentKeys.length,
+    failedDocumentKeys,
   };
 };
 
@@ -399,6 +413,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   activeContextProjectId: null,
   activeContextSessionId: null,
   activeContextStage: null,
+  activeViewingStage: null,
   activeSessionDetail: null,
   isLoadingActiveSessionDetail: false,
   activeSessionDetailError: null,

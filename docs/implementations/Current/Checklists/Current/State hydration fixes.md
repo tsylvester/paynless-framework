@@ -360,43 +360,43 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
     *   `[✅]`   `requirements`
         *   `[✅]`   Method callable from store, returns typed response
 
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore.ts` **Add updateViewingStage store action and wire into setViewingStage**
-    *   `[ ]`   `objective`
-        *   `[ ]`   When setViewingStage is called (user clicks a stage tab), persist the choice to the server via api.dialectic().updateViewingStage()
-        *   `[ ]`   On session load (fetchSessionDetails, fetchDialecticProjectDetails), read viewing_stage_id from the session and set viewingStageSlug from it
-        *   `[ ]`   If viewing_stage_id is null (first load), use current_stage_id as the initial viewing stage and persist it
-    *   `[ ]`   `role`
-        *   `[ ]`   App — store action
-    *   `[ ]`   `module`
-        *   `[ ]`   packages/store/src/dialecticStore.ts — setViewingStage, fetchSessionDetails paths
-    *   `[ ]`   `deps`
-        *   `[ ]`   updateViewingStage from @paynless/api — port, inward
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   setViewingStage receives slug, needs to resolve to stage id for the API call
-    *   `[ ]`   interface/`dialectic.types.ts`
-        *   `[ ]`   DialecticStateActions: add updateViewingStage action
-    *   `[ ]`   unit/`dialecticStore.test.ts`
-        *   `[ ]`   Test: setViewingStage calls api.dialectic().updateViewingStage with correct sessionId and stageId
-        *   `[ ]`   Test: on session load, viewingStageSlug is set from session.viewing_stage_id
-        *   `[ ]`   Test: if viewing_stage_id is null on load, viewingStageSlug is set from current_stage_id
-    *   `[ ]`   `dialecticStore.ts`
-        *   `[ ]`   In setViewingStage: after setting viewingStageSlug, resolve slug to stage id from currentProcessTemplate.stages, call api.dialectic().updateViewingStage({ sessionId, viewingStageId })
-        *   `[ ]`   In session initialization paths: read viewing_stage_id from session, resolve to slug, set viewingStageSlug
-        *   `[ ]`   Remove StageTabCard useEffect fallback to stages[0] — no longer needed
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: app
-        *   `[ ]`   Depends on: API client (port, inward), types (domain, inward)
-        *   `[ ]`   Provides: consumed by StageTabCard, SubmitResponsesButton
-    *   `[ ]`   `requirements`
-        *   `[ ]`   Stage tab selection survives page refresh
-        *   `[ ]`   No localStorage, no guessing, no defaults
-        *   `[ ]`   Follows updateSessionModels pattern
-    *   `[ ]`   **Commit** `feat(dialectic): server-persisted viewing stage`
-        *   `[ ]`   Migration adding viewing_stage_id column
-        *   `[ ]`   Edge function updateViewingStage with tests
-        *   `[ ]`   index.ts router registration
-        *   `[ ]`   API client method
-        *   `[ ]`   Store action wiring and session initialization
+*   `[✅]`   [STORE] packages/store/src/`dialecticStore.ts` **Add updateViewingStage store action and wire into setViewingStage**
+    *   `[✅]`   `objective`
+        *   `[✅]`   When setViewingStage is called (user clicks a stage tab), persist the choice to the server via api.dialectic().updateViewingStage()
+        *   `[✅]`   On session load (fetchSessionDetails, fetchDialecticProjectDetails), read viewing_stage_id from the session and set viewingStageSlug from it
+        *   `[✅]`   If viewing_stage_id is null (first load), use current_stage_id as the initial viewing stage and persist it
+    *   `[✅]`   `role`
+        *   `[✅]`   App — store action
+    *   `[✅]`   `module`
+        *   `[✅]`   packages/store/src/dialecticStore.ts — setViewingStage, fetchSessionDetails paths
+    *   `[✅]`   `deps`
+        *   `[✅]`   updateViewingStage from @paynless/api — port, inward
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   setViewingStage receives slug, needs to resolve to stage id for the API call
+    *   `[✅]`   interface/`dialectic.types.ts`
+        *   `[✅]`   DialecticStateActions: add updateViewingStage action
+    *   `[✅]`   unit/`dialecticStore.test.ts`
+        *   `[✅]`   Test: setViewingStage calls api.dialectic().updateViewingStage with correct sessionId and stageId
+        *   `[✅]`   Test: on session load, viewingStageSlug is set from session.viewing_stage_id
+        *   `[✅]`   Test: if viewing_stage_id is null on load, viewingStageSlug is set from current_stage_id
+    *   `[✅]`   `dialecticStore.ts`
+        *   `[✅]`   In setViewingStage: after setting viewingStageSlug, resolve slug to stage id from currentProcessTemplate.stages, call api.dialectic().updateViewingStage({ sessionId, viewingStageId })
+        *   `[✅]`   In session initialization paths: read viewing_stage_id from session, resolve to slug, set viewingStageSlug
+        *   `[✅]`   Remove StageTabCard useEffect fallback to stages[0] — no longer needed
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: app
+        *   `[✅]`   Depends on: API client (port, inward), types (domain, inward)
+        *   `[✅]`   Provides: consumed by StageTabCard, SubmitResponsesButton
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Stage tab selection survives page refresh
+        *   `[✅]`   No localStorage, no guessing, no defaults
+        *   `[✅]`   Follows updateSessionModels pattern
+    *   `[✅]`   **Commit** `feat(dialectic): server-persisted viewing stage`
+        *   `[✅]`   Migration adding viewing_stage_id column
+        *   `[✅]`   Edge function updateViewingStage with tests
+        *   `[✅]`   index.ts router registration
+        *   `[✅]`   API client method
+        *   `[✅]`   Store action wiring and session initialization
 
 ## Phase 3: submitStageResponses applies updatedSession (Issue 5)
 

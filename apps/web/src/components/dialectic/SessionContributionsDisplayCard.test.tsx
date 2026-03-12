@@ -29,7 +29,14 @@ import {
 } from '../../mocks/dialecticStore.mock';
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 
-vi.mock('@paynless/store', () => import('../../mocks/dialecticStore.mock'));
+vi.mock('@paynless/store', async () => {
+  const dialecticMock = await import('../../mocks/dialecticStore.mock');
+  const authMock = await import('../../mocks/authStore.mock');
+  return {
+    ...dialecticMock,
+    useAuthStore: authMock.useAuthStore,
+  };
+});
 
 vi.mock('./ExportProjectButton', () => ({
   ExportProjectButton: vi.fn(() => null),
@@ -49,18 +56,18 @@ const projectId = 'proj-1';
 const iterationNumber = 1;
 const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
 
-function buildUnifiedProgressWithStageComplete(activeStageSlug: string): UnifiedProjectProgress {
+function buildUnifiedProgressWithStageComplete(viewingStageSlug: string): UnifiedProjectProgress {
   return {
     totalStages: 1,
     completedStages: 0,
-    currentStageSlug: activeStageSlug,
+    currentStageSlug: viewingStageSlug,
     overallPercentage: 100,
     currentStage: null,
     projectStatus: 'in_progress',
     hydrationReady: true,
     stageDetails: [
       {
-        stageSlug: activeStageSlug,
+        stageSlug: viewingStageSlug,
         totalSteps: 3,
         completedSteps: 3,
         totalDocuments: 1,
@@ -220,6 +227,7 @@ const buildSession = (
   dialectic_session_models: [],
   dialectic_contributions: contributions,
   feedback: [],
+  viewing_stage_id: 'stage-1',
 });
 
 const buildProject = (
@@ -349,7 +357,7 @@ describe('SessionContributionsDisplayCard', () => {
       activeContextProjectId: project.id,
       activeContextSessionId: session.id,
       activeContextStage: stage,
-      activeStageSlug: stage.slug,
+      viewingStageSlug: stage.slug,
       activeSessionDetail: session,
       selectedModels: session.selected_models,
       currentProjectDetail: project,
@@ -459,11 +467,12 @@ describe('SessionContributionsDisplayCard', () => {
         ],
       };
 
+      // Step statuses without in_progress/waiting_for_children so SubmitResponsesButton shows (currentStageHasActiveJobs false)
       const progress = buildStageRunProgress(
         {
           planner_header: 'completed',
-          draft_document: 'in_progress',
-          render_document: 'waiting_for_children',
+          draft_document: 'completed',
+          render_document: 'not_started',
         },
         {
           header_context: {
@@ -506,7 +515,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
+        viewingStageSlug: stage1.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -520,6 +529,41 @@ describe('SessionContributionsDisplayCard', () => {
       });
 
       selectIsStageReadyForSessionIteration.mockReturnValue(true);
+
+      // SubmitResponsesButton uses selectUnifiedProjectProgress for viewingStageDetail; incomplete docs => button disabled
+      selectUnifiedProjectProgress.mockReturnValue({
+        totalStages: 2,
+        completedStages: 0,
+        currentStageSlug: stage1.slug,
+        overallPercentage: 50,
+        currentStage: null,
+        projectStatus: 'in_progress',
+        hydrationReady: true,
+        stageDetails: [
+          {
+            stageSlug: stage1.slug,
+            totalSteps: 3,
+            completedSteps: 2,
+            totalDocuments: 2,
+            completedDocuments: 1,
+            failedSteps: 0,
+            stagePercentage: 66,
+            stepsDetail: [],
+            stageStatus: 'in_progress',
+          },
+          {
+            stageSlug: stage2.slug,
+            totalSteps: 3,
+            completedSteps: 0,
+            totalDocuments: 0,
+            completedDocuments: 0,
+            failedSteps: 0,
+            stagePercentage: 0,
+            stepsDetail: [],
+            stageStatus: 'not_started',
+          },
+        ],
+      });
 
       renderSessionContributionsDisplayCard();
 
@@ -621,7 +665,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
+        viewingStageSlug: stage1.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -867,7 +911,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage,
-        activeStageSlug: stage.slug,
+        viewingStageSlug: stage.slug,
         activeSessionDetail: session,
         selectedModels: [],
         currentProjectDetail: project,
@@ -1158,7 +1202,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: synthesisStage,
-        activeStageSlug: synthesisStage.slug,
+        viewingStageSlug: synthesisStage.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -1294,7 +1338,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: thesisStage, // Non-last stage (thesis when stages are [thesis, antithesis, synthesis])
-        activeStageSlug: thesisStage.slug,
+        viewingStageSlug: thesisStage.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -1853,7 +1897,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
+        viewingStageSlug: stage1.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -1971,7 +2015,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
+        viewingStageSlug: stage1.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -2083,7 +2127,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
+        viewingStageSlug: stage1.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -2218,7 +2262,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: thesisStage,
-        activeStageSlug: thesisStage.slug,
+        viewingStageSlug: thesisStage.slug,
         activeSessionDetail: sessionAlreadyPastThesis,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -2242,7 +2286,7 @@ describe('SessionContributionsDisplayCard', () => {
       }
     });
 
-    it('when viewing prior stage and backend returns no advancement, does not call setActiveStage', async () => {
+    it('when viewing prior stage and backend returns no advancement, does not call setViewingStage', async () => {
       const thesisStage: DialecticStage = {
         id: 'stage-thesis',
         slug: 'thesis',
@@ -2334,7 +2378,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: thesisStage,
-        activeStageSlug: thesisStage.slug,
+        viewingStageSlug: thesisStage.slug,
         activeSessionDetail: sessionAlreadyPastThesis,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -2370,10 +2414,10 @@ describe('SessionContributionsDisplayCard', () => {
         );
       });
 
-      expect(store.setActiveStage).not.toHaveBeenCalled();
+      expect(store.setViewingStage).not.toHaveBeenCalled();
     });
 
-    it('when backend returns advancement, calls setActiveStage with next stage and shows success', async () => {
+    it('when backend returns advancement, calls setViewingStage with next stage and shows success', async () => {
       const thesisStage: DialecticStage = {
         id: 'stage-thesis',
         slug: 'thesis',
@@ -2465,7 +2509,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: thesisStage,
-        activeStageSlug: thesisStage.slug,
+        viewingStageSlug: thesisStage.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -2496,7 +2540,7 @@ describe('SessionContributionsDisplayCard', () => {
         expect(store.submitStageResponses).toHaveBeenCalled();
       });
 
-      expect(store.setActiveStage).toHaveBeenCalledWith(antithesisStage.slug);
+      expect(store.setViewingStage).toHaveBeenCalledWith(antithesisStage.slug);
 
       await waitFor(() => {
         expect(screen.getByText('Antithesis')).toBeInTheDocument();
@@ -2596,7 +2640,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: thesisStage,
-        activeStageSlug: thesisStage.slug,
+        viewingStageSlug: thesisStage.slug,
         activeSessionDetail: sessionAlreadyPastThesis,
         selectedModels: session.selected_models,
         currentProjectDetail: project,

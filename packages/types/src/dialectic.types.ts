@@ -400,6 +400,7 @@ export interface DialecticStateValues {
   activeContextProjectId: string | null;
   activeContextSessionId: string | null;
   activeContextStage: DialecticStage | null;
+  activeViewingStage: DialecticStage | null;
   viewingStageSlug: string | null;
 
   // New state for single session details

@@ -67,7 +67,7 @@ export const GeneratedContributionCard: React.FC<
 		initializeFeedbackDraft,
 	} = useDialecticStore((state) => {
 		const sessionId = state.activeContextSessionId;
-		const stageSlug = state.activeStageSlug;
+		const stageSlug = state.viewingStageSlug;
 		const iterationNumber = state.activeSessionDetail?.iteration_count;
 		const focusedDocument =
 			sessionId && stageSlug
@@ -101,7 +101,7 @@ export const GeneratedContributionCard: React.FC<
 	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
 	const stageRunProgress = useDialecticStore((state) => {
 		const currentSessionId = state.activeContextSessionId;
-		const currentStageSlug = state.activeStageSlug;
+		const currentStageSlug = state.viewingStageSlug;
 		const currentIterationNumber = state.activeSessionDetail?.iteration_count;
 
 		if (!currentSessionId || !currentStageSlug || typeof currentIterationNumber !== "number") {
@@ -203,7 +203,7 @@ export const GeneratedContributionCard: React.FC<
 	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
 	const documentResourceState = useDialecticStore((state) => {
 		const currentSessionId = state.activeContextSessionId;
-		const currentStageSlug = state.activeStageSlug;
+		const currentStageSlug = state.viewingStageSlug;
 		const currentIterationNumber = state.activeSessionDetail?.iteration_count;
 
 		if (

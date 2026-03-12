@@ -411,7 +411,7 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
   initializeMockDialecticState({
     activeContextProjectId: mockProjectId,
     activeContextSessionId: mockSessionId,
-    activeStageSlug: mockStageSlug,
+    viewingStageSlug: mockStageSlug,
     activeSessionDetail: {
       ...(activeSessionDetailOverride ?? {
         id: mockSessionId,
@@ -425,6 +425,7 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
         current_stage_id: mockStageSlug,
         created_at: '2023-01-01T00:00:00Z',
         updated_at: '2023-01-01T00:00:00Z',
+        viewing_stage_id: mockStageSlug,
       }),
       dialectic_contributions: contributionList,
     },

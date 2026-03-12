@@ -181,7 +181,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	activeContextSessionId: null,
 	activeContextStage: null,
 	viewingStageSlug: null,
-
+	activeViewingStage: null,
 	activeSeedPrompt: null,
 
 	// New initial states for single session fetching
