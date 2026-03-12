@@ -71,7 +71,7 @@ vi.mock('@paynless/store', async () => {
     initialDialecticStateValues: actualPaynlessStore.initialDialecticStateValues,
     selectSelectedModels: actualPaynlessStore.selectSelectedModels,
     selectSessionById: selectSessionByIdMock,
-    selectActiveStage: actualPaynlessStore.selectActiveStage,
+    selectViewingStage: actualPaynlessStore.selectViewingStage,
   };
 });
 
@@ -114,6 +114,7 @@ const createMockSession = (
   updated_at: new Date().toISOString(),
   dialectic_contributions: [],
   dialectic_session_models: [],
+  viewing_stage_id: mockThesisStage.id,
 });
 
 const createMockProject = (
@@ -170,6 +171,7 @@ function createSessionWithInvalidIterationCount(): SessionWithInvalidIterationCo
     updated_at: defaultSession.updated_at,
     dialectic_contributions: defaultSession.dialectic_contributions,
     dialectic_session_models: defaultSession.dialectic_session_models,
+    viewing_stage_id: defaultSession.viewing_stage_id,
   };
 }
 const defaultProcessTemplate: DialecticProcessTemplate = {
@@ -243,7 +245,7 @@ describe('useStartContributionGeneration', () => {
       currentProjectDetail: defaultProject,
       currentProcessTemplate: defaultProcessTemplate,
       activeContextSessionId: 'sess-1',
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       selectedModels: defaultSelectedModels,
       generatingSessions: {},
     });
@@ -308,8 +310,8 @@ describe('useStartContributionGeneration', () => {
     expect(toast.error).toHaveBeenCalled();
   });
 
-  it('returns { success: false, error } and shows error toast when activeStage is null', async () => {
-    setDialecticState({ activeStageSlug: null, currentProcessTemplate: null });
+  it('returns { success: false, error } and shows error toast when viewingStage is null', async () => {
+    setDialecticState({ viewingStageSlug: null, currentProcessTemplate: null });
     const { result } = renderHook(() => useStartContributionGeneration());
 
     let outcome: StartContributionGenerationResult = { success: true };
@@ -477,7 +479,7 @@ describe('useStartContributionGeneration', () => {
     expect(result.current.startContributionGeneration).toBeDefined();
   });
 
-  it('isDisabled is true when any guard fails (isSessionGenerating, !areAnyModelsSelected, !activeStage, !activeSession, !isStageReady, !isWalletReady, !balanceMeetsThreshold)', () => {
+  it('isDisabled is true when any guard fails (isSessionGenerating, !areAnyModelsSelected, !viewingStage, !activeSession, !isStageReady, !isWalletReady, !balanceMeetsThreshold)', () => {
     setDialecticState({ selectedModels: [] });
     const { result } = renderHook(() => useStartContributionGeneration());
     expect(result.current.isDisabled).toBe(true);
@@ -539,7 +541,7 @@ describe('useStartContributionGeneration', () => {
 
   it('derived state values correctly reflect store state (each derived field tested with known inputs)', () => {
     const { result } = renderHook(() => useStartContributionGeneration());
-    expect(result.current.activeStage).toEqual(mockThesisStage);
+    expect(result.current.viewingStage).toEqual(mockThesisStage);
     expect(result.current.activeSession).not.toBeNull();
     expect(result.current.activeSession?.id).toBe('sess-1');
     expect(result.current.stageThreshold).toBe(mockThesisStage.minimum_balance);
@@ -554,7 +556,7 @@ describe('useStartContributionGeneration', () => {
       currentProjectDetail: defaultProject,
       currentProcessTemplate: defaultProcessTemplate,
       activeContextSessionId: 'sess-1',
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       selectedModels: defaultSelectedModels,
       generatingSessions: { 'sess-1': ['run-1'] },
     });
@@ -567,7 +569,7 @@ describe('useStartContributionGeneration', () => {
     expect(result.current.isPauseMode).toBe(false);
   });
 
-  it('hasPausedUserJobs is true when activeStageProgress.stageStatus is paused_user', () => {
+  it('hasPausedUserJobs is true when viewingStageProgress.stageStatus is paused_user', () => {
     const pausedUserStageDetail: StageProgressDetail = {
       ...defaultStageDetail,
       stageStatus: 'paused_user',
@@ -581,7 +583,7 @@ describe('useStartContributionGeneration', () => {
     expect(result.current.hasPausedUserJobs).toBe(true);
   });
 
-  it('hasPausedUserJobs is false when activeStageProgress.stageStatus is not paused_user', () => {
+  it('hasPausedUserJobs is false when viewingStageProgress.stageStatus is not paused_user', () => {
     const { result } = renderHook(() => useStartContributionGeneration());
     expect(result.current.hasPausedUserJobs).toBe(false);
   });
@@ -591,7 +593,7 @@ describe('useStartContributionGeneration', () => {
       currentProjectDetail: defaultProject,
       currentProcessTemplate: defaultProcessTemplate,
       activeContextSessionId: 'sess-1',
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       selectedModels: defaultSelectedModels,
       generatingSessions: { 'sess-1': ['run-1'] },
     });

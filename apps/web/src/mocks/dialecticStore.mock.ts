@@ -115,7 +115,7 @@ export const selectSelectedModels = vi.fn<[DialecticStateValues], SelectedModels
 export const selectDefaultGenerationModels = vi.fn<[DialecticStateValues], SelectedModels[]>().mockReturnValue([]);
 export const selectActiveContextProjectId = (state: DialecticStateValues): string | null => state.activeContextProjectId;
 export const selectActiveContextSessionId = (state: DialecticStateValues): string | null => state.activeContextSessionId;
-export const selectActiveStageSlug = (state: DialecticStateValues): string | null => state.activeStageSlug;
+export const selectViewingStageSlug = (state: DialecticStateValues): string | null => state.viewingStageSlug;
 export const selectSessionById = (state: DialecticStateValues, sessionId: string): DialecticSession | undefined => state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
 export const selectCurrentProcessTemplate = (state: DialecticStateValues): DialecticProcessTemplate | null => state.currentProcessTemplate;
 export const selectOverlay = vi.fn();
@@ -338,9 +338,10 @@ const mockSession: DialecticSession = {
   updated_at: new Date().toISOString(),
   dialectic_contributions: [],
   dialectic_session_models: [],
+  viewing_stage_id: 'stage-1',
 };
 
-/** Empty stage run progress snapshot including step-based progress (for tests and overrides). Matches shape used by ensureRecipeForActiveStage. */
+/** Empty stage run progress snapshot including step-based progress (for tests and overrides). Matches shape used by ensureRecipeForViewingStage. */
 export const emptyStageRunProgressSnapshot: StageRunProgressSnapshot = {
   documents: {},
   stepStatuses: {},
@@ -415,7 +416,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isFetchingFeedbackFileContent: false,
   fetchFeedbackFileContentError: null,
   activeDialecticWalletId: null,
-  activeStageSlug: 'thesis',
+  viewingStageSlug: 'thesis',
   recipesByStageSlug: {},
   dagProgressByRun: {},
   stageRunProgress: {},
@@ -614,12 +615,12 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       activateProjectAndSessionContextForDeepLink: mockActivateProjectAndSessionContextForDeepLink,
       fetchAndSetCurrentSessionDetails: mockFetchAndSetCurrentSessionDetails,
       setActiveDialecticWalletId: vi.fn((id: string | null) => set({ activeDialecticWalletId: id })),
-      setActiveStage: vi.fn((slug: string | null) => {
+      setViewingStage: vi.fn((slug: string | null) => {
         const stages = get().currentProcessTemplate?.stages ?? [];
         const stage = stages.find(s => s.slug === slug) ?? null;
         set({
           activeContextStage: stage,
-          activeStageSlug: slug
+          viewingStageSlug: slug
         });
       }),
       setFocusedStageDocument: vi.fn((payload: SetFocusedStageDocumentPayload) => {
@@ -663,7 +664,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       }),
       _handleJobFailed: vi.fn(),
       fetchStageRecipe: vi.fn().mockResolvedValue(undefined),
-      ensureRecipeForActiveStage: vi.fn().mockResolvedValue(undefined),
+      ensureRecipeForViewingStage: vi.fn().mockResolvedValue(undefined),
       fetchStageDocumentFeedback: vi.fn().mockResolvedValue(undefined),
       submitStageDocumentFeedback: vi.fn<[SubmitStageDocumentFeedbackPayload], Promise<ApiResponse<{ success: boolean }>>>()
         .mockImplementation(async (payload: SubmitStageDocumentFeedbackPayload) => {

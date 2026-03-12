@@ -61,6 +61,7 @@ describe('useStageRunProgressHydration', () => {
         dialectic_contributions: [],
         dialectic_session_models: [],
         feedback: [],
+        viewing_stage_id: 'thesis',
     });
 
     const stageThesis: DialecticStage = {
@@ -73,6 +74,7 @@ describe('useStageRunProgressHydration', () => {
         expected_output_template_ids: [],
         recipe_template_id: null,
         active_recipe_instance_id: null,
+        minimum_balance: 0,
     };
 
     const templateOneStage: DialecticProcessTemplate = {
@@ -95,6 +97,7 @@ describe('useStageRunProgressHydration', () => {
         expected_output_template_ids: [],
         recipe_template_id: null,
         active_recipe_instance_id: null,
+        minimum_balance: 0,
     };
 
     const templateTwoStages: DialecticProcessTemplate = {
@@ -245,7 +248,7 @@ describe('useStageRunProgressHydration', () => {
         setDialecticStateValues({
             activeContextSessionId: sessionId,
             activeSessionDetail: session,
-            activeStageSlug: stageSlug,
+            viewingStageSlug: stageSlug,
             currentProcessTemplate: templateOneStage,
             recipesByStageSlug: recipesForTemplateOneStage,
         });
@@ -270,12 +273,12 @@ describe('useStageRunProgressHydration', () => {
         });
     });
 
-    it('does not call hydrateAllStageProgress again when activeStageSlug changes (tab change)', async () => {
+    it('does not call hydrateAllStageProgress again when viewingStageSlug changes (tab change)', async () => {
         const session: DialecticSession = createSession();
         setDialecticStateValues({
             activeContextSessionId: sessionId,
             activeSessionDetail: session,
-            activeStageSlug: 'thesis',
+            viewingStageSlug: 'thesis',
             currentProcessTemplate: templateOneStage,
             recipesByStageSlug: recipesForTemplateOneStage,
         });
@@ -288,7 +291,7 @@ describe('useStageRunProgressHydration', () => {
             expect(hydrateAllStageProgressMock).toHaveBeenCalledTimes(1);
         });
 
-        setDialecticStateValues({ activeStageSlug: 'antithesis' });
+        setDialecticStateValues({ viewingStageSlug: 'antithesis' });
         rerender();
 
         await waitFor(() => {
@@ -505,7 +508,7 @@ describe('useStageRunProgressHydration', () => {
         consoleErrorSpy.mockRestore();
     });
 
-    it('calls fetchStageRecipe for all sorted stages before calling ensureRecipeForActiveStage', async () => {
+    it('calls fetchStageRecipe for all sorted stages before calling ensureRecipeForViewingStage', async () => {
         const session: DialecticSession = createSession();
         setDialecticStateValues({
             activeContextSessionId: sessionId,
@@ -515,23 +518,23 @@ describe('useStageRunProgressHydration', () => {
         });
 
         const fetchStageRecipeMock = getDialecticStoreActionMock('fetchStageRecipe');
-        const ensureRecipeForActiveStageMock = getDialecticStoreActionMock('ensureRecipeForActiveStage');
+        const ensureRecipeForViewingStageMock = getDialecticStoreActionMock('ensureRecipeForViewingStage');
 
         renderHook(() => useStageRunProgressHydration());
 
         await waitFor(() => {
             expect(fetchStageRecipeMock).toHaveBeenCalledWith('thesis');
-            expect(ensureRecipeForActiveStageMock).toHaveBeenCalled();
+            expect(ensureRecipeForViewingStageMock).toHaveBeenCalled();
         });
 
         const fetchOrder: number[] = vi.mocked(fetchStageRecipeMock).mock.invocationCallOrder;
-        const ensureOrder: number[] = vi.mocked(ensureRecipeForActiveStageMock).mock.invocationCallOrder;
+        const ensureOrder: number[] = vi.mocked(ensureRecipeForViewingStageMock).mock.invocationCallOrder;
         const maxFetchOrder: number = Math.max(...fetchOrder);
         const minEnsureOrder: number = Math.min(...ensureOrder);
         expect(maxFetchOrder).toBeLessThan(minEnsureOrder);
     });
 
-    it('calls ensureRecipeForActiveStage for all stages with loaded recipes before calling hydrateAllStageProgress', async () => {
+    it('calls ensureRecipeForViewingStage for all stages with loaded recipes before calling hydrateAllStageProgress', async () => {
         const session: DialecticSession = createSession();
         setDialecticStateValues({
             activeContextSessionId: sessionId,
@@ -540,7 +543,7 @@ describe('useStageRunProgressHydration', () => {
             recipesByStageSlug: recipesForTemplateOneStage,
         });
 
-        const ensureRecipeForActiveStageMock = getDialecticStoreActionMock('ensureRecipeForActiveStage');
+        const ensureRecipeForViewingStageMock = getDialecticStoreActionMock('ensureRecipeForViewingStage');
         const hydrateAllStageProgressMock = getDialecticStoreActionMock('hydrateAllStageProgress');
 
         renderHook(() => useStageRunProgressHydration());
@@ -549,7 +552,7 @@ describe('useStageRunProgressHydration', () => {
             expect(hydrateAllStageProgressMock).toHaveBeenCalledTimes(1);
         });
 
-        const ensureOrder: number[] = vi.mocked(ensureRecipeForActiveStageMock).mock.invocationCallOrder;
+        const ensureOrder: number[] = vi.mocked(ensureRecipeForViewingStageMock).mock.invocationCallOrder;
         const hydrateOrder: number[] = vi.mocked(hydrateAllStageProgressMock).mock.invocationCallOrder;
         const maxEnsureOrder: number = Math.max(...ensureOrder);
         const minHydrateOrder: number = Math.min(...hydrateOrder);
@@ -611,7 +614,7 @@ describe('useStageRunProgressHydration', () => {
         });
     });
 
-    it('when fetchStageRecipe throws, hook logs the error and does not proceed to ensureRecipeForActiveStage', async () => {
+    it('when fetchStageRecipe throws, hook logs the error and does not proceed to ensureRecipeForViewingStage', async () => {
         const session: DialecticSession = createSession();
         setDialecticStateValues({
             activeContextSessionId: sessionId,
@@ -620,7 +623,7 @@ describe('useStageRunProgressHydration', () => {
         });
 
         const fetchStageRecipeMock = getDialecticStoreActionMock('fetchStageRecipe');
-        const ensureRecipeForActiveStageMock = getDialecticStoreActionMock('ensureRecipeForActiveStage');
+        const ensureRecipeForViewingStageMock = getDialecticStoreActionMock('ensureRecipeForViewingStage');
         vi.mocked(fetchStageRecipeMock).mockRejectedValueOnce(new Error('fetch failed'));
 
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -628,14 +631,14 @@ describe('useStageRunProgressHydration', () => {
         renderHook(() => useStageRunProgressHydration());
 
         await waitFor(() => {
-            expect(ensureRecipeForActiveStageMock).not.toHaveBeenCalled();
+            expect(ensureRecipeForViewingStageMock).not.toHaveBeenCalled();
         });
 
         expect(consoleErrorSpy).toHaveBeenCalled();
         consoleErrorSpy.mockRestore();
     });
 
-    it('when ensureRecipeForActiveStage throws, hook logs the error and does not proceed to hydrateAllStageProgress', async () => {
+    it('when ensureRecipeForViewingStage throws, hook logs the error and does not proceed to hydrateAllStageProgress', async () => {
         const session: DialecticSession = createSession();
         setDialecticStateValues({
             activeContextSessionId: sessionId,
@@ -644,9 +647,9 @@ describe('useStageRunProgressHydration', () => {
             recipesByStageSlug: recipesForTemplateOneStage,
         });
 
-        const ensureRecipeForActiveStageMock = getDialecticStoreActionMock('ensureRecipeForActiveStage');
+        const ensureRecipeForViewingStageMock = getDialecticStoreActionMock('ensureRecipeForViewingStage');
         const hydrateAllStageProgressMock = getDialecticStoreActionMock('hydrateAllStageProgress');
-        vi.mocked(ensureRecipeForActiveStageMock).mockRejectedValueOnce(new Error('ensure failed'));
+        vi.mocked(ensureRecipeForViewingStageMock).mockRejectedValueOnce(new Error('ensure failed'));
 
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -667,7 +670,7 @@ describe('useStageRunProgressHydration', () => {
         setDialecticStateValues({
             activeContextSessionId: sessionId,
             activeSessionDetail: session,
-            activeStageSlug: stageSlug,
+            viewingStageSlug: stageSlug,
             currentProcessTemplate: templateOneStage,
             progressHydrationStatus: { [progressKey]: 'success' },
         });

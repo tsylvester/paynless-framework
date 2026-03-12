@@ -20,6 +20,9 @@ import {
   type DialecticContribution,
   type DialecticDomain,
   type UpdateSessionModelsPayload,
+  type UpdateViewingStageDeps,
+  type UpdateViewingStageParams,
+  type UpdateViewingStagePayload,
   type GenerateContributionsPayload,
   type GenerateContributionsResponse,
   type DialecticProjectRow,
@@ -177,7 +180,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	activeContextProjectId: null,
 	activeContextSessionId: null,
 	activeContextStage: null,
-	activeStageSlug: null,
+	viewingStageSlug: null,
 
 	activeSeedPrompt: null,
 
@@ -607,10 +610,10 @@ export const useDialecticStore = create<DialecticStore>()(
 					}
 				}
 
-				if (get().activeStageSlug !== null) {
+				if (get().viewingStageSlug !== null) {
 					logger.info(
 						"[DialecticStore] Skipping stage set: user has already selected stage.",
-						{ activeStageSlug: get().activeStageSlug },
+						{ viewingStageSlug: get().viewingStageSlug },
 					);
 				} else if (stageToSet) {
 					set({ activeContextStage: stageToSet });
@@ -631,7 +634,7 @@ export const useDialecticStore = create<DialecticStore>()(
 				if (latestSession) {
 					const iterationNumber = latestSession.iteration_count;
 					for (const stage of template.stages) {
-						await get().ensureRecipeForActiveStage(latestSession.id, stage.slug, iterationNumber);
+						await get().ensureRecipeForViewingStage(latestSession.id, stage.slug, iterationNumber);
 					}
 					logger.info('[DialecticStore] All stage progress entries initialized.');
 				}
@@ -2905,6 +2908,47 @@ export const useDialecticStore = create<DialecticStore>()(
 			// Set selected models from session response (single origin: selected_models)
 			const models = fetchedSession.selected_models;
 			set({ selectedModels: models });
+
+			// Hydrate viewingStageSlug from session.viewing_stage_id or session.current_stage_id
+			const template = get().currentProcessTemplate;
+			const viewingStageIdOrCurrent =
+				fetchedSession.viewing_stage_id ?? fetchedSession.current_stage_id;
+			if (template?.stages && viewingStageIdOrCurrent) {
+				const stage = template.stages.find((s) => s.id === viewingStageIdOrCurrent);
+				if (stage) {
+					set({ viewingStageSlug: stage.slug });
+					const userId = useAuthStore.getState().user?.id;
+					if (
+						fetchedSession.viewing_stage_id === null &&
+						userId &&
+						userId.length > 0
+					) {
+						const deps: UpdateViewingStageDeps = {};
+						const params: UpdateViewingStageParams = { userId };
+						const payload: UpdateViewingStagePayload = {
+							sessionId: fetchedSession.id,
+							viewingStageId: stage.id,
+						};
+						api
+							.dialectic()
+							.updateViewingStage(deps, params, payload)
+							.then((response) => {
+								if (response.error) {
+									logger.error(
+										'[DialecticStore] Failed to persist initial viewing stage on session load',
+										{ sessionId: fetchedSession.id, error: response.error },
+									);
+								}
+							})
+							.catch((err) => {
+								logger.error(
+									'[DialecticStore] Network error persisting initial viewing stage on session load',
+									{ sessionId: fetchedSession.id, error: err },
+								);
+							});
+					}
+				}
+			}
 		} catch (error: unknown) {
 			const networkError: ApiError = {
 				message:
@@ -2957,7 +3001,7 @@ export const useDialecticStore = create<DialecticStore>()(
         const firstStage = template.stages.find((s) => s.id === template.starting_stage_id);
         if (!firstStage) return;
         logger.info(`[DialecticStore] Setting initial active stage for deep link: ${firstStage.slug}`);
-        get().setActiveStage(firstStage.slug);
+        get().setViewingStage(firstStage.slug);
     }
   },
 
@@ -3037,9 +3081,46 @@ export const useDialecticStore = create<DialecticStore>()(
 		set({ activeDialecticWalletId: walletId });
 	},
 
-  setActiveStage: (slug: string | null) => {
+  setViewingStage: (slug: string | null) => {
     logger.info(`[DialecticStore] Setting active stage slug to: ${slug}`);
-    set({ activeStageSlug: slug });
+    set({ viewingStageSlug: slug });
+    if (slug !== null) {
+		const state = get();
+		const sessionId = state.activeContextSessionId;
+		const template = state.currentProcessTemplate;
+		const stage = template?.stages?.find((s) => s.slug === slug);
+		const userId = useAuthStore.getState().user?.id;
+		if (!userId) {
+			logger.error('[DialecticStore] User ID is not set');
+			return;
+		}
+		if (sessionId && stage && userId) {
+			const deps: UpdateViewingStageDeps = {};
+			const params: UpdateViewingStageParams = {
+			userId,
+			};
+			const payload: UpdateViewingStagePayload = { sessionId, viewingStageId: stage.id };
+			api
+			.dialectic()
+			.updateViewingStage(deps, params, payload)
+			.then((response) => {
+				if (response.error) {
+				logger.error('[DialecticStore] Failed to persist viewing stage', {
+					sessionId,
+					viewingStageId: stage.id,
+					error: response.error,
+				});
+				}
+			})
+			.catch((err) => {
+				logger.error('[DialecticStore] Network error persisting viewing stage', {
+				sessionId,
+				viewingStageId: stage.id,
+				error: err,
+				});
+			});
+		}
+    }
   },
 
 	setFocusedStageDocument: ({ sessionId, stageSlug, modelId, documentKey, iterationNumber }: SetFocusedStageDocumentPayload) => {
@@ -3160,10 +3241,10 @@ export const useDialecticStore = create<DialecticStore>()(
     });
   },
 
-  ensureRecipeForActiveStage: async (sessionId: string, stageSlug: string, iterationNumber: number): Promise<void> => {
+  ensureRecipeForViewingStage: async (sessionId: string, stageSlug: string, iterationNumber: number): Promise<void> => {
     const recipe = get().recipesByStageSlug[stageSlug];
     if (!recipe) {
-      throw new Error(`[ensureRecipeForActiveStage] Recipe not loaded for stage: ${stageSlug} — fetchStageRecipe must succeed before calling this function`);
+      throw new Error(`[ensureRecipeForViewingStage] Recipe not loaded for stage: ${stageSlug} — fetchStageRecipe must succeed before calling this function`);
     }
     const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
     set(state => {

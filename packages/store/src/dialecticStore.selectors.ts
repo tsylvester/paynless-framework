@@ -196,16 +196,16 @@ export const selectIsLoadingProcessTemplate = (state: DialecticStateValues) => s
 export const selectProcessTemplateError = (state: DialecticStateValues) => state.processTemplateError;
 
 // Selector for the active stage slug
-export const selectActiveStageSlug = (state: DialecticStateValues): string | null => state.activeStageSlug;
+export const selectViewingStageSlug = (state: DialecticStateValues): string | null => state.viewingStageSlug;
 
 // Memoized selector to get the full active stage object
-export const selectActiveStage = createSelector(
-  [selectCurrentProcessTemplate, selectActiveStageSlug],
-  (processTemplate, activeStageSlug) => {
-    if (!processTemplate || !activeStageSlug) {
+export const selectViewingStage = createSelector(
+  [selectCurrentProcessTemplate, selectViewingStageSlug],
+  (processTemplate, viewingStageSlug) => {
+    if (!processTemplate || !viewingStageSlug) {
       return null;
     }
-    return processTemplate.stages?.find(s => s.slug === activeStageSlug) || null;
+    return processTemplate.stages?.find(s => s.slug === viewingStageSlug) || null;
   }
 );
 

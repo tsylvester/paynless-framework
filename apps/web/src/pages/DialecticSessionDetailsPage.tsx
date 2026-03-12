@@ -3,7 +3,7 @@ import { useParams, Link, useLocation, useNavigate } from "react-router-dom";
 import {
 	useDialecticStore,
 	selectSortedStages,
-	selectActiveStageSlug,
+	selectViewingStageSlug,
 	selectSelectedModels,
 } from "@paynless/store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -47,14 +47,14 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 	const currentProjectDetail = useDialecticStore(
 		(state) => state.currentProjectDetail,
 	) as DialecticProject | null;
-	const activeStageSlug = useDialecticStore(selectActiveStageSlug);
+	const viewingStageSlug = useDialecticStore(selectViewingStageSlug);
 	const sortedStages = useDialecticStore(selectSortedStages);
 	const setShouldOpenDagProgress = useDialecticStore((state) => state.setShouldOpenDagProgress);
 	const selectedModels = useDialecticStore(selectSelectedModels);
 
-	const { startContributionGeneration, activeStage: hookActiveStage } = useStartContributionGeneration();
+	const { startContributionGeneration, viewingStage: hookViewingStage } = useStartContributionGeneration();
 
-	// Ensure activeContextStage is synced with activeStageSlug
+	// Ensure activeContextStage is synced with viewingStageSlug
 	useActiveStageSync();
 
 	// Loading and error states from store
@@ -96,7 +96,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 
 	useEffect(() => {
 		if (!location.state?.autoStartGeneration || autoStartAttemptedRef.current) return;
-		if (!activeSessionDetail || !currentProjectDetail || !activeContextSessionId || selectedModels.length === 0 || !hookActiveStage) return;
+		if (!activeSessionDetail || !currentProjectDetail || !activeContextSessionId || selectedModels.length === 0 || !hookViewingStage) return;
 		autoStartAttemptedRef.current = true;
 		(async () => {
 			try {
@@ -117,7 +117,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 		startContributionGeneration,
 		setShouldOpenDagProgress,
 		navigate,
-		hookActiveStage,
+		hookViewingStage,
 	]);
 
 	const isLoading = isLoadingProject || isLoadingSession;
@@ -203,13 +203,13 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 					{/* Main Content Area */}
 					<div className="lg:col-span-1">
 						<div className="bg-card rounded-xl border shadow-sm overflow-hidden">
-							{activeStageSlug && activeSessionDetail ? (
+							{viewingStageSlug && activeSessionDetail ? (
 								<div className="p-6">
 									<SessionContributionsDisplayCard />
 								</div>
 							) : (
 								<div className="py-16 text-center">
-									{!activeStageSlug && sortedStages.length > 0 && !isLoading ? (
+									{!viewingStageSlug && sortedStages.length > 0 && !isLoading ? (
 										<div className="space-y-3">
 											<div className="w-14 h-14 mx-auto rounded-full bg-muted/50 flex items-center justify-center">
 												<span className="text-xl">🎯</span>

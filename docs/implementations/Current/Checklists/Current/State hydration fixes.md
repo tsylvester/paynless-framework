@@ -360,29 +360,28 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
     *   `[✅]`   `requirements`
         *   `[✅]`   Method callable from store, returns typed response
 
-*   `[ ]`   [STORE] packages/store/src/`dialecticStore.ts` **Add updateViewingStage store action and wire into setActiveStage**
+*   `[ ]`   [STORE] packages/store/src/`dialecticStore.ts` **Add updateViewingStage store action and wire into setViewingStage**
     *   `[ ]`   `objective`
-        *   `[ ]`   When setActiveStage is called (user clicks a stage tab), persist the choice to the server via api.dialectic().updateViewingStage()
-        *   `[ ]`   On session load (fetchSessionDetails, fetchDialecticProjectDetails), read viewing_stage_id from the session and set activeStageSlug from it
+        *   `[ ]`   When setViewingStage is called (user clicks a stage tab), persist the choice to the server via api.dialectic().updateViewingStage()
+        *   `[ ]`   On session load (fetchSessionDetails, fetchDialecticProjectDetails), read viewing_stage_id from the session and set viewingStageSlug from it
         *   `[ ]`   If viewing_stage_id is null (first load), use current_stage_id as the initial viewing stage and persist it
     *   `[ ]`   `role`
         *   `[ ]`   App — store action
     *   `[ ]`   `module`
-        *   `[ ]`   packages/store/src/dialecticStore.ts — setActiveStage, fetchSessionDetails paths
+        *   `[ ]`   packages/store/src/dialecticStore.ts — setViewingStage, fetchSessionDetails paths
     *   `[ ]`   `deps`
         *   `[ ]`   updateViewingStage from @paynless/api — port, inward
     *   `[ ]`   `context_slice`
-        *   `[ ]`   setActiveStage receives slug, needs to resolve to stage id for the API call
-        *   `[ ]`   activeSessionDetail and currentProcessTemplate available via get()
+        *   `[ ]`   setViewingStage receives slug, needs to resolve to stage id for the API call
     *   `[ ]`   interface/`dialectic.types.ts`
-        *   `[ ]`   DialecticStateActions: add updateViewingStage action if needed as a separate callable
+        *   `[ ]`   DialecticStateActions: add updateViewingStage action
     *   `[ ]`   unit/`dialecticStore.test.ts`
-        *   `[ ]`   Test: setActiveStage calls api.dialectic().updateViewingStage with correct sessionId and stageId
-        *   `[ ]`   Test: on session load, activeStageSlug is set from session.viewing_stage_id
-        *   `[ ]`   Test: if viewing_stage_id is null on load, activeStageSlug is set from current_stage_id
+        *   `[ ]`   Test: setViewingStage calls api.dialectic().updateViewingStage with correct sessionId and stageId
+        *   `[ ]`   Test: on session load, viewingStageSlug is set from session.viewing_stage_id
+        *   `[ ]`   Test: if viewing_stage_id is null on load, viewingStageSlug is set from current_stage_id
     *   `[ ]`   `dialecticStore.ts`
-        *   `[ ]`   In setActiveStage: after setting activeStageSlug, resolve slug to stage id from currentProcessTemplate.stages, call api.dialectic().updateViewingStage({ sessionId, viewingStageId })
-        *   `[ ]`   In session initialization paths: read viewing_stage_id from session, resolve to slug, set activeStageSlug
+        *   `[ ]`   In setViewingStage: after setting viewingStageSlug, resolve slug to stage id from currentProcessTemplate.stages, call api.dialectic().updateViewingStage({ sessionId, viewingStageId })
+        *   `[ ]`   In session initialization paths: read viewing_stage_id from session, resolve to slug, set viewingStageSlug
         *   `[ ]`   Remove StageTabCard useEffect fallback to stages[0] — no longer needed
     *   `[ ]`   `directionality`
         *   `[ ]`   Layer: app
@@ -391,7 +390,7 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
     *   `[ ]`   `requirements`
         *   `[ ]`   Stage tab selection survives page refresh
         *   `[ ]`   No localStorage, no guessing, no defaults
-        *   `[ ]`   Follows updateSessionModels pattern exactly
+        *   `[ ]`   Follows updateSessionModels pattern
     *   `[ ]`   **Commit** `feat(dialectic): server-persisted viewing stage`
         *   `[ ]`   Migration adding viewing_stage_id column
         *   `[ ]`   Edge function updateViewingStage with tests
@@ -565,10 +564,10 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
         *   `[ ]`   No unnecessary server load from aggressive polling
         *   `[ ]`   Realtime updates are the primary mechanism, polling is backup at most
 
-*   `[ ]`   [UI] apps/web/src/hooks/`useActiveStageSync.ts` **Evaluate and simplify after server-persisted viewing stage**
+*   `[ ]`   [UI] apps/web/src/hooks/`useViewingStageSync.ts` **Evaluate and simplify after server-persisted viewing stage**
     *   `[ ]`   `objective`
         *   `[ ]`   With viewing_stage_id server-persisted and activeStageSlug set from it on load, evaluate whether the useActiveStageSync hook is still necessary
-        *   `[ ]`   If activeContextStage can be derived from activeStageSlug inside a selector or set atomically in setActiveStage, this hook can be removed
+        *   `[ ]`   If activeContextStage can be derived from activeStageSlug inside a selector or set atomically in setViewingStage, this hook can be removed
     *   `[ ]`   `role`
         *   `[ ]`   UI — React hook
     *   `[ ]`   `module`

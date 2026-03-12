@@ -124,6 +124,7 @@ const baseSession: DialecticSession = {
     ],
     dialectic_session_models: [],
     feedback: [],
+    viewing_stage_id: 'stage-synthesis',
 };
 
 const buildPlannerStep = (): DialecticStageRecipeStep => {
@@ -347,7 +348,7 @@ const setChecklistState = (
 
     setDialecticStateValues({
         activeContextSessionId: sessionId,
-        activeStageSlug: recipe.stageSlug,
+        viewingStageSlug: recipe.stageSlug,
         activeSessionDetail: baseSession,
         currentProcessTemplate: buildProcessTemplateForStage(recipe.stageSlug),
         recipesByStageSlug: {
@@ -593,7 +594,7 @@ describe('StageRunChecklist', () => {
         act(() => {
             setDialecticStateValues({
                 activeContextSessionId: null,
-                activeStageSlug: null,
+                viewingStageSlug: null,
                 activeSessionDetail: null,
                 currentProcessTemplate: null,
                 recipesByStageSlug: {},
@@ -615,7 +616,7 @@ describe('StageRunChecklist', () => {
 
         setDialecticStateValues({
             activeContextSessionId: sessionId,
-            activeStageSlug: recipe.stageSlug,
+            viewingStageSlug: recipe.stageSlug,
             activeSessionDetail: baseSession,
             currentProcessTemplate: buildProcessTemplateForStage(recipe.stageSlug),
             recipesByStageSlug: {
@@ -673,7 +674,7 @@ describe('StageRunChecklist', () => {
 
         initializeMockDialecticState();
 
-        setChecklistState(recipe, progressEntry, { activeStageSlug: null });
+        setChecklistState(recipe, progressEntry, { viewingStageSlug: null });
 
         act(() => {
             render(<StageRunChecklist modelId={modelIdA} onDocumentSelect={vi.fn()} />);
@@ -690,7 +691,7 @@ describe('StageRunChecklist', () => {
 
         setDialecticStateValues({
             activeContextSessionId: sessionId,
-            activeStageSlug: recipe.stageSlug,
+            viewingStageSlug: recipe.stageSlug,
             activeSessionDetail: baseSession,
             currentProcessTemplate: buildProcessTemplateForStage(recipe.stageSlug),
             recipesByStageSlug: {
@@ -735,7 +736,7 @@ describe('StageRunChecklist', () => {
 
         setDialecticStateValues({
             activeContextSessionId: sessionId,
-            activeStageSlug: recipe.stageSlug,
+            viewingStageSlug: recipe.stageSlug,
             activeSessionDetail: baseSession,
             currentProcessTemplate: buildProcessTemplateForStage(recipe.stageSlug),
             recipesByStageSlug: {
@@ -1570,7 +1571,7 @@ describe('StageRunChecklist', () => {
             selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
             setDialecticStateValues({
                 activeContextSessionId: sessionId,
-                activeStageSlug: recipe.stageSlug,
+                viewingStageSlug: recipe.stageSlug,
                 activeSessionDetail: baseSession,
                 currentProcessTemplate: buildProcessTemplateForStage(recipe.stageSlug),
                 recipesByStageSlug: { [recipe.stageSlug]: recipe },
@@ -1765,7 +1766,7 @@ describe('StageRunChecklist', () => {
             selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
             setDialecticStateValues({
                 activeContextSessionId: sessionId,
-                activeStageSlug: recipe.stageSlug,
+                viewingStageSlug: recipe.stageSlug,
                 activeSessionDetail: baseSession,
                 currentProcessTemplate: buildProcessTemplateForStage(recipe.stageSlug),
                 recipesByStageSlug: { [recipe.stageSlug]: recipe },
@@ -1786,7 +1787,7 @@ describe('StageRunChecklist', () => {
             selectValidMarkdownDocumentKeys.mockReturnValue(new Set(['synthesis_document_rendered']));
             setDialecticStateValues({
                 activeContextSessionId: sessionId,
-                activeStageSlug: recipe.stageSlug,
+                viewingStageSlug: recipe.stageSlug,
                 activeSessionDetail: baseSession,
                 currentProcessTemplate: buildProcessTemplateForStage(recipe.stageSlug),
                 recipesByStageSlug: { [recipe.stageSlug]: recipe },
@@ -1871,7 +1872,7 @@ describe('StageRunChecklist', () => {
             const progressKey = `${sessionId}:${recipe.stageSlug}:${iterationNumber}`;
             setDialecticStateValues({
                 activeContextSessionId: sessionId,
-                activeStageSlug: recipe.stageSlug,
+                viewingStageSlug: recipe.stageSlug,
                 activeSessionDetail: baseSession,
                 currentProcessTemplate: buildProcessTemplateForStage(recipe.stageSlug),
                 recipesByStageSlug: { [recipe.stageSlug]: recipe },
@@ -1970,7 +1971,7 @@ describe('StageRunChecklist', () => {
             };
             setDialecticStateValues({
                 activeContextSessionId: sessionId,
-                activeStageSlug: synthesisRecipe.stageSlug,
+                viewingStageSlug: synthesisRecipe.stageSlug,
                 activeSessionDetail: sessionWithAnalysisCurrent,
                 currentProcessTemplate: buildProcessTemplateForStage(synthesisRecipe.stageSlug),
                 recipesByStageSlug: {
@@ -2029,7 +2030,7 @@ describe('StageRunChecklist', () => {
             };
             setDialecticStateValues({
                 activeContextSessionId: sessionId,
-                activeStageSlug: synthesisRecipe.stageSlug,
+                viewingStageSlug: synthesisRecipe.stageSlug,
                 activeSessionDetail: sessionWithSynthesisCurrent,
                 currentProcessTemplate: buildProcessTemplateForStage(alternateStageSlug),
                 recipesByStageSlug: {

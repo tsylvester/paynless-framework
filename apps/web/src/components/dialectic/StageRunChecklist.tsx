@@ -136,7 +136,7 @@ type StageChecklistData = {
 
 type ChecklistData = {
   sortedStages: Array<{ id: string; slug: string; display_name: string | null }>;
-  activeStageIndex: number;
+  viewingStageIndex: number;
   effectiveModelIds: string[];
   stageDataList: StageChecklistData[];
 };
@@ -147,7 +147,7 @@ function computeStageRunChecklistData(
   modelIdProp: string | null,
 ): ChecklistData {
   const sortedStages = selectSortedStages(state);
-  const activeStageSlug: string | null = state.activeStageSlug;
+  const viewingStageSlug: string | null = state.viewingStageSlug;
   const activeSessionId = state.activeContextSessionId;
   const iterationNumber = state.activeSessionDetail?.iteration_count;
   void modelIdProp;
@@ -172,9 +172,9 @@ function computeStageRunChecklistData(
     modelNameByModelId.set(modelId, modelName);
   });
 
-  const activeStageIndex =
-    activeStageSlug != null
-      ? sortedStages.findIndex((s) => s.slug === activeStageSlug)
+  const viewingStageIndex =
+    viewingStageSlug != null
+      ? sortedStages.findIndex((s) => s.slug === viewingStageSlug)
       : -1;
 
   // The store tracks which stage slug is actively generating via generatingForStageSlug.
@@ -182,7 +182,7 @@ function computeStageRunChecklistData(
 
   const stageDataList: StageChecklistData[] = sortedStages.map((stage) => {
     const stageIndex = sortedStages.indexOf(stage);
-    const isReady = activeStageIndex >= 0 && stageIndex <= activeStageIndex;
+    const isReady = viewingStageIndex >= 0 && stageIndex <= viewingStageIndex;
 
     const steps = selectStepList(state, stage.slug);
     const validMarkdownDocumentKeys = selectValidMarkdownDocumentKeys(state, stage.slug);
@@ -397,7 +397,7 @@ function computeStageRunChecklistData(
       slug: s.slug,
       display_name: s.display_name ?? null,
     })),
-    activeStageIndex,
+    viewingStageIndex,
     effectiveModelIds: [],
     stageDataList,
   };
@@ -412,9 +412,9 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
   const activeSessionId = useDialecticStore(selectActiveContextSessionId);
   const activeSessionDetail = useDialecticStore((state) => state.activeSessionDetail);
   const iterationNumber = activeSessionDetail?.iteration_count;
-  const storeActiveStageSlug = useDialecticStore((state) => state.activeStageSlug);
-  const setActiveStage = useDialecticStore((state) => state.setActiveStage);
-  const effectiveStageSlug = stageSlugProp ?? storeActiveStageSlug;
+  const storeViewingStageSlug = useDialecticStore((state) => state.viewingStageSlug);
+  const setViewingStage = useDialecticStore((state) => state.setViewingStage);
+  const effectiveStageSlug = stageSlugProp ?? storeViewingStageSlug;
   const checklistData = useDialecticStore((state) =>
     computeStageRunChecklistData(state, modelId),
   );
@@ -436,8 +436,8 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
       }
 
       // Switch to the document's stage if it differs from the current active stage
-      if (stageSlug !== storeActiveStageSlug) {
-        setActiveStage(stageSlug);
+      if (stageSlug !== storeViewingStageSlug) {
+        setViewingStage(stageSlug);
       }
 
       modelIds.forEach((mid) => {
@@ -456,8 +456,8 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
       activeSessionId,
       iterationNumber,
       onDocumentSelect,
-      storeActiveStageSlug,
-      setActiveStage,
+      storeViewingStageSlug,
+      setViewingStage,
     ],
   );
 

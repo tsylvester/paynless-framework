@@ -136,6 +136,7 @@ export interface DialecticSession {
   current_stage_id: string | null;
   created_at: string;
   updated_at: string;
+  viewing_stage_id: string | null;
 
   dialectic_session_models?: DialecticSessionModel[];
   dialectic_contributions?: DialecticContribution[];
@@ -399,7 +400,7 @@ export interface DialecticStateValues {
   activeContextProjectId: string | null;
   activeContextSessionId: string | null;
   activeContextStage: DialecticStage | null;
-  activeStageSlug: string | null;
+  viewingStageSlug: string | null;
 
   // New state for single session details
   activeSessionDetail: DialecticSession | null;
@@ -738,7 +739,7 @@ export interface DialecticActions {
   setActiveContextSessionId: (id: string | null) => void;
   setActiveContextStage: (stage: DialecticStage | null) => void;
   setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => void;
-  setActiveStage: (slug: string | null) => void;
+  setViewingStage: (slug: string | null) => void;
   setFocusedStageDocument: (payload: SetFocusedStageDocumentPayload) => void;
   clearFocusedStageDocument: (payload: ClearFocusedStageDocumentPayload) => void;
 
@@ -782,7 +783,7 @@ export interface DialecticActions {
 
   // Recipe hydration and per-stage-run progress
   fetchStageRecipe: (stageSlug: string) => Promise<void>;
-  ensureRecipeForActiveStage: (sessionId: string, stageSlug: string, iterationNumber: number) => Promise<void>;
+  ensureRecipeForViewingStage: (sessionId: string, stageSlug: string, iterationNumber: number) => Promise<void>;
   resetProgressHydrationStatus: (runKey: string) => void;
 }
 
@@ -1143,7 +1144,7 @@ export interface UseStartContributionGenerationReturn {
   didGenerationFail: boolean;
   contributionsForStageAndIterationExist: boolean;
   showBalanceCallout: boolean;
-  activeStage: DialecticStage | null;
+  viewingStage: DialecticStage | null;
   activeSession: DialecticSession | null;
   stageThreshold: number | undefined;
 }
