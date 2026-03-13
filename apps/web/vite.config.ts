@@ -1,13 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-// Import vitest types for test config
-import type { UserConfig } from 'vitest/config';
-import path from 'node:path'; // Keep path for alias
+import path from 'node:path';
 import tsconfigPaths from 'vite-tsconfig-paths';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
 import { visualizer } from 'rollup-plugin-visualizer';
+import vitePrerender from 'vite-plugin-prerender-esm-fix';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -27,6 +26,10 @@ export default defineConfig({
       open: true,
       gzipSize: true,
       brotliSize: true,
+    }),
+    vitePrerender({
+      staticDir: path.join(__dirname, 'dist'),
+      routes: ['/vibecoder', '/indiehacker', '/startup', '/agency'],
     }),
   ],
   optimizeDeps: {

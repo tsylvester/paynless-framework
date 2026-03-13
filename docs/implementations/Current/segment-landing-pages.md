@@ -119,58 +119,172 @@ Replace the generic `UseCases` component (2x2 grid on the homepage) with four ra
 - [x] Write example scenarios for each
 - [x] Define the example project for each segment
 - [x] Select featured docs per segment (2 docs each, tailored to what the persona cares about)
-- [ ] Run each example project through the system and capture output artifacts
-- [ ] Extract and polish the 2 featured docs per segment from the generated output
-- [ ] Write the full landing page copy for each segment
+- [x] Run each example project through the system and capture output artifacts
+- [x] Extract the 2 featured docs per segment from the generated output
 
-### Step 2: Update the homepage UseCases component
-- [ ] Rewrite the 4 cards with final one-liners and summaries
-- [ ] Make each card a `<Link>` to `/use-cases/{segment-slug}`
-- [ ] Slugs: `vibe-coders`, `indie-hackers`, `startups`, `agencies`
+**Example output location:** `example/use-cases/{segment}/` — raw AI output, shipped as-is.
 
-### Step 3: Build the segment landing pages
-- [ ] Create a shared layout/template for segment landing pages
-- [ ] Page structure per segment:
-  - Hero with segment-specific headline and pain statement
-  - "Sound familiar?" scenario section (the example story)
-  - "Here's what Paynless produces" section — 2 featured docs in markdown renderer with expand handle
-  - "See all 18 documents →" teaser CTA linking to sign-up
-  - How it works (brief recap of 5-stage process, contextualized to this segment)
-  - CTA: sign-up with segment tag
-- [ ] Create route `/use-cases/:segment` in React Router
-- [ ] Build 4 pages using the shared template + segment-specific content
+### Step 2: Build the segment landing pages
 
-### Step 4: Implement segment tracking on sign-up (PostHog)
-Existing PostHog integration captures email on account creation into a generic contact list. We need to segment it.
+#### Routing decisions
+- **Short routes:** `/:segment` — no `/use-cases/` prefix. Routes are `/vibecoder`, `/indiehacker`, `/startup`, `/agency`
+- **`ref` param values** match the route/PostHog list names: `vibecoder`, `indiehacker`, `startup`, `agency`
+- **CTA links:** `/register?ref=vibecoder` etc.
 
-**Approach:**
-- CTA links pass `ref` query param: `/register?ref=vibe-coder`
-- Registration page reads `ref` from URL search params
-- On account creation, include `ref` in the PostHog `identify` or `capture` call as a user property
-- **5 PostHog lists:**
-  - `vibe-coder` — from `/use-cases/vibe-coders` CTA
-  - `indie-hacker` — from `/use-cases/indie-hackers` CTA
-  - `startup` — from `/use-cases/startups` CTA
-  - `agency` — from `/use-cases/agencies` CTA
-  - `direct` — default for any sign-up with no `ref` param (main page, organic, etc.)
-- If no `ref` param is present, default to `direct` so every sign-up is tagged
+#### Page section structure (8 sections per landing page)
 
-**Tasks:**
-- [ ] Add `ref` query param reading to registration page
-- [ ] Include `signup_segment` property in PostHog identify/capture on account creation
-- [ ] Create 5 PostHog lists/cohorts for each segment
-- [ ] Verify tag flows through by testing each CTA → register → PostHog path
+1. **Hero** — segment headline + pain one-liner + primary CTA button
+   - CTA text: "Start Free — 1M Tokens, No Credit Card"
+   - Links to `/register?ref={segment}`
+   - Auth-aware: if logged in, show "Go to Dashboard" instead
+
+2. **Before/After** — shows the transformation
+   - Left: the one-sentence example input (from the segment's "Example project")
+   - Arrow/divider
+   - Right: the two featured doc titles with brief descriptions
+   - Message: "Bring whatever you have — from a single sentence to a full brief. The more detail you provide, the sharper the output. But even one sentence gets you started."
+
+3. **"Sound Familiar?"** — scenario story section
+   - The example scenario for the segment rendered as a styled blockquote
+   - Relatable, empathy-driven — no CTA here, just connection
+
+4. **Doc Reader** — "Here's What You Get From Paynless"
+   - Tabbed interface switching between the 2 featured docs per segment
+   - Uses existing `MarkdownRenderer` component
+   - Contained `<div>` with `max-height: 600px`, `overflow-y: auto`, styled with Tailwind prose classes
+   - Expand/collapse toggle button to show full document height
+   - Example docs loaded from `example/use-cases/{segment}/` as static imports
+
+5. **"See All 18 Documents"** — breadth teaser
+   - Stage-grouped list of all 18 document titles (no content, just names):
+     - **Proposal:** Business Case, Feature Specifications, Success Metrics, Technical Approach
+     - **Review:** Business Case Critique, Dependency Map, Non-Functional Requirements, Risk Register, Technical Feasibility
+     - **Refinement:** Product Requirements, System Architecture, Tech Stack
+     - **Planning:** Master Plan, Milestones, Technical Requirements
+     - **Implementation:** Work Plan, Recommendations, Updated Master Plan
+   - CTA: "Sign up to generate your own" → `/register?ref={segment}`
+
+6. **How It Works** — 5-stage process contextualized to segment
+   - Same 5 stages (Proposal → Review → Refinement → Planning → Implementation)
+   - Each stage description reframed in the segment's language:
+     - Vibecoder: "Describe what you want → Get a plan your AI agent can follow"
+     - Indiehacker: "Describe your project → Get stack decisions and architecture from experienced devs in that stack"
+     - Startup: "Paste your pitch → Get alignment docs your whole team can build from"
+     - Agency: "Paste the client brief → Get scope docs and build instructions for your dev team"
+
+7. **FAQ / Objection Handler** — 2-3 items per segment
+   - Vibecoder: "But I've already tried AI tools" / "What if my project is too simple?"
+   - Indiehacker: "Can I trust AI architecture decisions?" / "What if I already know part of the stack?"
+   - Startup: "Is AI-generated architecture reliable enough to build on?" / "Can my whole team use this?"
+   - Agency: "Will this look professional enough to show my client?" / "Can I white-label the output?"
+
+8. **Final CTA** — conversion section
+   - Headline: segment-specific closing hook
+   - Pricing: "Start free — 1M tokens on signup, 100k tokens free every month. No credit card unless you upgrade."
+   - Primary button: "Get Started Free" → `/register?ref={segment}`
+   - Secondary: "Sign In" → `/login`
+   - Auth-aware: logged-in users see "Go to Dashboard"
+
+#### Content data structure
+- One TypeScript data file (`segmentContent.ts`) holding a typed object per segment
+- Contains: slug, headline, oneLiner, painStatement, scenario, exampleInput, featuredDocs (tab labels + file references), howItWorksFraming (5 strings), faqItems (question/answer pairs), ctaRef
+- Template component consumes this data object — no per-segment component files
+
+#### Technical approach
+- [x] Create segment content data file with all 4 segments
+- [x] Create shared landing page template component
+- [x] Create landing page route component (reads `:segment` param, looks up content)
+- [ ] Configure `vite-plugin-prerender` to generate static HTML at build time for the 4 segment routes
+- [ ] Add route `/:segment` to React Router for the 4 segment slugs
+- [ ] Import example markdown files as static content for the doc reader
+
+#### SEO / Prerendering approach
+The 4 segment landing pages need to be indexable by search engines immediately — no hydration delay, real HTML on first request.
+
+**Approach: `vite-plugin-prerender`**
+- Build-time prerendering — Puppeteer/jsdom renders each route at build time and writes static `.html` files
+- Zero changes to routes, components, or entry point — plugin config only
+- Rest of SPA untouched — only the 4 segment routes get prerendered
+- Output: `dist/vibecoder/index.html`, `dist/indiehacker/index.html`, etc.
+
+**Not doing:**
+- Vike / vite-plugin-ssr — requires file-based routing migration (weeks)
+- React Router v7 Framework Mode — requires v6→v7 upgrade + file-based routing (weeks)
+- Full SSR runtime — overkill for 4 static content pages
+
+#### Mobile approach
+- Functional and readable on mobile, not mobile-first optimized
+- Doc reader: full-width, scrollable, expand toggle prominent
+- Before/after: stacked vertically on mobile
+- FAQ: accordion or simple stacked sections
+
+### Step 3: Update the homepage UseCases component
+- [ ] Rewrite the 4 cards with final one-liners and segment-specific summaries
+- [ ] Make each card a `<Link>` to `/{segment-slug}`
+- [ ] Slugs: `vibe-coder`, `indie-hacker`, `startup`, `agency`
+- [ ] Update card content to match the 4 segments (replace "Learning & Teaching" with the 4 defined ICPs)
+
+### Step 4: Implement segment tracking on sign-up (ConvertKit + PostHog)
+
+Two-step flow: **ConvertKit captures email + segment cohort**, then **PostHog segments behavioral analytics** using the same cohort tag.
+
+#### Current state (broken)
+- `RegisterForm.tsx` has a newsletter checkbox that calls `subscribeToNewsletter(email)` in authStore
+- `subscribeToNewsletter` calls `supabase.functions.invoke('subscribe-to-newsletter')` — **this edge function does not exist**
+- `on-user-created` Auth Hook auto-subscribes ALL new users to a single Kit tag (no segment differentiation)
+- PostHog has zero integration in the registration flow (no `identify`, no `track`)
+
+#### Target state
+- CTA links pass `ref` query param: `/register?ref=vibecoder`
+- `RegisterForm.tsx` reads `ref` from URL search params
+- On registration (if newsletter checkbox is checked), pass `ref` value to the newsletter subscription so Kit tags the subscriber with their segment cohort
+- On successful account creation, call PostHog `identify(userId, { signup_segment })` and `track('user_registered', { signup_segment })` with the `ref` value (default `direct`)
+- **5 segment cohorts** in both ConvertKit and PostHog:
+  - `vibecoder` — from `/vibecoder` CTA
+  - `indiehacker` — from `/indiehacker` CTA
+  - `startup` — from `/startup` CTA
+  - `agency` — from `/agency` CTA
+  - `direct` — default for any sign-up with no `ref` param
+
+#### ConvertKit integration fix
+- The `subscribe-to-newsletter` edge function was previously deleted because it tried to read the user's email from Supabase's `auth` table (which Supabase blocks). The fix: recreate it to accept `{ email, segment }` directly from the client — email comes straight from the signup form input, no auth table reads needed.
+- `subscribeToNewsletter` action in authStore already receives email as a param — update signature to also accept `segment`, pass both to the new edge function.
+- The new edge function uses `getEmailMarketingService()` factory (same pattern as `on-user-created`) and calls Kit with the segment value.
+- Kit's `addUserToList` currently subscribes to a single tag. Need to either: (a) create per-segment tags in Kit and pass the segment-appropriate tag ID, or (b) use Kit custom fields to store the segment value.
+- **Manual setup (Tim):** Create segment tags or custom field in the ConvertKit dashboard for the 5 cohorts.
+
+#### PostHog integration
+- After registration succeeds and user ID is available, call `analytics.identify(userId, { signup_segment })` and `analytics.track('user_registered', { signup_segment })`
+- This happens in `RegisterForm.tsx` after the `register()` call succeeds
+- **Manual setup (Tim):** Create 5 cohorts in PostHog dashboard filtered by `signup_segment` property
+
+#### Tasks
+- [ ] Fix the broken `subscribeToNewsletter` flow (create edge function or fix the call path)
+- [ ] Pass `ref` / segment value through the newsletter subscription so Kit captures the cohort
+- [ ] Add `ref` query param reading to `RegisterForm.tsx`
+- [ ] Add PostHog `identify` + `track` calls on successful registration with `signup_segment` property
+- [ ] Tim: Create segment tags/forms in ConvertKit dashboard
+- [ ] Tim: Create 5 cohorts in PostHog dashboard
+- [ ] Verify tag flows through by testing each CTA → register → Kit + PostHog path
 
 ### Step 5: Review and polish
 - [ ] Review all 4 landing pages for tone consistency
-- [ ] Ensure mobile responsiveness
+- [ ] Ensure mobile is functional and readable
 - [ ] Test all CTA links and segment tag passthrough
 - [ ] Confirm analytics/tracking captures segment correctly
 
 ---
 
+## Resolved Questions
+
+1. **Routing:** Short routes — `/:segment` using the PostHog list names as slugs (`/vibe-coder`, `/indie-hacker`, `/startup`, `/agency`). No `/use-cases/` prefix.
+2. **Doc polish:** Ship raw AI output as-is. What is generated is exactly what we use. Authentic, not misleading.
+3. **`ref` values:** Use PostHog list names (`vibe-coder`, `indie-hacker`, `startup`, `agency`) as the `ref` param values.
+4. **Mobile:** Functional and readable, not mobile-first. Target ICP is planning software — phone/tablet users are not the primary segment.
+5. **Social proof:** No fake testimonials. Innovators don't need social proof — they need to see the product works. Trust signals come from real users after adoption curve begins.
+
 ## Open Questions
 
-1. **Routing:** Do we want `/use-cases/vibe-coders` or a different URL structure?
-2. **Doc polish:** After running the 4 example projects, do the featured docs need manual editing, or do we ship the raw AI output as-is? (Raw is more authentic, but may need light cleanup.)
-3. **PostHog list setup:** Need the specific PostHog API calls / dashboard config to create the 5 cohorts. Tim to pull the PostHog code for each.
+1. **PostHog cohort setup:** Create 5 cohorts in PostHog dashboard filtered by `signup_segment` user property.
+2. **ConvertKit segment strategy:** Decide between per-segment Kit tags (requires creating 5 tags and passing tag IDs dynamically) vs. a Kit custom field storing the segment value on a single tag. Check Kit dashboard capabilities & report.
+3. **`subscribe-to-newsletter` edge function:** Recreate it — accepts `{ email, segment }` from the client. Previously deleted because it tried to read email from auth tables; now the email is passed directly from the signup form input.
