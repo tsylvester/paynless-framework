@@ -6,7 +6,7 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
 import { visualizer } from 'rollup-plugin-visualizer';
-import vitePrerender from 'vite-plugin-prerender-esm-fix';
+import prerender from '@prerenderer/rollup-plugin';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -27,9 +27,13 @@ export default defineConfig({
       gzipSize: true,
       brotliSize: true,
     }),
-    vitePrerender({
-      staticDir: path.join(__dirname, 'dist'),
+    prerender({
       routes: ['/vibecoder', '/indiehacker', '/startup', '/agency'],
+      renderer: '@prerenderer/renderer-puppeteer',
+      rendererOptions: {
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      },
     }),
   ],
   optimizeDeps: {
