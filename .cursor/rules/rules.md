@@ -1,4 +1,8 @@
-# Instructions for Agent
+# Rules
+* These are not suggestions.
+* These are not guidelines. 
+* These are strict requirements.
+* The agent must abide by this entire rule set at all times without deviation. 
 
 ## 0. Command Pyramid & Modes
 * Any work that does not exactly follow these instructions will be rejected for failing to follow these instructions.
