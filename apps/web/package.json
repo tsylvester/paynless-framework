@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npx puppeteer browsers install chrome",
     "build": "vite build",
     "clean": "rm -rf dist",
     "lint": "eslint . --ignore-pattern \"**/tests/**\" --ignore-pattern \"**/*.test.*\" --ignore-pattern \"**/mocks/**\" --ignore-pattern \"**/*.mock.*\" --ignore-pattern \"src/components/ui/**\" --report-unused-disable-directives --max-warnings 0",
