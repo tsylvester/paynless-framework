@@ -33,6 +33,7 @@ const thesisStage: DialecticStage = {
   expected_output_template_ids: [],
   recipe_template_id: null,
   active_recipe_instance_id: null,
+  minimum_balance: 0,
 };
 
 const antithesisStage: DialecticStage = {
@@ -45,6 +46,7 @@ const antithesisStage: DialecticStage = {
   expected_output_template_ids: [],
   recipe_template_id: null,
   active_recipe_instance_id: null,
+  minimum_balance: 0,
 };
 
 const templateWithStages: DialecticProcessTemplate = {
@@ -71,6 +73,7 @@ const sessionWithThesisStage: DialecticSession = {
   status: 'active',
   associated_chat_id: null,
   dialectic_session_models: [],
+  viewing_stage_id: 'thesis',
 };
 
 const currentProjectDetailWithSession: DialecticProject = {
@@ -135,7 +138,7 @@ describe('fetchProcessTemplate stage guard', () => {
     );
   });
 
-  it('sets activeContextStage on initial load when activeStageSlug is null', async () => {
+  it('sets activeContextStage on initial load when viewingStageSlug is null', async () => {
     const mockResponse: ApiResponse<DialecticProcessTemplate> = {
       data: templateWithStages,
       status: 200,
@@ -144,7 +147,7 @@ describe('fetchProcessTemplate stage guard', () => {
 
     useDialecticStore.setState({
       currentProjectDetail: currentProjectDetailWithSession,
-      activeStageSlug: null,
+      viewingStageSlug: null,
       activeContextStage: null,
     });
 
@@ -156,7 +159,7 @@ describe('fetchProcessTemplate stage guard', () => {
     expect(state.currentProcessTemplate).toEqual(templateWithStages);
   });
 
-  it('does not overwrite activeContextStage when activeStageSlug is already set', async () => {
+  it('does not overwrite activeContextStage when viewingStageSlug is already set', async () => {
     const mockResponse: ApiResponse<DialecticProcessTemplate> = {
       data: templateWithStages,
       status: 200,
@@ -165,7 +168,7 @@ describe('fetchProcessTemplate stage guard', () => {
 
     useDialecticStore.setState({
       currentProjectDetail: currentProjectDetailWithSession,
-      activeStageSlug: 'antithesis',
+      viewingStageSlug: 'antithesis',
       activeContextStage: antithesisStage,
     });
 
@@ -173,12 +176,12 @@ describe('fetchProcessTemplate stage guard', () => {
     await fetchProcessTemplate('pt1');
 
     const state = useDialecticStore.getState();
-    expect(state.activeStageSlug).toBe('antithesis');
+    expect(state.viewingStageSlug).toBe('antithesis');
     expect(state.activeContextStage).toEqual(antithesisStage);
     expect(state.currentProcessTemplate).toEqual(templateWithStages);
   });
 
-  it('does not change activeContextStage or activeStageSlug when fetchProcessTemplate is called again after user has selected stage', async () => {
+  it('does not change activeContextStage or viewingStageSlug when fetchProcessTemplate is called again after user has selected stage', async () => {
     const mockResponse: ApiResponse<DialecticProcessTemplate> = {
       data: templateWithStages,
       status: 200,
@@ -187,30 +190,30 @@ describe('fetchProcessTemplate stage guard', () => {
 
     useDialecticStore.setState({
       currentProjectDetail: currentProjectDetailWithSession,
-      activeStageSlug: null,
+      viewingStageSlug: null,
       activeContextStage: null,
     });
 
-    const { fetchProcessTemplate, setActiveStage } = useDialecticStore.getState();
+    const { fetchProcessTemplate, setViewingStage } = useDialecticStore.getState();
     await fetchProcessTemplate('pt1');
 
     const afterFirst = useDialecticStore.getState();
     expect(afterFirst.activeContextStage).toEqual(thesisStage);
-    expect(afterFirst.activeStageSlug).toBeNull();
+    expect(afterFirst.viewingStageSlug).toBeNull();
 
-    setActiveStage('antithesis');
+    setViewingStage('antithesis');
     useDialecticStore.setState({ activeContextStage: antithesisStage });
 
     await fetchProcessTemplate('pt1');
 
     const afterSecond = useDialecticStore.getState();
-    expect(afterSecond.activeStageSlug).toBe('antithesis');
+    expect(afterSecond.viewingStageSlug).toBe('antithesis');
     expect(afterSecond.activeContextStage).toEqual(antithesisStage);
   });
 
   it('allows activeContextStage to be set via setActiveContextStage when user navigates explicitly', () => {
     useDialecticStore.setState({
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       activeContextStage: thesisStage,
     });
 

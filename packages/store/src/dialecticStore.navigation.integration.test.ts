@@ -48,6 +48,7 @@ const thesisStage: DialecticStage = {
   expected_output_template_ids: [],
   recipe_template_id: null,
   active_recipe_instance_id: null,
+  minimum_balance: 0,
 };
 
 const antithesisStage: DialecticStage = {
@@ -60,6 +61,7 @@ const antithesisStage: DialecticStage = {
   expected_output_template_ids: [],
   recipe_template_id: null,
   active_recipe_instance_id: null,
+  minimum_balance: 0,
 };
 
 const templateWithStages: DialecticProcessTemplate = {
@@ -77,7 +79,7 @@ const sessionWithThesisStage: DialecticSession = {
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   current_stage_id: 'stage-1',
-  selected_model_ids: [],
+  selected_models: [],
   dialectic_contributions: [],
   feedback: [],
   session_description: null,
@@ -86,6 +88,7 @@ const sessionWithThesisStage: DialecticSession = {
   status: 'thesis_completed',
   associated_chat_id: null,
   dialectic_session_models: [],
+  viewing_stage_id: 'stage-1',
 };
 
 const sessionWithAntithesisStage: DialecticSession = {
@@ -137,7 +140,7 @@ describe('Stage navigation stability during generation lifecycle', () => {
     vi.restoreAllMocks();
   });
 
-  it('keeps activeStageSlug unchanged when contribution_generation_complete fires while user is viewing thesis', async () => {
+  it('keeps viewingStageSlug unchanged when contribution_generation_complete fires while user is viewing thesis', async () => {
     const projectId = 'proj-1';
     const sessionId = 'session-1';
 
@@ -153,7 +156,7 @@ describe('Stage navigation stability during generation lifecycle', () => {
     useDialecticStore.setState({
       currentProjectDetail: currentProjectDetailWithSession,
       currentProcessTemplate: templateWithStages,
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       activeContextStage: thesisStage,
     });
 
@@ -179,14 +182,14 @@ describe('Stage navigation stability during generation lifecycle', () => {
     });
 
     const state = useDialecticStore.getState();
-    expect(state.activeStageSlug).toBe('thesis');
+    expect(state.viewingStageSlug).toBe('thesis');
   });
 
-  it('keeps activeStageSlug unchanged when document_completed fires while user is viewing thesis', () => {
+  it('keeps viewingStageSlug unchanged when document_completed fires while user is viewing thesis', () => {
     useDialecticStore.setState({
       currentProjectDetail: currentProjectDetailWithSession,
       currentProcessTemplate: templateWithStages,
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       activeContextStage: thesisStage,
     });
 
@@ -216,15 +219,15 @@ describe('Stage navigation stability during generation lifecycle', () => {
     });
 
     const state = useDialecticStore.getState();
-    expect(state.activeStageSlug).toBe('thesis');
+    expect(state.viewingStageSlug).toBe('thesis');
     expect(state.activeContextStage).toEqual(thesisStage);
   });
 
-  it('keeps activeStageSlug unchanged when render_completed fires while user is viewing thesis', () => {
+  it('keeps viewingStageSlug unchanged when render_completed fires while user is viewing thesis', () => {
     useDialecticStore.setState({
       currentProjectDetail: currentProjectDetailWithSession,
       currentProcessTemplate: templateWithStages,
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       activeContextStage: thesisStage,
     });
 
@@ -254,26 +257,26 @@ describe('Stage navigation stability during generation lifecycle', () => {
     });
 
     const state = useDialecticStore.getState();
-    expect(state.activeStageSlug).toBe('thesis');
+    expect(state.viewingStageSlug).toBe('thesis');
     expect(state.activeContextStage).toEqual(thesisStage);
   });
 
-  it('updates activeStageSlug to antithesis when user explicitly calls setActiveStage', () => {
+  it('updates viewingStageSlug to antithesis when user explicitly calls setViewingStage', () => {
     useDialecticStore.setState({
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       activeContextStage: thesisStage,
     });
 
-    const { setActiveStage } = useDialecticStore.getState();
+    const { setViewingStage } = useDialecticStore.getState();
     act(() => {
-      setActiveStage('antithesis');
+      setViewingStage('antithesis');
     });
 
     const state = useDialecticStore.getState();
-    expect(state.activeStageSlug).toBe('antithesis');
+    expect(state.viewingStageSlug).toBe('antithesis');
   });
 
-  it('submitStageResponses success then setActiveStage(next) advances viewed stage to next', async () => {
+  it('submitStageResponses success then setViewingStage(next) advances viewed stage to next', async () => {
     const submitPayload = {
       sessionId: 'session-1',
       projectId: 'proj-1',
@@ -302,22 +305,22 @@ describe('Stage navigation stability during generation lifecycle', () => {
     useDialecticStore.setState({
       currentProjectDetail: currentProjectDetailWithSession,
       currentProcessTemplate: templateWithStages,
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       activeContextStage: thesisStage,
       activeSessionDetail: sessionWithThesisStage,
     });
 
-    const { submitStageResponses, setActiveStage } = useDialecticStore.getState();
+    const { submitStageResponses, setViewingStage } = useDialecticStore.getState();
     const result = await submitStageResponses(submitPayload);
 
     expect(result.error).toBeUndefined();
     expect(result.data).toBeDefined();
 
     act(() => {
-      setActiveStage('antithesis');
+      setViewingStage('antithesis');
     });
 
     const state = useDialecticStore.getState();
-    expect(state.activeStageSlug).toBe('antithesis');
+    expect(state.viewingStageSlug).toBe('antithesis');
   });
 });

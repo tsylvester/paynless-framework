@@ -90,7 +90,7 @@ describe("exportProject", () => {
     }
 
     beforeEach(async () => {
-        const projectData: Tables<'dialectic_projects'> = {
+        const projectDataInit: Tables<'dialectic_projects'> = {
             id: mockProjectId,
             user_id: mockUser.id,
             project_name: mockProjectName,
@@ -106,7 +106,8 @@ describe("exportProject", () => {
             initial_prompt_resource_id: null,
             idempotency_key: null,
         };
-        const bucketResourceData: Tables<'dialectic_project_resources'> = {
+        projectData = projectDataInit;
+        const bucketResourceDataInit: Tables<'dialectic_project_resources'> = {
             id: "res-bucket",
             project_id: mockProjectId,
             user_id: mockUser.id,
@@ -124,10 +125,11 @@ describe("exportProject", () => {
             source_contribution_id: null,
             stage_slug: "thesis",
         };
+        bucketResourceData = bucketResourceDataInit;
         readmeContentBuffer = await new Blob(["# Project readme"]).arrayBuffer();
         resourceInFolderContentBuffer = await new Blob(["Resource 1 content"]).arrayBuffer();
 
-        const mockFileRecordForZip: FileRecord = {
+        const mockFileRecordForZipInit: FileRecord = {
             id: "zip-export-file-id-123",
             project_id: mockProjectId,
             user_id: mockUser.id,
@@ -148,6 +150,7 @@ describe("exportProject", () => {
             source_contribution_id: null,
             session_id: mockProjectId,
         };
+        mockFileRecordForZip = mockFileRecordForZipInit;
 
         mockSupabaseSetup = createMockSupabaseClient(mockUser.id, {
             genericMockResults: {

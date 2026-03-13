@@ -18,6 +18,7 @@ import type {
   DialecticNotificationTypes,
   StageRenderedDocumentDescriptor,
   SelectedModels,
+  JobProgressDto,
 } from '@paynless/types';
 import { mockLogger, resetMockLogger } from '../../api/src/mocks/logger.mock';
 import { getStageRunDocumentKey } from './dialecticStore.documents';
@@ -44,6 +45,7 @@ const stageThesis: DialecticStage = {
   expected_output_template_ids: [],
   recipe_template_id: null,
   active_recipe_instance_id: null,
+  minimum_balance: 0,
 };
 
 const stageAntithesis: DialecticStage = {
@@ -56,6 +58,7 @@ const stageAntithesis: DialecticStage = {
   expected_output_template_ids: [],
   recipe_template_id: null,
   active_recipe_instance_id: null,
+  minimum_balance: 0,
 };
 
 const templateTwoStages: DialecticProcessTemplate = {
@@ -161,6 +164,7 @@ const emptyStageProgress: StageRunProgressSnapshot = {
   documents: {},
   jobProgress: {},
   progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+  jobs: [],
 };
 
 function buildNotification(
@@ -254,6 +258,7 @@ describe('Integration test: Frontend progress tracking from notifications to dis
           documents: {},
           jobProgress: {},
           progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+          jobs: [],
         },
         [`${sessionId}:antithesis:${iterationNumber}`]: emptyStageProgress,
       },
@@ -645,6 +650,23 @@ describe('Integration test: Frontend progress tracking from notifications to dis
         ...baseDescriptor,
         modelId: 'model-3',
       };
+      const now: string = new Date().toISOString();
+      const completedJob: Omit<JobProgressDto, 'documentKey' | 'modelId'> = {
+        id: 'job-doc',
+        status: 'completed',
+        jobType: 'RENDER',
+        stepKey: 'document_step',
+        parentJobId: null,
+        createdAt: now,
+        startedAt: now,
+        completedAt: now,
+        modelName: null,
+      };
+      progress.jobs = [
+        { ...completedJob, documentKey: 'business_case', modelId: 'model-1' },
+        { ...completedJob, documentKey: 'executive_summary', modelId: 'model-2' },
+        { ...completedJob, documentKey: 'scope', modelId: 'model-3' },
+      ];
     });
 
     const state: DialecticStateValues = useDialecticStore.getState();
@@ -691,6 +713,23 @@ describe('Integration test: Frontend progress tracking from notifications to dis
         ...baseDescriptor,
         modelId: 'model-3',
       };
+      const now: string = new Date().toISOString();
+      const completedJob: Omit<JobProgressDto, 'documentKey' | 'modelId'> = {
+        id: 'job-doc',
+        status: 'completed',
+        jobType: 'RENDER',
+        stepKey: 'document_step',
+        parentJobId: null,
+        createdAt: now,
+        startedAt: now,
+        completedAt: now,
+        modelName: null,
+      };
+      progress.jobs = [
+        { ...completedJob, documentKey: 'business_case', modelId: 'model-1' },
+        { ...completedJob, documentKey: 'executive_summary', modelId: 'model-2' },
+        { ...completedJob, documentKey: 'scope', modelId: 'model-3' },
+      ];
     });
 
     const state: DialecticStateValues = useDialecticStore.getState();

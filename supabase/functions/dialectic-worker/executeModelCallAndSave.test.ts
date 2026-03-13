@@ -161,6 +161,7 @@ export const mockSessionRow: Tables<'dialectic_sessions'> = {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     idempotency_key: 'session-456_render',
+    viewing_stage_id: null,
   };
 
 export const mockSessionData: DialecticSession = {

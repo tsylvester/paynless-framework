@@ -43,6 +43,8 @@ import type {
   StageProgressEntry,
   SubmitStageResponsesPayload,
   StageDocumentContentState,
+  StageRunProgressSnapshot,
+  JobProgressDto,
 } from '@paynless/types';
 import { getStageRunDocumentKey, getStageDocumentKey } from './dialecticStore.documents';
 import { useAuthStore } from './authStore';
@@ -381,6 +383,7 @@ describe('useDialecticStore', () => {
                     iteration_count: 0,
                     status: 'active',
                     associated_chat_id: null,
+                    viewing_stage_id: 'thesis',
                 }, // Add a value for new field
             });
 
@@ -662,6 +665,7 @@ describe('useDialecticStore', () => {
                     status: 'pending_hypothesis',
                     associated_chat_id: null,
                     current_stage_id: 'thesis',
+                    viewing_stage_id: 'thesis',
                 }],
             };
 
@@ -760,7 +764,29 @@ describe('useDialecticStore', () => {
                 status: 'pending_antithesis',
                 associated_chat_id: null,
                 current_stage_id: stageSlug,
+                viewing_stage_id: stageSlug,
             }],
+        };
+
+        const thesisStageForSubmit: DialecticStage = {
+            id: stageSlug,
+            slug: stageSlug,
+            display_name: 'Thesis',
+            description: '',
+            default_system_prompt_id: null,
+            expected_output_template_ids: [],
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+            created_at: new Date().toISOString(),
+            minimum_balance: 0,
+        };
+        const mockSubmitTemplate: DialecticProcessTemplate = {
+            id: 'pt-1',
+            name: 'Test',
+            starting_stage_id: stageSlug,
+            created_at: new Date().toISOString(),
+            stages: [thesisStageForSubmit],
+            description: null,
         };
 
         const payload: SubmitStageResponsesPayload = {
@@ -787,6 +813,7 @@ describe('useDialecticStore', () => {
             };
             useDialecticStore.setState({
                 currentProjectDetail: mockProject,
+                currentProcessTemplate: mockSubmitTemplate,
                 stageDocumentContent: {
                     [serializedKey]: documentContent,
                 },
@@ -829,6 +856,7 @@ describe('useDialecticStore', () => {
             };
             useDialecticStore.setState({
                 currentProjectDetail: mockProject,
+                currentProcessTemplate: mockSubmitTemplate,
                 stageDocumentContent: {
                     [serializedKey]: documentContent,
                 },
@@ -836,6 +864,7 @@ describe('useDialecticStore', () => {
             getMockDialecticClient().submitStageDocumentFeedback.mockResolvedValue({ data: { success: true }, status: 200 });
             getMockDialecticClient().submitStageResponses.mockResolvedValue({ data: { updatedSession: mockProject.dialectic_sessions![0] }, status: 200 });
             getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+            getMockDialecticClient().updateViewingStage.mockResolvedValue({ error: undefined, status: 200 });
 
             await useDialecticStore.getState().submitStageResponses(payload);
 
@@ -867,6 +896,7 @@ describe('useDialecticStore', () => {
             };
             useDialecticStore.setState({
                 currentProjectDetail: mockProject,
+                currentProcessTemplate: mockSubmitTemplate,
                 stageDocumentContent: {
                     [serializedKey]: documentContent,
                 },
@@ -878,12 +908,196 @@ describe('useDialecticStore', () => {
             getMockDialecticClient().submitStageDocumentFeedback.mockResolvedValue({ data: { success: true }, status: 200 });
             getMockDialecticClient().submitStageResponses.mockResolvedValue({ data: { updatedSession: mockProject.dialectic_sessions![0] }, status: 200 });
             getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+            getMockDialecticClient().updateViewingStage.mockResolvedValue({ error: undefined, status: 200 });
 
             await useDialecticStore.getState().submitStageResponses(payload);
 
             expect(getMockDialecticClient().saveContributionEdit).toHaveBeenCalledTimes(1);
             expect(getMockDialecticClient().submitStageDocumentFeedback).toHaveBeenCalledTimes(1);
             expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
+        });
+
+        it('after successful submitStageResponses, activeSessionDetail.current_stage_id matches updatedSession.current_stage_id', async () => {
+            const session: DialecticSession = mockProject.dialectic_sessions![0];
+            const updatedSession: DialecticSession = {
+                ...session,
+                current_stage_id: 'antithesis',
+                viewing_stage_id: session.viewing_stage_id,
+            };
+            useDialecticStore.setState({
+                currentProjectDetail: mockProject,
+                activeSessionDetail: session,
+                activeContextSessionId: sessionId,
+                activeContextProjectId: projectId,
+            });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({
+                data: { updatedSession },
+                status: 200,
+            });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetail?.current_stage_id).toBe(updatedSession.current_stage_id);
+        });
+
+        it('after successful submitStageResponses, currentProjectDetail.dialectic_sessions entry is updated', async () => {
+            const session: DialecticSession = mockProject.dialectic_sessions![0];
+            const updatedSession: DialecticSession = {
+                ...session,
+                current_stage_id: 'antithesis',
+                viewing_stage_id: session.viewing_stage_id,
+            };
+            useDialecticStore.setState({
+                currentProjectDetail: mockProject,
+                activeSessionDetail: session,
+                activeContextSessionId: sessionId,
+                activeContextProjectId: projectId,
+            });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({
+                data: { updatedSession },
+                status: 200,
+            });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            const state = useDialecticStore.getState();
+            const entry = state.currentProjectDetail?.dialectic_sessions?.find((s) => s.id === sessionId);
+            expect(entry?.current_stage_id).toBe(updatedSession.current_stage_id);
+        });
+
+        it('if viewing_stage_id === old current_stage_id before submit, both viewing_stage_id and viewingStageSlug advance to new stage', async () => {
+            const thesisStage: DialecticStage = {
+                id: 'thesis',
+                slug: 'thesis',
+                display_name: 'Thesis',
+                description: '',
+                default_system_prompt_id: null,
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: new Date().toISOString(),
+                minimum_balance: 0,
+            };
+            const antithesisStage: DialecticStage = {
+                id: 'antithesis',
+                slug: 'antithesis',
+                display_name: 'Antithesis',
+                description: '',
+                default_system_prompt_id: null,
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: new Date().toISOString(),
+                minimum_balance: 0,
+            };
+            const template: DialecticProcessTemplate = {
+                id: 'pt-1',
+                name: 'Test',
+                starting_stage_id: 'thesis',
+                created_at: new Date().toISOString(),
+                stages: [thesisStage, antithesisStage],
+                description: null,
+            };
+            const session: DialecticSession = {
+                ...mockProject.dialectic_sessions![0],
+                current_stage_id: 'thesis',
+                viewing_stage_id: 'thesis',
+            };
+            const updatedSession: DialecticSession = {
+                ...session,
+                current_stage_id: 'antithesis',
+                viewing_stage_id: 'antithesis',
+            };
+            const projectWithSession: DialecticProject = {
+                ...mockProject,
+                dialectic_sessions: [session],
+            };
+            useDialecticStore.setState({
+                currentProjectDetail: projectWithSession,
+                activeSessionDetail: session,
+                activeContextSessionId: sessionId,
+                activeContextProjectId: projectId,
+                currentProcessTemplate: template,
+                viewingStageSlug: 'thesis',
+            });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({
+                data: { updatedSession },
+                status: 200,
+            });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetail?.viewing_stage_id).toBe('antithesis');
+            expect(state.viewingStageSlug).toBe('antithesis');
+        });
+
+        it('if viewing_stage_id !== old current_stage_id before submit, viewing_stage_id and viewingStageSlug are preserved', async () => {
+            const thesisStage: DialecticStage = {
+                id: 'thesis',
+                slug: 'thesis',
+                display_name: 'Thesis',
+                description: '',
+                default_system_prompt_id: null,
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: new Date().toISOString(),
+                minimum_balance: 0,
+            };
+            const antithesisStage: DialecticStage = {
+                id: 'antithesis',
+                slug: 'antithesis',
+                display_name: 'Antithesis',
+                description: '',
+                default_system_prompt_id: null,
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: new Date().toISOString(),
+                minimum_balance: 0,
+            };
+            const template: DialecticProcessTemplate = {
+                id: 'pt-1',
+                name: 'Test',
+                starting_stage_id: 'thesis',
+                created_at: new Date().toISOString(),
+                stages: [thesisStage, antithesisStage],
+                description: null,
+            };
+            const session: DialecticSession = {
+                ...mockProject.dialectic_sessions![0],
+                current_stage_id: 'antithesis',
+                viewing_stage_id: 'thesis',
+            };
+            const updatedSession: DialecticSession = {
+                ...session,
+                current_stage_id: 'antithesis',
+                viewing_stage_id: 'thesis',
+            };
+            const projectWithSession: DialecticProject = {
+                ...mockProject,
+                dialectic_sessions: [session],
+            };
+            useDialecticStore.setState({
+                currentProjectDetail: projectWithSession,
+                activeSessionDetail: session,
+                activeContextSessionId: sessionId,
+                activeContextProjectId: projectId,
+                currentProcessTemplate: template,
+                viewingStageSlug: 'thesis',
+            });
+            getMockDialecticClient().submitStageResponses.mockResolvedValue({
+                data: { updatedSession },
+                status: 200,
+            });
+
+            await useDialecticStore.getState().submitStageResponses(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetail?.viewing_stage_id).toBe('thesis');
+            expect(state.viewingStageSlug).toBe('thesis');
         });
     });
 
@@ -1159,17 +1373,17 @@ describe('useDialecticStore', () => {
         });
     });
 
-    describe('ensureRecipeForActiveStage thunk', () => {
-        it('ensureRecipeForActiveStage throws when recipe is not in store', async () => {
+    describe('ensureRecipeForViewingStage thunk', () => {
+        it('ensureRecipeForViewingStage throws when recipe is not in store', async () => {
             useDialecticStore.setState({ recipesByStageSlug: {} });
 
-            const { ensureRecipeForActiveStage } = useDialecticStore.getState();
+            const { ensureRecipeForViewingStage } = useDialecticStore.getState();
             await expect(
-                ensureRecipeForActiveStage('session-1', 'thesis', 1),
+                ensureRecipeForViewingStage('session-1', 'thesis', 1),
             ).rejects.toThrow(/Recipe not loaded for stage: thesis/);
         });
 
-        it('ensureRecipeForActiveStage initializes progress snapshot when recipe exists', async () => {
+        it('ensureRecipeForViewingStage initializes progress snapshot when recipe exists', async () => {
             const mockStep: DialecticStageRecipeStep = {
                 id: 'step-1',
                 step_key: 'step_a',
@@ -1190,8 +1404,8 @@ describe('useDialecticStore', () => {
             };
             useDialecticStore.setState({ recipesByStageSlug: { thesis: mockRecipe } });
 
-            const { ensureRecipeForActiveStage } = useDialecticStore.getState();
-            await ensureRecipeForActiveStage('session-1', 'thesis', 1);
+            const { ensureRecipeForViewingStage } = useDialecticStore.getState();
+            await ensureRecipeForViewingStage('session-1', 'thesis', 1);
 
             const state = useDialecticStore.getState();
             const progressKey = 'session-1:thesis:1';
@@ -1409,6 +1623,7 @@ describe('useDialecticStore', () => {
                 current_stage_id: null,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: 'thesis',
             }],
             contributionGenerationStatus: 'idle',
             generateContributionsError: null,
@@ -1732,6 +1947,7 @@ describe('useDialecticStore', () => {
                 status: 'active', 
                 associated_chat_id: null,
                 dialectic_session_models: [],
+                viewing_stage_id: 'thesis',
                 },
                 { 
                 id: mockSessionId, 
@@ -1748,6 +1964,7 @@ describe('useDialecticStore', () => {
                 status: 'active', 
                 associated_chat_id: null,
                 dialectic_session_models: [], 
+                viewing_stage_id: 'stage-1',
             }
             ],
             contributionGenerationStatus: 'idle',
@@ -1775,6 +1992,7 @@ describe('useDialecticStore', () => {
             status: 'active',
             associated_chat_id: null,
             dialectic_session_models: [],
+            viewing_stage_id: 'stage-1',
         };
 
         const mockStage: DialecticStage = {
@@ -1820,6 +2038,11 @@ describe('useDialecticStore', () => {
                 data: mockSession,
                 status: 200,
             });
+            getMockDialecticClient().updateViewingStage.mockResolvedValue({
+                data: undefined,
+                error: undefined,
+                status: 200,
+            });
 
             // Act
             const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
@@ -1835,7 +2058,7 @@ describe('useDialecticStore', () => {
             expect(state.activeContextProjectId).toBe(mockProjectId);
             expect(state.activeContextSessionId).toBe(mockSessionId);
             expect(state.activeContextStage).toEqual(mockStage);
-            expect(state.activeStageSlug).toBe(mockStage.slug);
+            expect(state.viewingStageSlug).toBe(mockStage.slug);
         });
 
         it('should set projectDetailError on failure', async () => {
@@ -1848,6 +2071,231 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.projectDetailError).toEqual(mockError);
             expect(getMockDialecticClient().getSessionDetails).not.toHaveBeenCalled(); // Should not proceed if project fetch fails
+        });
+    });
+
+    describe('setViewingStage and viewing stage hydration', () => {
+        it('calls api.dialectic().updateViewingStage with correct sessionId and stageId when setViewingStage is called', () => {
+            const sessionId = 'sess-viewing-1';
+            const stageId = 'stage-thesis-id';
+            const stageSlug = 'thesis';
+            const template: DialecticProcessTemplate = {
+                id: 'pt-1',
+                name: 'Test',
+                starting_stage_id: stageId,
+                created_at: new Date().toISOString(),
+                stages: [
+                    {
+                        id: stageId,
+                        slug: stageSlug,
+                        display_name: 'Thesis',
+                        description: '',
+                        default_system_prompt_id: null,
+                        expected_output_template_ids: [],
+                        recipe_template_id: null,
+                        active_recipe_instance_id: null,
+                        created_at: new Date().toISOString(),
+                        minimum_balance: 0,
+                    },
+                ],
+                description: null,
+            };
+
+            getMockDialecticClient().updateViewingStage.mockResolvedValue({
+                data: undefined,
+                error: undefined,
+                status: 200,
+            });
+
+            useDialecticStore.setState({
+                activeContextSessionId: sessionId,
+                currentProcessTemplate: template,
+                viewingStageSlug: null,
+            });
+
+            const { setViewingStage } = useDialecticStore.getState();
+            setViewingStage(stageSlug);
+
+            expect(getMockDialecticClient().updateViewingStage).toHaveBeenCalledTimes(1);
+            expect(getMockDialecticClient().updateViewingStage).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.anything(),
+                { sessionId, viewingStageId: stageId },
+            );
+        });
+
+        it('sets viewingStageSlug from session.viewing_stage_id on session load', async () => {
+            const sessionId = 'sess-hydrate-1';
+            const stageId = 'stage-antithesis-id';
+            const stageSlug = 'antithesis';
+            const sessionWithViewingStage: DialecticSession = {
+                id: sessionId,
+                project_id: 'proj-1',
+                current_stage_id: stageId,
+                viewing_stage_id: stageId,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                selected_models: [],
+                dialectic_contributions: [],
+                feedback: [],
+                session_description: null,
+                user_input_reference_url: null,
+                iteration_count: 0,
+                status: 'active',
+                associated_chat_id: null,
+                dialectic_session_models: [],
+            };
+            const stageDetails: DialecticStage = {
+                id: stageId,
+                slug: stageSlug,
+                display_name: 'Antithesis',
+                description: '',
+                default_system_prompt_id: null,
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: new Date().toISOString(),
+                minimum_balance: 0,
+            };
+            const template: DialecticProcessTemplate = {
+                id: 'pt-1',
+                name: 'Test',
+                starting_stage_id: 'stage-thesis-id',
+                created_at: new Date().toISOString(),
+                stages: [stageDetails],
+                description: null,
+            };
+
+            const projectDetail: DialecticProject = {
+                id: 'proj-1',
+                user_id: 'user-1',
+                project_name: 'Test Project',
+                selected_domain_id: 'domain-1',
+                dialectic_domains: { name: 'Test' },
+                selected_domain_overlay_id: null,
+                repo_url: null,
+                status: 'active',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                dialectic_sessions: [],
+                process_template_id: 'pt-1',
+                dialectic_process_templates: template,
+                isLoadingProcessTemplate: false,
+                processTemplateError: null,
+                contributionGenerationStatus: 'idle',
+                generateContributionsError: null,
+                isSubmittingStageResponses: false,
+                submitStageResponsesError: null,
+                isSavingContributionEdit: false,
+                saveContributionEditError: null,
+            };
+
+            getMockDialecticClient().getSessionDetails.mockResolvedValue({
+                data: {
+                    session: sessionWithViewingStage,
+                    currentStageDetails: stageDetails,
+                    activeSeedPrompt: null,
+                },
+                status: 200,
+            });
+
+            useDialecticStore.setState({
+                currentProjectDetail: projectDetail,
+                currentProcessTemplate: template,
+                viewingStageSlug: null,
+            });
+
+            await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(sessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.viewingStageSlug).toBe(stageSlug);
+        });
+
+        it('sets viewingStageSlug from current_stage_id when viewing_stage_id is null on load', async () => {
+            const sessionId = 'sess-hydrate-null-1';
+            const stageId = 'stage-synthesis-id';
+            const stageSlug = 'synthesis';
+            const sessionWithNullViewingStage: DialecticSession = {
+                id: sessionId,
+                project_id: 'proj-1',
+                current_stage_id: stageId,
+                viewing_stage_id: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                selected_models: [],
+                dialectic_contributions: [],
+                feedback: [],
+                session_description: null,
+                user_input_reference_url: null,
+                iteration_count: 0,
+                status: 'active',
+                associated_chat_id: null,
+                dialectic_session_models: [],
+            };
+            const stageDetails: DialecticStage = {
+                id: stageId,
+                slug: stageSlug,
+                display_name: 'Synthesis',
+                description: '',
+                default_system_prompt_id: null,
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: new Date().toISOString(),
+                minimum_balance: 0,
+            };
+            const template: DialecticProcessTemplate = {
+                id: 'pt-1',
+                name: 'Test',
+                starting_stage_id: 'stage-thesis-id',
+                created_at: new Date().toISOString(),
+                stages: [stageDetails],
+                description: null,
+            };
+
+            const projectDetail: DialecticProject = {
+                id: 'proj-1',
+                user_id: 'user-1',
+                project_name: 'Test Project',
+                selected_domain_id: 'domain-1',
+                dialectic_domains: { name: 'Test' },
+                selected_domain_overlay_id: null,
+                repo_url: null,
+                status: 'active',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                dialectic_sessions: [],
+                process_template_id: 'pt-1',
+                dialectic_process_templates: template,
+                isLoadingProcessTemplate: false,
+                processTemplateError: null,
+                contributionGenerationStatus: 'idle',
+                generateContributionsError: null,
+                isSubmittingStageResponses: false,
+                submitStageResponsesError: null,
+                isSavingContributionEdit: false,
+                saveContributionEditError: null,
+            };
+
+            getMockDialecticClient().getSessionDetails.mockResolvedValue({
+                data: {
+                    session: sessionWithNullViewingStage,
+                    currentStageDetails: stageDetails,
+                    activeSeedPrompt: null,
+                },
+                status: 200,
+            });
+
+            useDialecticStore.setState({
+                currentProjectDetail: projectDetail,
+                currentProcessTemplate: template,
+                viewingStageSlug: null,
+            });
+
+            await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(sessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.viewingStageSlug).toBe(stageSlug);
         });
     });
 
@@ -1871,6 +2319,7 @@ describe('useDialecticStore', () => {
                         iteration_count: 0,
                         status: 'active',
                         associated_chat_id: null,
+                        viewing_stage_id: 'thesis',
                     }],
                     project_name: 'Test Project',
                     selected_domain_id: 'domain-1',
@@ -2223,6 +2672,582 @@ describe('useDialecticStore', () => {
             expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
             expect(useDialecticStore.getState().generatingSessions['session-123']).toBeUndefined();
             expect(getMockDialecticClient().getProjectDetails).toHaveBeenCalledWith('proj-1');
+        });
+
+        describe('progress.jobs upsert from lifecycle events', () => {
+            const progressKey = 'session-123:thesis:1';
+            const mockRecipe: DialecticStageRecipe = {
+                stageSlug: 'thesis',
+                instanceId: 'inst-1',
+                steps: [{ id: 'step-1', step_key: 'plan', step_slug: 'plan', step_name: 'Plan', execution_order: 0, job_type: 'PLAN', prompt_type: 'Planner', output_type: 'json', granularity_strategy: 'all_to_one', inputs_required: [] }],
+                edges: [],
+            };
+            const emptyProgressSnapshot: StageRunProgressSnapshot = {
+                stepStatuses: {},
+                documents: {},
+                jobProgress: {},
+                progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+                jobs: [],
+            };
+
+            beforeEach(() => {
+                useDialecticStore.setState({
+                    recipesByStageSlug: { thesis: mockRecipe },
+                    stageRunProgress: { [progressKey]: { ...emptyProgressSnapshot, jobs: [] } },
+                });
+            });
+
+            it("planner_started upserts job with status 'processing' and jobType 'PLAN'", () => {
+                const event: DialecticLifecycleEvent = {
+                    type: 'planner_started',
+                    sessionId: 'session-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-plan-1',
+                    step_key: 'plan',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-plan-1');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('processing');
+                expect(job?.jobType).toBe('PLAN');
+                expect(job?.stepKey).toBe('plan');
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+            });
+
+            it("planner_completed upserts job with status 'completed' and jobType 'PLAN'", () => {
+                const event: DialecticLifecycleEvent = {
+                    type: 'planner_completed',
+                    sessionId: 'session-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-plan-2',
+                    step_key: 'plan',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-plan-2');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('completed');
+                expect(job?.jobType).toBe('PLAN');
+                expect(job?.stepKey).toBe('plan');
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+            });
+
+            it("execute_started upserts job with status 'processing' and jobType 'EXECUTE' (with or without document_key — same path)", () => {
+                const eventNoDoc: DialecticLifecycleEvent = {
+                    type: 'execute_started',
+                    sessionId: 'session-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-exec-1',
+                    step_key: 'step_a',
+                    modelId: 'model-1',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventNoDoc);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-exec-1');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('processing');
+                expect(job?.jobType).toBe('EXECUTE');
+                expect(job?.stepKey).toBe('step_a');
+                expect(job?.modelId).toBe('model-1');
+                expect(job?.documentKey).toBeNull();
+            });
+
+            it("execute_completed upserts job with status 'completed' and jobType 'EXECUTE' (with or without document_key — same path)", () => {
+                useDialecticStore.setState((state) => {
+                    const snap = state.stageRunProgress[progressKey];
+                    if (snap?.jobs) {
+                        snap.jobs.push({
+                            id: 'job-exec-done',
+                            status: 'processing',
+                            jobType: 'EXECUTE',
+                            stepKey: 'step_a',
+                            modelId: 'model-1',
+                            documentKey: null,
+                            parentJobId: null,
+                            createdAt: new Date().toISOString(),
+                            startedAt: null,
+                            completedAt: null,
+                            modelName: null,
+                        });
+                    }
+                    return state;
+                });
+                const eventNoDoc: DialecticLifecycleEvent = {
+                    type: 'execute_completed',
+                    sessionId: 'session-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-exec-done',
+                    step_key: 'step_a',
+                    modelId: 'model-1',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventNoDoc);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-exec-done');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('completed');
+                expect(job?.jobType).toBe('EXECUTE');
+                expect(job?.stepKey).toBe('step_a');
+                expect(job?.modelId).toBe('model-1');
+                expect(job?.documentKey).toBeNull();
+            });
+
+            it("render_chunk_completed upserts job with status 'processing'", () => {
+                const event: DialecticLifecycleEvent = {
+                    type: 'render_chunk_completed',
+                    sessionId: 'session-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-render-chunk',
+                    document_key: 'doc-1',
+                    modelId: 'model-1',
+                    step_key: 'render',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-render-chunk');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('processing');
+                expect(job?.jobType).toBe('RENDER');
+                expect(job?.stepKey).toBe('render');
+                expect(job?.modelId).toBe('model-1');
+                expect(job?.documentKey).toBe('doc-1');
+            });
+
+            it("job_failed upserts job with status 'failed' (with or without document_key — same path)", () => {
+                useDialecticStore.setState((state) => {
+                    const snap = state.stageRunProgress[progressKey];
+                    if (snap?.jobs) {
+                        snap.jobs.push({
+                            id: 'job-fail-1',
+                            status: 'processing',
+                            jobType: 'EXECUTE',
+                            stepKey: 'step_a',
+                            modelId: 'model-1',
+                            documentKey: null,
+                            parentJobId: null,
+                            createdAt: new Date().toISOString(),
+                            startedAt: null,
+                            completedAt: null,
+                            modelName: null,
+                        });
+                    }
+                    return state;
+                });
+                const event: DialecticLifecycleEvent = {
+                    type: 'job_failed',
+                    sessionId: 'session-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-fail-1',
+                    step_key: 'step_a',
+                    modelId: 'model-1',
+                    error: { code: 'FAILED', message: 'Job failed' },
+                } as DialecticLifecycleEvent;
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-fail-1');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('failed');
+                expect(job?.jobType).toBeNull();
+                expect(job?.stepKey).toBe('step_a');
+                expect(job?.modelId).toBe('model-1');
+                expect(job?.documentKey).toBeNull();
+            });
+
+            it("contribution_generation_started upserts job with status 'processing'", () => {
+                useDialecticStore.setState((state) => {
+                    const snap = state.stageRunProgress[progressKey];
+                    if (snap?.jobs) {
+                        snap.jobs.push({
+                            id: 'job-cg-1',
+                            status: 'pending',
+                            jobType: null,
+                            stepKey: null,
+                            modelId: null,
+                            documentKey: null,
+                            parentJobId: null,
+                            createdAt: new Date().toISOString(),
+                            startedAt: null,
+                            completedAt: null,
+                            modelName: null,
+                        });
+                    }
+                    return state;
+                });
+                const event: DialecticLifecycleEvent = {
+                    type: 'contribution_generation_started',
+                    sessionId: 'session-123',
+                    modelId: 'model-abc',
+                    iterationNumber: 1,
+                    job_id: 'job-cg-1',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-cg-1');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('processing');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
+            });
+
+            it("dialectic_contribution_started upserts job with status 'processing'", () => {
+                useDialecticStore.setState((state) => {
+                    const snap = state.stageRunProgress[progressKey];
+                    if (snap?.jobs) {
+                        snap.jobs.push({
+                            id: 'job-dc-1',
+                            status: 'pending',
+                            jobType: null,
+                            stepKey: null,
+                            modelId: null,
+                            documentKey: null,
+                            parentJobId: null,
+                            createdAt: new Date().toISOString(),
+                            startedAt: null,
+                            completedAt: null,
+                            modelName: null,
+                        });
+                    }
+                    return state;
+                });
+                const event: DialecticLifecycleEvent = {
+                    type: 'dialectic_contribution_started',
+                    sessionId: 'session-123',
+                    modelId: 'model-abc',
+                    iterationNumber: 1,
+                    job_id: 'job-dc-1',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-dc-1');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('processing');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
+            });
+
+            it("contribution_generation_retrying upserts job with status 'retrying'", () => {
+                useDialecticStore.setState((state) => {
+                    const snap = state.stageRunProgress[progressKey];
+                    if (snap?.jobs) {
+                        snap.jobs.push({
+                            id: 'job-retry-1',
+                            status: 'processing',
+                            jobType: null,
+                            stepKey: null,
+                            modelId: null,
+                            documentKey: null,
+                            parentJobId: null,
+                            createdAt: new Date().toISOString(),
+                            startedAt: null,
+                            completedAt: null,
+                            modelName: null,
+                        });
+                    }
+                    return state;
+                });
+                const event: DialecticLifecycleEvent = {
+                    type: 'contribution_generation_retrying',
+                    sessionId: 'session-123',
+                    modelId: 'model-abc',
+                    iterationNumber: 1,
+                    job_id: 'job-retry-1',
+                    error: 'Retrying',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-retry-1');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('retrying');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
+            });
+
+            it("dialectic_contribution_received upserts job with status 'processing'", () => {
+                useDialecticStore.setState((state) => {
+                    const snap = state.stageRunProgress[progressKey];
+                    if (snap?.jobs) {
+                        snap.jobs.push({
+                            id: 'job-recv-1',
+                            status: 'pending',
+                            jobType: null,
+                            stepKey: null,
+                            modelId: null,
+                            documentKey: null,
+                            parentJobId: null,
+                            createdAt: new Date().toISOString(),
+                            startedAt: null,
+                            completedAt: null,
+                            modelName: null,
+                        });
+                    }
+                    return state;
+                });
+                const event: DialecticLifecycleEvent = {
+                    type: 'dialectic_contribution_received',
+                    sessionId: 'session-123',
+                    contribution: {
+                        id: 'real-1',
+                        model_id: 'model-abc',
+                        iteration_number: 1,
+                        session_id: 'session-123',
+                        user_id: 'user-123',
+                        stage: 'stage-1',
+                        model_name: 'model-abc',
+                        prompt_template_id_used: 'pt-1',
+                        seed_prompt_url: null,
+                        edit_version: 1,
+                        is_latest_edit: true,
+                        original_model_contribution_id: null,
+                        raw_response_storage_path: null,
+                        target_contribution_id: null,
+                        tokens_used_input: 10,
+                        tokens_used_output: 20,
+                        processing_time_ms: 100,
+                        error: null,
+                        citations: [],
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        contribution_type: 'text',
+                        file_name: null,
+                        storage_bucket: null,
+                        storage_path: null,
+                        size_bytes: null,
+                        mime_type: null,
+                    },
+                    job_id: 'job-recv-1',
+                    is_continuing: false,
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-recv-1');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('processing');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
+            });
+
+            it("contribution_generation_complete upserts job with status 'completed'", () => {
+                useDialecticStore.setState((state) => {
+                    const snap = state.stageRunProgress[progressKey];
+                    if (snap?.jobs) {
+                        snap.jobs.push({
+                            id: 'job-complete-1',
+                            status: 'processing',
+                            jobType: null,
+                            stepKey: null,
+                            modelId: null,
+                            documentKey: null,
+                            parentJobId: null,
+                            createdAt: new Date().toISOString(),
+                            startedAt: null,
+                            completedAt: null,
+                            modelName: null,
+                        });
+                    }
+                    return state;
+                });
+                useDialecticStore.setState({ generatingSessions: { 'session-123': ['job-complete-1'] } });
+                const event: DialecticLifecycleEvent = {
+                    type: 'contribution_generation_complete',
+                    sessionId: 'session-123',
+                    projectId: 'proj-123',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-complete-1');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('completed');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
+            });
+
+            it("contribution_generation_continued upserts job with status 'continuing'", () => {
+                useDialecticStore.setState((state) => {
+                    const snap = state.stageRunProgress[progressKey];
+                    if (snap?.jobs) {
+                        snap.jobs.push({
+                            id: 'job-cont-1',
+                            status: 'processing',
+                            jobType: null,
+                            stepKey: null,
+                            modelId: null,
+                            documentKey: null,
+                            parentJobId: null,
+                            createdAt: new Date().toISOString(),
+                            startedAt: null,
+                            completedAt: null,
+                            modelName: null,
+                        });
+                    }
+                    return state;
+                });
+                const event: DialecticLifecycleEvent = {
+                    type: 'contribution_generation_continued',
+                    sessionId: 'session-123',
+                    contribution: {
+                        id: 'part-1',
+                        model_id: 'model-abc',
+                        iteration_number: 1,
+                        session_id: 'session-123',
+                        status: 'continuing',
+                        model_name: 'model-abc',
+                        stage: 'stage-1',
+                        user_id: 'user-123',
+                        prompt_template_id_used: 'pt-1',
+                        seed_prompt_url: null,
+                        edit_version: 1,
+                        is_latest_edit: true,
+                        original_model_contribution_id: null,
+                        raw_response_storage_path: null,
+                        target_contribution_id: null,
+                        tokens_used_input: 10,
+                        tokens_used_output: 20,
+                        processing_time_ms: 100,
+                        error: null,
+                        citations: [],
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        contribution_type: 'text',
+                        file_name: null,
+                        storage_bucket: null,
+                        storage_path: null,
+                        size_bytes: null,
+                        mime_type: null,
+                    },
+                    job_id: 'job-cont-1',
+                    projectId: 'proj-123',
+                    modelId: 'model-abc',
+                    continuationNumber: 1,
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-cont-1');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('continuing');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
+            });
+
+            it("contribution_generation_failed upserts job with status 'failed'", () => {
+                useDialecticStore.setState((state) => {
+                    const snap = state.stageRunProgress[progressKey];
+                    if (snap?.jobs) {
+                        snap.jobs.push({
+                            id: 'job-fail-cg-1',
+                            status: 'processing',
+                            jobType: null,
+                            stepKey: null,
+                            modelId: null,
+                            documentKey: null,
+                            parentJobId: null,
+                            createdAt: new Date().toISOString(),
+                            startedAt: null,
+                            completedAt: null,
+                            modelName: null,
+                        });
+                    }
+                    return state;
+                });
+                const event: DialecticLifecycleEvent = {
+                    type: 'contribution_generation_failed',
+                    sessionId: 'session-123',
+                    modelId: 'model-abc',
+                    job_id: 'job-fail-cg-1',
+                    error: { code: 'FAILED', message: 'Generation failed' },
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const progress = useDialecticStore.getState().stageRunProgress[progressKey];
+                const job = progress?.jobs?.find((j) => j.id === 'job-fail-cg-1');
+                expect(job).toBeDefined();
+                expect(job?.status).toBe('failed');
+                expect(job?.stepKey).toBeNull();
+                expect(job?.modelId).toBeNull();
+                expect(job?.documentKey).toBeNull();
+                expect(job?.jobType).toBeNull();
+            });
+
+            it('contribution_generation_paused_nsf does NOT upsert (no job_id on payload)', () => {
+                const jobsBefore = useDialecticStore.getState().stageRunProgress[progressKey]?.jobs?.length ?? 0;
+                const event: DialecticLifecycleEvent = {
+                    type: 'contribution_generation_paused_nsf',
+                    sessionId: 'session-123',
+                    projectId: 'proj-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+                const jobsAfter = useDialecticStore.getState().stageRunProgress[progressKey]?.jobs?.length ?? 0;
+                expect(jobsAfter).toBe(jobsBefore);
+            });
+
+            it("progress.jobs entry is updated (not duplicated) when same job_id arrives across start→chunk→complete sequence", () => {
+                const eventStart: DialecticLifecycleEvent = {
+                    type: 'execute_started',
+                    sessionId: 'session-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-seq-exec-1',
+                    step_key: 'step_a',
+                    modelId: 'model-1',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventStart);
+                const progressAfterStart = useDialecticStore.getState().stageRunProgress[progressKey];
+                const jobsAfterStart = progressAfterStart?.jobs?.filter((j) => j.id === 'job-seq-exec-1') ?? [];
+                expect(jobsAfterStart).toHaveLength(1);
+                expect(jobsAfterStart[0]?.status).toBe('processing');
+                expect(jobsAfterStart[0]?.jobType).toBe('EXECUTE');
+
+                const eventChunk: DialecticLifecycleEvent = {
+                    type: 'execute_chunk_completed',
+                    sessionId: 'session-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-seq-exec-1',
+                    step_key: 'step_a',
+                    modelId: 'model-1',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventChunk);
+                const progressAfterChunk = useDialecticStore.getState().stageRunProgress[progressKey];
+                const jobsAfterChunk = progressAfterChunk?.jobs?.filter((j) => j.id === 'job-seq-exec-1') ?? [];
+                expect(jobsAfterChunk).toHaveLength(1);
+                expect(jobsAfterChunk[0]?.status).toBe('processing');
+
+                const eventComplete: DialecticLifecycleEvent = {
+                    type: 'execute_completed',
+                    sessionId: 'session-123',
+                    stageSlug: 'thesis',
+                    iterationNumber: 1,
+                    job_id: 'job-seq-exec-1',
+                    step_key: 'step_a',
+                    modelId: 'model-1',
+                };
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventComplete);
+                const progressAfterComplete = useDialecticStore.getState().stageRunProgress[progressKey];
+                const jobsAfterComplete = progressAfterComplete?.jobs?.filter((j) => j.id === 'job-seq-exec-1') ?? [];
+                expect(jobsAfterComplete).toHaveLength(1);
+                expect(jobsAfterComplete[0]?.status).toBe('completed');
+                expect(jobsAfterComplete[0]?.jobType).toBe('EXECUTE');
+            });
         });
     });
 

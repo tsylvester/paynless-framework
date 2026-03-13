@@ -13,6 +13,7 @@ import {
 } from "../_shared/types/file_manager.types.ts";
 import { downloadFromStorage } from "../_shared/supabase_storage_utils.ts";
 import { deconstructStoragePath } from "../_shared/utils/path_deconstructor.ts";
+import { generateShortId } from "../_shared/utils/path_constructor.ts";
 import type { DialecticProjectRow, DialecticProjectInsert, DialecticSessionInsert, DialecticContributionRow, DialecticProjectResourceRow, DialecticFeedbackRow } from "../dialectic-service/dialectic.interface.ts";
 import { isContributionType, isFileType } from "../_shared/utils/type_guards.ts";
 import { isDocumentKey } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
@@ -325,6 +326,16 @@ export async function cloneProject(
                 isContinuation: deconstructed.isContinuation,
                 turnIndex: deconstructed.turnIndex,
                 ...(asset.sourceTable === 'dialectic_project_resources' && { sourceContributionId: asset.source_contribution_id }),
+                ...(fileType === FileType.UserFeedback &&
+                    asset.sourceTable === 'dialectic_feedback' &&
+                    deconstructed.originalProjectId != null &&
+                    deconstructed.shortSessionId != null &&
+                    newSessionId != null && {
+                        originalStoragePath: asset.storage_path
+                            .replace(deconstructed.originalProjectId, actualClonedProjectId)
+                            .replace('session_' + deconstructed.shortSessionId, 'session_' + generateShortId(newSessionId)),
+                        originalBaseName: asset.file_name.replace(/_feedback\.md$/i, ''),
+                    }),
             };
 
             const uploadContext = buildUploadContextForAsset(pathContext, fileContentBuffer, asset, cloningUserId);

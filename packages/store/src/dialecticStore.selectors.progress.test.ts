@@ -77,6 +77,7 @@ import type {
     UnifiedProjectProgress,
     SelectedModels,
     JobProgressEntry,
+    JobProgressDto,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 
@@ -96,6 +97,7 @@ describe('selectUnifiedProjectProgress', () => {
       expected_output_template_ids: [],
       recipe_template_id: null,
       active_recipe_instance_id: null,
+      minimum_balance: 0,
     };
     const stage2ForUnified: DialecticStage = {
       id: 'stage-def',
@@ -107,6 +109,7 @@ describe('selectUnifiedProjectProgress', () => {
       expected_output_template_ids: [],
       recipe_template_id: null,
       active_recipe_instance_id: null,
+      minimum_balance: 0,
     };
     const templateForUnified: DialecticProcessTemplate = {
       id: 'pt-1',
@@ -162,6 +165,7 @@ describe('selectUnifiedProjectProgress', () => {
       documents: {},
       jobProgress: {},
       progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+      jobs: [],
     };
 
     it('returns 0% progress for new project with no completed documents', () => {
@@ -246,6 +250,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 3, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -293,6 +298,22 @@ describe('selectUnifiedProjectProgress', () => {
         edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const baseDescriptor: StageRenderedDocumentDescriptor = {
+        descriptorType: 'rendered',
+        status: 'completed',
+        job_id: 'j1',
+        latestRenderedResourceId: 'r1',
+        modelId: 'model-1',
+        versionHash: 'v1',
+        lastRenderedResourceId: 'r1',
+        lastRenderAtIso: new Date().toISOString(),
+      };
+      const jobsForThreeStep: JobProgressDto[] = [
+        { id: 'j1', status: 'completed', jobType: 'EXECUTE', stepKey: 'step_a', modelId: 'model-1', documentKey: 'doc_a', parentJobId: null, createdAt: '', startedAt: null, completedAt: null, modelName: null },
+        { id: 'j2', status: 'completed', jobType: 'EXECUTE', stepKey: 'step_b', modelId: 'model-1', documentKey: 'doc_b', parentJobId: null, createdAt: '', startedAt: null, completedAt: null, modelName: null },
+        { id: 'j3', status: 'completed', jobType: 'EXECUTE', stepKey: 'step_c', modelId: 'model-1', documentKey: 'doc_c', parentJobId: null, createdAt: '', startedAt: null, completedAt: null, modelName: null },
+      ];
       const projectWithSession: DialecticProject = {
         ...projectBaseForUnified,
         dialectic_sessions: [session],
@@ -306,7 +327,12 @@ describe('selectUnifiedProjectProgress', () => {
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { step_a: 'completed', step_b: 'completed', step_c: 'completed' },
-            documents: {},
+            documents: {
+              [`doc_a${sep}model-1`]: { ...baseDescriptor, job_id: 'j1' },
+              [`doc_b${sep}model-1`]: { ...baseDescriptor, job_id: 'j2', latestRenderedResourceId: 'r2', lastRenderedResourceId: 'r2' },
+              [`doc_c${sep}model-1`]: { ...baseDescriptor, job_id: 'j3', latestRenderedResourceId: 'r3', lastRenderedResourceId: 'r3' },
+            },
+            jobs: jobsForThreeStep,
             jobProgress: {},
             progress: { completedSteps: 3, totalSteps: 3, failedSteps: 0 },
           },
@@ -368,6 +394,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 2, totalSteps: 3, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -419,6 +446,8 @@ describe('selectUnifiedProjectProgress', () => {
         ...projectBaseForUnified,
         dialectic_sessions: [session],
       };
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const job1: JobProgressDto = { id: 'j1', status: 'completed', jobType: 'EXECUTE', stepKey: 'step_1', modelId: 'model-1', documentKey: 'd1', parentJobId: null, createdAt: '', startedAt: null, completedAt: null, modelName: null };
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
@@ -428,15 +457,17 @@ describe('selectUnifiedProjectProgress', () => {
         stageRunProgress: {
           [key1]: {
             stepStatuses: { step_1: 'completed' },
-            documents: {},
+            documents: { [`d1${sep}model-1`]: { descriptorType: 'rendered', status: 'completed', job_id: 'j1', latestRenderedResourceId: 'r1', modelId: 'model-1', versionHash: 'v1', lastRenderedResourceId: 'r1', lastRenderAtIso: new Date().toISOString() } },
             jobProgress: {},
             progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+            jobs: [job1],
           },
           [key2]: {
             stepStatuses: { step_2: 'in_progress' },
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 },
+            jobs: [],
           },
         },
       };
@@ -492,6 +523,8 @@ describe('selectUnifiedProjectProgress', () => {
         ...projectBaseForUnified,
         dialectic_sessions: [session],
       };
+      const job1: JobProgressDto = { id: 'j1', status: 'completed', jobType: 'EXECUTE', stepKey: 'step_1', modelId: 'model-1', documentKey: 'd1', parentJobId: null, createdAt: '', startedAt: null, completedAt: null, modelName: null };
+      const job2: JobProgressDto = { id: 'j2', status: 'completed', jobType: 'EXECUTE', stepKey: 'step_2', modelId: 'model-1', documentKey: 'd2', parentJobId: null, createdAt: '', startedAt: null, completedAt: null, modelName: null };
       const state: DialecticStateValues = {
         ...initialDialecticStateValues,
         currentProjectDetail: projectWithSession,
@@ -504,12 +537,14 @@ describe('selectUnifiedProjectProgress', () => {
             documents: { [`d1${sep}model-1`]: completedDoc },
             jobProgress: {},
             progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+            jobs: [job1],
           },
           [key2]: {
             stepStatuses: { step_2: 'completed' },
             documents: { [`d2${sep}model-1`]: { ...completedDoc, job_id: 'j2', latestRenderedResourceId: 'r2', lastRenderedResourceId: 'r2' } },
             jobProgress: {},
             progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+            jobs: [job2],
           },
         },
       };
@@ -600,6 +635,7 @@ describe('selectUnifiedProjectProgress', () => {
             },
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -658,6 +694,8 @@ describe('selectUnifiedProjectProgress', () => {
         edges: [],
       };
       const progressKey = progressKeyForStage('mock-stage-1');
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const jobOut: JobProgressDto = { id: 'j-out', status: 'completed', jobType: 'RENDER', stepKey: 'render_step', modelId: 'model-1', documentKey: 'out', parentJobId: null, createdAt: '', startedAt: null, completedAt: null, modelName: null };
       const projectWithSession: DialecticProject = {
         ...projectBaseForUnified,
         dialectic_sessions: [session],
@@ -671,9 +709,10 @@ describe('selectUnifiedProjectProgress', () => {
         stageRunProgress: {
           [progressKey]: {
             stepStatuses: { render_step: 'completed' },
-            documents: {},
+            documents: { [`out${sep}model-1`]: { descriptorType: 'rendered', status: 'completed', job_id: 'j-out', latestRenderedResourceId: 'r1', modelId: 'model-1', versionHash: 'v1', lastRenderedResourceId: 'r1', lastRenderAtIso: new Date().toISOString() } },
             jobProgress: {},
             progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+            jobs: [jobOut],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -769,6 +808,7 @@ describe('selectUnifiedProjectProgress', () => {
             },
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -825,6 +865,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 1, totalSteps: 3, failedSteps: 1 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -909,6 +950,7 @@ describe('selectUnifiedProjectProgress', () => {
             },
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1017,6 +1059,7 @@ describe('selectUnifiedProjectProgress', () => {
               doc_step: { totalJobs: 2, completedJobs: 2, inProgressJobs: 0, failedJobs: 0 },
             },
             progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1107,6 +1150,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1180,6 +1224,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1248,6 +1293,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1311,6 +1357,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1374,6 +1421,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1414,6 +1462,8 @@ describe('selectUnifiedProjectProgress', () => {
       };
       const key1 = progressKeyForStage('mock-stage-1');
       const key2 = progressKeyForStage('mock-stage-2');
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const job1: JobProgressDto = { id: 'j1', status: 'completed', jobType: 'EXECUTE', stepKey: 'step_1', modelId: 'model-1', documentKey: 'd1', parentJobId: null, createdAt: '', startedAt: null, completedAt: null, modelName: null };
       const projectWithSession: DialecticProject = {
         ...projectBaseForUnified,
         dialectic_sessions: [session],
@@ -1427,15 +1477,17 @@ describe('selectUnifiedProjectProgress', () => {
         stageRunProgress: {
           [key1]: {
             stepStatuses: { step_1: 'completed' },
-            documents: {},
+            documents: { [`d1${sep}model-1`]: { descriptorType: 'rendered', status: 'completed', job_id: 'j1', latestRenderedResourceId: 'r1', modelId: 'model-1', versionHash: 'v1', lastRenderedResourceId: 'r1', lastRenderAtIso: new Date().toISOString() } },
             jobProgress: {},
             progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+            jobs: [job1],
           },
           [key2]: {
             stepStatuses: { step_2a: 'completed', step_2b: 'in_progress' },
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 1, totalSteps: 2, failedSteps: 0 },
+            jobs: [],
           },
         },
       };
@@ -1496,6 +1548,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 1, totalSteps: 3, failedSteps: 1 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1546,6 +1599,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1592,6 +1646,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1782,6 +1837,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1831,6 +1887,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 2, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1882,6 +1939,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 2, failedSteps: 1 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1934,6 +1992,7 @@ describe('selectUnifiedProjectProgress', () => {
             documents: {},
             jobProgress: {},
             progress: { completedSteps: 1, totalSteps: 3, failedSteps: 0 },
+            jobs: [],
           },
           [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
         },
@@ -1944,6 +2003,380 @@ describe('selectUnifiedProjectProgress', () => {
       expect(firstStage.stepsDetail[1].status).toBe('in_progress');
       expect(firstStage.stepsDetail[2].status).toBe('not_started');
       expect(firstStage.stageStatus).toBe('in_progress');
+    });
+
+    it('stageStatus is completed when all documents complete, even if some steps are not completed', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          { id: 's1', step_key: 'step_a', step_slug: 'step-a', step_name: 'Step A', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' }] },
+        ],
+        edges: [],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const docKey = `doc_a${sep}model-1`;
+      const job: JobProgressDto = {
+        id: 'job-1',
+        status: 'completed',
+        jobType: 'EXECUTE',
+        stepKey: 'step_a',
+        modelId: 'model-1',
+        documentKey: 'doc_a',
+        parentJobId: null,
+        createdAt: '',
+        startedAt: null,
+        completedAt: null,
+        modelName: null,
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { step_a: 'not_started' },
+            documents: {
+              [docKey]: {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'job-1',
+                latestRenderedResourceId: 'r1',
+                modelId: 'model-1',
+                versionHash: 'v1',
+                lastRenderedResourceId: 'r1',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+            jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 },
+            jobs: [job],
+          },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
+        },
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage.stageStatus).toBe('completed');
+      expect(firstStage.completedDocuments).toBe(1);
+      expect(firstStage.totalDocuments).toBe(1);
+    });
+
+    it('stageStatus is NOT completed when steps are all completed but documents are not all complete', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          { id: 's1', step_key: 'step_a', step_slug: 'step-a', step_name: 'Step A', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' }] },
+        ],
+        edges: [],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { step_a: 'completed' },
+            documents: {},
+            jobProgress: {},
+            progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+            jobs: [],
+          },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
+        },
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage.stageStatus).not.toBe('completed');
+      expect(firstStage.completedSteps).toBe(1);
+      expect(firstStage.totalSteps).toBe(1);
+      expect(firstStage.completedDocuments).toBe(0);
+      expect(firstStage.totalDocuments).toBe(1);
+    });
+
+    it('stageStatus is completed when completedDocuments === totalDocuments && totalDocuments > 0', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          { id: 's1', step_key: 'step_a', step_slug: 'step-a', step_name: 'Step A', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' }] },
+        ],
+        edges: [],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const docKey = `doc_a${sep}model-1`;
+      const job: JobProgressDto = {
+        id: 'job-1',
+        status: 'completed',
+        jobType: 'EXECUTE',
+        stepKey: 'step_a',
+        modelId: 'model-1',
+        documentKey: 'doc_a',
+        parentJobId: null,
+        createdAt: '',
+        startedAt: null,
+        completedAt: null,
+        modelName: null,
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { step_a: 'completed' },
+            documents: {
+              [docKey]: {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'job-1',
+                latestRenderedResourceId: 'r1',
+                modelId: 'model-1',
+                versionHash: 'v1',
+                lastRenderedResourceId: 'r1',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+            jobProgress: {},
+            progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+            jobs: [job],
+          },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
+        },
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage.completedDocuments).toBe(firstStage.totalDocuments);
+      expect(firstStage.totalDocuments).toBeGreaterThan(0);
+      expect(firstStage.stageStatus).toBe('completed');
+    });
+
+    it('stageStatus is not_started when totalDocuments is 0 (no jobs yet)', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 'plan-step',
+            step_key: 'plan_step',
+            step_slug: 'plan-step',
+            step_name: 'Plan Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'PLAN',
+            prompt_type: 'Planner',
+            output_type: 'header_context',
+            granularity_strategy: 'all_to_one',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [],
+          },
+        ],
+        edges: [],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { plan_step: 'completed' },
+            documents: {},
+            jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
+          },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
+        },
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage.totalDocuments).toBe(0);
+      expect(firstStage.completedDocuments).toBe(0);
+      expect(firstStage.stageStatus).toBe('not_started');
+    });
+
+    it('stageDetail stageStatus (isComplete) matches document-based completion not step-based', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          { id: 's1', step_key: 'step_a', step_slug: 'step-a', step_name: 'Step A', execution_order: 1, parallel_group: 1, branch_key: 'b1', job_type: 'EXECUTE', prompt_type: 'Turn', output_type: 'assembled_document_json', granularity_strategy: 'per_source_document', inputs_required: [], inputs_relevance: [], outputs_required: [{ document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' }] },
+        ],
+        edges: [],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+      const docKey = `doc_a${sep}model-1`;
+      const job: JobProgressDto = {
+        id: 'job-1',
+        status: 'completed',
+        jobType: 'EXECUTE',
+        stepKey: 'step_a',
+        modelId: 'model-1',
+        documentKey: 'doc_a',
+        parentJobId: null,
+        createdAt: '',
+        startedAt: null,
+        completedAt: null,
+        modelName: null,
+      };
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const stateCompleteDocs: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { step_a: 'completed' },
+            documents: {
+              [docKey]: {
+                descriptorType: 'rendered',
+                status: 'completed',
+                job_id: 'job-1',
+                latestRenderedResourceId: 'r1',
+                modelId: 'model-1',
+                versionHash: 'v1',
+                lastRenderedResourceId: 'r1',
+                lastRenderAtIso: new Date().toISOString(),
+              },
+            },
+            jobProgress: {},
+            progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+            jobs: [job],
+          },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
+        },
+      };
+      const stateStepsOnly: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: { step_a: 'completed' },
+            documents: {},
+            jobProgress: {},
+            progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+            jobs: [],
+          },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
+        },
+      };
+      const resultComplete: UnifiedProjectProgress = selectUnifiedProjectProgress(stateCompleteDocs, sessionId);
+      const resultStepsOnly: UnifiedProjectProgress = selectUnifiedProjectProgress(stateStepsOnly, sessionId);
+      const detailComplete: StageProgressDetail | undefined = resultComplete.stageDetails[0];
+      const detailStepsOnly: StageProgressDetail | undefined = resultStepsOnly.stageDetails[0];
+      expect(detailComplete).toBeDefined();
+      expect(detailStepsOnly).toBeDefined();
+      expect(detailComplete?.completedDocuments).toBe(detailComplete?.totalDocuments);
+      expect(detailComplete?.totalDocuments).toBeGreaterThan(0);
+      expect(detailComplete?.stageStatus).toBe('completed');
+      expect(detailStepsOnly?.completedDocuments).toBe(0);
+      expect(detailStepsOnly?.totalDocuments).toBe(1);
+      expect(detailStepsOnly?.stageStatus).not.toBe('completed');
     });
   });
 

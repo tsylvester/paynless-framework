@@ -164,14 +164,14 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
     });
   });
 
-  describe('ensureRecipeForActiveStage', () => {
+  describe('ensureRecipeForViewingStage', () => {
     it('initializes stageRunProgress with stepStatuses=not_started for each recipe step', async () => {
       // hydrate recipe first
       api.dialectic().fetchStageRecipe.mockResolvedValue(recipeResponse);
       await useDialecticStore.getState().fetchStageRecipe(stageSlug);
 
       // initialize progress for session+stage+iteration
-      await useDialecticStore.getState().ensureRecipeForActiveStage(sessionId, stageSlug, iterationNumber);
+      await useDialecticStore.getState().ensureRecipeForViewingStage(sessionId, stageSlug, iterationNumber);
 
       const state = useDialecticStore.getState();
       const keyPrefix = `${sessionId}:${stageSlug}:`;
@@ -191,7 +191,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       api.dialectic().fetchStageRecipe.mockResolvedValue(recipeResponse);
       await useDialecticStore.getState().fetchStageRecipe(stageSlug);
       // initialize
-      await useDialecticStore.getState().ensureRecipeForActiveStage(sessionId, stageSlug, iterationNumber);
+      await useDialecticStore.getState().ensureRecipeForViewingStage(sessionId, stageSlug, iterationNumber);
 
       // Simulate one step completed
       useDialecticStore.setState((state) => {
@@ -202,7 +202,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
       });
 
       // call again
-      await useDialecticStore.getState().ensureRecipeForActiveStage(sessionId, stageSlug, iterationNumber);
+      await useDialecticStore.getState().ensureRecipeForViewingStage(sessionId, stageSlug, iterationNumber);
 
       const state = useDialecticStore.getState();
       const key = Object.keys(state.stageRunProgress).find((k: string) => k.startsWith(`${sessionId}:${stageSlug}:`));
@@ -215,7 +215,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
     it('creates stepStatuses entries for ALL step types (PLAN, intermediate EXECUTE, document EXECUTE, RENDER)', async () => {
       api.dialectic().fetchStageRecipe.mockResolvedValue(fourStepRecipeResponse);
       await useDialecticStore.getState().fetchStageRecipe(stageSlug);
-      await useDialecticStore.getState().ensureRecipeForActiveStage(sessionId, stageSlug, iterationNumber);
+      await useDialecticStore.getState().ensureRecipeForViewingStage(sessionId, stageSlug, iterationNumber);
 
       const state = useDialecticStore.getState();
       const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
@@ -230,7 +230,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
     it('idempotent path adds missing step keys for newly-visible step types without resetting existing values', async () => {
       api.dialectic().fetchStageRecipe.mockResolvedValue(fourStepRecipeResponse);
       await useDialecticStore.getState().fetchStageRecipe(stageSlug);
-      await useDialecticStore.getState().ensureRecipeForActiveStage(sessionId, stageSlug, iterationNumber);
+      await useDialecticStore.getState().ensureRecipeForViewingStage(sessionId, stageSlug, iterationNumber);
 
       const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
       useDialecticStore.setState((state) => {
@@ -243,7 +243,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
         }
       });
 
-      await useDialecticStore.getState().ensureRecipeForActiveStage(sessionId, stageSlug, iterationNumber);
+      await useDialecticStore.getState().ensureRecipeForViewingStage(sessionId, stageSlug, iterationNumber);
 
       const state = useDialecticStore.getState();
       const progress = state.stageRunProgress[progressKey];
@@ -365,6 +365,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
           },
           stepStatuses: {},
           progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+          jobs: [],
         };
         // No cached content - stageDocumentContent is empty
       });
@@ -406,6 +407,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
           },
           stepStatuses: {},
           progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+          jobs: [],
         };
       });
 
@@ -446,6 +448,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
           },
           stepStatuses: {},
           progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+          jobs: [],
         };
         // Content IS cached with matching version
         const cachedContent: StageDocumentContentState = {
@@ -507,6 +510,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
           },
           stepStatuses: {},
           progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+          jobs: [],
         };
         // Content cached but with OLD resource ID (stale)
         const staleContent: StageDocumentContentState = {
@@ -565,6 +569,7 @@ describe('DialecticStore - Recipes and Stage Run Progress', () => {
           },
           stepStatuses: {},
           progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+          jobs: [],
         };
       });
 

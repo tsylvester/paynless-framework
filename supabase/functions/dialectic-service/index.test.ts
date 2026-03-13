@@ -49,6 +49,8 @@ import {
   StartSessionSuccessResponse,
   StartSessionPayload,
   UpdateSessionModelsPayload,
+  UpdateViewingStagePayload,
+  UpdateViewingStageReturn,
   DialecticProcessTemplate,
   RegenerateDocumentParams,
   RegenerateDocumentDeps,
@@ -132,6 +134,25 @@ const mockFeedbackRow: DialecticFeedbackRow = {
   target_contribution_id: null,
 };
 
+const mockUpdateViewingStageSuccessReturn: UpdateViewingStageReturn = {
+  data: {
+    id: 'sess-pQR141',
+    project_id: mockProject.id,
+    session_description: 'A test session',
+    user_input_reference_url: null,
+    iteration_count: 0,
+    selected_model_ids: null,
+    status: 'active',
+    associated_chat_id: null,
+    current_stage_id: 'stage-1',
+    viewing_stage_id: 'stage-viewing-1',
+    idempotency_key: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  status: 200,
+};
+
 // #endregion
 
 // Helper to create a mostly empty but type-compliant ActionHandlers mock
@@ -160,6 +181,7 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
         listDomains: overrides?.listDomains || (() => Promise.resolve({ data: [] })),
         fetchProcessTemplate: overrides?.fetchProcessTemplate || (() => Promise.resolve({ data: { created_at: new Date().toISOString(), description: 'mock-description', id: 'mock-id', name: 'mock-name', starting_stage_id: 'mock-starting-stage-id' }, status: 200 })),
         updateSessionModels: overrides?.updateSessionModels || (() => Promise.resolve({ data: mockSession, status: 200 })),
+        updateViewingStage: overrides?.updateViewingStage || (() => Promise.resolve<UpdateViewingStageReturn>(mockUpdateViewingStageSuccessReturn)),
         getStageRecipe: overrides?.getStageRecipe || (() => Promise.resolve({ data: { stageSlug: '', instanceId: '', steps: [], edges: [] }, status: 200 })),
         listStageDocuments: overrides?.listStageDocuments || (() => Promise.resolve({ data: [], status: 200 })),
         submitStageDocumentFeedback: overrides?.submitStageDocumentFeedback || (() => Promise.resolve({ data: mockFeedbackRow })),
@@ -2300,5 +2322,78 @@ withSupabaseEnv("handleRequest - saveContributionEdit", async (t) => {
 
     assertEquals(response.status, 401);
     assertEquals(saveContributionEditSpy.calls.length, 0);
+  });
+});
+
+withSupabaseEnv("handleRequest - updateViewingStage", async (t) => {
+  const mockSessionId = 'sess-test-viewing-stage';
+  const mockViewingStageId = 'stage-viewing-test';
+  const successReturn: UpdateViewingStageReturn = {
+    ...mockUpdateViewingStageSuccessReturn,
+    data: mockUpdateViewingStageSuccessReturn.data
+      ? { ...mockUpdateViewingStageSuccessReturn.data, id: mockSessionId, viewing_stage_id: mockViewingStageId, updated_at: new Date().toISOString() }
+      : undefined,
+    status: 200,
+  };
+
+  const payload: UpdateViewingStagePayload = { sessionId: mockSessionId, viewingStageId: mockViewingStageId };
+
+  await t.step("should call updateViewingStage and return 200 on success", async () => {
+    const updateSpy = spy(() => Promise.resolve(successReturn));
+    const mockHandlers = createMockHandlers({ updateViewingStage: updateSpy });
+
+    const mockToken = "mock-jwt";
+    const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+      getUserResult: { data: { user: mockUser }, error: null }
+    });
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("updateViewingStage", payload, mockToken);
+    const response = await handleRequest(req, mockHandlers, mockUserClient as any, mockAdminClient as any);
+
+    assertEquals(response.status, 200);
+    const body = await response.json();
+    assertEquals(body.id, mockSessionId);
+    assertEquals(body.viewing_stage_id, mockViewingStageId);
+    assertEquals(updateSpy.calls.length, 1);
+  });
+
+  await t.step("should return error if updateViewingStage handler fails", async () => {
+    const error: ServiceError = { message: "Update Failed", status: 500, code: "DB_UPDATE_ERROR" };
+    const errorReturn: UpdateViewingStageReturn = { error, status: 500 };
+    const updateSpy = spy(() => Promise.resolve(errorReturn));
+    const mockHandlers = createMockHandlers({ updateViewingStage: updateSpy });
+
+    const mockToken = "mock-jwt";
+    const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+      getUserResult: { data: { user: mockUser }, error: null }
+    });
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("updateViewingStage", payload, mockToken);
+    const response = await handleRequest(req, mockHandlers, mockUserClient as any, mockAdminClient as any);
+
+    assertEquals(response.status, 500);
+    const body = await response.json();
+    assertEquals(body.error, error.message);
+    assertEquals(updateSpy.calls.length, 1);
+  });
+
+  await t.step("should return 401 if not authenticated", async () => {
+    const updateSpy = spy(() => Promise.resolve(successReturn));
+    const mockHandlers = createMockHandlers({ updateViewingStage: updateSpy });
+
+    const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+      getUserResult: { data: { user: null }, error: null }
+    });
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("updateViewingStage", payload);
+    const response = await handleRequest(req, mockHandlers, mockUserClient as any, mockAdminClient as any);
+
+    assertEquals(response.status, 401);
+    const body = await response.json();
+    assertEquals(body.error, "User not authenticated");
+    assertEquals(updateSpy.calls.length, 0);
   });
 });
