@@ -120,15 +120,9 @@ Replace the generic `UseCases` component (2x2 grid on the homepage) with four ra
 - [x] Define the example project for each segment
 - [x] Select featured docs per segment (2 docs each, tailored to what the persona cares about)
 - [ ] Run each example project through the system and capture output artifacts
-- [ ] Extract and polish the 2 featured docs per segment from the generated output
-- [ ] Write the full landing page copy for each segment
+- [ ] Extract the 2 featured docs per segment from the generated output
 
-### Step 2: Update the homepage UseCases component
-- [ ] Rewrite the 4 cards with final one-liners and summaries
-- [ ] Make each card a `<Link>` to `/use-cases/{segment-slug}`
-- [ ] Slugs: `vibe-coders`, `indie-hackers`, `startups`, `agencies`
-
-### Step 3: Build the segment landing pages
+### Step 2: Build the segment landing pages
 - [ ] Create a shared layout/template for segment landing pages
 - [ ] Page structure per segment:
   - Hero with segment-specific headline and pain statement
@@ -139,6 +133,12 @@ Replace the generic `UseCases` component (2x2 grid on the homepage) with four ra
   - CTA: sign-up with segment tag
 - [ ] Create route `/use-cases/:segment` in React Router
 - [ ] Build 4 pages using the shared template + segment-specific content
+
+### Step 3: Update the homepage UseCases component
+- [ ] Rewrite the 4 cards with final one-liners and summaries
+- [ ] Make each card a `<Link>` to `/use-cases/{segment-slug}`
+- [ ] Slugs: `vibe-coders`, `indie-hackers`, `startups`, `agencies`
+
 
 ### Step 4: Implement segment tracking on sign-up (PostHog)
 Existing PostHog integration captures email on account creation into a generic contact list. We need to segment it.
