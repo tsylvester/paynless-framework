@@ -23,54 +23,80 @@
 
 ### Phase 1: Infrastructure & Backend
 
-*   `[ ]`   [DB]+[RLS] supabase/migrations **Create `github_connections` table for storing user GitHub tokens**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Create a `github_connections` table that stores each user's GitHub OAuth access token, GitHub user ID, and GitHub username
-    *   `[ ]`   Enforce one connection per user via UNIQUE constraint on `user_id`
-    *   `[ ]`   RLS: users may SELECT and DELETE their own row; INSERT and UPDATE restricted to service role (edge functions store tokens server-side)
-    *   `[ ]`   Cascade delete on `auth.users` removal
-  *   `[ ]`   `role`
-    *   `[ ]`   Infrastructure — database schema and security policy
-  *   `[ ]`   `module`
-    *   `[ ]`   Database schema: `github_connections` table — user-to-GitHub credential mapping
-    *   `[ ]`   Boundary: stores credentials consumed by `github-service` and `dialectic-service` edge functions
-  *   `[ ]`   `deps`
-    *   `[ ]`   `auth.users` table — FK target for `user_id`, infrastructure layer
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `supabase/migrations/YYYYMMDDHHMMSS_create_github_connections.sql`
-    *   `[ ]`   `CREATE TABLE public.github_connections` with columns: `id uuid PK DEFAULT gen_random_uuid()`, `user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`, `github_user_id text NOT NULL`, `github_username text NOT NULL`, `access_token text NOT NULL`, `token_scopes text`, `created_at timestamptz NOT NULL DEFAULT now()`, `updated_at timestamptz NOT NULL DEFAULT now()`, `UNIQUE(user_id)`
-    *   `[ ]`   RLS enabled: `ALTER TABLE public.github_connections ENABLE ROW LEVEL SECURITY;`
-    *   `[ ]`   Policy `github_connections_select_own`: `USING (auth.uid() = user_id)` for SELECT
-    *   `[ ]`   Policy `github_connections_delete_own`: `USING (auth.uid() = user_id)` for DELETE
-    *   `[ ]`   No INSERT/UPDATE policy for `authenticated` role — writes go through service role client in edge functions
-    *   `[ ]`   Add table and column comments
-  *   `[ ]`   `supabase/functions/types_db.ts`
-    *   `[ ]`   Regenerate from database schema after migration
-    *   `[ ]`   Verify `github_connections` row type appears with all columns
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Infrastructure layer
-    *   `[ ]`   All dependencies inward (schema definition references `auth.users`)
-    *   `[ ]`   Provides table to backend edge functions (`github-service`, `dialectic-service`)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Migration applies cleanly on existing database
-    *   `[ ]`   RLS prevents cross-user reads/deletes
-    *   `[ ]`   Service role can INSERT/UPDATE (for edge function token storage)
-    *   `[ ]`   `types_db.ts` regenerated to include `github_connections`
-    *   `[ ]`   Exempt from TDD (database migration / generated types)
+https://paynless.app/github-auth callback for Github App
 
-*   `[ ]`   [CONFIG] supabase/config.toml **Enable GitHub OAuth provider and manual identity linking**
+https://paynless.app/github-hook callback for Github App event detail POST
+
+https://github.com/apps/paynless-app public app link 
+
+*   `[✅]`   [DB]+[RLS] supabase/migrations **Create `github_connections` table for storing GitHub App installation references**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Create a `github_connections` table that stores each user's GitHub App installation reference, GitHub user ID, and GitHub username
+    *   `[✅]`   No access tokens stored; tokens are generated on-demand using the GitHub App private key
+    *   `[✅]`   Enforce one installation per user via UNIQUE constraint on `user_id`
+    *   `[✅]`   RLS: users may SELECT and DELETE their own row; INSERT and UPDATE restricted to service role (edge functions store installation data server-side)
+    *   `[✅]`   Cascade delete on `auth.users` removal
+    *   `[✅]`   Works for any logged-in user regardless of login method (email, Google, or GitHub OAuth)
+  *   `[✅]`   `role`
+    *   `[✅]`   Infrastructure — database schema and security policy
+  *   `[✅]`   `module`
+    *   `[✅]`   Database schema: `github_connections` table — user-to-GitHub App installation mapping
+    *   `[✅]`   Boundary: stores installation references consumed by `github-service` and `dialectic-service` edge functions
+    *   `[✅]`   Edge functions use the installation ID to generate short-lived access tokens via the GitHub App private key
+  *   `[✅]`   `deps`
+    *   `[✅]`   `auth.users` table — FK target for `user_id`, infrastructure layer
+    *   `[✅]`   GitHub App private key stored in environment variable `GITHUB_APP_PRIVATE_KEY`
+    *   `[✅]`   GitHub App ID stored in environment variable `GITHUB_APP_ID`
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `supabase/migrations/YYYYMMDDHHMMSS_create_github_connections.sql`
+    *   `[✅]`   `CREATE TABLE public.github_connections` with columns:
+      *   `[✅]`   `id uuid PK DEFAULT gen_random_uuid()`
+      *   `[✅]`   `user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`
+      *   `[✅]`   `installation_id bigint NOT NULL` — GitHub App installation ID
+      *   `[✅]`   `installation_target_type text NOT NULL CHECK (installation_target_type IN ('User', 'Organization'))`
+      *   `[✅]`   `installation_target_id bigint NOT NULL` — GitHub account ID that installed the app
+      *   `[✅]`   `github_user_id text NOT NULL` — GitHub user numeric ID (fetched from GitHub API after installation)
+      *   `[✅]`   `github_username text NOT NULL` — GitHub username (fetched from GitHub API after installation)
+      *   `[✅]`   `permissions jsonb` — Snapshot of permissions granted at install time
+      *   `[✅]`   `suspended_at timestamptz` — NULL if active; timestamp if user suspended the installation
+      *   `[✅]`   `created_at timestamptz NOT NULL DEFAULT now()`
+      *   `[✅]`   `updated_at timestamptz NOT NULL DEFAULT now()`
+      *   `[✅]`   `UNIQUE(user_id)`
+      *   `[✅]`   `UNIQUE(installation_id)` — each installation maps to one Paynless user
+    *   `[✅]`   RLS enabled: `ALTER TABLE public.github_connections ENABLE ROW LEVEL SECURITY;`
+    *   `[✅]`   Policy `github_connections_select_own`: `USING (auth.uid() = user_id)` for SELECT
+    *   `[✅]`   Policy `github_connections_delete_own`: `USING (auth.uid() = user_id)` for DELETE
+    *   `[✅]`   No INSERT/UPDATE policy for `authenticated` role — writes go through service role client in edge functions
+    *   `[✅]`   Add table and column comments
+  *   `[✅]`   `supabase/functions/types_db.ts`
+    *   `[✅]`   Regenerate from database schema after migration
+    *   `[✅]`   Verify `github_connections` row type appears with all columns
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Infrastructure layer
+    *   `[✅]`   All dependencies inward (schema definition references `auth.users`)
+    *   `[✅]`   Provides table to backend edge functions (`github-service`, `dialectic-service`)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Migration applies cleanly on existing database
+    *   `[✅]`   RLS prevents cross-user reads/deletes
+    *   `[✅]`   Service role can INSERT/UPDATE (for edge function installation storage)
+    *   `[✅]`   `types_db.ts` regenerated to include `github_connections`
+    *   `[✅]`   Exempt from TDD (database migration / generated types)
+
+*   `[ ]`   [CONFIG] supabase/config.toml **Enable GitHub OAuth provider as optional login method**
   *   `[ ]`   `objective`
-    *   `[ ]`   Add `[auth.external.github]` section enabling GitHub as an OAuth sign-in provider
+    *   `[ ]`   Add `[auth.external.github]` section enabling GitHub as an OAuth sign-in provider (optional login method alongside email and Google)
     *   `[ ]`   Set `enable_manual_linking = true` so users who signed in via email or Google can link a GitHub identity to their existing account
     *   `[ ]`   Document required environment variables for GitHub OAuth App credentials
+    *   `[ ]`   **Note:** This is separate from GitHub sync — GitHub App installation provides repo access, OAuth provides identity only
   *   `[ ]`   `role`
     *   `[ ]`   Infrastructure — Supabase Auth configuration
   *   `[ ]`   `module`
     *   `[ ]`   Auth config: external OAuth providers
-    *   `[ ]`   Boundary: enables Supabase Auth to redirect to GitHub and process OAuth callbacks
+    *   `[ ]`   Boundary: enables Supabase Auth to redirect to GitHub and process OAuth callbacks for login
+    *   `[ ]`   **Not required for GitHub sync** — sync works via GitHub App installation for any logged-in user
   *   `[ ]`   `deps`
     *   `[ ]`   Supabase Auth service — infrastructure layer
-    *   `[ ]`   GitHub OAuth App — external dependency (user must register at `github.com/settings/applications/new` and set callback URL to Supabase auth callback endpoint)
+    *   `[ ]`   GitHub OAuth App — external dependency (separate from GitHub App; register at `github.com/settings/applications/new` for OAuth login)
     *   `[ ]`   Confirm no reverse dependency is introduced
   *   `[ ]`   `supabase/config.toml`
     *   `[ ]`   Change `enable_manual_linking = false` to `enable_manual_linking = true`
@@ -88,6 +114,7 @@
     *   `[ ]`   GitHub OAuth login works end-to-end when env vars are set
     *   `[ ]`   Existing Google OAuth unaffected
     *   `[ ]`   Manual identity linking enabled for all providers
+    *   `[ ]`   GitHub sync feature works independently of this OAuth config (sync uses GitHub App, not OAuth)
     *   `[ ]`   Exempt from TDD (configuration file)
 
 *   `[ ]`   [BE] supabase/functions/_shared/adapters/github_adapter **GitHub REST API adapter with interface and backend types**
