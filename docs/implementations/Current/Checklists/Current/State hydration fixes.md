@@ -555,60 +555,170 @@ All six front-end hydration symptoms resolved without page refresh. No defaults,
         *   `[✅]`   After successful advance, generation starts automatically without user intervention
         *   `[✅]`   If auto-generation cannot proceed, user sees a persistent, actionable explanation of what to fix — not a transient toast
         *   `[✅]`   Failure messages are specific to the exact precondition that failed, not generic
-    *   `[ ]`   **Commit** `fix(ui): rewrite SubmitResponsesButton with explicit 6-condition selector and auto-generation`
-        *   `[ ]`   selectCanAdvanceStage selector with full test coverage
-        *   `[ ]`   SubmitResponsesButton rewritten to consume it
-        *   `[ ]`   All legacy visibility logic removed
-        *   `[ ]`   Auto-triggers startContributionGeneration on successful stage advance
-        *   `[ ]`   Persistent inline Alert for generation precondition failures with actionable user guidance
+    *   `[✅]`   **Commit** `fix(ui): rewrite SubmitResponsesButton with explicit 6-condition selector and auto-generation`
+        *   `[✅]`   selectCanAdvanceStage selector with full test coverage
+        *   `[✅]`   SubmitResponsesButton rewritten to consume it
+        *   `[✅]`   All legacy visibility logic removed
+        *   `[✅]`   Auto-triggers startContributionGeneration on successful stage advance
+        *   `[✅]`   Persistent inline Alert for generation precondition failures with actionable user guidance
 
-## Phase 5: Cleanup
 
-*   `[ ]`   [UI] apps/web/src/hooks/`useStageProgressPolling.ts` **Evaluate and simplify polling after realtime job tracking**
-    *   `[ ]`   `objective`
-        *   `[ ]`   With progress.jobs updated in realtime, evaluate whether aggressive 1s polling and triple-refresh-on-completion are still necessary
-        *   `[ ]`   If polling is still needed (belt-and-suspenders for missed events), reduce frequency and remove multi-refresh hacks
-        *   `[ ]`   If polling is no longer needed, remove the hook entirely and remove its usage from SessionContributionsDisplayCard
-    *   `[ ]`   `role`
-        *   `[ ]`   UI — React hook
-    *   `[ ]`   `module`
-        *   `[ ]`   apps/web/src/hooks/useStageProgressPolling.ts
-        *   `[ ]`   apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx (consumer)
-    *   `[ ]`   `deps`
-        *   `[ ]`   hydrateAllStageProgress store action — app, inward
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   Evaluate based on testing results from Phases 1-4
-    *   `[ ]`   `useStageProgressPolling.ts`
-        *   `[ ]`   Decision depends on testing results — either simplify or remove
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: UI
-    *   `[ ]`   `requirements`
-        *   `[ ]`   No unnecessary server load from aggressive polling
-        *   `[ ]`   Realtime updates are the primary mechanism, polling is backup at most
+## Phase 5: Fix stale closures, eliminate runaway polling, remove redundant sync
 
-*   `[ ]`   [UI] apps/web/src/hooks/`useViewingStageSync.ts` **Evaluate and simplify after server-persisted viewing stage**
-    *   `[ ]`   `objective`
-        *   `[ ]`   With viewing_stage_id server-persisted and activeStageSlug set from it on load, evaluate whether the useActiveStageSync hook is still necessary
-        *   `[ ]`   If activeContextStage can be derived from activeStageSlug inside a selector or set atomically in setViewingStage, this hook can be removed
-    *   `[ ]`   `role`
-        *   `[ ]`   UI — React hook
-    *   `[ ]`   `module`
-        *   `[ ]`   apps/web/src/hooks/useActiveStageSync.ts
-        *   `[ ]`   apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx (consumer)
-    *   `[ ]`   `deps`
-        *   `[ ]`   setActiveContextStage store action — app, inward
-    *   `[ ]`   `context_slice`
-        *   `[ ]`   Evaluate based on testing results from Phases 1-4
-    *   `[ ]`   `useActiveStageSync.ts`
-        *   `[ ]`   Decision depends on testing results — either simplify or remove
-    *   `[ ]`   `directionality`
-        *   `[ ]`   Layer: UI
-    *   `[ ]`   `requirements`
-        *   `[ ]`   No render-cycle gap between activeStageSlug and activeContextStage
-        *   `[ ]`   The two-property pattern either eliminated or made atomic
-    *   `[ ]`   **Commit** `refactor(ui): simplify polling and stage sync hooks after hydration fixes`
-        *   `[ ]`   useStageProgressPolling simplified or removed
-        *   `[ ]`   useActiveStageSync simplified or removed
+*   `[✅]`   [UI] apps/web/src/hooks/`useStartContributionGeneration.ts` **Fix stale closures — read store at call time instead of memoizing at render time**
+    *   `[✅]`   `objective`
+        *   `[✅]`   `viewingStage` (line 65) and `activeSession` (lines 66-70) are captured via `useMemo` at render time, creating stale closures inside `startContributionGeneration` and `pauseGeneration` callbacks
+        *   `[✅]`   When `handleSubmit` in SubmitResponsesButton calls `await submitStageResponses()` then `await startContributionGeneration()`, the store has already updated (`setViewingStage`, `activeSessionDetail`), but the callback still holds the pre-advance stage slug — the server rejects the mismatch with 400
+        *   `[✅]`   Replace `useMemo` snapshots with Zustand selector subscriptions for return values (rendering still needs `viewingStage` and `activeSession` — `GenerateContributionButton` and `DialecticSessionDetailsPage` consume them from the hook's return)
+        *   `[✅]`   Inside `startContributionGeneration` and `pauseGeneration` callback bodies, read `viewingStage`, `activeSession`, `currentProjectDetail`, `activeContextSessionId`, wallet info, and resume-mode prereqs from `useDialecticStore.getState()` at call time — not from closure variables
+        *   `[✅]`   `useCallback` dep arrays shrink to stable store action references only (`generateContributions`, `resumePausedNsfJobs`, `pauseActiveJobs`)
+        *   `[✅]`   `UseStartContributionGenerationReturn` type does NOT change — all consumers keep working
+    *   `[✅]`   `role`
+        *   `[✅]`   UI — React hook (app layer)
+    *   `[✅]`   `module`
+        *   `[✅]`   apps/web/src/hooks/useStartContributionGeneration.ts
+        *   `[✅]`   Boundary: composes store selectors and actions into a single generation-control interface for UI consumers
+    *   `[✅]`   `deps`
+        *   `[✅]`   `useDialecticStore` / `useDialecticStore.getState()` from @paynless/store — app, inward
+        *   `[✅]`   `useWalletStore` / `useWalletStore.getState()` from @paynless/store — app, inward
+        *   `[✅]`   `useAiStore` / `useAiStore.getState()` from @paynless/store — app, inward
+        *   `[✅]`   `selectViewingStage`, `selectSessionById`, `selectIsStageReadyForSessionIteration`, `selectUnifiedProjectProgress`, `selectSelectedModels`, `selectActiveChatWalletInfo` from @paynless/store — domain, inward
+        *   `[✅]`   No reverse dependencies introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   Return values (`viewingStage`, `activeSession`, derived booleans) from Zustand selector subscriptions — reactive for rendering
+        *   `[✅]`   Callback bodies read from `getState()` — current at call time, not render time
+        *   `[✅]`   No concrete imports from higher or lateral layers
+    *   `[✅]`   unit/`useStartContributionGeneration.test.ts`
+        *   `[✅]`   Test: `startContributionGeneration` reads `viewingStage` from current store state, not stale closure — after store mutation between renders, callback uses updated stage slug
+        *   `[✅]`   Test: `startContributionGeneration` reads `activeSession` from current store state — after store mutation, callback uses updated session
+        *   `[✅]`   Test: `pauseGeneration` reads `viewingStage` and `activeSession` from current store state
+        *   `[✅]`   Test: returned `viewingStage` and `activeSession` still reflect current store state for rendering
+        *   `[✅]`   Test: precondition checks (null session, null stage, wallet not ready) still return correct error results
+        *   `[✅]`   Test: resume mode path reads current store state
+    *   `[✅]`   `useStartContributionGeneration.ts`
+        *   `[✅]`   Remove `useMemo(() => selectViewingStage(store), [store])` (line 65) — replace with `useDialecticStore(selectViewingStage)` for the return value
+        *   `[✅]`   Remove `useMemo` for `activeSession` (lines 66-70) — replace with Zustand selector subscription for the return value
+        *   `[✅]`   Inside `startContributionGeneration` callback body: read all state values from `useDialecticStore.getState()` at call time — `viewingStage` via `selectViewingStage(state)`, `activeSession` via `selectSessionById(state, state.activeContextSessionId)`, `currentProjectDetail`, `activeContextSessionId`, wallet info via `useWalletStore.getState()`, AI settings via `useAiStore.getState()`
+        *   `[✅]`   Inside `pauseGeneration` callback body: same `getState()` pattern for `viewingStage` and `activeSession`
+        *   `[✅]`   Simplify `useCallback` dep arrays to stable action refs only: `[generateContributions, resumePausedNsfJobs]` for `startContributionGeneration`, `[pauseActiveJobs]` for `pauseGeneration`
+        *   `[✅]`   Preserve all precondition checks, toast messages, error handling, and return shape
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: UI (app)
+        *   `[✅]`   Depends on: store selectors (domain, inward), store actions (app, inward)
+        *   `[✅]`   Provides: `UseStartContributionGenerationReturn` consumed by `SubmitResponsesButton`, `GenerateContributionButton`, `DialecticSessionDetailsPage`
+    *   `[✅]`   `requirements`
+        *   `[✅]`   Callbacks always use current store state at call time — no stale closures across `await` boundaries
+        *   `[✅]`   Returned `viewingStage` and `activeSession` remain reactive for rendering consumers
+        *   `[✅]`   `UseStartContributionGenerationReturn` type unchanged — zero impact on consumers
+        *   `[✅]`   Supports session hotswap: if user switches projects while generation is running, next call to `startContributionGeneration` uses the correct session
+
+*   `[✅]`   [UI] apps/web/src/components/dialectic/`SubmitResponsesButton.tsx` **Remove redundant setViewingStage call from handleSubmit**
+    *   `[✅]`   `objective`
+        *   `[✅]`   `handleSubmit` lines 123-131 call `setViewingStage(nextStage.slug)` after `submitStageResponses` succeeds — this is redundant because the store's `submitStageResponses` success path (dialecticStore.ts lines 2745-2789) already advances `viewingStageSlug` and persists `viewing_stage_id` to the server
+        *   `[✅]`   The redundancy produces two `updateViewingStage` API calls (visible in browser logs as two "Successfully updated viewing stage" entries)
+        *   `[✅]`   Remove the redundant `setViewingStage` call and the `sortedStages`/`setViewingStage` subscriptions that are only used by it
+    *   `[✅]`   `role`
+        *   `[✅]`   UI — React component
+    *   `[✅]`   `module`
+        *   `[✅]`   apps/web/src/components/dialectic/SubmitResponsesButton.tsx
+        *   `[✅]`   Boundary: consumes store selector and generation hook, renders button or null, renders persistent failure guidance
+    *   `[✅]`   `deps`
+        *   `[✅]`   selectCanAdvanceStage from @paynless/store — domain, inward
+        *   `[✅]`   submitStageResponses action — app, inward
+        *   `[✅]`   useStartContributionGeneration from apps/web/src/hooks — app, inward (fixed in prior node)
+        *   `[✅]`   No reverse dependencies introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   `useDialecticStore(selectCanAdvanceStage)` for visibility
+        *   `[✅]`   `useDialecticStore` for session, project, submitStageResponses, isSubmittingStageResponses, submitStageResponsesError
+        *   `[✅]`   `useStartContributionGeneration()` for startContributionGeneration and diagnostic fields
+        *   `[✅]`   Remove: `selectSortedStages` subscription, `setViewingStage` subscription — no longer needed in this component
+    *   `[✅]`   unit/`SubmitResponsesButton.test.tsx`
+        *   `[✅]`   Test: after successful submitStageResponses, calls startContributionGeneration (still passes)
+        *   `[✅]`   Remove: test assertion that `setViewingStage` was called from handleSubmit (store handles this internally)
+        *   `[✅]`   Preserve: all other existing test assertions (renders null when canAdvance false, renders button when true, persistent Alert tests, etc.)
+    *   `[✅]`   `SubmitResponsesButton.tsx`
+        *   `[✅]`   Remove `selectSortedStages` import and `sortedStages` subscription (line 61)
+        *   `[✅]`   Remove `setViewingStage` subscription (line 62)
+        *   `[✅]`   Remove lines 123-131 (the `sortedStages.findIndex` → `setViewingStage(nextStage.slug)` block)
+        *   `[✅]`   Preserve: `startContributionGeneration()` call after successful submit, autoGenResult handling, persistent Alert, confirmation dialog
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: UI
+        *   `[✅]`   Depends on: selectors (domain, inward), store actions (app, inward), useStartContributionGeneration hook (app, inward)
+        *   `[✅]`   Provides: user-facing button with automatic generation trigger and persistent failure guidance
+    *   `[✅]`   `requirements`
+        *   `[✅]`   No duplicate `updateViewingStage` API calls
+        *   `[✅]`   Stage advancement and viewing stage update happen atomically in the store, not split between store and component
+        *   `[✅]`   `startContributionGeneration` reads the already-updated store state at call time (relies on prior node's fix)
+
+*   `[✅]`   [UI] apps/web/src/hooks/`useStageProgressPolling.ts` **Delete runaway polling hook and remove from consumer**
+    *   `[✅]`   `objective`
+        *   `[✅]`   The first `useEffect` (lines 21-91) enters cooldown mode after generation fails and sets up a 500ms `setInterval` that never self-terminates — `finalPollCountRef` is only checked at effect setup, not inside the interval callback, and none of the effect's dependencies change from `hydrateAllStageProgress` calls, so cleanup never runs
+        *   `[✅]`   This produces an infinite loop of database calls (thousands observed in browser during a single session) — fatal in production
+        *   `[✅]`   All four effects in this hook are redundant with realtime lifecycle event tracking (Phases 1-3) or duplicated by `useStageRunProgressHydration`: effect 1 polls during generation (realtime handles this), effect 2 triple-refreshes on completion (hack), effect 3 refreshes on `generatingSessions` change (realtime handles this), effect 4 refreshes on stage change (duplicated by `useStageRunProgressHydration`)
+        *   `[✅]`   Delete the hook file entirely and remove its import and call from `SessionContributionsDisplayCard.tsx`
+    *   `[✅]`   `role`
+        *   `[✅]`   UI — React hook (being removed)
+    *   `[✅]`   `module`
+        *   `[✅]`   apps/web/src/hooks/useStageProgressPolling.ts (delete)
+        *   `[✅]`   apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx (consumer — remove import and call)
+    *   `[✅]`   `deps`
+        *   `[✅]`   No dependencies after deletion — all consumers of realtime progress are served by lifecycle event handlers and `useStageRunProgressHydration`
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   No context required after deletion
+    *   `[✅]`   `useStageProgressPolling.ts`
+        *   `[✅]`   Delete the file
+    *   `[✅]`   `SessionContributionsDisplayCard.tsx`
+        *   `[✅]`   Remove `import { useStageProgressPolling } from '../../hooks/useStageProgressPolling';` (line 42)
+        *   `[✅]`   Remove `useStageProgressPolling();` call (line 86)
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: UI (being removed)
+        *   `[✅]`   No dependencies or provides after deletion
+    *   `[✅]`   `requirements`
+        *   `[✅]`   No runaway polling intervals
+        *   `[✅]`   No unnecessary server load from aggressive sub-second polling
+        *   `[✅]`   Realtime lifecycle events are the sole progress update mechanism
+        *   `[✅]`   `useStageRunProgressHydration` continues to provide initial and per-stage hydration
+
+*   `[✅]`   [UI] apps/web/src/hooks/`useActiveStageSync.ts` **Evaluate and fix viewing vs app-progress semantics; remove or replace hook**
+    *   `[✅]`   `objective`
+        *   `[✅]`   The app implements a multi-stage DAG. Two distinct concepts are persisted in the database (Phases 2–3): **viewing_stage_id** = which stage the user is viewing (user may view prior stages to review or future stages to see what work will be made); **current_stage_id** = which stage the app has reached through progress through the DAG. They are separate. They are only equal when the user intentionally views the stage the app has reached.
+        *   `[✅]`   In the store: `viewingStageSlug` is driven by `viewing_stage_id` (load and `setViewingStage` persist it). App progress is `activeSessionDetail.current_stage_id` (from load and from `submitStageResponses` response). `activeContextStage` must represent **app progress** (the stage the app is on in the DAG), not the user's viewing choice — so it must be set from `current_stage_id`, never from `viewingStageSlug`.
+        *   `[✅]`   `useActiveStageSync` currently sets `activeContextStage` from `viewingStageSlug` (viewing → context), which conflates viewing with app progress and is incorrect.
+        *   `[✅]`   Evaluate: remove `useActiveStageSync` and ensure `activeContextStage` is set only from session's `current_stage_id` wherever session state is applied (e.g. session load / setActiveDialecticContext, getSessionDetails, submitStageResponses success path). If the store already sets `activeContextStage` from `current_stage_id` in those paths, remove the hook and its consumers. If not, add store logic to set `activeContextStage` from the stage object for `activeSessionDetail.current_stage_id` in those paths, then remove the hook.
+    *   `[✅]`   `role`
+        *   `[✅]`   UI — React hook (evaluate: remove or replace)
+    *   `[✅]`   `module`
+        *   `[✅]`   apps/web/src/hooks/useActiveStageSync.ts (delete after store is correct)
+        *   `[✅]`   packages/store/src/dialecticStore.ts — ensure activeContextStage is set from current_stage_id on session load and submitStageResponses success (if not already)
+        *   `[✅]`   apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx (remove hook import and call)
+        *   `[✅]`   apps/web/src/pages/DialecticSessionDetailsPage.tsx (remove hook import and call)
+    *   `[✅]`   `deps`
+        *   `[✅]`   Session data from DB: `current_stage_id`, `viewing_stage_id` — both persisted; store must not conjoin them
+        *   `[✅]`   No reverse dependencies introduced
+    *   `[✅]`   `context_slice`
+        *   `[✅]`   viewingStageSlug ← viewing_stage_id only
+        *   `[✅]`   activeContextStage ← current_stage_id only (stage object from template)
+    *   `[✅]`   `dialecticStore.ts` (if required)
+        *   `[✅]`   Wherever activeSessionDetail is set from server (session load, setActiveDialecticContext, submitStageResponses success): also set activeContextStage to the stage object for activeSessionDetail.current_stage_id (from currentProcessTemplate.stages), so activeContextStage always reflects app progress
+        *   `[✅]`   Do not set activeContextStage inside setViewingStage — viewing and app progress remain separate
+    *   `[✅]`   `useActiveStageSync.ts`
+        *   `[✅]`   Delete the file once store correctly drives activeContextStage from current_stage_id
+    *   `[✅]`   `SessionContributionsDisplayCard.tsx`
+        *   `[✅]`   Remove `import { useActiveStageSync } from '../../hooks/useActiveStageSync';` and `useActiveStageSync();` call
+    *   `[✅]`   `DialecticSessionDetailsPage.tsx`
+        *   `[✅]`   Remove `import { useActiveStageSync } from "@/hooks/useActiveStageSync";` and `useActiveStageSync();` call
+    *   `[✅]`   `directionality`
+        *   `[✅]`   Layer: UI (hook removed); store layer sets activeContextStage from app progress only
+        *   `[✅]`   Viewing and app progress remain separate; they are equivalent only when the user intentionally views the stage the app has reached
+    *   `[✅]`   `requirements`
+        *   `[✅]`   viewing_stage_id and current_stage_id are never conjoined in the store
+        *   `[✅]`   activeContextStage is driven by current_stage_id (app progress), not by viewing_stage_id
+        *   `[✅]`   selectCanAdvanceStage Condition 1 (logicalMatchesViewing) continues to compare session.current_stage_id with session.viewing_stage_id — no change to selector semantics
+    *   `[✅]`   **Commit** `fix(ui): eliminate stale closures, runaway polling, and fix activeContextStage semantics`
+        *   `[✅]`   useStartContributionGeneration reads store at call time — no stale closures
+        *   `[✅]`   SubmitResponsesButton no longer duplicates setViewingStage — no duplicate API calls
+        *   `[✅]`   useStageProgressPolling deleted — no runaway polling intervals
+        *   `[✅]`   activeContextStage driven from current_stage_id (app progress); useActiveStageSync removed; viewing and app progress remain separate
 
 
 

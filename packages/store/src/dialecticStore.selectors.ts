@@ -1132,6 +1132,7 @@ export const selectCanAdvanceStage = (state: DialecticStateValues): SelectCanAdv
         'failed',
     ];
     const currentStageNoActiveJobs: boolean =
+        currentStageComplete ||   // completed stage → no active jobs by definition
         !currentProgress ||
         (Object.values(currentProgress.stepStatuses).every(
             (s) => s !== 'in_progress' && s !== 'waiting_for_children' && s !== 'failed' && s !== 'paused_nsf' && s !== 'paused_user'

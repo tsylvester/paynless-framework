@@ -375,7 +375,13 @@ function computeStageRunChecklistData(
       documentRows.push({ entry, stepKey: stepKeyResolved, consolidatedLabel, perModelLabels });
     });
 
-    documentRows.sort((a, b) => a.entry.documentKey.localeCompare(b.entry.documentKey));
+    const stepOrderMap = new Map(steps.map(s => [s.step_key, s.execution_order]));
+    documentRows.sort((a, b) => {
+        const orderA = stepOrderMap.get(a.stepKey) ?? Infinity;
+        const orderB = stepOrderMap.get(b.stepKey) ?? Infinity;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.entry.documentKey.localeCompare(b.entry.documentKey);
+    });
 
     const hasStageProgress = stageProgress != null;
 
