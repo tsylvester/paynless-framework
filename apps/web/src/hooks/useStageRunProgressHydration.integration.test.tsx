@@ -306,15 +306,12 @@ describe('useStageRunProgressHydration integration', () => {
     it('after failed hydration, re-triggering the hook retries and succeeds when the API is available', async () => {
         setDialecticStateValues({ progressHydrationStatus: { [runKey]: 'failed' } });
 
-        const { rerender } = render(<HydrationWrapper />);
+        render(<HydrationWrapper />);
 
         await waitFor(() => {
             const state = getDialecticStoreState();
-            expect(state.progressHydrationStatus[runKey]).toBe('failed');
+            expect(state.progressHydrationStatus[runKey]).toBe('pending');
         });
-
-        setDialecticStateValues({ progressHydrationStatus: {} });
-        rerender(<HydrationWrapper />);
 
         await waitFor(() => {
             const state = getDialecticStoreState();

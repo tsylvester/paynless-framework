@@ -84,6 +84,29 @@ function buildMinimalRecipe(slug: string): DialecticStageRecipe {
   };
 }
 
+/** Recipe with a single first step (execution_order 1) and no required inputs, so next-stage inputs check passes. */
+function buildRecipeWithFirstStep(slug: string): DialecticStageRecipe {
+  const step: DialecticStageRecipeStep = {
+    id: 'step-1',
+    step_key: 'step-1',
+    step_slug: 'step-1',
+    step_name: 'Step',
+    execution_order: 1,
+    job_type: 'RENDER',
+    prompt_type: 'Turn',
+    output_type: 'rendered_document',
+    granularity_strategy: 'all_to_one',
+    inputs_required: [],
+    outputs_required: [],
+  };
+  return {
+    stageSlug: slug,
+    instanceId: 'inst-1',
+    steps: [step],
+    edges: [],
+  };
+}
+
 function buildRenderedDescriptor(
   modelId: string,
   latestRenderedResourceId: string,
@@ -273,7 +296,7 @@ function setupVisibleButtonState(): void {
     viewingStageSlug: stage1.slug,
     recipesByStageSlug: {
       thesis: buildThesisRecipeWithDocumentKey('success_metrics'),
-      antithesis: buildMinimalRecipe('antithesis'),
+      antithesis: buildRecipeWithFirstStep('antithesis'),
     },
     stageRunProgress: {
       [progressKey]: {
@@ -314,7 +337,7 @@ describe('SubmitResponsesButton', () => {
     );
   });
 
-  it('renders null when canAdvance is false (project null, session not in project)', () => {
+  it('renders disabled button when canAdvance is false (project null, session not in project)', () => {
     setDialecticStateValues({
       currentProjectDetail: null,
       activeSessionDetail: buildSession(),
@@ -322,10 +345,11 @@ describe('SubmitResponsesButton', () => {
       currentProcessTemplate: buildProcessTemplate([buildStage('stage-1', stageSlug, 'Thesis')]),
     });
     render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeDisabled();
   });
 
-  it('renders null when canAdvance is false (session null)', () => {
+  it('renders disabled button when canAdvance is false (session null)', () => {
     const stage = buildStage('stage-1', stageSlug, 'Thesis');
     setDialecticStateValues({
       currentProjectDetail: buildProject(buildSession(), buildProcessTemplate([stage])),
@@ -334,10 +358,11 @@ describe('SubmitResponsesButton', () => {
       currentProcessTemplate: buildProcessTemplate([stage]),
     });
     render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeDisabled();
   });
 
-  it('renders null when canAdvance is false (final stage, no next stage)', () => {
+  it('renders disabled button when canAdvance is false (final stage, no next stage)', () => {
     const stage = buildStage('stage-1', stageSlug, 'Thesis');
     const processTemplate = buildProcessTemplate([stage]);
     const session = buildSession();
@@ -370,10 +395,11 @@ describe('SubmitResponsesButton', () => {
       },
     });
     render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeDisabled();
   });
 
-  it('renders null when canAdvance is false (user on final stage of multi-stage process)', () => {
+  it('renders disabled button when canAdvance is false (user on final stage of multi-stage process)', () => {
     const stage1 = buildStage('stage-1', 'thesis', 'Thesis');
     const stage2 = buildStage('stage-2', 'antithesis', 'Antithesis');
     const processTemplate = buildProcessTemplate([stage1, stage2]);
@@ -387,7 +413,7 @@ describe('SubmitResponsesButton', () => {
       currentProcessTemplate: processTemplate,
       recipesByStageSlug: {
         thesis: buildMinimalRecipe('thesis'),
-        antithesis: buildMinimalRecipe('antithesis'),
+        antithesis: buildRecipeWithFirstStep('antithesis'),
       },
       stageRunProgress: {
         [progressKey]: emptyStageRunProgressSnapshot,
@@ -397,10 +423,11 @@ describe('SubmitResponsesButton', () => {
       submitStageResponsesError: null,
     });
     render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeDisabled();
   });
 
-  it('renders null when canAdvance is false (viewed stage does not match app current stage)', () => {
+  it('renders disabled button when canAdvance is false (viewed stage does not match app current stage)', () => {
     const stage1 = buildStage('stage-1', 'thesis', 'Thesis');
     const stage2 = buildStage('stage-2', 'antithesis', 'Antithesis');
     const processTemplate = buildProcessTemplate([stage1, stage2]);
@@ -419,7 +446,7 @@ describe('SubmitResponsesButton', () => {
       viewingStageSlug: stage1.slug,
       recipesByStageSlug: {
         thesis: buildThesisRecipeWithDocumentKey('success_metrics'),
-        antithesis: buildMinimalRecipe('antithesis'),
+        antithesis: buildRecipeWithFirstStep('antithesis'),
       },
       stageRunProgress: {
         [progressKey]: {
@@ -444,7 +471,8 @@ describe('SubmitResponsesButton', () => {
       submitStageResponsesError: null,
     });
     render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeDisabled();
   });
 
   it('renders button when canAdvance is true', () => {
@@ -460,7 +488,7 @@ describe('SubmitResponsesButton', () => {
     expect(trigger).not.toBeDisabled();
   });
 
-  it('renders null when canAdvance is false (current stage not complete)', () => {
+  it('renders disabled button when canAdvance is false (current stage not complete)', () => {
     const stage1 = buildStage('stage-1', 'thesis', 'Thesis');
     const stage2 = buildStage('stage-2', 'antithesis', 'Antithesis');
     const processTemplate = buildProcessTemplate([stage1, stage2]);
@@ -473,7 +501,7 @@ describe('SubmitResponsesButton', () => {
       currentProcessTemplate: processTemplate,
       recipesByStageSlug: {
         thesis: buildMinimalRecipe('thesis'),
-        antithesis: buildMinimalRecipe('antithesis'),
+        antithesis: buildRecipeWithFirstStep('antithesis'),
       },
       stageRunProgress: {
         [progressKey]: emptyStageRunProgressSnapshot,
@@ -481,7 +509,8 @@ describe('SubmitResponsesButton', () => {
       },
     });
     render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeDisabled();
   });
 
 
@@ -537,7 +566,8 @@ describe('SubmitResponsesButton', () => {
         activeContextStage: stage2,
       });
     });
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeDisabled();
   });
 
   it('renders card-footer container with data-testid="card-footer" when all conditions met', () => {
@@ -669,28 +699,6 @@ describe('SubmitResponsesButton', () => {
     expect(screen.getByText('Submit failed')).toBeInTheDocument();
   });
 
-  it('calls setViewingStage with next stage slug on successful submission', async () => {
-    setupVisibleButtonState();
-    const { submitStageResponses, setViewingStage } = getDialecticStoreState();
-    vi.mocked(submitStageResponses).mockResolvedValue({
-      data: { updatedSession: buildSession(), message: 'ok' },
-      error: undefined,
-      status: 200,
-    });
-    render(<SubmitResponsesButton />);
-    const trigger = screen.getByRole('button', { name: /Submit Responses & Advance Stage/i });
-    await act(async () => {
-      fireEvent.click(trigger);
-    });
-    const continueBtn = await screen.findByRole('button', { name: 'Continue' });
-    await act(async () => {
-      fireEvent.click(continueBtn);
-    });
-    await waitFor(() => {
-      expect(vi.mocked(setViewingStage)).toHaveBeenCalledWith('antithesis');
-    });
-  });
-
   it('shows success toast on successful submission', async () => {
     setupVisibleButtonState();
     render(<SubmitResponsesButton />);
@@ -736,7 +744,7 @@ describe('SubmitResponsesButton', () => {
     expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeInTheDocument();
   });
 
-  it('renders null when canAdvance is false (next stage already has generated documents)', () => {
+  it('renders disabled button when canAdvance is false (next stage already has generated documents)', () => {
     const stage1 = buildStage('stage-1', 'thesis', 'Thesis');
     const stage2 = buildStage('stage-2', 'antithesis', 'Antithesis');
     const processTemplate = buildProcessTemplate([stage1, stage2]);
@@ -751,7 +759,7 @@ describe('SubmitResponsesButton', () => {
           step_key: 'step-1',
           step_slug: 'step-1',
           step_name: 'Step',
-          execution_order: 0,
+          execution_order: 1,
           job_type: 'RENDER',
           prompt_type: 'Turn',
           output_type: 'rendered_document',
@@ -813,10 +821,11 @@ describe('SubmitResponsesButton', () => {
       submitStageResponsesError: null,
     });
     render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeDisabled();
   });
 
-  it('renders null when canAdvance is false (next stage has progress)', () => {
+  it('renders disabled button when canAdvance is false (next stage has progress)', () => {
     const stage1 = buildStage('stage-1', 'thesis', 'Thesis');
     const stage2 = buildStage('stage-2', 'antithesis', 'Antithesis');
     const processTemplate = buildProcessTemplate([stage1, stage2]);
@@ -831,7 +840,7 @@ describe('SubmitResponsesButton', () => {
           step_key: 'step-1',
           step_slug: 'step-1',
           step_name: 'Step',
-          execution_order: 0,
+          execution_order: 1,
           job_type: 'RENDER',
           prompt_type: 'Turn',
           output_type: 'rendered_document',
@@ -882,10 +891,11 @@ describe('SubmitResponsesButton', () => {
       submitStageResponsesError: null,
     });
     render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeDisabled();
   });
 
-  it('renders null when canAdvance is false (current stage has active jobs)', () => {
+  it('renders disabled button when canAdvance is false (current stage has active jobs)', () => {
     setupVisibleButtonState();
     setDialecticStateValues({
       stageRunProgress: {
@@ -909,10 +919,11 @@ describe('SubmitResponsesButton', () => {
       },
     });
     render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeDisabled();
   });
 
-  it('renders null when canAdvance is false (current stage has paused jobs)', () => {
+  it('renders disabled button when canAdvance is false (current stage has paused jobs)', () => {
     setupVisibleButtonState();
     setDialecticStateValues({
       stageRunProgress: {
@@ -936,7 +947,8 @@ describe('SubmitResponsesButton', () => {
       },
     });
     render(<SubmitResponsesButton />);
-    expect(screen.queryByTestId('card-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-footer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit Responses & Advance Stage/i })).toBeDisabled();
   });
 
   it('after successful submitStageResponses, calls startContributionGeneration', async () => {
@@ -963,28 +975,6 @@ describe('SubmitResponsesButton', () => {
     });
     await waitFor(() => {
       expect(startContributionGeneration).toHaveBeenCalled();
-    });
-  });
-
-  it('after successful submitStageResponses, advances viewingStage to next stage', async () => {
-    setupVisibleButtonState();
-    const { submitStageResponses, setViewingStage } = getDialecticStoreState();
-    vi.mocked(submitStageResponses).mockResolvedValue({
-      data: { updatedSession: buildSession(), message: 'ok' },
-      error: undefined,
-      status: 200,
-    });
-    render(<SubmitResponsesButton />);
-    const trigger = screen.getByRole('button', { name: /Submit Responses & Advance Stage/i });
-    await act(async () => {
-      fireEvent.click(trigger);
-    });
-    const continueBtn = await screen.findByRole('button', { name: 'Continue' });
-    await act(async () => {
-      fireEvent.click(continueBtn);
-    });
-    await waitFor(() => {
-      expect(vi.mocked(setViewingStage)).toHaveBeenCalledWith('antithesis');
     });
   });
 

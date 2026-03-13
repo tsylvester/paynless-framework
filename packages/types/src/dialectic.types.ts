@@ -785,6 +785,7 @@ export interface DialecticActions {
   // Recipe hydration and per-stage-run progress
   fetchStageRecipe: (stageSlug: string) => Promise<void>;
   ensureRecipeForViewingStage: (sessionId: string, stageSlug: string, iterationNumber: number) => Promise<void>;
+  setProgressHydrationRunPending: (runKey: string) => void;
   resetProgressHydrationStatus: (runKey: string) => void;
 }
 

@@ -22,7 +22,6 @@ const GENERATION_STARTED_DESCRIPTION =
   "The AI is working. We will notify you when it is complete.";
 
 export function useStartContributionGeneration(): UseStartContributionGenerationReturn {
-  const store = useDialecticStore();
   const generateContributions = useDialecticStore(
     (state) => state.generateContributions,
   );
@@ -52,9 +51,6 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     }
   });
 
-  const continueUntilComplete = useAiStore(
-    (state) => state.continueUntilComplete,
-  );
   const newChatContext = useAiStore((state) => state.newChatContext);
 
   const activeWalletInfo = useWalletStore((state) =>
@@ -62,12 +58,13 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
   );
 
   const selectedModels = useDialecticStore(selectSelectedModels);
-  const viewingStage = useMemo(() => selectViewingStage(store), [store]);
-  const activeSession = useMemo((): DialecticSession | null => {
-    if (!activeContextSessionId) return null;
-    const session = selectSessionById(store, activeContextSessionId);
+  const viewingStage = useDialecticStore(selectViewingStage);
+  const activeSession = useDialecticStore((state): DialecticSession | null => {
+    const sid = state.activeContextSessionId;
+    if (!sid) return null;
+    const session = selectSessionById(state, sid);
     return session ?? null;
-  }, [store, activeContextSessionId]);
+  });
 
   const isWalletReady =
     activeWalletInfo.status === "ok" && activeWalletInfo.walletId != null;
@@ -152,6 +149,15 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     async (
       onOpenDagProgress?: () => void,
     ): Promise<StartContributionGenerationResult> => {
+      const state = useDialecticStore.getState();
+      const viewingStage = selectViewingStage(state);
+      const activeContextSessionId = state.activeContextSessionId;
+      if (activeContextSessionId == null) {
+        const error = "No active session.";
+        toast.error(error);
+        return { success: false, error };
+      }
+      const activeSession = selectSessionById(state, activeContextSessionId);
       if (activeSession == null) {
         const error = "No active session.";
         toast.error(error);
@@ -162,6 +168,7 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
         toast.error(error);
         return { success: false, error };
       }
+      const currentProjectDetail = state.currentProjectDetail;
       if (currentProjectDetail == null) {
         const error = "No project selected.";
         toast.error(error);
@@ -172,12 +179,14 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
         toast.error(error);
         return { success: false, error };
       }
-      if (activeContextSessionId == null) {
-        const error = "No active session ID.";
-        toast.error(error);
-        return { success: false, error };
-      }
-      if (!isWalletReady) {
+      const walletState = useWalletStore.getState();
+      const aiState = useAiStore.getState();
+      const activeWalletInfo = selectActiveChatWalletInfo(
+        walletState,
+        aiState.newChatContext,
+      );
+      const continueUntilComplete = aiState.continueUntilComplete;
+      if (activeWalletInfo.status !== "ok" || activeWalletInfo.walletId == null) {
         const error = "Wallet is not ready.";
         toast.error(error);
         return { success: false, error };
@@ -191,6 +200,17 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
       }
 
       const iterationNumber = activeSession.iteration_count;
+      const unifiedProgress = selectUnifiedProjectProgress(state, activeContextSessionId);
+      const viewingStageProgress = unifiedProgress?.stageDetails?.find(
+        (s) => s.stageSlug === viewingStage.slug,
+      );
+      const hasPausedNsfJobs = viewingStageProgress?.stageStatus === "paused_nsf";
+      const hasPausedUserJobs = viewingStageProgress?.stageStatus === "paused_user";
+      const balanceNum = Number(activeWalletInfo.balance);
+      const balanceMeetsThreshold =
+        !Number.isNaN(balanceNum) && balanceNum >= viewingStage.minimum_balance;
+      const isResumeMode =
+        (hasPausedNsfJobs && balanceMeetsThreshold) || hasPausedUserJobs;
 
       if (isResumeMode) {
         toast.success("Resuming generation...");
@@ -232,23 +252,18 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
         return { success: false, error: errorMessage };
       }
     },
-    [
-      activeSession,
-      currentProjectDetail,
-      viewingStage,
-      activeContextSessionId,
-      isWalletReady,
-      activeWalletInfo.walletId,
-      isResumeMode,
-      continueUntilComplete,
-      resumePausedNsfJobs,
-      generateContributions,
-    ],
+    [generateContributions, resumePausedNsfJobs],
   );
 
   const pauseGeneration = useCallback(
     async (onOpenDagProgress?: () => void): Promise<void> => {
-      if (activeSession == null || viewingStage == null) return;
+      const state = useDialecticStore.getState();
+      const viewingStage = selectViewingStage(state);
+      const activeContextSessionId = state.activeContextSessionId;
+      if (activeContextSessionId == null) return;
+      const activeSession = selectSessionById(state, activeContextSessionId);
+      if (activeSession == null) return;
+      if (viewingStage == null) return;
       onOpenDagProgress?.();
       toast.info("Pausing generation...");
       await pauseActiveJobs({
@@ -257,7 +272,7 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
         iterationNumber: activeSession.iteration_count,
       });
     },
-    [activeSession, viewingStage, pauseActiveJobs],
+    [pauseActiveJobs],
   );
 
   return {

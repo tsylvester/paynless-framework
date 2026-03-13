@@ -1160,38 +1160,39 @@ export const selectCanAdvanceStage = (state: DialecticStateValues): SelectCanAdv
     let nextStageInputsReady: boolean = true;
     if (nextStage) {
         const recipeNext = recipesByStageSlug[nextStage.slug];
-        if (recipeNext?.steps) {
-            for (const step of recipeNext.steps) {
-                const requirements = step.inputs_required ?? [];
-                for (const req of requirements) {
-                    if (req.required === false) continue;
-                    if (req.type === 'document') {
-                        const sourceStageSlug: string = deriveRequirementStageSlug(req.slug, currentStage.slug);
-                        const sourceProgressKey: string = `${sessionId}:${sourceStageSlug}:${iterationNumber}`;
-                        const sourceProgress = stageRunProgress[sourceProgressKey];
-                        if (!sourceProgress?.documents) {
-                            nextStageInputsReady = false;
-                            break;
-                        }
-                        let hasCompleted: boolean = false;
-                        for (const compositeKey of Object.keys(sourceProgress.documents)) {
-                            const logicalKey: string = compositeKey.includes(STAGE_RUN_DOCUMENT_KEY_SEPARATOR)
-                                ? compositeKey.slice(0, compositeKey.indexOf(STAGE_RUN_DOCUMENT_KEY_SEPARATOR))
-                                : compositeKey;
-                            if (logicalKey !== req.document_key) continue;
-                            const descriptor = sourceProgress.documents[compositeKey];
-                            if (descriptor && descriptor.status === 'completed') {
-                                hasCompleted = true;
-                                break;
-                            }
-                        }
-                        if (!hasCompleted) {
-                            nextStageInputsReady = false;
+        if (!recipeNext?.steps?.length) {
+            nextStageInputsReady = false;
+        } else {
+            const firstStep: DialecticStageRecipeStep = recipeNext.steps.find(
+                (s) => s.execution_order === 1,
+            )!;
+            for (const req of firstStep.inputs_required) {
+                if (req.required === false) continue;
+                if (req.type === 'document') {
+                    const sourceStageSlug: string = deriveRequirementStageSlug(req.slug, currentStage.slug);
+                    const sourceProgressKey: string = `${sessionId}:${sourceStageSlug}:${iterationNumber}`;
+                    const sourceProgress = stageRunProgress[sourceProgressKey];
+                    if (!sourceProgress?.documents) {
+                        nextStageInputsReady = false;
+                        break;
+                    }
+                    let hasCompleted: boolean = false;
+                    for (const compositeKey of Object.keys(sourceProgress.documents)) {
+                        const logicalKey: string = compositeKey.includes(STAGE_RUN_DOCUMENT_KEY_SEPARATOR)
+                            ? compositeKey.slice(0, compositeKey.indexOf(STAGE_RUN_DOCUMENT_KEY_SEPARATOR))
+                            : compositeKey;
+                        if (logicalKey !== req.document_key) continue;
+                        const descriptor = sourceProgress.documents[compositeKey];
+                        if (descriptor && descriptor.status === 'completed') {
+                            hasCompleted = true;
                             break;
                         }
                     }
+                    if (!hasCompleted) {
+                        nextStageInputsReady = false;
+                        break;
+                    }
                 }
-                if (!nextStageInputsReady) break;
             }
         }
     }

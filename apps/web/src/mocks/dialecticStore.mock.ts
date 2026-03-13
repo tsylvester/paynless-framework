@@ -767,6 +767,11 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       hydrateAllStageProgress: vi.fn().mockImplementation((payload: GetAllStageProgressPayload) => {
         hydrateAllStageProgressLogic(set, payload);
       }),
+      setProgressHydrationRunPending: vi.fn().mockImplementation((runKey: string) => {
+        set((state) => {
+          state.progressHydrationStatus[runKey] = 'pending';
+        });
+      }),
       resetProgressHydrationStatus: vi.fn(),
       initializeFeedbackDraft: vi.fn().mockImplementation(
         async (key: StageDocumentCompositeKey) => {

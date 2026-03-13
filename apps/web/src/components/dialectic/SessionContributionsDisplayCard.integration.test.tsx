@@ -38,6 +38,18 @@ vi.mock('@paynless/store', async () => {
   const actual = await import('@paynless/store');
   const mock = await import('../../mocks/dialecticStore.mock');
   const authMock = await import('../../mocks/authStore.mock');
+  const selectCanAdvanceStageMock = vi.fn().mockReturnValue({
+    canAdvance: true,
+    reason: null,
+    conditions: {
+      logicalMatchesViewing: true,
+      currentStageComplete: true,
+      nextStageInputsReady: true,
+      currentStageNoActiveJobs: true,
+      nextStageNoProgress: true,
+      nextStageExists: true,
+    },
+  });
   return {
     ...actual,
     useDialecticStore: mock.useDialecticStore,
@@ -45,6 +57,7 @@ vi.mock('@paynless/store', async () => {
     selectStageDocumentChecklist: actual.selectStageDocumentChecklist,
     selectIsStageReadyForSessionIteration: mock.selectIsStageReadyForSessionIteration,
     selectUnifiedProjectProgress: mock.selectUnifiedProjectProgress,
+    selectCanAdvanceStage: selectCanAdvanceStageMock,
   };
 });
 

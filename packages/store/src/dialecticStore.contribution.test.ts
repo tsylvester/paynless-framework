@@ -14,6 +14,8 @@ import {
   DialecticProject, 
   AIModelCatalogEntry,
   DialecticContribution,
+  DialecticProcessTemplate,
+  DialecticStage,
   SubmitStageResponsesPayload,
   SubmitStageResponsesResponse,
   SaveContributionEditPayload,
@@ -448,10 +450,44 @@ describe('useDialecticStore', () => {
             message: 'Successfully submitted and prepared next seed.',
         };
 
+        const thesisStage: DialecticStage = {
+            id: mockStageSlug,
+            slug: mockStageSlug,
+            display_name: 'Thesis',
+            description: '',
+            default_system_prompt_id: null,
+            expected_output_template_ids: [],
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+            created_at: new Date().toISOString(),
+            minimum_balance: 0,
+        };
+        const antithesisStage: DialecticStage = {
+            id: 'antithesis',
+            slug: 'antithesis',
+            display_name: 'Antithesis',
+            description: '',
+            default_system_prompt_id: null,
+            expected_output_template_ids: [],
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+            created_at: new Date().toISOString(),
+            minimum_balance: 0,
+        };
+        const mockSubmitTemplate: DialecticProcessTemplate = {
+            id: 'pt-1',
+            name: 'Test',
+            starting_stage_id: mockStageSlug,
+            created_at: new Date().toISOString(),
+            stages: [thesisStage, antithesisStage],
+            description: null,
+        };
+
         beforeEach(() => {
             mockInitialProjectState = JSON.parse(JSON.stringify(mockProjectForRefetch));
             useDialecticStore.setState({
                 currentProjectDetail: mockInitialProjectState,
+                currentProcessTemplate: mockSubmitTemplate,
                 selectedModels: [
                     { id: 'model-1', displayName: 'Model 1' },
                     { id: 'model-2', displayName: 'Model 2' },

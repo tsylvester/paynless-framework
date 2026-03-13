@@ -378,6 +378,7 @@ export interface DialecticSession {
 	current_stage_id: string | null;
 	created_at: string;
 	updated_at: string;
+	viewing_stage_id: string | null;
 }
 
 export type DialecticProcessTemplate =

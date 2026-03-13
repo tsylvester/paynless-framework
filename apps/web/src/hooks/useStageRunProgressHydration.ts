@@ -20,6 +20,7 @@ export const useStageRunProgressHydration = (): void => {
     });
     const fetchStageRecipe = useDialecticStore((state) => state.fetchStageRecipe);
     const ensureRecipeForViewingStage = useDialecticStore((state) => state.ensureRecipeForViewingStage);
+    const setProgressHydrationRunPending = useDialecticStore((state) => state.setProgressHydrationRunPending);
     const hydrateAllStageProgress = useDialecticStore((state) => state.hydrateAllStageProgress);
     const hydrateStageProgress = useDialecticStore((state) => state.hydrateStageProgress);
 
@@ -37,6 +38,7 @@ export const useStageRunProgressHydration = (): void => {
         if (status === 'success' && hydrationReady) {
             return;
         }
+        setProgressHydrationRunPending(runKey);
         const userId = user.id;
         const projectId = activeSessionDetail.project_id;
         const hydrateAll = async (): Promise<void> => {
@@ -80,6 +82,7 @@ export const useStageRunProgressHydration = (): void => {
         sortedStages,
         progressHydrationStatus,
         hydrationReady,
+        setProgressHydrationRunPending,
         fetchStageRecipe,
         ensureRecipeForViewingStage,
         hydrateAllStageProgress,

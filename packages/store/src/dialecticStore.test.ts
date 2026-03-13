@@ -768,6 +768,27 @@ describe('useDialecticStore', () => {
             }],
         };
 
+        const thesisStageForSubmit: DialecticStage = {
+            id: stageSlug,
+            slug: stageSlug,
+            display_name: 'Thesis',
+            description: '',
+            default_system_prompt_id: null,
+            expected_output_template_ids: [],
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+            created_at: new Date().toISOString(),
+            minimum_balance: 0,
+        };
+        const mockSubmitTemplate: DialecticProcessTemplate = {
+            id: 'pt-1',
+            name: 'Test',
+            starting_stage_id: stageSlug,
+            created_at: new Date().toISOString(),
+            stages: [thesisStageForSubmit],
+            description: null,
+        };
+
         const payload: SubmitStageResponsesPayload = {
             projectId,
             sessionId,
@@ -792,6 +813,7 @@ describe('useDialecticStore', () => {
             };
             useDialecticStore.setState({
                 currentProjectDetail: mockProject,
+                currentProcessTemplate: mockSubmitTemplate,
                 stageDocumentContent: {
                     [serializedKey]: documentContent,
                 },
@@ -834,6 +856,7 @@ describe('useDialecticStore', () => {
             };
             useDialecticStore.setState({
                 currentProjectDetail: mockProject,
+                currentProcessTemplate: mockSubmitTemplate,
                 stageDocumentContent: {
                     [serializedKey]: documentContent,
                 },
@@ -841,6 +864,7 @@ describe('useDialecticStore', () => {
             getMockDialecticClient().submitStageDocumentFeedback.mockResolvedValue({ data: { success: true }, status: 200 });
             getMockDialecticClient().submitStageResponses.mockResolvedValue({ data: { updatedSession: mockProject.dialectic_sessions![0] }, status: 200 });
             getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+            getMockDialecticClient().updateViewingStage.mockResolvedValue({ error: undefined, status: 200 });
 
             await useDialecticStore.getState().submitStageResponses(payload);
 
@@ -872,6 +896,7 @@ describe('useDialecticStore', () => {
             };
             useDialecticStore.setState({
                 currentProjectDetail: mockProject,
+                currentProcessTemplate: mockSubmitTemplate,
                 stageDocumentContent: {
                     [serializedKey]: documentContent,
                 },
@@ -883,6 +908,7 @@ describe('useDialecticStore', () => {
             getMockDialecticClient().submitStageDocumentFeedback.mockResolvedValue({ data: { success: true }, status: 200 });
             getMockDialecticClient().submitStageResponses.mockResolvedValue({ data: { updatedSession: mockProject.dialectic_sessions![0] }, status: 200 });
             getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+            getMockDialecticClient().updateViewingStage.mockResolvedValue({ error: undefined, status: 200 });
 
             await useDialecticStore.getState().submitStageResponses(payload);
 
@@ -1938,7 +1964,7 @@ describe('useDialecticStore', () => {
                 status: 'active', 
                 associated_chat_id: null,
                 dialectic_session_models: [], 
-                viewing_stage_id: 'thesis',
+                viewing_stage_id: 'stage-1',
             }
             ],
             contributionGenerationStatus: 'idle',
@@ -1966,7 +1992,7 @@ describe('useDialecticStore', () => {
             status: 'active',
             associated_chat_id: null,
             dialectic_session_models: [],
-            viewing_stage_id: 'thesis',
+            viewing_stage_id: 'stage-1',
         };
 
         const mockStage: DialecticStage = {

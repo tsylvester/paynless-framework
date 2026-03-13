@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import {
 	useDialecticStore,
 	selectCanAdvanceStage,
-	selectSortedStages,
 	selectStageHasUnsavedChanges,
 } from "@paynless/store";
 import type {
@@ -25,6 +24,7 @@ import {
 	AlertDialogTitle,
 	AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -57,8 +57,6 @@ export const SubmitResponsesButton: React.FC = () => {
 	const project = useDialecticStore((state) => state.currentProjectDetail);
 	const session = useDialecticStore((state) => state.activeSessionDetail);
 	const activeContextStage = useDialecticStore((state) => state.activeContextStage);
-	const sortedStages = useDialecticStore(selectSortedStages);
-	const setViewingStage = useDialecticStore((state) => state.setViewingStage);
 	const submitStageResponses = useDialecticStore(
 		(state) => state.submitStageResponses,
 	);
@@ -101,10 +99,6 @@ export const SubmitResponsesButton: React.FC = () => {
 		null,
 	);
 
-	if (!canAdvanceResult.canAdvance) {
-		return null;
-	}
-
 	const shouldPulse = !isSubmitting;
 
 	const handleSubmit = async (): Promise<void> => {
@@ -123,15 +117,6 @@ export const SubmitResponsesButton: React.FC = () => {
 				return;
 			}
 			toast.success("Stage advanced!");
-			const currentIndex = sortedStages.findIndex(
-				(s) => s.id === activeContextStage.id,
-			);
-			if (currentIndex >= 0 && currentIndex < sortedStages.length - 1) {
-				const nextStage = sortedStages[currentIndex + 1];
-				if (nextStage) {
-					setViewingStage(nextStage.slug);
-				}
-			}
 			const genResult: StartContributionGenerationResult =
 				await startContributionGeneration();
 			setAutoGenResult(genResult);
@@ -164,46 +149,61 @@ export const SubmitResponsesButton: React.FC = () => {
 			) : null}
 			<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 				{hasUnsavedEdits || hasUnsavedFeedback}
-				<AlertDialog>
-					<AlertDialogTrigger asChild>
-						<Button
-							disabled={isSubmitting}
-							className={
-								shouldPulse ? "animate-pulse ring-2 ring-primary" : undefined
-							}
-						>
-							{isSubmitting ? (
-								<>
-									<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-									Submitting...
-								</>
-							) : (
-								"Submit Responses & Advance Stage"
-							)}
-						</Button>
-					</AlertDialogTrigger>
-					<AlertDialogContent>
-						<AlertDialogHeader>
-							<AlertDialogTitle>Submit and Advance?</AlertDialogTitle>
-							<AlertDialogDescription>
-								This will save all your edits and feedback for this stage, then
-								advance to the next stage. You can continue editing until you
-								submit.
-							</AlertDialogDescription>
-							{(hasUnsavedEdits || hasUnsavedFeedback) && (
-								<span className="text-sm text-muted-foreground">
-									Unsaved work will be saved automatically.
-								</span>
-							)}
-						</AlertDialogHeader>
-						<AlertDialogFooter>
-							<AlertDialogCancel>Cancel</AlertDialogCancel>
-							<AlertDialogAction onClick={handleSubmit}>
-								Continue
-							</AlertDialogAction>
-						</AlertDialogFooter>
-					</AlertDialogContent>
-				</AlertDialog>
+				{canAdvanceResult.canAdvance ? (
+					<AlertDialog>
+						<AlertDialogTrigger asChild>
+							<Button
+								disabled={isSubmitting}
+								className={
+									shouldPulse ? "animate-pulse ring-2 ring-primary" : undefined
+								}
+							>
+								{isSubmitting ? (
+									<>
+										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+										Submitting...
+									</>
+								) : (
+									"Submit Responses & Advance Stage"
+								)}
+							</Button>
+						</AlertDialogTrigger>
+						<AlertDialogContent>
+							<AlertDialogHeader>
+								<AlertDialogTitle>Submit and Advance?</AlertDialogTitle>
+								<AlertDialogDescription>
+									This will save all your edits and feedback for this stage, then
+									advance to the next stage. You can continue editing until you
+									submit.
+								</AlertDialogDescription>
+								{(hasUnsavedEdits || hasUnsavedFeedback) && (
+									<span className="text-sm text-muted-foreground">
+										Unsaved work will be saved automatically.
+									</span>
+								)}
+							</AlertDialogHeader>
+							<AlertDialogFooter>
+								<AlertDialogCancel>Cancel</AlertDialogCancel>
+								<AlertDialogAction onClick={handleSubmit}>
+									Continue
+								</AlertDialogAction>
+							</AlertDialogFooter>
+						</AlertDialogContent>
+					</AlertDialog>
+				) : (
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<span className="inline-block">
+								<Button disabled>
+									Submit Responses & Advance Stage
+								</Button>
+							</span>
+						</TooltipTrigger>
+						<TooltipContent>
+							{canAdvanceResult.reason}
+						</TooltipContent>
+					</Tooltip>
+				)}
 			</div>
 			{autoGenAlertMessage ? (
 				<Alert variant="default" className="mt-4">

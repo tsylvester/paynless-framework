@@ -2742,15 +2742,17 @@ export const useDialecticStore = create<DialecticStore>()(
 						};
 					});
 
+					const template = get().currentProcessTemplate;
+					const stageForCurrent =
+						template!.stages!.find((s) => s.id === updatedSession.current_stage_id);
+					set({ activeContextStage: stageForCurrent });
+
 					if (
 						viewingMatchedLogical &&
 						updatedSession.current_stage_id !== null &&
 						updatedSession.current_stage_id !== undefined
 					) {
-						const template = get().currentProcessTemplate;
-						const stage = template?.stages?.find(
-							(s) => s.id === updatedSession.current_stage_id,
-						);
+						const stage = template?.stages?.find((s) => s.id === updatedSession.current_stage_id);
 						if (stage) {
 							set({ viewingStageSlug: stage.slug });
 							const userId = useAuthStore.getState().user?.id;
@@ -3102,13 +3104,7 @@ export const useDialecticStore = create<DialecticStore>()(
     if (!get().projectDetailError) {
         logger.info(`[DialecticStore] Proceeding to fetch session details for ${sessionId}.`);
         await get().fetchAndSetCurrentSessionDetails(sessionId);
-
-        const template = get().currentProcessTemplate;
-        if (!template?.stages?.length || !template.starting_stage_id) return;
-        const firstStage = template.stages.find((s) => s.id === template.starting_stage_id);
-        if (!firstStage) return;
-        logger.info(`[DialecticStore] Setting initial active stage for deep link: ${firstStage.slug}`);
-        get().setViewingStage(firstStage.slug);
+        // viewingStageSlug is already set from session.viewing_stage_id by fetchAndSetCurrentSessionDetails; do not overwrite.
     }
   },
 
@@ -3418,6 +3414,12 @@ export const useDialecticStore = create<DialecticStore>()(
       });
       logger.error('[DialecticStore] hydrateAllStageProgress failed', { runKey, errorDetails: err });
     }
+  },
+
+  setProgressHydrationRunPending: (runKey: string): void => {
+    set(state => {
+      state.progressHydrationStatus[runKey] = 'pending';
+    });
   },
 
   resetProgressHydrationStatus: (runKey: string): void => {
