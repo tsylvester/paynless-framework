@@ -625,9 +625,9 @@ export const GeneratedContributionCard: React.FC<
 
 						{isDocumentGenerating && (
 							<Alert variant="default" className="border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
-								<div className="flex items-center gap-2">
-									<Loader2 className="h-4 animate-spin text-amber-600" />
-									<AlertDescription className="text-amber-800 dark:text-amber-200">
+								<div className="col-span-2 flex items-center gap-2">
+									<Loader2 className="h-4 shrink-0 animate-spin text-amber-600" />
+									<AlertDescription className="min-w-0 text-amber-800 dark:text-amber-200">
 										Document is being generated. Content will appear when ready...
 									</AlertDescription>
 								</div>
