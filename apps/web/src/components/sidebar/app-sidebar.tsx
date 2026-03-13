@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { BookOpen, File, User, SquareTerminal } from "lucide-react";
+import { BookOpen, File, User, SquareTerminal, DollarSign, Code, Rocket, Users, Building2 } from "lucide-react";
 import { NavMain } from "@/components/sidebar/nav-main";
 import { NavUser } from "@/components/sidebar/nav-user";
 
@@ -86,6 +86,39 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 			},
 		],
 
+		navExplore: [
+			{
+				title: "Vibe Coders",
+				url: "/vibecoder",
+				icon: Code,
+				isActive: true,
+			},
+			{
+				title: "Indie Hackers",
+				url: "/indiehacker",
+				icon: Rocket,
+				isActive: true,
+			},
+			{
+				title: "Startups",
+				url: "/startup",
+				icon: Users,
+				isActive: true,
+			},
+			{
+				title: "Agencies",
+				url: "/agency",
+				icon: Building2,
+				isActive: true,
+			},
+			{
+				title: "Pricing",
+				url: "/pricing",
+				icon: DollarSign,
+				isActive: true,
+			},
+		],
+
 		navSecondary: [
 			{
 				title: "Chats",
@@ -150,6 +183,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				<>
 					<SidebarContent>
 						<NavMain items={data.navMain} />
+						<NavMain items={data.navExplore} subtitle="Explore" hideLogo />
 					</SidebarContent>
 					<SidebarFooter>
 						<SidebarMenuButton

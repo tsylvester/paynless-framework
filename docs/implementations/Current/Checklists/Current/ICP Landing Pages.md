@@ -262,6 +262,213 @@ The homepage UseCases component currently shows a generic 2x2 grid with broad la
         *   `[✅]` Existing animation/layout behavior preserved
         *   `[✅]` No new icons needed if existing Lucide icons fit (Rocket, Code2, Building2 + one more)
 
+*   `[✅]` apps/web/src/components/marketing/`PricingSection.tsx` **[UI] Simplified pricing explanation for homepage — free tier, base paid tier, link to full pricing**
+    *   `[✅]` `objective`
+        *   `[✅]` Render a simplified pricing explanation section for the homepage
+        *   `[✅]` Display: 1M tokens on signup, free users get 100k/mo, $19.99 for 1M tokens/mo
+        *   `[✅]` Note availability of Extra, Premium, Annual, and larger OTP options
+        *   `[✅]` Link to `/pricing` for full pricing details
+        *   `[✅]` Auth-aware CTAs: "Get Started Free" for unauth, "View Plans" for auth users
+    *   `[✅]` `role`
+        *   `[✅]` UI presentation — marketing section for homepage
+    *   `[✅]` `module`
+        *   `[✅]` Marketing / homepage components
+    *   `[✅]` `deps`
+        *   `[✅]` `motion` from `framer-motion` — animations consistent with other marketing sections
+        *   `[✅]` `Link` from `react-router-dom` — navigation to /pricing and /register
+        *   `[✅]` `useAuthStore` from `@paynless/store` — auth-aware CTA rendering
+        *   `[✅]` Lucide icons (`Sparkles`, `ArrowRight`, `Check`) — consistent iconography
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` Auth state for CTA button text
+    *   `[✅]` unit/`PricingSection.test.tsx`
+        *   `[✅]` Renders section heading
+        *   `[✅]` Displays "1M tokens on signup" messaging
+        *   `[✅]` Displays free tier info (100k tokens/mo)
+        *   `[✅]` Displays base paid tier ($19.99 for 1M tokens/mo)
+        *   `[✅]` Displays "more options available" text with link to /pricing
+        *   `[✅]` CTA shows "Get Started Free" when not authenticated
+        *   `[✅]` CTA shows "View Plans" when authenticated
+        *   `[✅]` Link to /pricing renders correctly
+    *   `[✅]` `construction`
+        *   `[✅]` No required props — self-contained marketing section
+    *   `[✅]` `PricingSection.tsx`
+        *   `[✅]` Section heading: "Simple, Transparent Pricing"
+        *   `[✅]` Signup bonus callout: "1M tokens free on signup"
+        *   `[✅]` Two-column or card layout: Free tier vs Base paid tier
+        *   `[✅]` Free tier: $0/mo, 100k tokens/mo, basic features
+        *   `[✅]` Base paid tier: $19.99/mo, 1M tokens/mo, full features
+        *   `[✅]` Footer text: "Extra, Premium, Annual, and larger one-time purchases available"
+        *   `[✅]` "See all pricing options" link to `/pricing`
+        *   `[✅]` Auth-aware primary CTA button
+        *   `[✅]` Styling matches existing marketing section patterns
+    *   `[✅]` `directionality`
+        *   `[✅]` UI adapter layer — consumes auth store, renders presentation
+        *   `[✅]` All dependencies are inward-facing
+        *   `[✅]` Provides outward to Home.tsx
+    *   `[✅]` `requirements`
+        *   `[✅]` Clear, simple pricing explanation without overwhelming detail
+        *   `[✅]` Responsive layout (mobile-first)
+        *   `[✅]` Consistent animation and styling with existing marketing components
+
+*   `[✅]` apps/web/src/pages/`PricingPage.tsx` **[UI] Public pricing page — full pricing options display at /pricing**
+    *   `[✅]` `objective`
+        *   `[✅]` Dedicated public pricing page at `/pricing`
+        *   `[✅]` Display all subscription plans (Free, Monthly tiers, Annual tiers, One-time purchases)
+        *   `[✅]` No authentication required — fully public page
+        *   `[✅]` CTAs link to `/register?ref=pricing` for conversion tracking
+    *   `[✅]` `role`
+        *   `[✅]` UI page — public-facing pricing information
+    *   `[✅]` `module`
+        *   `[✅]` Pages layer — route-level component
+    *   `[✅]` `deps`
+        *   `[✅]` `motion` from `framer-motion` — page animations
+        *   `[✅]` `Link` from `react-router-dom` — CTA navigation
+        *   `[✅]` `useAuthStore` from `@paynless/store` — auth-aware CTAs
+        *   `[✅]` Lucide icons (`Check`, `Sparkles`, `ArrowRight`) — feature lists
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` Auth state for CTA rendering
+    *   `[✅]` unit/`PricingPage.test.tsx`
+        *   `[✅]` Renders page heading "Pricing"
+        *   `[✅]` Renders Free plan card
+        *   `[✅]` Renders Monthly plan cards
+        *   `[✅]` Renders Annual plan cards with savings callout
+        *   `[✅]` Renders One-time purchase options
+        *   `[✅]` CTA buttons link to `/register?ref=pricing` when not authenticated
+        *   `[✅]` CTA buttons link to `/subscription` when authenticated
+        *   `[✅]` FAQ section renders
+        *   `[✅]` Accessible without authentication
+    *   `[✅]` `construction`
+        *   `[✅]` No props — route-level page
+    *   `[✅]` `PricingPage.tsx`
+        *   `[✅]` Page wrapper with max-width container
+        *   `[✅]` Hero: "Choose Your Plan" heading with signup bonus callout
+        *   `[✅]` Tabs or sections: Monthly / Annual / One-Time
+        *   `[✅]` Plan cards grid with features, pricing, CTAs
+        *   `[✅]` Free plan always visible
+        *   `[✅]` FAQ section (reuse content pattern from SubscriptionPage)
+        *   `[✅]` All CTAs include `?ref=pricing` param for unauth users
+        *   `[✅]` Auth users see "Manage Subscription" linking to /subscription
+    *   `[✅]` `directionality`
+        *   `[✅]` UI page layer — composes presentation
+        *   `[✅]` All dependencies are inward-facing
+        *   `[✅]` Provides outward to routes.tsx
+    *   `[✅]` `requirements`
+        *   `[✅]` Page renders fully without authentication
+        *   `[✅]` All plan tiers displayed with clear pricing
+        *   `[✅]` Conversion tracking via `ref=pricing` param
+        *   `[✅]` Consistent styling with other marketing pages
+
+*   `[✅]` apps/web/src/routes/`routes.tsx` **[UI] Add public /pricing route**
+    *   `[✅]` `objective`
+        *   `[✅]` Add route for `/pricing` pointing to `PricingPage`
+        *   `[✅]` Route is public (no `ProtectedRoute` wrapper)
+        *   `[✅]` Lazy-loaded consistent with existing route patterns
+        *   `[✅]` Place route before the `:segment` catch route
+    *   `[✅]` `role`
+        *   `[✅]` Infrastructure — routing configuration
+    *   `[✅]` `module`
+        *   `[✅]` App routing layer
+    *   `[✅]` `deps`
+        *   `[✅]` `PricingPage` — page component, direction: inward
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` React Router route configuration array
+    *   `[✅]` unit/`routes.test.tsx` (update existing)
+        *   `[✅]` `/pricing` route resolves to PricingPage
+        *   `[✅]` `/pricing` route is accessible without authentication
+    *   `[✅]` `routes.tsx`
+        *   `[✅]` Add lazy import for `PricingPage`
+        *   `[✅]` Add route entry: `{ path: 'pricing', element: <PricingPage /> }`
+        *   `[✅]` Place before `:segment` route to avoid segment validation conflict
+    *   `[✅]` `directionality`
+        *   `[✅]` Infrastructure layer — wires routes to components
+        *   `[✅]` All dependencies are inward-facing
+    *   `[✅]` `requirements`
+        *   `[✅]` `/pricing` route resolves correctly
+        *   `[✅]` Route is public, no auth required
+        *   `[✅]` Lazy loaded
+
+*   `[✅]` apps/web/src/pages/`Home.tsx` **[UI] Add navigation badges and PricingSection to homepage**
+    *   `[✅]` `objective`
+        *   `[✅]` Add styled navigation links ("badges") to ICP landing pages and pricing page
+        *   `[✅]` Position badges in upper-right area of Hero section, above the fold
+        *   `[✅]` Add `PricingSection` component between UseCases and CTASection
+        *   `[✅]` Maintain existing section order with new elements integrated
+    *   `[✅]` `role`
+        *   `[✅]` UI page — homepage composition
+    *   `[✅]` `module`
+        *   `[✅]` Pages layer — root landing page
+    *   `[✅]` `deps`
+        *   `[✅]` `PricingSection` from `../components/marketing/PricingSection` — new import
+        *   `[✅]` `Link` from `react-router-dom` — badge navigation (already imported)
+        *   `[✅]` Existing marketing component imports unchanged
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` No new context requirements
+    *   `[✅]` unit/`Home.test.tsx` (create or update)
+        *   `[✅]` Renders navigation badges section with 5 links
+        *   `[✅]` Badge links point to correct routes (/vibecoder, /indiehacker, /startup, /agency, /pricing)
+        *   `[✅]` Badges positioned in Hero section
+        *   `[✅]` Renders PricingSection component
+        *   `[✅]` Section order: Hero (with badges) → ProcessSteps → StatsSection → FeatureCards → UseCases → PricingSection → CTASection
+    *   `[✅]` `Home.tsx`
+        *   `[✅]` Import `PricingSection`
+        *   `[✅]` Add navigation badges in Hero section upper-right area
+        *   `[✅]` Badge links: "Vibe Coders", "Indie Hackers", "Startups", "Agencies", "Pricing"
+        *   `[✅]` Simple styled links (pills/buttons), not large cards
+        *   `[✅]` Add `<PricingSection />` between UseCases and CTASection
+    *   `[✅]` `directionality`
+        *   `[✅]` UI page layer — composes marketing components
+        *   `[✅]` All dependencies are inward-facing
+    *   `[✅]` `requirements`
+        *   `[✅]` Badges visible above the fold in upper-right Hero area
+        *   `[✅]` All 5 badge links functional
+        *   `[✅]` PricingSection renders between UseCases and CTASection
+        *   `[✅]` No layout breaks on mobile or desktop
+
+*   `[✅]` apps/web/src/components/sidebar/`app-sidebar.tsx` **[UI] Add unauth-only navigation section with ICP and pricing links**
+    *   `[✅]` `objective`
+        *   `[✅]` Add new navigation section visible only to unauthenticated users
+        *   `[✅]` Section contains links to 4 ICP landing pages and pricing page
+        *   `[✅]` Position below existing navMain, above Login button
+        *   `[✅]` Authenticated users do not see this section
+    *   `[✅]` `role`
+        *   `[✅]` UI navigation — app sidebar
+    *   `[✅]` `module`
+        *   `[✅]` Sidebar / navigation components
+    *   `[✅]` `deps`
+        *   `[✅]` Existing imports unchanged
+        *   `[✅]` Lucide icons (`DollarSign`, `Code`, `Rocket`, `Users`, `Building2`) for nav items
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` Auth state from existing `useAuthStore` usage
+    *   `[✅]` unit/`app-sidebar.test.tsx` (update existing)
+        *   `[✅]` When unauthenticated: renders "Explore" section with 5 links
+        *   `[✅]` Explore section contains: Vibe Coders, Indie Hackers, Startups, Agencies, Pricing
+        *   `[✅]` Links navigate to correct routes
+        *   `[✅]` When authenticated: Explore section is NOT rendered
+        *   `[✅]` Existing navMain items still render for both auth states
+    *   `[✅]` `app-sidebar.tsx`
+        *   `[✅]` Define `navExplore` array for unauth navigation:
+            *   `[✅]` "Vibe Coders" → `/vibecoder` (Code icon)
+            *   `[✅]` "Indie Hackers" → `/indiehacker` (Rocket icon)
+            *   `[✅]` "Startups" → `/startup` (Users icon)
+            *   `[✅]` "Agencies" → `/agency` (Building2 icon)
+            *   `[✅]` "Pricing" → `/pricing` (DollarSign icon)
+        *   `[✅]` Render `navExplore` section in NO_AUTH state only
+        *   `[✅]` Position between navMain and Login button
+        *   `[✅]` Use existing `NavMain` component pattern for rendering
+    *   `[✅]` `directionality`
+        *   `[✅]` UI adapter layer — navigation component
+        *   `[✅]` All dependencies are inward-facing
+    *   `[✅]` `requirements`
+        *   `[✅]` Unauth users see Explore section with all 5 links
+        *   `[✅]` Auth users do not see Explore section
+        *   `[✅]` Links work correctly
+        *   `[✅]` Sidebar styling consistent with existing items
+
 *   `[ ]` apps/web/src/components/auth/`RegisterForm.tsx` **[UI] Read ref param, fix ConvertKit newsletter subscription, add PostHog segment tracking on registration**
     *   `[ ]` `objective`
         *   `[ ]` Read `ref` query parameter from URL (e.g., `/register?ref=vibecoder`)
@@ -328,22 +535,22 @@ The homepage UseCases component currently shows a generic 2x2 grid with broad la
         *   `[ ]` Existing registration UX is not altered (form fields, validation, navigation)
         *   `[ ]` Newsletter subscription no longer silently fails
     *   `[ ]` `manual_setup` (not code)
-        *   `[ ]` ConvertKit: create segment tags or custom field in Kit dashboard for the 5 cohorts
-        *   `[ ]` PostHog: create 5 cohorts in PostHog dashboard filtered by `signup_segment` user property
-    *   `[ ]` **Commit** `feat(landing-pages): add ICP segment landing pages with ConvertKit + PostHog tracking`
+        *   `[ ]` ConvertKit: create segment tags or custom field in Kit dashboard for the 6 cohorts (direct, vibecoder, indiehacker, startup, agency, pricing)
+        *   `[ ]` PostHog: create 6 cohorts in PostHog dashboard filtered by `signup_segment` user property
+    *   `[ ]` **Commit** `feat(landing-pages): add ICP segment landing pages, pricing page, and ConvertKit + PostHog tracking`
         *   `[ ]` Created segment content data types and data file with all 4 ICP segments
         *   `[ ]` Created shared landing page template component with 8 sections
         *   `[ ]` Created route component that validates segment param and renders template
         *   `[ ]` Added 4 segment routes to React Router
         *   `[ ]` Updated homepage UseCases cards to link to segment landing pages
+        *   `[ ]` Created PricingSection component for homepage simplified pricing display
+        *   `[ ]` Created public PricingPage with full pricing options at /pricing
+        *   `[ ]` Added /pricing route to React Router
+        *   `[ ]` Added navigation badges to homepage Hero section linking to ICP pages and pricing
+        *   `[ ]` Added PricingSection to homepage between UseCases and CTA
+        *   `[ ]` Added unauth-only Explore section to sidebar with ICP and pricing links
         *   `[ ]` Fixed broken newsletter subscription flow and added segment cohort tagging via ConvertKit
-        *   `[ ]` Added PostHog identify + track calls on registration with signup_segment property
-
-* Add landing page badges to top of home page
-* Add pricing page
-* Add pricing to home page 
-* Add pricing landing page to top of home page 
-
+        *   `[ ]` Added PostHog identify + track calls on registration with signup_segment property (6 cohorts: direct, vibecoder, indiehacker, startup, agency, pricing)
 
 ---
 
