@@ -1624,6 +1624,7 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
     updated_at: iso,
     user_input_reference_url: null,
     idempotency_key: null,
+    viewing_stage_id: null,
   };
   const projectRow: Tables<"dialectic_projects"> = {
     id: basePayload.projectId,
@@ -1936,6 +1937,7 @@ Deno.test("getAllStageProgress: paused_user step status drives stage status (use
     updated_at: iso,
     user_input_reference_url: null,
     idempotency_key: null,
+    viewing_stage_id: null,
   };
   const projectRow: Tables<"dialectic_projects"> = {
     id: basePayload.projectId,
@@ -2250,6 +2252,7 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
     updated_at: iso,
     user_input_reference_url: null,
     idempotency_key: null,
+    viewing_stage_id: null,
   };
   const projectRow: Tables<"dialectic_projects"> = {
     id: basePayload.projectId,
@@ -2391,6 +2394,7 @@ Deno.test("getAllStageProgress: stage with no jobs returns empty jobs: [] array"
     updated_at: iso,
     user_input_reference_url: null,
     idempotency_key: null,
+    viewing_stage_id: null,
   };
   const projectRow: Tables<"dialectic_projects"> = {
     id: basePayload.projectId,
@@ -2481,7 +2485,8 @@ Deno.test("getAllStageProgress: stage with no edges returns empty edges: [] arra
     status: "active",
     updated_at: iso,
     user_input_reference_url: null,
-    idempotency_key: null,
+    idempotency_key: null,  
+    viewing_stage_id: null,
   };
   const projectRow: Tables<"dialectic_projects"> = {
     id: basePayload.projectId,

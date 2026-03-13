@@ -13,7 +13,7 @@ import {
 	selectActiveContextSessionId,
 	selectCurrentProjectDetail,
 	selectSortedStages,
-	selectActiveStageSlug,
+	selectViewingStageSlug,
 	selectUnifiedProjectProgress,
 	selectSelectedModels,
 } from "@paynless/store";
@@ -31,7 +31,7 @@ interface StageProgressSnapshotSummary {
 interface StageCardProps {
 	stage: DialecticStage;
 	index: number;
-	isActive: boolean;
+	isViewingStage: boolean;
 	isContextReady: boolean;
 	onSelect: () => void;
 	progress: StageProgressSnapshotSummary;
@@ -45,7 +45,7 @@ function formatMinimumBalance(minimumBalance: number): string {
 const StageCard: React.FC<StageCardProps> = ({
 	stage,
 	index,
-	isActive,
+	isViewingStage,
 	isContextReady,
 	onSelect,
 	progress,
@@ -78,22 +78,22 @@ const StageCard: React.FC<StageCardProps> = ({
 				data-testid={`stage-tab-${stage.slug}`}
 				className={cn(
 					"group w-full text-left py-3 px-3 rounded-lg transition-all duration-200 text-sm relative bg-surface",
-					isActive
+					isViewingStage
 						? "border-l-4 border-l-primary font-medium"
 						: "text-muted-foreground hover:text-foreground border-l-4 border-l-transparent",
 				)}
 				onClick={onSelect}
 				role="tab"
-				aria-selected={isActive}
+				aria-selected={isViewingStage}
 				aria-controls={`stage-content-${stage.display_name}`}
-				tabIndex={isActive ? 0 : -1}
+				tabIndex={isViewingStage ? 0 : -1}
 			>
 				<div className="flex items-center justify-between gap-3 relative z-10">
 					<div className="flex items-center gap-2.5">
 						<div
 							className={cn(
 								"w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-colors duration-200",
-								isActive
+								isViewingStage
 									? "bg-primary text-primary-foreground"
 									: progress.isComplete
 										? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
@@ -109,7 +109,7 @@ const StageCard: React.FC<StageCardProps> = ({
 						<span
 							className={cn(
 								"font-medium",
-								isActive
+								isViewingStage
 									? "text-foreground"
 									: "text-muted-foreground group-hover:text-foreground",
 							)}
@@ -170,8 +170,8 @@ const StageCard: React.FC<StageCardProps> = ({
 export const StageTabCard: React.FC = () => {
 	const {
 		stages,
-		activeStageSlug,
-		setActiveStage,
+		viewingStageSlug,
+		setViewingStage,
 		setFocusedStageDocument,
 		selectedModels,
 		focusedStageDocumentMap,
@@ -181,7 +181,7 @@ export const StageTabCard: React.FC = () => {
 		stageSummaries,
 	} = useDialecticStore((state) => {
 		const sortedStages = selectSortedStages(state);
-		const activeStageSlugValue = selectActiveStageSlug(state);
+		const viewingStageSlugValue = selectViewingStageSlug(state);
 		const sessionId = selectActiveContextSessionId(state);
 		const activeSession = sessionId ? selectSessionById(state, sessionId) : null;
 		const unified = sessionId ? selectUnifiedProjectProgress(state, sessionId) : null;
@@ -204,8 +204,8 @@ export const StageTabCard: React.FC = () => {
 
 		return {
 			stages: sortedStages,
-			activeStageSlug: activeStageSlugValue,
-			setActiveStage: state.setActiveStage,
+			viewingStageSlug: viewingStageSlugValue,
+			setViewingStage: state.setViewingStage,
 			setFocusedStageDocument: state.setFocusedStageDocument,
 			selectedModels: selectSelectedModels(state),
 			focusedStageDocumentMap: focusedStageDocumentEntries,
@@ -219,19 +219,19 @@ export const StageTabCard: React.FC = () => {
 	const hasInitializedStage = useRef(false);
 
 	useEffect(() => {
-		if (!hasInitializedStage.current && !activeStageSlug && stages.length > 0) {
+		if (!hasInitializedStage.current && !viewingStageSlug && stages.length > 0) {
 			const currentStageFromSession = activeSessionDetail?.current_stage_id
 				? stages.find((s) => s.id === activeSessionDetail.current_stage_id)
 				: undefined;
 
 			if (currentStageFromSession) {
-				setActiveStage(currentStageFromSession.slug);
+				setViewingStage(currentStageFromSession.slug);
 			} else {
-				setActiveStage(stages[0].slug);
+				setViewingStage(stages[0].slug);
 			}
 			hasInitializedStage.current = true;
 		}
-	}, [stages, activeStageSlug, setActiveStage, activeSessionDetail]);
+	}, [stages, viewingStageSlug, setViewingStage, activeSessionDetail]);
 
 	if (stages.length === 0) {
 		return (
@@ -251,7 +251,7 @@ export const StageTabCard: React.FC = () => {
 	);
 
 	const handleStageSelect = (slug: string) => {
-		setActiveStage(slug);
+		setViewingStage(slug);
 	};
 
 	const handleDocumentSelect = (payload: SetFocusedStageDocumentPayload) => {
@@ -280,14 +280,14 @@ export const StageTabCard: React.FC = () => {
 		<div className="space-y-1.5 self-start" data-testid="stage-container">
 			<div className="space-y-1.5" data-testid="stage-tab-list">
 				{stages.map((stage, index) => {
-					const isActiveStage = stage.slug === activeStageSlug;
+					const isViewingStage = stage.slug === viewingStageSlug;
 
 					return (
 						<StageCard
 							key={stage.id}
 							stage={stage}
 							index={index}
-							isActive={isActiveStage}
+							isViewingStage={isViewingStage}
 							isContextReady={isContextReady}
 							onSelect={() => handleStageSelect(stage.slug)}
 							progress={

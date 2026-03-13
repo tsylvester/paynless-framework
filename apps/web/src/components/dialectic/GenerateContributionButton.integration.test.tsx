@@ -38,12 +38,13 @@ vi.mock('@paynless/store', async () => {
     useDialecticStore: mockDialecticStoreUtils.useDialecticStore,
     selectUnifiedProjectProgress: actualPaynlessStore.selectUnifiedProjectProgress,
     selectStageRunProgress: actualPaynlessStore.selectStageRunProgress,
-    selectActiveStage: actualPaynlessStore.selectActiveStage,
+    selectViewingStageSlug: actualPaynlessStore.selectViewingStageSlug,
     selectSessionById: actualPaynlessStore.selectSessionById,
     selectIsStageReadyForSessionIteration: actualPaynlessStore.selectIsStageReadyForSessionIteration,
     selectSelectedModels: actualPaynlessStore.selectSelectedModels,
     useWalletStore: walletStoreMock.useWalletStore,
     selectActiveChatWalletInfo: walletStoreMock.selectActiveChatWalletInfo,
+    selectViewingStage: actualPaynlessStore.selectViewingStage,
     useAiStore: (selector: (state: { continueUntilComplete: boolean; newChatContext: string | null }) => unknown) => {
       return selector({ continueUntilComplete: false, newChatContext: 'personal' });
     },
@@ -163,6 +164,7 @@ function setStoreForButton(
     selected_models: [],
     dialectic_contributions: [],
     dialectic_session_models: [],
+    viewing_stage_id: stage.id,
   };
   const currentProjectDetail: DialecticProject = {
     id: 'proj-1',
@@ -194,7 +196,7 @@ function setStoreForButton(
     currentProcessTemplate: template,
     currentProjectDetail,
     activeContextSessionId: sessionId,
-    activeStageSlug: stageSlug,
+    viewingStageSlug: stageSlug,
     selectedModels,
     recipesByStageSlug: { [stageSlug]: recipe },
     stageRunProgress: { [progressKey]: progress },

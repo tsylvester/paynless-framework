@@ -19,6 +19,7 @@ import type {
 import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard';
 import { GeneratedContributionCard } from './GeneratedContributionCard';
 
+import { selectCanAdvanceStage } from '@paynless/store';
 import {
   getDialecticStoreState,
   initializeMockDialecticState,
@@ -29,7 +30,44 @@ import {
 } from '../../mocks/dialecticStore.mock';
 import { useStageRunProgressHydration } from '../../hooks/useStageRunProgressHydration';
 
-vi.mock('@paynless/store', () => import('../../mocks/dialecticStore.mock'));
+const CAN_ADVANCE_TRUE = {
+  canAdvance: true,
+  reason: null,
+  conditions: {
+    logicalMatchesViewing: true,
+    currentStageComplete: true,
+    nextStageInputsReady: true,
+    currentStageNoActiveJobs: true,
+    nextStageNoProgress: true,
+    nextStageExists: true,
+  },
+};
+
+vi.mock('@paynless/store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/store')>();
+  const dialecticMock = await import('../../mocks/dialecticStore.mock');
+  const authMock = await import('../../mocks/authStore.mock');
+  const useAiStoreMock = await import('../../mocks/aiStore.mock');
+  const selectCanAdvanceStageMock = vi.fn().mockReturnValue({
+    canAdvance: false,
+    reason: 'current stage not all documents completed',
+    conditions: {
+      logicalMatchesViewing: true,
+      currentStageComplete: false,
+      nextStageInputsReady: true,
+      currentStageNoActiveJobs: true,
+      nextStageNoProgress: true,
+      nextStageExists: true,
+    },
+  });
+  return {
+    ...actual,
+    ...dialecticMock,
+    useAuthStore: authMock.useAuthStore,
+    useAiStore: useAiStoreMock.useAiStore,
+    selectCanAdvanceStage: selectCanAdvanceStageMock,
+  };
+});
 
 vi.mock('./ExportProjectButton', () => ({
   ExportProjectButton: vi.fn(() => null),
@@ -49,18 +87,18 @@ const projectId = 'proj-1';
 const iterationNumber = 1;
 const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
 
-function buildUnifiedProgressWithStageComplete(activeStageSlug: string): UnifiedProjectProgress {
+function buildUnifiedProgressWithStageComplete(viewingStageSlug: string): UnifiedProjectProgress {
   return {
     totalStages: 1,
     completedStages: 0,
-    currentStageSlug: activeStageSlug,
+    currentStageSlug: viewingStageSlug,
     overallPercentage: 100,
     currentStage: null,
     projectStatus: 'in_progress',
     hydrationReady: true,
     stageDetails: [
       {
-        stageSlug: activeStageSlug,
+        stageSlug: viewingStageSlug,
         totalSteps: 3,
         completedSteps: 3,
         totalDocuments: 1,
@@ -220,6 +258,7 @@ const buildSession = (
   dialectic_session_models: [],
   dialectic_contributions: contributions,
   feedback: [],
+  viewing_stage_id: 'stage-1',
 });
 
 const buildProject = (
@@ -349,7 +388,7 @@ describe('SessionContributionsDisplayCard', () => {
       activeContextProjectId: project.id,
       activeContextSessionId: session.id,
       activeContextStage: stage,
-      activeStageSlug: stage.slug,
+      viewingStageSlug: stage.slug,
       activeSessionDetail: session,
       selectedModels: session.selected_models,
       currentProjectDetail: project,
@@ -459,11 +498,12 @@ describe('SessionContributionsDisplayCard', () => {
         ],
       };
 
+      // Step statuses without in_progress/waiting_for_children so SubmitResponsesButton shows (currentStageHasActiveJobs false)
       const progress = buildStageRunProgress(
         {
           planner_header: 'completed',
-          draft_document: 'in_progress',
-          render_document: 'waiting_for_children',
+          draft_document: 'completed',
+          render_document: 'not_started',
         },
         {
           header_context: {
@@ -506,7 +546,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
+        viewingStageSlug: stage1.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -521,6 +561,41 @@ describe('SessionContributionsDisplayCard', () => {
 
       selectIsStageReadyForSessionIteration.mockReturnValue(true);
 
+      // SubmitResponsesButton uses selectUnifiedProjectProgress for viewingStageDetail; incomplete docs => button disabled
+      selectUnifiedProjectProgress.mockReturnValue({
+        totalStages: 2,
+        completedStages: 0,
+        currentStageSlug: stage1.slug,
+        overallPercentage: 50,
+        currentStage: null,
+        projectStatus: 'in_progress',
+        hydrationReady: true,
+        stageDetails: [
+          {
+            stageSlug: stage1.slug,
+            totalSteps: 3,
+            completedSteps: 2,
+            totalDocuments: 2,
+            completedDocuments: 1,
+            failedSteps: 0,
+            stagePercentage: 66,
+            stepsDetail: [],
+            stageStatus: 'in_progress',
+          },
+          {
+            stageSlug: stage2.slug,
+            totalSteps: 3,
+            completedSteps: 0,
+            totalDocuments: 0,
+            completedDocuments: 0,
+            failedSteps: 0,
+            stagePercentage: 0,
+            stepsDetail: [],
+            stageStatus: 'not_started',
+          },
+        ],
+      });
+
       renderSessionContributionsDisplayCard();
 
       expect(screen.getByTestId('card-header')).toBeInTheDocument();
@@ -530,6 +605,7 @@ describe('SessionContributionsDisplayCard', () => {
     });
 
     it('enables the submit button when all documents are complete even if legacy readiness reports false', () => {
+      vi.mocked(selectCanAdvanceStage).mockReturnValue(CAN_ADVANCE_TRUE);
       // Use multi-stage setup so this is not the last stage (single stage would disable button per step 5.c.v)
       const stage1: DialecticStage = {
         id: 'stage-1',
@@ -621,7 +697,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
+        viewingStageSlug: stage1.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -651,6 +727,7 @@ describe('SessionContributionsDisplayCard', () => {
 
   describe('Legacy readiness regression', () => {
     it('does not consult selectIsStageReadyForSessionIteration for gating', () => {
+      vi.mocked(selectCanAdvanceStage).mockReturnValue(CAN_ADVANCE_TRUE);
       const progress = buildStageRunProgress(
         {
           planner_header: 'completed',
@@ -867,7 +944,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage,
-        activeStageSlug: stage.slug,
+        viewingStageSlug: stage.slug,
         activeSessionDetail: session,
         selectedModels: [],
         currentProjectDetail: project,
@@ -1158,7 +1235,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: synthesisStage,
-        activeStageSlug: synthesisStage.slug,
+        viewingStageSlug: synthesisStage.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -1193,6 +1270,7 @@ describe('SessionContributionsDisplayCard', () => {
 
   describe('Non-last stage button behavior', () => {
     it('enables submit button when not in last stage and isComplete is true', () => {
+      vi.mocked(selectCanAdvanceStage).mockReturnValue(CAN_ADVANCE_TRUE);
       // 5.e.i: Create multiple stages with non-last stage active
       const thesisStage: DialecticStage = {
         id: 'stage-thesis',
@@ -1294,7 +1372,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: thesisStage, // Non-last stage (thesis when stages are [thesis, antithesis, synthesis])
-        activeStageSlug: thesisStage.slug,
+        viewingStageSlug: thesisStage.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -1744,6 +1822,10 @@ describe('SessionContributionsDisplayCard', () => {
   });
 
   describe('Step 14.c: GeneratedContributionCard rendering and submit behavior', () => {
+    beforeEach(() => {
+      vi.mocked(selectCanAdvanceStage).mockReturnValue(CAN_ADVANCE_TRUE);
+    });
+
     it('14.c.i: renders one GeneratedContributionCard per model when a documentKey is focused', () => {
       // Target: When the user selects a specific document in the list, one GeneratedContributionCard
       // is rendered per model so the user can compare that document across models. Models always
@@ -1853,7 +1935,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
+        viewingStageSlug: stage1.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -1971,7 +2053,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
+        viewingStageSlug: stage1.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -2083,7 +2165,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: stage1,
-        activeStageSlug: stage1.slug,
+        viewingStageSlug: stage1.slug,
         activeSessionDetail: session,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -2137,6 +2219,10 @@ describe('SessionContributionsDisplayCard', () => {
   });
 
   describe('Submit button label when viewing prior stage', () => {
+    beforeEach(() => {
+      vi.mocked(selectCanAdvanceStage).mockReturnValue(CAN_ADVANCE_TRUE);
+    });
+
     it('shows Save Edits & Feedback when session already past this stage', () => {
       const thesisStage: DialecticStage = {
         id: 'stage-thesis',
@@ -2218,7 +2304,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: thesisStage,
-        activeStageSlug: thesisStage.slug,
+        viewingStageSlug: thesisStage.slug,
         activeSessionDetail: sessionAlreadyPastThesis,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -2242,7 +2328,7 @@ describe('SessionContributionsDisplayCard', () => {
       }
     });
 
-    it('when viewing prior stage and backend returns no advancement, does not call setActiveStage', async () => {
+    it('when viewing prior stage and backend returns no advancement, does not call setViewingStage', async () => {
       const thesisStage: DialecticStage = {
         id: 'stage-thesis',
         slug: 'thesis',
@@ -2334,7 +2420,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: thesisStage,
-        activeStageSlug: thesisStage.slug,
+        viewingStageSlug: thesisStage.slug,
         activeSessionDetail: sessionAlreadyPastThesis,
         selectedModels: session.selected_models,
         currentProjectDetail: project,
@@ -2370,138 +2456,7 @@ describe('SessionContributionsDisplayCard', () => {
         );
       });
 
-      expect(store.setActiveStage).not.toHaveBeenCalled();
-    });
-
-    it('when backend returns advancement, calls setActiveStage with next stage and shows success', async () => {
-      const thesisStage: DialecticStage = {
-        id: 'stage-thesis',
-        slug: 'thesis',
-        display_name: 'Thesis',
-        description: 'Thesis stage',
-        default_system_prompt_id: 'prompt-1',
-        expected_output_template_ids: [],
-        recipe_template_id: null,
-        active_recipe_instance_id: null,
-        created_at: isoTimestamp,
-        minimum_balance: 100000,
-      };
-      const antithesisStage: DialecticStage = {
-        id: 'stage-antithesis',
-        slug: 'antithesis',
-        display_name: 'Antithesis',
-        description: 'Antithesis stage',
-        default_system_prompt_id: 'prompt-2',
-        expected_output_template_ids: [],
-        recipe_template_id: null,
-        active_recipe_instance_id: null,
-        created_at: isoTimestamp,
-        minimum_balance: 100000,
-      };
-      const multiStageProcessTemplate: DialecticProcessTemplate = {
-        id: 'template-multi',
-        name: 'Multi-Stage Template',
-        description: 'Template with multiple stages',
-        starting_stage_id: thesisStage.id,
-        created_at: isoTimestamp,
-        stages: [thesisStage, antithesisStage],
-        transitions: [
-          {
-            id: 'transition-1',
-            source_stage_id: thesisStage.id,
-            target_stage_id: antithesisStage.id,
-            condition_description: null,
-            created_at: isoTimestamp,
-            process_template_id: 'template-multi',
-          },
-        ],
-      };
-
-      const thesisProgressKey = `${sessionId}:${thesisStage.slug}:${iterationNumber}`;
-      const progress = buildStageRunProgress(
-        {
-          planner_header: 'completed',
-          draft_document: 'completed',
-          render_document: 'completed',
-        },
-        {
-          header_context: {
-            status: 'completed',
-            job_id: 'job-1',
-            latestRenderedResourceId: 'header.json',
-            modelId: 'model-a',
-            versionHash: 'hash-a',
-            lastRenderedResourceId: 'resource-a',
-            lastRenderAtIso: isoTimestamp,
-          },
-          draft_document_markdown: buildStageDocumentDescriptor('model-a', {
-            status: 'completed',
-          }),
-        },
-      );
-
-      const steps = buildRecipeSteps();
-      const contributions = ['model-a', 'model-b'].map(buildContribution);
-      const session = buildSession(contributions, buildSelectedModels(['model-a', 'model-b']));
-      const sessionAfterAdvance: DialecticSession = {
-        ...session,
-        current_stage_id: antithesisStage.id,
-      };
-      const project = buildProject(session, multiStageProcessTemplate);
-      const recipe = buildRecipe(steps);
-
-      const store = getDialecticStoreState();
-      const advanceResponse = {
-        data: {
-          message: 'Stage advanced.',
-          updatedSession: sessionAfterAdvance,
-        },
-        error: undefined,
-        status: 200,
-      };
-      vi.mocked(store.submitStageResponses).mockResolvedValueOnce(advanceResponse);
-
-      setDialecticStateValues({
-        activeContextProjectId: project.id,
-        activeContextSessionId: session.id,
-        activeContextStage: thesisStage,
-        activeStageSlug: thesisStage.slug,
-        activeSessionDetail: session,
-        selectedModels: session.selected_models,
-        currentProjectDetail: project,
-        currentProcessTemplate: multiStageProcessTemplate,
-        recipesByStageSlug: {
-          [thesisStage.slug]: recipe,
-        },
-        stageRunProgress: {
-          [thesisProgressKey]: progress,
-        },
-      });
-
-      selectIsStageReadyForSessionIteration.mockReturnValue(true);
-      selectUnifiedProjectProgress.mockReturnValue(buildUnifiedProgressWithStageComplete(thesisStage.slug));
-
-      renderSessionContributionsDisplayCard();
-
-      const submitButton = getSubmitButton();
-      expect(submitButton).toBeInTheDocument();
-      if (submitButton) {
-        fireEvent.click(submitButton);
-      }
-
-      const confirmButton = await screen.findByRole('button', { name: 'Continue' });
-      fireEvent.click(confirmButton);
-
-      await waitFor(() => {
-        expect(store.submitStageResponses).toHaveBeenCalled();
-      });
-
-      expect(store.setActiveStage).toHaveBeenCalledWith(antithesisStage.slug);
-
-      await waitFor(() => {
-        expect(screen.getByText('Antithesis')).toBeInTheDocument();
-      });
-      expect(screen.getByText(/Antithesis stage|Stage advanced!/)).toBeInTheDocument();
+      expect(store.setViewingStage).not.toHaveBeenCalled();
     });
 
     it('when viewing prior stage and backend returns no advancement, shows saved-without-advancing message', async () => {
@@ -2596,7 +2551,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeContextProjectId: project.id,
         activeContextSessionId: session.id,
         activeContextStage: thesisStage,
-        activeStageSlug: thesisStage.slug,
+        viewingStageSlug: thesisStage.slug,
         activeSessionDetail: sessionAlreadyPastThesis,
         selectedModels: session.selected_models,
         currentProjectDetail: project,

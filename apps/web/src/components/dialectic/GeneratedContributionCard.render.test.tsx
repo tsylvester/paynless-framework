@@ -412,7 +412,7 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
   initializeMockDialecticState({
     activeContextProjectId: mockProjectId,
     activeContextSessionId: mockSessionId,
-    activeStageSlug: mockStageSlug,
+    viewingStageSlug: mockStageSlug,
     activeSessionDetail: {
       ...(activeSessionDetailOverride ?? {
         id: mockSessionId,
@@ -426,12 +426,13 @@ const setupStore = (overrides: Partial<DialecticStateValues> & {
         current_stage_id: mockStageSlug,
         created_at: '2023-01-01T00:00:00Z',
         updated_at: '2023-01-01T00:00:00Z',
+        viewing_stage_id: mockStageSlug,
       }),
       dialectic_contributions: activeSessionDetailOverride?.dialectic_contributions ?? contributionList,
     },
     modelCatalog: [
-      { id: modelA, model_name: 'Model Alpha', provider_name: 'OpenAI', api_identifier: 'openai', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [] },
-      { id: modelB, model_name: 'Model Beta', provider_name: 'Anthropic', api_identifier: 'anthropic', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [] },
+      { id: modelA, model_name: 'Model Alpha', provider_name: 'OpenAI', api_identifier: 'openai', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [], is_default_generation: false },
+      { id: modelB, model_name: 'Model Beta', provider_name: 'Anthropic', api_identifier: 'anthropic', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [], is_default_generation: false },
     ],
     stageRunProgress: {
       [progressKey]: {
@@ -641,6 +642,7 @@ describe('GeneratedContributionCard', () => {
           status: 'active',
           associated_chat_id: null,
           current_stage_id: mockStageSlug,
+          viewing_stage_id: mockStageSlug,
           created_at: '2023-01-01T00:00:00Z',
           updated_at: '2023-01-01T00:00:00Z',
           dialectic_contributions: [
@@ -654,7 +656,7 @@ describe('GeneratedContributionCard', () => {
           ],
         },
         modelCatalog: [
-          { id: modelA, model_name: catalogDisplayName, provider_name: 'OpenAI', api_identifier: 'openai', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [] },
+          { id: modelA, model_name: catalogDisplayName, provider_name: 'OpenAI', api_identifier: 'openai', description: '', created_at: '', updated_at: '', is_active: true, context_window_tokens: 0, input_token_cost_usd_millionths: 0, output_token_cost_usd_millionths: 0, max_output_tokens: 0, strengths: [], weaknesses: [], is_default_generation: false },
         ],
       });
 
@@ -685,6 +687,7 @@ describe('GeneratedContributionCard', () => {
           status: 'active',
           associated_chat_id: null,
           current_stage_id: mockStageSlug,
+          viewing_stage_id: mockStageSlug,
           created_at: createdAtIso,
           updated_at: createdAtIso,
           dialectic_contributions: [
@@ -767,6 +770,7 @@ describe('GeneratedContributionCard', () => {
           status: 'active',
           associated_chat_id: null,
           current_stage_id: mockStageSlug,
+          viewing_stage_id: mockStageSlug,
           created_at: '2023-01-01T00:00:00Z',
           updated_at: '2023-01-01T00:00:00Z',
           dialectic_contributions: [
@@ -811,7 +815,7 @@ describe('GeneratedContributionCard', () => {
         },
         sourceContributionId: null,
         documentsOverride: {
-          [`${docA2Key}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelA}`]: { ...docA2, latestRenderedResourceId: '' },
+          [`${docA2Key}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelA}`]: { ...docA2, latestRenderedResourceId: '', status: 'completed' },
         },
         activeSessionDetail: {
           id: mockSessionId,
@@ -823,6 +827,7 @@ describe('GeneratedContributionCard', () => {
           status: 'active',
           associated_chat_id: null,
           current_stage_id: mockStageSlug,
+          viewing_stage_id: mockStageSlug,
           created_at: '2023-01-01T00:00:00Z',
           updated_at: '2023-01-01T00:00:00Z',
           dialectic_contributions: [

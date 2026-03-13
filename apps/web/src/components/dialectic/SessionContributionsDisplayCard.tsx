@@ -5,7 +5,7 @@ import {
 	selectProjectDetailError,
 	selectFeedbackForStageIteration,
 	selectCurrentProjectDetail,
-	selectActiveStageSlug,
+	selectViewingStageSlug,
 	selectSortedStages,
 	selectStageProgressSummary,
 	selectStageRunProgress,
@@ -68,7 +68,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	// --- Store Data using Reactive Hooks ---
 	const project = useDialecticStore(selectCurrentProjectDetail);
 	const session = useDialecticStore((state) => state.activeSessionDetail);
-	const activeStageSlug = useDialecticStore(selectActiveStageSlug);
+	const viewingStageSlug = useDialecticStore(selectViewingStageSlug);
 	const processTemplate = useDialecticStore(
 		(state) => state.currentProcessTemplate,
 	);
@@ -76,9 +76,9 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	const focusedStageDocument = useDialecticStore((state) => state.focusedStageDocument);
 	const setFocusedStageDocument = useDialecticStore((state) => state.setFocusedStageDocument);
 
-	const activeStage = useMemo(() => {
-		return processTemplate?.stages?.find((s) => s.slug === activeStageSlug) || null;
-	}, [processTemplate, activeStageSlug]);
+	const viewingStage = useMemo(() => {
+		return processTemplate?.stages?.find((s) => s.slug === viewingStageSlug) || null;
+	}, [processTemplate, viewingStageSlug]);
 
 	useStageRunProgressHydration();
 
@@ -114,21 +114,21 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
 	const documentsByModel = useDialecticStore((state) => {
 		const currentSession = state.activeSessionDetail;
-		const currentStageSlug = state.activeStageSlug;
+		const currentStageSlug = state.viewingStageSlug;
 		const currentProcessTemplate = state.currentProcessTemplate;
-		const currentActiveStage =
+		const currentViewingStage =
 			currentProcessTemplate?.stages?.find((s) => s.slug === currentStageSlug) ||
 			null;
 
-		if (!currentSession || !currentActiveStage || typeof currentSession.iteration_count !== 'number') {
+		if (!currentSession || !currentViewingStage || typeof currentSession.iteration_count !== 'number') {
 			return new Map<string, StageDocumentChecklistEntry[]>();
 		}
 
-		const progressKey = `${currentSession.id}:${currentActiveStage.slug}:${currentSession.iteration_count}`;
+		const progressKey = `${currentSession.id}:${currentViewingStage.slug}:${currentSession.iteration_count}`;
 		const progress = selectStageRunProgress(
 			state,
 			currentSession.id,
-			currentActiveStage.slug,
+			currentViewingStage.slug,
 			currentSession.iteration_count,
 		);
 
@@ -183,34 +183,34 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
 	const stageProgressSummary = useDialecticStore((state) => {
 		const currentSession = state.activeSessionDetail;
-		const currentStageSlug = state.activeStageSlug;
+		const currentStageSlug = state.viewingStageSlug;
 		const currentProcessTemplate = state.currentProcessTemplate;
-		const currentActiveStage = currentProcessTemplate?.stages?.find((s) => s.slug === currentStageSlug) || null;
+		const currentViewingStage = currentProcessTemplate?.stages?.find((s) => s.slug === currentStageSlug) || null;
 
-		if (!currentSession || !currentActiveStage || typeof currentSession.iteration_count !== 'number') {
+		if (!currentSession || !currentViewingStage || typeof currentSession.iteration_count !== 'number') {
 			return undefined;
 		}
 
 		return selectStageProgressSummary(
 			state,
 			currentSession.id,
-			currentActiveStage.slug,
+			currentViewingStage.slug,
 			currentSession.iteration_count,
 		);
 	});
 
 	const isLastStage = useMemo(() => {
-		// Handle edge cases: empty sortedStages or null activeStage
+		// Handle edge cases: empty sortedStages or null viewingStage
 		if (!sortedStages || sortedStages.length === 0) {
 			return false;
 		}
-		if (!activeStage) {
+		if (!viewingStage) {
 			return false;
 		}
-		// Check if activeStage.slug matches the last stage in sortedStages
+		// Check if viewingStage.slug matches the last stage in sortedStages
 		const lastStage = sortedStages[sortedStages.length - 1];
-		return activeStage.slug === lastStage?.slug;
-	}, [sortedStages, activeStage]);
+		return viewingStage.slug === lastStage?.slug;
+	}, [sortedStages, viewingStage]);
 
 	const documentGroups = useMemo(
 		() => Array.from(documentsByModel.entries()),
@@ -220,12 +220,12 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	// Auto-focus the first document when the stage has documents but none is focused
 	const autoFocusedStageRef = useRef<string | null>(null);
 	useEffect(() => {
-		if (!session || !activeStageSlug || typeof session.iteration_count !== 'number') {
+		if (!session || !viewingStageSlug || typeof session.iteration_count !== 'number') {
 			return;
 		}
 
 		// Check if any document is already focused for this stage
-		const currentStagePrefix = `${session.id}:${activeStageSlug}:`;
+		const currentStagePrefix = `${session.id}:${viewingStageSlug}:`;
 		const hasExistingFocus = focusedStageDocument && Object.entries(focusedStageDocument).some(
 			([key, entry]) => key.startsWith(currentStagePrefix) && entry?.documentKey
 		);
@@ -234,7 +234,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		}
 
 		// Avoid re-triggering for the same stage if we already auto-focused
-		const stageKey = `${session.id}:${activeStageSlug}:${session.iteration_count}`;
+		const stageKey = `${session.id}:${viewingStageSlug}:${session.iteration_count}`;
 		if (autoFocusedStageRef.current === stageKey) {
 			return;
 		}
@@ -263,7 +263,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 			if (entries.some(e => e.documentKey === firstDocKey)) {
 				setFocusedStageDocument({
 					sessionId: session.id,
-					stageSlug: activeStageSlug,
+					stageSlug: viewingStageSlug,
 					modelId,
 					documentKey: firstDocKey,
 					stepKey: firstStepKey,
@@ -271,7 +271,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 				});
 			}
 		}
-	}, [documentGroups, session, activeStageSlug, focusedStageDocument, setFocusedStageDocument]);
+	}, [documentGroups, session, viewingStageSlug, focusedStageDocument, setFocusedStageDocument]);
 
 	// Get the selected document key, filtered by the CURRENT stage
 	// focusedStageDocument is keyed by `${sessionId}:${stageSlug}:${modelId}`
@@ -279,12 +279,12 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		if (!focusedStageDocument || typeof focusedStageDocument !== 'object') {
 			return null;
 		}
-		if (!session || !activeStageSlug) {
+		if (!session || !viewingStageSlug) {
 			return null;
 		}
 
 		// Only look at entries for the current session and stage
-		const currentStagePrefix = `${session.id}:${activeStageSlug}:`;
+		const currentStagePrefix = `${session.id}:${viewingStageSlug}:`;
 
 		// Find the first entry that belongs to the current stage
 		for (const [key, entry] of Object.entries(focusedStageDocument)) {
@@ -299,7 +299,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 		}
 
 		return null;
-	}, [focusedStageDocument, session, activeStageSlug]);
+	}, [focusedStageDocument, session, viewingStageSlug]);
 
 	const entryMatchesSelectedDocument = (
 		entryDocumentKey: string,
@@ -360,18 +360,18 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	const feedbacksForStageIterationArray = useDialecticStore((state) => {
 		const currentProject = selectCurrentProjectDetail(state);
 		const currentSession = state.activeSessionDetail;
-		const currentStageSlug = state.activeStageSlug;
+		const currentStageSlug = state.viewingStageSlug;
 		const currentProcessTemplate = state.currentProcessTemplate;
-		const currentActiveStage = currentProcessTemplate?.stages?.find((s) => s.slug === currentStageSlug) || null;
+		const currentViewingStage = currentProcessTemplate?.stages?.find((s) => s.slug === currentStageSlug) || null;
 
-		if (!currentProject || !currentSession || !currentActiveStage) {
+		if (!currentProject || !currentSession || !currentViewingStage) {
 			return null;
 		}
 
 		return selectFeedbackForStageIteration(
 			state,
 			currentSession.id,
-			currentActiveStage.slug,
+			currentViewingStage.slug,
 			currentSession.iteration_count,
 		);
 	});
@@ -427,7 +427,7 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 	}
 
 	// Handle case where there is no active stage
-	if (!activeStage) {
+	if (!viewingStage) {
 		return (
 			<Card>
 				<CardHeader>
@@ -446,8 +446,8 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 			<div data-testid="card-header" className="space-y-2">
 				<div className="flex flex-wrap items-center justify-between gap-4">
 					<div className="space-y-1 min-w-[200px]">
-						<h2 className="text-xl font-medium tracking-tight">{activeStage.display_name}</h2>
-						<p className="text-sm text-muted-foreground leading-relaxed">{activeStage.description}</p>
+						<h2 className="text-xl font-medium tracking-tight">{viewingStage.display_name}</h2>
+						<p className="text-sm text-muted-foreground leading-relaxed">{viewingStage.description}</p>
 					</div>
 
 					{/* Middle Section: Banners */}

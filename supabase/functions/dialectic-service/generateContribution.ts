@@ -70,7 +70,7 @@ export async function generateContributions(
                 project_id,
                 selected_model_ids,
                 iteration_count,
-                current_stage:current_stage_id(slug)
+                current_stage:dialectic_stages!current_stage_id(slug)
             `)
             .eq('id', sessionId)
             .single();

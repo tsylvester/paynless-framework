@@ -19,6 +19,11 @@ import {
   FetchProcessTemplatePayload,
   DialecticProcessTemplate,
   UpdateSessionModelsPayload,
+  UpdateViewingStageDeps,
+  UpdateViewingStageParams,
+  UpdateViewingStagePayload,
+  UpdateViewingStageReturn,
+  UpdateViewingStageFn,
   DialecticSession,
   GetContributionContentDataResponse,
   GetSessionDetailsResponse,
@@ -84,6 +89,7 @@ import { listModelCatalog } from './listModelCatalog.ts';
 import { fetchProcessTemplate } from './fetchProcessTemplate.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { handleUpdateSessionModels } from './updateSessionModels.ts';
+import { updateViewingStage } from './updateViewingStage.ts';
 import { listStageDocuments } from './listStageDocuments.ts';
 import { submitStageDocumentFeedback, type SubmitStageDocumentFeedbackDeps } from './submitStageDocumentFeedback.ts';
 import { getAllStageProgress } from './getAllStageProgress.ts';
@@ -203,6 +209,7 @@ export interface ActionHandlers {
   listModelCatalog: (dbClient: SupabaseClient) => Promise<{ data?: AIModelCatalogEntry[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
   updateSessionModels: (dbClient: SupabaseClient, payload: UpdateSessionModelsPayload, userId: string) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
+  updateViewingStage: UpdateViewingStageFn;
   getStageRecipe: (payload: { stageSlug: string }, dbClient: SupabaseClient) => Promise<{ data?: StageRecipeResponse; error?: ServiceError; status?: number }>;
   listStageDocuments: (payload: ListStageDocumentsPayload, dbClient: SupabaseClient) => Promise<{ status: number; data?: ListStageDocumentsResponse; error?: { message: string } }>;
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload, dbClient: SupabaseClient, deps: SubmitStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<DialecticFeedbackRow>>;
@@ -284,6 +291,7 @@ export async function handleRequest(
         'deleteProject', 'cloneProject', 'exportProject', 'getProjectResourceContent',
         'saveContributionEdit', 'submitStageResponses', 'fetchProcessTemplate',
         'updateSessionModels',
+        'updateViewingStage',
         'getSessionDetails',
         'listModelCatalog',
         'listStageDocuments',
@@ -587,6 +595,19 @@ export async function handleRequest(
           }
           return createSuccessResponse(data, status || 200, req);
         }
+        case "updateViewingStage": {
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for updateViewingStage', 401, req, { message: "User not authenticated", status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const payload: UpdateViewingStagePayload = requestBody.payload;
+          const deps: UpdateViewingStageDeps = { dbClient: adminClient as SupabaseClient<Database> };
+          const params: UpdateViewingStageParams = { userId: userForJson.id };
+          const result: UpdateViewingStageReturn = await handlers.updateViewingStage(deps, params, payload);
+          if (result.error) {
+            return createErrorResponse(result.error.message, result.status, req, result.error);
+          }
+          return createSuccessResponse(result.data, result.status, req);
+        }
         case "listStageDocuments": {
           const payload: ListStageDocumentsPayload = requestBody.payload;
           const result = await handlers.listStageDocuments(payload, adminClient);
@@ -728,6 +749,7 @@ export const defaultHandlers: ActionHandlers = {
   listModelCatalog,
   fetchProcessTemplate,
   updateSessionModels: handleUpdateSessionModels,
+  updateViewingStage,
   getStageRecipe,
   listStageDocuments,
   submitStageDocumentFeedback,

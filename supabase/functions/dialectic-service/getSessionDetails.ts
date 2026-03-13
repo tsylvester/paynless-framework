@@ -31,7 +31,7 @@ export async function getSessionDetails(
       .from('dialectic_sessions')
       .select(`
         *,
-        dialectic_stages (*)
+        dialectic_stages!current_stage_id (*)
       `)
       .eq('id', sessionId)
       .single();
@@ -197,6 +197,7 @@ export async function getSessionDetails(
         current_stage_id: sessionFields.current_stage_id,
         created_at: sessionFields.created_at,
         updated_at: sessionFields.updated_at,
+        viewing_stage_id: sessionFields.viewing_stage_id,
       };
 
     const currentStageDetails: DialecticStage | null = dialectic_stages 

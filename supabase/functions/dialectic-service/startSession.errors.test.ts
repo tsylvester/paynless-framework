@@ -383,6 +383,7 @@ Deno.test("startSession - includes idempotency_key in the insert call to dialect
         updated_at: new Date().toISOString(),
         user_input_reference_url: null,
         idempotency_key: mockIdempotencyKey,
+        viewing_stage_id: null,
     };
     const insertPayloadHolder: { payload: DialecticSessionInsert | null } = { payload: null };
     const mockConfig: MockSupabaseDataConfig = {
