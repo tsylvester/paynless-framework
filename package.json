@@ -1,4 +1,3 @@
-
 {
   "name": "paynless-framework-monorepo",
   "version": "0.1.0",
@@ -46,6 +45,7 @@
     "jiti": "2.4.2",
     "jsdom": "^26.0.0",
     "msw": "^2.7.3",
+    "netlify-plugin-chromium": "^1.1.4",
     "nx": "20.7.1",
     "rimraf": "^5.0.10",
     "typescript": "^5.5.3",

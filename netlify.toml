@@ -1,0 +1,5 @@
+# Netlify configuration
+# Build settings are configured in Netlify UI, this file adds necessary plugins
+
+[[plugins]]
+  package = "netlify-plugin-chromium"

@@ -53,6 +53,9 @@ importers:
       msw:
         specifier: ^2.7.3
         version: 2.7.6(@types/node@20.17.46)(typescript@5.8.3)
+      netlify-plugin-chromium:
+        specifier: ^1.1.4
+        version: 1.1.4
       nx:
         specifier: 20.7.1
         version: 20.7.1(@swc/core@1.11.24(@swc/helpers@0.5.17))
@@ -5438,6 +5441,9 @@ packages:
   negotiator@0.6.3:
     resolution: {integrity: sha512-+EUsqGPLsM+j/zdChZjsnX51g4XrHFOIXwfnCVPGlQk/k5giakcKsuxCObBRu6DSm9opw/O6slWbJdghQM4bBg==}
     engines: {node: '>= 0.6'}
+
+  netlify-plugin-chromium@1.1.4:
+    resolution: {integrity: sha512-yLgw6YePOF38URWVsHg3nBBoVSKcbMabKxziJX5i01/weyXWtFQVFvDWSOhyWkQgoMJ6zwF2UznA0Icy+m4pow==}
 
   netmask@2.0.2:
     resolution: {integrity: sha512-dBpDMdxv9Irdq66304OLfEmQ9tbNRFnFTuZiLo+bD+r332bBmMJ8GBLXklIXXgxd3+v9+KUnZaUR5PJMa75Gsg==}
@@ -12423,6 +12429,8 @@ snapshots:
   natural-compare@1.4.0: {}
 
   negotiator@0.6.3: {}
+
+  netlify-plugin-chromium@1.1.4: {}
 
   netmask@2.0.2: {}
 

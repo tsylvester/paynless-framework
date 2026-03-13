@@ -33,6 +33,7 @@ export default defineConfig({
       rendererOptions: {
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        executablePath: process.env.CHROME_PATH || undefined,
       },
     }),
   ],
