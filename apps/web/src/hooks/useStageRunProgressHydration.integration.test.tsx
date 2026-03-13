@@ -41,6 +41,7 @@ const stageThesis: DialecticStage = {
     expected_output_template_ids: [],
     recipe_template_id: null,
     active_recipe_instance_id: null,
+    minimum_balance: 0,
 };
 
 const templateOneStage: DialecticProcessTemplate = {
@@ -95,6 +96,7 @@ const session: DialecticSession = {
     dialectic_contributions: [],
     dialectic_session_models: [],
     feedback: [],
+    viewing_stage_id: 'thesis',
 };
 
 const project: DialecticProject = {
@@ -234,7 +236,7 @@ describe('useStageRunProgressHydration integration', () => {
         setDialecticStateValues({
             activeContextSessionId: sessionId,
             activeSessionDetail: session,
-            activeStageSlug: 'thesis',
+            viewingStageSlug: 'thesis',
             currentProcessTemplate: templateOneStage,
             currentProjectDetail: project,
             recipesByStageSlug: { thesis: recipeThesis },
@@ -304,15 +306,12 @@ describe('useStageRunProgressHydration integration', () => {
     it('after failed hydration, re-triggering the hook retries and succeeds when the API is available', async () => {
         setDialecticStateValues({ progressHydrationStatus: { [runKey]: 'failed' } });
 
-        const { rerender } = render(<HydrationWrapper />);
+        render(<HydrationWrapper />);
 
         await waitFor(() => {
             const state = getDialecticStoreState();
-            expect(state.progressHydrationStatus[runKey]).toBe('failed');
+            expect(state.progressHydrationStatus[runKey]).toBe('pending');
         });
-
-        setDialecticStateValues({ progressHydrationStatus: {} });
-        rerender(<HydrationWrapper />);
 
         await waitFor(() => {
             const state = getDialecticStoreState();

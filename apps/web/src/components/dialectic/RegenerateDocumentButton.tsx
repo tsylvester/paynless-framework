@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import type { DocumentDisplayMetadata, RegenerateDocumentPayload } from '@paynless/types';
 import { useDialecticStore } from '@paynless/store';
-import { Loader2, RefreshCcw } from 'lucide-react';
+import { Loader2, RefreshCcw, Circle } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -155,13 +155,25 @@ const RegenerateDocumentButton: React.FC<RegenerateDocumentButtonProps> = ({
   const showButton =
     isDocumentOnCurrentStage && hasStageProgress && perModelLabels.length > 0;
 
+  // Check if this stage is currently generating
+  const generatingForStageSlug = useDialecticStore((state) => state.generatingForStageSlug);
+  const contributionGenerationStatus = useDialecticStore((state) => state.contributionGenerationStatus);
+  const isStageGenerating = generatingForStageSlug === stageSlug && contributionGenerationStatus === 'generating';
+
+  // Show pulsing animation for any non-completed, non-failed status during active generation
+  // or if the document itself is in a generating state
+  const isGenerating = (isStageGenerating && entryStatus !== 'completed' && entryStatus !== 'failed') ||
+                       entryStatus === 'generating' || 
+                       entryStatus === 'continuing' || 
+                       entryStatus === 'retrying';
+
   return (
     <>
       {showButton ? (
         <button
           type="button"
           className={cn(
-            'inline-flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full',
+            'inline-flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full relative',
             entryStatus === 'completed' && 'bg-emerald-500',
             entryStatus === 'failed' && 'bg-destructive',
             (entryStatus === 'generating' ||
@@ -174,22 +186,45 @@ const RegenerateDocumentButton: React.FC<RegenerateDocumentButtonProps> = ({
           disabled={isSubmitting}
           onClick={(e) => void handleRegenerateButtonClick(e, documentKey, stageSlug, perModelLabels)}
         >
-          <RefreshCcw className="h-[15px] w-[15px] text-white" />
+          {isGenerating ? (
+            <Loader2 className="h-3 w-3 text-white animate-spin" />
+          ) : (
+            <RefreshCcw className="h-[15px] w-[15px] text-white" />
+          )}
         </button>
       ) : (
-        <span
-          className={cn(
-            'inline-block h-2.5 w-2.5 shrink-0 rounded-full',
-            entryStatus === 'completed' && 'bg-emerald-500',
-            entryStatus === 'failed' && 'bg-destructive',
-            (entryStatus === 'generating' ||
-              entryStatus === 'continuing' ||
-              entryStatus === 'not_started') &&
-              'bg-amber-400',
+        <div className="relative">
+          {isGenerating ? (
+            <>
+              <Circle 
+                className={cn(
+                  'h-2.5 w-2.5 shrink-0 text-amber-400 animate-pulse',
+                )}
+                fill="currentColor"
+                data-testid={statusDataTestId}
+                aria-hidden
+              />
+              <Circle 
+                className={cn(
+                  'h-2.5 w-2.5 shrink-0 text-amber-400 absolute top-0 left-0 animate-ping',
+                )}
+                fill="currentColor"
+                aria-hidden
+              />
+            </>
+          ) : (
+            <span
+              className={cn(
+                'inline-block h-2.5 w-2.5 shrink-0 rounded-full',
+                entryStatus === 'completed' ? 'bg-emerald-500' :
+                entryStatus === 'failed' ? 'bg-destructive' :
+                'bg-amber-400', // Only amber for truly incomplete states
+              )}
+              data-testid={statusDataTestId}
+              aria-hidden
+            />
           )}
-          data-testid={statusDataTestId}
-          aria-hidden
-        />
+        </div>
       )}
       <Dialog
         open={regenerateDialogOpen}

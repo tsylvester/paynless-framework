@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
 	useDialecticStore,
 	selectGenerateContributionsError,
@@ -47,10 +48,12 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
 	const session: DialecticSession | null = useDialecticStore(
 		(state) => state.activeSessionDetail,
 	);
-	const unifiedProgress = useDialecticStore((state) =>
-		state.activeSessionDetail
-			? selectUnifiedProjectProgress(state, state.activeSessionDetail.id)
-			: null,
+	const unifiedProgress = useDialecticStore(
+		useShallow((state) =>
+			state.activeSessionDetail
+				? selectUnifiedProjectProgress(state, state.activeSessionDetail.id)
+				: null,
+		),
 	);
 	const generateContributionsError = useDialecticStore(selectGenerateContributionsError);
 	const navigate = useNavigate();

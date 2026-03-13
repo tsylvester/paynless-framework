@@ -89,7 +89,24 @@ const mockedApiObject = {
     getStageDocumentFeedback: vi.fn().mockResolvedValue({ data: [], error: null }),
     submitStageDocumentFeedback: vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
     getProjectResourceContent: vi.fn().mockResolvedValue({ data: { content: '' }, error: null }),
-    getAllStageProgress: vi.fn().mockResolvedValue({ data: [], error: null }),
+    getAllStageProgress: vi.fn().mockResolvedValue({
+      data: {
+        dagProgress: { completedStages: 0, totalStages: 1 },
+        stages: [
+          {
+            stageSlug: 'thesis',
+            status: 'completed',
+            modelCount: null,
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            steps: [],
+            documents: [],
+            jobs: [],
+            edges: [],
+          },
+        ],
+      },
+      error: null,
+    }),
     listStageDocuments: vi.fn().mockResolvedValue({ data: [], error: null }),
   }),
 };

@@ -67,7 +67,7 @@ export const GeneratedContributionCard: React.FC<
 		initializeFeedbackDraft,
 	} = useDialecticStore((state) => {
 		const sessionId = state.activeContextSessionId;
-		const stageSlug = state.activeStageSlug;
+		const stageSlug = state.viewingStageSlug;
 		const iterationNumber = state.activeSessionDetail?.iteration_count;
 		const focusedDocument =
 			sessionId && stageSlug
@@ -101,7 +101,7 @@ export const GeneratedContributionCard: React.FC<
 	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
 	const stageRunProgress = useDialecticStore((state) => {
 		const currentSessionId = state.activeContextSessionId;
-		const currentStageSlug = state.activeStageSlug;
+		const currentStageSlug = state.viewingStageSlug;
 		const currentIterationNumber = state.activeSessionDetail?.iteration_count;
 
 		if (!currentSessionId || !currentStageSlug || typeof currentIterationNumber !== "number") {
@@ -203,7 +203,7 @@ export const GeneratedContributionCard: React.FC<
 	// IMPORTANT: Read values directly from state to avoid stale closure issues when switching stages
 	const documentResourceState = useDialecticStore((state) => {
 		const currentSessionId = state.activeContextSessionId;
-		const currentStageSlug = state.activeStageSlug;
+		const currentStageSlug = state.viewingStageSlug;
 		const currentIterationNumber = state.activeSessionDetail?.iteration_count;
 
 		if (
@@ -238,7 +238,11 @@ export const GeneratedContributionCard: React.FC<
 	const documentDescriptor: StageRunDocumentDescriptor | undefined =
 		focusedDocument && stageRunProgress && documentDescriptorKey
 			? stageRunProgress.documents?.[documentDescriptorKey]
-			: undefined;	
+			: undefined;
+	
+	const isDocumentGenerating = documentDescriptor?.status === 'generating' || 
+		documentDescriptor?.status === 'continuing' ||
+		documentDescriptor?.status === 'retrying';	
 
 	const isRenderedDescriptor = (
 		descriptor: StageRunDocumentDescriptor | undefined,
@@ -619,9 +623,21 @@ export const GeneratedContributionCard: React.FC<
 							</Alert>
 						)}
 
+						{isDocumentGenerating && (
+							<Alert variant="default" className="border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
+								<div className="col-span-2 flex items-center gap-2">
+									<Loader2 className="h-4 shrink-0 animate-spin text-amber-600" />
+									<AlertDescription className="min-w-0 text-amber-800 dark:text-amber-200">
+										Document is being generated. Content will appear when ready...
+									</AlertDescription>
+								</div>
+							</Alert>
+						)}
+
 						{documentDescriptor &&
 							!isRenderedDescriptor(documentDescriptor) &&
-							!isDraftLoading && (
+							!isDraftLoading &&
+							!isDocumentGenerating && (
 								<Alert variant="default">
 									<AlertDescription>
 										RENDER job has not completed yet. Document content will be

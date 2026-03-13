@@ -85,6 +85,7 @@ const mockSession: DialecticSession = {
   user_input_reference_url: null,
   associated_chat_id: null,
   dialectic_contributions: [],
+  viewing_stage_id: 'stage-1',
 };
 
 const mockProject: DialecticProject = {
@@ -255,7 +256,7 @@ describe('StageTabCard', () => {
             ...initialDialecticStateValues,
             currentProjectDetail: mockProject,
             activeContextSessionId: mockSession.id,
-            activeStageSlug: mockStages[0].slug,
+            viewingStageSlug: mockStages[0].slug,
             activeSessionDetail: mockSession,
             currentProcessTemplate: mockProcessTemplate,
             selectedModels: mockSession.selected_models,
@@ -263,7 +264,7 @@ describe('StageTabCard', () => {
         };
         setDialecticStateValues(initialState);
         const storeActions = getDialecticStoreState();
-        storeActions.setActiveStage = vi.fn();
+        storeActions.setViewingStage = vi.fn();
         storeActions.setFocusedStageDocument = vi.fn();
         return storeActions;
     };
@@ -295,8 +296,8 @@ describe('StageTabCard', () => {
     expect(screen.getByText('No stages available for this process.')).toBeInTheDocument();
   });
   
-  it('highlights the active stage', () => {
-    setupStore({ activeStageSlug: 'antithesis' });
+  it('highlights the viewing stage', () => {
+    setupStore({ viewingStageSlug: 'antithesis' });
     renderComponent();
     
     const activeCard = screen.getByTestId('stage-tab-antithesis');
@@ -306,21 +307,21 @@ describe('StageTabCard', () => {
     expect(inactiveCard).toHaveAttribute('aria-selected', 'false');
   });
 
-  it('calls setActiveStage when a card is clicked', () => {
+  it('calls setViewingStage when a card is clicked', () => {
     const storeActions = setupStore();
     renderComponent();
     
     const antithesisCard = screen.getByTestId('stage-tab-antithesis');
     fireEvent.click(antithesisCard);
     
-    expect(storeActions.setActiveStage).toHaveBeenCalledWith('antithesis');
+    expect(storeActions.setViewingStage).toHaveBeenCalledWith('antithesis');
   });
 
   it('shows Done label when stage is fully complete and not active', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
-      activeStageSlug: 'antithesis',
+      viewingStageSlug: 'antithesis',
       recipesByStageSlug: {
         [mockStages[0].slug]: recipe,
       },
@@ -535,7 +536,7 @@ describe('StageTabCard', () => {
     const progressKey = `${mockSession.id}:${mockStages[0].slug}:${mockSession.iteration_count}`;
     const recipe = createRecipeWithMarkdownDocuments(['document-one', 'document-two'], mockStages[0].slug);
     setupStore({
-      activeStageSlug: 'antithesis',
+      viewingStageSlug: 'antithesis',
       recipesByStageSlug: {
         [mockStages[0].slug]: recipe,
       },
@@ -555,20 +556,20 @@ describe('StageTabCard', () => {
     expect(labelElement).toHaveTextContent('2 / 2 Done');
   });
 
-  it('does not call setActiveStage from useEffect when activeStageSlug is already set', () => {
-    const storeActions = setupStore({ activeStageSlug: 'antithesis' });
+  it('does not call setViewingStage from useEffect when viewingStageSlug is already set', () => {
+    const storeActions = setupStore({ viewingStageSlug: 'antithesis' });
     renderComponent();
-    expect(storeActions.setActiveStage).not.toHaveBeenCalled();
+    expect(storeActions.setViewingStage).not.toHaveBeenCalled();
   });
 
   it('does not re-fire useEffect when activeSessionDetail reference changes but current_stage_id is unchanged', () => {
     const storeActions = setupStore({
-      activeStageSlug: null,
+      viewingStageSlug: null,
       activeSessionDetail: mockSession,
     });
     renderComponent();
-    expect(storeActions.setActiveStage).toHaveBeenCalledTimes(1);
-    expect(storeActions.setActiveStage).toHaveBeenCalledWith('thesis');
+    expect(storeActions.setViewingStage).toHaveBeenCalledTimes(1);
+    expect(storeActions.setViewingStage).toHaveBeenCalledWith('thesis');
 
     const sessionNewReference: DialecticSession = {
       ...mockSession,
@@ -583,17 +584,17 @@ describe('StageTabCard', () => {
       });
     });
 
-    expect(storeActions.setActiveStage).toHaveBeenCalledTimes(1);
+    expect(storeActions.setViewingStage).toHaveBeenCalledTimes(1);
   });
 
-  it('sets initial stage on mount when activeStageSlug is null', () => {
+  it('sets initial stage on mount when viewingStageSlug is null', () => {
     const storeActions = setupStore({
-      activeStageSlug: null,
+      viewingStageSlug: null,
       activeSessionDetail: mockSession,
       currentProcessTemplate: mockProcessTemplate,
     });
     renderComponent();
-    expect(storeActions.setActiveStage).toHaveBeenCalledWith('thesis');
+    expect(storeActions.setViewingStage).toHaveBeenCalledWith('thesis');
   });
 
   it('renders stage card label from stage display_name', () => {

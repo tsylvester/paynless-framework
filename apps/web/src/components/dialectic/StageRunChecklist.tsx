@@ -136,7 +136,7 @@ type StageChecklistData = {
 
 type ChecklistData = {
   sortedStages: Array<{ id: string; slug: string; display_name: string | null }>;
-  activeStageIndex: number;
+  viewingStageIndex: number;
   effectiveModelIds: string[];
   stageDataList: StageChecklistData[];
 };
@@ -147,7 +147,7 @@ function computeStageRunChecklistData(
   modelIdProp: string | null,
 ): ChecklistData {
   const sortedStages = selectSortedStages(state);
-  const activeStageSlug: string | null = state.activeStageSlug;
+  const viewingStageSlug: string | null = state.viewingStageSlug;
   const activeSessionId = state.activeContextSessionId;
   const iterationNumber = state.activeSessionDetail?.iteration_count;
   void modelIdProp;
@@ -172,9 +172,9 @@ function computeStageRunChecklistData(
     modelNameByModelId.set(modelId, modelName);
   });
 
-  const activeStageIndex =
-    activeStageSlug != null
-      ? sortedStages.findIndex((s) => s.slug === activeStageSlug)
+  const viewingStageIndex =
+    viewingStageSlug != null
+      ? sortedStages.findIndex((s) => s.slug === viewingStageSlug)
       : -1;
 
   // The store tracks which stage slug is actively generating via generatingForStageSlug.
@@ -182,7 +182,7 @@ function computeStageRunChecklistData(
 
   const stageDataList: StageChecklistData[] = sortedStages.map((stage) => {
     const stageIndex = sortedStages.indexOf(stage);
-    const isReady = activeStageIndex >= 0 && stageIndex <= activeStageIndex;
+    const isReady = viewingStageIndex >= 0 && stageIndex <= viewingStageIndex;
 
     const steps = selectStepList(state, stage.slug);
     const validMarkdownDocumentKeys = selectValidMarkdownDocumentKeys(state, stage.slug);
@@ -247,6 +247,7 @@ function computeStageRunChecklistData(
       const stepKey = stepKeyByDocumentKey.get(documentKey);
       let completedCount = 0;
       let hasFailed = false;
+      let hasGenerating = false;
       let hasContinuing = false;
       let firstRenderedEntry: StageDocumentEntry | null = null;
       const perModelLabels: PerModelLabel[] = [];
@@ -277,7 +278,7 @@ function computeStageRunChecklistData(
               hasContinuing = true;
               statusLabel = 'Continuing';
             } else if (checklistEntry.status === 'generating') {
-              hasContinuing = true;
+              hasGenerating = true;
               statusLabel = 'Generating';
             } else {
               statusLabel = 'Not started';
@@ -296,6 +297,10 @@ function computeStageRunChecklistData(
               ) ?? [];
             const job = jobsForModel[0];
             statusLabel = job != null ? jobStatusToLabel(job.status) : 'Missing status';
+            // Check if job is actively generating
+            if (job && (job.status === 'processing' || job.status === 'retrying' || job.status === 'waiting_for_children')) {
+              hasGenerating = true;
+            }
           }
 
           const jobsForModel =
@@ -303,6 +308,10 @@ function computeStageRunChecklistData(
               (j) => j.documentKey === documentKey && j.modelId === mid,
             ) ?? [];
           const job = jobsForModel[0];
+          // Also check job status here to ensure we catch all generating states
+          if (job && (job.status === 'processing' || job.status === 'retrying' || job.status === 'waiting_for_children')) {
+            hasGenerating = true;
+          }
           const nameFromJob =
             job?.modelName != null && job.modelName.trim().length > 0
               ? job.modelName
@@ -320,24 +329,24 @@ function computeStageRunChecklistData(
       const consolidatedLabel =
         hasFailed
           ? 'Failed'
-          : hasContinuing
-            ? 'Continuing'
-            : completedCount === totalModels && totalModels > 0
-              ? 'Completed'
-              : completedCount === 0 && isStageGenerating
-                ? 'Generating'
+          : hasGenerating || (completedCount === 0 && isStageGenerating)
+            ? 'Generating'
+            : hasContinuing
+              ? 'Continuing'
+              : completedCount === totalModels && totalModels > 0
+                ? 'Completed'
                 : completedCount === 0
                   ? 'Not Started'
                   : `${completedCount}/${totalModels} complete`;
 
       const derivedStatus: StageDocumentEntry['status'] = hasFailed
         ? 'failed'
-        : hasContinuing
-          ? 'continuing'
-          : completedCount === totalModels && totalModels > 0
-            ? 'completed'
-            : completedCount === 0 && isStageGenerating
-              ? 'generating'
+        : hasGenerating || (completedCount === 0 && isStageGenerating)
+          ? 'generating'
+          : hasContinuing
+            ? 'continuing'
+            : completedCount === totalModels && totalModels > 0
+              ? 'completed'
               : 'not_started';
 
       const stepKeyResolved: string = stepKey ?? '';
@@ -366,7 +375,13 @@ function computeStageRunChecklistData(
       documentRows.push({ entry, stepKey: stepKeyResolved, consolidatedLabel, perModelLabels });
     });
 
-    documentRows.sort((a, b) => a.entry.documentKey.localeCompare(b.entry.documentKey));
+    const stepOrderMap = new Map(steps.map(s => [s.step_key, s.execution_order]));
+    documentRows.sort((a, b) => {
+        const orderA = stepOrderMap.get(a.stepKey) ?? Infinity;
+        const orderB = stepOrderMap.get(b.stepKey) ?? Infinity;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.entry.documentKey.localeCompare(b.entry.documentKey);
+    });
 
     const hasStageProgress = stageProgress != null;
 
@@ -388,7 +403,7 @@ function computeStageRunChecklistData(
       slug: s.slug,
       display_name: s.display_name ?? null,
     })),
-    activeStageIndex,
+    viewingStageIndex,
     effectiveModelIds: [],
     stageDataList,
   };
@@ -403,9 +418,9 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
   const activeSessionId = useDialecticStore(selectActiveContextSessionId);
   const activeSessionDetail = useDialecticStore((state) => state.activeSessionDetail);
   const iterationNumber = activeSessionDetail?.iteration_count;
-  const storeActiveStageSlug = useDialecticStore((state) => state.activeStageSlug);
-  const setActiveStage = useDialecticStore((state) => state.setActiveStage);
-  const effectiveStageSlug = stageSlugProp ?? storeActiveStageSlug;
+  const storeViewingStageSlug = useDialecticStore((state) => state.viewingStageSlug);
+  const setViewingStage = useDialecticStore((state) => state.setViewingStage);
+  const effectiveStageSlug = stageSlugProp ?? storeViewingStageSlug;
   const checklistData = useDialecticStore((state) =>
     computeStageRunChecklistData(state, modelId),
   );
@@ -427,8 +442,8 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
       }
 
       // Switch to the document's stage if it differs from the current active stage
-      if (stageSlug !== storeActiveStageSlug) {
-        setActiveStage(stageSlug);
+      if (stageSlug !== storeViewingStageSlug) {
+        setViewingStage(stageSlug);
       }
 
       modelIds.forEach((mid) => {
@@ -447,8 +462,8 @@ const StageRunChecklist: React.FC<StageRunChecklistProps> = ({
       activeSessionId,
       iterationNumber,
       onDocumentSelect,
-      storeActiveStageSlug,
-      setActiveStage,
+      storeViewingStageSlug,
+      setViewingStage,
     ],
   );
 

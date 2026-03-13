@@ -164,7 +164,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
-        activeStageSlug: stageSlug,
+        viewingStageSlug: stageSlug,
         activeSessionDetail: {
           id: sessionId,
           project_id: projectId,
@@ -177,6 +177,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
+          viewing_stage_id: stageSlug,
           dialectic_contributions: [
             buildDialecticContribution({
               id: sourceContributionId,
@@ -198,6 +199,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
               [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
             jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
         },
         stageDocumentContent: {
@@ -206,6 +209,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
         recipesByStageSlug: {
           [stageSlug]: {
             stageSlug,
+            edges: [],
             instanceId: 'instance-1',
             steps: [
               {
@@ -248,6 +252,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
             max_output_tokens: 16000,
             strengths: [],
             weaknesses: [],
+            is_default_generation: false,
           },
         ],
       });
@@ -335,7 +340,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
-        activeStageSlug: stageSlug,
+        viewingStageSlug: stageSlug,
         activeSessionDetail: {
           id: sessionId,
           project_id: projectId,
@@ -348,6 +353,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
+          viewing_stage_id: stageSlug,
           dialectic_contributions: [
             buildDialecticContribution({
               id: 'contrib-loading-1',
@@ -369,6 +375,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
               [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
             jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
         },
         stageDocumentContent: {
@@ -377,6 +385,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
         recipesByStageSlug: {
           [stageSlug]: {
             stageSlug,
+            edges: [],
             instanceId: 'instance-1',
             steps: [
               {
@@ -419,6 +428,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
             max_output_tokens: 16000,
             strengths: [],
             weaknesses: [],
+            is_default_generation: false,
           },
         ],
       });
@@ -483,7 +493,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
-        activeStageSlug: stageSlug,
+        viewingStageSlug: stageSlug,
         activeSessionDetail: {
           id: sessionId,
           project_id: projectId,
@@ -496,6 +506,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
+          viewing_stage_id: stageSlug,
           dialectic_contributions: [
             buildDialecticContribution({
               id: 'contrib-loaded-1',
@@ -517,6 +528,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
               [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
             jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
         },
         stageDocumentContent: {
@@ -525,6 +538,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
         recipesByStageSlug: {
           [stageSlug]: {
             stageSlug,
+            edges: [],
             instanceId: 'instance-1',
             steps: [
               {
@@ -567,6 +581,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
             max_output_tokens: 16000,
             strengths: [],
             weaknesses: [],
+            is_default_generation: false,
           },
         ],
       });
@@ -617,7 +632,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
-        activeStageSlug: stageSlug,
+        viewingStageSlug: stageSlug,
         activeSessionDetail: {
           id: sessionId,
           project_id: projectId,
@@ -630,6 +645,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
+          viewing_stage_id: stageSlug,
           dialectic_contributions: [
             buildDialecticContribution({
               id: 'contrib-loading-2',
@@ -651,6 +667,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
               [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
             jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
         },
         stageDocumentContent: {
@@ -659,6 +677,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
         recipesByStageSlug: {
           [stageSlug]: {
             stageSlug,
+            edges: [],
             instanceId: 'instance-1',
             steps: [
               {
@@ -701,6 +720,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
             max_output_tokens: 16000,
             strengths: [],
             weaknesses: [],
+            is_default_generation: false,
           },
         ],
       });
@@ -754,7 +774,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
-        activeStageSlug: stageSlug,
+        viewingStageSlug: stageSlug,
         activeSessionDetail: {
           id: sessionId,
           project_id: projectId,
@@ -767,6 +787,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
+          viewing_stage_id: stageSlug,
           dialectic_contributions: [
             buildDialecticContribution({
               id: 'contrib-error-1',
@@ -788,6 +809,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
               [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
             jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
         },
         stageDocumentContent: {
@@ -796,6 +819,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
         recipesByStageSlug: {
           [stageSlug]: {
             stageSlug,
+            edges: [],
             instanceId: 'instance-1',
             steps: [
               {
@@ -838,6 +862,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
             max_output_tokens: 16000,
             strengths: [],
             weaknesses: [],
+            is_default_generation: false,
           },
         ],
       });
@@ -894,7 +919,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
-        activeStageSlug: stageSlug,
+        viewingStageSlug: stageSlug,
         activeSessionDetail: {
           id: sessionId,
           project_id: projectId,
@@ -907,6 +932,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
+          viewing_stage_id: stageSlug,
           dialectic_contributions: [
             buildDialecticContribution({
               id: 'contrib-unsaved-1',
@@ -928,6 +954,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
               [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
             jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
         },
         stageDocumentContent: {
@@ -936,6 +964,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
         recipesByStageSlug: {
           [stageSlug]: {
             stageSlug,
+            edges: [],
             instanceId: 'instance-1',
             steps: [
               {
@@ -978,6 +1007,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
             max_output_tokens: 16000,
             strengths: [],
             weaknesses: [],
+            is_default_generation: false,
           },
         ],
       });
@@ -1020,7 +1050,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
-        activeStageSlug: stageSlug,
+        viewingStageSlug: stageSlug,
         activeSessionDetail: {
           id: sessionId,
           project_id: projectId,
@@ -1033,6 +1063,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
+          viewing_stage_id: stageSlug,
           dialectic_contributions: [
             buildDialecticContribution({
               id: 'contrib-unsaved-2',
@@ -1054,6 +1085,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
               [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
             jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
         },
         stageDocumentContent: {
@@ -1062,6 +1095,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
         recipesByStageSlug: {
           [stageSlug]: {
             stageSlug,
+            edges: [],
             instanceId: 'instance-1',
             steps: [
               {
@@ -1104,6 +1138,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
             max_output_tokens: 16000,
             strengths: [],
             weaknesses: [],
+            is_default_generation: false,
           },
         ],
       });
@@ -1152,7 +1187,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
       setDialecticStateValues({
         activeContextProjectId: projectId,
         activeContextSessionId: sessionId,
-        activeStageSlug: stageSlug,
+        viewingStageSlug: stageSlug,
         activeSessionDetail: {
           id: sessionId,
           project_id: projectId,
@@ -1165,6 +1200,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
           current_stage_id: stageSlug,
           created_at: '2024-01-01T00:00:00.000Z',
           updated_at: '2024-01-01T00:00:00.000Z',
+          viewing_stage_id: stageSlug,
           dialectic_contributions: [
             buildDialecticContribution({
               id: 'contrib-unsaved-3',
@@ -1186,6 +1222,8 @@ describe('GeneratedContributionCard Integration Tests', () => {
               [`${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`]: documentDescriptor,
             },
             jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
         },
         stageDocumentContent: {
@@ -1194,6 +1232,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
         recipesByStageSlug: {
           [stageSlug]: {
             stageSlug,
+            edges: [],
             instanceId: 'instance-1',
             steps: [
               {
@@ -1236,6 +1275,7 @@ describe('GeneratedContributionCard Integration Tests', () => {
             max_output_tokens: 16000,
             strengths: [],
             weaknesses: [],
+            is_default_generation: false,
           },
         ],
       });

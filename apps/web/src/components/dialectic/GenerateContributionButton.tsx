@@ -28,7 +28,7 @@ export const GenerateContributionButton: React.FC<
 		didGenerationFail,
 		contributionsForStageAndIterationExist,
 		showBalanceCallout,
-		activeStage,
+		viewingStage,
 		activeSession,
 		stageThreshold,
 	} = useStartContributionGeneration();
@@ -74,9 +74,9 @@ export const GenerateContributionButton: React.FC<
 	const getButtonText = (): React.ReactNode => {
 		if (!areAnyModelsSelected) return "Choose AI Models";
 		if (!isWalletReady) return "Wallet Not Ready";
-		if (!activeStage || !activeSession) return "Stage Not Ready";
+		if (!viewingStage || !activeSession) return "Stage Not Ready";
 		if (!isStageReady) return "Previous Stage Incomplete";
-		const displayName = activeStage.display_name;
+		const displayName = viewingStage.display_name;
 		if (isPauseMode)
 			return (
 				<>
@@ -103,11 +103,11 @@ export const GenerateContributionButton: React.FC<
 				variant="outline"
 				size="sm"
 				className={cn(className, "w-full text-sm")}
-				data-testid={`generate-${activeStage?.slug ?? "unknown"}-button`}
+				data-testid={`generate-${viewingStage?.slug ?? "unknown"}-button`}
 			>
 				{isPauseMode ? getButtonText() : <><RefreshCcw className="mr-2 h-4 w-4" />{" "}{getButtonText()}</>}
 			</Button>
-			{showBalanceCallout && activeStage && (
+			{showBalanceCallout && viewingStage && (
 				<p
 					className="mt-1.5 max-w-[280px] rounded-md border border-primary/60 bg-primary/15 px-3 py-2 text-center text-xs font-medium text-primary shadow-md animate-pulse"
 					data-testid="generate-button-balance-callout"
@@ -116,18 +116,18 @@ export const GenerateContributionButton: React.FC<
 						to="/subscription"
 						className="font-semibold underline underline-offset-2 hover:no-underline"
 					>
-						Minimum {formattedThreshold} token balance for {activeStage.display_name}{" "}
+						Minimum {formattedThreshold} token balance for {viewingStage.display_name}{" "}
 					</Link>
 				</p>
 			)}
-			{activeStage &&
+			{viewingStage &&
 				activeSession &&
 				activeContextSessionId !== null &&
 				activeContextSessionId !== undefined && (
 					<StageDAGProgressDialog
 						open={dagDialogOpen}
 						onOpenChange={setDagDialogOpen}
-						stageSlug={activeStage.slug}
+						stageSlug={viewingStage.slug}
 						sessionId={activeContextSessionId}
 						iterationNumber={activeSession.iteration_count}
 					/>

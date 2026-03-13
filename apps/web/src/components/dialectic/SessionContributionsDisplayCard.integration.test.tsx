@@ -38,6 +38,18 @@ vi.mock('@paynless/store', async () => {
   const actual = await import('@paynless/store');
   const mock = await import('../../mocks/dialecticStore.mock');
   const authMock = await import('../../mocks/authStore.mock');
+  const selectCanAdvanceStageMock = vi.fn().mockReturnValue({
+    canAdvance: true,
+    reason: null,
+    conditions: {
+      logicalMatchesViewing: true,
+      currentStageComplete: true,
+      nextStageInputsReady: true,
+      currentStageNoActiveJobs: true,
+      nextStageNoProgress: true,
+      nextStageExists: true,
+    },
+  });
   return {
     ...actual,
     useDialecticStore: mock.useDialecticStore,
@@ -45,6 +57,7 @@ vi.mock('@paynless/store', async () => {
     selectStageDocumentChecklist: actual.selectStageDocumentChecklist,
     selectIsStageReadyForSessionIteration: mock.selectIsStageReadyForSessionIteration,
     selectUnifiedProjectProgress: mock.selectUnifiedProjectProgress,
+    selectCanAdvanceStage: selectCanAdvanceStageMock,
   };
 });
 
@@ -62,18 +75,18 @@ const projectId = 'proj-1';
 const iterationNumber = 1;
 const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
 
-function buildUnifiedProgressWithStageComplete(activeStageSlug: string): UnifiedProjectProgress {
+function buildUnifiedProgressWithStageComplete(viewingStageSlug: string): UnifiedProjectProgress {
   return {
     totalStages: 1,
     completedStages: 0,
-    currentStageSlug: activeStageSlug,
+    currentStageSlug: viewingStageSlug,
     overallPercentage: 100,
     currentStage: null,
     projectStatus: 'in_progress',
     hydrationReady: true,
     stageDetails: [
       {
-        stageSlug: activeStageSlug,
+        stageSlug: viewingStageSlug,
         totalSteps: 3,
         completedSteps: 3,
         totalDocuments: 1,
@@ -273,6 +286,7 @@ const buildSession = (
   dialectic_session_models: [],
   dialectic_contributions: contributions,
   feedback: [],
+  viewing_stage_id: 'stage-1',
 });
 
 const buildProject = (
@@ -403,7 +417,7 @@ describe('SessionContributionsDisplayCard Integration Tests', () => {
       activeContextProjectId: project.id,
       activeContextSessionId: session.id,
       activeContextStage: stage,
-      activeStageSlug: stage.slug,
+      viewingStageSlug: stage.slug,
       activeSessionDetail: session,
       selectedModels: session.selected_models,
       currentProjectDetail: project,

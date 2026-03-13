@@ -106,6 +106,7 @@ function createMockSession(
     updated_at: new Date().toISOString(),
     dialectic_contributions: contributions,
     dialectic_session_models: [],
+    viewing_stage_id: 'stage-1',
   };
 }
 
@@ -147,10 +148,13 @@ function getDefaultHookReturn(
     balanceMeetsThreshold: true,
     areAnyModelsSelected: true,
     hasPausedNsfJobs: false,
+    hasPausedUserJobs: false,
+    isPauseMode: false,
+    pauseGeneration: vi.fn().mockResolvedValue(undefined),
     didGenerationFail: false,
     contributionsForStageAndIterationExist: false,
     showBalanceCallout: false,
-    activeStage: mockThesisStage,
+    viewingStage: mockThesisStage,
     activeSession: defaultSession,
     stageThreshold: mockThesisStage.minimum_balance,
     ...overrides,
@@ -162,10 +166,10 @@ vi.mock('@paynless/store', async () => {
   const actualPaynlessStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
   const walletStoreMock = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStore.mock');
 
-  const selectActiveStage = (state: DialecticStateValues): DialecticStage | null => {
-    const { currentProjectDetail, activeStageSlug } = state;
-    if (!currentProjectDetail?.dialectic_process_templates?.stages || !activeStageSlug) return null;
-    return currentProjectDetail.dialectic_process_templates.stages.find((s: DialecticStage) => s.slug === activeStageSlug) ?? null;
+  const selectViewingStage = (state: DialecticStateValues): DialecticStage | null => {
+    const { currentProjectDetail, viewingStageSlug } = state;
+    if (!currentProjectDetail?.dialectic_process_templates?.stages || !viewingStageSlug) return null;
+    return currentProjectDetail.dialectic_process_templates.stages.find((s: DialecticStage) => s.slug === viewingStageSlug) ?? null;
   };
 
   const useAiStore = (selector: (state: { continueUntilComplete: boolean; newChatContext: string | null }) => unknown) =>
@@ -180,7 +184,7 @@ vi.mock('@paynless/store', async () => {
     initialWalletStateValues: actualPaynlessStore.initialWalletStateValues,
     selectSessionById: actualPaynlessStore.selectSessionById,
     selectSelectedModels: actualPaynlessStore.selectSelectedModels,
-    selectActiveStage,
+    selectViewingStage,
     selectIsStageReadyForSessionIteration: vi.fn(),
     selectUnifiedProjectProgress: mockStoreExports.selectUnifiedProjectProgress,
   };
@@ -231,7 +235,7 @@ describe('GenerateContributionButton NSF', () => {
       selectedModels: oneSelectedModel,
       currentProjectDetail: defaultProject,
       activeContextSessionId: sessionId,
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       contributionGenerationStatus: 'idle',
     });
 
@@ -357,6 +361,7 @@ describe('GenerateContributionButton NSF', () => {
         iterationNumber: 1,
         walletId: 'wallet-id',
         continueUntilComplete: false,
+        idempotencyKey: '123',
       });
       cb?.();
       return Promise.resolve({ success: true });
@@ -394,10 +399,10 @@ describe('GenerateContributionButton NSF', () => {
 
   it('button state priority: isSessionGenerating overrides paused_nsf and balance', () => {
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ isSessionGenerating: true, isDisabled: true })
+      getDefaultHookReturn({ isSessionGenerating: true, isPauseMode: true, isDisabled: false })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByRole('button')).toHaveTextContent(/Generating.../i);
+    expect(screen.getByRole('button')).toBeEnabled();
+    expect(screen.getByRole('button')).toHaveTextContent(/Pause Proposal/i);
   });
 });

@@ -27,6 +27,7 @@
   "license": "ISC",
   "dependencies": {
     "@supabase/postgrest-js": "^1.19.4",
+    "immer": "^10.1.1",
     "vite-plugin-node-polyfills": "^0.23.0"
   }
 }

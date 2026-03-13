@@ -20,6 +20,9 @@ import {
   type DialecticContribution,
   type DialecticDomain,
   type UpdateSessionModelsPayload,
+  type UpdateViewingStageDeps,
+  type UpdateViewingStageParams,
+  type UpdateViewingStagePayload,
   type GenerateContributionsPayload,
   type GenerateContributionsResponse,
   type DialecticProjectRow,
@@ -56,6 +59,8 @@ import {
   type RegenerateDocumentResponse,
   StartSessionSuccessResponse,
   type CreateProjectAutoStartResult,
+  UpsertJobFromLifecycleEventParams,
+  type UpsertJobFromLifecycleEventPayload,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { useAuthStore } from './authStore';
@@ -96,6 +101,7 @@ import {
 	getStageRunDocumentKey,
 	initializeFeedbackDraftLogic,
 } from './dialecticStore.documents';
+import { upsertJobFromLifecycleEvent } from './upsertJobFromLifecycleEvent';
 
 type FocusedDocumentKeyParams = Pick<SetFocusedStageDocumentPayload, 'sessionId' | 'stageSlug' | 'modelId'>;
 
@@ -174,8 +180,8 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	activeContextProjectId: null,
 	activeContextSessionId: null,
 	activeContextStage: null,
-	activeStageSlug: null,
-
+	viewingStageSlug: null,
+	activeViewingStage: null,
 	activeSeedPrompt: null,
 
 	// New initial states for single session fetching
@@ -604,10 +610,10 @@ export const useDialecticStore = create<DialecticStore>()(
 					}
 				}
 
-				if (get().activeStageSlug !== null) {
+				if (get().viewingStageSlug !== null) {
 					logger.info(
 						"[DialecticStore] Skipping stage set: user has already selected stage.",
-						{ activeStageSlug: get().activeStageSlug },
+						{ viewingStageSlug: get().viewingStageSlug },
 					);
 				} else if (stageToSet) {
 					set({ activeContextStage: stageToSet });
@@ -628,7 +634,7 @@ export const useDialecticStore = create<DialecticStore>()(
 				if (latestSession) {
 					const iterationNumber = latestSession.iteration_count;
 					for (const stage of template.stages) {
-						await get().ensureRecipeForActiveStage(latestSession.id, stage.slug, iterationNumber);
+						await get().ensureRecipeForViewingStage(latestSession.id, stage.slug, iterationNumber);
 					}
 					logger.info('[DialecticStore] All stage progress entries initialized.');
 				}
@@ -1593,12 +1599,44 @@ export const useDialecticStore = create<DialecticStore>()(
         case 'contribution_generation_continued':
             handlers._handleContributionGenerationContinued(payload);
             break;
-        case 'planner_started':
+        case 'planner_started': {
             handlers._handlePlannerStarted(payload);
+            const progressKeyPlanStart = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+            set(state => {
+                const progress = state.stageRunProgress[progressKeyPlanStart];
+                if (progress) {
+                    const params: UpsertJobFromLifecycleEventParams = {
+                        jobId: payload.job_id,
+                        stepKey: payload.step_key ?? null,
+                        modelId: null,
+                        documentKey: null,
+                        jobType: 'PLAN',
+                        status: 'processing',
+                    };
+                    upsertJobFromLifecycleEvent({}, progress, params);
+                }
+            });
             break;
-        case 'planner_completed':
+        }
+        case 'planner_completed': {
             handlers._handlePlannerCompleted(payload);
+            const progressKeyPlanDone = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+            set(state => {
+                const progress = state.stageRunProgress[progressKeyPlanDone];
+                if (progress) {
+                    const params: UpsertJobFromLifecycleEventParams = {
+                        jobId: payload.job_id,
+                        stepKey: payload.step_key ?? null,
+                        modelId: null,
+                        documentKey: null,
+                        jobType: 'PLAN',
+                        status: 'completed',
+                    };
+                    upsertJobFromLifecycleEvent({}, progress, params);
+                }
+            });
             break;
+        }
         case 'document_started':
             handlers._handleDocumentStarted(payload);
             break;
@@ -1619,6 +1657,21 @@ export const useDialecticStore = create<DialecticStore>()(
 				if (payload.step_key !== undefined && payload.step_key !== '') {
                 setStepStatusLogic(get, set, `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`, payload.step_key, 'in_progress');
 				}
+                const progressKeyExecStart = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+                set(state => {
+                    const progress = state.stageRunProgress[progressKeyExecStart];
+                    if (progress) {
+                        const params: UpsertJobFromLifecycleEventParams = {
+                            jobId: payload.job_id,
+                            stepKey: payload.step_key ?? null,
+                            modelId: payload.modelId ?? null,
+                            documentKey: payload.document_key ?? null,
+                            jobType: 'EXECUTE',
+                            status: 'processing',
+                        };
+                        upsertJobFromLifecycleEvent({}, progress, params);
+                    }
+                });
             }
             break;
         case 'document_chunk_completed':
@@ -1637,6 +1690,22 @@ export const useDialecticStore = create<DialecticStore>()(
                     modelId: payload.modelId,
                     isFinalChunk: payload.isFinalChunk,
                     continuationNumber: payload.continuationNumber,
+                });
+            } else {
+                const progressKeyChunk = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+                set(state => {
+                    const progress = state.stageRunProgress[progressKeyChunk];
+                    if (progress) {
+                        const params: UpsertJobFromLifecycleEventParams = {
+                            jobId: payload.job_id,
+                            stepKey: payload.step_key ?? null,
+                            modelId: payload.modelId ?? null,
+                            documentKey: payload.document_key ?? null,
+                            jobType: null,
+                            status: 'processing',
+                        };
+                        upsertJobFromLifecycleEvent({}, progress, params);
+                    }
                 });
             }
             break;
@@ -1659,19 +1728,68 @@ export const useDialecticStore = create<DialecticStore>()(
 				if (payload.step_key !== undefined && payload.step_key !== '') {
 					setStepStatusLogic(get, set, `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`, payload.step_key, 'completed');
 				}
+                const progressKeyExecDone = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+                set(state => {
+                    const progress = state.stageRunProgress[progressKeyExecDone];
+                    if (progress) {
+                        const params: UpsertJobFromLifecycleEventParams = {
+                            jobId: payload.job_id,
+                            stepKey: payload.step_key ?? null,
+                            modelId: payload.modelId ?? null,
+                            documentKey: payload.document_key ?? null,
+                            jobType: 'EXECUTE',
+                            status: 'completed',
+                        };
+                        upsertJobFromLifecycleEvent({}, progress, params);
+                    }
+                });
             }
             break;
         case 'render_started':
             handlers._handleRenderStarted(payload);
             break;
-        case 'render_chunk_completed':
+        case 'render_chunk_completed': {
             setStepStatusLogic(get, set, `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`, payload.step_key, 'in_progress');
+            const progressKeyRenderChunk = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+            set(state => {
+                const progress = state.stageRunProgress[progressKeyRenderChunk];
+                if (progress) {
+                    const params: UpsertJobFromLifecycleEventParams = {
+                        jobId: payload.job_id,
+                        stepKey: payload.step_key ?? null,
+                        modelId: payload.modelId ?? null,
+                        documentKey: payload.document_key ?? null,
+                        jobType: 'RENDER',
+                        status: 'processing',
+                    };
+                    upsertJobFromLifecycleEvent({}, progress, params);
+                }
+            });
             break;
+        }
         case 'render_completed':
             handlers._handleRenderCompleted(payload);
             break;
         case 'job_failed':
-            handlers._handleJobFailed(payload);
+            if (payload.document_key !== undefined && payload.document_key !== '') {
+                handlers._handleJobFailed(payload);
+            } else {
+                const progressKeyFailed = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+                set(state => {
+                    const progress = state.stageRunProgress[progressKeyFailed];
+                    if (progress) {
+                        const params: UpsertJobFromLifecycleEventParams = {
+                            jobId: payload.job_id,
+                            stepKey: payload.step_key ?? null,
+                            modelId: payload.modelId ?? null,
+                            documentKey: payload.document_key ?? null,
+                            jobType: null,
+                            status: 'failed',
+                        };
+                        upsertJobFromLifecycleEvent({}, progress, params);
+                    }
+                });
+            }
             break;
         case 'contribution_generation_paused_nsf':
             handlers._handleContributionGenerationPausedNsf(payload);
@@ -1743,6 +1861,30 @@ export const useDialecticStore = create<DialecticStore>()(
       if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
         state.activeSessionDetail = { ...session };
       }
+      const params: UpsertJobFromLifecycleEventParams = {
+        jobId: event.job_id,
+        stepKey: null,
+        modelId: null,
+        documentKey: null,
+        jobType: null,
+        status: 'processing',
+      };
+      let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
+      for (const key of Object.keys(state.stageRunProgress)) {
+        if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${event.iterationNumber}`)) {
+          const progress = state.stageRunProgress[key];
+          if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+            targetProgress = progress;
+            break;
+          }
+          if (!targetProgress) {
+            targetProgress = progress;
+          }
+        }
+      }
+      if (targetProgress) {
+        upsertJobFromLifecycleEvent({}, targetProgress, params);
+      }
     });
   },
 
@@ -1750,15 +1892,37 @@ export const useDialecticStore = create<DialecticStore>()(
     set(state => {
       const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
       if (session?.dialectic_contributions) {
-        // Find placeholder by job_id
         const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
         if (placeholder) {
           placeholder.status = 'generating';
         }
       }
-      // Sync with activeSessionDetail if it's the same session
       if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
         state.activeSessionDetail = { ...session };
+      }
+      const params: UpsertJobFromLifecycleEventParams = {
+        jobId: event.job_id,
+        stepKey: null,
+        modelId: null,
+        documentKey: null,
+        jobType: null,
+        status: 'processing',
+      };
+      let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
+      for (const key of Object.keys(state.stageRunProgress)) {
+        if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${event.iterationNumber}`)) {
+          const progress = state.stageRunProgress[key];
+          if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+            targetProgress = progress;
+            break;
+          }
+          if (!targetProgress) {
+            targetProgress = progress;
+          }
+        }
+      }
+      if (targetProgress) {
+        upsertJobFromLifecycleEvent({}, targetProgress, params);
       }
     });
   },
@@ -1767,19 +1931,44 @@ export const useDialecticStore = create<DialecticStore>()(
     set(state => {
       const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
       if (session?.dialectic_contributions) {
-        // Find placeholder by job_id
         const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
         if (placeholder) {
           placeholder.status = 'retrying';
-          placeholder.error = { 
+          placeholder.error = {
               message: event.error || 'An error occurred during generation. Retrying...',
-              code: 'CONTRIBUTION_RETRYING' 
+              code: 'CONTRIBUTION_RETRYING'
           };
         }
       }
-      // Sync with activeSessionDetail if it's the same session
       if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
         state.activeSessionDetail = { ...session };
+      }
+      const params: UpsertJobFromLifecycleEventParams = {
+        jobId: event.job_id,
+        stepKey: null,
+        modelId: null,
+        documentKey: null,
+        jobType: null,
+        status: 'retrying',
+      };
+      for (const key of Object.keys(state.stageRunProgress)) {
+        if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${event.iterationNumber}`)) {
+          const progress = state.stageRunProgress[key];
+          if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+            upsertJobFromLifecycleEvent({}, progress, params);
+            break;
+          }
+        }
+      }
+      let firstProgress: UpsertJobFromLifecycleEventPayload | undefined;
+      for (const key of Object.keys(state.stageRunProgress)) {
+        if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${event.iterationNumber}`)) {
+          firstProgress = state.stageRunProgress[key];
+          break;
+        }
+      }
+      if (firstProgress) {
+        upsertJobFromLifecycleEvent({}, firstProgress, params);
       }
     });
   },
@@ -1834,6 +2023,34 @@ export const useDialecticStore = create<DialecticStore>()(
         state.contributionGenerationStatus = 'idle';
         state.generatingForStageSlug = null;
       }
+
+      const iterNum = event.contribution?.iteration_number;
+      if (typeof iterNum === 'number') {
+        const params: UpsertJobFromLifecycleEventParams = {
+          jobId: event.job_id,
+          stepKey: null,
+          modelId: null,
+          documentKey: null,
+          jobType: null,
+          status: 'processing',
+        };
+        let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
+        for (const key of Object.keys(state.stageRunProgress)) {
+          if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${iterNum}`)) {
+            const progress = state.stageRunProgress[key];
+            if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+              targetProgress = progress;
+              break;
+            }
+            if (!targetProgress) {
+              targetProgress = progress;
+            }
+          }
+        }
+        if (targetProgress) {
+          upsertJobFromLifecycleEvent({}, targetProgress, params);
+        }
+      }
     });
 
     if (wasGenerationCompleted && projectIdForRefetch) {
@@ -1877,6 +2094,34 @@ export const useDialecticStore = create<DialecticStore>()(
         state.activeSessionDetail = { ...session };
       }
       // Do not remove the job_id from tracking, as the generation is still in progress.
+
+      const iterNum = event.contribution?.iteration_number;
+      if (typeof iterNum === 'number') {
+        const params: UpsertJobFromLifecycleEventParams = {
+          jobId: event.job_id,
+          stepKey: null,
+          modelId: null,
+          documentKey: null,
+          jobType: null,
+          status: 'continuing',
+        };
+        let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
+        for (const key of Object.keys(state.stageRunProgress)) {
+          if (key.startsWith(`${event.sessionId}:`) && key.endsWith(`:${iterNum}`)) {
+            const progress = state.stageRunProgress[key];
+            if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+              targetProgress = progress;
+              break;
+            }
+            if (!targetProgress) {
+              targetProgress = progress;
+            }
+          }
+        }
+        if (targetProgress) {
+          upsertJobFromLifecycleEvent({}, targetProgress, params);
+        }
+      }
     });
   },
 
@@ -1920,11 +2165,65 @@ export const useDialecticStore = create<DialecticStore>()(
         state.generatingForStageSlug = null;
         state.generateContributionsError = event.error || { message: 'Generation failed without a specific error.', code: 'GENERATION_FAILED' };
       }
+
+      if (event.job_id) {
+        const params: UpsertJobFromLifecycleEventParams = {
+          jobId: event.job_id,
+          stepKey: null,
+          modelId: null,
+          documentKey: null,
+          jobType: null,
+          status: 'failed',
+        };
+        let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
+        for (const key of Object.keys(state.stageRunProgress)) {
+          if (key.startsWith(`${event.sessionId}:`)) {
+            const progress = state.stageRunProgress[key];
+            if (progress?.jobs?.some((j) => j.id === event.job_id)) {
+              targetProgress = progress;
+              break;
+            }
+            if (!targetProgress) {
+              targetProgress = progress;
+            }
+          }
+        }
+        if (targetProgress) {
+          upsertJobFromLifecycleEvent({}, targetProgress, params);
+        }
+      }
     });
   },
 
   _handleContributionGenerationComplete: (event: ContributionGenerationCompletePayload) => {
     set(state => {
+      const jobIds: string[] = state.generatingSessions[event.sessionId] ?? [];
+      for (const jobId of jobIds) {
+        const params: UpsertJobFromLifecycleEventParams = {
+          jobId,
+          stepKey: null,
+          modelId: null,
+          documentKey: null,
+          jobType: null,
+          status: 'completed',
+        };
+        let targetProgress: UpsertJobFromLifecycleEventPayload | undefined;
+        for (const key of Object.keys(state.stageRunProgress)) {
+          if (key.startsWith(`${event.sessionId}:`)) {
+            const progress = state.stageRunProgress[key];
+            if (progress?.jobs?.some((j) => j.id === jobId)) {
+              targetProgress = progress;
+              break;
+            }
+            if (!targetProgress) {
+              targetProgress = progress;
+            }
+          }
+        }
+        if (targetProgress) {
+          upsertJobFromLifecycleEvent({}, targetProgress, params);
+        }
+      }
       // Remove the session from the generating list
       delete state.generatingSessions[event.sessionId];
 
@@ -2379,15 +2678,124 @@ export const useDialecticStore = create<DialecticStore>()(
 				logger.info("[DialecticStore] Successfully advanced stage.", {
 					response: response.data,
 				});
-				set({
-					isSubmittingStageResponses: false,
-					submitStageResponsesError: null,
-				});
+				const updatedSession: DialecticSession | undefined = response.data?.updatedSession;
+				if (updatedSession) {
+					const state = get();
+					const session: DialecticSession | undefined =
+						state.activeSessionDetail?.id === payload.sessionId
+							? state.activeSessionDetail
+							: state.currentProjectDetail?.dialectic_sessions?.find(
+									(s) => s.id === payload.sessionId,
+								);
+					const oldCurrentStageId: string | null = session?.current_stage_id ?? null;
+					const oldViewingStageId: string | null = session?.viewing_stage_id ?? null;
+					const viewingMatchedLogical: boolean =
+						oldViewingStageId !== null && oldViewingStageId === oldCurrentStageId;
 
-				logger.info(
-					`[DialecticStore] Stage advanced for project ${payload.projectId}. Refetching project details.`,
-				);
-				await get().fetchDialecticProjectDetails(payload.projectId, { preserveContext: true });
+					set((s) => {
+						let newCurrentProjectDetail = s.currentProjectDetail;
+						let newActiveSessionDetail = s.activeSessionDetail;
+						if (!s.currentProjectDetail?.dialectic_sessions) {
+							return {
+								isSubmittingStageResponses: false,
+								submitStageResponsesError: null,
+							};
+						}
+						const sessionIndex = s.currentProjectDetail.dialectic_sessions.findIndex(
+							(entry) => entry.id === updatedSession.id,
+						);
+						if (sessionIndex === -1) {
+							return {
+								isSubmittingStageResponses: false,
+								submitStageResponsesError: null,
+							};
+						}
+						const newSessions = [...s.currentProjectDetail.dialectic_sessions];
+						const existing = newSessions[sessionIndex];
+						let mergedSession: DialecticSession = {
+							...existing,
+							...updatedSession,
+						};
+						if (
+							viewingMatchedLogical &&
+							updatedSession.current_stage_id !== null &&
+							updatedSession.current_stage_id !== undefined
+						) {
+							mergedSession = {
+								...mergedSession,
+								viewing_stage_id: updatedSession.current_stage_id,
+							};
+						}
+						newSessions[sessionIndex] = mergedSession;
+						newCurrentProjectDetail = {
+							...s.currentProjectDetail,
+							dialectic_sessions: newSessions,
+						};
+						if (s.activeSessionDetail?.id === updatedSession.id) {
+							newActiveSessionDetail = mergedSession;
+						}
+						return {
+							currentProjectDetail: newCurrentProjectDetail,
+							activeSessionDetail: newActiveSessionDetail,
+							isSubmittingStageResponses: false,
+							submitStageResponsesError: null,
+						};
+					});
+
+					const template = get().currentProcessTemplate;
+					const stageForCurrent =
+						template!.stages!.find((s) => s.id === updatedSession.current_stage_id);
+					set({ activeContextStage: stageForCurrent });
+
+					if (
+						viewingMatchedLogical &&
+						updatedSession.current_stage_id !== null &&
+						updatedSession.current_stage_id !== undefined
+					) {
+						const stage = template?.stages?.find((s) => s.id === updatedSession.current_stage_id);
+						if (stage) {
+							set({ viewingStageSlug: stage.slug });
+							const userId = useAuthStore.getState().user?.id;
+							if (userId) {
+								const deps: UpdateViewingStageDeps = {};
+								const params: UpdateViewingStageParams = { userId };
+								const updateViewingPayload: UpdateViewingStagePayload = {
+									sessionId: payload.sessionId,
+									viewingStageId: updatedSession.current_stage_id,
+								};
+								api
+									.dialectic()
+									.updateViewingStage(deps, params, updateViewingPayload)
+									.then((updateResponse) => {
+										if (updateResponse.error) {
+											logger.error(
+												"[DialecticStore] Failed to persist viewing stage after advance",
+												{
+													sessionId: payload.sessionId,
+													viewingStageId: updatedSession.current_stage_id,
+													error: updateResponse.error,
+												},
+											);
+										}
+									})
+									.catch((err: unknown) => {
+										logger.error(
+											"[DialecticStore] Network error persisting viewing stage after advance",
+											{
+												sessionId: payload.sessionId,
+												error: err,
+											},
+										);
+									});
+							}
+						}
+					}
+				} else {
+					set({
+						isSubmittingStageResponses: false,
+						submitStageResponsesError: null,
+					});
+				}
 			}
 			return response;
 		} catch (error: unknown) {
@@ -2609,6 +3017,47 @@ export const useDialecticStore = create<DialecticStore>()(
 			// Set selected models from session response (single origin: selected_models)
 			const models = fetchedSession.selected_models;
 			set({ selectedModels: models });
+
+			// Hydrate viewingStageSlug from session.viewing_stage_id or session.current_stage_id
+			const template = get().currentProcessTemplate;
+			const viewingStageIdOrCurrent =
+				fetchedSession.viewing_stage_id ?? fetchedSession.current_stage_id;
+			if (template?.stages && viewingStageIdOrCurrent) {
+				const stage = template.stages.find((s) => s.id === viewingStageIdOrCurrent);
+				if (stage) {
+					set({ viewingStageSlug: stage.slug });
+					const userId = useAuthStore.getState().user?.id;
+					if (
+						fetchedSession.viewing_stage_id === null &&
+						userId &&
+						userId.length > 0
+					) {
+						const deps: UpdateViewingStageDeps = {};
+						const params: UpdateViewingStageParams = { userId };
+						const payload: UpdateViewingStagePayload = {
+							sessionId: fetchedSession.id,
+							viewingStageId: stage.id,
+						};
+						api
+							.dialectic()
+							.updateViewingStage(deps, params, payload)
+							.then((response) => {
+								if (response.error) {
+									logger.error(
+										'[DialecticStore] Failed to persist initial viewing stage on session load',
+										{ sessionId: fetchedSession.id, error: response.error },
+									);
+								}
+							})
+							.catch((err) => {
+								logger.error(
+									'[DialecticStore] Network error persisting initial viewing stage on session load',
+									{ sessionId: fetchedSession.id, error: err },
+								);
+							});
+					}
+				}
+			}
 		} catch (error: unknown) {
 			const networkError: ApiError = {
 				message:
@@ -2655,13 +3104,7 @@ export const useDialecticStore = create<DialecticStore>()(
     if (!get().projectDetailError) {
         logger.info(`[DialecticStore] Proceeding to fetch session details for ${sessionId}.`);
         await get().fetchAndSetCurrentSessionDetails(sessionId);
-
-        const template = get().currentProcessTemplate;
-        if (!template?.stages?.length || !template.starting_stage_id) return;
-        const firstStage = template.stages.find((s) => s.id === template.starting_stage_id);
-        if (!firstStage) return;
-        logger.info(`[DialecticStore] Setting initial active stage for deep link: ${firstStage.slug}`);
-        get().setActiveStage(firstStage.slug);
+        // viewingStageSlug is already set from session.viewing_stage_id by fetchAndSetCurrentSessionDetails; do not overwrite.
     }
   },
 
@@ -2741,9 +3184,46 @@ export const useDialecticStore = create<DialecticStore>()(
 		set({ activeDialecticWalletId: walletId });
 	},
 
-  setActiveStage: (slug: string | null) => {
+  setViewingStage: (slug: string | null) => {
     logger.info(`[DialecticStore] Setting active stage slug to: ${slug}`);
-    set({ activeStageSlug: slug });
+    set({ viewingStageSlug: slug });
+    if (slug !== null) {
+		const state = get();
+		const sessionId = state.activeContextSessionId;
+		const template = state.currentProcessTemplate;
+		const stage = template?.stages?.find((s) => s.slug === slug);
+		const userId = useAuthStore.getState().user?.id;
+		if (!userId) {
+			logger.error('[DialecticStore] User ID is not set');
+			return;
+		}
+		if (sessionId && stage && userId) {
+			const deps: UpdateViewingStageDeps = {};
+			const params: UpdateViewingStageParams = {
+			userId,
+			};
+			const payload: UpdateViewingStagePayload = { sessionId, viewingStageId: stage.id };
+			api
+			.dialectic()
+			.updateViewingStage(deps, params, payload)
+			.then((response) => {
+				if (response.error) {
+				logger.error('[DialecticStore] Failed to persist viewing stage', {
+					sessionId,
+					viewingStageId: stage.id,
+					error: response.error,
+				});
+				}
+			})
+			.catch((err) => {
+				logger.error('[DialecticStore] Network error persisting viewing stage', {
+				sessionId,
+				viewingStageId: stage.id,
+				error: err,
+				});
+			});
+		}
+    }
   },
 
 	setFocusedStageDocument: ({ sessionId, stageSlug, modelId, documentKey, iterationNumber }: SetFocusedStageDocumentPayload) => {
@@ -2864,10 +3344,10 @@ export const useDialecticStore = create<DialecticStore>()(
     });
   },
 
-  ensureRecipeForActiveStage: async (sessionId: string, stageSlug: string, iterationNumber: number): Promise<void> => {
+  ensureRecipeForViewingStage: async (sessionId: string, stageSlug: string, iterationNumber: number): Promise<void> => {
     const recipe = get().recipesByStageSlug[stageSlug];
     if (!recipe) {
-      throw new Error(`[ensureRecipeForActiveStage] Recipe not loaded for stage: ${stageSlug} — fetchStageRecipe must succeed before calling this function`);
+      throw new Error(`[ensureRecipeForViewingStage] Recipe not loaded for stage: ${stageSlug} — fetchStageRecipe must succeed before calling this function`);
     }
     const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
     set(state => {
@@ -2934,6 +3414,12 @@ export const useDialecticStore = create<DialecticStore>()(
       });
       logger.error('[DialecticStore] hydrateAllStageProgress failed', { runKey, errorDetails: err });
     }
+  },
+
+  setProgressHydrationRunPending: (runKey: string): void => {
+    set(state => {
+      state.progressHydrationStatus[runKey] = 'pending';
+    });
   },
 
   resetProgressHydrationStatus: (runKey: string): void => {

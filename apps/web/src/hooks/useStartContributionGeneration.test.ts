@@ -46,13 +46,14 @@ vi.mock('@paynless/store', async () => {
   defaultSelectSessionByIdRef.current = (state: DialecticStateValues, sessionId: string): DialecticSession | undefined =>
     actualPaynlessStore.selectSessionById(state, sessionId);
 
-  const useAiStore = (selector: (state: Pick<AiState, 'continueUntilComplete' | 'newChatContext'>) => unknown): unknown => {
-    const state: Pick<AiState, 'continueUntilComplete' | 'newChatContext'> = {
-      continueUntilComplete: true,
-      newChatContext: null,
-    };
-    return selector(state);
+  const aiStoreState: Pick<AiState, 'continueUntilComplete' | 'newChatContext'> = {
+    continueUntilComplete: true,
+    newChatContext: null,
   };
+  const useAiStore = (selector: (state: Pick<AiState, 'continueUntilComplete' | 'newChatContext'>) => unknown): unknown => {
+    return selector(aiStoreState);
+  };
+  useAiStore.getState = (): Pick<AiState, 'continueUntilComplete' | 'newChatContext'> => aiStoreState;
 
   const selectSessionByIdMock = vi.fn<
     [DialecticStateValues, string],
@@ -71,7 +72,7 @@ vi.mock('@paynless/store', async () => {
     initialDialecticStateValues: actualPaynlessStore.initialDialecticStateValues,
     selectSelectedModels: actualPaynlessStore.selectSelectedModels,
     selectSessionById: selectSessionByIdMock,
-    selectActiveStage: actualPaynlessStore.selectActiveStage,
+    selectViewingStage: actualPaynlessStore.selectViewingStage,
   };
 });
 
@@ -88,6 +89,19 @@ const mockThesisStage: DialecticStage = {
   slug: 'thesis',
   display_name: 'Thesis',
   description: 'Initial hypothesis',
+  default_system_prompt_id: null,
+  created_at: new Date().toISOString(),
+  expected_output_template_ids: [],
+  recipe_template_id: null,
+  active_recipe_instance_id: null,
+  minimum_balance: 100000,
+};
+
+const mockAntithesisStage: DialecticStage = {
+  id: 'stage-2',
+  slug: 'antithesis',
+  display_name: 'Antithesis',
+  description: 'Counter-argument',
   default_system_prompt_id: null,
   created_at: new Date().toISOString(),
   expected_output_template_ids: [],
@@ -114,6 +128,7 @@ const createMockSession = (
   updated_at: new Date().toISOString(),
   dialectic_contributions: [],
   dialectic_session_models: [],
+  viewing_stage_id: mockThesisStage.id,
 });
 
 const createMockProject = (
@@ -153,7 +168,12 @@ const createMockProject = (
 });
 
 const defaultSession: DialecticSession = createMockSession('sess-1', 'proj-1', 1);
+const defaultSession2: DialecticSession = createMockSession('sess-2', 'proj-1', 1);
 const defaultProject: DialecticProject = createMockProject('proj-1', [defaultSession]);
+const projectWithTwoSessions: DialecticProject = createMockProject('proj-1', [
+  defaultSession,
+  defaultSession2,
+]);
 
 function createSessionWithInvalidIterationCount(): SessionWithInvalidIterationCount {
   return {
@@ -170,6 +190,7 @@ function createSessionWithInvalidIterationCount(): SessionWithInvalidIterationCo
     updated_at: defaultSession.updated_at,
     dialectic_contributions: defaultSession.dialectic_contributions,
     dialectic_session_models: defaultSession.dialectic_session_models,
+    viewing_stage_id: defaultSession.viewing_stage_id,
   };
 }
 const defaultProcessTemplate: DialecticProcessTemplate = {
@@ -180,6 +201,25 @@ const defaultProcessTemplate: DialecticProcessTemplate = {
   starting_stage_id: mockThesisStage.id,
   stages: [mockThesisStage],
   transitions: [],
+};
+
+const processTemplateWithTwoStages: DialecticProcessTemplate = {
+  id: 'tpl-1',
+  name: 'Template',
+  created_at: new Date().toISOString(),
+  description: null,
+  starting_stage_id: mockThesisStage.id,
+  stages: [mockThesisStage, mockAntithesisStage],
+  transitions: [
+    {
+      id: 't1',
+      process_template_id: 'tpl-1',
+      source_stage_id: mockThesisStage.id,
+      target_stage_id: mockAntithesisStage.id,
+      created_at: new Date().toISOString(),
+      condition_description: null,
+    },
+  ],
 };
 
 const defaultStageDetail: StageProgressDetail = {
@@ -243,7 +283,7 @@ describe('useStartContributionGeneration', () => {
       currentProjectDetail: defaultProject,
       currentProcessTemplate: defaultProcessTemplate,
       activeContextSessionId: 'sess-1',
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       selectedModels: defaultSelectedModels,
       generatingSessions: {},
     });
@@ -308,8 +348,8 @@ describe('useStartContributionGeneration', () => {
     expect(toast.error).toHaveBeenCalled();
   });
 
-  it('returns { success: false, error } and shows error toast when activeStage is null', async () => {
-    setDialecticState({ activeStageSlug: null, currentProcessTemplate: null });
+  it('returns { success: false, error } and shows error toast when viewingStage is null', async () => {
+    setDialecticState({ viewingStageSlug: null, currentProcessTemplate: null });
     const { result } = renderHook(() => useStartContributionGeneration());
 
     let outcome: StartContributionGenerationResult = { success: true };
@@ -477,7 +517,7 @@ describe('useStartContributionGeneration', () => {
     expect(result.current.startContributionGeneration).toBeDefined();
   });
 
-  it('isDisabled is true when any guard fails (isSessionGenerating, !areAnyModelsSelected, !activeStage, !activeSession, !isStageReady, !isWalletReady, !balanceMeetsThreshold)', () => {
+  it('isDisabled is true when any guard fails (isSessionGenerating, !areAnyModelsSelected, !viewingStage, !activeSession, !isStageReady, !isWalletReady, !balanceMeetsThreshold)', () => {
     setDialecticState({ selectedModels: [] });
     const { result } = renderHook(() => useStartContributionGeneration());
     expect(result.current.isDisabled).toBe(true);
@@ -539,7 +579,7 @@ describe('useStartContributionGeneration', () => {
 
   it('derived state values correctly reflect store state (each derived field tested with known inputs)', () => {
     const { result } = renderHook(() => useStartContributionGeneration());
-    expect(result.current.activeStage).toEqual(mockThesisStage);
+    expect(result.current.viewingStage).toEqual(mockThesisStage);
     expect(result.current.activeSession).not.toBeNull();
     expect(result.current.activeSession?.id).toBe('sess-1');
     expect(result.current.stageThreshold).toBe(mockThesisStage.minimum_balance);
@@ -554,7 +594,7 @@ describe('useStartContributionGeneration', () => {
       currentProjectDetail: defaultProject,
       currentProcessTemplate: defaultProcessTemplate,
       activeContextSessionId: 'sess-1',
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       selectedModels: defaultSelectedModels,
       generatingSessions: { 'sess-1': ['run-1'] },
     });
@@ -567,7 +607,7 @@ describe('useStartContributionGeneration', () => {
     expect(result.current.isPauseMode).toBe(false);
   });
 
-  it('hasPausedUserJobs is true when activeStageProgress.stageStatus is paused_user', () => {
+  it('hasPausedUserJobs is true when viewingStageProgress.stageStatus is paused_user', () => {
     const pausedUserStageDetail: StageProgressDetail = {
       ...defaultStageDetail,
       stageStatus: 'paused_user',
@@ -581,7 +621,7 @@ describe('useStartContributionGeneration', () => {
     expect(result.current.hasPausedUserJobs).toBe(true);
   });
 
-  it('hasPausedUserJobs is false when activeStageProgress.stageStatus is not paused_user', () => {
+  it('hasPausedUserJobs is false when viewingStageProgress.stageStatus is not paused_user', () => {
     const { result } = renderHook(() => useStartContributionGeneration());
     expect(result.current.hasPausedUserJobs).toBe(false);
   });
@@ -591,7 +631,7 @@ describe('useStartContributionGeneration', () => {
       currentProjectDetail: defaultProject,
       currentProcessTemplate: defaultProcessTemplate,
       activeContextSessionId: 'sess-1',
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       selectedModels: defaultSelectedModels,
       generatingSessions: { 'sess-1': ['run-1'] },
     });
@@ -639,6 +679,183 @@ describe('useStartContributionGeneration', () => {
 
     expect(toast.success).toHaveBeenCalledWith('Resuming generation...');
     expect(onOpenDagProgress).toHaveBeenCalledTimes(1);
+    expect(mockResumePausedNsfJobs).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      stageSlug: 'thesis',
+      iterationNumber: 1,
+    });
+  });
+
+  it('startContributionGeneration reads viewingStage from current store state, not stale closure — after store mutation between renders, callback uses updated stage slug', async () => {
+    initializeMockDialecticState({
+      currentProjectDetail: defaultProject,
+      currentProcessTemplate: processTemplateWithTwoStages,
+      activeContextSessionId: 'sess-1',
+      viewingStageSlug: 'thesis',
+      selectedModels: defaultSelectedModels,
+      generatingSessions: {},
+    });
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(defaultUnifiedProgress);
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const { result } = renderHook(() => useStartContributionGeneration());
+
+    await act(async () => {
+      setDialecticState({
+        currentProjectDetail: defaultProject,
+        currentProcessTemplate: processTemplateWithTwoStages,
+        activeContextSessionId: 'sess-1',
+        viewingStageSlug: 'antithesis',
+        selectedModels: defaultSelectedModels,
+        generatingSessions: {},
+      });
+    });
+    const generateContributions = getDialecticStoreState().generateContributions;
+    await act(async () => {
+      await result.current.startContributionGeneration();
+    });
+
+    expect(generateContributions).toHaveBeenCalledTimes(1);
+    const payload: GenerateContributionsPayload = vi.mocked(generateContributions).mock.calls[0][0];
+    expect(payload.stageSlug).toBe('antithesis');
+  });
+
+  it('startContributionGeneration reads activeSession from current store state — after store mutation, callback uses updated session', async () => {
+    initializeMockDialecticState({
+      currentProjectDetail: projectWithTwoSessions,
+      currentProcessTemplate: defaultProcessTemplate,
+      activeContextSessionId: 'sess-1',
+      viewingStageSlug: 'thesis',
+      selectedModels: defaultSelectedModels,
+      generatingSessions: {},
+    });
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(defaultUnifiedProgress);
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const { result } = renderHook(() => useStartContributionGeneration());
+
+    await act(async () => {
+      setDialecticState({
+        currentProjectDetail: projectWithTwoSessions,
+        currentProcessTemplate: defaultProcessTemplate,
+        activeContextSessionId: 'sess-2',
+        viewingStageSlug: 'thesis',
+        selectedModels: defaultSelectedModels,
+        generatingSessions: {},
+      });
+    });
+    const generateContributions = getDialecticStoreState().generateContributions;
+    await act(async () => {
+      await result.current.startContributionGeneration();
+    });
+
+    expect(generateContributions).toHaveBeenCalledTimes(1);
+    const payload: GenerateContributionsPayload = vi.mocked(generateContributions).mock.calls[0][0];
+    expect(payload.sessionId).toBe('sess-2');
+  });
+
+  it('pauseGeneration reads viewingStage and activeSession from current store state', async () => {
+    initializeMockDialecticState({
+      currentProjectDetail: projectWithTwoSessions,
+      currentProcessTemplate: processTemplateWithTwoStages,
+      activeContextSessionId: 'sess-1',
+      viewingStageSlug: 'thesis',
+      selectedModels: defaultSelectedModels,
+      generatingSessions: {},
+    });
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(defaultUnifiedProgress);
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const { result } = renderHook(() => useStartContributionGeneration());
+
+    await act(async () => {
+      setDialecticState({
+        currentProjectDetail: projectWithTwoSessions,
+        currentProcessTemplate: processTemplateWithTwoStages,
+        activeContextSessionId: 'sess-2',
+        viewingStageSlug: 'antithesis',
+        selectedModels: defaultSelectedModels,
+        generatingSessions: {},
+      });
+    });
+    await act(async () => {
+      await result.current.pauseGeneration();
+    });
+
+    expect(mockPauseActiveJobs).toHaveBeenCalledWith({
+      sessionId: 'sess-2',
+      stageSlug: 'antithesis',
+      iterationNumber: 1,
+    });
+  });
+
+  it('returned viewingStage and activeSession reflect current store state for rendering', () => {
+    initializeMockDialecticState({
+      currentProjectDetail: projectWithTwoSessions,
+      currentProcessTemplate: processTemplateWithTwoStages,
+      activeContextSessionId: 'sess-1',
+      viewingStageSlug: 'thesis',
+      selectedModels: defaultSelectedModels,
+      generatingSessions: {},
+    });
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(defaultUnifiedProgress);
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const { result } = renderHook(() => useStartContributionGeneration());
+
+    expect(result.current.viewingStage?.slug).toBe('thesis');
+    expect(result.current.activeSession?.id).toBe('sess-1');
+
+    act(() => {
+      setDialecticState({
+        currentProjectDetail: projectWithTwoSessions,
+        currentProcessTemplate: processTemplateWithTwoStages,
+        activeContextSessionId: 'sess-1',
+        viewingStageSlug: 'antithesis',
+        selectedModels: defaultSelectedModels,
+        generatingSessions: {},
+      });
+    });
+    expect(result.current.viewingStage?.slug).toBe('antithesis');
+
+    act(() => {
+      setDialecticState({
+        currentProjectDetail: projectWithTwoSessions,
+        currentProcessTemplate: processTemplateWithTwoStages,
+        activeContextSessionId: 'sess-2',
+        viewingStageSlug: 'antithesis',
+        selectedModels: defaultSelectedModels,
+        generatingSessions: {},
+      });
+    });
+    expect(result.current.activeSession?.id).toBe('sess-2');
+  });
+
+  it('resume mode path reads current store state at call time', async () => {
+    initializeMockDialecticState({
+      currentProjectDetail: defaultProject,
+      currentProcessTemplate: defaultProcessTemplate,
+      activeContextSessionId: 'sess-1',
+      viewingStageSlug: 'thesis',
+      selectedModels: defaultSelectedModels,
+      generatingSessions: {},
+    });
+    vi.mocked(selectUnifiedProjectProgress).mockReturnValue(defaultUnifiedProgress);
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isResumeMode).toBe(false);
+
+    await act(async () => {
+      const pausedNsfStageDetail: StageProgressDetail = {
+        ...defaultStageDetail,
+        stageStatus: 'paused_nsf',
+      };
+      const progressPausedNsf: UnifiedProjectProgress = {
+        ...defaultUnifiedProgress,
+        stageDetails: [pausedNsfStageDetail],
+      };
+      vi.mocked(selectUnifiedProjectProgress).mockReturnValue(progressPausedNsf);
+    });
+    await act(async () => {
+      await result.current.startContributionGeneration();
+    });
+
     expect(mockResumePausedNsfJobs).toHaveBeenCalledWith({
       sessionId: 'sess-1',
       stageSlug: 'thesis',

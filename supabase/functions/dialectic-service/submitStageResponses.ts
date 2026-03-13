@@ -83,7 +83,7 @@ export async function submitStageResponses(
       `
       *,
       project:dialectic_projects!inner(*, process_template:dialectic_process_templates!inner(*), dialectic_domains!inner(id, name, description)),
-      stage:dialectic_stages!inner(*)
+      stage:dialectic_stages!current_stage_id!inner(*)
     `,
     )
     .eq('id', payload.sessionId)

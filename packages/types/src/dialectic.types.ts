@@ -1,6 +1,7 @@
 import { SystemPrompt } from './ai.types';
 import type { ApiError, ApiResponse } from './api.types';
 import type { Database } from '@paynless/db-types';
+import type { Draft } from 'immer';
 
 // Define UpdateProjectDomainPayload before its use in DialecticApiClient
 export interface UpdateProjectDomainPayload {
@@ -135,6 +136,7 @@ export interface DialecticSession {
   current_stage_id: string | null;
   created_at: string;
   updated_at: string;
+  viewing_stage_id: string | null;
 
   dialectic_session_models?: DialecticSessionModel[];
   dialectic_contributions?: DialecticContribution[];
@@ -398,7 +400,8 @@ export interface DialecticStateValues {
   activeContextProjectId: string | null;
   activeContextSessionId: string | null;
   activeContextStage: DialecticStage | null;
-  activeStageSlug: string | null;
+  activeViewingStage: DialecticStage | null;
+  viewingStageSlug: string | null;
 
   // New state for single session details
   activeSessionDetail: DialecticSession | null;
@@ -737,7 +740,7 @@ export interface DialecticActions {
   setActiveContextSessionId: (id: string | null) => void;
   setActiveContextStage: (stage: DialecticStage | null) => void;
   setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => void;
-  setActiveStage: (slug: string | null) => void;
+  setViewingStage: (slug: string | null) => void;
   setFocusedStageDocument: (payload: SetFocusedStageDocumentPayload) => void;
   clearFocusedStageDocument: (payload: ClearFocusedStageDocumentPayload) => void;
 
@@ -781,7 +784,8 @@ export interface DialecticActions {
 
   // Recipe hydration and per-stage-run progress
   fetchStageRecipe: (stageSlug: string) => Promise<void>;
-  ensureRecipeForActiveStage: (sessionId: string, stageSlug: string, iterationNumber: number) => Promise<void>;
+  ensureRecipeForViewingStage: (sessionId: string, stageSlug: string, iterationNumber: number) => Promise<void>;
+  setProgressHydrationRunPending: (runKey: string) => void;
   resetProgressHydrationStatus: (runKey: string) => void;
 }
 
@@ -1094,6 +1098,8 @@ export interface DialecticApiClient {
   resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
   pauseActiveJobs(payload: PauseActiveJobsPayload): Promise<ApiResponse<PauseActiveJobsResponse>>;
   regenerateDocument(payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>>;
+
+  updateViewingStage: UpdateViewingStageFn;
 }
 
 
@@ -1140,7 +1146,7 @@ export interface UseStartContributionGenerationReturn {
   didGenerationFail: boolean;
   contributionsForStageAndIterationExist: boolean;
   showBalanceCallout: boolean;
-  activeStage: DialecticStage | null;
+  viewingStage: DialecticStage | null;
   activeSession: DialecticSession | null;
   stageThreshold: number | undefined;
 }
@@ -1203,6 +1209,58 @@ export interface JobProgressDto {
   completedAt: string | null;
   modelName: string | null;
 }
+
+/** Params for upsertJobFromLifecycleEvent (event fields + target status). Any field present is written; any absent is dropped (null). */
+export interface UpsertJobFromLifecycleEventParams {
+  jobId: string;
+  documentKey?: string | null;
+  modelId?: string | null;
+  stepKey?: string | null;
+  jobType?: RecipeJobType | null;
+  status: string;
+  parentJobId?: string | null;
+  createdAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  modelName?: string | null;
+}
+
+/** Payload for upsertJobFromLifecycleEvent (draft progress snapshot to mutate). */
+export type UpsertJobFromLifecycleEventPayload = Draft<StageRunProgressSnapshot>;
+
+export type UpsertJobFromLifecycleEventReturn = void;
+
+/** No injected dependencies (pure function). */
+export interface UpsertJobFromLifecycleEventDeps {}
+
+export type UpsertJobFromLifecycleEventSignature = (
+  deps: UpsertJobFromLifecycleEventDeps,
+  payload: UpsertJobFromLifecycleEventPayload,
+  params: UpsertJobFromLifecycleEventParams,
+) => UpsertJobFromLifecycleEventReturn;
+
+export interface UpdateViewingStageDeps {}
+
+export interface UpdateViewingStageParams {
+  userId: string;
+}
+
+export interface UpdateViewingStagePayload {
+  sessionId: string;
+  viewingStageId: string;
+}
+
+export interface UpdateViewingStageReturn {
+  data?: Database["public"]["Tables"]["dialectic_sessions"]["Row"];
+  error: ApiError | null;
+  status: number;
+}
+
+export type UpdateViewingStageFn = (
+  deps: UpdateViewingStageDeps,
+  params: UpdateViewingStageParams,
+  payload: UpdateViewingStagePayload,
+) => Promise<UpdateViewingStageReturn>;
 
 export interface StageProgressEntry {
   stageSlug: string;
@@ -1395,9 +1453,9 @@ export type DialecticServiceActionPayload = {
   action: 'regenerateDocument';
   payload: RegenerateDocumentPayload;
 }
-
-export interface DialecticServiceResponsePayload {
-  // ... existing code ...
+| {
+  action: 'updateViewingStage';
+  payload: UpdateViewingStagePayload;
 }
 
 export type UpdateProjectInitialPromptPayload = {
@@ -1518,4 +1576,32 @@ export interface AssembledPrompt {
 
 export interface StartSessionSuccessResponse extends DialecticSession {
   seedPrompt: AssembledPrompt;
+}
+
+export interface SelectCanAdvanceStageDeps {}
+
+export interface SelectCanAdvanceStageParams {}
+
+export interface SelectCanAdvanceStagePayload {
+  activeSessionDetail: DialecticSession | null;
+  currentProcessTemplate: DialecticProcessTemplate | null;
+  stageRunProgress: Record<string, StageRunProgressSnapshot>;
+  recipesByStageSlug: Record<string, DialecticStageRecipe>;
+}
+
+export interface SelectCanAdvanceStageReturn {
+  canAdvance: boolean;
+  conditions: {
+    logicalMatchesViewing: boolean;
+    currentStageComplete: boolean;
+    nextStageInputsReady: boolean;
+    currentStageNoActiveJobs: boolean;
+    nextStageNoProgress: boolean; 
+    nextStageExists: boolean;
+  };
+  reason: string | null;
+}
+
+export interface SelectCanAdvanceStageFn {
+  (deps: SelectCanAdvanceStageDeps, params: SelectCanAdvanceStageParams, payload: SelectCanAdvanceStagePayload): SelectCanAdvanceStageReturn;
 }
