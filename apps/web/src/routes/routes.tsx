@@ -29,6 +29,7 @@ const DialecticSessionDetailsPage = lazy(() => import('../pages/DialecticSession
 const DocsPage = lazy(() => import('../pages/DocsPage').then(module => ({ default: module.DocsPage })));
 const DocPage = lazy(() => import('../pages/DocPage').then(module => ({ default: module.DocPage })));
 const SegmentLandingPageRoute = lazy(() => import('../pages/SegmentLandingPageRoute').then(module => ({ default: module.SegmentLandingPageRoute })));
+const PricingPage = lazy(() => import('../pages/PricingPage').then(module => ({ default: module.PricingPage })));
 //import { ForgotPassword } from '../pages/ForgotPassword';
 //import { ResetPassword } from '../pages/ResetPassword';
 //import { VerifyEmail } from '../pages/VerifyEmail';
@@ -223,6 +224,10 @@ const routes: RouteObject[] = [
       },
       // --- End Temporary Placement --- 
 
+      {
+        path: 'pricing',
+        element: <PricingPage />,
+      },
       {
         path: ':segment',
         element: <SegmentLandingPageRoute />,

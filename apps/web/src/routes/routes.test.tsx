@@ -33,6 +33,10 @@ vi.mock('../pages/Dashboard', () => ({
   DashboardPage: () => <div data-testid="dashboard-page">Dashboard Page</div>,
 }));
 
+vi.mock('../pages/PricingPage', () => ({
+  PricingPage: () => <div data-testid="pricing-page">Pricing Page</div>,
+}));
+
 vi.mock('../components/routes/RootRoute', async () => {
   const { Outlet: RouterOutlet } = await import('react-router-dom');
   return {
@@ -130,6 +134,23 @@ describe('routes.tsx', () => {
       await waitFor(() => {
         expect(screen.getByTestId('register-page')).toBeInTheDocument();
       });
+    });
+
+    it('renders PricingPage at /pricing', async () => {
+      await renderRoute('/pricing');
+      await waitFor(() => {
+        expect(screen.getByTestId('pricing-page')).toBeInTheDocument();
+      });
+    });
+
+    it('/pricing route is accessible without authentication', async () => {
+      await renderRoute('/pricing');
+      await waitFor(() => {
+        expect(screen.getByTestId('pricing-page')).toBeInTheDocument();
+      });
+      const pricingElement = screen.getByTestId('pricing-page');
+      const protectedRouteWrapper = pricingElement.closest('[data-testid="protected-route"]');
+      expect(protectedRouteWrapper).toBeNull();
     });
   });
 
