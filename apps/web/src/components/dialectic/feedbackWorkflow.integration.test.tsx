@@ -13,7 +13,6 @@ import type {
 	DialecticSession,
 	DialecticProject,
 	DialecticContribution,
-	StageRenderedDocumentDescriptor,
 	StageDocumentCompositeKey,
 	EditedDocumentResource,
 	SaveContributionEditSuccessResponse,
@@ -26,7 +25,10 @@ import type {
 	RecipeGranularity,
 	OutputRequirement,
 	StageDocumentContentState,
+	JobProgressDto,
+	StageRunProgressSnapshot,
 } from '@paynless/types';
+import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import { GeneratedContributionCard } from './GeneratedContributionCard';
 import { SubmitResponsesButton } from './SubmitResponsesButton';
 import { toast } from 'sonner';
@@ -223,6 +225,7 @@ const buildStage = (
 	recipe_template_id: null,
 	active_recipe_instance_id: null,
 	created_at: isoTimestamp,
+	minimum_balance: 100000,
 });
 
 const buildTransitions = (
@@ -304,6 +307,7 @@ const buildSession = (
 	dialectic_session_models: [],
 	dialectic_contributions: contributions,
 	feedback: [],
+	viewing_stage_id: 'stage-1',
 });
 
 const buildProject = (
@@ -334,20 +338,6 @@ const buildProject = (
 	submitStageResponsesError: null,
 	isSavingContributionEdit: false,
 	saveContributionEditError: null,
-});
-
-const buildRenderedDescriptor = (
-	modelId: string,
-	resourceId: string,
-): StageRenderedDocumentDescriptor => ({
-	descriptorType: 'rendered',
-	modelId,
-	status: 'completed',
-	job_id: `job-${modelId}`,
-	latestRenderedResourceId: resourceId,
-	versionHash: `hash-${modelId}`,
-	lastRenderedResourceId: resourceId,
-	lastRenderAtIso: isoTimestamp,
 });
 
 const buildResourceContentResponse = (
@@ -429,6 +419,7 @@ const recipesByStageSlug = {
 				granularity_strategy: granularity,
 			},
 		],
+		edges: [],
 	},
 };
 
@@ -437,21 +428,19 @@ function resetStoreAndSeedState(): void {
 		...initialDialecticStateValues,
 		activeContextProjectId: projectId,
 		activeContextSessionId: sessionId,
-		activeStageSlug: stageSlug,
+		viewingStageSlug: stageSlug,
 		activeContextStage: stage1,
 		activeSessionDetail: session,
 		currentProjectDetail: project,
 		currentProcessTemplate: processTemplate,
-		recipesByStageSlug,
+		recipesByStageSlug: recipesByStageSlug,
 		stageRunProgress: {
 			[progressKey]: {
 				stepStatuses: {},
-				documents: {
-					[`${docKey1}:${modelIdA}`]: buildRenderedDescriptor(modelIdA, 'res-a1'),
-					[`${docKey2}:${modelIdA}`]: buildRenderedDescriptor(modelIdA, 'res-a2'),
-					[`${docKey1}:${modelIdB}`]: buildRenderedDescriptor(modelIdB, 'res-b1'),
-				},
+				documents: {},
 				jobProgress: {},
+				progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+				jobs: [],
 			},
 		},
 	});
@@ -464,6 +453,83 @@ function focusDocument(modelId: string, documentKey: string): void {
 		focusedStageDocument: {
 			...state.focusedStageDocument,
 			[focusKey]: { modelId, documentKey },
+		},
+	}));
+}
+
+/** Sets stage run progress so allDocumentsAvailable is true (completedDocuments === totalDocuments). */
+function setThesisStageRunProgressAllComplete(): void {
+	const sep = STAGE_RUN_DOCUMENT_KEY_SEPARATOR;
+	const docKeyA1 = `${docKey1}${sep}${modelIdA}`;
+	const docKeyA2 = `${docKey2}${sep}${modelIdA}`;
+	const docKeyB1 = `${docKey1}${sep}${modelIdB}`;
+	const renderedDescriptor = {
+		descriptorType: 'rendered' as const,
+		status: 'completed' as const,
+		job_id: 'job-1',
+		latestRenderedResourceId: 'res-1',
+		modelId: modelIdA,
+		versionHash: 'v1',
+		lastRenderedResourceId: 'res-1',
+		lastRenderAtIso: isoTimestamp,
+	};
+	const jobs: JobProgressDto[] = [
+		{
+			id: 'job-a1',
+			status: 'completed',
+			jobType: 'EXECUTE',
+			stepKey: 'draft_document',
+			modelId: modelIdA,
+			documentKey: docKey1,
+			parentJobId: null,
+			createdAt: isoTimestamp,
+			startedAt: null,
+			completedAt: null,
+			modelName: null,
+		},
+		{
+			id: 'job-b1',
+			status: 'completed',
+			jobType: 'EXECUTE',
+			stepKey: 'draft_document',
+			modelId: modelIdB,
+			documentKey: docKey1,
+			parentJobId: null,
+			createdAt: isoTimestamp,
+			startedAt: null,
+			completedAt: null,
+			modelName: null,
+		},
+		{
+			id: 'job-a2',
+			status: 'completed',
+			jobType: 'EXECUTE',
+			stepKey: 'draft_document',
+			modelId: modelIdA,
+			documentKey: docKey2,
+			parentJobId: null,
+			createdAt: isoTimestamp,
+			startedAt: null,
+			completedAt: null,
+			modelName: null,
+		},
+	];
+	const progress: StageRunProgressSnapshot = {
+		stepStatuses: { draft_document: 'completed' },
+		documents: {
+			[docKeyA1]: { ...renderedDescriptor, modelId: modelIdA },
+			[docKeyB1]: { ...renderedDescriptor, modelId: modelIdB, job_id: 'job-b1' },
+			[docKeyA2]: { ...renderedDescriptor, job_id: 'job-a2' },
+		},
+		jobProgress: {},
+		progress: { completedSteps: 1, totalSteps: 1, failedSteps: 0 },
+		jobs,
+	};
+	useDialecticStore.setState((state) => ({
+		...state,
+		stageRunProgress: {
+			...state.stageRunProgress,
+			[progressKey]: progress,
 		},
 	}));
 }
@@ -1070,6 +1136,10 @@ describe('Feedback Workflow Integration — Full User Story', () => {
 				status: 200,
 			});
 
+			// Ensure Submit button is enabled (allDocumentsAvailable): stage run progress
+			// must have completedDocuments === totalDocuments for the current stage.
+			setThesisStageRunProgressAllComplete();
+
 			// ACT: Render SubmitResponsesButton and click Submit
 			render(<SubmitResponsesButton />);
 
@@ -1124,10 +1194,10 @@ describe('Feedback Workflow Integration — Full User Story', () => {
 				expect(toast.success).toHaveBeenCalledWith('Stage advanced!');
 			});
 
-			// ASSERT: Store reflects stage advancement (setActiveStage called with 'antithesis')
+			// ASSERT: Store reflects stage advancement (setViewingStage called with 'antithesis')
 			await waitFor(() => {
 				const finalState = useDialecticStore.getState();
-				expect(finalState.activeStageSlug).toBe(nextStageSlug);
+				expect(finalState.viewingStageSlug).toBe(nextStageSlug);
 			});
 		});
 	});

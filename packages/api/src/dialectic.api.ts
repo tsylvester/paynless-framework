@@ -5,6 +5,7 @@ import type {
     DialecticStageRecipe,
     StartSessionPayload,
     DialecticSession,
+    DialecticSessionRow,
     AIModelCatalogEntry,
     DomainDescriptor,
     DomainOverlayDescriptor,
@@ -42,8 +43,12 @@ import type {
     PauseActiveJobsResponse,
     RegenerateDocumentPayload,
     RegenerateDocumentResponse,
+    UpdateViewingStageDeps,
+    UpdateViewingStageParams,
+    UpdateViewingStagePayload,
+    UpdateViewingStageReturn,
 } from '@paynless/types';
-import { logger } from '@paynless/utils';
+import { isApiError, logger } from '@paynless/utils';
 
 
 /**
@@ -759,6 +764,47 @@ export class DialecticApiClient {
                 error: { code: 'NETWORK_ERROR', message },
                 status: 0,
             };
+        }
+    }
+
+    /**
+     * Updates the viewing stage for a given session.
+     * Requires authentication.
+     */
+    async updateViewingStage(
+        _deps: UpdateViewingStageDeps,
+        _params: UpdateViewingStageParams,
+        payload: UpdateViewingStagePayload
+    ): Promise<UpdateViewingStageReturn> {
+        logger.info('Updating viewing stage for session', { sessionId: payload.sessionId, viewingStageId: payload.viewingStageId });
+
+        try {
+            const response = await this.apiClient.post<DialecticSessionRow, DialecticServiceActionPayload>(
+                'dialectic-service',
+                {
+                    action: 'updateViewingStage',
+                    payload,
+                }
+            );
+
+            const result: UpdateViewingStageReturn = {
+                data: response.data,
+                error: response.error ?? null,
+                status: response.status,
+            };
+
+            if (result.error) {
+                logger.error('Error updating viewing stage:', { error: result.error, sessionId: payload.sessionId });
+            } else {
+                logger.info('Successfully updated viewing stage', { sessionId: payload.sessionId, updatedSession: result.data });
+            }
+            return result;
+        } catch (error: unknown) {
+            if (isApiError(error)) {
+                logger.error('Error updating viewing stage:', { error, sessionId: payload.sessionId });
+                return { data: undefined, error, status: 0 };
+            }
+            throw error;
         }
     }
 

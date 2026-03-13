@@ -1054,6 +1054,7 @@ export type Database = {
           status: string
           updated_at: string
           user_input_reference_url: string | null
+          viewing_stage_id: string | null
         }
         Insert: {
           associated_chat_id?: string | null
@@ -1068,6 +1069,7 @@ export type Database = {
           status?: string
           updated_at?: string
           user_input_reference_url?: string | null
+          viewing_stage_id?: string | null
         }
         Update: {
           associated_chat_id?: string | null
@@ -1082,11 +1084,19 @@ export type Database = {
           status?: string
           updated_at?: string
           user_input_reference_url?: string | null
+          viewing_stage_id?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "dialectic_sessions_current_stage_id_fkey"
             columns: ["current_stage_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_sessions_viewing_stage_id_fkey"
+            columns: ["viewing_stage_id"]
             isOneToOne: false
             referencedRelation: "dialectic_stages"
             referencedColumns: ["id"]
@@ -2261,6 +2271,14 @@ export type Database = {
           similarity: number
           rank: number
         }[]
+      }
+      pause_active_jobs: {
+        Args: {
+          p_session_id: string
+          p_stage_slug: string
+          p_iteration_number: number
+        }
+        Returns: number
       }
       perform_chat_rewind: {
         Args:

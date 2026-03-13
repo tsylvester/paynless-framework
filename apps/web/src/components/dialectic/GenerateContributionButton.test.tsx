@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom'; // Still useful for DOM assertions
 import { MemoryRouter } from 'react-router-dom';
@@ -42,11 +42,11 @@ vi.mock('@paynless/store', async () => {
   // Use real selectSelectedModels so component reads state.selectedModels.
   const selectSelectedModels = actualPaynlessStore.selectSelectedModels;
   
-  const selectActiveStage = (state: DialecticStateValues): DialecticStage | null => {
-    const { currentProjectDetail, activeStageSlug } = state;
-    if (!currentProjectDetail || !activeStageSlug || !currentProjectDetail.dialectic_process_templates) return null;
+  const selectViewingStage = (state: DialecticStateValues): DialecticStage | null => {
+    const { currentProjectDetail, viewingStageSlug } = state;
+    if (!currentProjectDetail || !viewingStageSlug || !currentProjectDetail.dialectic_process_templates) return null;
     const processTemplate: DialecticProcessTemplate = currentProjectDetail.dialectic_process_templates;
-    return processTemplate.stages?.find((s: DialecticStage) => s.slug === activeStageSlug) || null;
+    return processTemplate.stages?.find((s: DialecticStage) => s.slug === viewingStageSlug) || null;
   };
 
   const useAiStore = (selector: (state: { continueUntilComplete: boolean; newChatContext: string | null }) => unknown) => {
@@ -69,7 +69,7 @@ vi.mock('@paynless/store', async () => {
     initialWalletStateValues: actualPaynlessStore.initialWalletStateValues,
     selectSessionById: actualPaynlessStore.selectSessionById, // This selector is simple enough to work with our mock state
     selectSelectedModels,
-    selectActiveStage, // Use our test-specific implementation
+    selectViewingStage, // Use our test-specific implementation
     // Add the new selector to our mocks
     selectIsStageReadyForSessionIteration: vi.fn(),
   };
@@ -175,6 +175,7 @@ const createMockSession = (
   updated_at: new Date().toISOString(),
   dialectic_contributions: contributions,
   dialectic_session_models: [],
+  viewing_stage_id: 'stage-1',
 });
 
 // SelectedModels fixtures for store state (component uses selectSelectedModels)
@@ -200,7 +201,7 @@ function getDefaultHookReturn(
     didGenerationFail: false,
     contributionsForStageAndIterationExist: false,
     showBalanceCallout: false,
-    activeStage: mockThesisStage,
+    viewingStage: mockThesisStage,
     activeSession: defaultSession,
     stageThreshold: mockThesisStage.minimum_balance,
     ...overrides,
@@ -226,7 +227,7 @@ describe('GenerateContributionButton', () => {
       selectedModels: oneSelectedModel,
       currentProjectDetail: defaultProject,
       activeContextSessionId: 'test-session-id',
-      activeStageSlug: 'thesis',
+      viewingStageSlug: 'thesis',
       contributionGenerationStatus: 'idle',
     });
     mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
@@ -614,21 +615,25 @@ describe('GenerateContributionButton', () => {
     expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeInTheDocument();
   });
 
-  it('after click, button is disabled for 500ms debounce period', async () => {
+  it('after click, button is disabled for 500ms debounce period then enters pause mode', async () => {
     vi.useFakeTimers();
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderWithRouter(<GenerateContributionButton />);
     const button = screen.getByRole('button', { name: /Generate Proposal/i });
-    await user.click(button);
+    // Use fireEvent to avoid userEvent's internal timer delays conflicting with fake timers
+    fireEvent.click(button);
     expect(button).toBeDisabled();
+    // After click, generation is in progress — hook now returns isPauseMode
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({ isPauseMode: true, isSessionGenerating: true, isDisabled: false })
+    );
     await act(async () => {
       vi.advanceTimersByTime(500);
     });
-    await waitFor(() => {
-      expect(screen.getByRole('button')).not.toBeDisabled();
-    });
+    // Debounce cleared, button is now in pause mode and enabled
+    expect(screen.getByRole('button')).not.toBeDisabled();
+    expect(screen.getByRole('button')).toHaveTextContent(/Pause Proposal/i);
     vi.useRealTimers();
   });
 

@@ -14,6 +14,8 @@ import {
   DialecticProject, 
   AIModelCatalogEntry,
   DialecticContribution,
+  DialecticProcessTemplate,
+  DialecticStage,
   SubmitStageResponsesPayload,
   SubmitStageResponsesResponse,
   SaveContributionEditPayload,
@@ -56,8 +58,8 @@ describe('useDialecticStore', () => {
     });
 
     const mockModelCatalog: AIModelCatalogEntry[] = [
-        { id: 'model-1', model_name: 'Test Model 1', provider_name: 'Provider A', api_identifier: 'm1', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null },
-        { id: 'model-2', model_name: 'Test Model 2', provider_name: 'Provider B', api_identifier: 'm2', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null },
+        { id: 'model-1', model_name: 'Test Model 1', provider_name: 'Provider A', api_identifier: 'm1', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null, is_default_generation: false },
+        { id: 'model-2', model_name: 'Test Model 2', provider_name: 'Provider B', api_identifier: 'm2', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null, is_default_generation: false },
     ];
 
     describe('fetchContributionContent action', () => {
@@ -234,6 +236,7 @@ describe('useDialecticStore', () => {
                 current_stage_id: null,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             }],
             contributionGenerationStatus: 'idle',
             generateContributionsError: null,
@@ -412,6 +415,7 @@ describe('useDialecticStore', () => {
                 selected_models: [],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             }],
             dialectic_domains: { name: 'Test Domain' },
             dialectic_process_templates: null,
@@ -441,14 +445,49 @@ describe('useDialecticStore', () => {
                 status: 'pending_antithesis',
                 associated_chat_id: null,
                 current_stage_id: 'antithesis',
+                viewing_stage_id: null,
              },
             message: 'Successfully submitted and prepared next seed.',
+        };
+
+        const thesisStage: DialecticStage = {
+            id: mockStageSlug,
+            slug: mockStageSlug,
+            display_name: 'Thesis',
+            description: '',
+            default_system_prompt_id: null,
+            expected_output_template_ids: [],
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+            created_at: new Date().toISOString(),
+            minimum_balance: 0,
+        };
+        const antithesisStage: DialecticStage = {
+            id: 'antithesis',
+            slug: 'antithesis',
+            display_name: 'Antithesis',
+            description: '',
+            default_system_prompt_id: null,
+            expected_output_template_ids: [],
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+            created_at: new Date().toISOString(),
+            minimum_balance: 0,
+        };
+        const mockSubmitTemplate: DialecticProcessTemplate = {
+            id: 'pt-1',
+            name: 'Test',
+            starting_stage_id: mockStageSlug,
+            created_at: new Date().toISOString(),
+            stages: [thesisStage, antithesisStage],
+            description: null,
         };
 
         beforeEach(() => {
             mockInitialProjectState = JSON.parse(JSON.stringify(mockProjectForRefetch));
             useDialecticStore.setState({
                 currentProjectDetail: mockInitialProjectState,
+                currentProcessTemplate: mockSubmitTemplate,
                 selectedModels: [
                     { id: 'model-1', displayName: 'Model 1' },
                     { id: 'model-2', displayName: 'Model 2' },
@@ -596,10 +635,6 @@ describe('useDialecticStore', () => {
                 .mockResolvedValueOnce({ data: { resource: mockSaveEditResource1, sourceContributionId: 'contrib-doc-1' }, status: 201 })
                 .mockResolvedValueOnce({ data: { resource: mockSaveEditResource3, sourceContributionId: 'contrib-doc-3' }, status: 201 });
             const submitStageResponsesSpy = vi.spyOn(api.dialectic(), 'submitStageResponses').mockResolvedValue({ data: mockSuccessResponse, status: 200 });
-            api.dialectic().getProjectDetails.mockResolvedValueOnce({
-                data: mockProjectForRefetch,
-                status: 200,
-            });
 
             const { submitStageResponses } = useDialecticStore.getState();
             await submitStageResponses(mockPayload);
@@ -622,7 +657,6 @@ describe('useDialecticStore', () => {
             expect(api.dialectic().submitStageDocumentFeedback).toHaveBeenCalledTimes(0);
             expect(submitStageResponsesSpy).toHaveBeenCalledTimes(1);
             expect(submitStageResponsesSpy).toHaveBeenCalledWith(mockPayload);
-            expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(mockProjectId);
             const state = useDialecticStore.getState();
             expect(state.isSubmittingStageResponses).toBe(false);
             expect(state.submitStageResponsesError).toBeNull();
@@ -1028,6 +1062,7 @@ describe('useDialecticStore', () => {
                 status: 'pending_hypothesis',
                 associated_chat_id: null,
                 current_stage_id: 'thesis',
+                viewing_stage_id: null,
             }],
             user_id: 'user-1',
             project_name: 'Test Project',

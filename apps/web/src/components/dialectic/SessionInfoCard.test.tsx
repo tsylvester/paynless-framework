@@ -51,7 +51,7 @@ vi.mock('@paynless/store', async () => {
     selectPersonalWallet: walletStoreMockModule.selectPersonalWallet,
     selectIsLoadingPersonalWallet: walletStoreMockModule.selectIsLoadingPersonalWallet,
     selectPersonalWalletError: walletStoreMockModule.selectPersonalWalletError,
-    selectActiveStageSlug: actualOriginalStoreModule.selectActiveStageSlug,
+    selectViewingStageSlug: actualOriginalStoreModule.selectViewingStageSlug,
     selectSortedStages: actualOriginalStoreModule.selectSortedStages,
   };
 });
@@ -153,6 +153,7 @@ const mockSession: DialecticSession = {
   selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
   associated_chat_id: null,
   dialectic_contributions: [],
+  viewing_stage_id: mockStage.id,
 };
 
 const mockProject: DialecticProject = {

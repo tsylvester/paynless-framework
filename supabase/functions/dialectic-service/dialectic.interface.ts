@@ -378,6 +378,7 @@ export interface DialecticSession {
 	current_stage_id: string | null;
 	created_at: string;
 	updated_at: string;
+	viewing_stage_id: string | null;
 }
 
 export type DialecticProcessTemplate =
@@ -473,6 +474,10 @@ type FetchProcessTemplateAction = {
 type UpdateSessionModelsAction = {
 	action: "updateSessionModels";
 	payload: UpdateSessionModelsPayload;
+};
+type UpdateViewingStageAction = {
+	action: "updateViewingStage";
+	payload: UpdateViewingStagePayload;
 };
 
 // Define new payload and action for getSessionDetails
@@ -723,6 +728,7 @@ export type DialecticServiceRequest =
 	| ListAvailableDomainOverlaysAction
 	| FetchProcessTemplateAction
 	| UpdateSessionModelsAction
+	| UpdateViewingStageAction
 	| GetSessionDetailsAction
 	| GetStageRecipeAction
 	| ListStageDocumentsAction
@@ -939,6 +945,31 @@ export interface UpdateSessionModelsPayload {
 	sessionId: string;
 	selectedModels: SelectedModels[];
 }
+
+export interface UpdateViewingStagePayload {
+	sessionId: string;
+	viewingStageId: string;
+}
+
+export interface UpdateViewingStageDeps {
+	dbClient: SupabaseClient<Database>;
+}
+
+export interface UpdateViewingStageParams {
+	userId: string;
+}
+
+export interface UpdateViewingStageReturn {
+	data?: Database["public"]["Tables"]["dialectic_sessions"]["Row"];
+	error?: ServiceError;
+	status?: number;
+}
+
+export type UpdateViewingStageFn = (
+	deps: UpdateViewingStageDeps,
+	params: UpdateViewingStageParams,
+	payload: UpdateViewingStagePayload,
+) => Promise<UpdateViewingStageReturn>;
 
 export type StartSessionSuccessResponse = DialecticSession & {
 	seedPrompt: AssembledPrompt;

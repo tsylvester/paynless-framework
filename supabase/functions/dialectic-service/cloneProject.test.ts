@@ -607,6 +607,7 @@ describe("cloneProject", () => {
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 selected_model_ids: ["mc_claude_3_opus"], user_input_reference_url: null, associated_chat_id: null,
                 idempotency_key: null,
+                viewing_stage_id: null,
             }
         ];
         
@@ -821,6 +822,10 @@ describe("cloneProject", () => {
 
         const feedbackCallArgs = fmCalls.find(call => call.args[0].pathContext.fileType === FileType.UserFeedback)?.args[0];
         assert(feedbackCallArgs, "A call to FileManager for the feedback asset is MISSING.");
+        const expectedFeedbackStoragePath = `${deepNewProjectId}/session_${generateShortId(deepNewSessionId)}/iteration_1/1_thesis`;
+        const expectedFeedbackBaseName = originalFeedbackData[0].file_name.replace(/_feedback\.md$/i, "");
+        assertEquals(feedbackCallArgs.pathContext.originalStoragePath, expectedFeedbackStoragePath, "UserFeedback pathContext must include originalStoragePath (remapped to cloned project/session).");
+        assertEquals(feedbackCallArgs.pathContext.originalBaseName, expectedFeedbackBaseName, "UserFeedback pathContext must include originalBaseName derived from dialectic_feedback.file_name.");
 
         // --- PROOF #2: PATH COMPLEXITY ---
         const plannerPromptCallArgs = fmCalls.find(call => call.args[0].pathContext.originalFileName === originalResourcesData[1].file_name)?.args[0];

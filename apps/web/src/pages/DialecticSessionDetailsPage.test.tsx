@@ -109,6 +109,7 @@ const mockSession: DialecticSession = {
   associated_chat_id: null,
   user_input_reference_url: null,
   selected_models: [],
+  viewing_stage_id: mockStages[0].id,
 };
 
 const mockOtherSession: DialecticSession = {
@@ -123,6 +124,7 @@ const mockOtherSession: DialecticSession = {
   associated_chat_id: null,
   user_input_reference_url: null,
   selected_models: [],
+  viewing_stage_id: mockStages[1].id,
   };
 
   const mockProject: DialecticProject = {
@@ -261,7 +263,7 @@ describe('DialecticSessionDetailsPage', () => {
       activeSessionDetail: mockSession,
       currentProjectDetail: mockProject,
       currentProcessTemplate: mockProcessTemplate,
-      activeStageSlug: mockStages[0].slug,
+      viewingStageSlug: mockStages[0].slug,
       isLoadingActiveSessionDetail: false,
       activeSessionDetailError: null,
     });
@@ -318,7 +320,7 @@ describe('DialecticSessionDetailsPage', () => {
     beforeEach(() => {
       mockUseStartContributionGeneration.mockReturnValue({
         startContributionGeneration: mockStartContributionGeneration,
-        activeStage: mockStages[0],
+        viewingStage: mockStages[0],
       });
     });
 
@@ -328,7 +330,7 @@ describe('DialecticSessionDetailsPage', () => {
       activeSessionDetail: mockSession,
       currentProjectDetail: mockProject,
       currentProcessTemplate: mockProcessTemplate,
-      activeStageSlug: mockStages[0].slug,
+      viewingStageSlug: mockStages[0].slug,
       isLoadingActiveSessionDetail: false,
       activeSessionDetailError: null,
     };
@@ -474,7 +476,7 @@ describe('DialecticSessionDetailsPage', () => {
       activeSessionDetail: mockSession,
       currentProjectDetail: mockProject,
       currentProcessTemplate: mockProcessTemplate,
-      activeStageSlug: mockStages[0].slug,
+      viewingStageSlug: mockStages[0].slug,
       isLoadingActiveSessionDetail: false,
       activeSessionDetailError: null,
     });

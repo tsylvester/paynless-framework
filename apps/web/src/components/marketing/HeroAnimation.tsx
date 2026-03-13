@@ -516,12 +516,12 @@ const StageComponents = [
 
 // ─── Progress Indicator ──────────────────────────────────────────
 
-function StageProgress({ activeStage }: { activeStage: number }) {
+function StageProgress({ viewingStage }: { viewingStage: number }) {
   return (
     <div className="flex items-center gap-1.5">
       {STAGES.map((stage, i) => {
-        const isActive = i === activeStage
-        const isPast = i < activeStage
+        const isActive = i === viewingStage
+        const isPast = i < viewingStage
 
         return (
           <div key={stage.title} className="flex items-center">
@@ -583,17 +583,17 @@ function StageProgress({ activeStage }: { activeStage: number }) {
 // ─── Main Export ──────────────────────────────────────────────────
 
 export function HeroAnimation() {
-  const [activeStage, setActiveStage] = useState(0)
+  const [viewingStage, setViewingStage] = useState(0)
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setActiveStage((prev) => (prev + 1) % TOTAL_STAGES)
+      setViewingStage((prev) => (prev + 1) % TOTAL_STAGES)
     }, STAGE_DURATION)
     return () => clearInterval(timer)
   }, [])
 
-  const ActiveComponent = StageComponents[activeStage]
-  const stage = STAGES[activeStage]
+  const ActiveComponent = StageComponents[viewingStage]
+  const stage = STAGES[viewingStage]
 
   return (
     <div className="relative w-full h-[560px] md:h-[640px] select-none">
@@ -603,7 +603,7 @@ export function HeroAnimation() {
         style={{
           background: `radial-gradient(ellipse at center, ${stage.color}06 0%, transparent 70%)`,
         }}
-        key={`glow-${activeStage}`}
+        key={`glow-${viewingStage}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5 }}
@@ -613,7 +613,7 @@ export function HeroAnimation() {
       <div className="absolute inset-0 bottom-20 flex items-center justify-center overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div
-            key={activeStage}
+            key={viewingStage}
             className="w-full h-full relative"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -628,13 +628,13 @@ export function HeroAnimation() {
       {/* Bottom area: progress steps + description */}
       <div className="absolute bottom-0 left-0 right-0 flex flex-col items-center gap-3">
         {/* Progress bar */}
-        <StageProgress activeStage={activeStage} />
+        <StageProgress viewingStage={viewingStage} />
 
         {/* Timer bar */}
         <div className="w-36 h-[2px] bg-border/20 rounded-full overflow-hidden">
           <motion.div
             className="h-full rounded-full bg-textSecondary/30"
-            key={`timer-${activeStage}`}
+            key={`timer-${viewingStage}`}
             initial={{ width: '0%' }}
             animate={{ width: '100%' }}
             transition={{ duration: STAGE_DURATION / 1000, ease: 'linear' }}
@@ -644,7 +644,7 @@ export function HeroAnimation() {
         {/* Stage description */}
         <AnimatePresence mode="wait">
           <motion.p
-            key={activeStage}
+            key={viewingStage}
             className="text-sm text-textSecondary/70 text-center"
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
