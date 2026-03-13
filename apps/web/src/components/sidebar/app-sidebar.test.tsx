@@ -41,15 +41,16 @@ vi.mock('react-router-dom', async () => {
 });
 
 vi.mock('@/components/sidebar/nav-main', () => ({
-  NavMain: ({ items }: { items: Array<{ title: string; url: string; items?: Array<{ title: string; url: string }> }> }) => (
-    <div data-testid="nav-main">
+  NavMain: ({ items, subtitle = 'Platform' }: { items: Array<{ title: string; url: string; items?: Array<{ title: string; url: string }> }>; subtitle?: string }) => (
+    <div data-testid="nav-main" data-subtitle={subtitle}>
+      <span data-testid={`nav-section-${subtitle.toLowerCase()}`}>{subtitle}</span>
       {items.map((item) => (
-        <div key={item.url}>
+        <a key={item.url} href={item.url} data-testid={`nav-link-${item.url.replace('/', '')}`}>
           {item.title}
           {item.items && item.items.map((nestedItem) => (
             <div key={nestedItem.url}>{nestedItem.title}</div>
           ))}
-        </div>
+        </a>
       ))}
     </div>
   ),
@@ -236,7 +237,8 @@ describe('AppSidebar', () => {
 
     expect(screen.getByText('Login')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-menu-button')).toBeInTheDocument();
-    expect(screen.getByTestId('nav-main')).toBeInTheDocument();
+    const navMainElements = screen.getAllByTestId('nav-main');
+    expect(navMainElements).toHaveLength(2);
   });
 
   it('should render AUTHENTICATED state when user exists and isLoading is false', () => {
@@ -382,6 +384,63 @@ describe('AppSidebar', () => {
     renderComponent();
 
     expect(screen.getByTestId('sidebar')).toBeInTheDocument();
+  });
+
+  it('should render Explore section with 5 links when unauthenticated', () => {
+    mockSetAuthUser(null);
+    mockSetAuthIsLoading(false);
+
+    renderComponent();
+
+    expect(screen.getByTestId('nav-section-explore')).toBeInTheDocument();
+    expect(screen.getByText('Explore')).toBeInTheDocument();
+    expect(screen.getByText('Vibe Coders')).toBeInTheDocument();
+    expect(screen.getByText('Indie Hackers')).toBeInTheDocument();
+    expect(screen.getByText('Startups')).toBeInTheDocument();
+    expect(screen.getByText('Agencies')).toBeInTheDocument();
+    expect(screen.getByText('Pricing')).toBeInTheDocument();
+  });
+
+  it('should render Explore section links with correct routes when unauthenticated', () => {
+    mockSetAuthUser(null);
+    mockSetAuthIsLoading(false);
+
+    renderComponent();
+
+    expect(screen.getByTestId('nav-link-vibecoder')).toHaveAttribute('href', '/vibecoder');
+    expect(screen.getByTestId('nav-link-indiehacker')).toHaveAttribute('href', '/indiehacker');
+    expect(screen.getByTestId('nav-link-startup')).toHaveAttribute('href', '/startup');
+    expect(screen.getByTestId('nav-link-agency')).toHaveAttribute('href', '/agency');
+    expect(screen.getByTestId('nav-link-pricing')).toHaveAttribute('href', '/pricing');
+  });
+
+  it('should NOT render Explore section when authenticated', () => {
+    const mockUser: User = {
+      id: '123',
+      email: 'test@test.com',
+      created_at: new Date().toISOString(),
+    };
+    mockSetAuthUser(mockUser);
+    mockSetAuthIsLoading(false);
+
+    renderComponent();
+
+    expect(screen.queryByTestId('nav-section-explore')).not.toBeInTheDocument();
+    expect(screen.queryByText('Vibe Coders')).not.toBeInTheDocument();
+    expect(screen.queryByText('Indie Hackers')).not.toBeInTheDocument();
+    expect(screen.queryByText('Startups')).not.toBeInTheDocument();
+    expect(screen.queryByText('Agencies')).not.toBeInTheDocument();
+  });
+
+  it('should render navMain items in both authenticated and unauthenticated states', () => {
+    mockSetAuthUser(null);
+    mockSetAuthIsLoading(false);
+
+    renderComponent();
+
+    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Chat')).toBeInTheDocument();
+    expect(screen.getByText('Planner')).toBeInTheDocument();
   });
 });
 

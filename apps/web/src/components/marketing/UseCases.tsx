@@ -1,13 +1,15 @@
-import { motion } from 'framer-motion'
+import { Link } from 'react-router-dom'
+import { motion, Variants } from 'framer-motion'
 import {
   Rocket,
   Code2,
   Building2,
-  GraduationCap,
+  Briefcase,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 interface UseCase {
+  slug: string
   title: string
   description: string
   icon: LucideIcon
@@ -17,56 +19,60 @@ interface UseCase {
 
 const useCases: UseCase[] = [
   {
-    title: 'Indie Hackers & Vibe Coders',
+    slug: 'vibecoder',
+    title: 'Vibecoders',
     description:
-      'Ship your SaaS idea with production-quality architecture from day one.',
+      "Stop burning money on 'please fix' — give your agent a real plan.",
     icon: Rocket,
     items: [
-      'Turn a napkin sketch into a full spec',
-      'Get database schemas and API designs',
-      'Security review baked into every plan',
+      'End the regeneration loop that breaks more than it fixes',
+      'Get structured specs your AI agent can follow without losing context',
+      'Know exactly what to build, what to leave alone, and in what order',
     ],
     gradient: 'from-blue-500/20 to-cyan-500/20',
   },
   {
-    title: 'Development Teams',
+    slug: 'indiehacker',
+    title: 'Indiehackers & Solo Developers',
     description:
-      'Align your team on architecture before writing a single line of code.',
+      "You know how to code. You just don't know this stack yet.",
     icon: Code2,
     items: [
-      'Share specs across your org',
-      'Consistent technical standards',
-      'Faster sprint planning',
+      'Make sound architectural decisions in unfamiliar territory',
+      'Skip weeks of studying best practices before shipping',
+      'Get guardrails from devs who have shipped in that stack',
     ],
     gradient: 'from-purple-500/20 to-pink-500/20',
   },
   {
-    title: 'Startups & Agencies',
+    slug: 'startup',
+    title: 'Startups & Small Teams',
     description:
-      'Deliver client proposals and technical scopes in hours instead of weeks.',
+      "Clock's ticking. You can't afford weeks of planning, or none at all.",
     icon: Building2,
     items: [
-      'Rapid project scoping',
-      'Professional deliverables',
-      'Iterate with AI before committing budget',
+      'Get the rigor of a mature planning process in an afternoon',
+      'Align your whole team on architecture before writing line one',
+      'Ship with confidence instead of hoping the architecture holds',
     ],
     gradient: 'from-amber-500/20 to-orange-500/20',
   },
   {
-    title: 'Learning & Teaching',
+    slug: 'agency',
+    title: 'Agencies & Freelancers',
     description:
-      'Understand software architecture through AI-guided dialectic exploration.',
-    icon: GraduationCap,
+      "Your client won't pay for discovery. Your team pays the price.",
+    icon: Briefcase,
     items: [
-      'See how experts critique designs',
-      'Learn by reviewing AI reasoning',
-      'Build portfolio-ready project plans',
+      'Generate scope docs before quoting to estimate accurately',
+      'Surface gaps in the client brief before they become change orders',
+      'Hand your dev team clear specs instead of a 2-page feature list',
     ],
     gradient: 'from-emerald-500/20 to-teal-500/20',
   },
 ]
 
-const containerVariants = {
+const containerVariants: Variants = {
   hidden: {},
   visible: {
     transition: {
@@ -75,7 +81,7 @@ const containerVariants = {
   },
 }
 
-const cardVariants = {
+const cardVariants: Variants = {
   hidden: { opacity: 0, x: -20 },
   visible: {
     opacity: 1,
@@ -99,11 +105,11 @@ export function UseCases() {
             Built For You
           </span>
           <h2 className="text-3xl md:text-4xl font-bold text-textPrimary mb-4">
-            Perfect For Every Builder
+            Built for How You Actually Ship
           </h2>
           <p className="max-w-2xl mx-auto text-lg text-textSecondary">
-            Whether you&apos;re shipping a weekend project or architecting an
-            enterprise platform, Paynless scales to your ambition.
+            Whether you&apos;re prompting AI agents, learning a new stack, racing to MVP,
+            or scoping client work — Paynless generates the plan you need.
           </p>
         </motion.div>
 
@@ -117,36 +123,37 @@ export function UseCases() {
           {useCases.map((useCase) => {
             const Icon = useCase.icon
             return (
-              <motion.div
-                key={useCase.title}
-                variants={cardVariants}
-                className={`relative p-8 rounded-2xl border border-border bg-gradient-to-br ${useCase.gradient} backdrop-blur-sm hover:shadow-lg transition-all duration-300`}
-              >
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-background/80 border border-border flex items-center justify-center">
-                    <Icon className="h-6 w-6 text-primary" />
+              <Link key={useCase.slug} to={`/${useCase.slug}`} className="block">
+                <motion.div
+                  variants={cardVariants}
+                  className={`relative p-8 rounded-2xl border border-border bg-gradient-to-br ${useCase.gradient} backdrop-blur-sm hover:shadow-lg transition-all duration-300`}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-background/80 border border-border flex items-center justify-center">
+                      <Icon className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-textPrimary mb-2">
+                        {useCase.title}
+                      </h3>
+                      <p className="text-textSecondary mb-4">
+                        {useCase.description}
+                      </p>
+                      <ul className="space-y-2">
+                        {useCase.items.map((item) => (
+                          <li
+                            key={item}
+                            className="flex items-center gap-2 text-sm text-textSecondary"
+                          >
+                            <div className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-textPrimary mb-2">
-                      {useCase.title}
-                    </h3>
-                    <p className="text-textSecondary mb-4">
-                      {useCase.description}
-                    </p>
-                    <ul className="space-y-2">
-                      {useCase.items.map((item) => (
-                        <li
-                          key={item}
-                          className="flex items-center gap-2 text-sm text-textSecondary"
-                        >
-                          <div className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              </motion.div>
+                </motion.div>
+              </Link>
             )
           })}
         </motion.div>

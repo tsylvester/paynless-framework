@@ -13,6 +13,7 @@ import { FeatureCards } from '../components/marketing/FeatureCards'
 import { StatsSection } from '../components/marketing/StatsSection'
 import { UseCases } from '../components/marketing/UseCases'
 import { CTASection } from '../components/marketing/CTASection'
+import { PricingSection } from '../components/marketing/PricingSection'
 
 export function HomePage() {
   const { user } = useAuthStore((state) => ({ user: state.user }))
@@ -57,15 +58,34 @@ export function HomePage() {
   }, [availableProviders])
 
   return (
-    <div className="overflow-hidden -mt-[3.25rem] md:-mx-4 md:-mb-4">
+    <div data-testid="homepage-container" className="overflow-hidden -mt-[3.25rem] md:-mx-4 md:-mb-4">
       {/* Hero Section */}
-      <section className="relative w-full py-16 md:py-24">
+      <section data-testid="hero-section" className="relative w-full py-16 md:py-24">
         {/* Background */}
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent dark:from-primary/20 dark:via-primary/10">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDIwIDAgTCAwIDAgMCAyMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMC4yIiBzdHJva2Utb3BhY2l0eT0iMC4xIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIiAvPjwvc3ZnPg==')] opacity-20" />
         </div>
 
         <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4">
+          {/* Navigation Badges */}
+          <div data-testid="navigation-badges" className="flex flex-wrap justify-end gap-2 mb-6">
+            <Link to="/vibecoder" className="px-3 py-1.5 text-sm font-medium rounded-full bg-surface border border-border hover:bg-primary/10 hover:border-primary/30 transition-colors">
+              Vibecoders
+            </Link>
+            <Link to="/indiehacker" className="px-3 py-1.5 text-sm font-medium rounded-full bg-surface border border-border hover:bg-primary/10 hover:border-primary/30 transition-colors">
+              Indiehackers
+            </Link>
+            <Link to="/startup" className="px-3 py-1.5 text-sm font-medium rounded-full bg-surface border border-border hover:bg-primary/10 hover:border-primary/30 transition-colors">
+              Startups
+            </Link>
+            <Link to="/agency" className="px-3 py-1.5 text-sm font-medium rounded-full bg-surface border border-border hover:bg-primary/10 hover:border-primary/30 transition-colors">
+              Agencies
+            </Link>
+            <Link to="/pricing" className="px-3 py-1.5 text-sm font-medium rounded-full bg-surface border border-border hover:bg-primary/10 hover:border-primary/30 transition-colors">
+              Pricing
+            </Link>
+          </div>
+
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Left: Copy */}
             <motion.div
@@ -149,21 +169,34 @@ export function HomePage() {
       </section>
 
       {/* How It Works - 5 Stages */}
-      <div id="how-it-works">
+      <div id="how-it-works" data-testid="process-steps">
         <ProcessSteps />
       </div>
 
       {/* Stats */}
-      <StatsSection />
+      <div data-testid="stats-section">
+        <StatsSection />
+      </div>
 
       {/* Feature Cards */}
-      <FeatureCards />
+      <div data-testid="feature-cards">
+        <FeatureCards />
+      </div>
 
       {/* Use Cases */}
-      <UseCases />
+      <div data-testid="use-cases">
+        <UseCases />
+      </div>
+
+      {/* Pricing */}
+      <div data-testid="pricing-section">
+        <PricingSection />
+      </div>
 
       {/* Final CTA */}
-      <CTASection />
+      <div data-testid="cta-section">
+        <CTASection />
+      </div>
     </div>
   )
 }

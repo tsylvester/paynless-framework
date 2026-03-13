@@ -876,3 +876,7 @@ AND/OR
 - Claude & ChatGPT only for paid
 - Paying customers get BYOK (heavy lift)
 
+## Front end hydration problems
+- n/n Done does not up date real, only on refresh
+- SubmitResponsesButton does not appear when docs are done 
+- "Review" stage does not reliably advance 
