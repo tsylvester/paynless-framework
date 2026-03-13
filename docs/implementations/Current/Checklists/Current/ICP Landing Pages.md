@@ -232,35 +232,35 @@ The homepage UseCases component currently shows a generic 2x2 grid with broad la
         *   `[✅]` Routes are public, no auth required
         *   `[✅]` Lazy loaded to avoid bloating initial bundle
 
-*   `[ ]` apps/web/src/components/marketing/`UseCases.tsx` **[UI] Update homepage cards to link to segment landing pages**
-    *   `[ ]` `objective`
-        *   `[ ]` Replace current 4 card content with the 4 defined ICP segments
-        *   `[ ]` Each card links to `/{segment-slug}`
-        *   `[ ]` Cards use segment one-liners and pain-focused summaries from the plan doc
-    *   `[ ]` `role`
-        *   `[ ]` UI presentation — homepage marketing section
-    *   `[ ]` `module`
-        *   `[ ]` Marketing / homepage components
-    *   `[ ]` `deps`
-        *   `[ ]` `Link` from `react-router-dom` — navigation to segment pages
-        *   `[ ]` Existing component dependencies (framer-motion, lucide-react) remain unchanged
-        *   `[ ]` Confirm no reverse dependency is introduced
-    *   `[ ]` `context_slice`
-        *   `[ ]` No new dependencies — self-contained component with static data
-    *   `[ ]` `UseCases.tsx`
-        *   `[ ]` Update `useCases` array to 4 segments: Vibe Coders, Indie Hackers, Startups, Agencies
-        *   `[ ]` Each card: title, one-liner description, 3 bullet items from segment pain/value, appropriate icon, gradient
-        *   `[ ]` Wrap each card in `<Link to="/{slug}">` making the entire card clickable
-        *   `[ ]` Slugs: `vibecoder`, `indiehacker`, `startup`, `agency`
-        *   `[ ]` Update section heading/subheading to match segment-focused messaging
-    *   `[ ]` `directionality`
-        *   `[ ]` UI adapter layer — homepage presentation
-        *   `[ ]` All dependencies are inward-facing
-    *   `[ ]` `requirements`
-        *   `[ ]` All 4 cards display correct segment content
-        *   `[ ]` All 4 cards link to the correct segment landing page
-        *   `[ ]` Existing animation/layout behavior preserved
-        *   `[ ]` No new icons needed if existing Lucide icons fit (Rocket, Code2, Building2 + one more)
+*   `[✅]` apps/web/src/components/marketing/`UseCases.tsx` **[UI] Update homepage cards to link to segment landing pages**
+    *   `[✅]` `objective`
+        *   `[✅]` Replace current 4 card content with the 4 defined ICP segments
+        *   `[✅]` Each card links to `/{segment-slug}`
+        *   `[✅]` Cards use segment one-liners and pain-focused summaries from the plan doc
+    *   `[✅]` `role`
+        *   `[✅]` UI presentation — homepage marketing section
+    *   `[✅]` `module`
+        *   `[✅]` Marketing / homepage components
+    *   `[✅]` `deps`
+        *   `[✅]` `Link` from `react-router-dom` — navigation to segment pages
+        *   `[✅]` Existing component dependencies (framer-motion, lucide-react) remain unchanged
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` No new dependencies — self-contained component with static data
+    *   `[✅]` `UseCases.tsx`
+        *   `[✅]` Update `useCases` array to 4 segments: Vibe Coders, Indie Hackers, Startups, Agencies
+        *   `[✅]` Each card: title, one-liner description, 3 bullet items from segment pain/value, appropriate icon, gradient
+        *   `[✅]` Wrap each card in `<Link to="/{slug}">` making the entire card clickable
+        *   `[✅]` Slugs: `vibecoder`, `indiehacker`, `startup`, `agency`
+        *   `[✅]` Update section heading/subheading to match segment-focused messaging
+    *   `[✅]` `directionality`
+        *   `[✅]` UI adapter layer — homepage presentation
+        *   `[✅]` All dependencies are inward-facing
+    *   `[✅]` `requirements`
+        *   `[✅]` All 4 cards display correct segment content
+        *   `[✅]` All 4 cards link to the correct segment landing page
+        *   `[✅]` Existing animation/layout behavior preserved
+        *   `[✅]` No new icons needed if existing Lucide icons fit (Rocket, Code2, Building2 + one more)
 
 *   `[ ]` apps/web/src/components/auth/`RegisterForm.tsx` **[UI] Read ref param, fix ConvertKit newsletter subscription, add PostHog segment tracking on registration**
     *   `[ ]` `objective`
@@ -339,7 +339,8 @@ The homepage UseCases component currently shows a generic 2x2 grid with broad la
         *   `[ ]` Fixed broken newsletter subscription flow and added segment cohort tagging via ConvertKit
         *   `[ ]` Added PostHog identify + track calls on registration with signup_segment property
 
-* Add landing page badges to top of home page 
+* Add landing page badges to top of home page
+* Add pricing page
 * Add pricing to home page 
 * Add pricing landing page to top of home page 
 
