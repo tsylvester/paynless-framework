@@ -1,18 +1,23 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { HomePage } from './Home';
 import { useAuthStore, useAiStore } from '@paynless/store';
 import type { User } from '@paynless/types';
 
+// Mock IntersectionObserver for framer-motion
+const mockIntersectionObserver = vi.fn();
+mockIntersectionObserver.mockReturnValue({
+  observe: vi.fn(),
+  unobserve: vi.fn(),
+  disconnect: vi.fn(),
+});
+window.IntersectionObserver = mockIntersectionObserver;
+
 // --- Mocks ---
 vi.mock('@paynless/store', () => ({
   useAuthStore: vi.fn(),
   useAiStore: vi.fn(),
-}));
-
-vi.mock('../components/dialectic/CreateDialecticProjectForm', () => ({
-  CreateDialecticProjectForm: () => <div data-testid="create-dialectic-project-form" />,
 }));
 
 const mockUseAuthStore = useAuthStore as unknown as Mock;
@@ -41,23 +46,14 @@ describe('HomePage', () => {
     mockUseAuthStore.mockReturnValue({ user: null });
     renderComponent();
 
-    expect(screen.getByText('Automate Software Planning')).toBeInTheDocument();
-    expect(screen.getByText('Paynless Coding')).toBeInTheDocument();
-    expect(
-      screen.getByText('Build Better Software Faster')
-    ).toBeInTheDocument();
+    expect(screen.getByText('AI-Powered Planning Engine')).toBeInTheDocument();
+    expect(screen.getByText('Build Plans That')).toBeInTheDocument();
+    expect(screen.getByText('Actually Work')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Generate requirements, user stories, and detailed implementation plans in seconds.'
+        /Describe your goals and watch multiple AI models collaborate/
       )
     ).toBeInTheDocument();
-  });
-
-  it('should render the dialectic project creation section', () => {
-    mockUseAuthStore.mockReturnValue({ user: null });
-    renderComponent();
-    expect(screen.getByTestId('create-dialectic-project-form')).toBeInTheDocument();
-    expect(screen.getByText('Describe what you want to build or upload an .md project file.')).toBeInTheDocument();
   });
 
 
@@ -103,14 +99,15 @@ describe('HomePage', () => {
       mockUseAuthStore.mockReturnValue({ user: null });
       renderComponent();
 
-      const getStartedLink = screen.getByRole('link', {
+      const heroSection = screen.getByTestId('hero-section');
+      const getStartedLink = within(heroSection).getByRole('link', {
         name: /Get Started/i,
       });
       expect(getStartedLink).toBeInTheDocument();
       expect(getStartedLink).toHaveAttribute('href', '/register');
     });
 
-    it('should show "Try It Now" button when user is logged in', () => {
+    it('should show "Go to Dashboard" button when user is logged in', () => {
       const mockUser: User = {
         id: '123',
         email: 'test@test.com',
@@ -119,9 +116,88 @@ describe('HomePage', () => {
       mockUseAuthStore.mockReturnValue({ user: mockUser });
       renderComponent();
 
-      const dashboardLink = screen.getByRole('link', { name: /Try It Now/i });
+      const heroSection = screen.getByTestId('hero-section');
+      const dashboardLink = within(heroSection).getByRole('link', { name: /Go to Dashboard/i });
       expect(dashboardLink).toBeInTheDocument();
       expect(dashboardLink).toHaveAttribute('href', '/dashboard');
+    });
+  });
+
+  describe('Navigation Badges', () => {
+    it('should render navigation badges section with 5 links', () => {
+      mockUseAuthStore.mockReturnValue({ user: null });
+      renderComponent();
+
+      const badgesContainer = screen.getByTestId('navigation-badges');
+      const vibeCoderLink = within(badgesContainer).getByRole('link', { name: /Vibecoders/i });
+      const indieHackerLink = within(badgesContainer).getByRole('link', { name: /Indiehackers/i });
+      const startupLink = within(badgesContainer).getByRole('link', { name: /Startups/i });
+      const agencyLink = within(badgesContainer).getByRole('link', { name: /Agencies/i });
+      const pricingLink = within(badgesContainer).getByRole('link', { name: /Pricing/i });
+
+      expect(vibeCoderLink).toBeInTheDocument();
+      expect(indieHackerLink).toBeInTheDocument();
+      expect(startupLink).toBeInTheDocument();
+      expect(agencyLink).toBeInTheDocument();
+      expect(pricingLink).toBeInTheDocument();
+    });
+
+    it('should have badge links pointing to correct routes', () => {
+      mockUseAuthStore.mockReturnValue({ user: null });
+      renderComponent();
+
+      const badgesContainer = screen.getByTestId('navigation-badges');
+      expect(within(badgesContainer).getByRole('link', { name: /Vibecoders/i })).toHaveAttribute('href', '/vibecoder');
+      expect(within(badgesContainer).getByRole('link', { name: /Indiehackers/i })).toHaveAttribute('href', '/indiehacker');
+      expect(within(badgesContainer).getByRole('link', { name: /Startups/i })).toHaveAttribute('href', '/startup');
+      expect(within(badgesContainer).getByRole('link', { name: /Agencies/i })).toHaveAttribute('href', '/agency');
+      expect(within(badgesContainer).getByRole('link', { name: /Pricing/i })).toHaveAttribute('href', '/pricing');
+    });
+
+    it('should position badges in Hero section', () => {
+      mockUseAuthStore.mockReturnValue({ user: null });
+      renderComponent();
+
+      const badgesContainer = screen.getByTestId('navigation-badges');
+      expect(badgesContainer).toBeInTheDocument();
+      expect(badgesContainer.closest('section')).toBeInTheDocument();
+    });
+  });
+
+  describe('PricingSection', () => {
+    it('should render PricingSection component', () => {
+      mockUseAuthStore.mockReturnValue({ user: null });
+      renderComponent();
+
+      expect(screen.getByTestId('pricing-section')).toBeInTheDocument();
+    });
+  });
+
+  describe('Section Order', () => {
+    it('should render sections in correct order: Hero → ProcessSteps → StatsSection → FeatureCards → UseCases → PricingSection → CTASection', () => {
+      mockUseAuthStore.mockReturnValue({ user: null });
+      renderComponent();
+
+      const container = screen.getByTestId('homepage-container');
+      const sections = container.querySelectorAll('[data-testid]');
+      const sectionIds = Array.from(sections).map((s) => s.getAttribute('data-testid'));
+
+      expect(sectionIds).toContain('hero-section');
+      expect(sectionIds).toContain('process-steps');
+      expect(sectionIds).toContain('stats-section');
+      expect(sectionIds).toContain('feature-cards');
+      expect(sectionIds).toContain('use-cases');
+      expect(sectionIds).toContain('pricing-section');
+      expect(sectionIds).toContain('cta-section');
+
+      const heroIndex = sectionIds.indexOf('hero-section');
+      const pricingIndex = sectionIds.indexOf('pricing-section');
+      const ctaIndex = sectionIds.indexOf('cta-section');
+      const useCasesIndex = sectionIds.indexOf('use-cases');
+
+      expect(heroIndex).toBe(0);
+      expect(pricingIndex).toBeGreaterThan(useCasesIndex);
+      expect(ctaIndex).toBeGreaterThan(pricingIndex);
     });
   });
 }); 
