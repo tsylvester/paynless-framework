@@ -1531,6 +1531,48 @@ export type Database = {
           },
         ]
       }
+      github_connections: {
+        Row: {
+          created_at: string
+          github_user_id: string
+          github_username: string
+          id: string
+          installation_id: number
+          installation_target_id: number
+          installation_target_type: string
+          permissions: Json | null
+          suspended_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          github_user_id: string
+          github_username: string
+          id?: string
+          installation_id: number
+          installation_target_id: number
+          installation_target_type: string
+          permissions?: Json | null
+          suspended_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          github_user_id?: string
+          github_username?: string
+          id?: string
+          installation_id?: number
+          installation_target_id?: number
+          installation_target_type?: string
+          permissions?: Json | null
+          suspended_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       invites: {
         Row: {
           created_at: string
@@ -2139,7 +2181,7 @@ export type Database = {
           {
             foreignKeyName: "user_subscriptions_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
@@ -2233,6 +2275,10 @@ export type Database = {
       execute_sql: {
         Args: { query: string }
         Returns: Json[]
+      }
+      get_user_email: {
+        Args: { p_user_id: string }
+        Returns: string
       }
       grant_initial_free_tokens_to_user: {
         Args: { p_user_id: string; p_free_plan_id: string }
