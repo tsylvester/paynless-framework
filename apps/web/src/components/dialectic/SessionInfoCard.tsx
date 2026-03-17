@@ -35,13 +35,8 @@ import {
 	DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-interface SessionInfoCardProps {
-	// REMOVED: session?: DialecticSession;
-}
 
-export const SessionInfoCard: React.FC<SessionInfoCardProps> = (
-	/* REMOVED: { session } */
-) => {
+export const SessionInfoCard: React.FC = () => {
 	const project: DialecticProject | null = useDialecticStore(
 		(state) => state.currentProjectDetail,
 	);

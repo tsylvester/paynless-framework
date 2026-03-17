@@ -13,23 +13,26 @@ import {
   selectDefaultGenerationModels,
   selectActiveChatWalletInfo,
   selectSortedStages,
+  selectSelectedModels,
 } from '@paynless/store';
 import { DomainSelector } from '@/components/dialectic/DomainSelector';
-
+import { AIModelSelector } from '@/components/dialectic/AIModelSelector';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2 } from 'lucide-react';
+import { ChevronDown, Cpu, Loader2 } from 'lucide-react';
 
 import { TextInputArea } from '@/components/common/TextInputArea';
 import { usePlatform } from '@paynless/platform';
 import { platformEventEmitter, type PlatformEvents, type FileDropPayload } from '@paynless/platform';
-import type { CreateProjectPayload, CreateProjectAndAutoStartPayload } from '@paynless/types';
+import type { CreateProjectPayload, CreateProjectAndAutoStartPayload, SelectedModels } from '@paynless/types';
 import { toast } from 'sonner';
 import { z } from 'zod';
+import { Popover, PopoverContent, PopoverTrigger } from '@radix-ui/react-popover';
+import { cn } from '@/lib/utils';
 
 const projectNamePlaceholder = "A Notepad App with To Do lists";
 const initialUserPromptPlaceholder = `I want to create a notepad app with a to-do list, reminders, and event scheduling. It should say hello world, tell me the date, and then list all of my tasks and notes.
@@ -85,7 +88,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
 
   const walletInfo = useWalletStore((state) => selectActiveChatWalletInfo(state, null));
   const sortedStages = useDialecticStore(selectSortedStages);
-
+	const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
   const [promptFile, setPromptFile] = useState<File | null>(null);
   const [projectNameManuallySet, setProjectNameManuallySet] = useState<boolean>(false);
   const [configureManually, setConfigureManually] = useState<boolean>(false);
@@ -108,6 +111,9 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   });
 
   const { capabilities } = usePlatform();
+
+  const selectedModels: SelectedModels[] = useDialecticStore(selectSelectedModels);
+  const uniqueModelCount = new Set(selectedModels.map((model) => model.id)).size;
 
   const watchedPrompt = useWatch({
     control,
@@ -453,8 +459,38 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
                     }}
                     aria-invalid={!!errors.projectName}
                   />
-                )}
+                )}  
               />
+              <span>with</span>
+              <Popover open={isModelSelectorOpen} onOpenChange={setIsModelSelectorOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      "h-9 px-3 gap-2",
+                      uniqueModelCount === 0 && "ring-2 ring-primary animate-pulse",
+                    )}
+                  >
+                    <Cpu className="h-4 w-4" />
+                    <span>
+                      {uniqueModelCount > 0
+                        ? `${uniqueModelCount} model${uniqueModelCount !== 1 ? "s" : ""}`
+                        : "Select models"}
+                    </span>
+                    <ChevronDown className="h-3.5 w-3.5 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[420px] p-0 bg-popover border shadow-lg" align="start">
+                  <div className="p-3 border-b bg-popover">
+                    <p className="text-sm font-medium">AI Models</p>
+                    <p className="text-xs text-muted-foreground">Select models for generation</p>
+                  </div>
+                  <div className="p-3 bg-popover overflow-y-auto">
+                    <AIModelSelector />
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           )}
             {errors.projectName && <p className="text-sm text-destructive data-testid='project-name-error'">{errors.projectName.message}</p>}
