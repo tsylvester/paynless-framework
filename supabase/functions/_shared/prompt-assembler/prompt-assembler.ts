@@ -93,6 +93,8 @@ export class PromptAssembler implements IPromptAssembler {
                     session: options.session,
                     stage: options.stage,
                     gatherContext: this.gatherContextFn,
+                    gatherContinuationInputs: this.gatherContinuationInputsFn,
+                    downloadFromStorage: this.downloadFromStorageFn,
                     sourceContributionId
                 });
             } 

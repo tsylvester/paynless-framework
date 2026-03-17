@@ -3,7 +3,6 @@ import {
   AssembleContinuationPromptDeps,
 } from "./prompt-assembler.interface.ts";
 import { isRecord } from "../utils/type_guards.ts";
-import { downloadFromStorage } from "../supabase_storage_utils.ts";
 import { FileType } from "../types/file_manager.types.ts";
 import { HeaderContext } from "../../dialectic-service/dialectic.interface.ts";
 
@@ -22,6 +21,8 @@ export async function assembleContinuationPrompt(
     project,
     session,
     stage,
+    gatherContinuationInputs,
+    downloadFromStorage: downloadFromStorageFn,
   }: AssembleContinuationPromptDeps,
 ): Promise<AssembledPrompt> {
   if (!session.selected_model_ids || session.selected_model_ids.length === 0) {
@@ -91,8 +92,7 @@ export async function assembleContinuationPrompt(
     const pathToDownload = headerContrib.storage_path + "/" + fileName;
 
     // Download using the contribution's bucket
-    const { data: buffer, error } = await downloadFromStorage(
-      dbClient,
+    const { data: buffer, error } = await downloadFromStorageFn(
       headerContrib.storage_bucket,
       pathToDownload,
     );
@@ -125,44 +125,40 @@ export async function assembleContinuationPrompt(
     throw new Error("PRECONDITION_FAILED: target_contribution_id is required");
   }
 
-  // Query prior contribution
-  const { data: priorContrib, error: priorContribError } = await dbClient
-    .from("dialectic_contributions")
-    .select("id, storage_bucket, storage_path, file_name")
-    .eq("id", targetContributionId)
-    .single();
+  // Resolve root contribution by walking backwards via target_contribution_id
+  let currentId: string = targetContributionId;
+  for (;;) {
+    const { data: row, error: rowError } = await dbClient
+      .from("dialectic_contributions")
+      .select("id, target_contribution_id")
+      .eq("id", currentId)
+      .single();
 
-  if (priorContribError || !priorContrib) {
-    throw new Error(
-      `Failed to resolve prior contribution ${targetContributionId}: ${priorContribError?.message}`,
-    );
+    if (rowError || !row) {
+      throw new Error(
+        `Failed to resolve prior contribution ${currentId}: ${rowError?.message}`,
+      );
+    }
+
+    const nextId = row.target_contribution_id;
+    if (nextId == null || typeof nextId !== "string" || nextId.trim().length === 0) {
+      break;
+    }
+    currentId = nextId;
   }
+  const rootContributionId: string = currentId;
 
-  if (
-    !priorContrib.storage_bucket || !priorContrib.storage_path ||
-    !priorContrib.file_name
-  ) {
-    throw new Error(
-      `Prior contribution ${targetContributionId} is missing storage metadata`,
-    );
+  const messages = await gatherContinuationInputs(
+    dbClient,
+    downloadFromStorageFn,
+    rootContributionId,
+  );
+
+  for (const msg of messages) {
+    if (typeof msg.content === "string") {
+      promptParts.push(msg.content);
+    }
   }
-
-  const priorPath = `${priorContrib.storage_path}/${priorContrib.file_name}`;
-  const { data: priorBuffer, error: priorDownloadError } =
-    await downloadFromStorage(
-      dbClient,
-      priorContrib.storage_bucket,
-      priorPath,
-    );
-
-  if (priorDownloadError || !priorBuffer) {
-    throw new Error(
-      `Failed to download prior output file from storage: ${priorDownloadError?.message}`,
-    );
-  }
-
-  const continuationContent = new TextDecoder().decode(priorBuffer);
-  promptParts.push(continuationContent);
 
   const finalPrompt = promptParts.join("\n\n");
 

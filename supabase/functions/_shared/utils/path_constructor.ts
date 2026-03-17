@@ -201,20 +201,25 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       if (!documentKey || typeof documentKey !== 'string' || documentKey.trim() === '') {
         throw new Error('documentKey is required for header_context file type.');
       }
+      if (isContinuation === true) {
+        if (turnIndex === undefined || typeof turnIndex !== 'number' || turnIndex <= 0) {
+          throw new Error('turnIndex is required and must be a number > 0 for continuation chunks');
+        }
+      }
       const sanitizedFragment = extractSourceGroupFragment(sourceGroupFragment);
       const fragmentSegment = sanitizedFragment ? `_${sanitizedFragment}` : '';
-      
+      const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
       const sanitizedDocumentKey = sanitizeForPath(documentKey);
       
       // Check if antithesis pattern applies: stageSlug === 'antithesis' AND sourceAnchorModelSlug exists
       if (rawStageSlug === 'antithesis' && sourceAnchorModelSlug) {
         const sourceAnchorModelSlugSanitized = sanitizeForPath(sourceAnchorModelSlug);
-        // Antithesis pattern: {modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}.json
-        const fileName = `${modelSlugSanitized}_critiquing_${sourceAnchorModelSlugSanitized}${fragmentSegment}_${attemptCount}_${sanitizedDocumentKey}.json`;
+        // Antithesis pattern: {modelSlug}_critiquing_{sourceAnchorModelSlug}[_{fragment}]_{attemptCount}_{documentKey}[_continuation_{turnIndex}].json
+        const fileName = `${modelSlugSanitized}_critiquing_${sourceAnchorModelSlugSanitized}${fragmentSegment}_${attemptCount}_${sanitizedDocumentKey}${continuationSuffix}.json`;
         return { storagePath: `${stageRootPath}/_work/context`, fileName };
       } else {
-        // Simple pattern: {modelSlug}_{attemptCount}[_{fragment}]_{documentKey}.json
-        const fileName = `${modelSlugSanitized}_${attemptCount}${fragmentSegment}_${sanitizedDocumentKey}.json`;
+        // Simple pattern: {modelSlug}_{attemptCount}[_{fragment}]_{documentKey}[_continuation_{turnIndex}].json
+        const fileName = `${modelSlugSanitized}_${attemptCount}${fragmentSegment}_${sanitizedDocumentKey}${continuationSuffix}.json`;
         return { storagePath: `${stageRootPath}/_work/context`, fileName };
       }
     }
@@ -272,7 +277,13 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       if (!stageRootPath || !modelSlugSanitized || attemptCount === undefined) {
         throw new Error('Required context missing for synthesis_header_context.');
       }
-      const fileName = `${modelSlugSanitized}_${attemptCount}_synthesis_header_context.json`;
+      if (isContinuation === true) {
+        if (turnIndex === undefined || typeof turnIndex !== 'number' || turnIndex <= 0) {
+          throw new Error('turnIndex is required and must be a number > 0 for continuation chunks');
+        }
+      }
+      const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
+      const fileName = `${modelSlugSanitized}_${attemptCount}_synthesis_header_context${continuationSuffix}.json`;
       return { storagePath: `${stageRootPath}/_work/context`, fileName };
     }
     case FileType.RagContextSummary: {

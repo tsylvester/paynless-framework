@@ -88,6 +88,7 @@ const mockRenderFn: RenderFn = (
 const mockProject: ProjectContext = {
   id: "project-id",
   created_at: new Date().toISOString(),
+  idempotency_key: null,
   initial_user_prompt: "Test prompt",
   project_name: "Test Project",
   selected_domain_id: "domain-id",
@@ -105,11 +106,13 @@ const mockProject: ProjectContext = {
 const mockSession: SessionContext = {
   id: "session-id",
   created_at: new Date().toISOString(),
+  idempotency_key: null,
   current_stage_id: "stage-id",
   iteration_count: 1,
   project_id: "project-id",
   status: "active",
   updated_at: new Date().toISOString(),
+  viewing_stage_id: null,
   associated_chat_id: null,
   selected_model_ids: ["model-1"],
   session_description: null,
@@ -165,11 +168,13 @@ const mockStage: StageContext = {
   active_recipe_instance_id: null,
   expected_output_template_ids: [],
   recipe_template_id: null,
+  minimum_balance: 0,
 };
 
 const mockJob: DialecticJobRow = {
   id: "job-id",
   created_at: new Date().toISOString(),
+  idempotency_key: null,
   session_id: "session-id",
   user_id: "user-id",
   status: "pending",
@@ -513,6 +518,8 @@ Deno.test("PromptAssembler", async (t) => {
           session: mockSession,
           stage: mockStage,
           gatherContext: assembler["gatherContextFn"],
+          gatherContinuationInputs: assembler["gatherContinuationInputsFn"],
+          downloadFromStorage: assembler["downloadFromStorageFn"],
         };
 
         await assembler.assembleContinuationPrompt(deps);
@@ -584,6 +591,7 @@ Deno.test("PromptAssembler", async (t) => {
           job: {
             id: "job-id-planner",
             created_at: new Date().toISOString(),
+            idempotency_key: null,
             session_id: "session-id",
             user_id: "user-id",
             status: "pending",
@@ -697,6 +705,49 @@ Deno.test("PromptAssembler", async (t) => {
         await assembler.assemble(options);
 
         assertSpyCalls(continuationSpy, 1);
+      } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "assemble router passes gatherContinuationInputs and downloadFromStorage in deps when dispatching to continuation path",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          mockAssembleContinuationPrompt,
+        );
+        const continuationSpy = spy(assembler, "assembleContinuationPrompt");
+
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          job: {
+            ...mockJob,
+            target_contribution_id: "prev-contribution-id",
+          },
+        };
+
+        await assembler.assemble(options);
+
+        assertSpyCalls(continuationSpy, 1);
+        const deps: AssembleContinuationPromptDeps = continuationSpy.calls[0].args[0];
+        assertEquals(deps.gatherContinuationInputs, assembler["gatherContinuationInputsFn"]);
+        assertEquals(deps.downloadFromStorage, assembler["downloadFromStorageFn"]);
       } finally {
         teardown();
       }
@@ -913,6 +964,7 @@ Deno.test("PromptAssembler", async (t) => {
           job: {
             id: "job-id-planner",
             created_at: new Date().toISOString(),
+            idempotency_key: null,
             session_id: "session-id",
             user_id: "user-id",
             status: "pending",

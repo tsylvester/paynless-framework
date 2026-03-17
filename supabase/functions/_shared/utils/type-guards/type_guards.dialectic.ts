@@ -1,8 +1,8 @@
 // supabase/functions/_shared/utils/type_guards.ts
-import type { Tables, Json } from "../../../types_db.ts";
+import type { Tables, TablesUpdate, Json } from "../../../types_db.ts";
 import { Constants } from "../../../types_db.ts";
-import { 
-    DialecticContributionRow, 
+import {
+    DialecticContributionRow,
     DialecticJobPayload,
     DialecticJobRow,
     JobResultsWithModelProcessing,
@@ -44,7 +44,8 @@ import {
     SelectAnchorResult,
     SourceDocument,
     SelectedModels,
-} from '../../../dialectic-service/dialectic.interface.ts';
+    GitHubRepoSettings,
+} from "../../../dialectic-service/dialectic.interface.ts";
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { isFileType } from './type_guards.file_manager.ts';
 import { ContinueReason } from "../../types.ts";
@@ -69,6 +70,37 @@ const validContributionTypes: ContributionType[] = [
 ];
 
 const validBranchKeys = new Set<string>(Object.values(BranchKey));
+
+export function isGitHubRepoSettings(value: unknown): value is GitHubRepoSettings {
+	if (!isRecord(value)) return false;
+	const provider = Object.getOwnPropertyDescriptor(value, "provider")?.value;
+	const owner = Object.getOwnPropertyDescriptor(value, "owner")?.value;
+	const repo = Object.getOwnPropertyDescriptor(value, "repo")?.value;
+	const branch = Object.getOwnPropertyDescriptor(value, "branch")?.value;
+	const folder = Object.getOwnPropertyDescriptor(value, "folder")?.value;
+	const last_sync_at = Object.getOwnPropertyDescriptor(value, "last_sync_at")?.value;
+	return (
+		provider === "github" &&
+		typeof owner === "string" &&
+		typeof repo === "string" &&
+		typeof branch === "string" &&
+		typeof folder === "string" &&
+		(last_sync_at === null || typeof last_sync_at === "string")
+	);
+}
+
+export function isDialecticProjectUpdate(value: unknown): value is TablesUpdate<"dialectic_projects"> {
+	if (!isRecord(value)) return false;
+	if ("repo_url" in value && value.repo_url !== null && !isRecord(value.repo_url)) return false;
+	return true;
+}
+
+/** Narrow repo_url partial update shape (e.g. { last_sync_at: string }) from Json. */
+export function isRepoUrlWithLastSyncAt(value: unknown): value is { last_sync_at: string } {
+	if (!isRecord(value)) return false;
+	const last_sync_at = Object.getOwnPropertyDescriptor(value, "last_sync_at")?.value;
+	return typeof last_sync_at === "string";
+}
 
 export function isPlannerMetadata(value: unknown): value is DialecticStepPlannerMetadata {
     if (!isRecord(value)) return false;
