@@ -11,7 +11,19 @@ import type {
   GitHubApiErrorBody,
   GitHubPushResult,
   GitHubCreateRepoPayload,
+  GetUserResult,
+  GetUserSuccess,
+  GetUserFailure,
+  ListReposResult,
+  ListReposSuccess,
+  ListBranchesResult,
+  ListBranchesSuccess,
+  CreateRepoResult,
+  CreateRepoSuccess,
+  PushFilesResult,
+  PushFilesSuccess,
 } from "../../types/github.types.ts";
+import type { ServiceError } from "../../types.ts";
 import {
   isGitHubApiErrorBody,
   isGitHubUser,
@@ -29,6 +41,12 @@ import {
   isGithubServiceRequestBody,
   isStoreInstallationPayload,
   isListBranchesParams,
+  isGetUserSuccess,
+  isListReposSuccess,
+  isListBranchesSuccess,
+  isCreateRepoSuccess,
+  isPushFilesSuccess,
+  isGetUserFailure,
   parseGitHubUser,
   parseGitHubRepo,
   parseGitHubRepoArray,
@@ -458,5 +476,91 @@ Deno.test("type_guards.github: isGithubServiceRequestBody", async (t) => {
         payload: { name: 123 },
       })
     );
+  });
+});
+
+const sampleError: ServiceError = { message: "err" };
+
+Deno.test("type_guards.github: isGetUserSuccess", async (t) => {
+  await t.step("returns true for GetUserSuccess", () => {
+    const result: GetUserResult = { data: validUser };
+    assert(isGetUserSuccess(result));
+  });
+  await t.step("returns false for GetUserFailure", () => {
+    const result: GetUserResult = { error: sampleError };
+    assert(!isGetUserSuccess(result));
+  });
+  await t.step("returns false for null", () => {
+    assert(!isGetUserSuccess(null));
+  });
+});
+
+Deno.test("type_guards.github: isListReposSuccess", async (t) => {
+  await t.step("returns true for ListReposSuccess", () => {
+    const result: ListReposResult = { data: [validRepo] };
+    assert(isListReposSuccess(result));
+  });
+  await t.step("returns false for ListReposFailure", () => {
+    const result: ListReposResult = { error: sampleError };
+    assert(!isListReposSuccess(result));
+  });
+  await t.step("returns false for null", () => {
+    assert(!isListReposSuccess(null));
+  });
+});
+
+Deno.test("type_guards.github: isListBranchesSuccess", async (t) => {
+  await t.step("returns true for ListBranchesSuccess", () => {
+    const result: ListBranchesResult = { data: [validBranch] };
+    assert(isListBranchesSuccess(result));
+  });
+  await t.step("returns false for ListBranchesFailure", () => {
+    const result: ListBranchesResult = { error: sampleError };
+    assert(!isListBranchesSuccess(result));
+  });
+  await t.step("returns false for null", () => {
+    assert(!isListBranchesSuccess(null));
+  });
+});
+
+Deno.test("type_guards.github: isCreateRepoSuccess", async (t) => {
+  await t.step("returns true for CreateRepoSuccess", () => {
+    const result: CreateRepoResult = { data: validRepo };
+    assert(isCreateRepoSuccess(result));
+  });
+  await t.step("returns false for CreateRepoFailure", () => {
+    const result: CreateRepoResult = { error: sampleError };
+    assert(!isCreateRepoSuccess(result));
+  });
+  await t.step("returns false for null", () => {
+    assert(!isCreateRepoSuccess(null));
+  });
+});
+
+Deno.test("type_guards.github: isPushFilesSuccess", async (t) => {
+  await t.step("returns true for PushFilesSuccess", () => {
+    const result: PushFilesResult = { data: validPushResult };
+    assert(isPushFilesSuccess(result));
+  });
+  await t.step("returns false for PushFilesFailure", () => {
+    const result: PushFilesResult = { error: sampleError };
+    assert(!isPushFilesSuccess(result));
+  });
+  await t.step("returns false for null", () => {
+    assert(!isPushFilesSuccess(null));
+  });
+});
+
+Deno.test("type_guards.github: isGetUserFailure", async (t) => {
+  await t.step("returns true for GetUserFailure", () => {
+    const result: GetUserResult = { error: sampleError };
+    assert(isGetUserFailure(result));
+  });
+  await t.step("returns false for GetUserSuccess", () => {
+    const result: GetUserResult = { data: validUser };
+    assert(!isGetUserFailure(result));
+  });
+  await t.step("returns false for null", () => {
+    assert(!isGetUserFailure(null));
   });
 });

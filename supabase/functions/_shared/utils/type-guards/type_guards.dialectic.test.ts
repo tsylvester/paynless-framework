@@ -87,6 +87,9 @@ import {
     SourceDocument,
     HeaderContext,
     GitHubRepoSettings,
+    SyncMapEntry,
+    SyncToGitHubPayload,
+    SyncToGitHubResponse,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
@@ -3996,5 +3999,83 @@ Deno.test('Type Guard: isSelectAnchorResult', async (t) => {
             unknownProperty: 'value',
         };
         assert(!isSelectAnchorResult(result));
+    });
+});
+
+Deno.test('Type contract: SyncMapEntry', async (t) => {
+    const validWithAudience: SyncMapEntry = {
+        documentKey: 'business_case',
+        friendlyName: 'business_case',
+        stageGroup: 'proposal',
+        layer: 'research',
+        audience: 'leadership',
+        sortOrder: 1,
+        available: true,
+        updatedSinceLastSync: false,
+    };
+    await t.step('has required shape with all fields including audience', () => {
+        assert(typeof validWithAudience.documentKey === 'string');
+        assert(typeof validWithAudience.friendlyName === 'string');
+        assert(typeof validWithAudience.stageGroup === 'string');
+        assert(['research', 'decision', 'action'].includes(validWithAudience.layer));
+        assert(validWithAudience.audience === 'leadership');
+        assert(typeof validWithAudience.sortOrder === 'number');
+        assert(typeof validWithAudience.available === 'boolean');
+        assert(typeof validWithAudience.updatedSinceLastSync === 'boolean');
+    });
+    await t.step('allows nullable audience', () => {
+        const withNullAudience: SyncMapEntry = {
+            ...validWithAudience,
+            audience: null,
+        };
+        assert(withNullAudience.audience === null);
+        assert(typeof withNullAudience.available === 'boolean');
+        assert(typeof withNullAudience.updatedSinceLastSync === 'boolean');
+    });
+});
+
+Deno.test('Type contract: SyncToGitHubPayload', async (t) => {
+    const valid: SyncToGitHubPayload = {
+        projectId: 'proj-1',
+        selectedModelIds: ['model-a'],
+        selectedDocumentKeys: ['business_case', 'feature_spec'],
+        includeRulesFile: true,
+    };
+    await t.step('requires projectId, selectedModelIds, selectedDocumentKeys, includeRulesFile', () => {
+        assert(typeof valid.projectId === 'string');
+        assert(Array.isArray(valid.selectedModelIds));
+        assert(valid.selectedModelIds.every((id) => typeof id === 'string'));
+        assert(Array.isArray(valid.selectedDocumentKeys));
+        assert(valid.selectedDocumentKeys.every((k) => typeof k === 'string'));
+        assert(typeof valid.includeRulesFile === 'boolean');
+    });
+});
+
+Deno.test('Type contract: SyncToGitHubResponse', async (t) => {
+    await t.step('requires commitSha (nullable string), filesUpdated, syncedAt, syncedDocumentKeys, skippedDocumentKeys', () => {
+        const withNullSha: SyncToGitHubResponse = {
+            commitSha: null,
+            filesUpdated: 0,
+            syncedAt: '2025-01-01T00:00:00Z',
+            syncedDocumentKeys: [],
+            skippedDocumentKeys: ['doc-a'],
+        };
+        assert(withNullSha.commitSha === null);
+        assert(typeof withNullSha.filesUpdated === 'number');
+        assert(typeof withNullSha.syncedAt === 'string');
+        assert(Array.isArray(withNullSha.syncedDocumentKeys));
+        assert(Array.isArray(withNullSha.skippedDocumentKeys));
+    });
+    await t.step('allows commitSha as string', () => {
+        const withSha: SyncToGitHubResponse = {
+            commitSha: 'abc123',
+            filesUpdated: 2,
+            syncedAt: '2025-01-01T00:00:00Z',
+            syncedDocumentKeys: ['business_case', 'feature_spec'],
+            skippedDocumentKeys: [],
+        };
+        assert(typeof withSha.commitSha === 'string');
+        assert(withSha.syncedDocumentKeys.length === 2);
+        assert(withSha.skippedDocumentKeys.length === 0);
     });
 });

@@ -13,6 +13,12 @@ import type {
   GithubServiceRequestBody,
   ListBranchesParams,
   StoreInstallationPayload,
+  GetUserSuccess,
+  GetUserFailure,
+  ListReposSuccess,
+  ListBranchesSuccess,
+  CreateRepoSuccess,
+  PushFilesSuccess,
 } from "../../types/github.types.ts";
 import { isRecord } from "./type_guards.common.ts";
 
@@ -154,6 +160,54 @@ export function isListBranchesParams(obj: unknown): obj is ListBranchesParams {
   const owner = Object.getOwnPropertyDescriptor(obj, "owner")?.value;
   const repo = Object.getOwnPropertyDescriptor(obj, "repo")?.value;
   return typeof owner === "string" && typeof repo === "string";
+}
+
+export function isGetUserSuccess(obj: unknown): obj is GetUserSuccess {
+  if (!isRecord(obj)) return false;
+  const data = Object.getOwnPropertyDescriptor(obj, "data")?.value;
+  if (!isGitHubUser(data)) return false;
+  const error = Object.getOwnPropertyDescriptor(obj, "error")?.value;
+  return error === undefined;
+}
+
+export function isListReposSuccess(obj: unknown): obj is ListReposSuccess {
+  if (!isRecord(obj)) return false;
+  const data = Object.getOwnPropertyDescriptor(obj, "data")?.value;
+  if (!isGitHubRepoArray(data)) return false;
+  const error = Object.getOwnPropertyDescriptor(obj, "error")?.value;
+  return error === undefined;
+}
+
+export function isListBranchesSuccess(obj: unknown): obj is ListBranchesSuccess {
+  if (!isRecord(obj)) return false;
+  const data = Object.getOwnPropertyDescriptor(obj, "data")?.value;
+  if (!isGitHubBranchArray(data)) return false;
+  const error = Object.getOwnPropertyDescriptor(obj, "error")?.value;
+  return error === undefined;
+}
+
+export function isCreateRepoSuccess(obj: unknown): obj is CreateRepoSuccess {
+  if (!isRecord(obj)) return false;
+  const data = Object.getOwnPropertyDescriptor(obj, "data")?.value;
+  if (!isGitHubRepo(data)) return false;
+  const error = Object.getOwnPropertyDescriptor(obj, "error")?.value;
+  return error === undefined;
+}
+
+export function isPushFilesSuccess(obj: unknown): obj is PushFilesSuccess {
+  if (!isRecord(obj)) return false;
+  const data = Object.getOwnPropertyDescriptor(obj, "data")?.value;
+  if (!isGitHubPushResult(data)) return false;
+  const error = Object.getOwnPropertyDescriptor(obj, "error")?.value;
+  return error === undefined;
+}
+
+export function isGetUserFailure(obj: unknown): obj is GetUserFailure {
+  if (!isRecord(obj)) return false;
+  const error = Object.getOwnPropertyDescriptor(obj, "error")?.value;
+  if (!isRecord(error)) return false;
+  const message = Object.getOwnPropertyDescriptor(error, "message")?.value;
+  return typeof message === "string";
 }
 
 export function parseGitHubUser(obj: unknown): GitHubUser {

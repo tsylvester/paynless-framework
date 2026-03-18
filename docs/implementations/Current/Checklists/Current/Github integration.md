@@ -318,238 +318,238 @@ https://github.com/apps/paynless-app public app link
     *   `[✅]`   `supabase/functions/github-service/index.ts` — new edge function with installation + repo handlers
     *   `[✅]`   `supabase/functions/types_db.ts` — regenerated to include `github_connections`
 
-*   `[ ]`   [BE] supabase/functions/github-service/index **Add suspended connection check to `getInstallationToken` helper and surface suspension in `getConnectionStatus`**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Patch the existing `github-service/index.ts` to check `github_connections.suspended_at` in the `getInstallationToken` helper before generating an installation token
-    *   `[ ]`   If `suspended_at` is non-null, return a clear error: "GitHub App connection is suspended. Please reactivate at github.com." instead of attempting token generation that would fail with an opaque GitHub API error
-    *   `[ ]`   Enhance `getConnectionStatus` action to include `suspended: boolean` in the response (derived from `suspended_at IS NOT NULL`)
-    *   `[ ]`   This ensures all repo operations (`listRepos`, `listBranches`, `createRepo`) and the downstream `syncToGitHub` handler fail fast with actionable guidance when the installation is suspended
-  *   `[ ]`   `role`
-    *   `[ ]`   Backend adapter — edge function patch for operational robustness
-  *   `[ ]`   `module`
-    *   `[ ]`   GitHub integration: installation lifecycle and repo operations (existing module, patched)
-    *   `[ ]`   Boundary: no new external dependencies; reads `suspended_at` from existing `github_connections` query
-  *   `[ ]`   `deps`
-    *   `[ ]`   `github_connections` table — existing dependency, now also reads `suspended_at` column
-    *   `[ ]`   All other deps unchanged from completed node
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   From `github_connections`: existing `installation_id` query now also selects `suspended_at`
-    *   `[ ]`   `getConnectionStatus` response: existing `{ connected, username, github_user_id }` extended with `suspended: boolean`
-  *   `[ ]`   unit/`supabase/functions/github-service/index.test.ts`
-    *   `[ ]`   Test: `getInstallationToken` returns error with "suspended" message when `github_connections.suspended_at` is non-null
-    *   `[ ]`   Test: `listRepos` returns error when connection is suspended (does not attempt GitHub API call)
-    *   `[ ]`   Test: `listBranches` returns error when connection is suspended
-    *   `[ ]`   Test: `createRepo` returns error when connection is suspended
-    *   `[ ]`   Test: `getConnectionStatus` returns `{ connected: true, username, github_user_id, suspended: true }` when `suspended_at` is non-null
-    *   `[ ]`   Test: `getConnectionStatus` returns `{ connected: true, username, github_user_id, suspended: false }` when `suspended_at` is null
-    *   `[ ]`   Test: existing `storeInstallation` tests continue to pass unchanged
-  *   `[ ]`   `construction`
-    *   `[ ]`   In `getInstallationToken` helper: add `suspended_at` to the SELECT query on `github_connections`; if `suspended_at` is non-null, return error response instead of proceeding to `generateInstallationToken`
-    *   `[ ]`   In `getConnectionStatus` handler: add `suspended: row.suspended_at !== null` to the response object
-  *   `[ ]`   `index.ts`
-    *   `[ ]`   Modify `getInstallationToken` helper: SELECT now includes `suspended_at`; check before token generation
-    *   `[ ]`   Modify `getConnectionStatus` case: add `suspended` field to response
-    *   `[ ]`   No other changes — all other actions use `getInstallationToken` and automatically benefit from the suspended check
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Adapter layer (edge function, patch)
-    *   `[ ]`   No new dependencies; provides enhanced error messaging outward
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Suspended installations fail fast with clear, actionable error message
-    *   `[ ]`   `getConnectionStatus` exposes suspension state so frontend can display it
-    *   `[ ]`   Existing non-suspended flows unaffected
-    *   `[ ]`   All unit tests pass (existing + new)
+*   `[✅]`   [BE] supabase/functions/github-service/index **Add suspended connection check to `getInstallationToken` helper and surface suspension in `getConnectionStatus`**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Patch the existing `github-service/index.ts` to check `github_connections.suspended_at` in the `getInstallationToken` helper before generating an installation token
+    *   `[✅]`   If `suspended_at` is non-null, return a clear error: "GitHub App connection is suspended. Please reactivate at github.com." instead of attempting token generation that would fail with an opaque GitHub API error
+    *   `[✅]`   Enhance `getConnectionStatus` action to include `suspended: boolean` in the response (derived from `suspended_at IS NOT NULL`)
+    *   `[✅]`   This ensures all repo operations (`listRepos`, `listBranches`, `createRepo`) and the downstream `syncToGitHub` handler fail fast with actionable guidance when the installation is suspended
+  *   `[✅]`   `role`
+    *   `[✅]`   Backend adapter — edge function patch for operational robustness
+  *   `[✅]`   `module`
+    *   `[✅]`   GitHub integration: installation lifecycle and repo operations (existing module, patched)
+    *   `[✅]`   Boundary: no new external dependencies; reads `suspended_at` from existing `github_connections` query
+  *   `[✅]`   `deps`
+    *   `[✅]`   `github_connections` table — existing dependency, now also reads `suspended_at` column
+    *   `[✅]`   All other deps unchanged from completed node
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   From `github_connections`: existing `installation_id` query now also selects `suspended_at`
+    *   `[✅]`   `getConnectionStatus` response: existing `{ connected, username, github_user_id }` extended with `suspended: boolean`
+  *   `[✅]`   unit/`supabase/functions/github-service/index.test.ts`
+    *   `[✅]`   Test: `getInstallationToken` returns error with "suspended" message when `github_connections.suspended_at` is non-null
+    *   `[✅]`   Test: `listRepos` returns error when connection is suspended (does not attempt GitHub API call)
+    *   `[✅]`   Test: `listBranches` returns error when connection is suspended
+    *   `[✅]`   Test: `createRepo` returns error when connection is suspended
+    *   `[✅]`   Test: `getConnectionStatus` returns `{ connected: true, username, github_user_id, suspended: true }` when `suspended_at` is non-null
+    *   `[✅]`   Test: `getConnectionStatus` returns `{ connected: true, username, github_user_id, suspended: false }` when `suspended_at` is null
+    *   `[✅]`   Test: existing `storeInstallation` tests continue to pass unchanged
+  *   `[✅]`   `construction`
+    *   `[✅]`   In `getInstallationToken` helper: add `suspended_at` to the SELECT query on `github_connections`; if `suspended_at` is non-null, return error response instead of proceeding to `generateInstallationToken`
+    *   `[✅]`   In `getConnectionStatus` handler: add `suspended: row.suspended_at !== null` to the response object
+  *   `[✅]`   `index.ts`
+    *   `[✅]`   Modify `getInstallationToken` helper: SELECT now includes `suspended_at`; check before token generation
+    *   `[✅]`   Modify `getConnectionStatus` case: add `suspended` field to response
+    *   `[✅]`   No other changes — all other actions use `getInstallationToken` and automatically benefit from the suspended check
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Adapter layer (edge function, patch)
+    *   `[✅]`   No new dependencies; provides enhanced error messaging outward
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Suspended installations fail fast with clear, actionable error message
+    *   `[✅]`   `getConnectionStatus` exposes suspension state so frontend can display it
+    *   `[✅]`   Existing non-suspended flows unaffected
+    *   `[✅]`   All unit tests pass (existing + new)
 
-*   `[ ]`   [DB]+[RLS] supabase/migrations **Create `dialectic_sync_maps` table for mapping document keys to friendly names and audience groups**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Create a `dialectic_sync_maps` table that maps each document key to a friendly export name, stage group, layer, and audience preset
-    *   `[ ]`   Each row represents one document type that can be synced to GitHub for a given DAG recipe template
-    *   `[ ]`   Audience presets: `leadership` (proposal docs), `management` (decision + TRD docs), `build` (action docs), NULL (review docs, opt-in only)
-    *   `[ ]`   Seed data for the current DAG template mapping all 18 document keys
-    *   `[ ]`   RLS: read-only for authenticated users (UI needs to fetch the map); writes via service role only
-  *   `[ ]`   `role`
-    *   `[ ]`   Infrastructure — database schema, security policy, and seed data
-  *   `[ ]`   `module`
-    *   `[ ]`   Database schema: `dialectic_sync_maps` table — per-template document-to-export mapping
-    *   `[ ]`   Boundary: consumed by `getSyncMap` handler and `syncToGitHub` handler in `dialectic-service`
-  *   `[ ]`   `deps`
-    *   `[ ]`   `dialectic_recipe_templates` table — FK target for `template_id`, infrastructure layer
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `supabase/migrations/YYYYMMDDHHMMSS_create_dialectic_sync_maps.sql`
-    *   `[ ]`   `CREATE TABLE public.dialectic_sync_maps` with columns:
-      *   `[ ]`   `id uuid PK DEFAULT gen_random_uuid()`
-      *   `[ ]`   `template_id uuid NOT NULL REFERENCES public.dialectic_recipe_templates(id) ON DELETE CASCADE`
-      *   `[ ]`   `document_key text NOT NULL` — matches `FileType` document key (e.g., `business_case`, `actionable_checklist`)
-      *   `[ ]`   `friendly_name text NOT NULL` — human-friendly export file name without extension (e.g., `business_case`, `work_plan`)
-      *   `[ ]`   `stage_group text NOT NULL` — human-readable stage label (e.g., `proposal`, `review`, `refinement`, `planning`, `implementation`)
-      *   `[ ]`   `layer text NOT NULL CHECK (layer IN ('research', 'decision', 'action'))` — categorization for UI grouping
-      *   `[ ]`   `audience text CHECK (audience IN ('leadership', 'management', 'build'))` — nullable; NULL means opt-in only (not in any audience preset)
-      *   `[ ]`   `sort_order integer NOT NULL DEFAULT 0` — display ordering within the sync dialog
-      *   `[ ]`   `created_at timestamptz NOT NULL DEFAULT now()`
-      *   `[ ]`   `UNIQUE(template_id, document_key)`
-    *   `[ ]`   RLS enabled: `ALTER TABLE public.dialectic_sync_maps ENABLE ROW LEVEL SECURITY;`
-    *   `[ ]`   Policy `dialectic_sync_maps_select_authenticated`: `USING (true)` for SELECT by `authenticated` role
-    *   `[ ]`   No INSERT/UPDATE/DELETE policy for `authenticated` role — writes go through service role
-    *   `[ ]`   Add table and column comments
-  *   `[ ]`   Seed data for current template (insert in same migration):
-    *   `[ ]`   `business_case` → friendly: `business_case`, stage: `proposal`, layer: `research`, audience: `leadership`, sort: 1
-    *   `[ ]`   `feature_spec` → friendly: `feature_specifications`, stage: `proposal`, layer: `research`, audience: `leadership`, sort: 2
-    *   `[ ]`   `technical_approach` → friendly: `technical_approach`, stage: `proposal`, layer: `research`, audience: `leadership`, sort: 3
-    *   `[ ]`   `success_metrics` → friendly: `success_metrics`, stage: `proposal`, layer: `research`, audience: `leadership`, sort: 4
-    *   `[ ]`   `business_case_critique` → friendly: `business_case_critique`, stage: `review`, layer: `research`, audience: NULL, sort: 5
-    *   `[ ]`   `technical_feasibility_assessment` → friendly: `technical_feasibility`, stage: `review`, layer: `research`, audience: NULL, sort: 6
-    *   `[ ]`   `risk_register` → friendly: `risk_register`, stage: `review`, layer: `research`, audience: NULL, sort: 7
-    *   `[ ]`   `non_functional_requirements` → friendly: `non_functional_requirements`, stage: `review`, layer: `research`, audience: NULL, sort: 8
-    *   `[ ]`   `dependency_map` → friendly: `dependency_map`, stage: `review`, layer: `research`, audience: NULL, sort: 9
-    *   `[ ]`   `product_requirements` → friendly: `product_requirements`, stage: `refinement`, layer: `decision`, audience: `management`, sort: 10
-    *   `[ ]`   `system_architecture` → friendly: `system_architecture`, stage: `refinement`, layer: `decision`, audience: `management`, sort: 11
-    *   `[ ]`   `tech_stack` → friendly: `tech_stack`, stage: `refinement`, layer: `decision`, audience: `management`, sort: 12
-    *   `[ ]`   `technical_requirements` → friendly: `technical_requirements`, stage: `planning`, layer: `action`, audience: `management`, sort: 13
-    *   `[ ]`   `master_plan` → friendly: `master_plan`, stage: `planning`, layer: `action`, audience: `build`, sort: 14
-    *   `[ ]`   `milestone_schema` → friendly: `milestones`, stage: `planning`, layer: `action`, audience: `build`, sort: 15
-    *   `[ ]`   `updated_master_plan` → friendly: `updated_master_plan`, stage: `implementation`, layer: `action`, audience: `build`, sort: 16
-    *   `[ ]`   `actionable_checklist` → friendly: `work_plan`, stage: `implementation`, layer: `action`, audience: `build`, sort: 17
-    *   `[ ]`   `advisor_recommendations` → friendly: `recommendations`, stage: `implementation`, layer: `action`, audience: `build`, sort: 18
-  *   `[ ]`   `supabase/functions/types_db.ts`
-    *   `[ ]`   Regenerate from database schema after migration
-    *   `[ ]`   Verify `dialectic_sync_maps` row type appears with all columns
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Infrastructure layer
-    *   `[ ]`   All dependencies inward (schema definition references `dialectic_recipe_templates`)
-    *   `[ ]`   Provides table to backend edge functions (`dialectic-service`)
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Migration applies cleanly on existing database
-    *   `[ ]`   RLS allows authenticated users to read sync map entries
-    *   `[ ]`   Service role can INSERT/UPDATE (for future template additions)
-    *   `[ ]`   Seed data covers all 18 document keys for the current DAG template
-    *   `[ ]`   `types_db.ts` regenerated to include `dialectic_sync_maps`
-    *   `[ ]`   Exempt from TDD (database migration / generated types / seed data)
+*   `[✅]`   [DB]+[RLS] supabase/migrations **Create `dialectic_sync_maps` table for mapping document keys to friendly names and audience groups**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Create a `dialectic_sync_maps` table that maps each document key to a friendly export name, stage group, layer, and audience preset
+    *   `[✅]`   Each row represents one document type that can be synced to GitHub for a given DAG recipe template
+    *   `[✅]`   Audience presets: `leadership` (proposal docs), `management` (decision + TRD docs), `build` (action docs), NULL (review docs, opt-in only)
+    *   `[✅]`   Seed data for the current DAG template mapping all 18 document keys
+    *   `[✅]`   RLS: read-only for authenticated users (UI needs to fetch the map); writes via service role only
+  *   `[✅]`   `role`
+    *   `[✅]`   Infrastructure — database schema, security policy, and seed data
+  *   `[✅]`   `module`
+    *   `[✅]`   Database schema: `dialectic_sync_maps` table — per-template document-to-export mapping
+    *   `[✅]`   Boundary: consumed by `getSyncMap` handler and `syncToGitHub` handler in `dialectic-service`
+  *   `[✅]`   `deps`
+    *   `[✅]`   `dialectic_recipe_templates` table — FK target for `template_id`, infrastructure layer
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `supabase/migrations/YYYYMMDDHHMMSS_create_dialectic_sync_maps.sql`
+    *   `[✅]`   `CREATE TABLE public.dialectic_sync_maps` with columns:
+      *   `[✅]`   `id uuid PK DEFAULT gen_random_uuid()`
+      *   `[✅]`   `template_id uuid NOT NULL REFERENCES public.dialectic_recipe_templates(id) ON DELETE CASCADE`
+      *   `[✅]`   `document_key text NOT NULL` — matches `FileType` document key (e.g., `business_case`, `actionable_checklist`)
+      *   `[✅]`   `friendly_name text NOT NULL` — human-friendly export file name without extension (e.g., `business_case`, `work_plan`)
+      *   `[✅]`   `stage_group text NOT NULL` — human-readable stage label (e.g., `proposal`, `review`, `refinement`, `planning`, `implementation`)
+      *   `[✅]`   `layer text NOT NULL CHECK (layer IN ('research', 'decision', 'action'))` — categorization for UI grouping
+      *   `[✅]`   `audience text CHECK (audience IN ('leadership', 'management', 'build'))` — nullable; NULL means opt-in only (not in any audience preset)
+      *   `[✅]`   `sort_order integer NOT NULL DEFAULT 0` — display ordering within the sync dialog
+      *   `[✅]`   `created_at timestamptz NOT NULL DEFAULT now()`
+      *   `[✅]`   `UNIQUE(template_id, document_key)`
+    *   `[✅]`   RLS enabled: `ALTER TABLE public.dialectic_sync_maps ENABLE ROW LEVEL SECURITY;`
+    *   `[✅]`   Policy `dialectic_sync_maps_select_authenticated`: `USING (true)` for SELECT by `authenticated` role
+    *   `[✅]`   No INSERT/UPDATE/DELETE policy for `authenticated` role — writes go through service role
+    *   `[✅]`   Add table and column comments
+  *   `[✅]`   Seed data for current template (insert in same migration):
+    *   `[✅]`   `business_case` → friendly: `business_case`, stage: `proposal`, layer: `research`, audience: `leadership`, sort: 1
+    *   `[✅]`   `feature_spec` → friendly: `feature_specifications`, stage: `proposal`, layer: `research`, audience: `leadership`, sort: 2
+    *   `[✅]`   `technical_approach` → friendly: `technical_approach`, stage: `proposal`, layer: `research`, audience: `leadership`, sort: 3
+    *   `[✅]`   `success_metrics` → friendly: `success_metrics`, stage: `proposal`, layer: `research`, audience: `leadership`, sort: 4
+    *   `[✅]`   `business_case_critique` → friendly: `business_case_critique`, stage: `review`, layer: `research`, audience: NULL, sort: 5
+    *   `[✅]`   `technical_feasibility_assessment` → friendly: `technical_feasibility`, stage: `review`, layer: `research`, audience: NULL, sort: 6
+    *   `[✅]`   `risk_register` → friendly: `risk_register`, stage: `review`, layer: `research`, audience: NULL, sort: 7
+    *   `[✅]`   `non_functional_requirements` → friendly: `non_functional_requirements`, stage: `review`, layer: `research`, audience: NULL, sort: 8
+    *   `[✅]`   `dependency_map` → friendly: `dependency_map`, stage: `review`, layer: `research`, audience: NULL, sort: 9
+    *   `[✅]`   `product_requirements` → friendly: `product_requirements`, stage: `refinement`, layer: `decision`, audience: `management`, sort: 10
+    *   `[✅]`   `system_architecture` → friendly: `system_architecture`, stage: `refinement`, layer: `decision`, audience: `management`, sort: 11
+    *   `[✅]`   `tech_stack` → friendly: `tech_stack`, stage: `refinement`, layer: `decision`, audience: `management`, sort: 12
+    *   `[✅]`   `technical_requirements` → friendly: `technical_requirements`, stage: `planning`, layer: `action`, audience: `management`, sort: 13
+    *   `[✅]`   `master_plan` → friendly: `master_plan`, stage: `planning`, layer: `action`, audience: `build`, sort: 14
+    *   `[✅]`   `milestone_schema` → friendly: `milestones`, stage: `planning`, layer: `action`, audience: `build`, sort: 15
+    *   `[✅]`   `updated_master_plan` → friendly: `updated_master_plan`, stage: `implementation`, layer: `action`, audience: `build`, sort: 16
+    *   `[✅]`   `actionable_checklist` → friendly: `work_plan`, stage: `implementation`, layer: `action`, audience: `build`, sort: 17
+    *   `[✅]`   `advisor_recommendations` → friendly: `recommendations`, stage: `implementation`, layer: `action`, audience: `build`, sort: 18
+  *   `[✅]`   `supabase/functions/types_db.ts`
+    *   `[✅]`   Regenerate from database schema after migration
+    *   `[✅]`   Verify `dialectic_sync_maps` row type appears with all columns
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Infrastructure layer
+    *   `[✅]`   All dependencies inward (schema definition references `dialectic_recipe_templates`)
+    *   `[✅]`   Provides table to backend edge functions (`dialectic-service`)
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Migration applies cleanly on existing database
+    *   `[✅]`   RLS allows authenticated users to read sync map entries
+    *   `[✅]`   Service role can INSERT/UPDATE (for future template additions)
+    *   `[✅]`   Seed data covers all 18 document keys for the current DAG template
+    *   `[✅]`   `types_db.ts` regenerated to include `dialectic_sync_maps`
+    *   `[✅]`   Exempt from TDD (database migration / generated types / seed data)
 
-*   `[ ]`   [BE] supabase/functions/dialectic-service/syncToGitHub **Sync rendered project documents to GitHub via sync map with model selection, audience presets, friendly file names, skip reporting, and pre-completion support**
-  *   `[ ]`   `objective`
-    *   `[ ]`   Sync user-selected rendered documents from `dialectic_project_resources` to the configured GitHub repository
-    *   `[ ]`   Accept `selectedModelIds` to filter documents by producing model (join through `source_contribution_id` → `dialectic_contributions.model_id`)
-    *   `[ ]`   Accept `selectedDocumentKeys` to filter which document types to sync (driven by sync map and audience presets in the UI)
-    *   `[ ]`   Accept `includeRulesFile` flag to optionally sync `.cursor/rules/rules.md` into the repo
-    *   `[ ]`   Look up `dialectic_sync_maps` for the project's template to map `document_key` → `friendly_name`
-    *   `[ ]`   Directory structure: single model selected → `docs/{friendly_name}.md`; multiple models → `docs/{model_slug}/{friendly_name}.md`
-    *   `[ ]`   Only sync rendered documents (`resource_type = 'rendered_document'`), not raw contributions or manifests
-    *   `[ ]`   Sync is additive/upsert — adds new files or updates existing files; does not delete files from the repo
-    *   `[ ]`   Uses `IGitHubAdapter.pushFiles()` for efficient batch commit via Git Trees API
-    *   `[ ]`   Support pre-completion sync: users may sync at any stage of project progress; only documents that have been rendered are pushed, unrendered documents are reported as skipped
-    *   `[ ]`   Support repeated sync: users may sync multiple times at different progress levels; each sync pushes the current state of selected documents
-    *   `[ ]`   Report which documents were synced and which were skipped (selected but not yet rendered) in the response
-    *   `[ ]`   Check `github_connections.suspended_at` before attempting sync — return clear error if the GitHub App installation is suspended
-    *   `[ ]`   Use contextual commit message: first sync → `"docs: initial sync from Paynless ({n} documents)"`; re-sync → `"docs: sync update from Paynless ({n} documents)"`
-    *   `[ ]`   If zero documents match the selection (all selected docs are unrendered), do NOT call `pushFiles`, do NOT update `last_sync_at` — return result with `filesUpdated: 0` and populated `skippedDocumentKeys`
-    *   `[ ]`   Map GitHub API 404 errors from `pushFiles` to actionable message: "The target repository or branch no longer exists. Please update your GitHub settings."
-  *   `[ ]`   `role`
-    *   `[ ]`   Backend service handler — orchestrates document retrieval, model filtering, name mapping, and push to GitHub
-  *   `[ ]`   `module`
-    *   `[ ]`   Dialectic service: GitHub document sync with sync map integration
-    *   `[ ]`   Boundary: reads from `dialectic_project_resources`, `dialectic_contributions`, `dialectic_sync_maps`, `github_connections`; downloads from Supabase storage; pushes to GitHub via adapter
-  *   `[ ]`   `deps`
-    *   `[ ]`   `dialectic_project_resources` table — source of rendered documents, infrastructure layer
-    *   `[ ]`   `dialectic_projects` table — `repo_url` JSONB column for repo/branch/folder config, infrastructure layer
-    *   `[ ]`   `dialectic_contributions` table — join target for model association via `source_contribution_id`, infrastructure layer
-    *   `[ ]`   `dialectic_sync_maps` table — document key to friendly name mapping, infrastructure layer (DB node)
-    *   `[ ]`   `github_connections` table — user's GitHub App installation reference (`installation_id`) and `suspended_at` status, infrastructure layer
-    *   `[ ]`   `generateInstallationToken` from `_shared/utils/github_token.ts` — infrastructure layer
-    *   `[ ]`   `IGitHubAdapter` / `GitHubApiAdapter` from `_shared/adapters/github_adapter.ts` — adapter layer
-    *   `[ ]`   `IStorageUtils` from `_shared/types/storage_utils.types.ts` — download files from Supabase storage, infrastructure layer
-    *   `[ ]`   `downloadFromStorage` from `_shared/supabase_storage_utils.ts` — infrastructure layer
-    *   `[ ]`   Backend GitHub types from `_shared/types/github.types.ts` — domain types
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Input: `SyncToGitHubPayload` — `{ projectId, selectedModelIds, selectedDocumentKeys, includeRulesFile }` from request payload + authenticated user
-    *   `[ ]`   From `dialectic_projects.repo_url`: `{ provider, owner, repo, branch, folder, last_sync_at }`
-    *   `[ ]`   From `dialectic_sync_maps`: array of `SyncMapEntry` for the project's template — maps `document_key` → `friendly_name`
-    *   `[ ]`   From `dialectic_project_resources` joined with `dialectic_contributions`: resources filtered by `selectedModelIds` and `selectedDocumentKeys`
-    *   `[ ]`   From `github_connections`: user's `installation_id` and `suspended_at` (used with `generateInstallationToken` to produce ephemeral access token; suspended connections are rejected)
-    *   `[ ]`   Output: `{ commitSha: string | null, filesUpdated: number, syncedAt: string, syncedDocumentKeys: string[], skippedDocumentKeys: string[] }` or error
-  *   `[ ]`   interface/`supabase/functions/dialectic-service/dialectic.interface.ts`
-    *   `[ ]`   `SyncMapEntry` — `{ documentKey: string; friendlyName: string; stageGroup: string; layer: 'research' | 'decision' | 'action'; audience: 'leadership' | 'management' | 'build' | null; sortOrder: number; available: boolean; updatedSinceLastSync: boolean; }`
-    *   `[ ]`   `SyncToGitHubPayload` — `{ projectId: string; selectedModelIds: string[]; selectedDocumentKeys: string[]; includeRulesFile: boolean; }`
-    *   `[ ]`   `GitHubRepoSettings` — `{ provider: 'github'; owner: string; repo: string; branch: string; folder: string; last_sync_at: string | null; }`
-    *   `[ ]`   `SyncToGitHubResponse` — `{ commitSha: string | null; filesUpdated: number; syncedAt: string; syncedDocumentKeys: string[]; skippedDocumentKeys: string[]; }`
-    *   `[ ]`   `UpdateProjectGitHubSettingsPayload` — `{ projectId: string; settings: GitHubRepoSettings; }`
-    *   `[ ]`   Add `syncToGitHub`, `updateProjectGitHubSettings`, `getSyncMap`, and `getAvailableModelsForSync` to `DialecticServiceActionPayload` union
-  *   `[ ]`   interface/tests/`supabase/functions/_shared/utils/type-guards/type_guards.dialectic.test.ts`
-    *   `[ ]`   Test: `SyncMapEntry` satisfies required shape with all fields including nullable `audience`, `available` boolean, and `updatedSinceLastSync` boolean
-    *   `[ ]`   Test: `SyncToGitHubPayload` requires `projectId`, `selectedModelIds`, `selectedDocumentKeys`, `includeRulesFile`
-    *   `[ ]`   Test: `SyncToGitHubResponse` requires `commitSha` (nullable string), `filesUpdated`, `syncedAt`, `syncedDocumentKeys` array, `skippedDocumentKeys` array
-  *   `[ ]`   interface/guards/`supabase/functions/_shared/utils/type-guards/type_guards.dialectic.ts`
-    *   `[ ]`   Guard: `isSyncMapEntry` — validates all required fields and constrained values for `layer` and `audience`, validates `available` is boolean, validates `updatedSinceLastSync` is boolean
-    *   `[ ]`   Guard: `isSyncToGitHubPayload` — validates `projectId` is string, `selectedModelIds` and `selectedDocumentKeys` are string arrays, `includeRulesFile` is boolean
-    *   `[ ]`   Guard: `isSyncToGitHubResponse` — validates `commitSha` is string or null, `filesUpdated` is number, `syncedDocumentKeys` and `skippedDocumentKeys` are string arrays
-  *   `[ ]`   unit/`supabase/functions/dialectic-service/syncToGitHub.test.ts`
-    *   `[ ]`   Test: returns error if project not found
-    *   `[ ]`   Test: returns error if user does not own the project
-    *   `[ ]`   Test: returns error if `repo_url` is null (no GitHub repo configured)
-    *   `[ ]`   Test: returns error if user has no GitHub connection in `github_connections`
-    *   `[ ]`   Test: returns error with clear message if `github_connections.suspended_at` is non-null (connection suspended)
-    *   `[ ]`   Test: loads sync map from `dialectic_sync_maps` for the project's template and applies `friendly_name` mapping to file paths
-    *   `[ ]`   Test: filters `dialectic_project_resources` by `selectedDocumentKeys` (only syncs chosen document types)
-    *   `[ ]`   Test: filters resources by `selectedModelIds` via join through `source_contribution_id` → `dialectic_contributions.model_id`
-    *   `[ ]`   Test: single model selected — files placed at `docs/{friendly_name}.md` (flat structure)
-    *   `[ ]`   Test: multiple models selected — files placed at `docs/{model_slug}/{friendly_name}.md` (model subdirectories)
-    *   `[ ]`   Test: `includeRulesFile = true` — adds `.cursor/rules/rules.md` content to the push
-    *   `[ ]`   Test: `includeRulesFile = false` — does not include rules file
-    *   `[ ]`   Test: converts downloaded file content to base64 and constructs `GitHubPushFile[]`
-    *   `[ ]`   Test: calls `adapter.pushFiles()` with correct owner, repo, branch, files, and commit message
-    *   `[ ]`   Test: updates `dialectic_projects.repo_url` with `last_sync_at` timestamp after successful push
-    *   `[ ]`   Test: returns `syncedDocumentKeys` listing all document keys that were actually pushed
-    *   `[ ]`   Test: returns `skippedDocumentKeys` listing document keys that were selected but had no rendered resource
-    *   `[ ]`   Test: pre-completion sync — user selects 10 docs but only 5 are rendered; response has `filesUpdated: 5`, `syncedDocumentKeys` with 5 entries, `skippedDocumentKeys` with 5 entries
-    *   `[ ]`   Test: empty sync — all selected documents are unrendered; does NOT call `pushFiles`, does NOT update `last_sync_at`, returns `commitSha: null`, `filesUpdated: 0`, `skippedDocumentKeys` populated
-    *   `[ ]`   Test: first sync — `last_sync_at` is null → commit message is `"docs: initial sync from Paynless ({n} documents)"`
-    *   `[ ]`   Test: re-sync — `last_sync_at` is non-null → commit message is `"docs: sync update from Paynless ({n} documents)"`
-    *   `[ ]`   Test: GitHub API 404 from `pushFiles` (deleted repo/branch) → returns actionable error "The target repository or branch no longer exists. Please update your GitHub settings."
-    *   `[ ]`   Test: GitHub API non-404 errors from `pushFiles` → returns generic sync error with status and message
-  *   `[ ]`   `construction`
-    *   `[ ]`   Signature: `syncToGitHub(deps: SyncToGitHubDeps, params: SyncToGitHubParams, payload: SyncToGitHubPayload): Promise<SyncToGitHubResult>`
-    *   `[ ]`   DI via deps: `supabaseClient`, `adminClient`, `storageUtils`, `generateInstallationToken`, `createGitHubAdapter`, `appId`, `privateKey`, `logger`
-    *   `[ ]`   Params: `{ user }` — authenticated user
-    *   `[ ]`   Payload: `{ projectId, selectedModelIds, selectedDocumentKeys, includeRulesFile }`
-  *   `[ ]`   `syncToGitHub.ts`
-    *   `[ ]`   Fetch project from `dialectic_projects`, verify ownership
-    *   `[ ]`   Parse `repo_url` JSONB as `GitHubRepoSettings`, validate required fields via `isGitHubRepoSettings` guard
-    *   `[ ]`   Query `github_connections` for user's `installation_id` and `suspended_at` via admin client
-    *   `[ ]`   If `suspended_at` is non-null, return error: "GitHub App connection is suspended. Please reactivate at github.com."
-    *   `[ ]`   Generate installation access token via `generateInstallationToken({ appId, privateKey }, { installationId })`
-    *   `[ ]`   Construct `GitHubApiAdapter(installationToken)` via `createGitHubAdapter`
-    *   `[ ]`   Query `dialectic_sync_maps` WHERE `template_id` matches project's template — load friendly name map
-    *   `[ ]`   Query `dialectic_project_resources` WHERE `project_id = projectId` AND `resource_type = 'rendered_document'`, joined with `dialectic_contributions` on `source_contribution_id` to get `model_id`
-    *   `[ ]`   Filter results by `selectedModelIds` (contribution's `model_id` IN payload list) and `selectedDocumentKeys` (resource's document key matches sync map entries in payload list)
-    *   `[ ]`   Compute `syncedDocumentKeys` (selected keys that matched actual resources) and `skippedDocumentKeys` (selected keys with no matching rendered resource)
-    *   `[ ]`   If zero documents matched (all skipped): return `{ commitSha: null, filesUpdated: 0, syncedAt: now, syncedDocumentKeys: [], skippedDocumentKeys }` without calling `pushFiles` or updating `last_sync_at`
-    *   `[ ]`   Determine directory structure: if `selectedModelIds.length === 1` → flat `docs/{friendly_name}.md`; if `> 1` → `docs/{model_slug}/{friendly_name}.md`
-    *   `[ ]`   For each matched resource: download file bytes via `storageUtils.downloadFromStorage`, convert to base64, build `GitHubPushFile` with mapped path
-    *   `[ ]`   If `includeRulesFile`: read rules content from storage or embedded source, add as `GitHubPushFile` at `.cursor/rules/rules.md`
-    *   `[ ]`   Build commit message: if `repo_url.last_sync_at` is null → `"docs: initial sync from Paynless ({n} documents)"`; if non-null → `"docs: sync update from Paynless ({n} documents)"` where `{n}` is the count of files being pushed
-    *   `[ ]`   Call `adapter.pushFiles(owner, repo, branch, files, commitMessage)` wrapped in try/catch
-    *   `[ ]`   Catch: if GitHub API error has status 404 → return error "The target repository or branch no longer exists. Please update your GitHub settings."
-    *   `[ ]`   Catch: other GitHub API errors → return error with status and message from GitHub
-    *   `[ ]`   Update `dialectic_projects.repo_url` JSONB merging `last_sync_at: new Date().toISOString()`
-    *   `[ ]`   Return `{ data: { commitSha, filesUpdated, syncedAt, syncedDocumentKeys, skippedDocumentKeys }, status: 200 }`
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Service layer (backend handler)
-    *   `[ ]`   Dependencies inward: `IGitHubAdapter` (adapter), tables (infrastructure), storage utils (infrastructure), sync maps (infrastructure)
-    *   `[ ]`   Provides outward: sync handler consumed by `dialectic-service/index.ts` router
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Only `dialectic_project_resources` rows matching `selectedDocumentKeys` and `selectedModelIds` are synced
-    *   `[ ]`   Friendly names from `dialectic_sync_maps` are used instead of raw storage file names
-    *   `[ ]`   Single-model sync uses flat directory; multi-model sync uses model subdirectories
-    *   `[ ]`   Rules file optionally included at `.cursor/rules/rules.md`
-    *   `[ ]`   Sync is additive — existing repo files not managed by sync are untouched
-    *   `[ ]`   `last_sync_at` is updated on the project only after a successful push with at least one file
-    *   `[ ]`   Response includes `syncedDocumentKeys` and `skippedDocumentKeys` so the caller knows exactly what was pushed and what was unavailable
-    *   `[ ]`   Pre-completion sync: selecting unrendered documents does not cause failure — they are reported as skipped
-    *   `[ ]`   Repeated sync: each sync pushes the current state of selected documents with a contextual commit message distinguishing initial from subsequent syncs
-    *   `[ ]`   Suspended connections are rejected with clear guidance before any GitHub API call is attempted
-    *   `[ ]`   Deleted repo/branch (404) produces actionable error directing user to update GitHub settings
-    *   `[ ]`   Empty sync (all docs skipped) returns cleanly without pushing or updating `last_sync_at`
-    *   `[ ]`   All unit tests pass
+*   `[✅]`   [BE] supabase/functions/dialectic-service/syncToGitHub **Sync rendered project documents to GitHub via sync map with model selection, audience presets, friendly file names, skip reporting, and pre-completion support**
+  *   `[✅]`   `objective`
+    *   `[✅]`   Sync user-selected rendered documents from `dialectic_project_resources` to the configured GitHub repository
+    *   `[✅]`   Accept `selectedModelIds` to filter documents by producing model (join through `source_contribution_id` → `dialectic_contributions.model_id`)
+    *   `[✅]`   Accept `selectedDocumentKeys` to filter which document types to sync (driven by sync map and audience presets in the UI)
+    *   `[✅]`   Accept `includeRulesFile` flag to optionally sync `.cursor/rules/rules.md` into the repo
+    *   `[✅]`   Look up `dialectic_sync_maps` for the project's template to map `document_key` → `friendly_name`
+    *   `[✅]`   Directory structure: single model selected → `docs/{friendly_name}.md`; multiple models → `docs/{model_slug}/{friendly_name}.md`
+    *   `[✅]`   Only sync rendered documents (`resource_type = 'rendered_document'`), not raw contributions or manifests
+    *   `[✅]`   Sync is additive/upsert — adds new files or updates existing files; does not delete files from the repo
+    *   `[✅]`   Uses `IGitHubAdapter.pushFiles()` for efficient batch commit via Git Trees API
+    *   `[✅]`   Support pre-completion sync: users may sync at any stage of project progress; only documents that have been rendered are pushed, unrendered documents are reported as skipped
+    *   `[✅]`   Support repeated sync: users may sync multiple times at different progress levels; each sync pushes the current state of selected documents
+    *   `[✅]`   Report which documents were synced and which were skipped (selected but not yet rendered) in the response
+    *   `[✅]`   Check `github_connections.suspended_at` before attempting sync — return clear error if the GitHub App installation is suspended
+    *   `[✅]`   Use contextual commit message: first sync → `"docs: initial sync from Paynless ({n} documents)"`; re-sync → `"docs: sync update from Paynless ({n} documents)"`
+    *   `[✅]`   If zero documents match the selection (all selected docs are unrendered), do NOT call `pushFiles`, do NOT update `last_sync_at` — return result with `filesUpdated: 0` and populated `skippedDocumentKeys`
+    *   `[✅]`   Map GitHub API 404 errors from `pushFiles` to actionable message: "The target repository or branch no longer exists. Please update your GitHub settings."
+  *   `[✅]`   `role`
+    *   `[✅]`   Backend service handler — orchestrates document retrieval, model filtering, name mapping, and push to GitHub
+  *   `[✅]`   `module`
+    *   `[✅]`   Dialectic service: GitHub document sync with sync map integration
+    *   `[✅]`   Boundary: reads from `dialectic_project_resources`, `dialectic_contributions`, `dialectic_sync_maps`, `github_connections`; downloads from Supabase storage; pushes to GitHub via adapter
+  *   `[✅]`   `deps`
+    *   `[✅]`   `dialectic_project_resources` table — source of rendered documents, infrastructure layer
+    *   `[✅]`   `dialectic_projects` table — `repo_url` JSONB column for repo/branch/folder config, infrastructure layer
+    *   `[✅]`   `dialectic_contributions` table — join target for model association via `source_contribution_id`, infrastructure layer
+    *   `[✅]`   `dialectic_sync_maps` table — document key to friendly name mapping, infrastructure layer (DB node)
+    *   `[✅]`   `github_connections` table — user's GitHub App installation reference (`installation_id`) and `suspended_at` status, infrastructure layer
+    *   `[✅]`   `generateInstallationToken` from `_shared/utils/github_token.ts` — infrastructure layer
+    *   `[✅]`   `IGitHubAdapter` / `GitHubApiAdapter` from `_shared/adapters/github_adapter.ts` — adapter layer
+    *   `[✅]`   `IStorageUtils` from `_shared/types/storage_utils.types.ts` — download files from Supabase storage, infrastructure layer
+    *   `[✅]`   `downloadFromStorage` from `_shared/supabase_storage_utils.ts` — infrastructure layer
+    *   `[✅]`   Backend GitHub types from `_shared/types/github.types.ts` — domain types
+    *   `[✅]`   Confirm no reverse dependency is introduced
+  *   `[✅]`   `context_slice`
+    *   `[✅]`   Input: `SyncToGitHubPayload` — `{ projectId, selectedModelIds, selectedDocumentKeys, includeRulesFile }` from request payload + authenticated user
+    *   `[✅]`   From `dialectic_projects.repo_url`: `{ provider, owner, repo, branch, folder, last_sync_at }`
+    *   `[✅]`   From `dialectic_sync_maps`: array of `SyncMapEntry` for the project's template — maps `document_key` → `friendly_name`
+    *   `[✅]`   From `dialectic_project_resources` joined with `dialectic_contributions`: resources filtered by `selectedModelIds` and `selectedDocumentKeys`
+    *   `[✅]`   From `github_connections`: user's `installation_id` and `suspended_at` (used with `generateInstallationToken` to produce ephemeral access token; suspended connections are rejected)
+    *   `[✅]`   Output: `{ commitSha: string | null, filesUpdated: number, syncedAt: string, syncedDocumentKeys: string[], skippedDocumentKeys: string[] }` or error
+  *   `[✅]`   interface/`supabase/functions/dialectic-service/dialectic.interface.ts`
+    *   `[✅]`   `SyncMapEntry` — `{ documentKey: string; friendlyName: string; stageGroup: string; layer: 'research' | 'decision' | 'action'; audience: 'leadership' | 'management' | 'build' | null; sortOrder: number; available: boolean; updatedSinceLastSync: boolean; }`
+    *   `[✅]`   `SyncToGitHubPayload` — `{ projectId: string; selectedModelIds: string[]; selectedDocumentKeys: string[]; includeRulesFile: boolean; }`
+    *   `[✅]`   `GitHubRepoSettings` — `{ provider: 'github'; owner: string; repo: string; branch: string; folder: string; last_sync_at: string | null; }`
+    *   `[✅]`   `SyncToGitHubResponse` — `{ commitSha: string | null; filesUpdated: number; syncedAt: string; syncedDocumentKeys: string[]; skippedDocumentKeys: string[]; }`
+    *   `[✅]`   `UpdateProjectGitHubSettingsPayload` — `{ projectId: string; settings: GitHubRepoSettings; }`
+    *   `[✅]`   Add `syncToGitHub`, `updateProjectGitHubSettings`, `getSyncMap`, and `getAvailableModelsForSync` to `DialecticServiceActionPayload` union
+  *   `[✅]`   interface/tests/`supabase/functions/_shared/utils/type-guards/type_guards.dialectic.test.ts`
+    *   `[✅]`   Test: `SyncMapEntry` satisfies required shape with all fields including nullable `audience`, `available` boolean, and `updatedSinceLastSync` boolean
+    *   `[✅]`   Test: `SyncToGitHubPayload` requires `projectId`, `selectedModelIds`, `selectedDocumentKeys`, `includeRulesFile`
+    *   `[✅]`   Test: `SyncToGitHubResponse` requires `commitSha` (nullable string), `filesUpdated`, `syncedAt`, `syncedDocumentKeys` array, `skippedDocumentKeys` array
+  *   `[✅]`   interface/guards/`supabase/functions/_shared/utils/type-guards/type_guards.dialectic.ts`
+    *   `[✅]`   Guard: `isSyncMapEntry` — validates all required fields and constrained values for `layer` and `audience`, validates `available` is boolean, validates `updatedSinceLastSync` is boolean
+    *   `[✅]`   Guard: `isSyncToGitHubPayload` — validates `projectId` is string, `selectedModelIds` and `selectedDocumentKeys` are string arrays, `includeRulesFile` is boolean
+    *   `[✅]`   Guard: `isSyncToGitHubResponse` — validates `commitSha` is string or null, `filesUpdated` is number, `syncedDocumentKeys` and `skippedDocumentKeys` are string arrays
+  *   `[✅]`   unit/`supabase/functions/dialectic-service/syncToGitHub.test.ts`
+    *   `[✅]`   Test: returns error if project not found
+    *   `[✅]`   Test: returns error if user does not own the project
+    *   `[✅]`   Test: returns error if `repo_url` is null (no GitHub repo configured)
+    *   `[✅]`   Test: returns error if user has no GitHub connection in `github_connections`
+    *   `[✅]`   Test: returns error with clear message if `github_connections.suspended_at` is non-null (connection suspended)
+    *   `[✅]`   Test: loads sync map from `dialectic_sync_maps` for the project's template and applies `friendly_name` mapping to file paths
+    *   `[✅]`   Test: filters `dialectic_project_resources` by `selectedDocumentKeys` (only syncs chosen document types)
+    *   `[✅]`   Test: filters resources by `selectedModelIds` via join through `source_contribution_id` → `dialectic_contributions.model_id`
+    *   `[✅]`   Test: single model selected — files placed at `docs/{friendly_name}.md` (flat structure)
+    *   `[✅]`   Test: multiple models selected — files placed at `docs/{model_slug}/{friendly_name}.md` (model subdirectories)
+    *   `[✅]`   Test: `includeRulesFile = true` — adds `.cursor/rules/rules.md` content to the push
+    *   `[✅]`   Test: `includeRulesFile = false` — does not include rules file
+    *   `[✅]`   Test: converts downloaded file content to base64 and constructs `GitHubPushFile[]`
+    *   `[✅]`   Test: calls `adapter.pushFiles()` with correct owner, repo, branch, files, and commit message
+    *   `[✅]`   Test: updates `dialectic_projects.repo_url` with `last_sync_at` timestamp after successful push
+    *   `[✅]`   Test: returns `syncedDocumentKeys` listing all document keys that were actually pushed
+    *   `[✅]`   Test: returns `skippedDocumentKeys` listing document keys that were selected but had no rendered resource
+    *   `[✅]`   Test: pre-completion sync — user selects 10 docs but only 5 are rendered; response has `filesUpdated: 5`, `syncedDocumentKeys` with 5 entries, `skippedDocumentKeys` with 5 entries
+    *   `[✅]`   Test: empty sync — all selected documents are unrendered; does NOT call `pushFiles`, does NOT update `last_sync_at`, returns `commitSha: null`, `filesUpdated: 0`, `skippedDocumentKeys` populated
+    *   `[✅]`   Test: first sync — `last_sync_at` is null → commit message is `"docs: initial sync from Paynless ({n} documents)"`
+    *   `[✅]`   Test: re-sync — `last_sync_at` is non-null → commit message is `"docs: sync update from Paynless ({n} documents)"`
+    *   `[✅]`   Test: GitHub API 404 from `pushFiles` (deleted repo/branch) → returns actionable error "The target repository or branch no longer exists. Please update your GitHub settings."
+    *   `[✅]`   Test: GitHub API non-404 errors from `pushFiles` → returns generic sync error with status and message
+  *   `[✅]`   `construction`
+    *   `[✅]`   Signature: `syncToGitHub(deps: SyncToGitHubDeps, params: SyncToGitHubParams, payload: SyncToGitHubPayload): Promise<SyncToGitHubResult>`
+    *   `[✅]`   DI via deps: `supabaseClient`, `adminClient`, `storageUtils`, `generateInstallationToken`, `createGitHubAdapter`, `appId`, `privateKey`, `logger`
+    *   `[✅]`   Params: `{ user }` — authenticated user
+    *   `[✅]`   Payload: `{ projectId, selectedModelIds, selectedDocumentKeys, includeRulesFile }`
+  *   `[✅]`   `syncToGitHub.ts`
+    *   `[✅]`   Fetch project from `dialectic_projects`, verify ownership
+    *   `[✅]`   Parse `repo_url` JSONB as `GitHubRepoSettings`, validate required fields via `isGitHubRepoSettings` guard
+    *   `[✅]`   Query `github_connections` for user's `installation_id` and `suspended_at` via admin client
+    *   `[✅]`   If `suspended_at` is non-null, return error: "GitHub App connection is suspended. Please reactivate at github.com."
+    *   `[✅]`   Generate installation access token via `generateInstallationToken({ appId, privateKey }, { installationId })`
+    *   `[✅]`   Construct `GitHubApiAdapter(installationToken)` via `createGitHubAdapter`
+    *   `[✅]`   Query `dialectic_sync_maps` WHERE `template_id` matches project's template — load friendly name map
+    *   `[✅]`   Query `dialectic_project_resources` WHERE `project_id = projectId` AND `resource_type = 'rendered_document'`, joined with `dialectic_contributions` on `source_contribution_id` to get `model_id`
+    *   `[✅]`   Filter results by `selectedModelIds` (contribution's `model_id` IN payload list) and `selectedDocumentKeys` (resource's document key matches sync map entries in payload list)
+    *   `[✅]`   Compute `syncedDocumentKeys` (selected keys that matched actual resources) and `skippedDocumentKeys` (selected keys with no matching rendered resource)
+    *   `[✅]`   If zero documents matched (all skipped): return `{ commitSha: null, filesUpdated: 0, syncedAt: now, syncedDocumentKeys: [], skippedDocumentKeys }` without calling `pushFiles` or updating `last_sync_at`
+    *   `[✅]`   Determine directory structure: if `selectedModelIds.length === 1` → flat `docs/{friendly_name}.md`; if `> 1` → `docs/{model_slug}/{friendly_name}.md`
+    *   `[✅]`   For each matched resource: download file bytes via `storageUtils.downloadFromStorage`, convert to base64, build `GitHubPushFile` with mapped path
+    *   `[✅]`   If `includeRulesFile`: read rules content from storage or embedded source, add as `GitHubPushFile` at `.cursor/rules/rules.md`
+    *   `[✅]`   Build commit message: if `repo_url.last_sync_at` is null → `"docs: initial sync from Paynless ({n} documents)"`; if non-null → `"docs: sync update from Paynless ({n} documents)"` where `{n}` is the count of files being pushed
+    *   `[✅]`   Call `adapter.pushFiles(owner, repo, branch, files, commitMessage)` wrapped in try/catch
+    *   `[✅]`   Catch: if GitHub API error has status 404 → return error "The target repository or branch no longer exists. Please update your GitHub settings."
+    *   `[✅]`   Catch: other GitHub API errors → return error with status and message from GitHub
+    *   `[✅]`   Update `dialectic_projects.repo_url` JSONB merging `last_sync_at: new Date().toISOString()`
+    *   `[✅]`   Return `{ data: { commitSha, filesUpdated, syncedAt, syncedDocumentKeys, skippedDocumentKeys }, status: 200 }`
+  *   `[✅]`   `directionality`
+    *   `[✅]`   Service layer (backend handler)
+    *   `[✅]`   Dependencies inward: `IGitHubAdapter` (adapter), tables (infrastructure), storage utils (infrastructure), sync maps (infrastructure)
+    *   `[✅]`   Provides outward: sync handler consumed by `dialectic-service/index.ts` router
+  *   `[✅]`   `requirements`
+    *   `[✅]`   Only `dialectic_project_resources` rows matching `selectedDocumentKeys` and `selectedModelIds` are synced
+    *   `[✅]`   Friendly names from `dialectic_sync_maps` are used instead of raw storage file names
+    *   `[✅]`   Single-model sync uses flat directory; multi-model sync uses model subdirectories
+    *   `[✅]`   Rules file optionally included at `.cursor/rules/rules.md`
+    *   `[✅]`   Sync is additive — existing repo files not managed by sync are untouched
+    *   `[✅]`   `last_sync_at` is updated on the project only after a successful push with at least one file
+    *   `[✅]`   Response includes `syncedDocumentKeys` and `skippedDocumentKeys` so the caller knows exactly what was pushed and what was unavailable
+    *   `[✅]`   Pre-completion sync: selecting unrendered documents does not cause failure — they are reported as skipped
+    *   `[✅]`   Repeated sync: each sync pushes the current state of selected documents with a contextual commit message distinguishing initial from subsequent syncs
+    *   `[✅]`   Suspended connections are rejected with clear guidance before any GitHub API call is attempted
+    *   `[✅]`   Deleted repo/branch (404) produces actionable error directing user to update GitHub settings
+    *   `[✅]`   Empty sync (all docs skipped) returns cleanly without pushing or updating `last_sync_at`
+    *   `[✅]`   All unit tests pass
 
 *   `[ ]`   [BE] supabase/functions/dialectic-service/getSyncMap **Return sync map entries for a project's recipe template with document availability and changed-since-last-sync status**
   *   `[ ]`   `objective`
