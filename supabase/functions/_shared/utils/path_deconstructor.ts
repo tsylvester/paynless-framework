@@ -63,12 +63,12 @@ export function deconstructStoragePath(
   // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at '_critiquing_'
   const turnPromptAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_(.+?)(_continuation_(\\d+))?_prompt\\.md$";
   const turnPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+)_(\\d+)_(.+?)(?:_([a-f0-9]{8}))?(_continuation_(\\d+))?_prompt\\.md$";
-  const synthesisHeaderContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)_synthesis_header_context\\.json$";
+  const synthesisHeaderContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)_synthesis_header_context(?:_continuation_(\\d+))?\\.json$";
   // HeaderContext patterns: antithesis pattern must be checked before simple pattern
   // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at '_critiquing_'
   // documentKey can be any value like 'header_context', 'header_context_pairwise', etc.
-  const headerContextAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_(.+)\\.json$";
-  const headerContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)(?:_([a-f0-9]{8}))?_(.+)\\.json$";
+  const headerContextAntithesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+?)_critiquing_(.+?)(?:_([a-f0-9]{8}))?_(\\d+)_(.+?)(?:_continuation_(\\d+))?\\.json$";
+  const headerContextPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/context/(.+)_(\\d+)(?:_([a-f0-9]{8}))?_(.+?)(?:_continuation_(\\d+))?\\.json$";
   // AssembledDocumentJson patterns: check in order of specificity (pairwise > antithesis > simple)
   // Model slugs can contain hyphens, so use (.+?) non-greedy to stop at pattern keywords
   const assembledJsonPairwisePatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/assembled_json/(.+?)_synthesizing_(.+?)_with_(.+?)_on_(.+?)_(\\d+)_(.+)_assembled\\.json$";
@@ -265,6 +265,10 @@ export function deconstructStoragePath(
     info.attemptCount = parseInt(matches[6], 10);
     info.contributionType = 'synthesis_header_context';
     info.fileTypeGuess = FileType.SynthesisHeaderContext;
+    if (matches[7]) {
+      info.isContinuation = true;
+      info.turnIndex = parseInt(matches[7], 10);
+    }
     return info;
   }
 
@@ -280,7 +284,11 @@ export function deconstructStoragePath(
     info.sourceAnchorModelSlug = matches[6];
     info.sourceGroupFragment = matches[7] || undefined; // Optional fragment between sourceAnchorModelSlug and attemptCount
     info.attemptCount = parseInt(matches[8], 10);
-    info.documentKey = matches[9]; // Extract documentKey from filename
+    info.documentKey = matches[9]; // Extract documentKey from filename (excluding optional continuation suffix)
+    if (matches[10]) {
+      info.isContinuation = true;
+      info.turnIndex = parseInt(matches[10], 10);
+    }
     info.contributionType = 'header_context';
     info.fileTypeGuess = FileType.HeaderContext;
     return info;
@@ -297,7 +305,11 @@ export function deconstructStoragePath(
     info.modelSlug = matches[5];
     info.attemptCount = parseInt(matches[6], 10);
     info.sourceGroupFragment = matches[7] || undefined; // Optional fragment after attemptCount
-    info.documentKey = matches[8]; // Extract documentKey from filename
+    info.documentKey = matches[8]; // Extract documentKey from filename (excluding optional continuation suffix)
+    if (matches[9]) {
+      info.isContinuation = true;
+      info.turnIndex = parseInt(matches[9], 10);
+    }
     info.contributionType = 'header_context';
     info.fileTypeGuess = FileType.HeaderContext;
     return info;

@@ -59,6 +59,7 @@ import {
   type RegenerateDocumentResponse,
   StartSessionSuccessResponse,
   type CreateProjectAutoStartResult,
+  type SelectedModels,
   UpsertJobFromLifecycleEventParams,
   type UpsertJobFromLifecycleEventPayload,
 } from '@paynless/types';
@@ -67,7 +68,7 @@ import { useAuthStore } from './authStore';
 import { useWalletStore } from './walletStore';
 import { useAiStore } from './aiStore';
 import { selectActiveChatWalletInfo } from './walletStore.selectors';
-import { selectDefaultGenerationModels } from './dialecticStore.selectors';
+import { selectDefaultGenerationModels, selectSelectedModels } from './dialecticStore.selectors';
 import { isAssembledPrompt, logger } from '@paynless/utils';
 import {
 	ensureStageDocumentContentLogic,
@@ -815,8 +816,13 @@ export const useDialecticStore = create<DialecticStore>()(
 				return { projectId: '', sessionId: null, hasDefaultModels: false, error: err };
 			}
 			const projectId: string = createResult.data.id;
+			const currentSelectedModels: SelectedModels[] = selectSelectedModels(get());
+			const modelsToUse: SelectedModels[] = currentSelectedModels.length > 0 ? currentSelectedModels : selectDefaultGenerationModels(get());
+			if (modelsToUse.length === 0) {
+				return { projectId, sessionId: null, hasDefaultModels: false };
+			}
 			set({ autoStartStep: 'Loading project details…' });
-			await get().fetchDialecticProjectDetails(projectId);
+			await get().fetchDialecticProjectDetails(projectId, { preserveContext: true });
 			const currentProjectDetail = get().currentProjectDetail;
 			if (!currentProjectDetail) {
 				return { projectId, sessionId: null, hasDefaultModels: false };
@@ -845,16 +851,12 @@ export const useDialecticStore = create<DialecticStore>()(
 				return { projectId, sessionId: null, hasDefaultModels: false, error: err };
 			}
 			const stageSlug: string = firstStage.slug;
-			const defaultModels = selectDefaultGenerationModels(get());
-			if (defaultModels.length === 0) {
-				return { projectId, sessionId: null, hasDefaultModels: false };
-			}
 			set({ autoStartStep: 'Starting session…' });
 			const sessionResult = await get().startDialecticSession({
 				idempotencyKey: payload.sessionIdempotencyKey,
 				projectId,
 				stageSlug,
-				selectedModels: defaultModels,
+				selectedModels: modelsToUse,
 			});
 			if (!sessionResult.data) {
 				const err = sessionResult.error ?? { message: 'Start session failed', code: 'UNKNOWN' };
@@ -864,7 +866,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			return {
 				projectId,
 				sessionId: sessionResult.data.id,
-				hasDefaultModels: true,
+				hasDefaultModels: modelsToUse.length > 0,
 			};
 		} finally {
 			set({ isAutoStarting: false, autoStartStep: null });

@@ -50,6 +50,9 @@ import {
     isObjectWithOptionalId,
     isArrayWithOptionalId,
     isSelectAnchorResult,
+    isGitHubRepoSettings,
+    isDialecticProjectUpdate,
+    isRepoUrlWithLastSyncAt,
 } from './type_guards.dialectic.ts';
 import { 
     BranchKey, 
@@ -83,9 +86,81 @@ import {
     SelectAnchorResult,
     SourceDocument,
     HeaderContext,
+    GitHubRepoSettings,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
+
+Deno.test('Type Guard: isGitHubRepoSettings', async (t) => {
+    const valid: GitHubRepoSettings = {
+        provider: 'github',
+        owner: 'octocat',
+        repo: 'repo',
+        branch: 'main',
+        folder: 'docs',
+        last_sync_at: null,
+    };
+    await t.step('returns true for valid GitHubRepoSettings', () => {
+        assert(isGitHubRepoSettings(valid));
+    });
+    await t.step('returns true when last_sync_at is string', () => {
+        assert(isGitHubRepoSettings({ ...valid, last_sync_at: '2025-01-01T00:00:00Z' }));
+    });
+    await t.step('returns false for null', () => {
+        assert(!isGitHubRepoSettings(null));
+    });
+    await t.step('returns false for non-object', () => {
+        assert(!isGitHubRepoSettings('string'));
+    });
+    await t.step('returns false when provider is not "github"', () => {
+        assert(!isGitHubRepoSettings({ ...valid, provider: 'gitlab' }));
+    });
+    await t.step('returns false when owner is not string', () => {
+        assert(!isGitHubRepoSettings({ ...valid, owner: 1 }));
+    });
+    await t.step('returns false when last_sync_at is not string or null', () => {
+        assert(!isGitHubRepoSettings({ ...valid, last_sync_at: 123 }));
+    });
+});
+
+Deno.test('Type Guard: isDialecticProjectUpdate', async (t) => {
+    await t.step('returns true for empty object', () => {
+        assert(isDialecticProjectUpdate({}));
+    });
+    await t.step('returns true for object with repo_url null', () => {
+        assert(isDialecticProjectUpdate({ repo_url: null }));
+    });
+    await t.step('returns true for object with repo_url as record', () => {
+        assert(isDialecticProjectUpdate({ repo_url: { last_sync_at: '2025-01-01T00:00:00Z' } }));
+    });
+    await t.step('returns false for null', () => {
+        assert(!isDialecticProjectUpdate(null));
+    });
+    await t.step('returns false for non-object', () => {
+        assert(!isDialecticProjectUpdate('string'));
+    });
+    await t.step('returns false when repo_url is present and not null and not a record', () => {
+        assert(!isDialecticProjectUpdate({ repo_url: 'not-an-object' }));
+    });
+});
+
+Deno.test('Type Guard: isRepoUrlWithLastSyncAt', async (t) => {
+    await t.step('returns true for object with last_sync_at string', () => {
+        assert(isRepoUrlWithLastSyncAt({ last_sync_at: '2025-01-01T00:00:00Z' }));
+    });
+    await t.step('returns false for null', () => {
+        assert(!isRepoUrlWithLastSyncAt(null));
+    });
+    await t.step('returns false for non-object', () => {
+        assert(!isRepoUrlWithLastSyncAt('string'));
+    });
+    await t.step('returns false when last_sync_at is missing', () => {
+        assert(!isRepoUrlWithLastSyncAt({}));
+    });
+    await t.step('returns false when last_sync_at is not string', () => {
+        assert(!isRepoUrlWithLastSyncAt({ last_sync_at: 123 }));
+    });
+});
 
 Deno.test('Type Guard: hasModelResultWithContributionId', async (t) => {
     await t.step('should return true for a valid object', () => {

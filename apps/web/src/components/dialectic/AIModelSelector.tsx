@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from "react";
+import React, { useMemo, useEffect, useRef } from "react";
 import { InternalDropdownButton } from "./InternalDropdownButton";
 import type { AiProvider, SelectedModels } from "@paynless/types";
 import {
@@ -11,8 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, X, Cpu } from "lucide-react";
-import { useDialecticStore, useAiStore } from "@paynless/store";
-import { selectSelectedModels } from "@paynless/store";
+import { useDialecticStore, useAiStore, selectSelectedModels, selectDefaultGenerationModels } from "@paynless/store";
 import { MultiplicitySelector } from "./MultiplicitySelector";
 import { cn } from "@/lib/utils";
 
@@ -135,12 +134,25 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 			aiError: state.aiError,
 		}));
 
-	const { selectedModels, setModelMultiplicity } = useDialecticStore(
-		(state) => ({
-			selectedModels: selectSelectedModels(state),
-			setModelMultiplicity: state.setModelMultiplicity,
-		}),
-	);
+	const {
+		selectedModels,
+		setModelMultiplicity,
+		fetchAIModelCatalog,
+		isLoadingModelCatalog,
+		modelCatalog,
+		setSelectedModels,
+		activeContextSessionId,
+	} = useDialecticStore((state) => ({
+		selectedModels: selectSelectedModels(state),
+		setModelMultiplicity: state.setModelMultiplicity,
+		fetchAIModelCatalog: state.fetchAIModelCatalog,
+		isLoadingModelCatalog: state.isLoadingModelCatalog,
+		modelCatalog: state.modelCatalog,
+		setSelectedModels: state.setSelectedModels,
+		activeContextSessionId: state.activeContextSessionId,
+	}));
+	const defaultModels = useDialecticStore(selectDefaultGenerationModels);
+	const defaultsAppliedRef = useRef<boolean>(false);
 
 	const currentSelectedModelIds = useMemo(
 		() => selectedModels.map((m) => m.id),
@@ -170,6 +182,24 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 			loadAiConfig();
 		}
 	}, [loadAiConfig, isConfigLoading, availableProviders, aiError]);
+
+	useEffect(() => {
+		if (modelCatalog.length === 0 && !isLoadingModelCatalog) {
+			fetchAIModelCatalog();
+		}
+	}, [fetchAIModelCatalog, isLoadingModelCatalog, modelCatalog.length]);
+
+	useEffect(() => {
+		if (
+			!defaultsAppliedRef.current &&
+			defaultModels.length > 0 &&
+			selectedModels.length === 0 &&
+			!activeContextSessionId
+		) {
+			defaultsAppliedRef.current = true;
+			setSelectedModels(defaultModels);
+		}
+	}, [defaultModels, selectedModels.length, activeContextSessionId, setSelectedModels]);
 
 	const handleMultiplicityChange = (modelId: string, newCount: number) => {
 		const provider = availableProviders?.find((p) => p.id === modelId);
@@ -207,7 +237,7 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 			: 0;
 
 		dropdownContent = (
-			<div className="flex flex-col h-full max-h-96">
+			<div className="flex flex-col h-full max-h-96 opacity-100">
 				{/* Scrollable content */}
 				<div className="flex-1 min-h-0">
 					<ScrollArea className="h-64">
@@ -324,7 +354,7 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 						disabled={finalIsDisabled}
 						aria-label="Select AI Models"
 					>
-						<div className="flex-grow mr-2 min-w-0">
+						<div className="flex-grow mr-2 min-w-0 bg-background-blur-md">
 							<SelectedModelsDisplayContent
 								availableProviders={availableProviders}
 								selectedModels={selectedModels}

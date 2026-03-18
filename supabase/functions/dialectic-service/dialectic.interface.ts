@@ -29,6 +29,13 @@ import type {
 	CountTokensDeps,
 } from "../_shared/types/tokenizer.types.ts";
 import type { ITokenWalletService } from "../_shared/types/tokenWallet.types.ts";
+import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts";
+import type {
+	GenerateInstallationTokenDeps,
+	GenerateInstallationTokenParams,
+	GenerateInstallationTokenReturn,
+	IGitHubAdapter,
+} from "../_shared/types/github.types.ts";
 import type {
 	AiModelExtendedConfig,
 	AiProviderAdapter,
@@ -708,6 +715,93 @@ type GetStageDocumentFeedbackAction = {
 	payload: GetStageDocumentFeedbackPayload;
 };
 
+// --- START: syncToGitHub and updateProjectGitHubSettings ---
+export interface SyncToGitHubPayload {
+	projectId: string;
+}
+
+export interface GitHubRepoSettings {
+	provider: "github";
+	owner: string;
+	repo: string;
+	branch: string;
+	folder: string;
+	last_sync_at: string | null;
+}
+
+export interface SyncToGitHubResponse {
+	commitSha: string;
+	filesUpdated: number;
+	syncedAt: string;
+}
+
+export interface SyncToGitHubDeps {
+	supabaseClient: SupabaseClient<Database>;
+	adminClient: SupabaseClient<Database>;
+	storageUtils: IStorageUtils;
+	generateInstallationToken: (
+		deps: GenerateInstallationTokenDeps,
+		params: GenerateInstallationTokenParams
+	) => Promise<GenerateInstallationTokenReturn>;
+	createGitHubAdapter: (token: string) => IGitHubAdapter;
+	appId: string;
+	privateKey: string;
+	logger: ILogger;
+}
+
+export interface SyncToGitHubParams {
+	user: User;
+}
+
+export interface SyncToGitHubResult {
+	data?: SyncToGitHubResponse;
+	error?: ServiceError;
+	status?: number;
+}
+
+export type SyncToGitHubFn = (
+	deps: SyncToGitHubDeps,
+	params: SyncToGitHubParams,
+	payload: SyncToGitHubPayload
+) => Promise<SyncToGitHubResult>;
+
+export interface UpdateProjectGitHubSettingsPayload {
+	projectId: string;
+	settings: GitHubRepoSettings;
+}
+
+export interface UpdateProjectGitHubSettingsDeps {
+	dbClient: SupabaseClient<Database>;
+	logger: ILogger;
+}
+
+export interface UpdateProjectGitHubSettingsParams {
+	user: User;
+}
+
+export interface UpdateProjectGitHubSettingsResult {
+	data?: DialecticProjectRow;
+	error?: ServiceError;
+	status?: number;
+}
+
+export type UpdateProjectGitHubSettingsFn = (
+	deps: UpdateProjectGitHubSettingsDeps,
+	params: UpdateProjectGitHubSettingsParams,
+	payload: UpdateProjectGitHubSettingsPayload
+) => Promise<UpdateProjectGitHubSettingsResult>;
+
+type SyncToGitHubAction = {
+	action: "syncToGitHub";
+	payload: SyncToGitHubPayload;
+};
+
+type UpdateProjectGitHubSettingsAction = {
+	action: "updateProjectGitHubSettings";
+	payload: UpdateProjectGitHubSettingsPayload;
+};
+// --- END: syncToGitHub and updateProjectGitHubSettings ---
+
 // The main union type for all possible JSON requests to the service.
 export type DialecticServiceRequest =
 	| ListProjectsAction
@@ -737,7 +831,9 @@ export type DialecticServiceRequest =
 	| PauseActiveJobsAction
 	| RegenerateDocumentAction
 	| GetStageDocumentFeedbackAction
-	| SubmitStageDocumentFeedbackAction;
+	| SubmitStageDocumentFeedbackAction
+	| SyncToGitHubAction
+	| UpdateProjectGitHubSettingsAction;
 
 // --- END: Discriminated Union ---
 

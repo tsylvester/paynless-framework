@@ -4,11 +4,15 @@ import { initialDialecticStateValues } from '@paynless/store';
 import { initialAiStateValues } from '@paynless/types';
 import { AIModelSelector } from './AIModelSelector';
 // Import AiProvider and DialecticStateValues for typing mock stores
-import type { AiProvider, DialecticStateValues, AiState, SelectedModels } from '@paynless/types';
+import type { AiProvider, DialecticStateValues, AiState, SelectedModels, AIModelCatalogEntry } from '@paynless/types';
 
 // Store references to mock implementations that can be updated
 let currentDialecticState: DialecticStateValues;
-let currentDialecticActions: { setModelMultiplicity: ReturnType<typeof vi.fn> };
+let currentDialecticActions: {
+  setModelMultiplicity: ReturnType<typeof vi.fn>;
+  fetchAIModelCatalog: ReturnType<typeof vi.fn>;
+  setSelectedModels: ReturnType<typeof vi.fn>;
+};
 let currentAiState: AiState;
 let currentAiActions: { loadAiConfig: ReturnType<typeof vi.fn> };
 
@@ -60,7 +64,8 @@ const setupMockStores = (
 
   const dialecticActions = {
     setModelMultiplicity: vi.fn(),
-    // Add other dialectic actions if used by the component indirectly
+    fetchAIModelCatalog: vi.fn(),
+    setSelectedModels: vi.fn(),
   };
 
   const aiActions = {
@@ -78,8 +83,8 @@ const setupMockStores = (
 };
 
 const mockAiProvidersData: AiProvider[] = [
-  { id: 'model1', name: 'GPT-4', provider: 'OpenAI', api_identifier: 'gpt-4', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, config: null, description: null },
-  { id: 'model2', name: 'Claude 3', provider: 'Anthropic', api_identifier: 'claude-3', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, config: null, description: null },
+  { id: 'model1', name: 'GPT-4', provider: 'OpenAI', api_identifier: 'gpt-4', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null },
+  { id: 'model2', name: 'Claude 3', provider: 'Anthropic', api_identifier: 'claude-3', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null },
 ];
 
 const modelIdToDisplayName: Record<string, string> = {
@@ -90,6 +95,27 @@ const modelIdToDisplayName: Record<string, string> = {
 
 function selectedModelsFromIds(ids: string[]): SelectedModels[] {
   return ids.map((id) => ({ id, displayName: modelIdToDisplayName[id] ?? id }));
+}
+
+function catalogEntry(overrides: Partial<AIModelCatalogEntry>): AIModelCatalogEntry {
+  const base: AIModelCatalogEntry = {
+    id: 'base-id',
+    provider_name: 'Provider',
+    model_name: 'Base Model',
+    api_identifier: 'api-id',
+    description: null,
+    strengths: null,
+    weaknesses: null,
+    context_window_tokens: null,
+    input_token_cost_usd_millionths: null,
+    output_token_cost_usd_millionths: null,
+    max_output_tokens: null,
+    is_active: true,
+    created_at: '2025-01-01T00:00:00Z',
+    updated_at: '2025-01-01T00:00:00Z',
+    is_default_generation: false,
+  };
+  return { ...base, ...overrides };
 }
 
 describe('AIModelSelector', () => {
@@ -228,7 +254,7 @@ describe('AIModelSelector', () => {
     expect(screen.getByText('Claude 3')).toBeInTheDocument();
     unmount();
 
-    const geminiModel: AiProvider = { id: 'model3', name: 'Gemini', provider: 'Google', api_identifier: 'gemini', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, config: null, description: null };
+    const geminiModel: AiProvider = { id: 'model3', name: 'Gemini', provider: 'Google', api_identifier: 'gemini', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null };
     const manyProviders: AiProvider[] = [...mockAiProvidersData, geminiModel];
 
     // Test with three models, GPT-4 (x1), Claude 3 (x1), Gemini (x1)
@@ -383,6 +409,96 @@ describe('AIModelSelector', () => {
     setupMockStores({}, { availableProviders: [], isConfigLoading: false, aiError: 'Some error' });
     render(<AIModelSelector />);
     expect(screen.getByRole('button')).not.toBeDisabled(); // Button should be clickable to show error
+  });
+
+  test('when modelCatalog is empty and isLoadingModelCatalog is false, fetchAIModelCatalog is called on mount', () => {
+    const { dialecticActions } = setupMockStores(
+      { modelCatalog: [], isLoadingModelCatalog: false },
+      { availableProviders: [], isConfigLoading: false }
+    );
+    render(<AIModelSelector />);
+    expect(dialecticActions.fetchAIModelCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  test('when modelCatalog is non-empty, fetchAIModelCatalog is NOT called on mount', () => {
+    const { dialecticActions } = setupMockStores(
+      {
+        modelCatalog: [catalogEntry({ id: 'm1', model_name: 'Model One', is_default_generation: true, is_active: true })],
+        isLoadingModelCatalog: false,
+      },
+      { availableProviders: mockAiProvidersData, isConfigLoading: false }
+    );
+    render(<AIModelSelector />);
+    expect(dialecticActions.fetchAIModelCatalog).not.toHaveBeenCalled();
+  });
+
+  test('when selectedModels is empty, defaultModels is non-empty, and activeContextSessionId is null, setSelectedModels is called with the default models', () => {
+    const defaultModels: SelectedModels[] = [
+      { id: 'default-1', displayName: 'Default One' },
+    ];
+    const { dialecticActions } = setupMockStores(
+      {
+        modelCatalog: [catalogEntry({ id: 'default-1', model_name: 'Default One', is_default_generation: true, is_active: true })],
+        isLoadingModelCatalog: false,
+        selectedModels: [],
+        activeContextSessionId: null,
+      },
+      { availableProviders: mockAiProvidersData, isConfigLoading: false }
+    );
+    render(<AIModelSelector />);
+    expect(dialecticActions.setSelectedModels).toHaveBeenCalledTimes(1);
+    expect(dialecticActions.setSelectedModels).toHaveBeenCalledWith(defaultModels);
+  });
+
+  test('when selectedModels is already non-empty, setSelectedModels is NOT called for defaults', () => {
+    const { dialecticActions } = setupMockStores(
+      {
+        modelCatalog: [catalogEntry({ id: 'default-1', model_name: 'Default One', is_default_generation: true, is_active: true })],
+        isLoadingModelCatalog: false,
+        selectedModels: selectedModelsFromIds(['model1']),
+        activeContextSessionId: null,
+      },
+      { availableProviders: mockAiProvidersData, isConfigLoading: false }
+    );
+    render(<AIModelSelector />);
+    expect(dialecticActions.setSelectedModels).not.toHaveBeenCalled();
+  });
+
+  test('when activeContextSessionId is set, setSelectedModels is NOT called for defaults even if selectedModels is empty', () => {
+    const { dialecticActions } = setupMockStores(
+      {
+        modelCatalog: [catalogEntry({ id: 'default-1', model_name: 'Default One', is_default_generation: true, is_active: true })],
+        isLoadingModelCatalog: false,
+        selectedModels: [],
+        activeContextSessionId: 'session-123',
+      },
+      { availableProviders: mockAiProvidersData, isConfigLoading: false }
+    );
+    render(<AIModelSelector />);
+    expect(dialecticActions.setSelectedModels).not.toHaveBeenCalled();
+  });
+
+  test('after defaults are applied once, clearing all models does NOT re-apply defaults', () => {
+    const dialecticConfig: Partial<DialecticStateValues> = {
+      modelCatalog: [catalogEntry({ id: 'default-1', model_name: 'Default One', is_default_generation: true, is_active: true })],
+      isLoadingModelCatalog: false,
+      selectedModels: [],
+      activeContextSessionId: null,
+    };
+    const { dialecticActions } = setupMockStores(
+      { ...dialecticConfig },
+      { availableProviders: mockAiProvidersData, isConfigLoading: false }
+    );
+    const { rerender } = render(<AIModelSelector />);
+    expect(dialecticActions.setSelectedModels).toHaveBeenCalledTimes(1);
+    dialecticActions.setSelectedModels.mockClear();
+
+    setupMockStores(
+      { ...dialecticConfig, selectedModels: [] },
+      { availableProviders: mockAiProvidersData, isConfigLoading: false }
+    );
+    rerender(<AIModelSelector />);
+    expect(dialecticActions.setSelectedModels).not.toHaveBeenCalled();
   });
 });
 
