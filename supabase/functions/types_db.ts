@@ -1414,6 +1414,50 @@ export type Database = {
           },
         ]
       }
+      dialectic_sync_maps: {
+        Row: {
+          audience: string | null
+          created_at: string
+          document_key: string
+          friendly_name: string
+          id: string
+          layer: string
+          sort_order: number
+          stage_group: string
+          template_id: string
+        }
+        Insert: {
+          audience?: string | null
+          created_at?: string
+          document_key: string
+          friendly_name: string
+          id?: string
+          layer: string
+          sort_order?: number
+          stage_group: string
+          template_id: string
+        }
+        Update: {
+          audience?: string | null
+          created_at?: string
+          document_key?: string
+          friendly_name?: string
+          id?: string
+          layer?: string
+          sort_order?: number
+          stage_group?: string
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_sync_maps_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_recipe_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dialectic_trigger_logs: {
         Row: {
           created_at: string | null

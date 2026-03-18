@@ -45,6 +45,9 @@ import {
     SourceDocument,
     SelectedModels,
     GitHubRepoSettings,
+    SyncMapEntry,
+    SyncToGitHubPayload,
+    SyncToGitHubResponse,
 } from "../../../dialectic-service/dialectic.interface.ts";
 import { isPlainObject, isRecord } from './type_guards.common.ts';
 import { isFileType } from './type_guards.file_manager.ts';
@@ -100,6 +103,65 @@ export function isRepoUrlWithLastSyncAt(value: unknown): value is { last_sync_at
 	if (!isRecord(value)) return false;
 	const last_sync_at = Object.getOwnPropertyDescriptor(value, "last_sync_at")?.value;
 	return typeof last_sync_at === "string";
+}
+
+const validSyncMapLayer: SyncMapEntry["layer"][] = ["research", "decision", "action"];
+const validSyncMapAudience: (SyncMapEntry["audience"])[] = ["leadership", "management", "build", null];
+
+export function isSyncMapEntry(value: unknown): value is SyncMapEntry {
+	if (!isRecord(value)) return false;
+	const documentKey = Object.getOwnPropertyDescriptor(value, "documentKey")?.value;
+	const friendlyName = Object.getOwnPropertyDescriptor(value, "friendlyName")?.value;
+	const stageGroup = Object.getOwnPropertyDescriptor(value, "stageGroup")?.value;
+	const layer = Object.getOwnPropertyDescriptor(value, "layer")?.value;
+	const audience = Object.getOwnPropertyDescriptor(value, "audience")?.value;
+	const sortOrder = Object.getOwnPropertyDescriptor(value, "sortOrder")?.value;
+	const available = Object.getOwnPropertyDescriptor(value, "available")?.value;
+	const updatedSinceLastSync = Object.getOwnPropertyDescriptor(value, "updatedSinceLastSync")?.value;
+	return (
+		typeof documentKey === "string" &&
+		typeof friendlyName === "string" &&
+		typeof stageGroup === "string" &&
+		validSyncMapLayer.includes(layer) &&
+		validSyncMapAudience.includes(audience) &&
+		typeof sortOrder === "number" &&
+		typeof available === "boolean" &&
+		typeof updatedSinceLastSync === "boolean"
+	);
+}
+
+export function isSyncToGitHubPayload(value: unknown): value is SyncToGitHubPayload {
+	if (!isRecord(value)) return false;
+	const projectId = Object.getOwnPropertyDescriptor(value, "projectId")?.value;
+	const selectedModelIds = Object.getOwnPropertyDescriptor(value, "selectedModelIds")?.value;
+	const selectedDocumentKeys = Object.getOwnPropertyDescriptor(value, "selectedDocumentKeys")?.value;
+	const includeRulesFile = Object.getOwnPropertyDescriptor(value, "includeRulesFile")?.value;
+	return (
+		typeof projectId === "string" &&
+		Array.isArray(selectedModelIds) &&
+		selectedModelIds.every((id: unknown) => typeof id === "string") &&
+		Array.isArray(selectedDocumentKeys) &&
+		selectedDocumentKeys.every((k: unknown) => typeof k === "string") &&
+		typeof includeRulesFile === "boolean"
+	);
+}
+
+export function isSyncToGitHubResponse(value: unknown): value is SyncToGitHubResponse {
+	if (!isRecord(value)) return false;
+	const commitSha = Object.getOwnPropertyDescriptor(value, "commitSha")?.value;
+	const filesUpdated = Object.getOwnPropertyDescriptor(value, "filesUpdated")?.value;
+	const syncedAt = Object.getOwnPropertyDescriptor(value, "syncedAt")?.value;
+	const syncedDocumentKeys = Object.getOwnPropertyDescriptor(value, "syncedDocumentKeys")?.value;
+	const skippedDocumentKeys = Object.getOwnPropertyDescriptor(value, "skippedDocumentKeys")?.value;
+	return (
+		(commitSha === null || typeof commitSha === "string") &&
+		typeof filesUpdated === "number" &&
+		typeof syncedAt === "string" &&
+		Array.isArray(syncedDocumentKeys) &&
+		syncedDocumentKeys.every((k: unknown) => typeof k === "string") &&
+		Array.isArray(skippedDocumentKeys) &&
+		skippedDocumentKeys.every((k: unknown) => typeof k === "string")
+	);
 }
 
 export function isPlannerMetadata(value: unknown): value is DialecticStepPlannerMetadata {

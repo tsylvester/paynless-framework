@@ -9,9 +9,28 @@ import type {
   GitHubUser,
   GitHubRepo,
   GitHubBranch,
-  GitHubCreateRepoPayload,
-  GitHubPushFile,
   GitHubPushResult,
+  GetUserDeps,
+  GetUserParams,
+  GetUserPayload,
+  GetUserResult,
+  ListReposDeps,
+  ListReposParams,
+  ListReposPayload,
+  ListReposResult,
+  ListBranchesDeps,
+  ListBranchesParams,
+  ListBranchesPayload,
+  ListBranchesResult,
+  CreateRepoDeps,
+  CreateRepoParams,
+  CreateRepoPayload,
+  CreateRepoResult,
+  PushFilesDeps,
+  PushFilesParams,
+  PushFilesPayload,
+  PushFilesResult,
+  GetInstallationTokenSuccess,
 } from "../types/github.types.ts";
 import {
   parseGitHubUser,
@@ -22,6 +41,12 @@ import {
   parseGitHubPushResult,
   parseCreateRepoPayload,
   requireCreateRepoPayload,
+  isGetUserSuccess,
+  isListReposSuccess,
+  isListBranchesSuccess,
+  isCreateRepoSuccess,
+  isPushFilesSuccess,
+  isGetUserFailure,
 } from "../utils/type-guards/type_guards.github.ts";
 
 function requestUrl(input: RequestInfo | URL): string {
@@ -43,6 +68,34 @@ function authFromInit(init: RequestInit | undefined): string | null {
 }
 
 const MOCK_TOKEN = "ghp_test_token";
+
+const GET_USER_DEPS: GetUserDeps = { token: MOCK_TOKEN };
+const GET_USER_PARAMS: GetUserParams = {};
+const GET_USER_PAYLOAD: GetUserPayload = {};
+
+const LIST_REPOS_DEPS: ListReposDeps = { token: MOCK_TOKEN };
+const LIST_REPOS_PARAMS: ListReposParams = {};
+const LIST_REPOS_PAYLOAD: ListReposPayload = {};
+
+const LIST_BRANCHES_DEPS: ListBranchesDeps = { token: MOCK_TOKEN };
+const LIST_BRANCHES_PARAMS: ListBranchesParams = { owner: "testuser", repo: "repo1" };
+const LIST_BRANCHES_PAYLOAD: ListBranchesPayload = {};
+
+const CREATE_REPO_DEPS: CreateRepoDeps = { token: MOCK_TOKEN };
+const CREATE_REPO_PARAMS: CreateRepoParams = {};
+const CREATE_REPO_PAYLOAD: CreateRepoPayload = {
+  name: "newrepo",
+  description: "desc",
+  private: false,
+  auto_init: true,
+};
+
+const PUSH_FILES_DEPS: PushFilesDeps = { token: MOCK_TOKEN };
+const PUSH_FILES_PARAMS: PushFilesParams = { owner: "testuser", repo: "repo1", branch: "main" };
+const PUSH_FILES_PAYLOAD: PushFilesPayload = {
+  files: [{ path: "a.txt", content: "YQ==", encoding: "base64" }],
+  commitMessage: "msg",
+};
 
 const MOCK_GET_USER_RESPONSE: GitHubUser = {
   id: 1,
@@ -70,13 +123,6 @@ const MOCK_LIST_BRANCHES_RESPONSE: GitHubBranch[] = [
   },
 ];
 
-const MOCK_CREATE_REPO_PAYLOAD: GitHubCreateRepoPayload = {
-  name: "newrepo",
-  description: "desc",
-  private: false,
-  auto_init: true,
-};
-
 const MOCK_CREATE_REPO_RESPONSE: GitHubRepo = {
   id: 102,
   name: "newrepo",
@@ -86,10 +132,6 @@ const MOCK_CREATE_REPO_RESPONSE: GitHubRepo = {
   private: false,
   html_url: "https://github.com/testuser/newrepo",
 };
-
-const MOCK_PUSH_FILES: GitHubPushFile[] = [
-  { path: "a.txt", content: "YQ==", encoding: "base64" },
-];
 
 Deno.test("GitHubApiAdapter: constructor stores token and sets Authorization header on requests", async () => {
   const fetchStub = stub(globalThis, "fetch", (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -101,15 +143,36 @@ Deno.test("GitHubApiAdapter: constructor stores token and sets Authorization hea
   });
   try {
     const adapter = new GitHubApiAdapter(MOCK_TOKEN);
-    await adapter.getUser();
+    await adapter.getUser(GET_USER_DEPS, GET_USER_PARAMS, GET_USER_PAYLOAD);
     assertSpyCalls(fetchStub, 1);
   } finally {
     fetchStub.restore();
   }
 });
 
-Deno.test("GitHubApiAdapter: getUser calls GET https://api.github.com/user and returns typed GitHubUser", async () => {
-  let capturedUrl = "";
+Deno.test("GitHubApiAdapter: works when token is taken from GetInstallationTokenSuccess.data", async () => {
+  const tokenResult: GetInstallationTokenSuccess = { data: MOCK_TOKEN };
+  const fetchStub = stub(globalThis, "fetch", (_input: RequestInfo | URL, init?: RequestInit) => {
+    const auth = authFromInit(init);
+    assertEquals(auth, `Bearer ${tokenResult.data}`);
+    return Promise.resolve(
+      new Response(JSON.stringify(MOCK_GET_USER_RESPONSE), { status: 200 })
+    );
+  });
+  try {
+    const deps: GetUserDeps = { token: tokenResult.data };
+    const adapter = new GitHubApiAdapter(tokenResult.data);
+    const result: GetUserResult = await adapter.getUser(deps, GET_USER_PARAMS, GET_USER_PAYLOAD);
+    assert(isGetUserSuccess(result));
+    assertEquals(result.data.login, MOCK_GET_USER_RESPONSE.login);
+    assertSpyCalls(fetchStub, 1);
+  } finally {
+    fetchStub.restore();
+  }
+});
+
+Deno.test("GitHubApiAdapter: getUser returns GetUserSuccess with data and no error when API returns 200", async () => {
+  let capturedUrl: string = "";
   const fetchStub = stub(globalThis, "fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     capturedUrl = requestUrl(input);
     assertEquals(init?.method ?? "GET", "GET");
@@ -119,20 +182,19 @@ Deno.test("GitHubApiAdapter: getUser calls GET https://api.github.com/user and r
   });
   try {
     const adapter = new GitHubApiAdapter(MOCK_TOKEN);
-    const raw: unknown = await adapter.getUser();
-    const result: GitHubUser = parseGitHubUser(raw);
-    assert(capturedUrl.includes("api.github.com"));
-    assert(capturedUrl.includes("/user"));
-    assertEquals(result.id, MOCK_GET_USER_RESPONSE.id);
-    assertEquals(result.login, MOCK_GET_USER_RESPONSE.login);
-    assertEquals(result.avatar_url, MOCK_GET_USER_RESPONSE.avatar_url);
+    const result: GetUserResult = await adapter.getUser(GET_USER_DEPS, GET_USER_PARAMS, GET_USER_PAYLOAD);
+    assert(isGetUserSuccess(result));
+    assertEquals(result.data.id, MOCK_GET_USER_RESPONSE.id);
+    assertEquals(result.data.login, MOCK_GET_USER_RESPONSE.login);
+    assertEquals(result.data.avatar_url, MOCK_GET_USER_RESPONSE.avatar_url);
+    assertEquals(result.error, undefined);
   } finally {
     fetchStub.restore();
   }
 });
 
 Deno.test("GitHubApiAdapter: listRepos calls GET https://api.github.com/user/repos with sort=updated&per_page=100 and returns GitHubRepo[]", async () => {
-  let capturedUrl = "";
+  let capturedUrl: string = "";
   const fetchStub = stub(globalThis, "fetch", (input: RequestInfo | URL) => {
     capturedUrl = requestUrl(input);
     return Promise.resolve(
@@ -141,23 +203,23 @@ Deno.test("GitHubApiAdapter: listRepos calls GET https://api.github.com/user/rep
   });
   try {
     const adapter = new GitHubApiAdapter(MOCK_TOKEN);
-    const raw: unknown = await adapter.listRepos();
-    const result: GitHubRepo[] = parseGitHubRepoArray(raw);
+    const result: ListReposResult = await adapter.listRepos(LIST_REPOS_DEPS, LIST_REPOS_PARAMS, LIST_REPOS_PAYLOAD);
+    assert(isListReposSuccess(result));
     assert(capturedUrl.includes("api.github.com"));
     assert(capturedUrl.includes("/user/repos"));
     assert(capturedUrl.includes("sort=updated"));
     assert(capturedUrl.includes("per_page=100"));
-    assertEquals(result.length, 1);
-    assertEquals(result[0].name, MOCK_LIST_REPOS_RESPONSE[0].name);
+    assertEquals(result.data.length, 1);
+    assertEquals(result.data[0].name, MOCK_LIST_REPOS_RESPONSE[0].name);
   } finally {
     fetchStub.restore();
   }
 });
 
 Deno.test("GitHubApiAdapter: listBranches calls GET https://api.github.com/repos/:owner/:repo/branches and returns GitHubBranch[]", async () => {
-  const owner = "testuser";
-  const repo = "repo1";
-  let capturedUrl = "";
+  const owner: string = "testuser";
+  const repo: string = "repo1";
+  let capturedUrl: string = "";
   const fetchStub = stub(globalThis, "fetch", (input: RequestInfo | URL) => {
     capturedUrl = requestUrl(input);
     return Promise.resolve(
@@ -166,21 +228,25 @@ Deno.test("GitHubApiAdapter: listBranches calls GET https://api.github.com/repos
   });
   try {
     const adapter = new GitHubApiAdapter(MOCK_TOKEN);
-    const raw: unknown = await adapter.listBranches(owner, repo);
-    const result: GitHubBranch[] = parseGitHubBranchArray(raw);
+    const result: ListBranchesResult = await adapter.listBranches(
+      LIST_BRANCHES_DEPS,
+      LIST_BRANCHES_PARAMS,
+      LIST_BRANCHES_PAYLOAD
+    );
+    assert(isListBranchesSuccess(result));
     assert(capturedUrl.includes("api.github.com"));
     assert(capturedUrl.includes(`/repos/${owner}/${repo}/branches`));
-    assertEquals(result.length, 1);
-    assertEquals(result[0].name, MOCK_LIST_BRANCHES_RESPONSE[0].name);
+    assertEquals(result.data.length, 1);
+    assertEquals(result.data[0].name, MOCK_LIST_BRANCHES_RESPONSE[0].name);
   } finally {
     fetchStub.restore();
   }
 });
 
 Deno.test("GitHubApiAdapter: createRepo calls POST https://api.github.com/user/repos with JSON body and returns GitHubRepo", async () => {
-  let capturedMethod = "";
-  let capturedUrl = "";
-  let capturedBody: GitHubCreateRepoPayload | null = null;
+  let capturedMethod: string = "";
+  let capturedUrl: string = "";
+  let capturedBody: CreateRepoPayload | null = null;
   const fetchStub = stub(globalThis, "fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     capturedUrl = requestUrl(input);
     capturedMethod = init?.method ?? "";
@@ -194,26 +260,26 @@ Deno.test("GitHubApiAdapter: createRepo calls POST https://api.github.com/user/r
   });
   try {
     const adapter = new GitHubApiAdapter(MOCK_TOKEN);
-    const raw: unknown = await adapter.createRepo(MOCK_CREATE_REPO_PAYLOAD);
-    const result: GitHubRepo = parseGitHubRepo(raw);
+    const result: CreateRepoResult = await adapter.createRepo(
+      CREATE_REPO_DEPS,
+      CREATE_REPO_PARAMS,
+      CREATE_REPO_PAYLOAD
+    );
+    assert(isCreateRepoSuccess(result));
     assert(capturedUrl.includes("api.github.com"));
     assert(capturedUrl.includes("/user/repos"));
     assertEquals(capturedMethod, "POST");
-    const body: GitHubCreateRepoPayload = requireCreateRepoPayload(capturedBody);
-    assertEquals(body.name, MOCK_CREATE_REPO_PAYLOAD.name);
-    assertEquals(result.name, MOCK_CREATE_REPO_RESPONSE.name);
+    const body: CreateRepoPayload = requireCreateRepoPayload(capturedBody);
+    assertEquals(body.name, CREATE_REPO_PAYLOAD.name);
+    assertEquals(result.data.name, MOCK_CREATE_REPO_RESPONSE.name);
   } finally {
     fetchStub.restore();
   }
 });
 
-Deno.test("GitHubApiAdapter: pushFiles creates blobs, builds tree, creates commit, updates ref and returns GitHubPushResult", async () => {
-  const owner = "testuser";
-  const repo = "repo1";
-  const branch = "main";
-  const commitMessage = "msg";
+Deno.test("GitHubApiAdapter: pushFiles creates blobs, builds tree, creates commit, updates ref and returns PushFilesResult", async () => {
   const fetchStub = stub(globalThis, "fetch", (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = requestUrl(input);
+    const url: string = requestUrl(input);
     if (url.includes("/git/ref/heads/") && init?.method !== "PATCH") {
       return Promise.resolve(new Response(JSON.stringify({ object: { sha: "basetreesha" } }), { status: 200 }));
     }
@@ -233,16 +299,20 @@ Deno.test("GitHubApiAdapter: pushFiles creates blobs, builds tree, creates commi
   });
   try {
     const adapter = new GitHubApiAdapter(MOCK_TOKEN);
-    const raw: unknown = await adapter.pushFiles(owner, repo, branch, MOCK_PUSH_FILES, commitMessage);
-    const result: GitHubPushResult = parseGitHubPushResult(raw);
-    assert(result.commitSha !== undefined);
-    assertEquals(result.filesUpdated, MOCK_PUSH_FILES.length);
+    const result: PushFilesResult = await adapter.pushFiles(
+      PUSH_FILES_DEPS,
+      PUSH_FILES_PARAMS,
+      PUSH_FILES_PAYLOAD
+    );
+    assert(isPushFilesSuccess(result));
+    assert(result.data.commitSha !== undefined);
+    assertEquals(result.data.filesUpdated, PUSH_FILES_PAYLOAD.files.length);
   } finally {
     fetchStub.restore();
   }
 });
 
-Deno.test("GitHubApiAdapter: non-200 responses throw with status and error message from GitHub API", async () => {
+Deno.test("GitHubApiAdapter: non-200 responses return GetUserFailure with status and error message from GitHub API", async () => {
   const fetchStub = stub(globalThis, "fetch", () =>
     Promise.resolve(
       new Response(JSON.stringify({ message: "Not Found" }), { status: 404 })
@@ -250,15 +320,95 @@ Deno.test("GitHubApiAdapter: non-200 responses throw with status and error messa
   );
   try {
     const adapter = new GitHubApiAdapter(MOCK_TOKEN);
-    let thrown: Error | null = null;
-    try {
-      await adapter.getUser();
-    } catch (e) {
-      thrown = e instanceof Error ? e : new Error(String(e));
+    const result: GetUserResult = await adapter.getUser(GET_USER_DEPS, GET_USER_PARAMS, GET_USER_PAYLOAD);
+    assert(isGetUserFailure(result));
+    assertEquals(result.error.status, 404);
+    assertEquals(result.error.message, "Not Found");
+    assertEquals(result.data, undefined);
+  } finally {
+    fetchStub.restore();
+  }
+});
+
+Deno.test("GitHubApiAdapter: listRepos returns ListReposFailure with status and message when API returns 500", async () => {
+  const fetchStub = stub(globalThis, "fetch", () =>
+    Promise.resolve(
+      new Response(JSON.stringify({ message: "Internal Server Error" }), { status: 500 })
+    )
+  );
+  try {
+    const adapter = new GitHubApiAdapter(MOCK_TOKEN);
+    const result: ListReposResult = await adapter.listRepos(LIST_REPOS_DEPS, LIST_REPOS_PARAMS, LIST_REPOS_PAYLOAD);
+    assert(!isListReposSuccess(result));
+    assertEquals(result.error.status, 500);
+    assertEquals(result.error.message, "Internal Server Error");
+  } finally {
+    fetchStub.restore();
+  }
+});
+
+Deno.test("GitHubApiAdapter: listBranches returns ListBranchesFailure with status and message when API returns 404", async () => {
+  const fetchStub = stub(globalThis, "fetch", () =>
+    Promise.resolve(
+      new Response(JSON.stringify({ message: "Not Found" }), { status: 404 })
+    )
+  );
+  try {
+    const adapter = new GitHubApiAdapter(MOCK_TOKEN);
+    const result: ListBranchesResult = await adapter.listBranches(
+      LIST_BRANCHES_DEPS,
+      LIST_BRANCHES_PARAMS,
+      LIST_BRANCHES_PAYLOAD
+    );
+    assert(!isListBranchesSuccess(result));
+    assertEquals(result.error.status, 404);
+    assertEquals(result.error.message, "Not Found");
+  } finally {
+    fetchStub.restore();
+  }
+});
+
+Deno.test("GitHubApiAdapter: createRepo returns CreateRepoFailure with status and message when API returns 422", async () => {
+  const fetchStub = stub(globalThis, "fetch", () =>
+    Promise.resolve(
+      new Response(JSON.stringify({ message: "Validation Failed" }), { status: 422 })
+    )
+  );
+  try {
+    const adapter = new GitHubApiAdapter(MOCK_TOKEN);
+    const result: CreateRepoResult = await adapter.createRepo(
+      CREATE_REPO_DEPS,
+      CREATE_REPO_PARAMS,
+      CREATE_REPO_PAYLOAD
+    );
+    assert(!isCreateRepoSuccess(result));
+    assertEquals(result.error.status, 422);
+    assertEquals(result.error.message, "Validation Failed");
+  } finally {
+    fetchStub.restore();
+  }
+});
+
+Deno.test("GitHubApiAdapter: pushFiles returns PushFilesFailure with status and message when API returns error on ref fetch", async () => {
+  const fetchStub = stub(globalThis, "fetch", (input: RequestInfo | URL) => {
+    const url: string = requestUrl(input);
+    if (url.includes("/git/ref/heads/")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ message: "Not Found" }), { status: 404 })
+      );
     }
-    assert(thrown !== null);
-    assert(thrown.message.includes("404"));
-    assert(thrown.message.includes("Not Found"));
+    return Promise.resolve(new Response("{}", { status: 200 }));
+  });
+  try {
+    const adapter = new GitHubApiAdapter(MOCK_TOKEN);
+    const result: PushFilesResult = await adapter.pushFiles(
+      PUSH_FILES_DEPS,
+      PUSH_FILES_PARAMS,
+      PUSH_FILES_PAYLOAD
+    );
+    assert(!isPushFilesSuccess(result));
+    assertEquals(result.error.status, 404);
+    assertEquals(result.error.message, "Not Found");
   } finally {
     fetchStub.restore();
   }

@@ -22,11 +22,21 @@ import type {
   GetInstallationTokenParams,
   GetInstallationTokenPayload,
   GetInstallationTokenReturn,
+  GetUserParams,
+  GetUserPayload,
   IGetInstallationToken,
   ListBranchesParams,
+  ListReposParams,
+  ListReposPayload,
+  ListBranchesPayload,
+  CreateRepoParams,
+  CreateRepoPayload,
   StoreInstallationPayload,
 } from "../_shared/types/github.types.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+
+const SUSPENDED_MESSAGE =
+  "GitHub App connection is suspended. Please reactivate at github.com.";
 
 const getInstallationToken: IGetInstallationToken = async (
   deps: GetInstallationTokenDeps,
@@ -35,12 +45,16 @@ const getInstallationToken: IGetInstallationToken = async (
 ): Promise<GetInstallationTokenReturn> => {
   const { data, error } = await deps.adminClient
     .from("github_connections")
-    .select("installation_id")
+    .select("installation_id, suspended_at")
     .eq("user_id", params.userId)
     .maybeSingle();
 
-  if (error || !data) {
-    return null;
+  if (error !== null || data === null) {
+    return { error: { message: "No GitHub connection found" } };
+  }
+
+  if (data.suspended_at !== null && data.suspended_at !== undefined) {
+    return { error: { message: SUSPENDED_MESSAGE } };
   }
 
   try {
@@ -48,9 +62,11 @@ const getInstallationToken: IGetInstallationToken = async (
       { appId: deps.appId, privateKey: deps.privateKey },
       { installationId: data.installation_id }
     );
-    return token;
-  } catch {
-    return null;
+    return { data: token };
+  } catch (err) {
+    const message: string =
+      err instanceof Error ? err.message : "Token generation failed";
+    return { error: { message } };
   }
 };
 
@@ -133,16 +149,24 @@ async function handleGithubServiceRequest(
       }
 
       const adapter = deps.createGitHubAdapter(token);
-      let ghUser: GitHubUser;
-      try {
-        ghUser = await adapter.getUser();
-      } catch (err) {
-        if (!(err instanceof Error)) throw err;
+      const getUserParams: GetUserParams = {};
+      const getUserPayload: GetUserPayload = {};
+      const getUserResult = await adapter.getUser(
+        { token },
+        getUserParams,
+        getUserPayload
+      );
+      if (getUserResult.error !== undefined) {
         deps.logger.error("github-service storeInstallation getUser error", {
-          error: err.message,
+          error: getUserResult.error.message,
         });
-        return deps.createErrorResponse(err.message, 500, req, err);
+        return deps.createErrorResponse(
+          getUserResult.error.message,
+          500,
+          req
+        );
       }
+      const ghUser: GitHubUser = getUserResult.data;
 
       const row: GithubConnectionInsert = {
         user_id: userId,
@@ -179,7 +203,7 @@ async function handleGithubServiceRequest(
     case "getConnectionStatus": {
       const { data: rows, error: selectError } = await adminClient
         .from("github_connections")
-        .select("github_user_id, github_username")
+        .select("github_user_id, github_username, suspended_at")
         .eq("user_id", userId)
         .maybeSingle();
 
@@ -204,6 +228,7 @@ async function handleGithubServiceRequest(
           connected: true,
           username: rows.github_username,
           github_user_id: rows.github_user_id,
+          suspended: rows.suspended_at !== null && rows.suspended_at !== undefined,
         },
         200,
         req
@@ -244,23 +269,30 @@ async function handleGithubServiceRequest(
         payloadEmpty
       );
 
-      if (installationToken === null) {
+      if (installationToken.error !== undefined) {
         return deps.createErrorResponse(
-          "No GitHub connection found",
+          installationToken.error.message,
           500,
           req
         );
       }
 
-      const repoAdapter = deps.createGitHubAdapter(installationToken);
-      let repos: GitHubRepo[];
-      try {
-        repos = await repoAdapter.listRepos();
-      } catch (err) {
-        if (!(err instanceof Error)) throw err;
-        return deps.createErrorResponse(err.message, 500, req, err);
+      const repoAdapter = deps.createGitHubAdapter(installationToken.data);
+      const listReposParams: ListReposParams = {};
+      const listReposPayload: ListReposPayload = {};
+      const listReposResult = await repoAdapter.listRepos(
+        { token: installationToken.data },
+        listReposParams,
+        listReposPayload
+      );
+      if (listReposResult.error !== undefined) {
+        return deps.createErrorResponse(
+          listReposResult.error.message,
+          500,
+          req
+        );
       }
-
+      const repos: GitHubRepo[] = listReposResult.data;
       return deps.createSuccessResponse(repos, 200, req);
     }
 
@@ -281,23 +313,29 @@ async function handleGithubServiceRequest(
         payloadEmpty
       );
 
-      if (installationToken === null) {
+      if (installationToken.error !== undefined) {
         return deps.createErrorResponse(
-          "No GitHub connection found",
+          installationToken.error.message,
           500,
           req
         );
       }
 
-      const branchAdapter = deps.createGitHubAdapter(installationToken);
-      let branches: GitHubBranch[];
-      try {
-        branches = await branchAdapter.listBranches(owner, repo);
-      } catch (err) {
-        if (!(err instanceof Error)) throw err;
-        return deps.createErrorResponse(err.message, 500, req, err);
+      const branchAdapter = deps.createGitHubAdapter(installationToken.data);
+      const listBranchesPayloadEmpty: ListBranchesPayload = {};
+      const listBranchesResult = await branchAdapter.listBranches(
+        { token: installationToken.data },
+        { owner, repo },
+        listBranchesPayloadEmpty
+      );
+      if (listBranchesResult.error !== undefined) {
+        return deps.createErrorResponse(
+          listBranchesResult.error.message,
+          500,
+          req
+        );
       }
-
+      const branches: GitHubBranch[] = listBranchesResult.data;
       return deps.createSuccessResponse(branches, 200, req);
     }
 
@@ -316,23 +354,34 @@ async function handleGithubServiceRequest(
         payloadEmpty
       );
 
-      if (installationToken === null) {
+      if (installationToken.error !== undefined) {
         return deps.createErrorResponse(
-          "No GitHub connection found",
+          installationToken.error.message,
           500,
           req
         );
       }
 
-      const createRepoAdapter = deps.createGitHubAdapter(installationToken);
-      let newRepo: GitHubRepo;
-      try {
-        newRepo = await createRepoAdapter.createRepo(createRepoPayload);
-      } catch (err) {
-        if (!(err instanceof Error)) throw err;
-        return deps.createErrorResponse(err.message, 500, req, err);
+      const createRepoAdapter = deps.createGitHubAdapter(installationToken.data);
+      const createRepoParams: CreateRepoParams = {};
+      const createRepoPayloadTyped: CreateRepoPayload = {
+        name: createRepoPayload.name,
+        description: createRepoPayload.description,
+        private: createRepoPayload.private,
+      };
+      const createRepoResult = await createRepoAdapter.createRepo(
+        { token: installationToken.data },
+        createRepoParams,
+        createRepoPayloadTyped
+      );
+      if (createRepoResult.error !== undefined) {
+        return deps.createErrorResponse(
+          createRepoResult.error.message,
+          500,
+          req
+        );
       }
-
+      const newRepo: GitHubRepo = createRepoResult.data;
       return deps.createSuccessResponse(newRepo, 200, req);
     }
 
