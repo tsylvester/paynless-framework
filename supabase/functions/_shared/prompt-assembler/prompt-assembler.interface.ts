@@ -4,6 +4,7 @@ import {
   DialecticRecipeStep,
 } from "../../dialectic-service/dialectic.interface.ts";
 import { GatherContextFn } from "./gatherContext.ts";
+import { GatherContinuationInputsFn } from "./gatherContinuationInputs.ts";
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { IFileManager, FileType } from "../types/file_manager.types.ts";
 import { DownloadStorageResult, DownloadFromStorageFn } from "../supabase_storage_utils.ts";
@@ -42,6 +43,11 @@ export interface AssembleContinuationPromptDeps {
   session: SessionContext;
   stage: StageContext;
   gatherContext: GatherContextFn;
+  gatherContinuationInputs: GatherContinuationInputsFn;
+  downloadFromStorage: (
+    bucket: string,
+    path: string,
+  ) => Promise<DownloadStorageResult>;
   sourceContributionId?: string | null;
 }
 export interface AssemblePlannerPromptDeps {

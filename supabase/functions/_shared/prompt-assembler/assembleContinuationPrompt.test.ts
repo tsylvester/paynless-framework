@@ -31,7 +31,22 @@
   import { assertSpyCall } from "jsr:@std/testing@0.225.1/mock";
   import { isRecord, isJson } from "../utils/type_guards.ts";
   import { DynamicContextVariables } from "./prompt-assembler.interface.ts";
+  import type { GatherContinuationInputsFn } from "./gatherContinuationInputs.ts";
+  import {
+    downloadFromStorage,
+    type DownloadStorageResult,
+  } from "../supabase_storage_utils.ts";
+  import type { Messages } from "../types.ts";
   
+  const mockGatherContinuationInputs: GatherContinuationInputsFn = async () => [];
+
+  /** Returns a gatherContinuationInputs mock that resolves to messages ending with the given prior content (so promptContent includes it). */
+  const createGatherMockWithPriorContent = (priorContent: string): GatherContinuationInputsFn =>
+    async (): Promise<Messages[]> => [
+      { role: "user", content: "Prior context." },
+      { role: "assistant", content: priorContent },
+    ];
+
   Deno.test("assembleContinuationPrompt", async (t) => {
     let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
     let mockFileManager: ReturnType<typeof createMockFileManagerService>;
@@ -39,9 +54,12 @@
     const setup = (config: MockSupabaseDataConfig = {}) => {
       mockSupabaseSetup = createMockSupabaseClient(undefined, config);
       mockFileManager = createMockFileManagerService();
+      const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
       return {
-        client: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+        client,
         fileManager: mockFileManager,
+        downloadFromStorage: (bucket: string, path: string) =>
+          downloadFromStorage(client, bucket, path),
       };
     };
   
@@ -67,6 +85,7 @@
       status: "active",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      idempotency_key: null,
     };
   
     const defaultSession: SessionContext = {
@@ -81,6 +100,8 @@
       status: "pending_thesis",
       associated_chat_id: null,
       user_input_reference_url: null,
+      idempotency_key: null,
+      viewing_stage_id: null,
     };
   
     const defaultStage: StageContext = {
@@ -121,6 +142,7 @@
       active_recipe_instance_id: null,
       expected_output_template_ids: [],
       recipe_template_id: null,
+      minimum_balance: 0,
     };
   
     const headerContextContent: HeaderContext = {
@@ -181,6 +203,7 @@
       inputs: {},
       target_contribution_id: "target-contrib-default",
       document_key: FileType.business_case,
+      idempotencyKey: "idem-assemble-continuation-test",
     };
 
 
@@ -213,14 +236,16 @@
         results: null,
         started_at: null,
         target_contribution_id: "target-contrib-default",
+        idempotency_key: null,
         payload,
         ...overrides,
       };
     };
   
-    // Helper function to create contribution mocks (generic)
+    // Helper function to create contribution mocks (generic).
+    // Returned row includes target_contribution_id so root-resolution select passes mock validation.
     const createContributionsMock = (
-      entries: Record<string, { storage_bucket: string; storage_path: string; file_name: string; contribution_type: string }>
+      entries: Record<string, { storage_bucket: string; storage_path: string; file_name: string; contribution_type: string; target_contribution_id?: string | null }>
     ) => {
       return {
         select: async (state: MockQueryBuilderState) => {
@@ -230,10 +255,15 @@
           const id = idFilter?.value;
           
           if (id !== undefined && id !== null && typeof id === "string" && entries[id]) {
+            const entry = entries[id];
             return {
               data: [{
-                id: id,
-                ...entries[id]
+                id,
+                storage_bucket: entry.storage_bucket,
+                storage_path: entry.storage_path,
+                file_name: entry.file_name,
+                contribution_type: entry.contribution_type,
+                target_contribution_id: entry.target_contribution_id ?? null,
               }],
               error: null,
               count: 1,
@@ -323,7 +353,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
             // Access storage spy before the call so it tracks calls correctly
@@ -340,6 +370,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: createGatherMockWithPriorContent(partialContent),
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "mock user objective",
                   domain: "Software Development",
@@ -427,7 +459,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
             try {
@@ -440,6 +472,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: createGatherMockWithPriorContent(partialContent),
+                downloadFromStorage,
                 gatherContext: spy(async () => ({
                   user_objective: "",
                   domain: "",
@@ -521,7 +555,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
             try {
@@ -534,6 +568,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: createGatherMockWithPriorContent(partialContent),
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
@@ -661,7 +697,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
             try {
@@ -673,6 +709,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: stageWithOrchestrationKeys,
+                gatherContinuationInputs: mockGatherContinuationInputs,
+                downloadFromStorage,
                   gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
@@ -749,7 +787,7 @@
               },
             },
           };
-          const { client, fileManager } = setup(config);
+          const { client, fileManager, downloadFromStorage } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
           try {
@@ -762,6 +800,8 @@
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
+              gatherContinuationInputs: createGatherMockWithPriorContent(incompleteJson),
+              downloadFromStorage,
               gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
@@ -847,7 +887,7 @@
               },
             },
           };
-          const { client, fileManager } = setup(config);
+          const { client, fileManager, downloadFromStorage } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
           try {
@@ -860,6 +900,8 @@
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
+              gatherContinuationInputs: createGatherMockWithPriorContent(incompleteJson),
+              downloadFromStorage,
               gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
@@ -932,7 +974,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
             try {
@@ -945,6 +987,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: mockGatherContinuationInputs,
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
@@ -1014,7 +1058,7 @@
               },
             },
           };
-          const { client, fileManager } = setup(config);
+          const { client, fileManager, downloadFromStorage } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
           try {
@@ -1027,6 +1071,8 @@
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
+              gatherContinuationInputs: mockGatherContinuationInputs,
+              downloadFromStorage,
               gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
@@ -1109,7 +1155,7 @@
               },
             },
           };
-          const { client, fileManager } = setup(config);
+          const { client, fileManager, downloadFromStorage } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
           try {
@@ -1122,6 +1168,8 @@
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
+              gatherContinuationInputs: mockGatherContinuationInputs,
+              downloadFromStorage,
               gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
@@ -1193,7 +1241,7 @@
               },
             },
           };
-          const { client, fileManager } = setup(config);
+          const { client, fileManager, downloadFromStorage } = setup(config);
           fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
           try {
@@ -1206,6 +1254,8 @@
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
+              gatherContinuationInputs: mockGatherContinuationInputs,
+              downloadFromStorage,
               gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
@@ -1284,7 +1334,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
             try {
@@ -1297,6 +1347,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: mockGatherContinuationInputs,
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
@@ -1370,7 +1422,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
             try {
@@ -1383,6 +1435,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: createGatherMockWithPriorContent(malformedJson),
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
@@ -1455,7 +1509,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
             try {
@@ -1468,6 +1522,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: createGatherMockWithPriorContent(partialValidJson),
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
@@ -1539,7 +1595,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
             try {
@@ -1552,6 +1608,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: mockGatherContinuationInputs,
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
@@ -1608,7 +1666,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             const jobWithoutTarget = createMockJob(
               { model_id: "model-123", target_contribution_id: undefined },
               { id: "job-no-target" },
@@ -1621,6 +1679,8 @@
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
+              gatherContinuationInputs: mockGatherContinuationInputs,
+              downloadFromStorage,
               gatherContext: spy(async () => { return {
                 user_objective: "",
                 domain: "",
@@ -1702,7 +1762,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
   
             // 2. Execute & Assert:
             //    - Verify `assertRejects` with an error message indicating the download failed.
@@ -1715,6 +1775,8 @@
                   project: defaultProject,
                   session: defaultSession,
                   stage: defaultStage,
+                  gatherContinuationInputs: mockGatherContinuationInputs,
+                  downloadFromStorage,
                   gatherContext: spy(async () => { return {
                     user_objective: "",
                     domain: "",
@@ -1782,7 +1844,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
             try {
@@ -1795,6 +1857,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: mockGatherContinuationInputs,
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
@@ -1864,7 +1928,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             const fileManagerError = new Error("FileManager failed");
             fileManager.setUploadAndRegisterFileResponse(null, fileManagerError);
   
@@ -1879,6 +1943,8 @@
                   project: defaultProject,
                   session: defaultSession,
                   stage: defaultStage,
+                  gatherContinuationInputs: mockGatherContinuationInputs,
+                  downloadFromStorage,
                   gatherContext: spy(async () => { return {
                     user_objective: "",
                     domain: "",
@@ -1906,7 +1972,7 @@
           async () => {
             // 1. Setup:
             //    - Provide a mock `SessionContext` with an empty `selected_model_ids` array.
-            const { client, fileManager } = setup();
+            const { client, fileManager, downloadFromStorage } = setup();
             const sessionWithNoModels = {
               ...defaultSession,
               selected_model_ids: [],
@@ -1923,6 +1989,8 @@
                   project: defaultProject,
                   session: sessionWithNoModels,
                   stage: defaultStage,
+                  gatherContinuationInputs: mockGatherContinuationInputs,
+                  downloadFromStorage,
                   gatherContext: spy(async () => { return {
                     user_objective: "",
                     domain: "",
@@ -1993,7 +2061,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
   
             try {
@@ -2004,6 +2072,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: mockGatherContinuationInputs,
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
@@ -2099,7 +2169,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
             const partialContent = "This is the partial markdown content.";
   
@@ -2115,6 +2185,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: createGatherMockWithPriorContent(partialContent),
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "mock user objective",
                   domain: "Software Development",
@@ -2179,7 +2251,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
             const partialContent = "This is partial content without header context.";
   
@@ -2191,6 +2263,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: createGatherMockWithPriorContent(partialContent),
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
                   domain: "",
@@ -2242,7 +2316,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
   
             try {
               await assertRejects(
@@ -2254,6 +2328,8 @@
                     project: defaultProject,
                     session: defaultSession,
                     stage: defaultStage,
+                    gatherContinuationInputs: mockGatherContinuationInputs,
+                    downloadFromStorage,
                     gatherContext: spy(async () => { return {
                       user_objective: "",
                       domain: "",
@@ -2330,7 +2406,7 @@
                 },
               },
             };
-            const { client, fileManager } = setup(config);
+            const { client, fileManager, downloadFromStorage } = setup(config);
             fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
             const partialContent = "This is the partial markdown content.";
   
@@ -2346,6 +2422,8 @@
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
+                gatherContinuationInputs: mockGatherContinuationInputs,
+                downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "mock user objective",
                   domain: "Software Development",
@@ -2367,6 +2445,537 @@
                 result.promptContent.includes(
                   headerContextContent.system_materials.agent_notes_to_self,
                 ),
+              );
+            } finally {
+              teardown();
+            }
+          },
+        );
+      },
+    );
+
+    await t.step(
+      "Fix 2: full continuation chain — gatherContinuationInputs and prompt assembly",
+      async (t) => {
+        await t.step(
+          "when continuation has multiple prior fragments in chain, all fragments are included in prompt content in order",
+          async () => {
+            const ROOT_ID = "root-contrib-123";
+            const TARGET_ID = "target-contrib-456";
+            const chainMessages: Messages[] = [
+              { role: "user", content: "Seed prompt." },
+              { role: "assistant", content: "First fragment.", id: ROOT_ID },
+              { role: "user", content: "Please continue." },
+              { role: "assistant", content: "Second fragment.", id: TARGET_ID },
+            ];
+            const gatherSpy = spy(
+              (_db: unknown, _download: unknown, _chunkId: string): Promise<Messages[]> =>
+                Promise.resolve(chainMessages),
+            );
+            const priorBucket = "bucket";
+            const priorPath = "path/file.json";
+            const config: MockSupabaseDataConfig = {
+              genericMockResults: {
+                ai_providers: {
+                  select: {
+                    data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                  },
+                },
+                dialectic_contributions: createContributionsMock({
+                  [TARGET_ID]: {
+                    storage_bucket: priorBucket,
+                    storage_path: "path",
+                    file_name: "file.json",
+                    contribution_type: "antithesis",
+                  },
+                }),
+              },
+              storageMock: {
+                downloadResult: (bucket: string, path: string) => {
+                  if (bucket === priorBucket && path === priorPath) {
+                    return Promise.resolve({
+                      data: new Blob(["prior content"]),
+                      error: null,
+                    });
+                  }
+                  return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+                },
+              },
+            };
+            const { client, fileManager, downloadFromStorage } = setup(config);
+            fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+            const job = createMockJob(
+              { model_id: "model-123", target_contribution_id: TARGET_ID },
+              { target_contribution_id: TARGET_ID },
+            );
+            try {
+              const result = await assembleContinuationPrompt({
+                dbClient: client,
+                fileManager,
+                job,
+                project: defaultProject,
+                session: defaultSession,
+                stage: defaultStage,
+                gatherContinuationInputs: gatherSpy,
+                downloadFromStorage,
+                gatherContext: spy(async () => ({
+                  user_objective: "",
+                  domain: "",
+                  agent_count: 0,
+                  context_description: "",
+                  original_user_request: "",
+                  prior_stage_ai_outputs: "",
+                  prior_stage_user_feedback: "",
+                  deployment_context: undefined,
+                  reference_documents: undefined,
+                  recipeStep: defaultStage.recipe_step,
+                })),
+              });
+              assert(result.promptContent.includes("Seed prompt."));
+              assert(result.promptContent.includes("First fragment."));
+              assert(result.promptContent.includes("Second fragment."));
+            } finally {
+              teardown();
+            }
+          },
+        );
+
+        await t.step(
+          "when continuation has a single prior fragment (first continuation), that fragment is included in prompt content",
+          async () => {
+            const ROOT_ID = "root-only-789";
+            const singleFragmentMessages: Messages[] = [
+              { role: "user", content: "Initial user prompt." },
+              { role: "assistant", content: "Only prior fragment.", id: ROOT_ID },
+            ];
+            const gatherSpy = spy(
+              (): Promise<Messages[]> => Promise.resolve(singleFragmentMessages),
+            );
+            const priorBucket = "bucket";
+            const priorPath = "path/file.json";
+            const config: MockSupabaseDataConfig = {
+              genericMockResults: {
+                ai_providers: {
+                  select: {
+                    data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                  },
+                },
+                dialectic_contributions: createContributionsMock({
+                  [ROOT_ID]: {
+                    storage_bucket: priorBucket,
+                    storage_path: "path",
+                    file_name: "file.json",
+                    contribution_type: "antithesis",
+                  },
+                }),
+              },
+              storageMock: {
+                downloadResult: (bucket: string, path: string) => {
+                  if (bucket === priorBucket && path === priorPath) {
+                    return Promise.resolve({
+                      data: new Blob(["prior content"]),
+                      error: null,
+                    });
+                  }
+                  return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+                },
+              },
+            };
+            const { client, fileManager, downloadFromStorage } = setup(config);
+            fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+            const job = createMockJob(
+              { model_id: "model-123", target_contribution_id: ROOT_ID },
+              { target_contribution_id: ROOT_ID },
+            );
+            try {
+              const result = await assembleContinuationPrompt({
+                dbClient: client,
+                fileManager,
+                job,
+                project: defaultProject,
+                session: defaultSession,
+                stage: defaultStage,
+                gatherContinuationInputs: gatherSpy,
+                downloadFromStorage,
+                gatherContext: spy(async () => ({
+                  user_objective: "",
+                  domain: "",
+                  agent_count: 0,
+                  context_description: "",
+                  original_user_request: "",
+                  prior_stage_ai_outputs: "",
+                  prior_stage_user_feedback: "",
+                  deployment_context: undefined,
+                  reference_documents: undefined,
+                  recipeStep: defaultStage.recipe_step,
+                })),
+              });
+              assert(result.promptContent.includes("Initial user prompt."));
+              assert(result.promptContent.includes("Only prior fragment."));
+            } finally {
+              teardown();
+            }
+          },
+        );
+
+        await t.step(
+          "gatherContinuationInputs is called with the root contribution ID from the chain (not just target_contribution_id)",
+          async () => {
+            const ROOT_ID = "root-chain-111";
+            const CHILD_ID = "child-chain-222";
+            const TARGET_ID = "target-chain-333";
+            const contributionsWithChain: Record<string, { storage_bucket: string; storage_path: string; file_name: string; contribution_type: string; target_contribution_id?: string | null }> = {
+              [ROOT_ID]: {
+                storage_bucket: "b",
+                storage_path: "p",
+                file_name: "f.json",
+                contribution_type: "antithesis",
+                target_contribution_id: null,
+              },
+              [CHILD_ID]: {
+                storage_bucket: "b",
+                storage_path: "p",
+                file_name: "f2.json",
+                contribution_type: "antithesis",
+                target_contribution_id: ROOT_ID,
+              },
+              [TARGET_ID]: {
+                storage_bucket: "b",
+                storage_path: "p",
+                file_name: "f3.json",
+                contribution_type: "antithesis",
+                target_contribution_id: CHILD_ID,
+              },
+            };
+            const selectMock = async (state: MockQueryBuilderState) => {
+              const idFilter = state.filters.find((f) => f.type === "eq" && f.column === "id");
+              const id = idFilter?.value;
+              if (id !== undefined && id !== null && typeof id === "string" && contributionsWithChain[id]) {
+                const row = contributionsWithChain[id];
+                return {
+                  data: [{ id, ...row }],
+                  error: null,
+                  count: 1,
+                  status: 200,
+                  statusText: "OK",
+                };
+              }
+              return { data: null, error: new Error("Contribution not found"), count: 0, status: 404, statusText: "Not Found" };
+            };
+            const gatherSpy = spy(
+              (_db: unknown, _download: unknown, chunkId: string): Promise<Messages[]> =>
+                Promise.resolve([{ role: "user", content: "seed" }, { role: "assistant", content: "content", id: chunkId }]),
+            );
+            const priorBucket = "b";
+            const priorPathFull = "p/f3.json";
+            const config: MockSupabaseDataConfig = {
+              genericMockResults: {
+                ai_providers: {
+                  select: {
+                    data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                  },
+                },
+                dialectic_contributions: { select: selectMock },
+              },
+              storageMock: {
+                downloadResult: (bucket: string, path: string) => {
+                  if (bucket === priorBucket && path === priorPathFull) {
+                    return Promise.resolve({
+                      data: new Blob(["prior content"]),
+                      error: null,
+                    });
+                  }
+                  return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+                },
+              },
+            };
+            const { client, fileManager, downloadFromStorage } = setup(config);
+            fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+            const job = createMockJob(
+              { model_id: "model-123", target_contribution_id: TARGET_ID },
+              { target_contribution_id: TARGET_ID },
+            );
+            try {
+              await assembleContinuationPrompt({
+                dbClient: client,
+                fileManager,
+                job,
+                project: defaultProject,
+                session: defaultSession,
+                stage: defaultStage,
+                gatherContinuationInputs: gatherSpy,
+                downloadFromStorage,
+                gatherContext: spy(async () => ({
+                  user_objective: "",
+                  domain: "",
+                  agent_count: 0,
+                  context_description: "",
+                  original_user_request: "",
+                  prior_stage_ai_outputs: "",
+                  prior_stage_user_feedback: "",
+                  deployment_context: undefined,
+                  reference_documents: undefined,
+                  recipeStep: defaultStage.recipe_step,
+                })),
+              });
+              assertSpyCall(gatherSpy, 0);
+              assertEquals(gatherSpy.calls[0].args[2], ROOT_ID);
+            } finally {
+              teardown();
+            }
+          },
+        );
+
+        await t.step(
+          "header context from inputs.header_context_id is still fetched and prepended when available",
+          async () => {
+            const HEADER_ID = "header-fix2-123";
+            const TARGET_ID = "target-fix2-456";
+            const chainMessages: Messages[] = [
+              { role: "user", content: "User prompt." },
+              { role: "assistant", content: "Prior output.", id: TARGET_ID },
+            ];
+            const gatherSpy = spy((): Promise<Messages[]> => Promise.resolve(chainMessages));
+            const bucket = "bucket";
+            const headerPath = "path/header.json";
+            const priorPath = "path/prior.json";
+            const config: MockSupabaseDataConfig = {
+              genericMockResults: {
+                ai_providers: {
+                  select: {
+                    data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                  },
+                },
+                dialectic_contributions: createContributionsMock({
+                  [HEADER_ID]: {
+                    storage_bucket: bucket,
+                    storage_path: "path",
+                    file_name: "header.json",
+                    contribution_type: "header_context",
+                  },
+                  [TARGET_ID]: {
+                    storage_bucket: bucket,
+                    storage_path: "path",
+                    file_name: "prior.json",
+                    contribution_type: "antithesis",
+                  },
+                }),
+              },
+              storageMock: {
+                downloadResult: (b: string, path: string) => {
+                  if (b === bucket && path === headerPath) {
+                    return Promise.resolve({
+                      data: new Blob([JSON.stringify(headerContextContent)]),
+                      error: null,
+                    });
+                  }
+                  if (b === bucket && path === priorPath) {
+                    return Promise.resolve({
+                      data: new Blob(["prior content"]),
+                      error: null,
+                    });
+                  }
+                  return Promise.resolve({ data: null, error: new Error("Not found") });
+                },
+              },
+            };
+            const { client, fileManager, downloadFromStorage } = setup(config);
+            fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+            const job = createMockJob(
+              {
+                model_id: "model-123",
+                target_contribution_id: TARGET_ID,
+                inputs: { header_context_id: HEADER_ID },
+              },
+              { target_contribution_id: TARGET_ID },
+            );
+            try {
+              const result = await assembleContinuationPrompt({
+                dbClient: client,
+                fileManager,
+                job,
+                project: defaultProject,
+                session: defaultSession,
+                stage: defaultStage,
+                gatherContinuationInputs: gatherSpy,
+                downloadFromStorage,
+                gatherContext: spy(async () => ({
+                  user_objective: "",
+                  domain: "",
+                  agent_count: 0,
+                  context_description: "",
+                  original_user_request: "",
+                  prior_stage_ai_outputs: "",
+                  prior_stage_user_feedback: "",
+                  deployment_context: undefined,
+                  reference_documents: undefined,
+                  recipeStep: defaultStage.recipe_step,
+                })),
+              });
+              assert(result.promptContent.includes(headerContextContent.system_materials.agent_notes_to_self));
+              assert(result.promptContent.includes("User prompt."));
+              assert(result.promptContent.includes("Prior output."));
+            } finally {
+              teardown();
+            }
+          },
+        );
+
+        await t.step(
+          "prompt saved to storage includes the assembled multi-fragment content",
+          async () => {
+            const TARGET_ID = "target-save-789";
+            const assembledContent: Messages[] = [
+              { role: "user", content: "Seed." },
+              { role: "assistant", content: "Fragment one.", id: "c1" },
+              { role: "user", content: "Continue." },
+              { role: "assistant", content: "Fragment two.", id: TARGET_ID },
+            ];
+            const gatherSpy = spy((): Promise<Messages[]> => Promise.resolve(assembledContent));
+            const priorBucket = "b";
+            const priorPathFull = "p/f.json";
+            const config: MockSupabaseDataConfig = {
+              genericMockResults: {
+                ai_providers: {
+                  select: {
+                    data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                  },
+                },
+                dialectic_contributions: createContributionsMock({
+                  [TARGET_ID]: {
+                    storage_bucket: priorBucket,
+                    storage_path: "p",
+                    file_name: "f.json",
+                    contribution_type: "antithesis",
+                  },
+                }),
+              },
+              storageMock: {
+                downloadResult: (bucket: string, path: string) => {
+                  if (bucket === priorBucket && path === priorPathFull) {
+                    return Promise.resolve({
+                      data: new Blob(["prior content"]),
+                      error: null,
+                    });
+                  }
+                  return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+                },
+              },
+            };
+            const { client, fileManager, downloadFromStorage } = setup(config);
+            fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+            const job = createMockJob(
+              { model_id: "model-123", target_contribution_id: TARGET_ID },
+              { target_contribution_id: TARGET_ID },
+            );
+            try {
+              await assembleContinuationPrompt({
+                dbClient: client,
+                fileManager,
+                job,
+                project: defaultProject,
+                session: defaultSession,
+                stage: defaultStage,
+                gatherContinuationInputs: gatherSpy,
+                downloadFromStorage,
+                gatherContext: spy(async () => ({
+                  user_objective: "",
+                  domain: "",
+                  agent_count: 0,
+                  context_description: "",
+                  original_user_request: "",
+                  prior_stage_ai_outputs: "",
+                  prior_stage_user_feedback: "",
+                  deployment_context: undefined,
+                  reference_documents: undefined,
+                  recipeStep: defaultStage.recipe_step,
+                })),
+              });
+              assertSpyCall(fileManager.uploadAndRegisterFile, 0);
+              const uploadArg = fileManager.uploadAndRegisterFile.calls[0].args[0];
+              const savedContent: string =
+                typeof uploadArg.fileContent === "string"
+                  ? uploadArg.fileContent
+                  : new TextDecoder().decode(uploadArg.fileContent);
+              assert(savedContent.includes("Seed."));
+              assert(savedContent.includes("Fragment one."));
+              assert(savedContent.includes("Fragment two."));
+            } finally {
+              teardown();
+            }
+          },
+        );
+
+        await t.step(
+          "error when gatherContinuationInputs fails to retrieve chain propagates correctly",
+          async () => {
+            const TARGET_ID = "target-err-999";
+            const gatherSpy = spy(
+              (): Promise<Messages[]> => Promise.reject(new Error("Failed to retrieve root contribution for id xyz.")),
+            );
+            const priorBucket = "b";
+            const priorPathFull = "p/f.json";
+            const config: MockSupabaseDataConfig = {
+              genericMockResults: {
+                ai_providers: {
+                  select: {
+                    data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                  },
+                },
+                dialectic_contributions: createContributionsMock({
+                  [TARGET_ID]: {
+                    storage_bucket: priorBucket,
+                    storage_path: "p",
+                    file_name: "f.json",
+                    contribution_type: "antithesis",
+                  },
+                }),
+              },
+              storageMock: {
+                downloadResult: (bucket: string, path: string) => {
+                  if (bucket === priorBucket && path === priorPathFull) {
+                    return Promise.resolve({
+                      data: new Blob(["prior content"]),
+                      error: null,
+                    });
+                  }
+                  return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+                },
+              },
+            };
+            const { client, fileManager, downloadFromStorage } = setup(config);
+            fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+            const job = createMockJob(
+              { model_id: "model-123", target_contribution_id: TARGET_ID },
+              { target_contribution_id: TARGET_ID },
+            );
+            try {
+              await assertRejects(
+                () =>
+                  assembleContinuationPrompt({
+                    dbClient: client,
+                    fileManager,
+                    job,
+                    project: defaultProject,
+                    session: defaultSession,
+                    stage: defaultStage,
+                    gatherContinuationInputs: gatherSpy,
+                    downloadFromStorage,
+                    gatherContext: spy(async () => ({
+                      user_objective: "",
+                      domain: "",
+                      agent_count: 0,
+                      context_description: "",
+                      original_user_request: "",
+                      prior_stage_ai_outputs: "",
+                      prior_stage_user_feedback: "",
+                      deployment_context: undefined,
+                      reference_documents: undefined,
+                      recipeStep: defaultStage.recipe_step,
+                    })),
+                  }),
+                Error,
+                "Failed to retrieve",
               );
             } finally {
               teardown();

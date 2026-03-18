@@ -27,6 +27,7 @@ import type {
   GenerateContributionsPayload,
   GenerateContributionsResponse,
   TokenWallet,
+  CreateProjectAndAutoStartPayload,
 } from '@paynless/types';
 
 vi.mock('@paynless/api', async (importOriginal) => {
@@ -127,6 +128,7 @@ function sessionSuccessResponse(sessionId: string, projectId: string): StartSess
     associated_chat_id: null,
     current_stage_id: null,
     user_input_reference_url: null,
+    viewing_stage_id: null,
   };
   return { ...session, seedPrompt };
 }
@@ -158,9 +160,11 @@ describe('useDialecticStore', () => {
   });
 
   describe('createProjectAndAutoStart', () => {
-    const payload: CreateProjectPayload = {
+    const payload: CreateProjectAndAutoStartPayload = {
       projectName: 'Auto Project',
       selectedDomainId: 'dom-1',
+      idempotencyKey: 'auto-project-1',
+      sessionIdempotencyKey: 'auto-session-1',
     };
     const projectId = 'proj-auto-1';
     const sessionId = 'sess-auto-1';
@@ -177,6 +181,7 @@ describe('useDialecticStore', () => {
         default_system_prompt_id: null,
         description: null,
         active_recipe_instance_id: null,
+        minimum_balance: 0,
       },
     ];
 
@@ -198,7 +203,7 @@ describe('useDialecticStore', () => {
         data: projectWithStages(projectId, []),
         status: 201,
       });
-      const projectWithStagesData = projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null }]);
+      const projectWithStagesData = projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]);
       mockDialecticApi.getProjectDetails.mockResolvedValue({ data: projectWithStagesData, status: 200 });
       mockDialecticApi.listModelCatalog.mockResolvedValue({
         data: [catalogEntry({ id: 'm1', model_name: 'Model One', is_default_generation: true, is_active: true })],
@@ -229,7 +234,7 @@ describe('useDialecticStore', () => {
         status: 201,
       });
       mockDialecticApi.getProjectDetails.mockResolvedValue({
-        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null }]),
+        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]),
         status: 200,
       });
       mockDialecticApi.startSession.mockResolvedValue({
@@ -253,7 +258,7 @@ describe('useDialecticStore', () => {
         status: 201,
       });
       mockDialecticApi.getProjectDetails.mockResolvedValue({
-        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null }]),
+        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]),
         status: 200,
       });
       mockDialecticApi.startSession.mockResolvedValue({
@@ -277,7 +282,7 @@ describe('useDialecticStore', () => {
         data: projectWithStages(projectId, []),
         status: 201,
       });
-      const projectData = projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null }]);
+      const projectData = projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]);
       mockDialecticApi.getProjectDetails.mockResolvedValue({ data: projectData, status: 200 });
       mockDialecticApi.startSession.mockResolvedValue({
         data: sessionSuccessResponse(sessionId, projectId),
@@ -300,7 +305,7 @@ describe('useDialecticStore', () => {
         status: 201,
       });
       mockDialecticApi.getProjectDetails.mockResolvedValue({
-        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null }]),
+        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]),
         status: 200,
       });
       mockDialecticApi.startSession.mockResolvedValue({
@@ -326,7 +331,7 @@ describe('useDialecticStore', () => {
         status: 201,
       });
       mockDialecticApi.getProjectDetails.mockResolvedValue({
-        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null }]),
+        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]),
         status: 200,
       });
 
@@ -343,6 +348,7 @@ describe('useDialecticStore', () => {
       const defaultModels: SelectedModels[] = [{ id: 'm1', displayName: 'Model One' }];
       useDialecticStore.setState({
         ...initialDialecticStateValues,
+        selectedModels: [],
         modelCatalog: [catalogEntry({ id: 'm1', model_name: 'Model One', is_default_generation: true, is_active: true })],
       });
       mockDialecticApi.createProject.mockResolvedValue({
@@ -350,7 +356,7 @@ describe('useDialecticStore', () => {
         status: 201,
       });
       mockDialecticApi.getProjectDetails.mockResolvedValue({
-        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null }]),
+        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]),
         status: 200,
       });
       mockDialecticApi.startSession.mockResolvedValue({
@@ -370,6 +376,38 @@ describe('useDialecticStore', () => {
       );
     });
 
+    it('when selectedModels in state is non-empty, startDialecticSession is called with those models not catalog defaults', async () => {
+      const userSelectedModels: SelectedModels[] = [{ id: 'user-m1', displayName: 'User Model' }];
+      useDialecticStore.setState({
+        ...initialDialecticStateValues,
+        selectedModels: userSelectedModels,
+        modelCatalog: [catalogEntry({ id: 'm1', model_name: 'Catalog Default', is_default_generation: true, is_active: true })],
+      });
+      mockDialecticApi.createProject.mockResolvedValue({
+        data: projectWithStages(projectId, []),
+        status: 201,
+      });
+      mockDialecticApi.getProjectDetails.mockResolvedValue({
+        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]),
+        status: 200,
+      });
+      mockDialecticApi.startSession.mockResolvedValue({
+        data: sessionSuccessResponse(sessionId, projectId),
+        status: 200,
+      });
+
+      const { createProjectAndAutoStart } = useDialecticStore.getState();
+      await createProjectAndAutoStart(payload);
+
+      expect(mockDialecticApi.startSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId,
+          stageSlug,
+          selectedModels: userSelectedModels,
+        }),
+      );
+    });
+
     it('returns projectId, sessionId, hasDefaultModels true on full success', async () => {
       useDialecticStore.setState({
         ...initialDialecticStateValues,
@@ -380,7 +418,7 @@ describe('useDialecticStore', () => {
         status: 201,
       });
       mockDialecticApi.getProjectDetails.mockResolvedValue({
-        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null }]),
+        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]),
         status: 200,
       });
       mockDialecticApi.startSession.mockResolvedValue({
@@ -462,7 +500,7 @@ describe('useDialecticStore', () => {
         status: 201,
       });
       mockDialecticApi.getProjectDetails.mockResolvedValue({
-        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null }]),
+        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]),
         status: 200,
       });
       const sessionError: ApiError = { code: 'SESSION_FAIL', message: 'Cannot start session' };
@@ -490,7 +528,7 @@ describe('useDialecticStore', () => {
         status: 201,
       });
       mockDialecticApi.getProjectDetails.mockResolvedValue({
-        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null }]),
+        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]),
         status: 200,
       });
       mockDialecticApi.startSession.mockResolvedValue({
@@ -516,7 +554,7 @@ describe('useDialecticStore', () => {
         status: 201,
       });
       mockDialecticApi.getProjectDetails.mockResolvedValue({
-        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null }]),
+        data: projectWithStages(projectId, [{ slug: stageSlug, display_name: 'Thesis', expected_output_template_ids: [], id: 'stage-1', recipe_template_id: null, created_at: '2023-01-01T00:00:00.000Z', default_system_prompt_id: null, description: null, active_recipe_instance_id: null, minimum_balance: 0 }]),
         status: 200,
       });
       mockDialecticApi.startSession.mockResolvedValue({
