@@ -1,14 +1,6 @@
 import { logger } from "../logger.ts";
 import { type UserData, type EmailMarketingService } from "../types.ts";
-
-// Export the interface
-export interface KitServiceConfig {
-    apiKey: string;
-    baseUrl: string;
-    tagId?: string;
-    customUserIdField?: string;
-    customCreatedAtField?: string;
-}
+import type { KitServiceConfig } from "./kit.interface.ts";
 
 export class KitService implements EmailMarketingService {
     private config: KitServiceConfig;
@@ -21,10 +13,7 @@ export class KitService implements EmailMarketingService {
         }
         this.config = config;
 
-        logger.info(`KitService initialized. Base URL: ${this.config.baseUrl}, Tag ID: ${this.config.tagId || 'Not Set'}, UserID Field: ${this.config.customUserIdField || 'Not Set'}, CreatedAt Field: ${this.config.customCreatedAtField || 'Not Set'}`);
-        if (!this.config.tagId) {
-            logger.warn("KitService initialized without a Tag ID. addUserToList requires a configured Tag ID.");
-        }
+        logger.info(`KitService initialized. Base URL: ${this.config.baseUrl}, UserID Field: ${this.config.customUserIdField || 'Not Set'}, CreatedAt Field: ${this.config.customCreatedAtField || 'Not Set'}`);
         if (!this.config.customUserIdField || !this.config.customCreatedAtField) {
             logger.warn("KitService initialized without custom field names. addUserToList and updateUserAttributes require these.");
         }
@@ -32,32 +21,17 @@ export class KitService implements EmailMarketingService {
 
     private async makeApiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
         const url = new URL(`${this.config.baseUrl}${endpoint}`);
-        // Add api_key for GET requests if needed, or handle auth via headers
-        if (options.method === 'GET' || !options.method) { 
-            url.searchParams.set('api_key', this.config.apiKey);
-        }
 
-        const defaultHeaders = {
+        const defaultHeaders: Record<string, string> = {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            // Add Authorization header if Kit uses it instead of api_key param for POST/PUT/DELETE
+            'X-Kit-Api-Key': this.config.apiKey,
         };
 
         const finalOptions: RequestInit = {
             ...options,
-            headers: { ...defaultHeaders, ...options.headers },
+            headers: { ...defaultHeaders, ...(options.headers as Record<string, string>) },
         };
-        
-        // Add api_key to body for non-GET if required by Kit
-        if (options.method && options.method !== 'GET' && finalOptions.body && typeof finalOptions.body === 'string') {
-            try {
-                const bodyJson = JSON.parse(finalOptions.body);
-                bodyJson.api_key = this.config.apiKey; 
-                finalOptions.body = JSON.stringify(bodyJson);
-            } catch (e) {
-                logger.warn("Failed to inject api_key into non-JSON body");
-            }
-        }
 
         logger.debug('Making Kit API request:', { url: url.toString(), method: finalOptions.method || 'GET' });
 
@@ -72,7 +46,9 @@ export class KitService implements EmailMarketingService {
                  await response.body?.cancel(); 
                  /* ignore parsing error */ 
              }
-             const errorMessage = (errorBody as Error)?.message || response.statusText || 'Unknown API error';
+             const parsedBody = errorBody as Record<string, unknown>;
+             const nestedError = parsedBody.error as Record<string, unknown> | undefined;
+             const errorMessage = (nestedError?.message as string) || (parsedBody.message as string) || response.statusText || 'Unknown API error';
              logger.error('Kit API Error', { 
                 status: response.status, 
                 endpoint, 
@@ -94,33 +70,26 @@ export class KitService implements EmailMarketingService {
     }
 
     async addUserToList(userData: UserData): Promise<void> {
-        if (!this.config.tagId) {
-            logger.error("Cannot add user to Kit tag: Tag ID is not configured.");
-            throw new Error("KitService is not configured with a Tag ID.");
-        }
         if (!this.config.customUserIdField || !this.config.customCreatedAtField) {
-            logger.error("Cannot add user to Kit tag: Custom field keys are not configured.");
+            logger.error("Cannot add user to Kit: Custom field keys are not configured.");
             throw new Error("KitService is not configured with custom field keys.");
         }
 
-        const endpoint = `/v1/tags/${this.config.tagId}/subscribe`;
-        const payload = {
-            // api_key: this.config.apiKey, // Injected by makeApiRequest for non-GET
-            email: userData.email,
+        const endpoint = `/v4/subscribers`;
+        const payload: Record<string, unknown> = {
+            email_address: userData.email,
             first_name: userData.firstName,
-            last_name: userData.lastName,
             fields: {
                 [this.config.customUserIdField.replace('fields[','').replace(']','')]: userData.id,
                 [this.config.customCreatedAtField.replace('fields[','').replace(']','')]: userData.createdAt,
             }
-            // Add any other standard fields Kit supports
         };
 
         await this.makeApiRequest(endpoint, {
             method: 'POST',
             body: JSON.stringify(payload),
         });
-        logger.info(`Successfully sent addUserToList request for ${userData.email} to Kit tag ${this.config.tagId}.`);
+        logger.info(`Successfully sent addUserToList request for ${userData.email} to Kit.`);
     }
 
     async updateUserAttributes(email: string, attributes: Partial<UserData>): Promise<void> {
@@ -135,32 +104,27 @@ export class KitService implements EmailMarketingService {
             return; // Don't throw, just skip if not found
         }
 
-        const endpoint = `/v1/subscribers/${subscriberId}`;
-        // Prepare payload, excluding email and ensuring custom fields are nested
-        const payload: Record<string, any> = {
-             // api_key: this.config.apiKey, // Injected by makeApiRequest
+        const endpoint = `/v4/subscribers/${subscriberId}`;
+        const fields: Record<string, unknown> = {};
+        if (attributes.id) fields[this.config.customUserIdField.replace('fields[','').replace(']','')] = attributes.id;
+        if (attributes.createdAt) fields[this.config.customCreatedAtField.replace('fields[','').replace(']','')] = attributes.createdAt;
+
+        const payload: Record<string, unknown> = {
              first_name: attributes.firstName,
              last_name: attributes.lastName,
-             fields: {}
+             fields,
         };
-        // Populate fields, mapping UserData keys to Kit field keys
-        if (attributes.id) payload.fields[this.config.customUserIdField.replace('fields[','').replace(']','')] = attributes.id;
-        if (attributes.createdAt) payload.fields[this.config.customCreatedAtField.replace('fields[','').replace(']','')] = attributes.createdAt;
-        // Add other custom fields if necessary
 
         await this.makeApiRequest(endpoint, {
-            method: 'PUT',
+            method: 'PATCH',
             body: JSON.stringify(payload),
         });
         logger.info(`Successfully sent updateUserAttributes request for ${email} (ID: ${subscriberId}) to Kit.`);
     }
 
     private async findSubscriberIdByEmail(email: string): Promise<number | null> {
-        // Construct endpoint with query parameters for email filtering
-        const endpoint = `/v1/subscribers?email_address=${encodeURIComponent(email)}`;
+        const endpoint = `/v4/subscribers?email_address=${encodeURIComponent(email)}`;
         try {
-             // Specify expected response structure for makeApiRequest
-             // The GET request will include api_key automatically via makeApiRequest
             const data = await this.makeApiRequest<{ subscribers: Array<{id: number}> }>(endpoint, { method: 'GET' });
             // Removed TODO as email is now passed in endpoint query string
             
@@ -185,10 +149,36 @@ export class KitService implements EmailMarketingService {
             return;
         }
 
-        const endpoint = `/v1/subscribers/${subscriberId}`; // DELETE request
+        const endpoint = `/v4/subscribers/${subscriberId}`;
         logger.info(`Attempting to remove Kit subscriber ${subscriberId} (${email})`);
         // makeApiRequest handles non-OK status by throwing, which is desired here
         await this.makeApiRequest(endpoint, { method: 'DELETE' }); 
         logger.info(`Successfully sent removeUser request for ${email} (ID: ${subscriberId}) to Kit.`);
+    }
+
+    async addTagToSubscriber(email: string, tagId: string): Promise<void> {
+        const endpoint = `/v4/tags/${tagId}/subscribers`;
+        const payload: Record<string, unknown> = {
+            email_address: email,
+        };
+
+        await this.makeApiRequest(endpoint, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+        logger.info(`Successfully tagged subscriber ${email} with tag ${tagId}.`);
+    }
+
+    async removeTagFromSubscriber(email: string, tagId: string): Promise<void> {
+        const endpoint = `/v4/tags/${tagId}/subscribers`;
+        const payload: Record<string, unknown> = {
+            email_address: email,
+        };
+
+        await this.makeApiRequest(endpoint, {
+            method: 'DELETE',
+            body: JSON.stringify(payload),
+        });
+        logger.info(`Successfully removed tag ${tagId} from subscriber ${email}.`);
     }
 } 

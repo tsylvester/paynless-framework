@@ -12,7 +12,7 @@ import {
   type Stub,
 } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { KitService } from "./kit_service.ts";
-import type { KitServiceConfig } from "./kit_service.ts";
+import type { KitServiceConfig } from "./kit.interface.ts";
 import type { UserData } from "../types.ts";
 import { logger } from "../logger.ts"; // Import real logger for potential spy
 
@@ -63,8 +63,7 @@ const stubFetchForTestScope = (): {
 // --- Test Data ---
 const validConfig: KitServiceConfig = {
   apiKey: "test-api-key",
-  baseUrl: "https://api.testkit.com/v3", // Use a test URL
-  tagId: "12345",
+  baseUrl: "https://api.kit.com",
   customUserIdField: "cf_user_id",
   customCreatedAtField: "cf_created_at",
 };
@@ -100,20 +99,6 @@ Deno.test("KitService tests", async (t) => {
     );
   });
 
-  await t.step("constructor should log warning if tagId is missing", () => {
-    const loggerSpy = spy(logger, "warn");
-    try {
-      new KitService({ ...validConfig, tagId: undefined });
-      assert(
-        loggerSpy.calls.some((call) =>
-          (call.args[0] as string)?.includes("without a Tag ID")
-        ),
-      );
-    } finally {
-      loggerSpy.restore();
-    }
-  });
-
   await t.step("constructor should log warning if custom fields are missing", () => {
     const loggerSpy = spy(logger, "warn");
     try {
@@ -137,21 +122,6 @@ Deno.test("KitService tests", async (t) => {
   });
 
   // --- Method Tests (Not Configured) ---
-
-  await t.step(
-    "addUserToList should throw if service lacks configured tagId",
-    async () => {
-      // Instance can be created, but method call should fail
-      const service = new KitService({ ...validConfig, tagId: undefined });
-      await assertRejects(
-        async () => {
-          await service.addUserToList(testUserData);
-        },
-        Error,
-        "KitService is not configured with a Tag ID.", // Error comes from method
-      );
-    },
-  );
 
   await t.step(
     "addUserToList should throw if service lacks configured custom fields",
@@ -189,13 +159,13 @@ Deno.test("KitService tests", async (t) => {
 
   // --- Method Tests (Configured) ---
 
-  await t.step("`addUserToList` calls Kit API correctly on success", async () => {
-    const { stub: fetchStub } = stubFetchForTestScope(); // Only get the stub
+  await t.step("`addUserToList` calls POST /v4/subscribers with email_address and X-Kit-Api-Key header", async () => {
+    const { stub: fetchStub } = stubFetchForTestScope();
     await using _disposable = fetchStub;
 
     const service = new KitService(validConfig);
     setMockFetchResponse(
-      new Response(JSON.stringify({ subscription: { subscriber: { id: 9876 } } }), {
+      new Response(JSON.stringify({ subscriber: { id: 9876 } }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -203,9 +173,22 @@ Deno.test("KitService tests", async (t) => {
 
     await service.addUserToList(testUserData);
 
-    // Check fetch was called
+    // Check fetch was called once
     assertEquals(fetchStub.calls.length, 1);
-    // Cannot assert arguments without spy
+    // Assert v4 endpoint
+    const calledUrl: string = fetchStub.calls[0].args[0] as string;
+    assertStringIncludes(calledUrl, "/v4/subscribers");
+    // Assert auth header
+    const calledOptions: RequestInit = fetchStub.calls[0].args[1] as RequestInit;
+    const headers: Record<string, string> = calledOptions.headers as Record<string, string>;
+    assertEquals(headers["X-Kit-Api-Key"], validConfig.apiKey);
+    // Assert email_address field in body (not "email")
+    const body: Record<string, unknown> = JSON.parse(calledOptions.body as string);
+    assertEquals(body.email_address, testUserData.email);
+    // Assert no api_key in body
+    assertEquals(body.api_key, undefined);
+    // Assert method is POST
+    assertEquals(calledOptions.method, "POST");
   });
 
   await t.step("`addUserToList` throws specific error on Kit API error", async () => {
@@ -254,7 +237,7 @@ Deno.test("KitService tests", async (t) => {
   // --- Tests for updateUserAttributes (Configured) ---
 
   await t.step(
-    "`updateUserAttributes` calls find (with email filter) and update API correctly on success",
+    "`updateUserAttributes` calls find via GET /v4/subscribers and PATCH /v4/subscribers/{id}",
     async () => {
       const { stub: fetchStub } = stubFetchForTestScope();
       await using _disposable = fetchStub;
@@ -266,7 +249,7 @@ Deno.test("KitService tests", async (t) => {
         JSON.stringify({ subscribers: [{ id: kitSubscriberId }] }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
-      // Mock PUT response for the update itself
+      // Mock PATCH response for the update itself
       const updateResponse = new Response(
         JSON.stringify({ subscriber: { id: kitSubscriberId } }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -279,6 +262,20 @@ Deno.test("KitService tests", async (t) => {
 
       // Verify fetch was called twice (find then update)
       assertEquals(fetchStub.calls.length, 2);
+      // Assert find call uses v4 endpoint with email_address and X-Kit-Api-Key header
+      const findUrl: string = fetchStub.calls[0].args[0] as string;
+      assertStringIncludes(findUrl, "/v4/subscribers");
+      assertStringIncludes(findUrl, `email_address=${encodeURIComponent(testUserData.email)}`);
+      const findOptions: RequestInit = fetchStub.calls[0].args[1] as RequestInit;
+      const findHeaders: Record<string, string> = findOptions.headers as Record<string, string>;
+      assertEquals(findHeaders["X-Kit-Api-Key"], validConfig.apiKey);
+      // Assert update call uses PATCH (not PUT) on v4 endpoint
+      const updateUrl: string = fetchStub.calls[1].args[0] as string;
+      assertStringIncludes(updateUrl, `/v4/subscribers/${kitSubscriberId}`);
+      const updateOptions: RequestInit = fetchStub.calls[1].args[1] as RequestInit;
+      assertEquals(updateOptions.method, "PATCH");
+      const updateHeaders: Record<string, string> = updateOptions.headers as Record<string, string>;
+      assertEquals(updateHeaders["X-Kit-Api-Key"], validConfig.apiKey);
     },
   );
 
@@ -381,7 +378,7 @@ Deno.test("KitService tests", async (t) => {
 
   // --- Tests for removeUser (Configured) ---
 
-  await t.step("`removeUser` calls find (with email filter) and delete API correctly on success", async () => {
+  await t.step("`removeUser` calls find and DELETE /v4/subscribers/{id} with X-Kit-Api-Key header", async () => {
     const { stub: fetchStub } = stubFetchForTestScope();
     await using _disposable = fetchStub;
 
@@ -392,15 +389,21 @@ Deno.test("KitService tests", async (t) => {
       JSON.stringify({ subscribers: [{ id: kitSubscriberId }] }),
       { status: 200 },
     );
-    // Mock DELETE response (Kit might return 200 with data or 204 No Content)
-    // We'll test with 200 and data, as handled by makeApiRequest
-    const deleteResponse = new Response(JSON.stringify({ subscriber: { id: kitSubscriberId } }), { status: 200 }); 
+    // Mock DELETE response (Kit v4 returns 204 No Content on success)
+    const deleteResponse = new Response(null, { status: 204 });
     setMockFetchResponse([findResponse, deleteResponse]);
 
     await service.removeUser(testUserData.email);
 
     // Verify fetch was called twice (find then delete)
     assertEquals(fetchStub.calls.length, 2);
+    // Assert delete call uses v4 endpoint
+    const deleteUrl: string = fetchStub.calls[1].args[0] as string;
+    assertStringIncludes(deleteUrl, `/v4/subscribers/${kitSubscriberId}`);
+    const deleteOptions: RequestInit = fetchStub.calls[1].args[1] as RequestInit;
+    assertEquals(deleteOptions.method, "DELETE");
+    const deleteHeaders: Record<string, string> = deleteOptions.headers as Record<string, string>;
+    assertEquals(deleteHeaders["X-Kit-Api-Key"], validConfig.apiKey);
   });
 
   await t.step("`removeUser` skips delete if user not found via email filter", async () => {
@@ -499,7 +502,166 @@ Deno.test("KitService tests", async (t) => {
       }
     });
 
-  // TODO: Add tests for trackEvent stub
-  // TODO: Add tests for rate limiting (429 response)
+  // --- Tests for makeApiRequest auth header ---
+
+  await t.step("`makeApiRequest` sends X-Kit-Api-Key header for GET requests, not api_key in query", async () => {
+    const { stub: fetchStub } = stubFetchForTestScope();
+    await using _disposable = fetchStub;
+
+    const service = new KitService(validConfig);
+    // findSubscriberIdByEmail makes a GET request internally
+    setMockFetchResponse(
+      new Response(JSON.stringify({ subscribers: [] }), { status: 200 }),
+    );
+
+    await service.updateUserAttributes(testUserData.email, { firstName: "Test" });
+
+    assertEquals(fetchStub.calls.length, 1);
+    const calledUrl: string = fetchStub.calls[0].args[0] as string;
+    // Assert no api_key in query string
+    assert(!calledUrl.includes("api_key="), "URL should not contain api_key query parameter");
+    // Assert X-Kit-Api-Key header is present
+    const calledOptions: RequestInit = fetchStub.calls[0].args[1] as RequestInit;
+    const headers: Record<string, string> = calledOptions.headers as Record<string, string>;
+    assertEquals(headers["X-Kit-Api-Key"], validConfig.apiKey);
+  });
+
+  // --- Tests for addTagToSubscriber ---
+
+  await t.step("`addTagToSubscriber` calls POST /v4/tags/{tagId}/subscribers with email_address", async () => {
+    const { stub: fetchStub } = stubFetchForTestScope();
+    await using _disposable = fetchStub;
+
+    const service = new KitService(validConfig);
+    const tagId = "99887";
+    setMockFetchResponse(
+      new Response(JSON.stringify({ subscriber: { id: 123 } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await service.addTagToSubscriber(testUserData.email, tagId);
+
+    assertEquals(fetchStub.calls.length, 1);
+    const calledUrl: string = fetchStub.calls[0].args[0] as string;
+    assertStringIncludes(calledUrl, `/v4/tags/${tagId}/subscribers`);
+    const calledOptions: RequestInit = fetchStub.calls[0].args[1] as RequestInit;
+    assertEquals(calledOptions.method, "POST");
+    const headers: Record<string, string> = calledOptions.headers as Record<string, string>;
+    assertEquals(headers["X-Kit-Api-Key"], validConfig.apiKey);
+    const body: Record<string, unknown> = JSON.parse(calledOptions.body as string);
+    assertEquals(body.email_address, testUserData.email);
+  });
+
+  await t.step("`addTagToSubscriber` throws on API error", async () => {
+    const { stub: fetchStub } = stubFetchForTestScope();
+    await using _disposable = fetchStub;
+
+    const service = new KitService(validConfig);
+    const tagId = "99887";
+    const errorMsg = "Tag not found";
+    setMockFetchResponse(
+      new Response(JSON.stringify({ error: { message: errorMsg } }), { status: 404 }),
+    );
+
+    await assertRejects(
+      async () => {
+        await service.addTagToSubscriber(testUserData.email, tagId);
+      },
+      Error,
+      `Kit API Error (404): ${errorMsg}`,
+    );
+    assertEquals(fetchStub.calls.length, 1);
+  });
+
+  // --- Tests for removeTagFromSubscriber ---
+
+  await t.step("`removeTagFromSubscriber` calls DELETE /v4/tags/{tagId}/subscribers with email_address", async () => {
+    const { stub: fetchStub } = stubFetchForTestScope();
+    await using _disposable = fetchStub;
+
+    const service = new KitService(validConfig);
+    const tagId = "99887";
+    // Kit v4 DELETE tag subscriber returns 204
+    setMockFetchResponse(new Response(null, { status: 204 }));
+
+    await service.removeTagFromSubscriber(testUserData.email, tagId);
+
+    assertEquals(fetchStub.calls.length, 1);
+    const calledUrl: string = fetchStub.calls[0].args[0] as string;
+    assertStringIncludes(calledUrl, `/v4/tags/${tagId}/subscribers`);
+    const calledOptions: RequestInit = fetchStub.calls[0].args[1] as RequestInit;
+    assertEquals(calledOptions.method, "DELETE");
+    const headers: Record<string, string> = calledOptions.headers as Record<string, string>;
+    assertEquals(headers["X-Kit-Api-Key"], validConfig.apiKey);
+    const body: Record<string, unknown> = JSON.parse(calledOptions.body as string);
+    assertEquals(body.email_address, testUserData.email);
+  });
+
+  await t.step("`removeTagFromSubscriber` throws on API error", async () => {
+    const { stub: fetchStub } = stubFetchForTestScope();
+    await using _disposable = fetchStub;
+
+    const service = new KitService(validConfig);
+    const tagId = "99887";
+    const errorMsg = "Subscriber not found for tag";
+    setMockFetchResponse(
+      new Response(JSON.stringify({ error: { message: errorMsg } }), { status: 404 }),
+    );
+
+    await assertRejects(
+      async () => {
+        await service.removeTagFromSubscriber(testUserData.email, tagId);
+      },
+      Error,
+      `Kit API Error (404): ${errorMsg}`,
+    );
+    assertEquals(fetchStub.calls.length, 1);
+  });
+
+  // --- Tests for 204 response handling ---
+
+  await t.step("`makeApiRequest` handles 204 responses correctly without body parsing", async () => {
+    const { stub: fetchStub } = stubFetchForTestScope();
+    await using _disposable = fetchStub;
+
+    const service = new KitService(validConfig);
+    const kitSubscriberId = 55566;
+    // find succeeds, then delete returns 204
+    const findResponse = new Response(
+      JSON.stringify({ subscribers: [{ id: kitSubscriberId }] }),
+      { status: 200 },
+    );
+    const deleteResponse = new Response(null, { status: 204 });
+    setMockFetchResponse([findResponse, deleteResponse]);
+
+    // removeUser triggers a DELETE which should get 204 — should not throw
+    await service.removeUser(testUserData.email);
+
+    assertEquals(fetchStub.calls.length, 2);
+  });
+
+  // --- Tests for error handling ---
+
+  await t.step("non-OK responses throw with status and message", async () => {
+    const { stub: fetchStub } = stubFetchForTestScope();
+    await using _disposable = fetchStub;
+
+    const service = new KitService(validConfig);
+    const errorMsg = "Rate limit exceeded";
+    setMockFetchResponse(
+      new Response(JSON.stringify({ message: errorMsg }), { status: 429 }),
+    );
+
+    await assertRejects(
+      async () => {
+        await service.addUserToList(testUserData);
+      },
+      Error,
+      "Kit API Error (429)",
+    );
+    assertEquals(fetchStub.calls.length, 1);
+  });
 
 });

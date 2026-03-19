@@ -469,89 +469,89 @@ The homepage UseCases component currently shows a generic 2x2 grid with broad la
         *   `[✅]` Links work correctly
         *   `[✅]` Sidebar styling consistent with existing items
 
-*   `[ ]` supabase/migrations/`YYYYMMDDHHMMSS_newsletter_events.sql` **[DB] Extend user_profiles, create newsletter_events table, trigger, and RLS**
-    *   `[ ]` `objective`
-        *   `[ ]` Add newsletter subscription tracking columns to `user_profiles`
-        *   `[ ]` Create `newsletter_events` queue table for event-driven Kit integration
-        *   `[ ]` Create DB trigger on `user_profiles.is_subscribed_to_newsletter` to manage timestamps and insert events idempotently
-        *   `[ ]` Lock down RLS so new columns and new table are service-role only
-    *   `[ ]` `role`
-        *   `[ ]` Infrastructure — database schema, triggers, and security policies
-    *   `[ ]` `module`
-        *   `[ ]` Newsletter event queue — foundation for all downstream Kit integration
-    *   `[ ]` `deps`
-        *   `[ ]` `user_profiles` table — existing, extended with new columns
-        *   `[ ]` `auth.users` — FK target for `newsletter_events.user_id`
-        *   `[ ]` Confirm no reverse dependency is introduced
-    *   `[ ]` `context_slice`
-        *   `[ ]` `user_profiles` table schema and existing RLS UPDATE policy
-        *   `[ ]` `auth.users` for FK reference
-    *   `[ ]` `user_profiles` alterations
-        *   `[ ]` Add `subscribed_at` (timestamptz, nullable, default null)
-        *   `[ ]` Add `unsubscribed_at` (timestamptz, nullable, default null)
-        *   `[ ]` Add `signup_ref` (text, nullable, default null) — set once at registration, never changed by user
-        *   `[ ]` Add `synced_to_kit_at` (timestamptz, nullable, default null) — set by sync script on success
-    *   `[ ]` `newsletter_events` table creation
-        *   `[ ]` `id` uuid PK default `gen_random_uuid()`
-        *   `[ ]` `user_id` uuid NOT NULL FK → `auth.users(id)` ON DELETE CASCADE
-        *   `[ ]` `event_type` text NOT NULL — values: `'subscribe'`, `'unsubscribe'`
-        *   `[ ]` `created_at` timestamptz NOT NULL default `now()`
-        *   `[ ]` `processed_at` timestamptz nullable default null
-        *   `[ ]` `ref` text nullable — copied from `user_profiles.signup_ref` at event creation time
-        *   `[ ]` Index on `newsletter_events` WHERE `processed_at IS NULL` for queue polling
-    *   `[ ]` RLS policies
-        *   `[ ]` `newsletter_events`: enable RLS, deny all to `anon` and `authenticated`, service_role only
-        *   `[ ]` `user_profiles` UPDATE policy: exclude `signup_ref`, `synced_to_kit_at`, `subscribed_at`, `unsubscribed_at` from client-writable columns — these are managed by trigger or service_role only
-    *   `[ ]` Trigger function `handle_newsletter_subscription_change()`
-        *   `[ ]` AFTER UPDATE OF `is_subscribed_to_newsletter` ON `user_profiles`
-        *   `[ ]` When `NEW.is_subscribed_to_newsletter = true` AND `OLD.is_subscribed_to_newsletter IS DISTINCT FROM true`:
-            *   `[ ]` Set `NEW.subscribed_at = now()` if `OLD.subscribed_at IS NULL`
-            *   `[ ]` Set `NEW.unsubscribed_at = NULL`
-            *   `[ ]` INSERT into `newsletter_events` (`user_id`, `event_type`, `ref`) VALUES (`NEW.id`, `'subscribe'`, `NEW.signup_ref`)
-        *   `[ ]` When `NEW.is_subscribed_to_newsletter = false` AND `OLD.is_subscribed_to_newsletter = true`:
-            *   `[ ]` Set `NEW.unsubscribed_at = now()`
-            *   `[ ]` INSERT into `newsletter_events` (`user_id`, `event_type`, `ref`) VALUES (`NEW.id`, `'unsubscribe'`, `NEW.signup_ref`)
-    *   `[ ]` `directionality`
-        *   `[ ]` Infrastructure layer — database schema, no application code dependency
-        *   `[ ]` All downstream consumers (edge functions, store) depend on this
-        *   `[ ]` No reverse dependencies
-    *   `[ ]` `requirements`
-        *   `[ ]` Migration applies cleanly to existing database with 200+ users
-        *   `[ ]` Existing `is_subscribed_to_newsletter` values (all false) do not trigger events on migration
-        *   `[ ]` Trigger is idempotent — flipping true→true does not duplicate events
-        *   `[ ]` New columns default to null, no data backfill required
-        *   `[ ]` RLS prevents client-side writes to service-managed columns
-    *   `[ ]` Exempt from TDD (SQL migration)
+*   `[✅]` supabase/migrations/`YYYYMMDDHHMMSS_newsletter_events.sql` **[DB] Extend user_profiles, create newsletter_events table, trigger, and RLS**
+    *   `[✅]` `objective`
+        *   `[✅]` Add newsletter subscription tracking columns to `user_profiles`
+        *   `[✅]` Create `newsletter_events` queue table for event-driven Kit integration
+        *   `[✅]` Create DB trigger on `user_profiles.is_subscribed_to_newsletter` to manage timestamps and insert events idempotently
+        *   `[✅]` Lock down RLS so new columns and new table are service-role only
+    *   `[✅]` `role`
+        *   `[✅]` Infrastructure — database schema, triggers, and security policies
+    *   `[✅]` `module`
+        *   `[✅]` Newsletter event queue — foundation for all downstream Kit integration
+    *   `[✅]` `deps`
+        *   `[✅]` `user_profiles` table — existing, extended with new columns
+        *   `[✅]` `auth.users` — FK target for `newsletter_events.user_id`
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` `user_profiles` table schema and existing RLS UPDATE policy
+        *   `[✅]` `auth.users` for FK reference
+    *   `[✅]` `user_profiles` alterations
+        *   `[✅]` Add `subscribed_at` (timestamptz, nullable, default null)
+        *   `[✅]` Add `unsubscribed_at` (timestamptz, nullable, default null)
+        *   `[✅]` Add `signup_ref` (text, nullable, default null) — set once at registration, never changed by user
+        *   `[✅]` Add `synced_to_kit_at` (timestamptz, nullable, default null) — set by sync script on success
+    *   `[✅]` `newsletter_events` table creation
+        *   `[✅]` `id` uuid PK default `gen_random_uuid()`
+        *   `[✅]` `user_id` uuid NOT NULL FK → `auth.users(id)` ON DELETE CASCADE
+        *   `[✅]` `event_type` text NOT NULL — values: `'subscribe'`, `'unsubscribe'`
+        *   `[✅]` `created_at` timestamptz NOT NULL default `now()`
+        *   `[✅]` `processed_at` timestamptz nullable default null
+        *   `[✅]` `ref` text nullable — copied from `user_profiles.signup_ref` at event creation time
+        *   `[✅]` Index on `newsletter_events` WHERE `processed_at IS NULL` for queue polling
+    *   `[✅]` RLS policies
+        *   `[✅]` `newsletter_events`: enable RLS, deny all to `anon` and `authenticated`, service_role only
+        *   `[✅]` `user_profiles` UPDATE policy: exclude `signup_ref`, `synced_to_kit_at`, `subscribed_at`, `unsubscribed_at` from client-writable columns — these are managed by trigger or service_role only
+    *   `[✅]` Trigger function `handle_newsletter_subscription_change()`
+        *   `[✅]` AFTER UPDATE OF `is_subscribed_to_newsletter` ON `user_profiles`
+        *   `[✅]` When `NEW.is_subscribed_to_newsletter = true` AND `OLD.is_subscribed_to_newsletter IS DISTINCT FROM true`:
+            *   `[✅]` Set `NEW.subscribed_at = now()` if `OLD.subscribed_at IS NULL`
+            *   `[✅]` Set `NEW.unsubscribed_at = NULL`
+            *   `[✅]` INSERT into `newsletter_events` (`user_id`, `event_type`, `ref`) VALUES (`NEW.id`, `'subscribe'`, `NEW.signup_ref`)
+        *   `[✅]` When `NEW.is_subscribed_to_newsletter = false` AND `OLD.is_subscribed_to_newsletter = true`:
+            *   `[✅]` Set `NEW.unsubscribed_at = now()`
+            *   `[✅]` INSERT into `newsletter_events` (`user_id`, `event_type`, `ref`) VALUES (`NEW.id`, `'unsubscribe'`, `NEW.signup_ref`)
+    *   `[✅]` `directionality`
+        *   `[✅]` Infrastructure layer — database schema, no application code dependency
+        *   `[✅]` All downstream consumers (edge functions, store) depend on this
+        *   `[✅]` No reverse dependencies
+    *   `[✅]` `requirements`
+        *   `[✅]` Migration applies cleanly to existing database with 200+ users
+        *   `[✅]` Existing `is_subscribed_to_newsletter` values (all false) do not trigger events on migration
+        *   `[✅]` Trigger is idempotent — flipping true→true does not duplicate events
+        *   `[✅]` New columns default to null, no data backfill required
+        *   `[✅]` RLS prevents client-side writes to service-managed columns
+    *   `[✅]` Exempt from TDD (SQL migration)
 
-*   `[ ]` supabase/functions/_shared/email_service/`kit_tags.config.ts` **[BE] Kit tag-to-ref mapping configuration**
-    *   `[ ]` `objective`
-        *   `[ ]` Provide a single source of truth mapping ref slugs to Kit tag IDs
-        *   `[ ]` Extensible — adding a new funnel ref requires adding one line
-        *   `[ ]` Not in .env — these are not secrets, they're configuration
-    *   `[ ]` `role`
-        *   `[ ]` Domain configuration — static data consumed by Kit adapter and edge functions
-    *   `[ ]` `module`
-        *   `[ ]` Email service configuration layer
-        *   `[ ]` No runtime dependencies — pure data export
-    *   `[ ]` `deps`
-        *   `[ ]` None — leaf config file
-        *   `[ ]` Confirm no reverse dependency is introduced
-    *   `[ ]` `context_slice`
-        *   `[ ]` No dependencies — exports typed config objects
-    *   `[ ]` `kit_tags.config.ts`
-        *   `[ ]` Export `KitTagConfig` type: `{ tagId: string; description: string }`
-        *   `[ ]` Export `kitTagMap: Record<string, KitTagConfig>` with placeholder tag IDs for: `vibecoder`, `indiehacker`, `startup`, `agency`, `pricing`, `direct`, `legacy_user`, `no_explicit_opt_in`
-        *   `[ ]` Export `getTagIdForRef(ref: string): string | null` — looks up ref in map, returns tagId or null for unknown refs
-        *   `[ ]` Export `KIT_NEWSLETTER_TAG_ID: string` — the primary newsletter tag (used for soft-unsub removal)
-    *   `[ ]` `directionality`
-        *   `[ ]` Domain configuration layer — pure data, no side effects
-        *   `[ ]` All dependencies are inward-facing (none)
-        *   `[ ]` Provides outward to Kit service and edge functions
-    *   `[ ]` `requirements`
-        *   `[ ]` All 8 ref slugs mapped with placeholder tag IDs
-        *   `[ ]` `getTagIdForRef` returns null for unknown refs (does not throw)
-        *   `[ ]` User fills in actual tag IDs after creating tags in Kit dashboard
-    *   `[ ]` Exempt from TDD (config/types)
+*   `[✅]` supabase/functions/_shared/email_service/`kit_tags.config.ts` **[BE] Kit tag-to-ref mapping configuration**
+    *   `[✅]` `objective`
+        *   `[✅]` Provide a single source of truth mapping ref slugs to Kit tag IDs
+        *   `[✅]` Extensible — adding a new funnel ref requires adding one line
+        *   `[✅]` Not in .env — these are not secrets, they're configuration
+    *   `[✅]` `role`
+        *   `[✅]` Domain configuration — static data consumed by Kit adapter and edge functions
+    *   `[✅]` `module`
+        *   `[✅]` Email service configuration layer
+        *   `[✅]` No runtime dependencies — pure data export
+    *   `[✅]` `deps`
+        *   `[✅]` None — leaf config file
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` No dependencies — exports typed config objects
+    *   `[✅]` `kit_tags.config.ts`
+        *   `[✅]` Export `KitTagConfig` type: `{ tagId: string; description: string }`
+        *   `[✅]` Export `kitTagMap: Record<string, KitTagConfig>` with placeholder tag IDs for: `vibecoder`, `indiehacker`, `startup`, `agency`, `pricing`, `direct`, `legacy_user`, `no_explicit_opt_in`
+        *   `[✅]` Export `getTagIdForRef(ref: string): string | null` — looks up ref in map, returns tagId or null for unknown refs
+        *   `[✅]` Export `KIT_NEWSLETTER_TAG_ID: string` — the primary newsletter tag (used for soft-unsub removal)
+    *   `[✅]` `directionality`
+        *   `[✅]` Domain configuration layer — pure data, no side effects
+        *   `[✅]` All dependencies are inward-facing (none)
+        *   `[✅]` Provides outward to Kit service and edge functions
+    *   `[✅]` `requirements`
+        *   `[✅]` All 8 ref slugs mapped with placeholder tag IDs
+        *   `[✅]` `getTagIdForRef` returns null for unknown refs (does not throw)
+        *   `[✅]` User fills in actual tag IDs after creating tags in Kit dashboard
+    *   `[✅]` Exempt from TDD (config/types)
 
 *   `[ ]` supabase/functions/_shared/email_service/`kit_service.ts` **[BE] Rewrite Kit service to API v4 + add tag management methods**
     *   `[ ]` `objective`
@@ -1017,6 +1017,32 @@ The homepage UseCases component currently shows a generic 2x2 grid with broad la
         *   `[ ]` Create cohorts in PostHog filtered by `signup_segment` user property for each ref value
 
 ---
+
+## Nodes to Detail to Before Starting kit_service.ts
+
+New files (3):
+
+    1. supabase/functions/_shared/email_service/factory.interface.ts
+    2. supabase/functions/_shared/email_service/factory.interface.test.ts
+    3. supabase/functions/_shared/email_service/factory.interface.guards.ts
+    4. supabase/functions/_shared/email_service/factory.ts
+    5. supabase/functions/_shared/email_service/factory.test.ts
+    6. supabase/functions/_shared/email_service/no_op_service.ts
+    7. supabase/functions/_shared/email_service/no_op_service.test.ts
+    8. supabase/functions/_shared/email_service/dummy_service.ts
+    9. supabase/functions/_shared/email_service/email.mock.ts
+    10. supabase/functions/on-user-created/index.ts
+    11. supabase/functions/me/index.ts
+    12. supabase/functions/me/index.test.ts
+    13. supabase/functions/me/me.integration.test.ts
+
+    5 top-level nodes (dependency-ordered):
+
+    factory.ts — owns: interface, interface tests, guards, unit tests, source
+    no_op_service.ts — owns: source, unit tests
+    dummy_service.ts — owns: source (no existing test file)
+    on-user-created/index.ts — owns: source
+    me/index.ts — owns: mock update, source, unit tests, integration tests. Commit here.
 
 # Backlog
 

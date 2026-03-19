@@ -143,6 +143,22 @@ export interface EmailMarketingService {
    * @param email - The user's email address.
    */
   removeUser?(email: string): Promise<void>;
+
+  /**
+   * (Optional) Adds a tag to a subscriber by email.
+   * Used for per-ref tagging in Kit API v4.
+   * @param email - The subscriber's email address.
+   * @param tagId - The tag ID to apply.
+   */
+  addTagToSubscriber?(email: string, tagId: string): Promise<void>;
+
+  /**
+   * (Optional) Removes a tag from a subscriber by email.
+   * Used for per-ref tagging in Kit API v4.
+   * @param email - The subscriber's email address.
+   * @param tagId - The tag ID to remove.
+   */
+  removeTagFromSubscriber?(email: string, tagId: string): Promise<void>;
 }
 
 // --- AI Adapter/API Types (Not DB Tables) ---
