@@ -75,13 +75,6 @@
 * When reviewing work against the checklist, the work being completed already is not a discovery or a problem to resolve. Do not propose undoing the work you are reviewing. Do not propose undoing a GREEN state to prove a RED state. "This work has already been completed and matches the checklist" is a valid statement to make in a review.
 
 ## 5. Strict Typing & Object 
-* Every function has: 
-  * A function signature
-  * A typed return
-  * A deps object
-  * A params object
-  * A payload object
-  * Agents cannot place deps inside params, blob params and payload, or invent other types to define the function. 
 * Use explicit types everywhere. No `any`, `as`, `as const`, inline ad-hoc types, or casts. The only exceptions to strict typing are for Supabase clients and intentionally malformed objects in error-handling tests. Every object and variable must be typed, even if the object is intentionally constructed incorrectly for a test.
 * Always construct full objects that satisfy existing interfaces/tuples from the relevant type file. Compose complex objects from smaller typed components; never rely on defaults, fallbacks, or backfilling to “heal” missing data.
 * Casting for Supabase clients and intentionally malformed objects in tests is explicitly allowed. Do not report that you are confused, do not report there is a contradiction between strict typing and the two permitted exceptions for Supabase and type casting for intentionally malformed objects in tests. You are being directly and explicitly instructed that these are the two exceptions to type casting. Do not pretend you cannot understand this exception. Do not ask the user to clarify about this exception. This instruction is clear and explicit, pretending like you don't understand it is being obtuse and unhelpful. 
@@ -102,11 +95,13 @@
 * Never rename functions or variables without explicit instruction.
 
 ## 7. Dependency Injection & Architecture
-* All functions have defined: 
-  - Signatures
-  - Deps
-  - Params
-  - Returns
+* All functions have defined signatures, deps, params, payload, returns
+  exampleFunction: ExampleFunction {
+    exampleDeps: ExampleDeps;
+    exampleParams: ExampleParams;
+    examplePayload: ExamplePayload;
+  }: ExampleReturn = ExampleSuccessReturn | ExampleErrorReturn
+  * Agents cannot place deps inside params, blob params and payload, or invent other types to define the function. 
 * Use explicit dependency injection at the application boundary—construct dependencies and provide them to the top-level operation.
 * **RequestContext / ExecutionContext allowed and recommended:** a single, strictly typed, immutable context object may be created at the operation boundary and passed down the call chain to avoid deep prop-drilling. Context must be:
   * Fully typed (no optional fields) and constructed by a typed factory.
@@ -225,6 +220,8 @@
 ## Checklist-Specific Editing Rules
 *   THE AGENT NEVER TOUCHES THE CHECKLIST UNLESS THEY ARE EXPLICITLY INSTRUCTED TO! 
 *   Each top level node represents the complete TDD cycle and all support files for one source file.
+*   The "Example Checklist" shows the mandatory node construction method. These are not optional, they are not suggestions, they are obligations. Only files that do not have types or tests (like a database migration) are exempt from the node structure. 
+*   DO NOT NUMBER NODES! Nodes intentionally DO NOT carry numbers. They use relational references to other files only. Relational references are durable to insertion and reordering, numbering is brittle and breaks with any change. Numbering nodes forces a ripple effect of editing every node after it just to modify or insert one node. DO NOT NUMBER NODES! USE RELATIONAL IDENTIFIERS ONLY! 
 *   "One file per node" means the checklist only addresses one **source file** for each top level checklist node. 
 *   Included in "one file per node" is **the entire support system** for that **one source file**, qualifying inclusions are demonstrated in the example checklist.
 *   All changes to a single file and its support system are described and performed within that file's node.
@@ -234,8 +231,8 @@
 *   Do not create multiple sequential top-level nodes that describe editing the same set of files. 
 *   If there is a prior version of the node, copy its state and revise that state to match the new requirements.
 *   Adding console logs or doing fixes from test output is not required to be detailed in checklist work unless the logs or test output indicate a requirement is misstated and must be corrected. 
-*   NEVER suggest making a type or interface update its own node - that is NEVER correct, types or interfaces are ALWAYS 'x'.b for whatever function demands the type change 
-*   NEVER suggest separating out type guard tests or guards from the interface that uses them, type guard tests are ALWAYS 'x'.b.i for whatever function demands the type change
+*   NEVER suggest making a type or interface update its own node - that is NEVER correct, types or interfaces are ALWAYS a step in the node for whatever function demands the type change 
+*   NEVER suggest separating out type guard tests or guards from the interface that uses them, type guard tests are ALWAYS a step in the node for whatever function demands the type change
 *   NEVER suggest editing two source files in a single top level checklist node, function1.ts and function2.ts are different nodes
 
 ## Example Cases in Creating Checklist Nodes
@@ -250,6 +247,7 @@
 *   "I won't include any commit steps, the user can decide." No, tell the user when it's time to commit. Include the commit step when a defined set of work has been completed and the entire relevant call stack is updated. 
 *   "After working on a set of nodes, the entire scope of work is completed. I'll create a separate node that includes a commit step." No, the commit step is included in the last node of the set of work.
 * "After working on a set of nodes, the entire scope of work is completed. I'll include a commit step as the last step in the last node in the set of work." Yes, this is correct. Include a commit set in the last node of the scoped set of work. 
+* "I'll add a new node for integration tests and commits at the end of a series of nodes." NO! DO NOT STRAND INTEGRATION TESTS OR COMMITS! The integration test step is an obligate inclusion in each node, when a call chain is updated, add the integration test to the last node in the dep sequence to prove that the modified call stack works. Then, after proving the call stack works, commit the work.  
 
 ## Example Checklist
 *   `[ ]`   [path]/[function] **Descriptive explanatory title**
