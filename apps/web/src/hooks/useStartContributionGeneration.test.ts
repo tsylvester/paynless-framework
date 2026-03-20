@@ -827,6 +827,81 @@ describe('useStartContributionGeneration', () => {
     expect(result.current.activeSession?.id).toBe('sess-2');
   });
 
+  it('isViewingAheadOfCurrentStage is false when viewing the current stage', () => {
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isViewingAheadOfCurrentStage).toBe(false);
+    expect(result.current.viewingAheadReason).toBeNull();
+  });
+
+  it('isViewingAheadOfCurrentStage is true when viewing one stage ahead of current_stage_id', () => {
+    const sessionOnThesis: DialecticSession = {
+      ...createMockSession('sess-1', 'proj-1', 1),
+      current_stage_id: mockThesisStage.id,
+      viewing_stage_id: mockAntithesisStage.id,
+    };
+    const projectWithTwoStages: DialecticProject = {
+      ...createMockProject('proj-1', [sessionOnThesis]),
+      dialectic_process_templates: processTemplateWithTwoStages,
+    };
+    initializeMockDialecticState({
+      currentProjectDetail: projectWithTwoStages,
+      currentProcessTemplate: processTemplateWithTwoStages,
+      activeContextSessionId: 'sess-1',
+      viewingStageSlug: 'antithesis',
+      selectedModels: defaultSelectedModels,
+      generatingSessions: {},
+    });
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isViewingAheadOfCurrentStage).toBe(true);
+    expect(result.current.viewingAheadReason).toContain('Submit your responses');
+    expect(result.current.viewingAheadReason).toContain('Thesis');
+  });
+
+  it('isDisabled is true when isViewingAheadOfCurrentStage is true', () => {
+    const sessionOnThesis: DialecticSession = {
+      ...createMockSession('sess-1', 'proj-1', 1),
+      current_stage_id: mockThesisStage.id,
+      viewing_stage_id: mockAntithesisStage.id,
+    };
+    const projectWithTwoStages: DialecticProject = {
+      ...createMockProject('proj-1', [sessionOnThesis]),
+      dialectic_process_templates: processTemplateWithTwoStages,
+    };
+    initializeMockDialecticState({
+      currentProjectDetail: projectWithTwoStages,
+      currentProcessTemplate: processTemplateWithTwoStages,
+      activeContextSessionId: 'sess-1',
+      viewingStageSlug: 'antithesis',
+      selectedModels: defaultSelectedModels,
+      generatingSessions: {},
+    });
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isDisabled).toBe(true);
+  });
+
+  it('isViewingAheadOfCurrentStage is false when viewing an earlier stage', () => {
+    const sessionOnAntithesis: DialecticSession = {
+      ...createMockSession('sess-1', 'proj-1', 1),
+      current_stage_id: mockAntithesisStage.id,
+      viewing_stage_id: mockThesisStage.id,
+    };
+    const projectWithTwoStages: DialecticProject = {
+      ...createMockProject('proj-1', [sessionOnAntithesis]),
+      dialectic_process_templates: processTemplateWithTwoStages,
+    };
+    initializeMockDialecticState({
+      currentProjectDetail: projectWithTwoStages,
+      currentProcessTemplate: processTemplateWithTwoStages,
+      activeContextSessionId: 'sess-1',
+      viewingStageSlug: 'thesis',
+      selectedModels: defaultSelectedModels,
+      generatingSessions: {},
+    });
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isViewingAheadOfCurrentStage).toBe(false);
+    expect(result.current.viewingAheadReason).toBeNull();
+  });
+
   it('resume mode path reads current store state at call time', async () => {
     initializeMockDialecticState({
       currentProjectDetail: defaultProject,
