@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useDialecticStore } from "@paynless/store";
 import { Pause, RefreshCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StageDAGProgressDialog } from "./StageDAGProgressDialog";
 import { useStartContributionGeneration } from "@/hooks/useStartContributionGeneration";
 
@@ -31,6 +32,8 @@ export const GenerateContributionButton: React.FC<
 		viewingStage,
 		activeSession,
 		stageThreshold,
+		isViewingAheadOfCurrentStage,
+		viewingAheadReason,
 	} = useStartContributionGeneration();
 
 	const shouldOpenDagProgress = useDialecticStore(
@@ -75,7 +78,10 @@ export const GenerateContributionButton: React.FC<
 		if (!areAnyModelsSelected) return "Choose AI Models";
 		if (!isWalletReady) return "Wallet Not Ready";
 		if (!viewingStage || !activeSession) return "Stage Not Ready";
-		if (!isStageReady) return "Previous Stage Incomplete";
+		if (!isStageReady) {
+			if (isViewingAheadOfCurrentStage) return "Prior Stage Not Submitted";
+			return "Previous Stage Incomplete";
+		}
 		const displayName = viewingStage.display_name;
 		if (isPauseMode)
 			return (
@@ -97,16 +103,35 @@ export const GenerateContributionButton: React.FC<
 
 	return (
 		<div className="flex w-full flex-col items-stretch">
-			<Button
-				onClick={handleClick}
-				disabled={isDisabled || isDebouncing}
-				variant="outline"
-				size="sm"
-				className={cn(className, "w-full text-sm")}
-				data-testid={`generate-${viewingStage?.slug ?? "unknown"}-button`}
-			>
-				{isPauseMode ? getButtonText() : <><RefreshCcw className="mr-2 h-4 w-4" />{" "}{getButtonText()}</>}
-			</Button>
+			{isViewingAheadOfCurrentStage && viewingAheadReason ? (
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<span className="w-full">
+							<Button
+								disabled
+								variant="outline"
+								size="sm"
+								className={cn(className, "w-full text-sm pointer-events-none")}
+								data-testid={`generate-${viewingStage?.slug ?? "unknown"}-button`}
+							>
+								<RefreshCcw className="mr-2 h-4 w-4" /> {getButtonText()}
+							</Button>
+						</span>
+					</TooltipTrigger>
+					<TooltipContent>{viewingAheadReason}</TooltipContent>
+				</Tooltip>
+			) : (
+				<Button
+					onClick={handleClick}
+					disabled={isDisabled || isDebouncing}
+					variant="outline"
+					size="sm"
+					className={cn(className, "w-full text-sm")}
+					data-testid={`generate-${viewingStage?.slug ?? "unknown"}-button`}
+				>
+					{isPauseMode ? getButtonText() : <><RefreshCcw className="mr-2 h-4 w-4" />{" "}{getButtonText()}</>}
+				</Button>
+			)}
 			{showBalanceCallout && viewingStage && (
 				<p
 					className="mt-1.5 max-w-[280px] rounded-md border border-primary/60 bg-primary/15 px-3 py-2 text-center text-xs font-medium text-primary shadow-md animate-pulse"

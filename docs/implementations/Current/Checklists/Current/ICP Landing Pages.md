@@ -469,88 +469,552 @@ The homepage UseCases component currently shows a generic 2x2 grid with broad la
         *   `[✅]` Links work correctly
         *   `[✅]` Sidebar styling consistent with existing items
 
-*   `[ ]` apps/web/src/components/auth/`RegisterForm.tsx` **[UI] Read ref param, fix ConvertKit newsletter subscription, add PostHog segment tracking on registration**
+*   `[ ]` supabase/migrations/`YYYYMMDDHHMMSS_newsletter_events.sql` **[DB] Extend user_profiles, create newsletter_events table, trigger, and RLS**
     *   `[ ]` `objective`
-        *   `[ ]` Read `ref` query parameter from URL (e.g., `/register?ref=vibecoder`)
-        *   `[ ]` Fix the broken newsletter subscription flow — currently calls a non-existent `subscribe-to-newsletter` edge function
-        *   `[ ]` Pass `ref` (segment cohort) through the newsletter subscription so ConvertKit (Kit) captures the subscriber's segment
-        *   `[ ]` After successful registration, call PostHog `identify` and `track` with `signup_segment` property
-        *   `[ ]` Default segment to `direct` when no `ref` param is present
+        *   `[ ]` Add newsletter subscription tracking columns to `user_profiles`
+        *   `[ ]` Create `newsletter_events` queue table for event-driven Kit integration
+        *   `[ ]` Create DB trigger on `user_profiles.is_subscribed_to_newsletter` to manage timestamps and insert events idempotently
+        *   `[ ]` Lock down RLS so new columns and new table are service-role only
     *   `[ ]` `role`
-        *   `[ ]` UI adapter — bridges URL params to email marketing (ConvertKit) and behavioral analytics (PostHog)
+        *   `[ ]` Infrastructure — database schema, triggers, and security policies
     *   `[ ]` `module`
-        *   `[ ]` Auth / registration flow — modifies existing `RegisterForm` component and `subscribeToNewsletter` action
+        *   `[ ]` Newsletter event queue — foundation for all downstream Kit integration
+    *   `[ ]` `deps`
+        *   `[ ]` `user_profiles` table — existing, extended with new columns
+        *   `[ ]` `auth.users` — FK target for `newsletter_events.user_id`
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` `user_profiles` table schema and existing RLS UPDATE policy
+        *   `[ ]` `auth.users` for FK reference
+    *   `[ ]` `user_profiles` alterations
+        *   `[ ]` Add `subscribed_at` (timestamptz, nullable, default null)
+        *   `[ ]` Add `unsubscribed_at` (timestamptz, nullable, default null)
+        *   `[ ]` Add `signup_ref` (text, nullable, default null) — set once at registration, never changed by user
+        *   `[ ]` Add `synced_to_kit_at` (timestamptz, nullable, default null) — set by sync script on success
+    *   `[ ]` `newsletter_events` table creation
+        *   `[ ]` `id` uuid PK default `gen_random_uuid()`
+        *   `[ ]` `user_id` uuid NOT NULL FK → `auth.users(id)` ON DELETE CASCADE
+        *   `[ ]` `event_type` text NOT NULL — values: `'subscribe'`, `'unsubscribe'`
+        *   `[ ]` `created_at` timestamptz NOT NULL default `now()`
+        *   `[ ]` `processed_at` timestamptz nullable default null
+        *   `[ ]` `ref` text nullable — copied from `user_profiles.signup_ref` at event creation time
+        *   `[ ]` Index on `newsletter_events` WHERE `processed_at IS NULL` for queue polling
+    *   `[ ]` RLS policies
+        *   `[ ]` `newsletter_events`: enable RLS, deny all to `anon` and `authenticated`, service_role only
+        *   `[ ]` `user_profiles` UPDATE policy: exclude `signup_ref`, `synced_to_kit_at`, `subscribed_at`, `unsubscribed_at` from client-writable columns — these are managed by trigger or service_role only
+    *   `[ ]` Trigger function `handle_newsletter_subscription_change()`
+        *   `[ ]` AFTER UPDATE OF `is_subscribed_to_newsletter` ON `user_profiles`
+        *   `[ ]` When `NEW.is_subscribed_to_newsletter = true` AND `OLD.is_subscribed_to_newsletter IS DISTINCT FROM true`:
+            *   `[ ]` Set `NEW.subscribed_at = now()` if `OLD.subscribed_at IS NULL`
+            *   `[ ]` Set `NEW.unsubscribed_at = NULL`
+            *   `[ ]` INSERT into `newsletter_events` (`user_id`, `event_type`, `ref`) VALUES (`NEW.id`, `'subscribe'`, `NEW.signup_ref`)
+        *   `[ ]` When `NEW.is_subscribed_to_newsletter = false` AND `OLD.is_subscribed_to_newsletter = true`:
+            *   `[ ]` Set `NEW.unsubscribed_at = now()`
+            *   `[ ]` INSERT into `newsletter_events` (`user_id`, `event_type`, `ref`) VALUES (`NEW.id`, `'unsubscribe'`, `NEW.signup_ref`)
+    *   `[ ]` `directionality`
+        *   `[ ]` Infrastructure layer — database schema, no application code dependency
+        *   `[ ]` All downstream consumers (edge functions, store) depend on this
+        *   `[ ]` No reverse dependencies
+    *   `[ ]` `requirements`
+        *   `[ ]` Migration applies cleanly to existing database with 200+ users
+        *   `[ ]` Existing `is_subscribed_to_newsletter` values (all false) do not trigger events on migration
+        *   `[ ]` Trigger is idempotent — flipping true→true does not duplicate events
+        *   `[ ]` New columns default to null, no data backfill required
+        *   `[ ]` RLS prevents client-side writes to service-managed columns
+    *   `[ ]` Exempt from TDD (SQL migration)
+
+*   `[ ]` supabase/functions/_shared/email_service/`kit_tags.config.ts` **[BE] Kit tag-to-ref mapping configuration**
+    *   `[ ]` `objective`
+        *   `[ ]` Provide a single source of truth mapping ref slugs to Kit tag IDs
+        *   `[ ]` Extensible — adding a new funnel ref requires adding one line
+        *   `[ ]` Not in .env — these are not secrets, they're configuration
+    *   `[ ]` `role`
+        *   `[ ]` Domain configuration — static data consumed by Kit adapter and edge functions
+    *   `[ ]` `module`
+        *   `[ ]` Email service configuration layer
+        *   `[ ]` No runtime dependencies — pure data export
+    *   `[ ]` `deps`
+        *   `[ ]` None — leaf config file
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` No dependencies — exports typed config objects
+    *   `[ ]` `kit_tags.config.ts`
+        *   `[ ]` Export `KitTagConfig` type: `{ tagId: string; description: string }`
+        *   `[ ]` Export `kitTagMap: Record<string, KitTagConfig>` with placeholder tag IDs for: `vibecoder`, `indiehacker`, `startup`, `agency`, `pricing`, `direct`, `legacy_user`, `no_explicit_opt_in`
+        *   `[ ]` Export `getTagIdForRef(ref: string): string | null` — looks up ref in map, returns tagId or null for unknown refs
+        *   `[ ]` Export `KIT_NEWSLETTER_TAG_ID: string` — the primary newsletter tag (used for soft-unsub removal)
+    *   `[ ]` `directionality`
+        *   `[ ]` Domain configuration layer — pure data, no side effects
+        *   `[ ]` All dependencies are inward-facing (none)
+        *   `[ ]` Provides outward to Kit service and edge functions
+    *   `[ ]` `requirements`
+        *   `[ ]` All 8 ref slugs mapped with placeholder tag IDs
+        *   `[ ]` `getTagIdForRef` returns null for unknown refs (does not throw)
+        *   `[ ]` User fills in actual tag IDs after creating tags in Kit dashboard
+    *   `[ ]` Exempt from TDD (config/types)
+
+*   `[ ]` supabase/functions/_shared/email_service/`kit_service.ts` **[BE] Rewrite Kit service to API v4 + add tag management methods**
+    *   `[ ]` `objective`
+        *   `[ ]` Migrate Kit service from broken v1/v3 endpoints to Kit API v4 (`https://api.kit.com/v4/`)
+        *   `[ ]` Fix authentication: `X-Kit-Api-Key` header instead of `api_key` in body/query
+        *   `[ ]` Fix field naming: `email_address` instead of `email`
+        *   `[ ]` Add tag management methods for per-ref tagging
+    *   `[ ]` `role`
+        *   `[ ]` Adapter — external service integration with Kit email marketing platform
+    *   `[ ]` `module`
+        *   `[ ]` Email service adapter layer
+        *   `[ ]` Consumes `kit_tags.config.ts` for tag lookups
+    *   `[ ]` `deps`
+        *   `[ ]` `kit_tags.config.ts` — tag ID lookups, direction: inward (config)
+        *   `[ ]` `EmailMarketingService` interface from `../types.ts` — contract, direction: inward
+        *   `[ ]` `UserData` type from `../types.ts` — data shape, direction: inward
+        *   `[ ]` `logger` from `../logger.ts` — logging, direction: lateral
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` `KitServiceConfig` for API key and base URL
+        *   `[ ]` `kitTagMap` for ref→tagId resolution
+    *   `[ ]` interface/`EmailMarketingService` updates (in `../types.ts` and `packages/types/src/email.types.ts`)
+        *   `[ ]` Add `addTagToSubscriber(email: string, tagId: string): Promise<void>`
+        *   `[ ]` Add `removeTagFromSubscriber(email: string, tagId: string): Promise<void>`
+    *   `[ ]` interface/`KitServiceConfig` updates
+        *   `[ ]` Remove `tagId` as required single value (tags are now per-ref via config)
+        *   `[ ]` Keep `apiKey`, `baseUrl`, `customUserIdField`, `customCreatedAtField`
+    *   `[ ]` unit/`kit_service.test.ts`
+        *   `[ ]` `makeApiRequest` sends `X-Kit-Api-Key` header, not `api_key` in body
+        *   `[ ]` `addUserToList` calls `POST /v4/subscribers` with `email_address` field
+        *   `[ ]` `findSubscriberIdByEmail` calls `GET /v4/subscribers?email_address=...`
+        *   `[ ]` `updateUserAttributes` calls `PATCH /v4/subscribers/{id}` (not PUT)
+        *   `[ ]` `addTagToSubscriber` calls `POST /v4/tags/{tagId}/subscribers` with `{"email_address": "..."}`
+        *   `[ ]` `removeTagFromSubscriber` calls `DELETE /v4/tags/{tagId}/subscribers` with `{"email_address": "..."}`
+        *   `[ ]` Error handling: non-OK responses throw with status and message
+        *   `[ ]` 204 responses handled correctly (no body parsing)
+    *   `[ ]` `construction`
+        *   `[ ]` Constructor accepts `KitServiceConfig` (apiKey, baseUrl required)
+        *   `[ ]` No tag ID required at construction — tags resolved per-call
+    *   `[ ]` `kit_service.ts`
+        *   `[ ]` Rewrite `makeApiRequest`: auth via `X-Kit-Api-Key` header for all methods, remove `api_key` body/query injection
+        *   `[ ]` Rewrite `addUserToList`: `POST /v4/subscribers` with `{ email_address, first_name, fields: {...} }`
+        *   `[ ]` Rewrite `findSubscriberIdByEmail`: `GET /v4/subscribers?email_address=...` with API key in header
+        *   `[ ]` Rewrite `updateUserAttributes`: `PATCH /v4/subscribers/{id}` (method changed from PUT)
+        *   `[ ]` Keep `removeUser` updated for v4: `DELETE /v4/subscribers/{id}` (hard delete, used for GDPR)
+        *   `[ ]` New `addTagToSubscriber(email, tagId)`: `POST /v4/tags/{tagId}/subscribers` with `{ "email_address": email }`
+        *   `[ ]` New `removeTagFromSubscriber(email, tagId)`: `DELETE /v4/tags/{tagId}/subscribers` with `{ "email_address": email }`
+    *   `[ ]` `factory.ts` updates
+        *   `[ ]` Update `EmailFactoryConfig` to remove single `kitTagId` — tags are now per-ref
+        *   `[ ]` Update factory validation to not require `kitTagId`
+    *   `[ ]` `directionality`
+        *   `[ ]` Adapter layer — implements interface, wraps external API
+        *   `[ ]` All dependencies are inward-facing (interface, types, config)
+        *   `[ ]` Provides outward to edge functions
+    *   `[ ]` `requirements`
+        *   `[ ]` All existing methods work against Kit API v4
+        *   `[ ]` New tag methods work for per-ref tagging
+        *   `[ ]` Auth uses `X-Kit-Api-Key` header exclusively
+        *   `[ ]` Base URL defaults to `https://api.kit.com`
+        *   `[ ]` Backward-compatible: NoOp and Dummy services unaffected
+
+*   `[ ]` supabase/functions/on-user-created/`index.ts` **[BE] Strip Kit logic from auth hook — let event queue handle all Kit communication**
+    *   `[ ]` `objective`
+        *   `[ ]` Remove direct Kit `addUserToList` call from the `on-user-created` auth hook
+        *   `[ ]` All Kit communication is now handled by the newsletter event queue
+        *   `[ ]` Profile and wallet creation remain in the DB trigger `handle_new_user()` — this edge function is separate
+    *   `[ ]` `role`
+        *   `[ ]` Infrastructure — Supabase auth hook, receives user creation events
+    *   `[ ]` `module`
+        *   `[ ]` Auth hook layer — post-signup processing
+    *   `[ ]` `deps`
+        *   `[ ]` Supabase Auth Hook payload — provides user record
+        *   `[ ]` `logger` from `../_shared/logger.ts` — logging
+        *   `[ ]` Remove: `getEmailMarketingService`, `EmailFactoryConfig`, `NoOpEmailService`, `EmailMarketingService`, `UserData`
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` Auth hook request body with `record` field containing `User`
+    *   `[ ]` unit/`on-user-created.test.ts`
+        *   `[ ]` Handler receives valid user record → returns 200 with log message
+        *   `[ ]` Handler receives invalid user record → returns 400
+        *   `[ ]` Handler does NOT call any email marketing service
+        *   `[ ]` Remove all existing tests that assert Kit/email service behavior
+    *   `[ ]` `construction`
+        *   `[ ]` `HandlerDependencies` simplified — remove `emailService`
+        *   `[ ]` `defaultDeps` simplified — remove factory config and service initialization
+    *   `[ ]` `index.ts`
+        *   `[ ]` Remove imports: `getEmailMarketingService`, `EmailFactoryConfig`, `NoOpEmailService`, `EmailMarketingService`, `UserData`
+        *   `[ ]` Remove `emailService` from `HandlerDependencies` interface
+        *   `[ ]` Remove `emailService` usage in handler: no `addUserToList`, no `instanceof NoOpEmailService` check
+        *   `[ ]` Remove `defaultDeps` factory config and service initialization (env var reads)
+        *   `[ ]` Keep: request parsing, user record validation, logging, 200 response
+        *   `[ ]` Handler becomes: parse request → validate user record → log → return 200
+    *   `[ ]` `directionality`
+        *   `[ ]` Infrastructure layer — auth hook
+        *   `[ ]` No longer depends on email service adapter
+        *   `[ ]` Profile/wallet creation handled by DB trigger, not this function
+    *   `[ ]` `requirements`
+        *   `[ ]` Auth hook still returns 200 on valid requests (does not block signup)
+        *   `[ ]` Auth hook still returns 400 on invalid requests
+        *   `[ ]` No Kit/email marketing calls made
+        *   `[ ]` Existing user signup flow (profile + wallet + tokens) is unaffected (handled by DB trigger)
+
+*   `[ ]` supabase/functions/`process-newsletter-events`/index.ts **[BE] Newsletter event queue processor — reads events, calls Kit, marks processed**
+    *   `[ ]` `objective`
+        *   `[ ]` Process unprocessed events from `newsletter_events` table
+        *   `[ ]` For `subscribe` events: create Kit subscriber if needed, add ref-specific tag
+        *   `[ ]` For `unsubscribe` events: remove newsletter tag from Kit subscriber (soft unsub, keeps subscriber in Kit)
+        *   `[ ]` Mark `processed_at = now()` on each event after successful Kit call
+        *   `[ ]` Idempotent — safe to re-run, duplicate processing does not create duplicate tags
+    *   `[ ]` `role`
+        *   `[ ]` Application service — event processor, bridges DB events to external Kit API
+    *   `[ ]` `module`
+        *   `[ ]` Newsletter event processing — consumes queue, produces Kit API calls
+    *   `[ ]` `deps`
+        *   `[ ]` `newsletter_events` table — reads unprocessed events (service_role), direction: inward (data)
+        *   `[ ]` `auth.users` — reads email for event's user_id (service_role), direction: inward (data)
+        *   `[ ]` `kit_service.ts` via factory — Kit API adapter, direction: lateral (adapter)
+        *   `[ ]` `kit_tags.config.ts` — ref→tagId resolution, direction: inward (config)
+        *   `[ ]` `logger` — logging, direction: lateral
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` Supabase service_role client for DB reads/writes
+        *   `[ ]` `getEmailMarketingService` factory for Kit adapter
+        *   `[ ]` `getTagIdForRef` for ref→tagId resolution
+        *   `[ ]` `KIT_NEWSLETTER_TAG_ID` for soft-unsub tag removal
+    *   `[ ]` unit/`process-newsletter-events.test.ts`
+        *   `[ ]` Subscribe event: creates Kit subscriber and adds ref-specific tag
+        *   `[ ]` Subscribe event with unknown ref: creates subscriber, logs warning, skips tagging
+        *   `[ ]` Unsubscribe event: removes newsletter tag from Kit subscriber
+        *   `[ ]` Already-processed events (processed_at not null) are not re-fetched
+        *   `[ ]` Marks `processed_at` on each event after successful processing
+        *   `[ ]` Kit API failure: does NOT mark `processed_at`, logs error, continues to next event
+        *   `[ ]` Empty queue: returns success with "no events to process" message
+        *   `[ ]` Batch processing: handles multiple pending events in one invocation
+    *   `[ ]` `construction`
+        *   `[ ]` `HandlerDependencies`: supabaseClient (service_role), emailService, logger
+        *   `[ ]` Default deps read env vars for service_role client and Kit factory config
+    *   `[ ]` `index.ts`
+        *   `[ ]` Query `newsletter_events` WHERE `processed_at IS NULL` ORDER BY `created_at ASC`
+        *   `[ ]` For each event: look up user email from `auth.users` via `user_id`
+        *   `[ ]` For `subscribe` events:
+            *   `[ ]` Call `emailService.addUserToList({ email, ... })` to ensure subscriber exists in Kit
+            *   `[ ]` Call `emailService.addTagToSubscriber(email, getTagIdForRef(event.ref))` to apply ref tag
+        *   `[ ]` For `unsubscribe` events:
+            *   `[ ]` Call `emailService.removeTagFromSubscriber(email, KIT_NEWSLETTER_TAG_ID)` to soft-unsub
+        *   `[ ]` On success per event: UPDATE `newsletter_events` SET `processed_at = now()` WHERE `id = event.id`
+        *   `[ ]` On failure per event: log error, skip, continue to next event
+        *   `[ ]` Return summary: `{ processed: N, failed: M, skipped: K }`
+    *   `[ ]` `directionality`
+        *   `[ ]` Application service layer — consumes data + config, calls adapter
+        *   `[ ]` All dependencies are inward-facing
+        *   `[ ]` Provides outward: triggered by Supabase Database Webhook on `newsletter_events` INSERT
+    *   `[ ]` `requirements`
+        *   `[ ]` All pending events processed in FIFO order
+        *   `[ ]` Failed events remain unprocessed for retry on next invocation
+        *   `[ ]` Idempotent — re-processing a subscribe event does not duplicate Kit tags
+        *   `[ ]` Soft unsub: subscriber remains in Kit, only tag is removed
+        *   `[ ]` Logging for every event outcome (success, failure, skip)
+
+*   `[ ]` supabase/functions/`subscribe-to-newsletter`/index.ts **[BE] Registration subscription handler — sets profile flags and ref via service_role**
+    *   `[ ]` `objective`
+        *   `[ ]` Accept `{ userId, ref }` from authenticated client after registration
+        *   `[ ]` Use service_role to update `user_profiles`: set `is_subscribed_to_newsletter = true`, `signup_ref = ref`
+        *   `[ ]` The DB trigger handles timestamps and event insertion — this function only writes the profile fields
+        *   `[ ]` Replaces the previously deleted `subscribe-to-newsletter` edge function
+    *   `[ ]` `role`
+        *   `[ ]` Application service — bridges client registration flow to profile update + event trigger
+    *   `[ ]` `module`
+        *   `[ ]` Newsletter subscription — registration path
+    *   `[ ]` `deps`
+        *   `[ ]` `user_profiles` table — writes `is_subscribed_to_newsletter`, `signup_ref` (service_role), direction: inward (data)
+        *   `[ ]` Supabase service_role client — bypasses RLS for service-managed columns
+        *   `[ ]` `logger` — logging, direction: lateral
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` Authenticated user JWT for user identity verification
+        *   `[ ]` Service_role client for profile writes
+    *   `[ ]` unit/`subscribe-to-newsletter.test.ts`
+        *   `[ ]` Valid `{ userId, ref }`: updates profile with `is_subscribed_to_newsletter = true` and `signup_ref = ref`
+        *   `[ ]` Missing userId: returns 400
+        *   `[ ]` Missing ref: defaults to `'direct'`
+        *   `[ ]` User not found: returns 404
+        *   `[ ]` Already subscribed: idempotent, no error (profile update is a no-op for the bool, trigger only fires on actual change)
+        *   `[ ]` Returns 200 on success
+    *   `[ ]` `construction`
+        *   `[ ]` `HandlerDependencies`: supabaseClient (service_role), logger
+    *   `[ ]` `index.ts`
+        *   `[ ]` Parse request body for `userId` and `ref` (default ref to `'direct'`)
+        *   `[ ]` Verify the authenticated user matches `userId` (or allow service_role bypass)
+        *   `[ ]` UPDATE `user_profiles` SET `is_subscribed_to_newsletter = true`, `signup_ref = ref` WHERE `id = userId`
+        *   `[ ]` Return 200 on success, appropriate error codes on failure
+    *   `[ ]` `directionality`
+        *   `[ ]` Application service layer — writes data, trigger handles downstream
+        *   `[ ]` All dependencies are inward-facing
+        *   `[ ]` Provides outward: called by client after registration
+    *   `[ ]` `requirements`
+        *   `[ ]` Profile is updated atomically (both fields in one UPDATE)
+        *   `[ ]` `signup_ref` is set by service_role only — client cannot write it directly
+        *   `[ ]` Trigger fires on `is_subscribed_to_newsletter` change → event inserted → queue processes → Kit updated
+        *   `[ ]` Idempotent — calling twice with same data does not duplicate events (trigger only fires on actual value change)
+
+*   `[ ]` supabase/functions/`sync-existing-users`/index.ts **[BE] One-time legacy user sync to Kit — tags existing users as legacy + no_explicit_opt_in**
+    *   `[ ]` `objective`
+        *   `[ ]` Sync all existing users (200+) to Kit with `legacy_user` and `no_explicit_opt_in` tags
+        *   `[ ]` Idempotent — uses `synced_to_kit_at` column to skip already-synced users
+        *   `[ ]` Disposable — intended for one-time use, can be removed after sync is complete
+    *   `[ ]` `role`
+        *   `[ ]` Operations — one-time data migration script as edge function
+    *   `[ ]` `module`
+        *   `[ ]` Legacy user sync — bootstrap existing users into Kit
+    *   `[ ]` `deps`
+        *   `[ ]` `user_profiles` table — reads all profiles WHERE `synced_to_kit_at IS NULL` (service_role)
+        *   `[ ]` `auth.users` — reads email for each user
+        *   `[ ]` `kit_service.ts` via factory — Kit API adapter
+        *   `[ ]` `kit_tags.config.ts` — tag IDs for `legacy_user` and `no_explicit_opt_in`
+        *   `[ ]` `logger` — logging
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` Service_role Supabase client
+        *   `[ ]` Kit adapter via factory
+        *   `[ ]` Tag config for legacy tags
+    *   `[ ]` unit/`sync-existing-users.test.ts`
+        *   `[ ]` Syncs users where `synced_to_kit_at IS NULL`: creates Kit subscriber, adds both tags
+        *   `[ ]` Skips users where `synced_to_kit_at IS NOT NULL`
+        *   `[ ]` Sets `synced_to_kit_at = now()` on each user after successful Kit sync
+        *   `[ ]` Kit API failure for one user: logs error, continues to next user, does NOT set `synced_to_kit_at`
+        *   `[ ]` Empty result set: returns success with "no users to sync" message
+        *   `[ ]` Returns summary: `{ synced: N, failed: M, skipped: K }`
+    *   `[ ]` `construction`
+        *   `[ ]` `HandlerDependencies`: supabaseClient (service_role), emailService, logger
+    *   `[ ]` `index.ts`
+        *   `[ ]` Query `user_profiles` JOIN `auth.users` WHERE `synced_to_kit_at IS NULL`
+        *   `[ ]` For each user:
+            *   `[ ]` Call `emailService.addUserToList({ id, email, firstName, createdAt })` to create subscriber in Kit
+            *   `[ ]` Call `emailService.addTagToSubscriber(email, getTagIdForRef('legacy_user'))` to add legacy tag
+            *   `[ ]` Call `emailService.addTagToSubscriber(email, getTagIdForRef('no_explicit_opt_in'))` to add opt-in status tag
+            *   `[ ]` UPDATE `user_profiles` SET `synced_to_kit_at = now()` WHERE `id = user.id`
+        *   `[ ]` On failure per user: log error, continue to next
+        *   `[ ]` Return summary JSON
+    *   `[ ]` `directionality`
+        *   `[ ]` Operations/infrastructure layer — one-time migration
+        *   `[ ]` All dependencies are inward-facing
+    *   `[ ]` `requirements`
+        *   `[ ]` All unsynced users added to Kit with both tags
+        *   `[ ]` Already-synced users are not re-processed (no tag overwrite)
+        *   `[ ]` Safe to re-run — picks up where it left off on partial failure
+        *   `[ ]` Logs progress for monitoring during manual execution
+
+*   `[ ]` packages/store/src/`authStore.ts` **[STORE] Update subscribeToNewsletter signature + add localStorage ref persistence**
+    *   `[ ]` `objective`
+        *   `[ ]` Update `subscribeToNewsletter` to accept and pass `ref` to the edge function
+        *   `[ ]` Add `persistSignupRef(ref)` and `consumeSignupRef()` utilities for OAuth ref survival
+        *   `[ ]` Ensure ref persistence works across all auth providers (email, Google, GitHub, Apple)
+    *   `[ ]` `role`
+        *   `[ ]` State management — auth store actions for newsletter subscription
+    *   `[ ]` `module`
+        *   `[ ]` Auth / newsletter subscription flow
+    *   `[ ]` `deps`
+        *   `[ ]` Supabase client — edge function invocation, direction: lateral
+        *   `[ ]` `localStorage` — ref persistence across OAuth redirects, direction: external (browser API)
+        *   `[ ]` `packages/types/src/auth.types.ts` — type definitions, direction: inward
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` Auth store state and actions
+        *   `[ ]` `localStorage` for `signup_ref` key
+    *   `[ ]` interface/`auth.types.ts` updates
+        *   `[ ]` Update `subscribeToNewsletter` signature: `(email: string, ref: string) => Promise<void>`
+        *   `[ ]` Add `persistSignupRef: (ref: string) => void`
+        *   `[ ]` Add `consumeSignupRef: () => string` — returns ref and clears from storage, defaults to `'direct'`
+    *   `[ ]` unit/`authStore.newsletter.test.ts` (update)
+        *   `[ ]` `subscribeToNewsletter(email, 'vibecoder')` invokes edge function with `{ email, ref: 'vibecoder' }`
+        *   `[ ]` `subscribeToNewsletter(email, 'direct')` invokes edge function with `{ email, ref: 'direct' }`
+        *   `[ ]` `persistSignupRef('vibecoder')` writes `'vibecoder'` to localStorage key `signup_ref`
+        *   `[ ]` `consumeSignupRef()` reads and clears localStorage key `signup_ref`, returns value
+        *   `[ ]` `consumeSignupRef()` returns `'direct'` when localStorage key is absent
+    *   `[ ]` `construction`
+        *   `[ ]` No new store state — ref is transient (localStorage), not persisted in Zustand
+    *   `[ ]` `authStore.ts`
+        *   `[ ]` Update `subscribeToNewsletter`: accept `(email: string, ref: string)`, pass `{ email, ref }` to edge function body
+        *   `[ ]` Add `persistSignupRef(ref: string)`: `localStorage.setItem('signup_ref', ref)`
+        *   `[ ]` Add `consumeSignupRef(): string`: read `localStorage.getItem('signup_ref')`, remove key, return value or `'direct'`
+    *   `[ ]` `directionality`
+        *   `[ ]` State management layer — consumes types, calls edge function
+        *   `[ ]` All dependencies are inward-facing
+        *   `[ ]` Provides outward to UI components
+    *   `[ ]` `requirements`
+        *   `[ ]` Edge function receives `{ email, ref }` on every subscription call
+        *   `[ ]` Ref survives OAuth redirect round-trips via localStorage
+        *   `[ ]` `consumeSignupRef` clears localStorage after read — no stale refs on subsequent logins
+        *   `[ ]` Default `'direct'` when no ref was persisted
+
+*   `[ ]` apps/web/src/components/auth/`RegisterForm.tsx` **[UI] Wire ref param, localStorage persistence, PostHog tracking on email registration**
+    *   `[ ]` `objective`
+        *   `[ ]` Read `ref` from URL search params, default to `'direct'`
+        *   `[ ]` Persist ref to localStorage before registration (survives page reload or interruption)
+        *   `[ ]` After registration: PostHog `identify` + `track` with `signup_segment`
+        *   `[ ]` Pass ref to `subscribeToNewsletter(email, ref)` when checkbox is checked
+    *   `[ ]` `role`
+        *   `[ ]` UI adapter — bridges URL params → analytics + email marketing for email signup path
+    *   `[ ]` `module`
+        *   `[ ]` Auth / registration flow — email signup
     *   `[ ]` `deps`
         *   `[ ]` `useSearchParams` from `react-router-dom` — reads `ref` from URL query params
-        *   `[ ]` `analytics` from `@paynless/analytics` — PostHog singleton for `identify`/`track` calls
-        *   `[ ]` `useAuthStore` — existing `register`, `subscribeToNewsletter` actions, and `user` state
+        *   `[ ]` `analytics` from `@paynless/analytics` — PostHog singleton for `identify`/`track`
+        *   `[ ]` `useAuthStore` — `register`, `subscribeToNewsletter`, `persistSignupRef`, `consumeSignupRef`, and `user` state
         *   `[ ]` Confirm no reverse dependency is introduced
     *   `[ ]` `context_slice`
         *   `[ ]` URL search params for `ref` value
-        *   `[ ]` `analytics` singleton (PostHog adapter) for `identify` and `track`
-        *   `[ ]` `useAuthStore` for `register()`, `subscribeToNewsletter()`, and post-registration `user` object (for userId)
-    *   `[ ]` `current_state`
-        *   `[ ]` `RegisterForm.tsx` has email/password fields and a newsletter checkbox (`subscribe` state)
-        *   `[ ]` On submit: calls `register(email, password)` then conditionally `subscribeToNewsletter(email)`
-        *   `[ ]` `subscribeToNewsletter` in authStore calls `supabase.functions.invoke('subscribe-to-newsletter', { body: { email } })` — **this edge function was deleted** because it tried to read the user's email from Supabase's auth table, which Supabase blocks for direct application reads. An attempt to mirror email into the profile table created further issues. The intended fix was always to pass the email directly from the signup form input instead of reading it from auth post-hoc.
-        *   `[ ]` `on-user-created` Auth Hook auto-subscribes ALL new users to a single Kit tag via `addUserToList(userData)` — no segment, no cohort
-        *   `[ ]` Kit's `addUserToList` posts to `/v1/tags/{tagId}/subscribe` with email + custom fields (userId, createdAt) — no segment field
-        *   `[ ]` PostHog has zero calls in the registration flow — no `identify`, no `track`
-        *   `[ ]` `register()` in authStore calls `supabase.auth.signUp({ email, password })` and returns — no analytics
-    *   `[ ]` `changes_needed`
-        *   `[ ]` **RegisterForm.tsx:**
-            *   `[ ]` Add `useSearchParams` to read `ref` from URL, default to `'direct'`
-            *   `[ ]` After `register()` succeeds, read user ID from auth store state
-            *   `[ ]` Call `analytics.identify(userId, { signup_segment: ref })` to set PostHog user property
-            *   `[ ]` Call `analytics.track('user_registered', { signup_segment: ref })` to capture registration event
-            *   `[ ]` Pass `ref` to `subscribeToNewsletter` call: `subscribeToNewsletter(email, ref)`
-        *   `[ ]` **authStore.ts — `subscribeToNewsletter` action:**
-            *   `[ ]` Update signature to accept segment: `subscribeToNewsletter(email: string, segment?: string)`
-            *   `[ ]` Update the `supabase.functions.invoke` call to target the new `subscribe-to-newsletter` edge function with `{ email, segment }` body
-        *   `[ ]` **supabase/functions/`subscribe-to-newsletter`/ — new edge function:**
-            *   `[ ]` Create the edge function that was previously deleted
-            *   `[ ]` Accepts `{ email, segment }` directly from the client — no auth table reads needed, email comes straight from the signup form input
-            *   `[ ]` Uses `getEmailMarketingService()` factory (same pattern as `on-user-created`)
-            *   `[ ]` Calls Kit's `addUserToList` with the email and segment value
-            *   `[ ]` **Decision needed:** Kit segment strategy — per-segment Kit tags (5 tag IDs, passed dynamically) or Kit custom field storing the segment value on a single tag? This determines how the edge function passes segment to Kit.
-        *   `[ ]` **Kit integration (whichever approach chosen):**
-            *   `[ ]` If per-segment tags: edge function receives segment → looks up tag ID → calls Kit with segment-specific `tagId`
-            *   `[ ]` If custom field: edge function passes segment as a Kit `fields` value in `addUserToList` payload
-    *   `[ ]` unit/`RegisterForm.test.tsx`
-        *   `[ ]` With `ref=vibecoder` in URL: PostHog `identify` called with `{ signup_segment: 'vibecoder' }`
-        *   `[ ]` With `ref=vibecoder` in URL: PostHog `track` called with `('user_registered', { signup_segment: 'vibecoder' })`
+        *   `[ ]` `analytics` singleton for PostHog calls
+        *   `[ ]` Auth store for registration actions and user state
+    *   `[ ]` unit/`RegisterForm.test.tsx` (update)
+        *   `[ ]` With `ref=vibecoder` in URL: `persistSignupRef` called with `'vibecoder'` before register
+        *   `[ ]` With `ref=vibecoder`: PostHog `identify` called with `{ signup_segment: 'vibecoder' }` after registration
+        *   `[ ]` With `ref=vibecoder`: PostHog `track` called with `('user_registered', { signup_segment: 'vibecoder' })` after registration
         *   `[ ]` With no `ref` param: PostHog calls use `signup_segment: 'direct'`
-        *   `[ ]` With unknown `ref` value: passes through raw value (no validation)
-        *   `[ ]` Newsletter checkbox checked: `subscribeToNewsletter` called with email AND segment
+        *   `[ ]` Newsletter checkbox checked: `subscribeToNewsletter` called with email AND ref
         *   `[ ]` Newsletter checkbox unchecked: `subscribeToNewsletter` NOT called
         *   `[ ]` Existing registration behavior (form validation, navigation, error display) unchanged
+    *   `[ ]` `RegisterForm.tsx`
+        *   `[ ]` Add `useSearchParams` to read `ref` from URL, default to `'direct'`
+        *   `[ ]` Call `persistSignupRef(ref)` before `register()` call
+        *   `[ ]` After `register()` succeeds: read user ID from auth store state
+        *   `[ ]` Call `analytics.identify(userId, { signup_segment: ref })`
+        *   `[ ]` Call `analytics.track('user_registered', { signup_segment: ref })`
+        *   `[ ]` If `subscribe` checkbox checked: call `subscribeToNewsletter(email, ref)`
     *   `[ ]` `directionality`
-        *   `[ ]` UI adapter layer — bridges URL params → analytics + email marketing
+        *   `[ ]` UI adapter layer — bridges URL params → store + analytics
         *   `[ ]` All dependencies are inward-facing
     *   `[ ]` `requirements`
-        *   `[ ]` Every sign-up is tagged with a segment in PostHog — no sign-up goes untracked
-        *   `[ ]` Newsletter subscribers in Kit are tagged with their acquisition segment
-        *   `[ ]` `ref` param values pass through cleanly to both PostHog and Kit
-        *   `[ ]` Default `direct` applied when no `ref` present
-        *   `[ ]` Existing registration UX is not altered (form fields, validation, navigation)
-        *   `[ ]` Newsletter subscription no longer silently fails
-    *   `[ ]` `manual_setup` (not code)
-        *   `[ ]` ConvertKit: create segment tags or custom field in Kit dashboard for the 6 cohorts (direct, vibecoder, indiehacker, startup, agency, pricing)
-        *   `[ ]` PostHog: create 6 cohorts in PostHog dashboard filtered by `signup_segment` user property
-    *   `[ ]` **Commit** `feat(landing-pages): add ICP segment landing pages, pricing page, and ConvertKit + PostHog tracking`
-        *   `[ ]` Created segment content data types and data file with all 4 ICP segments
-        *   `[ ]` Created shared landing page template component with 8 sections
-        *   `[ ]` Created route component that validates segment param and renders template
-        *   `[ ]` Added 4 segment routes to React Router
-        *   `[ ]` Updated homepage UseCases cards to link to segment landing pages
-        *   `[ ]` Created PricingSection component for homepage simplified pricing display
-        *   `[ ]` Created public PricingPage with full pricing options at /pricing
-        *   `[ ]` Added /pricing route to React Router
-        *   `[ ]` Added navigation badges to homepage Hero section linking to ICP pages and pricing
-        *   `[ ]` Added PricingSection to homepage between UseCases and CTA
-        *   `[ ]` Added unauth-only Explore section to sidebar with ICP and pricing links
-        *   `[ ]` Fixed broken newsletter subscription flow and added segment cohort tagging via ConvertKit
-        *   `[ ]` Added PostHog identify + track calls on registration with signup_segment property (6 cohorts: direct, vibecoder, indiehacker, startup, agency, pricing)
+        *   `[ ]` Every email sign-up is tagged with a segment in PostHog
+        *   `[ ]` Ref is persisted to localStorage before auth action begins
+        *   `[ ]` Newsletter subscribers receive ref through edge function → trigger → Kit
+        *   `[ ]` Default `'direct'` applied when no `ref` present
+        *   `[ ]` Existing registration UX is not altered
+
+*   `[ ]` apps/web/src/`App.tsx` + OAuth flows **[UI] Wire ref persistence for OAuth registration paths (Google, future GitHub/Apple)**
+    *   `[ ]` `objective`
+        *   `[ ]` Ensure `ref` from URL survives OAuth redirect round-trips via localStorage
+        *   `[ ]` After OAuth callback: detect new user, consume ref, call PostHog + subscribe-to-newsletter
+        *   `[ ]` Provider-agnostic pattern — works for Google now, GitHub and Apple later
+    *   `[ ]` `role`
+        *   `[ ]` UI adapter — bridges OAuth redirect flow to analytics + newsletter subscription
+    *   `[ ]` `module`
+        *   `[ ]` Auth / registration flow — OAuth signup paths
+    *   `[ ]` `deps`
+        *   `[ ]` `useAuthStore` — `loginWithGoogle`, `persistSignupRef`, `consumeSignupRef`, `subscribeToNewsletter`
+        *   `[ ]` `analytics` from `@paynless/analytics` — PostHog `identify`/`track`
+        *   `[ ]` `onAuthStateChange` listener in authStore — detects auth state transitions
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` Auth state transitions (signed_in event with new user detection)
+        *   `[ ]` `localStorage` for `signup_ref` key
+    *   `[ ]` `discovery` — **MUST RESOLVE BEFORE STARTING WORK**
+        *   `[ ]` Trace `onAuthStateChange` listener in `authStore.ts` to determine where post-OAuth user detection happens
+        *   `[ ]` Determine: does the listener distinguish "new signup" (first `SIGNED_IN` event) from "returning login"?
+        *   `[ ]` Determine: where does the post-OAuth redirect land? (currently `loginWithGoogle` redirects to `/dashboard`)
+        *   `[ ]` Determine: is there a point in the auth flow after OAuth where we have both the user ID and know this is a first-time signup?
+        *   `[ ]` Determine: should ref consumption + PostHog + newsletter subscription happen in the auth state listener, in `App.tsx` (on profile load), or in a dedicated post-auth hook?
+        *   `[ ]` Determine: if `has_seen_welcome_modal === false` is a reliable proxy for "new user", we can use that as the trigger point
+        *   `[ ]` Document findings and chosen approach before writing any code
+    *   `[ ]` unit/tests (determined after discovery)
+        *   `[ ]` Test cases TBD based on discovery findings — will cover:
+        *   `[ ]` OAuth login with ref in URL: ref persisted to localStorage before redirect
+        *   `[ ]` Post-OAuth callback for new user: ref consumed, PostHog identify+track called, subscribe-to-newsletter called
+        *   `[ ]` Post-OAuth callback for returning user: ref NOT consumed (or consumed and discarded), no duplicate PostHog/newsletter calls
+        *   `[ ]` Multiple OAuth providers: same ref persistence pattern works for all
+    *   `[ ]` Implementation (determined after discovery)
+        *   `[ ]` In `loginWithGoogle` (and future OAuth methods): read `ref` from URL, call `persistSignupRef(ref)` before initiating OAuth
+        *   `[ ]` In post-auth detection point (TBD from discovery): if new user, `consumeSignupRef()`, PostHog `identify` + `track`, call `subscribeToNewsletter` if applicable
+    *   `[ ]` `directionality`
+        *   `[ ]` UI adapter layer — bridges OAuth flow → store + analytics
+        *   `[ ]` All dependencies are inward-facing
+    *   `[ ]` `requirements`
+        *   `[ ]` Ref survives OAuth redirect round-trip for all providers
+        *   `[ ]` New OAuth users get PostHog `signup_segment` tracking
+        *   `[ ]` New OAuth users who opted in get newsletter subscription with ref
+        *   `[ ]` Returning OAuth users are not re-tracked or re-subscribed
+        *   `[ ]` Pattern is provider-agnostic — adding GitHub/Apple requires minimal changes
+
+*   `[ ]` apps/web/src/components/modals/`WelcomeModal.tsx` + `App.tsx` **[UI] Fix modal rendering + wire newsletter opt-in for legacy and new users**
+    *   `[ ]` `objective`
+        *   `[ ]` Fix WelcomeModal not rendering — component exists but is never imported/rendered in the app tree
+        *   `[ ]` Fix guard logic — modal should show based on `has_seen_welcome_modal`, not subscription status
+        *   `[ ]` Wire modal opt-in/opt-out to trigger newsletter event queue → Kit tag update
+        *   `[ ]` For `no_explicit_opt_in` legacy users: opt-in flips to explicit; opt-out leaves as-is
+    *   `[ ]` `role`
+        *   `[ ]` UI component — post-signup modal for newsletter opt-in
+    *   `[ ]` `module`
+        *   `[ ]` Auth / onboarding flow — welcome experience
+    *   `[ ]` `deps`
+        *   `[ ]` `useAuthStore` — `showWelcomeModal`, `profile`, `updateSubscriptionAndDismissWelcome`
+        *   `[ ]` `Dialog` and related shadcn components — modal UI
+        *   `[ ]` Confirm no reverse dependency is introduced
+    *   `[ ]` `context_slice`
+        *   `[ ]` `showWelcomeModal` boolean from auth store
+        *   `[ ]` `profile` for `has_seen_welcome_modal` and `is_subscribed_to_newsletter` state
+    *   `[ ]` `current_state`
+        *   `[ ]` `WelcomeModal.tsx` exists with correct UI and `handleContinue` calling `updateSubscriptionAndDismissWelcome`
+        *   `[ ]` `App.tsx` sets `showWelcomeModal = true` when `profile.has_seen_welcome_modal === false`
+        *   `[ ]` **Bug: `<WelcomeModal />` is never imported or rendered in any component** — only imported in its test file
+        *   `[ ]` **Bug: Line 12 guard** `if (!showWelcomeModal || profile?.is_subscribed_to_newsletter)` — skips modal for already-subscribed users even if `has_seen_welcome_modal` is false
+    *   `[ ]` unit/`WelcomeModal.test.tsx` (update)
+        *   `[ ]` Modal renders when `showWelcomeModal = true` regardless of `is_subscribed_to_newsletter` value
+        *   `[ ]` Modal does NOT render when `showWelcomeModal = false`
+        *   `[ ]` Clicking Continue with checkbox checked calls `updateSubscriptionAndDismissWelcome(true)`
+        *   `[ ]` Clicking Continue with checkbox unchecked calls `updateSubscriptionAndDismissWelcome(false)`
+        *   `[ ]` Remove/update any test that asserts modal hidden when `is_subscribed_to_newsletter = true`
+    *   `[ ]` `WelcomeModal.tsx`
+        *   `[ ]` Fix guard: change to `if (!showWelcomeModal) return null;` — remove `is_subscribed_to_newsletter` check
+        *   `[ ]` Existing `handleContinue` already calls `updateSubscriptionAndDismissWelcome(isSubscribed)` → writes profile → trigger fires → event queue → Kit — no additional wiring needed
+    *   `[ ]` `App.tsx`
+        *   `[ ]` Import `WelcomeModal` from `./components/modals/WelcomeModal`
+        *   `[ ]` Render `<WelcomeModal />` in the component tree (inside `AppContent`, after existing content)
+    *   `[ ]` `directionality`
+        *   `[ ]` UI component layer — consumes auth store, renders modal
+        *   `[ ]` All dependencies are inward-facing
+    *   `[ ]` `requirements`
+        *   `[ ]` Modal renders for all new users who haven't seen it, regardless of subscription status
+        *   `[ ]` Opt-in flips `is_subscribed_to_newsletter = true` → trigger → event → Kit tag update
+        *   `[ ]` Opt-out sets `has_seen_welcome_modal = true`, leaves `is_subscribed_to_newsletter = false`
+        *   `[ ]` For `no_explicit_opt_in` legacy users: modal appearance is idempotent with email opt-out — both paths set `has_seen_welcome_modal = true`
+        *   `[ ]` Modal only shows once per user (dismissed state persisted in profile)
+    *   `[ ]` **Commit** `feat(newsletter): Kit v4 integration, newsletter event queue, signup ref tracking, and opt-in flows`
+        *   `[ ]` Extended user_profiles with subscribed_at, unsubscribed_at, signup_ref, synced_to_kit_at
+        *   `[ ]` Created newsletter_events table with RLS and queue index
+        *   `[ ]` Created DB trigger for idempotent subscription state management and event insertion
+        *   `[ ]` Created Kit tag config mapping ref slugs to Kit tag IDs
+        *   `[ ]` Rewrote Kit service to API v4 (X-Kit-Api-Key auth, /v4/ endpoints, email_address field)
+        *   `[ ]` Added addTagToSubscriber and removeTagFromSubscriber to Kit service
+        *   `[ ]` Stripped Kit logic from on-user-created auth hook
+        *   `[ ]` Created process-newsletter-events edge function (queue processor → Kit)
+        *   `[ ]` Created subscribe-to-newsletter edge function (registration path)
+        *   `[ ]` Created sync-existing-users edge function (one-time legacy sync)
+        *   `[ ]` Updated authStore subscribeToNewsletter to accept ref, added localStorage ref persistence
+        *   `[ ]` Wired RegisterForm with ref reading, PostHog tracking, and newsletter subscription
+        *   `[ ]` Wired OAuth ref persistence for provider-agnostic signup tracking
+        *   `[ ]` Fixed WelcomeModal rendering and guard logic
+
+*   `[ ]` `manual_setup` **[CONFIG] Manual operational steps — Kit dashboard, env vars, webhook, sync**
+    *   `[ ]` Kit dashboard setup
+        *   `[ ]` Generate v4 API key in Kit dashboard
+        *   `[ ]` Create Kit tags: `vibecoder`, `indiehacker`, `startup`, `agency`, `pricing`, `direct`, `legacy_user`, `no_explicit_opt_in`
+        *   `[ ]` Record tag IDs and fill into `kit_tags.config.ts`
+    *   `[ ]` Environment variables
+        *   `[ ]` Update `EMAIL_MARKETING_BASE_URL` to `https://api.kit.com`
+        *   `[ ]` Update `EMAIL_MARKETING_API_KEY` with v4 API key
+        *   `[ ]` Remove `EMAIL_MARKETING_TAG_ID` (no longer used — tags are per-ref in config)
+    *   `[ ]` Supabase Database Webhook
+        *   `[ ]` Configure webhook on `newsletter_events` INSERT → calls `process-newsletter-events` edge function URL
+    *   `[ ]` Deploy edge functions
+        *   `[ ]` Deploy `process-newsletter-events`
+        *   `[ ]` Deploy `subscribe-to-newsletter`
+        *   `[ ]` Deploy `sync-existing-users`
+        *   `[ ]` Redeploy `on-user-created` (stripped Kit logic)
+    *   `[ ]` Run legacy sync
+        *   `[ ]` Invoke `sync-existing-users` edge function once
+        *   `[ ]` Verify users appear in Kit with `legacy_user` + `no_explicit_opt_in` tags
+    *   `[ ]` Send opt-in email
+        *   `[ ]` Draft "we made a newsletter" email in Kit targeting `no_explicit_opt_in` tag
+        *   `[ ]` Include unsubscribe button (Kit handles this natively)
+        *   `[ ]` Include explicit opt-in link (links to app, triggers welcome modal or direct opt-in)
+    *   `[ ]` PostHog cohorts
+        *   `[ ]` Create cohorts in PostHog filtered by `signup_segment` user property for each ref value
 
 ---
 
