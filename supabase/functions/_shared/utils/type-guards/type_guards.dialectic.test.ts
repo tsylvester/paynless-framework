@@ -12,8 +12,6 @@ import {
     isDialecticJobRowArray,
     isFailedAttemptError,
     isFailedAttemptErrorArray,
-    isJobResultsWithModelProcessing,
-    isModelProcessingResult,
     validatePayload,
     isDialecticPlanJobPayload,
     isDialecticSkeletonJobPayload,
@@ -1619,48 +1617,6 @@ Deno.test('Type Guard: isJobInsert', async (t) => {
     });
 });
 
-Deno.test('Type Guard: isJobResultsWithModelProcessing', async (t) => {
-    await t.step('should return true for a valid result object with a valid array', () => {
-        const results = {
-            modelProcessingResults: [
-                { modelId: 'm1', status: 'completed', attempts: 1, contributionId: 'c1' },
-                { modelId: 'm2', status: 'failed', attempts: 3, error: 'Failed' },
-            ],
-        };
-        assert(isJobResultsWithModelProcessing(results));
-    });
-
-    await t.step('should return true for a result object with an empty array', () => {
-        const results = { modelProcessingResults: [] };
-        assert(isJobResultsWithModelProcessing(results));
-    });
-
-    await t.step('should return false if modelProcessingResults is not an array', () => {
-        const results = { modelProcessingResults: { modelId: 'm1' } };
-        assert(!isJobResultsWithModelProcessing(results));
-    });
-
-    await t.step('should return false if the array contains invalid items', () => {
-        const results = {
-            modelProcessingResults: [
-                { modelId: 'm1', status: 'completed', attempts: 1 },
-                { status: 'failed', attempts: 3 }, // missing modelId
-            ],
-        };
-        assert(!isJobResultsWithModelProcessing(results));
-    });
-
-    await t.step('should return false if modelProcessingResults key is missing', () => {
-        const results = { otherKey: [] };
-        assert(!isJobResultsWithModelProcessing(results));
-    });
-
-    await t.step('should return false for non-objects', () => {
-        assert(!isJobResultsWithModelProcessing(null));
-        assert(!isJobResultsWithModelProcessing([]));
-    });
-});
-
 Deno.test('Type Guard: isStageWithRecipeSteps', async (t) => {
     const mockRecipeStep: DialecticStageRecipeStep = {
         branch_key: null,
@@ -1851,58 +1807,6 @@ Deno.test('Type Guard: isDatabaseRecipeSteps', async (t) => {
             ],
           };
         assert(!isDatabaseRecipeSteps(invalidObject));
-    });
-});
-
-Deno.test('Type Guard: isModelProcessingResult', async (t) => {
-    await t.step('should return true for a complete, successful result', () => {
-        const result = {
-            modelId: 'm1',
-            status: 'completed',
-            attempts: 1,
-            contributionId: 'c1',
-        };
-        assert(isModelProcessingResult(result));
-    });
-
-    await t.step('should return true for a failed result with an error message', () => {
-        const result = {
-            modelId: 'm2',
-            status: 'failed',
-            attempts: 3,
-            error: 'AI timed out',
-        };
-        assert(isModelProcessingResult(result));
-    });
-
-    await t.step('should return true for a result needing continuation', () => {
-        const result = {
-            modelId: 'm3',
-            status: 'needs_continuation',
-            attempts: 1,
-            contributionId: 'c2-partial',
-        };
-        assert(isModelProcessingResult(result));
-    });
-
-    await t.step('should return false if modelId is missing', () => {
-        const result = { status: 'completed', attempts: 1, contributionId: 'c1' };
-        assert(!isModelProcessingResult(result));
-    });
-
-    await t.step('should return false if status is invalid', () => {
-        const result = { modelId: 'm1', status: 'pending', attempts: 1 };
-        assert(!isModelProcessingResult(result));
-    });
-
-    await t.step('should return false if attempts is not a number', () => {
-        const result = { modelId: 'm1', status: 'completed', attempts: 'one' };
-        assert(!isModelProcessingResult(result));
-    });
-
-    await t.step('should return false for non-objects', () => {
-        assert(!isModelProcessingResult(null));
-        assert(!isModelProcessingResult('a string'));
     });
 });
 

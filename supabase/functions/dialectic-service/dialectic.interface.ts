@@ -1218,7 +1218,7 @@ export type DialecticStage =
 
 export interface ModelProcessingResult {
 	modelId: string;
-	status: "completed" | "failed" | "needs_continuation";
+	status: "completed" | "failed" | "needs_continuation" | "continuation_limit_reached";
 	attempts: number;
 	contributionId?: string;
 	error?: string;
@@ -1900,13 +1900,6 @@ export type SeedPromptData = {
 	path: string;
 	fileName: string;
 };
-export interface ModelProcessingResult {
-	modelId: string;
-	status: "completed" | "failed" | "needs_continuation";
-	attempts: number;
-	contributionId?: string;
-	error?: string;
-}
 
 export interface IContinueJobDeps {
 	logger: ILogger;
@@ -1915,6 +1908,7 @@ export interface IContinueJobDeps {
 export interface IContinueJobResult {
 	enqueued: boolean;
 	error?: Error;
+	reason?: string;
 }
 
 export type Job =

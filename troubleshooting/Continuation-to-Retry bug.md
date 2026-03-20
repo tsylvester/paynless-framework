@@ -384,215 +384,203 @@ Every file that must be touched across all three fixes, listed once, in implemen
 
 ## Node 1
 
-* `[ ]` [DB] `supabase/migrations/` **Fix retry-exhausted trigger to preserve error details**
-  * `[ ]` `objective`
-    * `[ ]` When the `invoke_worker_on_status_change` trigger detects retry exhaustion (`attempt_count >= max_retries + 1`), it must **merge** existing `error_details` (which contains the `failedAttempts` array written by `retryJob.ts`) with the trigger's metadata — not overwrite them
-    * `[ ]` After the fix, retry-exhausted jobs must have `error_details` containing **both** the `failedAttempts` array **and** the `finalError`/`message`/`attempt_count`/`max_retries` metadata
-    * `[ ]` No other branch of the trigger function is modified
-  * `[ ]` `role`
-    * `[ ]` Infrastructure — database trigger function governing job state transitions
-  * `[ ]` `module`
-    * `[ ]` Dialectic generation job state machine — retry exhaustion branch of `invoke_worker_on_status_change()`
-  * `[ ]` `deps`
-    * `[ ]` Source trigger: `supabase/migrations/20260109165706_state_machine_fix.sql` lines 64-76 — the existing `CREATE OR REPLACE FUNCTION invoke_worker_on_status_change()` that this migration supersedes
-    * `[ ]` Producer: `supabase/functions/dialectic-worker/retryJob.ts` — writes `error_details: { failedAttempts: [...] }` in the same UPDATE that sets `status: 'retrying'`; this is the data the trigger currently destroys
-    * `[ ]` No reverse dependency introduced — the trigger reads `NEW.error_details` but does not call or import any Deno code
-  * `[ ]` `context_slice`
-    * `[ ]` The trigger reads `NEW.error_details` (jsonb), `v_attempt_count` (integer), and `v_max_retries` (integer) — all already available in the function body
-    * `[ ]` No new columns, no new tables, no new function parameters
-  * `[ ]` `migration`
-    * `[ ]` New file: `supabase/migrations/YYYYMMDDHHMMSS_fix_retry_error_preserve.sql`
-    * `[ ]` `CREATE OR REPLACE FUNCTION public.invoke_worker_on_status_change()` — copy the full existing function body, changing only the retry-exhausted branch (lines 64-76 equivalent)
-    * `[ ]` Replace line 70 (`error_details = jsonb_build_object(...)`) with a merge: `error_details = COALESCE(NEW.error_details, '{}'::jsonb) || jsonb_build_object('finalError', 'Retry limit exceeded', 'attempt_count', v_attempt_count, 'max_retries', v_max_retries, 'message', format('Job exceeded maximum retry limit. Attempt count: %s, Max retries: %s', v_attempt_count, v_max_retries))`
-    * `[ ]` The `||` operator appends the trigger's metadata keys to the existing jsonb object, preserving the `failedAttempts` array and any other keys `retryJob.ts` stored
-    * `[ ]` All other branches of the function remain identical
-  * `[ ]` `directionality`
-    * `[ ]` Layer: infrastructure (database trigger)
-    * `[ ]` All dependencies are inward-facing — the trigger reads row data, it does not call application code
-    * `[ ]` The trigger's output (updated row) is consumed by application code reading job status — outward-facing
-  * `[ ]` `requirements`
-    * `[ ]` After migration, a retry-exhausted job's `error_details` must contain the `failedAttempts` key from `retryJob.ts`
-    * `[ ]` After migration, a retry-exhausted job's `error_details` must contain `finalError`, `attempt_count`, `max_retries`, and `message` from the trigger
-    * `[ ]` No existing behavior is changed for any other trigger branch
-    * `[ ]` Migration is idempotent (`CREATE OR REPLACE`)
+* `[✅]` [DB] `supabase/migrations/` **Fix retry-exhausted trigger to preserve error details**
+  * `[✅]` `objective`
+    * `[✅]` When the `invoke_worker_on_status_change` trigger detects retry exhaustion (`attempt_count >= max_retries + 1`), it must **merge** existing `error_details` (which contains the `failedAttempts` array written by `retryJob.ts`) with the trigger's metadata — not overwrite them
+    * `[✅]` After the fix, retry-exhausted jobs must have `error_details` containing **both** the `failedAttempts` array **and** the `finalError`/`message`/`attempt_count`/`max_retries` metadata
+    * `[✅]` No other branch of the trigger function is modified
+  * `[✅]` `role`
+    * `[✅]` Infrastructure — database trigger function governing job state transitions
+  * `[✅]` `module`
+    * `[✅]` Dialectic generation job state machine — retry exhaustion branch of `invoke_worker_on_status_change()`
+  * `[✅]` `deps`
+    * `[✅]` Source trigger: `supabase/migrations/20260109165706_state_machine_fix.sql` lines 64-76 — the existing `CREATE OR REPLACE FUNCTION invoke_worker_on_status_change()` that this migration supersedes
+    * `[✅]` Producer: `supabase/functions/dialectic-worker/retryJob.ts` — writes `error_details: { failedAttempts: [...] }` in the same UPDATE that sets `status: 'retrying'`; this is the data the trigger currently destroys
+    * `[✅]` No reverse dependency introduced — the trigger reads `NEW.error_details` but does not call or import any Deno code
+  * `[✅]` `context_slice`
+    * `[✅]` The trigger reads `NEW.error_details` (jsonb), `v_attempt_count` (integer), and `v_max_retries` (integer) — all already available in the function body
+    * `[✅]` No new columns, no new tables, no new function parameters
+  * `[✅]` `migration`
+    * `[✅]` New file: `supabase/migrations/YYYYMMDDHHMMSS_fix_retry_error_preserve.sql`
+    * `[✅]` `CREATE OR REPLACE FUNCTION public.invoke_worker_on_status_change()` — copy the full existing function body, changing only the retry-exhausted branch (lines 64-76 equivalent)
+    * `[✅]` Replace line 70 (`error_details = jsonb_build_object(...)`) with a merge: `error_details = COALESCE(NEW.error_details, '{}'::jsonb) || jsonb_build_object('finalError', 'Retry limit exceeded', 'attempt_count', v_attempt_count, 'max_retries', v_max_retries, 'message', format('Job exceeded maximum retry limit. Attempt count: %s, Max retries: %s', v_attempt_count, v_max_retries))`
+    * `[✅]` The `||` operator appends the trigger's metadata keys to the existing jsonb object, preserving the `failedAttempts` array and any other keys `retryJob.ts` stored
+    * `[✅]` All other branches of the function remain identical
+  * `[✅]` `directionality`
+    * `[✅]` Layer: infrastructure (database trigger)
+    * `[✅]` All dependencies are inward-facing — the trigger reads row data, it does not call application code
+    * `[✅]` The trigger's output (updated row) is consumed by application code reading job status — outward-facing
+  * `[✅]` `requirements`
+    * `[✅]` After migration, a retry-exhausted job's `error_details` must contain the `failedAttempts` key from `retryJob.ts`
+    * `[✅]` After migration, a retry-exhausted job's `error_details` must contain `finalError`, `attempt_count`, `max_retries`, and `message` from the trigger
+    * `[✅]` No existing behavior is changed for any other trigger branch
+    * `[✅]` Migration is idempotent (`CREATE OR REPLACE`)
 
 ## Node 2
 
-* `[ ]` [BE] `supabase/functions/_shared/utils/assembleChunks/` **Shared chunk assembly utility — classify, group, strip, merge**
-  * `[ ]` `objective`
-    * `[ ]` Provide a single, shared function that both `gatherContinuationInputs` and `assembleAndSaveFinalDocument` can call to assemble an ordered array of chunk content strings into one merged object
-    * `[ ]` Classify each chunk as raw (unparseable) or parseable (valid JSON)
-    * `[ ]` Group adjacent raw fragments and concatenate them into a single string, then sanitize the concatenated result into a parseable object
-    * `[ ]` Strip continuation metadata keys (`continuation_needed`, `stop_reason`, `resume_cursor`) from parseable chunks — these are control signals, not document content
-    * `[ ]` Deep-merge all parsed objects in order using the existing `mergeObjects` merge rules: string concatenation for `content` keys, recursive merge for nested objects, last-write-wins for primitives
-    * `[ ]` Return the single merged object on success, or a typed error on failure
-  * `[ ]` `role`
-    * `[ ]` Domain utility — pure data transformation with no I/O, no database access, no external calls
-  * `[ ]` `module`
-    * `[ ]` Chunk assembly — shared between continuation prompt assembly (`gatherContinuationInputs`) and final document assembly (`assembleAndSaveFinalDocument`)
-    * `[ ]` Replaces the Phase 2/Phase 3 logic in `file_manager.ts` (lines 774-840) and provides assembly logic for `gatherContinuationInputs.ts`
-  * `[ ]` `deps`
-    * `[ ]` `sanitizeJsonContent` from `supabase/functions/_shared/utils/jsonSanitizer.ts` — infrastructure utility, inward-facing; used to sanitize concatenated raw fragment groups into parseable JSON strings
-    * `[ ]` `isRecord` from `supabase/functions/_shared/utils/type-guards/type_guards.common.ts` — domain guard, inward-facing; used to verify parsed results are record objects before merging
-    * `[ ]` No reverse dependency introduced — this is a leaf utility consumed by higher-level functions
-  * `[ ]` `context_slice`
-    * `[ ]` From `sanitizeJsonContent`: accepts `string`, returns `JsonSanitizationResult` (`{ sanitized: string, wasSanitized: boolean, wasStructurallyFixed: boolean, hasDuplicateKeys: boolean }`)
-    * `[ ]` From `isRecord`: accepts `unknown`, returns type predicate `item is Record<PropertyKey, unknown>`
-    * `[ ]` Injection shape: both dependencies injected via `AssembleChunksDeps` interface — no concrete imports from higher or lateral layers
-  * `[ ]` interface/`assembleChunks.interface.ts`
-    * `[ ]` `AssembleChunksSignature` — function signature type: `(deps: AssembleChunksDeps, params: AssembleChunksParams, payload: AssembleChunksPayload) => AssembleChunksReturn`
-    * `[ ]` `AssembleChunksDeps` — `{ sanitizeJsonContent: (rawContent: string) => JsonSanitizationResult; isRecord: (item: unknown) => item is Record<PropertyKey, unknown>; }`
-    * `[ ]` `AssembleChunksParams` — empty object `{}` (no configuration parameters for this utility; must be defined, not equivocated with another empty object)
-    * `[ ]` `AssembleChunksPayload` — `{ chunks: string[]; }` — ordered array of chunk content strings to assemble
-    * `[ ]` `AssembleChunksReturn` — `Promise<AssembleChunksSuccess | AssembleChunksError>`
-    * `[ ]` `AssembleChunksSuccess` — `{ success: true; mergedObject: Record<string, unknown>; chunkCount: number; rawGroupCount: number; parseableCount: number; }`
-    * `[ ]` `AssembleChunksError` — `{ success: false; error: string; failedAtStep: "classification" | "sanitization" | "parse" | "merge"; }`
-  * `[ ]` interface/tests/`assembleChunks.interface.test.ts`
-    * `[ ]` Contract: `AssembleChunksDeps` requires both `sanitizeJsonContent` and `isRecord` — neither optional
-    * `[ ]` Contract: `AssembleChunksPayload.chunks` is `string[]` — not optional, not nullable
-    * `[ ]` Contract: `AssembleChunksParams` is an empty object — defined separately, not aliased to any other empty type
-    * `[ ]` Contract: `AssembleChunksReturn` discriminates on `success: true | false`
-    * `[ ]` Contract: `AssembleChunksSuccess.mergedObject` is `Record<string, unknown>` — not optional
-    * `[ ]` Contract: `AssembleChunksError.failedAtStep` is a string union of exactly `"classification" | "sanitization" | "parse" | "merge"`
-  * `[ ]` interface/guards/`assembleChunks.interface.guards.ts`
-    * `[ ]` `isAssembleChunksSuccess` — narrows `AssembleChunksReturn` to `AssembleChunksSuccess` via `success === true`
-    * `[ ]` `isAssembleChunksError` — narrows `AssembleChunksReturn` to `AssembleChunksError` via `success === false`
-    * `[ ]` `isAssembleChunksDeps` — validates that an object satisfies `AssembleChunksDeps` (both function properties present and are functions)
-    * `[ ]` `isAssembleChunksPayload` — validates that an object satisfies `AssembleChunksPayload` (`chunks` is an array of strings)
-  * `[ ]` unit/`assembleChunks.test.ts`
-    * `[ ]` Test: empty `chunks` array returns `AssembleChunksSuccess` with empty merged object, all counts zero
-    * `[ ]` Test: single parseable chunk returns that chunk's parsed content as `mergedObject`
-    * `[ ]` Test: multiple parseable chunks are deep-merged in order — `content` string fields concatenated, nested objects recursively merged, primitives last-write-wins
-    * `[ ]` Test: single raw (unparseable) chunk is sanitized then parsed — `mergedObject` contains the sanitized result
-    * `[ ]` Test: adjacent raw chunks are grouped, concatenated, sanitized as one string, then parsed
-    * `[ ]` Test: mixed chain — raw fragments followed by parseable chunk — raw group is sanitized, then merged with parseable chunk in order
-    * `[ ]` Test: mixed chain — parseable chunk followed by raw fragments followed by parseable chunk — three groups merged in order
-    * `[ ]` Test: continuation metadata keys (`continuation_needed`, `stop_reason`, `resume_cursor`) are stripped from parseable chunks before merge
-    * `[ ]` Test: continuation metadata keys inside nested objects are NOT stripped (only top-level stripping)
-    * `[ ]` Test: when sanitization of a raw group fails to produce parseable JSON, returns `AssembleChunksError` with `failedAtStep: "sanitization"`
-    * `[ ]` Test: `mergedObject` preserves all non-metadata keys from all chunks
-  * `[ ]` `construction`
-    * `[ ]` Canonical entry point: `assembleChunks(deps, params, payload)` — the only exported function
-    * `[ ]` Prohibited: direct construction of internal merge state outside the function
-    * `[ ]` Object completeness: all fields in `AssembleChunksSuccess` and `AssembleChunksError` must be populated at construction boundary — no optional fields, no defaults
-    * `[ ]` Initialization order: classify → group raw → sanitize raw groups → parse all → strip metadata → merge → return
-  * `[ ]` `assembleChunks.ts`
-    * `[ ]` Add construction rationale comment explaining why this is a shared utility (eliminates duplication between `gatherContinuationInputs` and `assembleAndSaveFinalDocument`), why deps are injected (testability), and why `mergeObjects` is an internal helper (single responsibility)
-    * `[ ]` Implement `assembleChunks` matching `AssembleChunksSignature`
-    * `[ ]` Step 1 — Classify: iterate `payload.chunks`, attempt `JSON.parse()` on each. Success → parseable. Failure → raw fragment.
-    * `[ ]` Step 2 — Group adjacent raw fragments: consecutive raw chunks concatenated into single strings, producing an ordered list of `{ type: "raw", content: string } | { type: "parsed", value: Record<string, unknown> }`
-    * `[ ]` Step 3 — Sanitize raw groups: for each raw group, call `deps.sanitizeJsonContent(content)`, then `JSON.parse(result.sanitized)`. Verify with `deps.isRecord()`. If sanitization or parse fails, return `AssembleChunksError`.
-    * `[ ]` Step 4 — Strip continuation metadata: from each parsed object (whether originally parseable or sanitized from raw), delete `continuation_needed`, `stop_reason`, `resume_cursor` at top level only
-    * `[ ]` Step 5 — Deep merge: fold all parsed objects left-to-right using `mergeObjects` logic (internal helper, same rules as `file_manager.ts` lines 752-769: `content` key string concatenation, recursive merge for nested records, last-write-wins for primitives)
-    * `[ ]` Step 6 — Return `AssembleChunksSuccess` with the merged object and counts
-    * `[ ]` `mergeObjects` is an internal helper within this file — not exported, not a second function file; it is a private implementation detail of `assembleChunks`
-  * `[ ]` provides/`assembleChunks.provides.ts`
-    * `[ ]` Exports `assembleChunks` function as the sole public symbol
-    * `[ ]` Exports all interface types from `assembleChunks.interface.ts` for consumer use
-    * `[ ]` Exports all guards from `assembleChunks.interface.guards.ts` for consumer use
-    * `[ ]` No other access path bypasses this file
-  * `[ ]` `assembleChunks.mock.ts`
-    * `[ ]` Provides a mock `assembleChunks` function that returns a configurable `AssembleChunksSuccess` or `AssembleChunksError`
-    * `[ ]` Consumers (`gatherContinuationInputs`, `assembleAndSaveFinalDocument`) use this mock to test in isolation without exercising real chunk assembly
-    * `[ ]` Mock respects `AssembleChunksSignature` — same deps/params/payload/return shape
-  * `[ ]` `directionality`
-    * `[ ]` Layer: domain utility (pure transformation)
-    * `[ ]` All dependencies are inward-facing: `sanitizeJsonContent` (infrastructure utility), `isRecord` (domain guard) — both lower-level
-    * `[ ]` All provides are outward-facing: consumed by `gatherContinuationInputs` (app-level) and `assembleAndSaveFinalDocument` (app-level)
-  * `[ ]` `requirements`
-    * `[ ]` Given an ordered array of chunk strings, produces a single merged object with all content preserved and continuation metadata stripped
-    * `[ ]` Handles raw-only, parseable-only, and mixed chains correctly
-    * `[ ]` Adjacent raw fragments are grouped and sanitized as one unit
-    * `[ ]` Deep merge follows existing `mergeObjects` rules exactly — no behavioral change from current Phase 2/3 merge logic
-    * `[ ]` Returns typed error with specific `failedAtStep` when assembly cannot complete
-    * `[ ]` No I/O, no database calls, no side effects — pure function
+* `[✅]` [BE] `supabase/functions/_shared/utils/assembleChunks/` **Shared chunk assembly utility — classify, group, strip, merge**
+  * `[✅]` `objective`
+    * `[✅]` Provide a single, shared function that both `gatherContinuationInputs` and `assembleAndSaveFinalDocument` can call to assemble an ordered array of chunk content strings into one merged object
+    * `[✅]` Classify each chunk as raw (unparseable) or parseable (valid JSON)
+    * `[✅]` Group adjacent raw fragments and concatenate them into a single string, then sanitize the concatenated result into a parseable object
+    * `[✅]` Strip continuation metadata keys (`continuation_needed`, `stop_reason`, `resume_cursor`) from parseable chunks — these are control signals, not document content
+    * `[✅]` Deep-merge all parsed objects in order using the existing `mergeObjects` merge rules: string concatenation for `content` keys, recursive merge for nested objects, last-write-wins for primitives
+    * `[✅]` Return the single merged object on success, or a typed error on failure
+  * `[✅]` `role`
+    * `[✅]` Domain utility — pure data transformation with no I/O, no database access, no external calls
+  * `[✅]` `module`
+    * `[✅]` Chunk assembly — shared between continuation prompt assembly (`gatherContinuationInputs`) and final document assembly (`assembleAndSaveFinalDocument`)
+    * `[✅]` Replaces the Phase 2/Phase 3 logic in `file_manager.ts` (lines 774-840) and provides assembly logic for `gatherContinuationInputs.ts`
+  * `[✅]` `deps`
+    * `[✅]` `sanitizeJsonContent` from `supabase/functions/_shared/utils/jsonSanitizer.ts` — infrastructure utility, inward-facing; used to sanitize concatenated raw fragment groups into parseable JSON strings
+    * `[✅]` `isRecord` from `supabase/functions/_shared/utils/type-guards/type_guards.common.ts` — domain guard, inward-facing; used to verify parsed results are record objects before merging
+    * `[✅]` No reverse dependency introduced — this is a leaf utility consumed by higher-level functions
+  * `[✅]` `context_slice`
+    * `[✅]` From `sanitizeJsonContent`: accepts `string`, returns `JsonSanitizationResult` (`{ sanitized: string, wasSanitized: boolean, wasStructurallyFixed: boolean, hasDuplicateKeys: boolean }`)
+    * `[✅]` From `isRecord`: accepts `unknown`, returns type predicate `item is Record<PropertyKey, unknown>`
+    * `[✅]` Injection shape: both dependencies injected via `AssembleChunksDeps` interface — no concrete imports from higher or lateral layers
+  * `[✅]` interface/`assembleChunks.interface.ts`
+    * `[✅]` `AssembleChunksSignature` — function signature type: `(deps: AssembleChunksDeps, params: AssembleChunksParams, payload: AssembleChunksPayload) => AssembleChunksReturn`
+    * `[✅]` `AssembleChunksDeps` — `{ sanitizeJsonContent: (rawContent: string) => JsonSanitizationResult; isRecord: (item: unknown) => item is Record<PropertyKey, unknown>; }`
+    * `[✅]` `AssembleChunksParams` — empty object `{}` (no configuration parameters for this utility; must be defined, not equivocated with another empty object)
+    * `[✅]` `AssembleChunksPayload` — `{ chunks: string[]; }` — ordered array of chunk content strings to assemble
+    * `[✅]` `AssembleChunksReturn` — `Promise<AssembleChunksSuccess | AssembleChunksError>`
+    * `[✅]` `AssembleChunksSuccess` — `{ success: true; mergedObject: Record<string, unknown>; chunkCount: number; rawGroupCount: number; parseableCount: number; }`
+    * `[✅]` `AssembleChunksError` — `{ success: false; error: string; failedAtStep: "classification" | "sanitization" | "parse" | "merge"; }`
+  * `[✅]` interface/tests/`assembleChunks.interface.test.ts`
+    * `[✅]` Contract: `AssembleChunksDeps` requires both `sanitizeJsonContent` and `isRecord` — neither optional
+    * `[✅]` Contract: `AssembleChunksPayload.chunks` is `string[]` — not optional, not nullable
+    * `[✅]` Contract: `AssembleChunksParams` is an empty object — defined separately, not aliased to any other empty type
+    * `[✅]` Contract: `AssembleChunksReturn` discriminates on `success: true | false`
+    * `[✅]` Contract: `AssembleChunksSuccess.mergedObject` is `Record<string, unknown>` — not optional
+    * `[✅]` Contract: `AssembleChunksError.failedAtStep` is a string union of exactly `"classification" | "sanitization" | "parse" | "merge"`
+  * `[✅]` interface/guards/`assembleChunks.interface.guards.ts`
+    * `[✅]` `isAssembleChunksSuccess` — narrows `AssembleChunksReturn` to `AssembleChunksSuccess` via `success === true`
+    * `[✅]` `isAssembleChunksError` — narrows `AssembleChunksReturn` to `AssembleChunksError` via `success === false`
+    * `[✅]` `isAssembleChunksDeps` — validates that an object satisfies `AssembleChunksDeps` (both function properties present and are functions)
+    * `[✅]` `isAssembleChunksPayload` — validates that an object satisfies `AssembleChunksPayload` (`chunks` is an array of strings)
+  * `[✅]` unit/`assembleChunks.test.ts`
+    * `[✅]` Test: empty `chunks` array returns `AssembleChunksSuccess` with empty merged object, all counts zero
+    * `[✅]` Test: single parseable chunk returns that chunk's parsed content as `mergedObject`
+    * `[✅]` Test: multiple parseable chunks are deep-merged in order — `content` string fields concatenated, nested objects recursively merged, primitives last-write-wins
+    * `[✅]` Test: single raw (unparseable) chunk is sanitized then parsed — `mergedObject` contains the sanitized result
+    * `[✅]` Test: adjacent raw chunks are grouped, concatenated, sanitized as one string, then parsed
+    * `[✅]` Test: mixed chain — raw fragments followed by parseable chunk — raw group is sanitized, then merged with parseable chunk in order
+    * `[✅]` Test: mixed chain — parseable chunk followed by raw fragments followed by parseable chunk — three groups merged in order
+    * `[✅]` Test: continuation metadata keys (`continuation_needed`, `stop_reason`, `resume_cursor`) are stripped from parseable chunks before merge
+    * `[✅]` Test: continuation metadata keys inside nested objects are NOT stripped (only top-level stripping)
+    * `[✅]` Test: when sanitization of a raw group fails to produce parseable JSON, returns `AssembleChunksError` with `failedAtStep: "sanitization"`
+    * `[✅]` Test: `mergedObject` preserves all non-metadata keys from all chunks
+  * `[✅]` `construction`
+    * `[✅]` Canonical entry point: `assembleChunks(deps, params, payload)` — the only exported function
+    * `[✅]` Prohibited: direct construction of internal merge state outside the function
+    * `[✅]` Object completeness: all fields in `AssembleChunksSuccess` and `AssembleChunksError` must be populated at construction boundary — no optional fields, no defaults
+    * `[✅]` Initialization order: classify → group raw → sanitize raw groups → parse all → strip metadata → merge → return
+  * `[✅]` `assembleChunks.ts`
+    * `[✅]` Add construction rationale comment explaining why this is a shared utility (eliminates duplication between `gatherContinuationInputs` and `assembleAndSaveFinalDocument`), why deps are injected (testability), and why `mergeObjects` is an internal helper (single responsibility)
+    * `[✅]` Implement `assembleChunks` matching `AssembleChunksSignature`
+    * `[✅]` Step 1 — Classify: iterate `payload.chunks`, attempt `JSON.parse()` on each. Success → parseable. Failure → raw fragment.
+    * `[✅]` Step 2 — Group adjacent raw fragments: consecutive raw chunks concatenated into single strings, producing an ordered list of `{ type: "raw", content: string } | { type: "parsed", value: Record<string, unknown> }`
+    * `[✅]` Step 3 — Sanitize raw groups: for each raw group, call `deps.sanitizeJsonContent(content)`, then `JSON.parse(result.sanitized)`. Verify with `deps.isRecord()`. If sanitization or parse fails, return `AssembleChunksError`.
+    * `[✅]` Step 4 — Strip continuation metadata: from each parsed object (whether originally parseable or sanitized from raw), delete `continuation_needed`, `stop_reason`, `resume_cursor` at top level only
+    * `[✅]` Step 5 — Deep merge: fold all parsed objects left-to-right using `mergeObjects` logic (internal helper, same rules as `file_manager.ts` lines 752-769: `content` key string concatenation, recursive merge for nested records, last-write-wins for primitives)
+    * `[✅]` Step 6 — Return `AssembleChunksSuccess` with the merged object and counts
+    * `[✅]` `mergeObjects` is an internal helper within this file — not exported, not a second function file; it is a private implementation detail of `assembleChunks`
+  * `[✅]` provides/`assembleChunks.provides.ts`
+    * `[✅]` Exports `assembleChunks` function as the sole public symbol
+    * `[✅]` Exports all interface types from `assembleChunks.interface.ts` for consumer use
+    * `[✅]` Exports all guards from `assembleChunks.interface.guards.ts` for consumer use
+    * `[✅]` No other access path bypasses this file
+  * `[✅]` `assembleChunks.mock.ts`
+    * `[✅]` Provides a mock `assembleChunks` function that returns a configurable `AssembleChunksSuccess` or `AssembleChunksError`
+    * `[✅]` Consumers (`gatherContinuationInputs`, `assembleAndSaveFinalDocument`) use this mock to test in isolation without exercising real chunk assembly
+    * `[✅]` Mock respects `AssembleChunksSignature` — same deps/params/payload/return shape
+  * `[✅]` `directionality`
+    * `[✅]` Layer: domain utility (pure transformation)
+    * `[✅]` All dependencies are inward-facing: `sanitizeJsonContent` (infrastructure utility), `isRecord` (domain guard) — both lower-level
+    * `[✅]` All provides are outward-facing: consumed by `gatherContinuationInputs` (app-level) and `assembleAndSaveFinalDocument` (app-level)
+  * `[✅]` `requirements`
+    * `[✅]` Given an ordered array of chunk strings, produces a single merged object with all content preserved and continuation metadata stripped
+    * `[✅]` Handles raw-only, parseable-only, and mixed chains correctly
+    * `[✅]` Adjacent raw fragments are grouped and sanitized as one unit
+    * `[✅]` Deep merge follows existing `mergeObjects` rules exactly — no behavioral change from current Phase 2/3 merge logic
+    * `[✅]` Returns typed error with specific `failedAtStep` when assembly cannot complete
+    * `[✅]` No I/O, no database calls, no side effects — pure function
 
 ## Node 3
 
-* `[ ]` [BE] `supabase/functions/dialectic-worker/continueJob` **Return distinguishable result when continuation cap is hit**
-  * `[ ]` `objective`
-    * `[ ]` When `continueJob` determines that the continuation count has reached the cap (`continuation_count >= 5`), it must return `{ enqueued: false, reason: 'continuation_limit_reached' }` so the caller (`executeModelCallAndSave`) can distinguish "cap hit" from "continueUntilComplete is false"
-    * `[ ]` The existing `return { enqueued: false }` for the `!continueUntilComplete` case must remain unchanged (no `reason` property)
-    * `[ ]` Add `"continuation_limit_reached"` to the `ModelProcessingResult.status` union so the caller can set the appropriate status
-    * `[ ]` Add `reason?: string` to `IContinueJobResult` so the return type supports the new field
-  * `[ ]` `role`
-    * `[ ]` Application — worker-level continuation orchestration
-  * `[ ]` `module`
-    * `[ ]` Dialectic worker — continuation enqueue logic
-    * `[ ]` Boundary: determines whether to enqueue a continuation job and reports the reason when it does not
-  * `[ ]` `deps`
-    * `[ ]` `IContinueJobDeps` from `dialectic.interface.ts` (line 1911-1913) — `{ logger: ILogger }`, inward-facing
-    * `[ ]` `IContinueJobResult` from `dialectic.interface.ts` (line 1915-1918) — return type, modified in this node
-    * `[ ]` `ModelProcessingResult` from `dialectic.interface.ts` (canonical definition at line 1219-1225; duplicate at line 1903-1909 to be deleted in this node) — modified to add `"continuation_limit_reached"` to status union
-    * `[ ]` `SupabaseClient<Database>` — infrastructure, injected via parameter (Supabase client cast exception applies)
-    * `[ ]` `isModelProcessingResult` from `_shared/utils/type-guards/type_guards.dialectic.ts` (line 1341-1379) — existing guard to be moved to new file in this node
-    * `[ ]` `isJobResultsWithModelProcessing` from `_shared/utils/type-guards/type_guards.dialectic.ts` (line 1329-1339) — existing guard to be moved alongside `isModelProcessingResult`
-    * `[ ]` Type guards from `_shared/utils/type_guards.ts` (barrel re-export) and `type-guards/type_guards.file_manager.ts` — domain guards, inward-facing
-    * `[ ]` No reverse dependency introduced
-  * `[ ]` `context_slice`
-    * `[ ]` From `IContinueJobDeps`: `{ logger: ILogger }` — logging only
-    * `[ ]` From `SupabaseClient<Database>`: `.from('dialectic_generation_jobs').insert()` — single table insert
-    * `[ ]` Injection shape: `deps` parameter for logger, `dbClient` parameter for database — no concrete imports from higher layers
-  * `[ ]` interface/`dialectic.interface.ts`
-    * `[ ]` `IContinueJobResult` (line 1915-1918): add `reason?: string` — optional because only the cap-hit path sets it
-    * `[ ]` `ModelProcessingResult` (line 1219-1225): change `status` from `"completed" | "failed" | "needs_continuation"` to `"completed" | "failed" | "needs_continuation" | "continuation_limit_reached"` — this is the canonical definition
-    * `[ ]` Delete the duplicate `ModelProcessingResult` at line 1903-1909 — a single canonical definition at line 1219 is the only valid source of truth; duplicate interface declarations cause silent merge behavior that masks drift
-  * `[ ]` interface/tests/`continueJob.interface.test.ts`
-    * `[ ]` Contract: `IContinueJobResult` accepts `{ enqueued: false, reason: 'continuation_limit_reached' }` — compiles without error
-    * `[ ]` Contract: `IContinueJobResult` accepts `{ enqueued: false }` with no `reason` — existing shape still valid
-    * `[ ]` Contract: `IContinueJobResult` accepts `{ enqueued: false, error: new Error('...') }` — existing shape still valid
-    * `[ ]` Contract: `ModelProcessingResult.status` accepts `"continuation_limit_reached"` — compiles without error
-    * `[ ]` Contract: `ModelProcessingResult.status` still accepts `"completed"`, `"failed"`, `"needs_continuation"` — no regression
-  * `[ ]` interface/guards/`continueJob.interface.guards.ts`
-    * `[ ]` `isContinuationLimitReached` — narrows `IContinueJobResult` to confirm `enqueued === false && reason === 'continuation_limit_reached'`
-  * `[ ]` guards/`_shared/utils/type-guards/type_guards.modelProcessingResult.ts` **(new file — guards moved from `type_guards.dialectic.ts`)**
-    * `[ ]` `isModelProcessingResult` — moved from `type_guards.dialectic.ts` (lines 1341-1379); updated to include `"continuation_limit_reached"` in the hardcoded status array at line 1373
-    * `[ ]` `isJobResultsWithModelProcessing` — moved from `type_guards.dialectic.ts` (lines 1329-1339); depends on `isModelProcessingResult`, must move together
-    * `[ ]` `isModelProcessingResultStatus` — new guard; validates that a string is one of the four valid `ModelProcessingResult.status` values including `"continuation_limit_reached"`
-  * `[ ]` guards/tests/`_shared/utils/type-guards/type_guards.modelProcessingResult.test.ts` **(new file — tests moved from `type_guards.dialectic.test.ts`)**
-    * `[ ]` Move existing `isModelProcessingResult` tests from `type_guards.dialectic.test.ts` (lines 1857-1905)
-    * `[ ]` Move existing `isJobResultsWithModelProcessing` tests from the same file
-    * `[ ]` Add test: `isModelProcessingResult` accepts object with `status: "continuation_limit_reached"` — returns `true`
-    * `[ ]` Add test: `isModelProcessingResultStatus` accepts `"continuation_limit_reached"` — returns `true`
-    * `[ ]` Add test: `isModelProcessingResultStatus` rejects `"invalid_status"` — returns `false`
-    * `[ ]` Add test: `isModelProcessingResultStatus` accepts each of `"completed"`, `"failed"`, `"needs_continuation"` — no regression
-  * `[ ]` barrel/`_shared/utils/type_guards.ts`
-    * `[ ]` Update re-export of `isModelProcessingResult` and `isJobResultsWithModelProcessing` to import from `type-guards/type_guards.modelProcessingResult.ts` instead of `type-guards/type_guards.dialectic.ts`
-    * `[ ]` Add re-export of `isModelProcessingResultStatus` from `type-guards/type_guards.modelProcessingResult.ts`
-  * `[ ]` removal/`_shared/utils/type-guards/type_guards.dialectic.ts`
-    * `[ ]` Remove `isModelProcessingResult` (lines 1341-1379)
-    * `[ ]` Remove `isJobResultsWithModelProcessing` (lines 1329-1339)
-  * `[ ]` removal/`_shared/utils/type-guards/type_guards.dialectic.test.ts`
-    * `[ ]` Remove `isModelProcessingResult` test block (lines 1857-1905)
-    * `[ ]` Remove `isJobResultsWithModelProcessing` test block
-  * `[ ]` unit/`continueJob.test.ts`
-    * `[ ]` Update existing test (line 397-408): `'CONTINUATION_COUNT: should not enqueue when continuation_count is 5 (at max)'` — add assertion `assertEquals(result.reason, 'continuation_limit_reached')`
-    * `[ ]` Update existing test (line 410-421): `'CONTINUATION_COUNT: should not enqueue when continuation_count is 6 (over max)'` — add assertion `assertEquals(result.reason, 'continuation_limit_reached')`
-    * `[ ]` Add new test: `'CONTINUATION_COUNT: should not include reason when continueUntilComplete is false'` — assert `result.reason` is `undefined` when `continueUntilComplete: false` causes the early return
-    * `[ ]` Existing test (line 315-325): `'CONTINUE_FLAG: should not enqueue when continueUntilComplete is false'` — add assertion `assertEquals(result.reason, undefined)` to confirm no reason for this path
-  * `[ ]` `construction`
-    * `[ ]` Canonical entry point: `continueJob(deps, dbClient, job, aiResponse, savedContribution, projectOwnerUserId)` — existing signature, unchanged
-    * `[ ]` The `reason` field is only set on the cap-hit path; the `continueUntilComplete: false` path returns without `reason`
-    * `[ ]` Object completeness: the returned `IContinueJobResult` is fully constructed at each return site — no post-construction mutation
-  * `[ ]` `continueJob.ts`
-    * `[ ]` Line 60-62: split the combined `if (!underMaxContinuations || !job.payload.continueUntilComplete)` into two separate checks
-    * `[ ]` First check: `if (!underMaxContinuations)` → `return { enqueued: false, reason: 'continuation_limit_reached' }`
-    * `[ ]` Second check: `if (!job.payload.continueUntilComplete)` → `return { enqueued: false }` (no reason, existing behavior)
-    * `[ ]` No other lines of the function are modified
-    * `[ ]` The split preserves the same logical behavior — both conditions still prevent enqueue, but now they return distinguishable results
-  * `[ ]` `directionality`
-    * `[ ]` Layer: application (worker)
-    * `[ ]` All dependencies are inward-facing: interface types (domain), type guards (domain), logger (infrastructure), database client (infrastructure)
-    * `[ ]` Provides are outward-facing: consumed by `executeModelCallAndSave` (same layer, lateral — acceptable because `executeModelCallAndSave` is the caller)
-  * `[ ]` `requirements`
-    * `[ ]` When `continuation_count >= 5`, return includes `reason: 'continuation_limit_reached'`
-    * `[ ]` When `continueUntilComplete` is false, return does NOT include `reason`
-    * `[ ]` All existing return paths and behavior are preserved — only the cap-hit return is enriched
-    * `[ ]` `ModelProcessingResult.status` union includes `"continuation_limit_reached"` at the single canonical definition (line 1219); duplicate at line 1903 is deleted
-    * `[ ]` `isModelProcessingResult` guard moved to `type_guards.modelProcessingResult.ts` with updated status validation
-    * `[ ]` `isJobResultsWithModelProcessing` guard moved alongside
-    * `[ ]` Barrel `type_guards.ts` re-exports from new location
-    * `[ ]` `IContinueJobResult` supports optional `reason` field
+* `[✅]` [BE] `supabase/functions/dialectic-worker/continueJob` **Return distinguishable result when continuation cap is hit**
+  * `[✅]` `objective`
+    * `[✅]` When `continueJob` determines that the continuation count has reached the cap (`continuation_count >= 5`), it must return `{ enqueued: false, reason: 'continuation_limit_reached' }` so the caller (`executeModelCallAndSave`) can distinguish "cap hit" from "continueUntilComplete is false"
+    * `[✅]` The existing `return { enqueued: false }` for the `!continueUntilComplete` case must remain unchanged (no `reason` property)
+    * `[✅]` Add `"continuation_limit_reached"` to the `ModelProcessingResult.status` union so the caller can set the appropriate status
+    * `[✅]` Add `reason?: string` to `IContinueJobResult` so the return type supports the new field
+  * `[✅]` `role`
+    * `[✅]` Application — worker-level continuation orchestration
+  * `[✅]` `module`
+    * `[✅]` Dialectic worker — continuation enqueue logic
+    * `[✅]` Boundary: determines whether to enqueue a continuation job and reports the reason when it does not
+  * `[✅]` `deps`
+    * `[✅]` `IContinueJobDeps` from `dialectic.interface.ts` (line 1911-1913) — `{ logger: ILogger }`, inward-facing
+    * `[✅]` `IContinueJobResult` from `dialectic.interface.ts` (line 1915-1918) — return type, modified in this node
+    * `[✅]` `ModelProcessingResult` from `dialectic.interface.ts` (canonical definition at line 1219-1225; duplicate at line 1903-1909 to be deleted in this node) — modified to add `"continuation_limit_reached"` to status union
+    * `[✅]` `SupabaseClient<Database>` — infrastructure, injected via parameter (Supabase client cast exception applies)
+    * `[✅]` `isModelProcessingResult` from `_shared/utils/type-guards/type_guards.dialectic.ts` (line 1341-1379) — existing guard to be moved to new file in this node
+    * `[✅]` `isJobResultsWithModelProcessing` from `_shared/utils/type-guards/type_guards.dialectic.ts` (line 1329-1339) — existing guard to be moved alongside `isModelProcessingResult`
+    * `[✅]` Type guards from `_shared/utils/type_guards.ts` (barrel re-export) and `type-guards/type_guards.file_manager.ts` — domain guards, inward-facing
+    * `[✅]` No reverse dependency introduced
+  * `[✅]` `context_slice`
+    * `[✅]` From `IContinueJobDeps`: `{ logger: ILogger }` — logging only
+    * `[✅]` From `SupabaseClient<Database>`: `.from('dialectic_generation_jobs').insert()` — single table insert
+    * `[✅]` Injection shape: `deps` parameter for logger, `dbClient` parameter for database — no concrete imports from higher layers
+  * `[✅]` interface/`dialectic.interface.ts`
+    * `[✅]` `IContinueJobResult` (line 1915-1918): add `reason?: string` — optional because only the cap-hit path sets it
+    * `[✅]` `ModelProcessingResult` (line 1219-1225): change `status` from `"completed" | "failed" | "needs_continuation"` to `"completed" | "failed" | "needs_continuation" | "continuation_limit_reached"` — this is the canonical definition
+    * `[✅]` Delete the duplicate `ModelProcessingResult` at line 1903-1909 — a single canonical definition at line 1219 is the only valid source of truth; duplicate interface declarations cause silent merge behavior that masks drift
+  * `[✅]` guards/tests/`_shared/utils/type-guards/type_guards.modelProcessingResult.test.ts` **(new file — tests moved from `type_guards.dialectic.test.ts`)**
+    * `[✅]` Move existing `isModelProcessingResult` tests from `type_guards.dialectic.test.ts` (lines 1857-1905)
+    * `[✅]` Move existing `isJobResultsWithModelProcessing` tests from the same file
+    * `[✅]` Add test: `isModelProcessingResult` accepts object with `status: "continuation_limit_reached"` — returns `true`
+    * `[✅]` Add test: `isModelProcessingResultStatus` accepts `"continuation_limit_reached"` — returns `true`
+    * `[✅]` Add test: `isModelProcessingResultStatus` rejects `"invalid_status"` — returns `false`
+    * `[✅]` Add test: `isModelProcessingResultStatus` accepts each of `"completed"`, `"failed"`, `"needs_continuation"` — no regression
+  * `[✅]` barrel/`_shared/utils/type_guards.ts`
+    * `[✅]` Update re-export of `isModelProcessingResult` and `isJobResultsWithModelProcessing` to import from `type-guards/type_guards.modelProcessingResult.ts` instead of `type-guards/type_guards.dialectic.ts`
+    * `[✅]` Add re-export of `isModelProcessingResultStatus` from `type-guards/type_guards.modelProcessingResult.ts`
+  * `[✅]` removal/`_shared/utils/type-guards/type_guards.dialectic.ts`
+    * `[✅]` Remove `isModelProcessingResult` (lines 1341-1379)
+    * `[✅]` Remove `isJobResultsWithModelProcessing` (lines 1329-1339)
+  * `[✅]` removal/`_shared/utils/type-guards/type_guards.dialectic.test.ts`
+    * `[✅]` Remove `isModelProcessingResult` test block (lines 1857-1905)
+    * `[✅]` Remove `isJobResultsWithModelProcessing` test block
+  * `[✅]` unit/`continueJob.test.ts`
+    * `[✅]` Update existing test (line 397-408): `'CONTINUATION_COUNT: should not enqueue when continuation_count is 5 (at max)'` — add assertion `assertEquals(result.reason, 'continuation_limit_reached')`
+    * `[✅]` Update existing test (line 410-421): `'CONTINUATION_COUNT: should not enqueue when continuation_count is 6 (over max)'` — add assertion `assertEquals(result.reason, 'continuation_limit_reached')`
+    * `[✅]` Add new test: `'CONTINUATION_COUNT: should not include reason when continueUntilComplete is false'` — assert `result.reason` is `undefined` when `continueUntilComplete: false` causes the early return
+    * `[✅]` Existing test (line 315-325): `'CONTINUE_FLAG: should not enqueue when continueUntilComplete is false'` — add assertion `assertEquals(result.reason, undefined)` to confirm no reason for this path
+  * `[✅]` `construction`
+    * `[✅]` Canonical entry point: `continueJob(deps, dbClient, job, aiResponse, savedContribution, projectOwnerUserId)` — existing signature, unchanged
+    * `[✅]` The `reason` field is only set on the cap-hit path; the `continueUntilComplete: false` path returns without `reason`
+    * `[✅]` Object completeness: the returned `IContinueJobResult` is fully constructed at each return site — no post-construction mutation
+  * `[✅]` `continueJob.ts`
+    * `[✅]` Line 60-62: split the combined `if (!underMaxContinuations || !job.payload.continueUntilComplete)` into two separate checks
+    * `[✅]` First check: `if (!underMaxContinuations)` → `return { enqueued: false, reason: 'continuation_limit_reached' }`
+    * `[✅]` Second check: `if (!job.payload.continueUntilComplete)` → `return { enqueued: false }` (no reason, existing behavior)
+    * `[✅]` No other lines of the function are modified
+    * `[✅]` The split preserves the same logical behavior — both conditions still prevent enqueue, but now they return distinguishable results
+  * `[✅]` `directionality`
+    * `[✅]` Layer: application (worker)
+    * `[✅]` All dependencies are inward-facing: interface types (domain), type guards (domain), logger (infrastructure), database client (infrastructure)
+    * `[✅]` Provides are outward-facing: consumed by `executeModelCallAndSave` (same layer, lateral — acceptable because `executeModelCallAndSave` is the caller)
+  * `[✅]` `requirements`
+    * `[✅]` When `continuation_count >= 5`, return includes `reason: 'continuation_limit_reached'`
+    * `[✅]` When `continueUntilComplete` is false, return does NOT include `reason`
+    * `[✅]` All existing return paths and behavior are preserved — only the cap-hit return is enriched
+    * `[✅]` `ModelProcessingResult.status` union includes `"continuation_limit_reached"` at the single canonical definition (line 1219); duplicate at line 1903 is deleted
+    * `[✅]` `isModelProcessingResult` guard moved to `type_guards.modelProcessingResult.ts` with updated status validation
+    * `[✅]` `isJobResultsWithModelProcessing` guard moved alongside
+    * `[✅]` Barrel `type_guards.ts` re-exports from new location
+    * `[✅]` `IContinueJobResult` supports optional `reason` field
 
 ## Node 4
 
