@@ -204,6 +204,8 @@ function getDefaultHookReturn(
     viewingStage: mockThesisStage,
     activeSession: defaultSession,
     stageThreshold: mockThesisStage.minimum_balance,
+    isViewingAheadOfCurrentStage: false,
+    viewingAheadReason: null,
     ...overrides,
   };
 }
@@ -673,5 +675,69 @@ describe('GenerateContributionButton', () => {
     const button = screen.getByRole('button');
     expect(button).toHaveTextContent('Retry');
     expect(button).toHaveTextContent('Proposal');
+  });
+
+  it('shows "Prior Stage Not Submitted" when viewing ahead and stage not ready', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isStageReady: false,
+        isDisabled: true,
+        isViewingAheadOfCurrentStage: true,
+        viewingAheadReason: 'Submit your responses for "Proposal" first to unlock this stage.',
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.getByRole('button')).toHaveTextContent('Prior Stage Not Submitted');
+    expect(screen.getByRole('button')).toBeDisabled();
+  });
+
+  it('shows tooltip with viewingAheadReason when viewing ahead of current stage', async () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const reason = 'Submit your responses for "Proposal" first to unlock this stage.';
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isStageReady: false,
+        isDisabled: true,
+        isViewingAheadOfCurrentStage: true,
+        viewingAheadReason: reason,
+      })
+    );
+    const user = userEvent.setup();
+    renderWithRouter(<GenerateContributionButton />);
+    const buttonWrapper = screen.getByRole('button').closest('span');
+    expect(buttonWrapper).not.toBeNull();
+    await user.hover(buttonWrapper!);
+    await waitFor(() => {
+      const matches = screen.getAllByText(reason);
+      expect(matches.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('shows "Previous Stage Incomplete" when stage not ready but NOT viewing ahead', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isStageReady: false,
+        isDisabled: true,
+        isViewingAheadOfCurrentStage: false,
+        viewingAheadReason: null,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.getByRole('button')).toHaveTextContent('Previous Stage Incomplete');
+  });
+
+  it('button is disabled when isViewingAheadOfCurrentStage is true even if other conditions pass', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isDisabled: true,
+        isViewingAheadOfCurrentStage: true,
+        viewingAheadReason: 'Complete prior stages first. You are currently on "Proposal".',
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.getByRole('button')).toBeDisabled();
   });
 }); 
