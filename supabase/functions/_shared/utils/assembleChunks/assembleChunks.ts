@@ -11,7 +11,8 @@ import {
  * Construction rationale (work plan): this is a shared utility because it eliminates duplication
  * between `gatherContinuationInputs` and `assembleAndSaveFinalDocument`. Dependencies are injected
  * for testability. `mergeObjects` is an internal helper for single responsibility (one exported
- * entry point) while preserving the same merge behavior as `file_manager.ts` lines 752–769.
+ * entry point). Continuation merge: same-key string values concatenate in chunk order at any
+ * depth; nested objects merge recursively; otherwise later chunk wins (e.g. numbers, type changes).
  * Assembly order is always: classify chunks → group adjacent raw fragments → sanitize each raw
  * group → parse → strip continuation metadata at top level → deep-merge left to right.
  */
@@ -76,11 +77,7 @@ export const assembleChunks: AssembleChunksSignature = async (
             if (Object.prototype.hasOwnProperty.call(source, key)) {
                 const sourceValue: unknown = source[key];
                 const targetValue: unknown = merged[key];
-                if (
-                    key === "content" &&
-                    typeof targetValue === "string" &&
-                    typeof sourceValue === "string"
-                ) {
+                if (typeof targetValue === "string" && typeof sourceValue === "string") {
                     merged[key] = targetValue + sourceValue;
                 } else if (deps.isRecord(targetValue) && deps.isRecord(sourceValue)) {
                     merged[key] = mergeObjects(targetValue, sourceValue);

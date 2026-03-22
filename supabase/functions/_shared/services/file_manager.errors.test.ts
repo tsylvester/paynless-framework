@@ -31,7 +31,10 @@ import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../../types_db.ts';
 import { PostgrestError } from 'npm:@supabase/supabase-js@2';
 import { MockLogger } from '../logger.mock.ts';
+import { createAssembleChunksMock } from '../utils/assembleChunks/assembleChunks.mock.ts'
 
+const assembleChunksMock = createAssembleChunksMock()
+  
 Deno.test('FileManagerService transient error retry behavior', async (t) => {
   let setup: MockSupabaseClientSetup;
   let fileManager: FileManagerService;
@@ -51,6 +54,7 @@ Deno.test('FileManagerService transient error retry behavior', async (t) => {
     fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, {
       constructStoragePath,
       logger,
+      assembleChunks: assembleChunksMock.assembleChunks,
     });
   };
 

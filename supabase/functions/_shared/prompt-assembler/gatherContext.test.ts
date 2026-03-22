@@ -111,6 +111,7 @@ Deno.test("gatherContext", async (t) => {
     status: "active",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    idempotency_key: null,
   };
 
   const defaultSession: SessionContext = {
@@ -125,6 +126,8 @@ Deno.test("gatherContext", async (t) => {
     status: "pending_thesis",
     associated_chat_id: null,
     user_input_reference_url: null,
+    idempotency_key: null,
+    viewing_stage_id: null,
   };
 
   const defaultStage: StageContext = {
@@ -140,6 +143,7 @@ Deno.test("gatherContext", async (t) => {
     active_recipe_instance_id: null,
     expected_output_template_ids: [],
     recipe_template_id: null,
+    minimum_balance: 0,
   };
 
   await t.step(

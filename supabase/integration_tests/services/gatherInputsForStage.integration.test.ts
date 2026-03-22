@@ -39,6 +39,77 @@ import { gatherInputsForStage } from "../../functions/_shared/prompt-assembler/g
 import type { ProjectContext, SessionContext, StageContext, AssemblerSourceDocument } from "../../functions/_shared/prompt-assembler/prompt-assembler.interface.ts";
 import { getStageRecipe } from "../../functions/dialectic-service/getStageRecipe.ts";
 import type { DialecticRecipeStep, DialecticStageRecipeStep } from "../../functions/dialectic-service/dialectic.interface.ts";
+import { assembleChunks} from "../../functions/_shared/utils/assembleChunks/assembleChunks.ts";
+
+/**
+ * Model JSON aligned to `thesis_*` template `{{#section:...}}` keys in
+ * `docs/templates/thesis/` so `document_renderer` merges into real sections (not a top-level
+ * `content` string those templates do not reference).
+ */
+function jsonPayloadForThesisContribution(
+  docKey: ModelContributionFileTypes,
+  distinctiveBody: string,
+): string {
+  if (docKey === FileType.business_case) {
+    const payload: Record<string, string> = {
+      executive_summary: distinctiveBody,
+      market_opportunity: "Integration test: market opportunity.",
+      user_problem_validation: "Integration test: user problem validation.",
+      competitive_analysis: "Integration test: competitive analysis.",
+      "differentiation_&_value_proposition": "Integration test: differentiation.",
+      "risks_&_mitigation": "Integration test: risks.",
+      strengths: "Integration test: strengths.",
+      weaknesses: "Integration test: weaknesses.",
+      opportunities: "Integration test: opportunities.",
+      threats: "Integration test: threats.",
+      next_steps: "Integration test: next steps.",
+      proposal_references: "Integration test: references.",
+    };
+    return JSON.stringify(payload);
+  }
+  if (docKey === FileType.feature_spec) {
+    const payload: Record<string, string> = {
+      feature_name: "Integration test feature",
+      feature_objective: distinctiveBody,
+      user_stories: "Integration test: user stories.",
+      acceptance_criteria: "Integration test: acceptance criteria.",
+      dependencies: "Integration test: dependencies.",
+      success_metrics: "Integration test: feature-level success metrics.",
+    };
+    return JSON.stringify(payload);
+  }
+  if (docKey === FileType.technical_approach) {
+    const payload: Record<string, string> = {
+      architecture: distinctiveBody,
+      components: "Integration test: components.",
+      data: "Integration test: data.",
+      deployment: "Integration test: deployment.",
+      sequencing: "Integration test: sequencing.",
+      risk_mitigation: "Integration test: risk mitigation.",
+      open_questions: "Integration test: open questions.",
+    };
+    return JSON.stringify(payload);
+  }
+  if (docKey === FileType.success_metrics) {
+    const payload: Record<string, string> = {
+      outcome_alignment: distinctiveBody,
+      north_star_metric: "Integration test: north star.",
+      primary_kpis: "Integration test: primary KPIs.",
+      leading_indicators: "Integration test: leading indicators.",
+      lagging_indicators: "Integration test: lagging indicators.",
+      guardrails: "Integration test: guardrails.",
+      measurement_plan: "Integration test: measurement plan.",
+      risk_signals: "Integration test: risk signals.",
+      next_steps: "Integration test: next steps.",
+      data_sources: "Integration test: data sources.",
+      reporting_cadence: "Integration test: reporting cadence.",
+      ownership: "Integration test: ownership.",
+      escalation_plan: "Integration test: escalation plan.",
+    };
+    return JSON.stringify(payload);
+  }
+  throw new Error(`Unsupported thesis document key: ${String(docKey)}`);
+}
 
 describe("gatherInputsForStage Integration Tests", () => {
   let adminClient: SupabaseClient<Database>;
@@ -62,12 +133,13 @@ describe("gatherInputsForStage Integration Tests", () => {
     assertExists(user, "Test user could not be created");
     testUser = user;
 
-    fileManager = new FileManagerService(adminClient, { constructStoragePath });
+    fileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger, assembleChunks });
 
     // Create test project using FormData
     const formData = new FormData();
     formData.append("projectName", "GatherInputsForStage Integration Test Project");
     formData.append("initialUserPromptText", "Test prompt for gatherInputsForStage integration test");
+    formData.append("idempotencyKey", crypto.randomUUID());
     
     // Fetch domain ID for software_development
     const { data: domain, error: domainError } = await adminClient
@@ -147,7 +219,8 @@ describe("gatherInputsForStage Integration Tests", () => {
     // Create test session
     const sessionPayload: StartSessionPayload = {
       projectId: testProject.id,
-      selectedModelIds: [model.id],
+      selectedModels: [{ id: model.id, displayName: "Mock Model" }],
+      idempotencyKey: crypto.randomUUID(),
       sessionDescription: "Test session for gatherInputsForStage integration test",
     };
     const sessionResult = await startSession(testUser, adminClient, sessionPayload);
@@ -183,26 +256,6 @@ describe("gatherInputsForStage Integration Tests", () => {
     assert(!projectError, `Failed to fetch project domain: ${projectError?.message}`);
     assertExists(projectData?.selected_domain_id, "Project must have a selected_domain_id");
 
-    // Check if template exists (templates are seeded via migrations)
-    // Templates use naming convention: {stage_slug}_{document_key}
-    // e.g., 'thesis_business_case' for thesis stage business_case document
-    const templateName = `${sourceStageSlug}_${documentKey}`;
-    const { data: templateRecord, error: templateQueryError } = await adminClient
-      .from("dialectic_document_templates")
-      .select("*")
-      .eq("name", templateName)
-      .eq("domain_id", projectData.selected_domain_id)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (templateQueryError || !templateRecord) {
-      throw new Error(
-        `Document template for stage '${sourceStageSlug}' and document '${documentKey}' not found. ` +
-        `Templates should be seeded via database migrations. Error: ${templateQueryError?.message ?? 'not found'}`
-      );
-    }
-
-    // 2) Create all four thesis stage documents using application functions
     // Thesis stage creates: business_case, feature_spec, technical_approach, and success_metrics
     const thesisDocuments: ModelContributionFileTypes[] = [
       FileType.business_case,
@@ -211,6 +264,27 @@ describe("gatherInputsForStage Integration Tests", () => {
       FileType.success_metrics,
     ];
 
+    // 1) Verify each template exists (migrations seed `name` = {stage_slug}_{document_key}, e.g. thesis_feature_spec)
+    for (const docKey of thesisDocuments) {
+      const templateBaseName: string = `${sourceStageSlug}_${docKey}`;
+      const { data: templateRecord, error: templateQueryError } = await adminClient
+        .from("dialectic_document_templates")
+        .select("*")
+        .eq("name", templateBaseName)
+        .eq("domain_id", projectData.selected_domain_id)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (templateQueryError || !templateRecord) {
+        throw new Error(
+          `Document template '${templateBaseName}' not found for stage '${sourceStageSlug}'. ` +
+            `Templates should be seeded via database migrations. Error: ${templateQueryError?.message ?? "not found"}`,
+        );
+      }
+    }
+
+    // 2) Create all four thesis stage documents using application functions
+
     const documentIdentities = new Map<ModelContributionFileTypes, string>();
     const contributionIds = new Map<ModelContributionFileTypes, string>();
 
@@ -218,9 +292,9 @@ describe("gatherInputsForStage Integration Tests", () => {
       const docIdentity = crypto.randomUUID();
       documentIdentities.set(docKey, docIdentity);
       
-      const contributionContent = JSON.stringify({
-        content: `This is test content for ${docKey} document that will be rendered.`
-      });
+      const distinctiveBody: string =
+        `This is test content for ${docKey} document that will be rendered.`;
+      const contributionContent: string = jsonPayloadForThesisContribution(docKey, distinctiveBody);
 
       const contributionContext: ModelContributionUploadContext = {
         pathContext: {
@@ -261,7 +335,7 @@ describe("gatherInputsForStage Integration Tests", () => {
       contributionIds.set(docKey, contributionRecord.id);
     }
 
-    // 3) Render all three documents using document_renderer.renderDocument()
+    // 3) Render all four thesis documents using document_renderer.renderDocument()
     const renderDeps: DocumentRendererDeps = {
       downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       fileManager: fileManager,
@@ -278,6 +352,8 @@ describe("gatherInputsForStage Integration Tests", () => {
         throw new Error(`Missing identity or contribution ID for ${docKey}`);
       }
 
+      const templateFilenameForDoc: string = `${sourceStageSlug}_${docKey}.md`;
+
       const renderParams: RenderDocumentParams = {
         projectId: testProject.id,
         sessionId: testSession.id,
@@ -286,6 +362,7 @@ describe("gatherInputsForStage Integration Tests", () => {
         documentIdentity: docIdentity,
         documentKey: docKey,
         sourceContributionId: contribId,
+        template_filename: templateFilenameForDoc,
       };
 
       const renderResult = await renderDocument(adminClient, renderDeps, renderParams);
@@ -443,15 +520,17 @@ describe("gatherInputsForStage Integration Tests", () => {
     const sessionContext: SessionContext = {
       id: testSession.id,
       project_id: testSession.project_id,
-      session_description: testSession.session_description ?? null,
-      user_input_reference_url: testSession.user_input_reference_url ?? null,
+      session_description: testSession.session_description,
+      user_input_reference_url: testSession.user_input_reference_url,
       iteration_count: testSession.iteration_count,
-      selected_model_ids: testSession.selected_model_ids ?? null,
+      selected_model_ids: testSession.selected_models.map(model => model.id),
       status: testSession.status ?? "pending_thesis",
       created_at: testSession.created_at,
       updated_at: testSession.updated_at,
       current_stage_id: testSession.current_stage_id,
-      associated_chat_id: testSession.associated_chat_id ?? null,
+      associated_chat_id: testSession.associated_chat_id,
+      idempotency_key: crypto.randomUUID(),
+      viewing_stage_id: testSession.viewing_stage_id,
     };
 
     // Call gatherInputsForStage
@@ -497,8 +576,7 @@ describe("gatherInputsForStage Integration Tests", () => {
       }
       
       assertEquals(gatheredDoc.type, "document", `Gathered document type for ${docKey} should be 'document'`);
-      // The rendered document should contain the content from the contribution
-      // The content is extracted from JSON and inserted into the template at {{content}}
+      // Rendered markdown should include the distinctive body placed in template section fields above.
       const expectedContentFragment = `This is test content for ${docKey} document that will be rendered.`;
       assert(gatheredDoc.content.includes(expectedContentFragment), `Gathered document content for ${docKey} should include the rendered content. Actual content length: ${gatheredDoc.content.length}, first 200 chars: ${gatheredDoc.content.substring(0, 200)}`);
       

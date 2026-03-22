@@ -55,6 +55,7 @@ Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models",
         current_stage_id: "stage-abc",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
     };
 
     const { selected_model_ids: _rowModelIds, ...sessionRowRest } = mockSessionRowAfterUpdate;
@@ -188,6 +189,7 @@ Deno.test("handleUpdateSessionModels - Error: Project Not Found/Forbidden", asyn
         user_input_reference_url: null,
         associated_chat_id: null,
         current_stage_id: null,
+        viewing_stage_id: null,
     };
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUserId, {

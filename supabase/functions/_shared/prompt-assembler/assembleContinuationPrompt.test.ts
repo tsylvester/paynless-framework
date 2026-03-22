@@ -31,21 +31,65 @@
   import { assertSpyCall } from "jsr:@std/testing@0.225.1/mock";
   import { isRecord, isJson } from "../utils/type_guards.ts";
   import { DynamicContextVariables } from "./prompt-assembler.interface.ts";
-  import type { GatherContinuationInputsFn } from "./gatherContinuationInputs.ts";
+  import {
+    GatherContinuationInputsSignature,
+    GatherContinuationInputsDeps,
+    GatherContinuationInputsParams,
+    GatherContinuationInputsPayload,
+    GatherContinuationInputsSuccess,
+    GatherContinuationInputsError,
+  } from "./gatherContinuationInputs.interface.ts";
   import {
     downloadFromStorage,
     type DownloadStorageResult,
   } from "../supabase_storage_utils.ts";
-  import type { Messages } from "../types.ts";
-  
-  const mockGatherContinuationInputs: GatherContinuationInputsFn = async () => [];
+  import { Messages } from "../types.ts";
+  import { AssembleChunksSignature } from "../utils/assembleChunks/assembleChunks.interface.ts";
 
-  /** Returns a gatherContinuationInputs mock that resolves to messages ending with the given prior content (so promptContent includes it). */
-  const createGatherMockWithPriorContent = (priorContent: string): GatherContinuationInputsFn =>
-    async (): Promise<Messages[]> => [
-      { role: "user", content: "Prior context." },
-      { role: "assistant", content: priorContent },
-    ];
+  const stubAssembleChunks: AssembleChunksSignature = async () => ({
+    success: false,
+    error: "stub: assembleChunks not used when gatherContinuationInputs is mocked",
+    failedAtStep: "merge",
+  });
+
+  const DEFAULT_ASSISTANT_BODY = '{"assembled_document": true}';
+
+  const mockGatherContinuationInputs: GatherContinuationInputsSignature = async (
+    _deps: GatherContinuationInputsDeps,
+    _params: GatherContinuationInputsParams,
+    _payload: GatherContinuationInputsPayload,
+  ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+    const ok: GatherContinuationInputsSuccess = {
+      success: true,
+      messages: [
+        { role: "user", content: "seed" },
+        { role: "assistant", content: "{}" },
+        { role: "user", content: "Third line continuation." },
+      ],
+    };
+    return ok;
+  };
+
+  /** Third user line is what becomes `promptContent` (plus header); assistant holds assembled body. */
+  const createGatherMockWithPriorContent = (
+    assistantContent: string,
+    thirdUserContent: string,
+  ): GatherContinuationInputsSignature =>
+    async (
+      _deps: GatherContinuationInputsDeps,
+      _params: GatherContinuationInputsParams,
+      _payload: GatherContinuationInputsPayload,
+    ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+      const ok: GatherContinuationInputsSuccess = {
+        success: true,
+        messages: [
+          { role: "user", content: "Prior context." },
+          { role: "assistant", content: assistantContent },
+          { role: "user", content: thirdUserContent },
+        ],
+      };
+      return ok;
+    };
 
   Deno.test("assembleContinuationPrompt", async (t) => {
     let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
@@ -58,6 +102,7 @@
       return {
         client,
         fileManager: mockFileManager,
+        assembleChunks: stubAssembleChunks,
         downloadFromStorage: (bucket: string, path: string) =>
           downloadFromStorage(client, bucket, path),
       };
@@ -366,11 +411,12 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockTurnJob,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContinuationInputs: createGatherMockWithPriorContent(partialContent),
+                gatherContinuationInputs: createGatherMockWithPriorContent(DEFAULT_ASSISTANT_BODY, partialContent),
                 downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "mock user objective",
@@ -468,11 +514,12 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockPlannerJob,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContinuationInputs: createGatherMockWithPriorContent(partialContent),
+                gatherContinuationInputs: createGatherMockWithPriorContent(DEFAULT_ASSISTANT_BODY, partialContent),
                 downloadFromStorage,
                 gatherContext: spy(async () => ({
                   user_objective: "",
@@ -564,11 +611,12 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockSeedJob,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContinuationInputs: createGatherMockWithPriorContent(partialContent),
+                gatherContinuationInputs: createGatherMockWithPriorContent(DEFAULT_ASSISTANT_BODY, partialContent),
                 downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
@@ -705,6 +753,7 @@
               await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockTurnJob,
                 project: defaultProject,
                 session: defaultSession,
@@ -796,11 +845,12 @@
             const result = await assembleContinuationPrompt({
               dbClient: client,
               fileManager,
+              assembleChunks: stubAssembleChunks,
               job: mockPlannerJob,
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
-              gatherContinuationInputs: createGatherMockWithPriorContent(incompleteJson),
+              gatherContinuationInputs: createGatherMockWithPriorContent(DEFAULT_ASSISTANT_BODY, incompleteJson),
               downloadFromStorage,
               gatherContext: spy(async () => { return {
                 user_objective: "",
@@ -896,11 +946,12 @@
             const result = await assembleContinuationPrompt({
               dbClient: client,
               fileManager,
+              assembleChunks: stubAssembleChunks,
               job: mockTurnJob,
               project: defaultProject,
               session: defaultSession,
               stage: defaultStage,
-              gatherContinuationInputs: createGatherMockWithPriorContent(incompleteJson),
+              gatherContinuationInputs: createGatherMockWithPriorContent(DEFAULT_ASSISTANT_BODY, incompleteJson),
               downloadFromStorage,
               gatherContext: spy(async () => { return {
                 user_objective: "",
@@ -983,6 +1034,7 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockSeedJob,
                 project: defaultProject,
                 session: defaultSession,
@@ -1067,6 +1119,7 @@
             const result = await assembleContinuationPrompt({
               dbClient: client,
               fileManager,
+              assembleChunks: stubAssembleChunks,
               job: mockPlannerJob,
               project: defaultProject,
               session: defaultSession,
@@ -1087,7 +1140,7 @@
                 stakeholder_considerations: undefined,
                 deliverable_format: undefined,
                 recipeStep: defaultStage.recipe_step,
-              }   }),
+              }}),
             });
   
           // 3. Assert:
@@ -1164,6 +1217,7 @@
             const result = await assembleContinuationPrompt({
               dbClient: client,
               fileManager,
+              assembleChunks: stubAssembleChunks,
               job: mockTurnJob,
               project: defaultProject,
               session: defaultSession,
@@ -1250,6 +1304,7 @@
             const result = await assembleContinuationPrompt({
               dbClient: client,
               fileManager,
+              assembleChunks: stubAssembleChunks,
               job: mockSeedJob,
               project: defaultProject,
               session: defaultSession,
@@ -1283,8 +1338,7 @@
         });
       });
     
-    await t.step(
-      "Category C: Recursive & Mixed-Mode Continuations (System Robustness)",
+    await t.step("Category C: Recursive & Mixed-Mode Continuations (System Robustness)",
       async (t) => {
         // These tests prove the system can handle failures within its own recovery loops.
     
@@ -1343,6 +1397,7 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockRecursiveJob,
                 project: defaultProject,
                 session: defaultSession,
@@ -1431,11 +1486,12 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockMixedJob,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContinuationInputs: createGatherMockWithPriorContent(malformedJson),
+                gatherContinuationInputs: createGatherMockWithPriorContent(DEFAULT_ASSISTANT_BODY, malformedJson),
                 downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
@@ -1518,11 +1574,12 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockMixedJob,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContinuationInputs: createGatherMockWithPriorContent(partialValidJson),
+                gatherContinuationInputs: createGatherMockWithPriorContent(DEFAULT_ASSISTANT_BODY, partialValidJson),
                 downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
@@ -1604,6 +1661,7 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockRecursiveCorrectiveJob,
                 project: defaultProject,
                 session: defaultSession,
@@ -1639,13 +1697,11 @@
         );
       });
   
-    await t.step(
-      "Category D: Universal Error Handling and Preconditions",
+    await t.step("Category D: Universal Error Handling and Preconditions",
       async (t) => {
         // These tests prove the function's fundamental robustness.
     
-        await t.step(
-          "D.1: should throw an error if target_contribution_id is not provided in the job payload",
+        await t.step("D.1: should throw an error if target_contribution_id is not provided in the job payload",
           async () => {
             // 1. Execute & Assert:
             //    - Call `assembleContinuationPrompt` with a job missing `target_contribution_id`.
@@ -1675,6 +1731,7 @@
             const baseArgs = {
               dbClient: client,
               fileManager,
+              assembleChunks: stubAssembleChunks,
               job: jobWithoutTarget,
               project: defaultProject,
               session: defaultSession,
@@ -1707,8 +1764,7 @@
           },
         );
   
-        await t.step(
-          "D.2: should throw an error if a HeaderContext is required (TurnPrompt) but cannot be fetched",
+        await t.step("D.2: should throw an error if a HeaderContext is required (TurnPrompt) but cannot be fetched",
           async () => {
             // 1. Setup:
             //    - Configure a mock 'Turn' job with header_context_id AND target_contribution_id.
@@ -1771,6 +1827,7 @@
                 assembleContinuationPrompt({
                   dbClient: client,
                   fileManager,
+                  assembleChunks: stubAssembleChunks,
                   job: mockTurnJob,
                   project: defaultProject,
                   session: defaultSession,
@@ -1799,8 +1856,7 @@
           },
         );
   
-        await t.step(
-          "D.3: should NOT throw for missing HeaderContext when not required (Planner/Seed)",
+        await t.step("D.3: should NOT throw for missing HeaderContext when not required (Planner/Seed)",
           async () => {
             // 1. Setup:
             //    - Configure a mock 'PLAN' job.
@@ -1853,6 +1909,7 @@
               await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockPlannerJob,
                 project: defaultProject,
                 session: defaultSession,
@@ -1884,8 +1941,7 @@
           },
         );
   
-        await t.step(
-          "D.4: should propagate errors from the FileManager service",
+        await t.step("D.4: should propagate errors from the FileManager service",
           async () => {
             // 1. Setup:
             //    - Configure `mockFileManager` to return an error from `uploadAndRegisterFile`.
@@ -1939,6 +1995,7 @@
                 assembleContinuationPrompt({
                   dbClient: client,
                   fileManager,
+                  assembleChunks: stubAssembleChunks,
                   job: mockPlannerJob,
                   project: defaultProject,
                   session: defaultSession,
@@ -1967,8 +2024,7 @@
           },
         );
   
-        await t.step(
-          "D.5: should throw an error if the session has no selected models",
+        await t.step("D.5: should throw an error if the session has no selected models",
           async () => {
             // 1. Setup:
             //    - Provide a mock `SessionContext` with an empty `selected_model_ids` array.
@@ -1985,6 +2041,7 @@
                 assembleContinuationPrompt({
                   dbClient: client,
                   fileManager,
+                  assembleChunks: stubAssembleChunks,
                   job: createMockJob({ model_id: "model-no-model" }),
                   project: defaultProject,
                   session: sessionWithNoModels,
@@ -2014,8 +2071,7 @@
         );
   
     await t.step("Category E: Source Contribution Metadata", async (t) => {
-        await t.step(
-          "E.1: should forward sourceContributionId when continuation references a prior contribution",
+        await t.step("E.1: should forward sourceContributionId when continuation references a prior contribution",
           async () => {
             const sourceContributionId = "contrib-123";
             const PRIOR_OUTPUT_BUCKET = "dialectic_contributions";
@@ -2068,6 +2124,7 @@
               await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockContinuationJob,
                 project: defaultProject,
                 session: defaultSession,
@@ -2106,8 +2163,7 @@
       },
     );
   
-    await t.step(
-      "Category F: Header Context Contribution ID Lookup (Step 10.b)",
+    await t.step("Category F: Header Context Contribution ID Lookup (Step 10.b)",
       async (t) => {
         const HEADER_CONTEXT_CONTRIBUTION_ID = "header-context-contrib-id";
         const HEADER_CONTEXT_STORAGE_BUCKET = "dialectic_contributions";
@@ -2181,11 +2237,12 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockTurnJob,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContinuationInputs: createGatherMockWithPriorContent(partialContent),
+                gatherContinuationInputs: createGatherMockWithPriorContent(DEFAULT_ASSISTANT_BODY, partialContent),
                 downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "mock user objective",
@@ -2259,11 +2316,12 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockPlannerJob,
                 project: defaultProject,
                 session: defaultSession,
                 stage: defaultStage,
-                gatherContinuationInputs: createGatherMockWithPriorContent(partialContent),
+                gatherContinuationInputs: createGatherMockWithPriorContent(DEFAULT_ASSISTANT_BODY, partialContent),
                 downloadFromStorage,
                 gatherContext: spy(async () => { return {
                   user_objective: "",
@@ -2324,6 +2382,7 @@
                   assembleContinuationPrompt({
                     dbClient: client,
                     fileManager,
+                    assembleChunks: stubAssembleChunks,
                     job: mockTurnJob,
                     project: defaultProject,
                     session: defaultSession,
@@ -2418,6 +2477,7 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job: mockTurnJob,
                 project: defaultProject,
                 session: defaultSession,
@@ -2446,6 +2506,7 @@
                   headerContextContent.system_materials.agent_notes_to_self,
                 ),
               );
+              assert(result.promptContent.includes("Third line continuation."));
             } finally {
               teardown();
             }
@@ -2454,23 +2515,30 @@
       },
     );
 
-    await t.step(
-      "Fix 2: full continuation chain — gatherContinuationInputs and prompt assembly",
+    await t.step("Fix 2: full continuation chain — gatherContinuationInputs and prompt assembly",
       async (t) => {
         await t.step(
-          "when continuation has multiple prior fragments in chain, all fragments are included in prompt content in order",
+          "when gatherContinuationInputs returns three messages, promptContent is third user line only (not flattened seed or assistant)",
           async () => {
             const ROOT_ID = "root-contrib-123";
             const TARGET_ID = "target-contrib-456";
             const chainMessages: Messages[] = [
               { role: "user", content: "Seed prompt." },
-              { role: "assistant", content: "First fragment.", id: ROOT_ID },
-              { role: "user", content: "Please continue." },
-              { role: "assistant", content: "Second fragment.", id: TARGET_ID },
+              { role: "assistant", content: "First fragment. Second fragment combined.", id: ROOT_ID },
+              { role: "user", content: "Please continue from the assistant output." },
             ];
             const gatherSpy = spy(
-              (_db: unknown, _download: unknown, _chunkId: string): Promise<Messages[]> =>
-                Promise.resolve(chainMessages),
+              async (
+                _deps: GatherContinuationInputsDeps,
+                _params: GatherContinuationInputsParams,
+                _payload: GatherContinuationInputsPayload,
+              ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+                const ok: GatherContinuationInputsSuccess = {
+                  success: true,
+                  messages: chainMessages,
+                };
+                return ok;
+              },
             );
             const priorBucket = "bucket";
             const priorPath = "path/file.json";
@@ -2512,6 +2580,7 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job,
                 project: defaultProject,
                 session: defaultSession,
@@ -2531,9 +2600,10 @@
                   recipeStep: defaultStage.recipe_step,
                 })),
               });
-              assert(result.promptContent.includes("Seed prompt."));
-              assert(result.promptContent.includes("First fragment."));
-              assert(result.promptContent.includes("Second fragment."));
+              assertEquals(result.messages, chainMessages);
+              assert(result.promptContent.includes("Please continue from the assistant output."));
+              assert(!result.promptContent.includes("Seed prompt."));
+              assert(!result.promptContent.includes("First fragment."));
             } finally {
               teardown();
             }
@@ -2541,15 +2611,26 @@
         );
 
         await t.step(
-          "when continuation has a single prior fragment (first continuation), that fragment is included in prompt content",
+          "when continuation has a single prior assistant turn, promptContent is the third user line (not seed or assistant body)",
           async () => {
             const ROOT_ID = "root-only-789";
             const singleFragmentMessages: Messages[] = [
               { role: "user", content: "Initial user prompt." },
               { role: "assistant", content: "Only prior fragment.", id: ROOT_ID },
+              { role: "user", content: "Third user continuation line." },
             ];
             const gatherSpy = spy(
-              (): Promise<Messages[]> => Promise.resolve(singleFragmentMessages),
+              async (
+                _deps: GatherContinuationInputsDeps,
+                _params: GatherContinuationInputsParams,
+                _payload: GatherContinuationInputsPayload,
+              ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+                const ok: GatherContinuationInputsSuccess = {
+                  success: true,
+                  messages: singleFragmentMessages,
+                };
+                return ok;
+              },
             );
             const priorBucket = "bucket";
             const priorPath = "path/file.json";
@@ -2591,6 +2672,7 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job,
                 project: defaultProject,
                 session: defaultSession,
@@ -2610,8 +2692,10 @@
                   recipeStep: defaultStage.recipe_step,
                 })),
               });
-              assert(result.promptContent.includes("Initial user prompt."));
-              assert(result.promptContent.includes("Only prior fragment."));
+              assertEquals(result.messages, singleFragmentMessages);
+              assert(result.promptContent.includes("Third user continuation line."));
+              assert(!result.promptContent.includes("Initial user prompt."));
+              assert(!result.promptContent.includes("Only prior fragment."));
             } finally {
               teardown();
             }
@@ -2663,8 +2747,21 @@
               return { data: null, error: new Error("Contribution not found"), count: 0, status: 404, statusText: "Not Found" };
             };
             const gatherSpy = spy(
-              (_db: unknown, _download: unknown, chunkId: string): Promise<Messages[]> =>
-                Promise.resolve([{ role: "user", content: "seed" }, { role: "assistant", content: "content", id: chunkId }]),
+              async (
+                _deps: GatherContinuationInputsDeps,
+                params: GatherContinuationInputsParams,
+                _payload: GatherContinuationInputsPayload,
+              ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+                const ok: GatherContinuationInputsSuccess = {
+                  success: true,
+                  messages: [
+                    { role: "user", content: "seed" },
+                    { role: "assistant", content: "content", id: params.chunkId },
+                    { role: "user", content: "Continue." },
+                  ],
+                };
+                return ok;
+              },
             );
             const priorBucket = "b";
             const priorPathFull = "p/f3.json";
@@ -2699,6 +2796,7 @@
               await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job,
                 project: defaultProject,
                 session: defaultSession,
@@ -2719,7 +2817,8 @@
                 })),
               });
               assertSpyCall(gatherSpy, 0);
-              assertEquals(gatherSpy.calls[0].args[2], ROOT_ID);
+              const gatherParams: GatherContinuationInputsParams = gatherSpy.calls[0].args[1];
+              assertEquals(gatherParams.chunkId, ROOT_ID);
             } finally {
               teardown();
             }
@@ -2734,8 +2833,21 @@
             const chainMessages: Messages[] = [
               { role: "user", content: "User prompt." },
               { role: "assistant", content: "Prior output.", id: TARGET_ID },
+              { role: "user", content: "Continuation after header." },
             ];
-            const gatherSpy = spy((): Promise<Messages[]> => Promise.resolve(chainMessages));
+            const gatherSpy = spy(
+              async (
+                _deps: GatherContinuationInputsDeps,
+                _params: GatherContinuationInputsParams,
+                _payload: GatherContinuationInputsPayload,
+              ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+                const ok: GatherContinuationInputsSuccess = {
+                  success: true,
+                  messages: chainMessages,
+                };
+                return ok;
+              },
+            );
             const bucket = "bucket";
             const headerPath = "path/header.json";
             const priorPath = "path/prior.json";
@@ -2793,6 +2905,7 @@
               const result = await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job,
                 project: defaultProject,
                 session: defaultSession,
@@ -2813,8 +2926,9 @@
                 })),
               });
               assert(result.promptContent.includes(headerContextContent.system_materials.agent_notes_to_self));
-              assert(result.promptContent.includes("User prompt."));
-              assert(result.promptContent.includes("Prior output."));
+              assert(result.promptContent.includes("Continuation after header."));
+              assert(!result.promptContent.includes("User prompt."));
+              assert(!result.promptContent.includes("Prior output."));
             } finally {
               teardown();
             }
@@ -2822,16 +2936,27 @@
         );
 
         await t.step(
-          "prompt saved to storage includes the assembled multi-fragment content",
+          "prompt saved to storage uses promptContent (third user plus header), not a serialized messages array",
           async () => {
             const TARGET_ID = "target-save-789";
             const assembledContent: Messages[] = [
               { role: "user", content: "Seed." },
-              { role: "assistant", content: "Fragment one.", id: "c1" },
-              { role: "user", content: "Continue." },
-              { role: "assistant", content: "Fragment two.", id: TARGET_ID },
+              { role: "assistant", content: "Fragment one. Fragment two.", id: TARGET_ID },
+              { role: "user", content: "STORAGE_THIRD_USER_LINE" },
             ];
-            const gatherSpy = spy((): Promise<Messages[]> => Promise.resolve(assembledContent));
+            const gatherSpy = spy(
+              async (
+                _deps: GatherContinuationInputsDeps,
+                _params: GatherContinuationInputsParams,
+                _payload: GatherContinuationInputsPayload,
+              ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+                const ok: GatherContinuationInputsSuccess = {
+                  success: true,
+                  messages: assembledContent,
+                };
+                return ok;
+              },
+            );
             const priorBucket = "b";
             const priorPathFull = "p/f.json";
             const config: MockSupabaseDataConfig = {
@@ -2872,6 +2997,7 @@
               await assembleContinuationPrompt({
                 dbClient: client,
                 fileManager,
+                assembleChunks: stubAssembleChunks,
                 job,
                 project: defaultProject,
                 session: defaultSession,
@@ -2897,9 +3023,9 @@
                 typeof uploadArg.fileContent === "string"
                   ? uploadArg.fileContent
                   : new TextDecoder().decode(uploadArg.fileContent);
-              assert(savedContent.includes("Seed."));
-              assert(savedContent.includes("Fragment one."));
-              assert(savedContent.includes("Fragment two."));
+              assert(savedContent.includes("STORAGE_THIRD_USER_LINE"));
+              assert(!savedContent.includes("Fragment one."));
+              assert(typeof uploadArg.fileContent === "string");
             } finally {
               teardown();
             }
@@ -2910,8 +3036,19 @@
           "error when gatherContinuationInputs fails to retrieve chain propagates correctly",
           async () => {
             const TARGET_ID = "target-err-999";
+            const gatherErrorMessage = "Failed to retrieve root contribution for id xyz.";
             const gatherSpy = spy(
-              (): Promise<Messages[]> => Promise.reject(new Error("Failed to retrieve root contribution for id xyz.")),
+              async (
+                _deps: GatherContinuationInputsDeps,
+                _params: GatherContinuationInputsParams,
+                _payload: GatherContinuationInputsPayload,
+              ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+                const err: GatherContinuationInputsError = {
+                  success: false,
+                  error: gatherErrorMessage,
+                };
+                return err;
+              },
             );
             const priorBucket = "b";
             const priorPathFull = "p/f.json";
@@ -2951,10 +3088,11 @@
             );
             try {
               await assertRejects(
-                () =>
-                  assembleContinuationPrompt({
+                async () => {
+                  await assembleContinuationPrompt({
                     dbClient: client,
                     fileManager,
+                    assembleChunks: stubAssembleChunks,
                     job,
                     project: defaultProject,
                     session: defaultSession,
@@ -2973,9 +3111,10 @@
                       reference_documents: undefined,
                       recipeStep: defaultStage.recipe_step,
                     })),
-                  }),
+                  });
+                },
                 Error,
-                "Failed to retrieve",
+                gatherErrorMessage,
               );
             } finally {
               teardown();
@@ -2984,6 +3123,324 @@
         );
       },
     );
-      });
-    });
-  
+
+    await t.step("Continuation-to-Retry checklist: assembleContinuationPrompt contract",
+      async (t) => {
+        const CHECKLIST_TARGET = "checklist-target-contrib";
+        const priorBucket = "b";
+        const priorPathFull = "p/f.json";
+        const checklistConfig: MockSupabaseDataConfig = {
+          genericMockResults: {
+            ai_providers: {
+              select: {
+                data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+              },
+            },
+            dialectic_contributions: createContributionsMock({
+              [CHECKLIST_TARGET]: {
+                storage_bucket: priorBucket,
+                storage_path: "p",
+                file_name: "f.json",
+                contribution_type: "antithesis",
+              },
+            }),
+          },
+          storageMock: {
+            downloadResult: (bucket: string, path: string) => {
+              if (bucket === priorBucket && path === priorPathFull) {
+                return Promise.resolve({
+                  data: new Blob(["prior content"]),
+                  error: null,
+                });
+              }
+              
+              return Promise.resolve({ data: null, error: new Error("File not found in mock") });
+            },
+
+          },
+        };
+
+        await t.step("success: assembled.messages contains the three gatherContinuationInputs messages",
+          async () => {
+            const three: Messages[] = [
+              { role: "user", content: "u1" },
+              { role: "assistant", content: "a1" },
+              { role: "user", content: "u-final" },
+            ];
+            const gather: GatherContinuationInputsSignature = async (
+              _deps: GatherContinuationInputsDeps,
+              _params: GatherContinuationInputsParams,
+              _payload: GatherContinuationInputsPayload,
+            ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+              const ok: GatherContinuationInputsSuccess = {
+                success: true,
+                messages: three,
+              };
+              return ok;
+            };
+            const { client, fileManager, downloadFromStorage } = setup(checklistConfig);
+            fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+            const job = createMockJob(
+              { model_id: "model-123", target_contribution_id: CHECKLIST_TARGET },
+              { target_contribution_id: CHECKLIST_TARGET },
+            );
+            try {
+              const result: AssembledPrompt = await assembleContinuationPrompt({
+                dbClient: client,
+                fileManager,
+                assembleChunks: stubAssembleChunks,
+                job,
+                project: defaultProject,
+                session: defaultSession,
+                stage: defaultStage,
+                gatherContinuationInputs: gather,
+                downloadFromStorage,
+                gatherContext: spy(async () => ({
+                  user_objective: "",
+                  domain: "",
+                  agent_count: 0,
+                  context_description: "",
+                  original_user_request: "",
+                  prior_stage_ai_outputs: "",
+                  prior_stage_user_feedback: "",
+                  deployment_context: undefined,
+                  reference_documents: undefined,
+                  recipeStep: defaultStage.recipe_step,
+                })),
+              });
+              assertEquals(result.messages, three);
+            } finally {
+              teardown();
+            }
+          },
+        );
+
+        await t.step("promptContent is third user message plus header context, not a flattened blob of all messages",
+          async () => {
+            const HEADER_ID = "checklist-header";
+            const headerPath = "path/header.json";
+            const priorPath = "path/prior.json";
+            const bucket = "bucket";
+            const three: Messages[] = [
+              { role: "user", content: "NOT_IN_PROMPT_BODY" },
+              { role: "assistant", content: "ASSISTANT_NOT_IN_PROMPT" },
+              { role: "user", content: "THIRD_ONLY_IN_PROMPT" },
+            ];
+            const gather: GatherContinuationInputsSignature = async (
+              _deps: GatherContinuationInputsDeps,
+              _params: GatherContinuationInputsParams,
+              _payload: GatherContinuationInputsPayload,
+            ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+              const ok: GatherContinuationInputsSuccess = {
+                success: true,
+                messages: three,
+              };
+              return ok;
+            };
+            const configWithHeader: MockSupabaseDataConfig = {
+              genericMockResults: {
+                ai_providers: {
+                  select: {
+                    data: [{ id: "model-123", name: "Test Model", provider: "test", slug: "test-model" }],
+                  },
+                },
+                dialectic_contributions: createContributionsMock({
+                  [HEADER_ID]: {
+                    storage_bucket: bucket,
+                    storage_path: "path",
+                    file_name: "header.json",
+                    contribution_type: "header_context",
+                  },
+                  [CHECKLIST_TARGET]: {
+                    storage_bucket: bucket,
+                    storage_path: "path",
+                    file_name: "prior.json",
+                    contribution_type: "antithesis",
+                  },
+                }),
+              },
+              storageMock: {
+                downloadResult: (b: string, path: string) => {
+                  if (b === bucket && path === headerPath) {
+                    return Promise.resolve({
+                      data: new Blob([JSON.stringify(headerContextContent)]),
+                      error: null,
+                    });
+                  }
+                  if (b === bucket && path === priorPath) {
+                    return Promise.resolve({
+                      data: new Blob(["prior content"]),
+                      error: null,
+                    });
+                  }
+                  return Promise.resolve({ data: null, error: new Error("Not found") });
+                },
+              },
+            };
+            const { client, fileManager, downloadFromStorage } = setup(configWithHeader);
+            fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+            const job = createMockJob(
+              {
+                model_id: "model-123",
+                target_contribution_id: CHECKLIST_TARGET,
+                inputs: { header_context_id: HEADER_ID },
+              },
+              { target_contribution_id: CHECKLIST_TARGET },
+            );
+            try {
+              const result: AssembledPrompt = await assembleContinuationPrompt({
+                dbClient: client,
+                fileManager,
+                assembleChunks: stubAssembleChunks,
+                job,
+                project: defaultProject,
+                session: defaultSession,
+                stage: defaultStage,
+                gatherContinuationInputs: gather,
+                downloadFromStorage,
+                gatherContext: spy(async () => ({
+                  user_objective: "",
+                  domain: "",
+                  agent_count: 0,
+                  context_description: "",
+                  original_user_request: "",
+                  prior_stage_ai_outputs: "",
+                  prior_stage_user_feedback: "",
+                  deployment_context: undefined,
+                  reference_documents: undefined,
+                  recipeStep: defaultStage.recipe_step,
+                })),
+              });
+              assert(result.promptContent.includes("THIRD_ONLY_IN_PROMPT"));
+              assert(result.promptContent.includes(headerContextContent.system_materials.agent_notes_to_self));
+              assert(!result.promptContent.includes("NOT_IN_PROMPT_BODY"));
+              assert(!result.promptContent.includes("ASSISTANT_NOT_IN_PROMPT"));
+            } finally {
+              teardown();
+            }
+          },
+        );
+
+        await t.step("when gatherContinuationInputs returns error, assembleContinuationPrompt throws with that error message",
+          async () => {
+            const errText = "gather failed for checklist";
+            const gather: GatherContinuationInputsSignature = async (
+              _deps: GatherContinuationInputsDeps,
+              _params: GatherContinuationInputsParams,
+              _payload: GatherContinuationInputsPayload,
+            ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+              const err: GatherContinuationInputsError = {
+                success: false,
+                error: errText,
+              };
+              return err;
+            };
+            const { client, fileManager, downloadFromStorage } = setup(checklistConfig);
+            fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+            const job = createMockJob(
+              { model_id: "model-123", target_contribution_id: CHECKLIST_TARGET },
+              { target_contribution_id: CHECKLIST_TARGET },
+            );
+            try {
+              await assertRejects(
+                async () => {
+                  await assembleContinuationPrompt({
+                    dbClient: client,
+                    fileManager,
+                    assembleChunks: stubAssembleChunks,
+                    job,
+                    project: defaultProject,
+                    session: defaultSession,
+                    stage: defaultStage,
+                    gatherContinuationInputs: gather,
+                    downloadFromStorage,
+                    gatherContext: spy(async () => ({
+                      user_objective: "",
+                      domain: "",
+                      agent_count: 0,
+                      context_description: "",
+                      original_user_request: "",
+                      prior_stage_ai_outputs: "",
+                      prior_stage_user_feedback: "",
+                      deployment_context: undefined,
+                      reference_documents: undefined,
+                      recipeStep: defaultStage.recipe_step,
+                    })),
+                  });
+                },
+                Error,
+                errText,
+              );
+            } finally {
+              teardown();
+            }
+          },
+        );
+
+        await t.step("file upload receives promptContent string; source_prompt_resource_id comes from upload response",
+          async () => {
+            const three: Messages[] = [
+              { role: "user", content: "seed" },
+              { role: "assistant", content: "big assistant body" },
+              { role: "user", content: "upload-third-line" },
+            ];
+            const gather: GatherContinuationInputsSignature = async (
+              _deps: GatherContinuationInputsDeps,
+              _params: GatherContinuationInputsParams,
+              _payload: GatherContinuationInputsPayload,
+            ): Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError> => {
+              const ok: GatherContinuationInputsSuccess = {
+                success: true,
+                messages: three,
+              };
+              return ok;
+            };
+            const { client, fileManager, downloadFromStorage } = setup(checklistConfig);
+            fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+            const job = createMockJob(
+              { model_id: "model-123", target_contribution_id: CHECKLIST_TARGET },
+              { target_contribution_id: CHECKLIST_TARGET },
+            );
+            try {
+              const result: AssembledPrompt = await assembleContinuationPrompt({
+                dbClient: client,
+                fileManager,
+                assembleChunks: stubAssembleChunks,
+                job,
+                project: defaultProject,
+                session: defaultSession,
+                stage: defaultStage,
+                gatherContinuationInputs: gather,
+                downloadFromStorage,
+                gatherContext: spy(async () => ({
+                  user_objective: "",
+                  domain: "",
+                  agent_count: 0,
+                  context_description: "",
+                  original_user_request: "",
+                  prior_stage_ai_outputs: "",
+                  prior_stage_user_feedback: "",
+                  deployment_context: undefined,
+                  reference_documents: undefined,
+                  recipeStep: defaultStage.recipe_step,
+                })),
+              });
+              assertSpyCall(fileManager.uploadAndRegisterFile, 0);
+              const uploadArg = fileManager.uploadAndRegisterFile.calls[0].args[0];
+              assert(typeof uploadArg.fileContent === "string");
+              assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
+              const fileContentStr: string =
+                typeof uploadArg.fileContent === "string"
+                  ? uploadArg.fileContent
+                  : new TextDecoder().decode(uploadArg.fileContent);
+              assert(!fileContentStr.includes(JSON.stringify(three)));
+              assert(fileContentStr.includes("upload-third-line"));
+            } finally {
+              teardown();
+            }
+          },
+        );
+      },
+    );
+  });
+});

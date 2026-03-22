@@ -317,7 +317,8 @@ Deno.test('Type Guard: isSelectedAiProvider', async (t) => {
             is_active: true,
             is_enabled: true,
             updated_at: new Date().toISOString(),
-            is_default_embedding: false
+            is_default_embedding: false,
+            is_default_generation: false,
         };
         assert(isSelectedAiProvider(provider));
     });

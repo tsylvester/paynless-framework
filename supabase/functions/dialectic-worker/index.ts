@@ -44,6 +44,7 @@ import { IJobContext } from './JobContext.interface.ts';
 import { createJobContext } from './createJobContext.ts';
 import { findSourceDocuments } from './findSourceDocuments.ts';
 import { pauseJobsForNsf } from './pauseJobsForNsf.ts';
+import { assembleChunks } from '../_shared/utils/assembleChunks/assembleChunks.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -69,7 +70,7 @@ export async function createDialecticWorkerDeps(
     throw new Error('OPENAI_API_KEY is not set');
   }
 
-  const fileManager = new FileManagerService(adminClient, { constructStoragePath, logger });
+  const fileManager = new FileManagerService(adminClient, { constructStoragePath, logger, assembleChunks });
 
   const embeddingAdapter = getAiProviderAdapter({
     provider: modelProvider,

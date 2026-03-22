@@ -175,6 +175,7 @@ notificationService: {
   sendContributionGenerationContinuedEvent: () => Promise.resolve(),
   sendContributionFailedNotification: () => Promise.resolve(),
   sendContributionGenerationFailedEvent: () => Promise.resolve(),
+  sendContributionGenerationPausedNsfEvent: () => Promise.resolve(),
 },
 downloadFromStorage: () => Promise.resolve({
   data: new ArrayBuffer(0),

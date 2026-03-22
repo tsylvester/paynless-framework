@@ -9,6 +9,7 @@ import {
   DialecticProjectResourceRow,
   DialecticContributionRow,
   DialecticFeedbackRow,
+  ContextForDocument,
 } from '../dialectic-service/dialectic.interface.ts';
 import { 
     FileType, 
@@ -1101,6 +1102,10 @@ export async function executeModelCallAndSave(
 
     let shouldContinue = isDialecticContinueReason(resolvedFinish);
 
+    // Continuation triggers (additive): structural JSON repair flags incomplete output; missing keys
+    // vs ContextForDocument.content_to_include (typed template, not untyped records); continuation cap
+    // merges chunk fragments with optional schema fill via assembleAndSaveFinalDocument.
+
     // Decide intermediate vs not before sanitize/parse. Run sanitize/parse only when the chunk
     // is not an intermediate continuation chunk (single-complete and final paths still get validated).
     const isIntermediateChunk = shouldContinue && !!job.payload.continueUntilComplete;
@@ -1137,6 +1142,11 @@ export async function executeModelCallAndSave(
                 wasStructurallyFixed: sanitizationResult.wasStructurallyFixed
             });
         }
+
+        if (sanitizationResult.wasStructurallyFixed && job.payload.continueUntilComplete && !shouldContinue) {
+            deps.logger.warn('[executeModelCallAndSave] Response was structurally fixed by sanitizer — treating as truncated, triggering continuation');
+            shouldContinue = true;
+        }
         
         let parsedContent: unknown;
         try {
@@ -1172,6 +1182,34 @@ export async function executeModelCallAndSave(
                 (typeof parsedContent.resume_cursor === 'string' && parsedContent.resume_cursor.trim() !== '')
             ) {
                 shouldContinue = true;
+            }
+        }
+
+        if (!shouldContinue && isRecord(parsedContent) && job.payload.continueUntilComplete) {
+            const contextDocsUnknown = job.payload.context_for_documents;
+            if (Array.isArray(contextDocsUnknown) && typeof job.payload.document_key === 'string') {
+                let matchedContextForKeys: ContextForDocument | undefined = undefined;
+                for (let docIdx = 0; docIdx < contextDocsUnknown.length; docIdx++) {
+                    const docRow = contextDocsUnknown[docIdx];
+                    if (docRow.document_key === job.payload.document_key) {
+                        matchedContextForKeys = docRow;
+                        break;
+                    }
+                }
+                if (matchedContextForKeys !== undefined) {
+                    const templateKeys: string[] = Object.keys(matchedContextForKeys.content_to_include);
+                    const missingKeys: string[] = [];
+                    for (let keyIdx = 0; keyIdx < templateKeys.length; keyIdx++) {
+                        const templateKey: string = templateKeys[keyIdx];
+                        if (!(templateKey in parsedContent)) {
+                            missingKeys.push(templateKey);
+                        }
+                    }
+                    if (missingKeys.length > 0) {
+                        deps.logger.warn(`[executeModelCallAndSave] Parsed response missing expected keys from context_for_documents: ${missingKeys.join(', ')}`, { jobId, missingKeys });
+                        shouldContinue = true;
+                    }
+                }
             }
         }
     }
@@ -1836,6 +1874,35 @@ export async function executeModelCallAndSave(
 
         if (continueResult.error) {
           deps.logger.error(`[dialectic-worker] [executeModelCallAndSave] Failed to enqueue continuation for job ${job.id}.`, { error: continueResult.error.message });
+        }
+        if (!continueResult.error && continueResult.enqueued === false && continueResult.reason === 'continuation_limit_reached') {
+            deps.logger.warn('[executeModelCallAndSave] Continuation limit reached for job — triggering final assembly with schema fill', { jobId: job.id });
+            modelProcessingResult.status = 'continuation_limit_reached';
+
+            const capRelationships = contribution.document_relationships;
+            let rootIdForCapAssembly: string | undefined = undefined;
+            if (isRecord(capRelationships)) {
+                const capCandidate: unknown = capRelationships[stageSlug];
+                if (typeof capCandidate === 'string' && capCandidate.trim() !== '') {
+                    rootIdForCapAssembly = capCandidate;
+                }
+            }
+
+            let matchedContextForCap: ContextForDocument | undefined = undefined;
+            const capContextDocsUnknown = job.payload.context_for_documents;
+            if (Array.isArray(capContextDocsUnknown) && typeof job.payload.document_key === 'string') {
+                for (let capIdx = 0; capIdx < capContextDocsUnknown.length; capIdx++) {
+                    const capDoc = capContextDocsUnknown[capIdx];
+                    if (capDoc.document_key === job.payload.document_key) {
+                        matchedContextForCap = capDoc;
+                        break;
+                    }
+                }
+            }
+
+            if (rootIdForCapAssembly !== undefined && rootIdForCapAssembly !== contribution.id && !shouldRender) {
+                await deps.fileManager.assembleAndSaveFinalDocument(rootIdForCapAssembly, matchedContextForCap);
+            }
         }
         if (projectOwnerUserId) {
             // Calculate continuation number for the newly enqueued job (matches continueJob.ts logic)

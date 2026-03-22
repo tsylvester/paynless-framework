@@ -11,8 +11,6 @@ import {
   isRecord 
 } from '../utils/type_guards.ts'
 import { sanitizeJsonContent } from '../utils/jsonSanitizer.ts'
-import { isJsonSanitizationResult } from '../utils/type-guards/type_guards.jsonSanitizer.ts'
-import type { JsonSanitizationResult } from '../types/jsonSanitizer.interface.ts'
 import {
   FileManagerDependencies,
   FileType,
@@ -34,6 +32,15 @@ import {
   DocumentRelated,
 
 } from '../types/file_manager.types.ts'
+import {
+  ContextForDocument,
+  ContentToInclude,
+} from '../../dialectic-service/dialectic.interface.ts'
+import type {
+  AssembleChunksDeps,
+  AssembleChunksParams,
+  AssembleChunksSignature,
+} from '../utils/assembleChunks/assembleChunks.interface.ts'
 import {
   isModelContributionContext,
   isModelContributionFileType,
@@ -106,6 +113,61 @@ function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const CONTINUATION_LIMIT_PLACEHOLDER: string =
+  '[Continuation limit reached — value not generated]'
+
+function isNestedContentToIncludeSpec(spec: unknown): spec is ContentToInclude {
+  return typeof spec === 'object' && spec !== null && !Array.isArray(spec)
+}
+
+function buildPlaceholderSubtree(node: ContentToInclude): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  const keys: string[] = Object.keys(node)
+  for (let i = 0; i < keys.length; i++) {
+    const key: string = keys[i]
+    const spec: unknown = node[key]
+    if (isNestedContentToIncludeSpec(spec)) {
+      out[key] = buildPlaceholderSubtree(spec)
+    } else {
+      out[key] = CONTINUATION_LIMIT_PLACEHOLDER
+    }
+  }
+  return out
+}
+
+function applyContentToIncludeFill(
+  merged: Record<string, unknown>,
+  schema: ContentToInclude,
+): void {
+  const keys: string[] = Object.keys(schema)
+  for (let i = 0; i < keys.length; i++) {
+    const key: string = keys[i]
+    const schemaSpec: unknown = schema[key]
+    const mergedVal: unknown = merged[key]
+
+    if (isNestedContentToIncludeSpec(schemaSpec)) {
+      const nestedSchema: ContentToInclude = schemaSpec
+      if (
+        mergedVal === undefined ||
+        mergedVal === '' ||
+        (Array.isArray(mergedVal) && mergedVal.length === 0)
+      ) {
+        merged[key] = buildPlaceholderSubtree(nestedSchema)
+      } else if (isRecord(mergedVal)) {
+        applyContentToIncludeFill(mergedVal, nestedSchema)
+      }
+    } else {
+      if (
+        mergedVal === undefined ||
+        mergedVal === '' ||
+        (Array.isArray(mergedVal) && mergedVal.length === 0)
+      ) {
+        merged[key] = CONTINUATION_LIMIT_PLACEHOLDER
+      }
+    }
+  }
+}
+
 /**
  * The FileManagerService provides a unified API for all file operations
  * within the Dialectic feature, ensuring consistent pathing and database registration.
@@ -115,6 +177,7 @@ export class FileManagerService implements IFileManager {
   private storageBucket: string
   private constructStoragePath: (context: PathContext) => { storagePath: string; fileName: string; }
   private logger: ILogger
+  private assembleChunks: AssembleChunksSignature
 
   constructor(
     supabaseClient: SupabaseClient<Database>,
@@ -123,6 +186,7 @@ export class FileManagerService implements IFileManager {
     this.supabase = supabaseClient
     this.constructStoragePath = dependencies.constructStoragePath
     this.logger = dependencies.logger
+    this.assembleChunks = dependencies.assembleChunks
     const bucket = Deno.env.get('SB_CONTENT_STORAGE_BUCKET')
     if (!bucket) {
       throw new Error('SB_CONTENT_STORAGE_BUCKET environment variable is not set.')
@@ -678,11 +742,17 @@ export class FileManagerService implements IFileManager {
    * Assembles contribution chunks into a single final document and uploads it.
    * This is used at the end of a continuation chain to create the final user-facing artifact.
    *
+   * Uses `ContextForDocument` (not an untyped record) so the optional schema walk matches PLAN
+   * outputs: `content_to_include` mirrors the expected JSON shape; missing or empty values are
+   * filled with the continuation placeholder before upload.
+   *
    * @param rootContributionId The ID of the initial contribution in the chain.
+   * @param expectedSchema When set, merged JSON is aligned to `content_to_include` before upload.
    * @returns An object containing the final file path or an error.
    */
   async assembleAndSaveFinalDocument(
     rootContributionId: string,
+    expectedSchema?: ContextForDocument,
   ): Promise<{ finalPath: string | null; error: Error | null }> {
     try {
       // 1. Fetch all contributions in the session to build the chain client-side.
@@ -749,98 +819,31 @@ export class FileManagerService implements IFileManager {
         throw new Error('No chunks to assemble');
       }
 
-      const mergeObjects = (target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> => {
-        const merged: Record<string, unknown> = { ...target };
-        for (const key in source) {
-          if (Object.prototype.hasOwnProperty.call(source, key)) {
-            const sourceValue = source[key];
-            const targetValue = merged[key];
-
-            if (key === 'content' && typeof targetValue === 'string' && typeof sourceValue === 'string') {
-              merged[key] = targetValue + sourceValue;
-            } else if (isRecord(targetValue) && isRecord(sourceValue)) {
-              merged[key] = mergeObjects(targetValue, sourceValue);
-            } else {
-              merged[key] = sourceValue;
-            }
-          }
-        }
-        return merged;
-      };
-
       const chunkIdsForError = downloadedChunks.map((c) => c.chunkId).join(', ');
       const pathsForError = downloadedChunks.map((c) => c.fullPath).join('; ');
 
-      // Phase 2: Concatenated sanitize/parse (handles continuation fragments and backtick-wrapped content).
-      let mergedObject: Record<string, unknown> | null = null;
+      const chunkTexts: string[] = downloadedChunks.map((d) => d.text);
+      const assembleChunksDeps: AssembleChunksDeps = {
+        sanitizeJsonContent,
+        isRecord,
+      };
+      const assembleChunksParams: AssembleChunksParams = {};
+      const assembleResult = await this.assembleChunks(
+        assembleChunksDeps,
+        assembleChunksParams,
+        { chunks: chunkTexts },
+      );
 
-      {
-        const concatenated = downloadedChunks.map((d) => d.text).join('');
-        const sanitizationResult: JsonSanitizationResult = sanitizeJsonContent(concatenated);
-        if (isJsonSanitizationResult(sanitizationResult)) {
-          try {
-            const parsed: unknown = JSON.parse(sanitizationResult.sanitized);
-            if (isRecord(parsed)) {
-              mergedObject = parsed;
-              if (sanitizationResult.wasSanitized) {
-                this.logger.info('[FileManagerService] assembleAndSaveFinalDocument JSON content sanitized (concatenated)', {
-                  wasSanitized: true,
-                  wasStructurallyFixed: sanitizationResult.wasStructurallyFixed,
-                  hasDuplicateKeys: sanitizationResult.hasDuplicateKeys,
-                });
-              }
-            }
-          } catch (_) {
-            // Fall through to Phase 3
-          }
-        }
+      if (!assembleResult.success) {
+        throw new Error(
+          `assembleChunks failed at ${assembleResult.failedAtStep}: ${assembleResult.error}. Chunk IDs: ${chunkIdsForError}; paths: ${pathsForError}`,
+        );
       }
 
-      // Phase 3: Per-chunk sanitize/parse (normal path for independently-complete chunks).
-      if (mergedObject === null) {
-        const parsedChunks: Record<string, unknown>[] = [];
-        for (const d of downloadedChunks) {
-          const sanitizationResult: JsonSanitizationResult = sanitizeJsonContent(d.text);
-          if (!isJsonSanitizationResult(sanitizationResult)) {
-            throw new Error(
-              `Failed to parse JSON from chunks: invalid sanitization result for chunk ${d.chunkId}. Chunk IDs: ${chunkIdsForError}; paths: ${pathsForError}`
-            );
-          }
-          try {
-            const parsed: unknown = JSON.parse(sanitizationResult.sanitized);
-            if (!isRecord(parsed)) {
-              throw new Error(
-                `Failed to parse JSON from chunks: chunk ${d.chunkId} parsed value is not a record. Chunk IDs: ${chunkIdsForError}; paths: ${pathsForError}`
-              );
-            }
-            parsedChunks.push(parsed);
-            if (sanitizationResult.wasSanitized) {
-              this.logger.info('[FileManagerService] assembleAndSaveFinalDocument JSON content sanitized (per-chunk)', {
-                chunkId: d.chunkId,
-                wasStructurallyFixed: sanitizationResult.wasStructurallyFixed,
-                hasDuplicateKeys: sanitizationResult.hasDuplicateKeys,
-              });
-            }
-          } catch (parseErr: unknown) {
-            const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-            throw new Error(
-              `Failed to parse JSON from chunk ${d.chunkId} at ${d.fullPath}: ${parseMsg}. Chunk IDs: ${chunkIdsForError}; paths: ${pathsForError}`
-            );
-          }
-        }
+      const mergedObject: Record<string, unknown> = assembleResult.mergedObject;
 
-        if (parsedChunks.length === 0) {
-          throw new Error(`No chunks to assemble. Chunk IDs: ${chunkIdsForError}; paths: ${pathsForError}`);
-        }
-
-        mergedObject = parsedChunks[0];
-        for (let i = 1; i < parsedChunks.length; i++) {
-          mergedObject = mergeObjects(mergedObject, parsedChunks[i]);
-        }
-      }
-
-      if (mergedObject === null) {
-        throw new Error(`No chunks to assemble. Chunk IDs: ${chunkIdsForError}; paths: ${pathsForError}`);
+      if (expectedSchema !== undefined) {
+        applyContentToIncludeFill(mergedObject, expectedSchema.content_to_include);
       }
 
       const finalContent = JSON.stringify(mergedObject);

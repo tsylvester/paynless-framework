@@ -9,6 +9,7 @@ import type {
   IFileManager,
   FileManagerResponse,
 } from '../types/file_manager.types.ts';
+import type { ContextForDocument } from '../../dialectic-service/dialectic.interface.ts';
 
 /**
  * A mock implementation of the IFileManager for testing purposes.
@@ -20,7 +21,7 @@ export class MockFileManagerService implements IFileManager {
 
   uploadAndRegisterFile: Spy<this, [context: UploadContext], Promise<FileManagerResponse>>;
   getFileSignedUrl: Spy<this, [fileId: string, table: 'dialectic_project_resources' | 'dialectic_contributions' | 'dialectic_feedback'], Promise<{ signedUrl: string | null; error: Error | null; }>>;
-  assembleAndSaveFinalDocument: Spy<this, [rootContributionId: string], Promise<{ finalPath: string | null; error: Error | null; }>>;
+  assembleAndSaveFinalDocument: Spy<this, [rootContributionId: string, expectedSchema?: ContextForDocument], Promise<{ finalPath: string | null; error: Error | null; }>>;
 
   constructor() {
     this.supabase = {} as SupabaseClient<Database>; // Mock Supabase client
@@ -30,7 +31,7 @@ export class MockFileManagerService implements IFileManager {
     this.getFileSignedUrl = spy(async (_fileId: string, _table: 'dialectic_project_resources' | 'dialectic_contributions' | 'dialectic_feedback') => {
         return await Promise.resolve({ signedUrl: 'http://mock.url/file', error: null });
     });
-    this.assembleAndSaveFinalDocument = spy(async (_rootContributionId: string) => {
+    this.assembleAndSaveFinalDocument = spy(async (_rootContributionId: string, _expectedSchema?: ContextForDocument) => {
         return await Promise.resolve({ finalPath: 'mock/path/final.md', error: null });
     });
   }
@@ -45,7 +46,7 @@ export class MockFileManagerService implements IFileManager {
     this.getFileSignedUrl = spy(async (_fileId: string, _table: 'dialectic_project_resources' | 'dialectic_contributions' | 'dialectic_feedback') => {
         return await Promise.resolve({ signedUrl: 'http://mock.url/file', error: null });
     });
-    this.assembleAndSaveFinalDocument = spy(async (_rootContributionId: string) => {
+    this.assembleAndSaveFinalDocument = spy(async (_rootContributionId: string, _expectedSchema?: ContextForDocument) => {
         return await Promise.resolve({ finalPath: 'mock/path/final.md', error: null });
     });
   }

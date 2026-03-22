@@ -362,7 +362,8 @@
     "https://deno.land/x/expect@v0.3.0/expect.ts": "5e6717eddc9df376f7b2c9be6403e016130bb2edbb1acd261a2d6ea9608ee196",
     "https://deno.land/x/expect@v0.3.0/matchers.ts": "a37ef4577739247af77a852cdcd69484f999a41ad86ec16bb63a88a7a47a2372",
     "https://deno.land/x/expect@v0.3.0/mock.ts": "562d4b1d735d15b0b8e935f342679096b64fe452f86e96714fe8616c0c884914",
-    "https://deno.land/x/expect@v0.3.0/mod.ts": "0304d2430e1e96ba669a8495e24ba606dcc3d152e1f81aaa8da898cea24e36c2"
+    "https://deno.land/x/expect@v0.3.0/mod.ts": "0304d2430e1e96ba669a8495e24ba606dcc3d152e1f81aaa8da898cea24e36c2",
+    "https://esm.sh/jsonc-parser@3.2.0": "e273a61c695f10c465e7ccbe6d32e76b81ad578831b80f3d0df870ec6e08f2c0"
   },
   "workspace": {
     "packageJson": {

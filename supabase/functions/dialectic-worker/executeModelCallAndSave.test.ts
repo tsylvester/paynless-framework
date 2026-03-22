@@ -175,7 +175,8 @@ export const mockSessionData: DialecticSession = {
     associated_chat_id: 'chat-789',
     current_stage_id: 'stage-1',
     created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(), 
+    viewing_stage_id: null,
 };
   
 export const mockProviderData: SelectedAiProvider = {
@@ -1677,8 +1678,9 @@ Deno.test('executeModelCallAndSave - updates source_contribution_id on originati
     clearAllStubs?.();
 });
 
-Deno.test('when the model produces malformed JSON, it should trigger a retry, not a continuation', async () => {
-    // Arrange
+Deno.test('when the model produces incomplete JSON, sanitizeJsonContent may repair it so the artifact is saved without retry or continuation', async () => {
+    // Raw content is not valid JSON, but the sanitizer structurally repairs it; executeModelCallAndSave
+    // then parses successfully — no Malformed JSON retry path and no continuation (continueUntilComplete is false).
     const { client: dbClient, clearAllStubs } = setupMockClient({
         'ai_providers': {
             select: { data: [mockFullProviderData], error: null }
@@ -1691,7 +1693,7 @@ Deno.test('when the model produces malformed JSON, it should trigger a retry, no
     const deps: IExecuteJobContext = getMockDeps({ fileManager });
     
     stub(deps, 'callUnifiedAIModel', () => Promise.resolve({
-        content: '{"key": "value", "incomplete', // Malformed JSON
+        content: '{"key": "value", "incomplete', // Invalid raw JSON; repaired by sanitizer
         contentType: 'application/json',
         inputTokens: 10,
         outputTokens: 5,
@@ -1709,14 +1711,9 @@ Deno.test('when the model produces malformed JSON, it should trigger a retry, no
     await executeModelCallAndSave(params);
 
     // Assert
-    assertEquals(fileManager.uploadAndRegisterFile.calls.length, 0, "Should not save the malformed artifact.");
-    assertEquals(continueJobSpy.calls.length, 0, "Should NOT call continueJob for a parsing failure.");
-    assertEquals(retryJobSpy.calls.length, 1, "Should call retryJob to recover from the error.");
-
-    const retryArgs = retryJobSpy.calls[0].args;
-    assertEquals(retryArgs[2].id, job.id, "Should retry the correct job.");
-    assertEquals(retryArgs[3], job.attempt_count + 1, "Should increment the attempt count.");
-    assert(retryArgs[4][0].error.includes('Malformed JSON'), "Should include the correct error reason in the retry details.");
+    assertEquals(fileManager.uploadAndRegisterFile.calls.length, 1, "Should save the repaired artifact.");
+    assertEquals(continueJobSpy.calls.length, 0, "Should NOT call continueJob when continueUntilComplete is false.");
+    assertEquals(retryJobSpy.calls.length, 0, "Should NOT retry when sanitization yields parseable JSON.");
 
     clearAllStubs?.();
 });

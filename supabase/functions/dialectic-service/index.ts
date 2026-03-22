@@ -109,6 +109,7 @@ import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
 import type { DialecticServiceResponse, DialecticFeedbackRow, SaveContributionEditFn, SaveContributionEditContext, GetStageDocumentFeedbackDeps, GetAllStageProgressDeps } from './dialectic.interface.ts';
 import type { Database } from '../types_db.ts';
+import { assembleChunks } from "../_shared/utils/assembleChunks/assembleChunks.ts";
 
 console.log("dialectic-service function started");
 
@@ -235,6 +236,7 @@ export async function handleRequest(
   const FileManagerDependencies = {
     constructStoragePath: constructStoragePath,
     logger: logger,
+    assembleChunks,
   };
 
   const getUserFnForRequest: GetUserFn = async (): Promise<GetUserFnResult> => {

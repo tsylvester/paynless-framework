@@ -55,7 +55,7 @@ async function expectAssembleError(
 }
 
 Deno.test(
-    "Test: empty `chunks` array returns `AssembleChunksSuccess` with empty merged object, all counts zero",
+    "empty `chunks` array returns `AssembleChunksSuccess` with empty merged object, all counts zero",
     async () => {
         const deps: AssembleChunksDeps = {
             sanitizeJsonContent: passthroughSanitize,
@@ -70,7 +70,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Test: single parseable chunk returns that chunk's parsed content as `mergedObject`",
+    "single parseable chunk returns that chunk's parsed content as `mergedObject`",
     async () => {
         const deps: AssembleChunksDeps = {
             sanitizeJsonContent: passthroughSanitize,
@@ -84,7 +84,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Test: multiple parseable chunks are deep-merged in order — `content` string fields concatenated, nested objects recursively merged, primitives last-write-wins",
+    "multiple parseable chunks are deep-merged in order — `content` string fields concatenated, nested objects recursively merged, primitives last-write-wins",
     async () => {
         const deps: AssembleChunksDeps = {
             sanitizeJsonContent: passthroughSanitize,
@@ -103,7 +103,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Test: single raw (unparseable) chunk is sanitized then parsed — `mergedObject` contains the sanitized result",
+    "single raw (unparseable) chunk is sanitized then parsed — `mergedObject` contains the sanitized result",
     async () => {
         const deps: AssembleChunksDeps = {
             sanitizeJsonContent: (_raw: string): JsonSanitizationResult => {
@@ -119,7 +119,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Test: adjacent raw chunks are grouped, concatenated, sanitized as one string, then parsed",
+    "adjacent raw chunks are grouped, concatenated, sanitized as one string, then parsed",
     async () => {
         const deps: AssembleChunksDeps = {
             sanitizeJsonContent: (raw: string): JsonSanitizationResult => {
@@ -136,7 +136,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Test: mixed chain — raw fragments followed by parseable chunk — raw group is sanitized, then merged with parseable chunk in order",
+    "mixed chain — raw fragments followed by parseable chunk — raw group is sanitized, then merged with parseable chunk in order",
     async () => {
         const deps: AssembleChunksDeps = {
             sanitizeJsonContent: (raw: string): JsonSanitizationResult => {
@@ -155,7 +155,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Test: mixed chain — parseable chunk followed by raw fragments followed by parseable chunk — three groups merged in order",
+    "mixed chain — parseable chunk followed by raw fragments followed by parseable chunk — three groups merged in order",
     async () => {
         const deps: AssembleChunksDeps = {
             sanitizeJsonContent: (raw: string): JsonSanitizationResult => {
@@ -174,7 +174,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Test: continuation metadata keys (`continuation_needed`, `stop_reason`, `resume_cursor`) are stripped from parseable chunks before merge",
+    "continuation metadata keys (`continuation_needed`, `stop_reason`, `resume_cursor`) are stripped from parseable chunks before merge",
     async () => {
         const deps: AssembleChunksDeps = {
             sanitizeJsonContent: passthroughSanitize,
@@ -190,7 +190,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Test: continuation metadata keys inside nested objects are NOT stripped (only top-level stripping)",
+    "continuation metadata keys inside nested objects are NOT stripped (only top-level stripping)",
     async () => {
         const deps: AssembleChunksDeps = {
             sanitizeJsonContent: passthroughSanitize,
@@ -206,7 +206,7 @@ Deno.test(
 );
 
 Deno.test(
-    'Test: when sanitization of a raw group fails to produce parseable JSON, returns `AssembleChunksError` with `failedAtStep: "sanitization"`',
+    "Sanitization of a raw group fails to produce parseable JSON — AssembleChunksError with failedAtStep sanitization",
     async () => {
         const deps: AssembleChunksDeps = {
             sanitizeJsonContent: (_raw: string): JsonSanitizationResult => {
@@ -223,7 +223,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Test: `mergedObject` preserves all non-metadata keys from all chunks",
+    "`mergedObject` preserves all non-metadata keys from all chunks",
     async () => {
         const deps: AssembleChunksDeps = {
             sanitizeJsonContent: passthroughSanitize,
@@ -238,5 +238,168 @@ Deno.test(
         assertEquals(r.mergedObject.alpha, 1);
         assertEquals(r.mergedObject.beta, 2);
         assertEquals("continuation_needed" in r.mergedObject, false);
+    },
+);
+
+Deno.test(
+    "two top-level string keys — same-key strings concatenate in chunk order (not only `content`)",
+    async () => {
+        const deps: AssembleChunksDeps = {
+            sanitizeJsonContent: passthroughSanitize,
+            isRecord,
+        };
+        const r = await expectAssembleSuccess(deps, {
+            chunks: [
+                '{"executive_summary":"The project aims to","methodology":"Agile"}',
+                '{"executive_summary":" deliver value","methodology":" framework"}',
+            ],
+        });
+        assertEquals(
+            r.mergedObject.executive_summary,
+            "The project aims to deliver value",
+        );
+        assertEquals(r.mergedObject.methodology, "Agile framework");
+    },
+);
+
+Deno.test(
+    "nested object — leaf string values at same path concatenate",
+    async () => {
+        const deps: AssembleChunksDeps = {
+            sanitizeJsonContent: passthroughSanitize,
+            isRecord,
+        };
+        const r = await expectAssembleSuccess(deps, {
+            chunks: [
+                '{"outer":{"inner":"p1","sibling":"keep"}}',
+                '{"outer":{"inner":"p2"}}',
+            ],
+        });
+        assertEquals(r.mergedObject.outer, {
+            inner: "p1p2",
+            sibling: "keep",
+        });
+    },
+);
+
+Deno.test(
+    "multiple keys — one key concatenates across chunks; key only in first chunk unchanged when second omits it",
+    async () => {
+        const deps: AssembleChunksDeps = {
+            sanitizeJsonContent: passthroughSanitize,
+            isRecord,
+        };
+        const r = await expectAssembleSuccess(deps, {
+            chunks: [
+                '{"k1":"a","k2":"solo"}',
+                '{"k1":"b"}',
+            ],
+        });
+        assertEquals(r.mergedObject.k1, "ab");
+        assertEquals(r.mergedObject.k2, "solo");
+    },
+);
+
+Deno.test(
+    "three parseable chunks — same string key concatenates in order",
+    async () => {
+        const deps: AssembleChunksDeps = {
+            sanitizeJsonContent: passthroughSanitize,
+            isRecord,
+        };
+        const r = await expectAssembleSuccess(deps, {
+            chunks: [
+                '{"segment":"a"}',
+                '{"segment":"b"}',
+                '{"segment":"c"}',
+            ],
+        });
+        assertEquals(r.mergedObject.segment, "abc");
+    },
+);
+
+Deno.test(
+    "raw group then parseable — same-key strings concatenate across sanitized raw and following chunk",
+    async () => {
+        const deps: AssembleChunksDeps = {
+            sanitizeJsonContent: (raw: string): JsonSanitizationResult => {
+                if (raw === "RAW_PREFIX") {
+                    return makeSanitizeResult(
+                        '{"body":"prefix"}',
+                        raw.length,
+                    );
+                }
+                return makeSanitizeResult(raw, raw.length);
+            },
+            isRecord,
+        };
+        const r = await expectAssembleSuccess(deps, {
+            chunks: ["RAW_PREFIX", '{"body":"-suffix"}'],
+        });
+        assertEquals(r.mergedObject.body, "prefix-suffix");
+    },
+);
+
+Deno.test(
+    "continuation metadata stripped then merge — arbitrary top-level string field concatenates with next chunk",
+    async () => {
+        const deps: AssembleChunksDeps = {
+            sanitizeJsonContent: passthroughSanitize,
+            isRecord,
+        };
+        const r = await expectAssembleSuccess(deps, {
+            chunks: [
+                '{"timeline":"Q1","continuation_needed":true,"stop_reason":"length","resume_cursor":"{}"}',
+                '{"timeline":"–Q4"}',
+            ],
+        });
+        assertEquals(r.mergedObject.timeline, "Q1–Q4");
+        assertEquals("continuation_needed" in r.mergedObject, false);
+        assertEquals("stop_reason" in r.mergedObject, false);
+        assertEquals("resume_cursor" in r.mergedObject, false);
+    },
+);
+
+Deno.test(
+    "empty string merges — empty plus hello and hello plus empty both yield hello",
+    async () => {
+        const deps: AssembleChunksDeps = {
+            sanitizeJsonContent: passthroughSanitize,
+            isRecord,
+        };
+        const rEmptyFirst = await expectAssembleSuccess(deps, {
+            chunks: ['{"k":""}', '{"k":"hello"}'],
+        });
+        assertEquals(rEmptyFirst.mergedObject.k, "hello");
+        const rEmptySecond = await expectAssembleSuccess(deps, {
+            chunks: ['{"k":"hello"}', '{"k":""}'],
+        });
+        assertEquals(rEmptySecond.mergedObject.k, "hello");
+    },
+);
+
+Deno.test(
+    "deep nesting three levels — leaf strings concatenate; key only in later chunk appears",
+    async () => {
+        const deps: AssembleChunksDeps = {
+            sanitizeJsonContent: passthroughSanitize,
+            isRecord,
+        };
+        const r = await expectAssembleSuccess(deps, {
+            chunks: [
+                '{"a":{"b":{"c":"part1"}}}',
+                '{"a":{"b":{"c":"part2","d":"only"}}}',
+            ],
+        });
+        assertEquals(r.mergedObject.a, {
+            b: {
+                c: "part1part2",
+                d: "only",
+            },
+        });
+        const rOnlyLater = await expectAssembleSuccess(deps, {
+            chunks: ["{}", '{"late":"x"}'],
+        });
+        assertEquals(rOnlyLater.mergedObject, { late: "x" });
     },
 );

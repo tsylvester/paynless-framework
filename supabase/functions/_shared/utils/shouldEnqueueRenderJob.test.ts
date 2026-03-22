@@ -35,7 +35,8 @@ describe('shouldEnqueueRenderJob', () => {
             recipe_template_id: 'template-1',
             active_recipe_instance_id: 'instance-1',
             expected_output_template_ids: [],
-            created_at: '2025-01-01T00:00:00.000Z',
+            created_at: '2025-01-01T00:00:00.000Z', 
+            minimum_balance: 0,
         };
 
         const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -122,6 +123,7 @@ describe('shouldEnqueueRenderJob', () => {
             active_recipe_instance_id: 'instance-1',
             expected_output_template_ids: [],
             created_at: '2025-01-01T00:00:00.000Z',
+            minimum_balance: 0,
         };
 
         const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -210,6 +212,7 @@ describe('shouldEnqueueRenderJob', () => {
             active_recipe_instance_id: 'instance-1',
             expected_output_template_ids: [],
             created_at: '2025-01-01T00:00:00.000Z',
+            minimum_balance: 0,
         };
 
         const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -269,6 +272,7 @@ describe('shouldEnqueueRenderJob', () => {
             active_recipe_instance_id: 'instance-1',
             expected_output_template_ids: [],
             created_at: '2025-01-01T00:00:00.000Z',
+            minimum_balance: 0,
         };
 
         const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -367,6 +371,7 @@ describe('shouldEnqueueRenderJob', () => {
             active_recipe_instance_id: 'instance-1',
             expected_output_template_ids: [],
             created_at: '2025-01-01T00:00:00.000Z',
+            minimum_balance: 0,
         };
 
         const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -460,6 +465,7 @@ describe('shouldEnqueueRenderJob', () => {
             active_recipe_instance_id: 'instance-1',
             expected_output_template_ids: [],
             created_at: '2025-01-01T00:00:00.000Z',
+            minimum_balance: 0,
         };
 
         const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -561,6 +567,7 @@ describe('shouldEnqueueRenderJob', () => {
             active_recipe_instance_id: 'instance-1',
             expected_output_template_ids: [],
             created_at: '2025-01-01T00:00:00.000Z',
+            minimum_balance: 0,
         };
 
         const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -648,6 +655,7 @@ describe('shouldEnqueueRenderJob', () => {
             active_recipe_instance_id: 'instance-1',
             expected_output_template_ids: [],
             created_at: '2025-01-01T00:00:00.000Z',
+            minimum_balance: 0,
         };
 
         const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {
@@ -758,6 +766,7 @@ describe('shouldEnqueueRenderJob', () => {
             active_recipe_instance_id: null,
             expected_output_template_ids: [],
             created_at: '2025-01-01T00:00:00.000Z',
+            minimum_balance: 0,
         };
 
         const { client } = setup({
@@ -795,6 +804,7 @@ describe('shouldEnqueueRenderJob', () => {
             active_recipe_instance_id: 'instance-1',
             expected_output_template_ids: [],
             created_at: '2025-01-01T00:00:00.000Z',
+            minimum_balance: 0,
         };
 
         const mockInstance: Tables<'dialectic_stage_recipe_instances'> = {

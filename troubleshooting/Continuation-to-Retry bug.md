@@ -584,458 +584,458 @@ Every file that must be touched across all three fixes, listed once, in implemen
 
 ## Node 4
 
-* `[ ]` [BE] `supabase/functions/_shared/prompt-assembler/gatherContinuationInputs` **Return assembled 3-message structure instead of N alternating messages**
-  * `[ ]` `objective`
-    * `[ ]` Replace the current N-message alternating user/assistant return with exactly 3 messages: (1) user seed prompt, (2) assistant assembled document from all prior chunks, (3) user context-aware continuation instruction
-    * `[ ]` Use the shared `assembleChunks` utility (Node 2) to assemble all chunk content strings into a single merged object for the assistant message
-    * `[ ]` Construct the continuation instruction based on the last chunk's state: explicit content-level flags (resume cursor), raw/structurally-fixed (continue from end), or missing expected keys (list missing keys)
-    * `[ ]` Accept an optional `expectedSchema` parameter (typed as `ContextForDocument` from `dialectic.interface.ts`) so missing-key detection can inform the continuation instruction — uses the explicit application type, not a primitive `Record<string, unknown>`
-  * `[ ]` `role`
-    * `[ ]` Application — prompt assembly pipeline component
-  * `[ ]` `module`
-    * `[ ]` Prompt assembler — continuation input gathering
-    * `[ ]` Boundary: fetches chunk data from database/storage and transforms it into a structured 3-message array for downstream prompt assembly
-  * `[ ]` `deps`
-    * `[ ]` `assembleChunks` from Node 2 (`_shared/utils/assembleChunks`) — domain utility, inward-facing; assembles chunk strings into merged object
-    * `[ ]` `SupabaseClient<Database>` — infrastructure, injected via parameter (Supabase client cast exception applies)
-    * `[ ]` `downloadFromStorageFn` — infrastructure adapter, injected via parameter; downloads chunk content from storage
-    * `[ ]` `Messages` from `_shared/types.ts` (line 395-400) — domain type for message structure
-    * `[ ]` No reverse dependency introduced — this function is consumed by `assembleContinuationPrompt` (higher layer)
-  * `[ ]` `context_slice`
-    * `[ ]` From `assembleChunks`: accepts `AssembleChunksDeps`, `AssembleChunksParams`, `AssembleChunksPayload`; returns `AssembleChunksSuccess | AssembleChunksError`
-    * `[ ]` From `SupabaseClient<Database>`: `.from('dialectic_contributions').select().eq().single()`, `.from('dialectic_contributions').select().contains()`, `.from('dialectic_project_resources').select().eq().eq().order().limit().maybeSingle()` — three query patterns
-    * `[ ]` From `downloadFromStorageFn`: accepts `(bucket: string, path: string)`, returns `Promise<DownloadStorageResult>`
-    * `[ ]` Injection shape: all dependencies injected via function parameters — no concrete imports from higher layers
-  * `[ ]` interface/`gatherContinuationInputs.interface.ts`
-    * `[ ]` `GatherContinuationInputsSignature` — function signature type incorporating DI structure
-    * `[ ]` `GatherContinuationInputsDeps` — `{ assembleChunks: AssembleChunksSignature; downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>; dbClient: SupabaseClient<Database>; }` (Supabase client cast exception applies)
-    * `[ ]` `GatherContinuationInputsParams` — `{ chunkId: string; }` — the root chunk ID to gather continuations for
-    * `[ ]` `GatherContinuationInputsPayload` — `{ expectedSchema?: ContextForDocument; }` — optional schema for missing-key detection in continuation instruction; uses the explicit `ContextForDocument` type (which contains `document_key: FileType` and `content_to_include: ContentToInclude`) rather than a primitive record
-    * `[ ]` `GatherContinuationInputsReturn` — `Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError>`
-    * `[ ]` `GatherContinuationInputsSuccess` — `{ success: true; messages: Messages[]; }` — always exactly 3 messages
-    * `[ ]` `GatherContinuationInputsError` — `{ success: false; error: string; }`
-    * `[ ]` Remove the existing `GatherContinuationInputsFn` type export (lines 6-13 of current file) — it is superseded by `GatherContinuationInputsSignature`. Both consumers (`prompt-assembler.interface.ts` and `prompt-assembler.ts`) are updated to use the new type in Node 5. No other consumers exist.
-  * `[ ]` interface/tests/`gatherContinuationInputs.interface.test.ts`
-    * `[ ]` Contract: `GatherContinuationInputsDeps` requires `assembleChunks`, `downloadFromStorageFn`, and `dbClient` — none optional
-    * `[ ]` Contract: `GatherContinuationInputsParams.chunkId` is `string` — not optional
-    * `[ ]` Contract: `GatherContinuationInputsPayload.expectedSchema` is optional `ContextForDocument`
-    * `[ ]` Contract: `GatherContinuationInputsSuccess.messages` is `Messages[]` — not optional
-    * `[ ]` Contract: `GatherContinuationInputsReturn` discriminates on `success: true | false`
-  * `[ ]` interface/guards/`gatherContinuationInputs.interface.guards.ts`
-    * `[ ]` `isGatherContinuationInputsSuccess` — narrows return to success via `success === true`
-    * `[ ]` `isGatherContinuationInputsError` — narrows return to error via `success === false`
-  * `[ ]` unit/`gatherContinuationInputs.test.ts`
-    * `[ ]` Update existing tests to expect 3-message return structure instead of N alternating messages
-    * `[ ]` Test: single chunk (root only) — messages are: (1) user seed prompt, (2) assistant with root chunk content as JSON string, (3) user continuation instruction
-    * `[ ]` Test: multiple chunks — assistant message contains the assembled/merged object from all chunks, not individual chunk contents
-    * `[ ]` Test: continuation instruction references resume cursor when last chunk has `resume_cursor` in its content-level flags (Path 2)
-    * `[ ]` Test: continuation instruction says "continue from where it ends" when last chunk is raw/structurally-fixed (Paths 1/3)
-    * `[ ]` Test: continuation instruction lists missing keys when `expectedSchema` is provided and assembled object is missing keys (Path 4)
-    * `[ ]` Test: when `assembleChunks` returns an error, `gatherContinuationInputs` returns `GatherContinuationInputsError`
-    * `[ ]` Test: when no `expectedSchema` is provided and last chunk has no flags, continuation instruction is a generic "continue from where it ends"
-    * `[ ]` Test: seed prompt is always the first message with role `user`
-    * `[ ]` Test: assembled object is always the second message with role `assistant`
-    * `[ ]` Test: continuation instruction is always the third message with role `user`
-  * `[ ]` `construction`
-    * `[ ]` Canonical entry point: `gatherContinuationInputs(deps, params, payload)` — new DI signature replacing the old positional signature
-    * `[ ]` The function constructs exactly 3 `Messages` objects — no more, no less
-    * `[ ]` The continuation instruction is constructed internally based on last-chunk analysis — not configurable externally
-    * `[ ]` Initialization order: fetch root chunk → fetch related chunks → sort → download all chunk content → call `assembleChunks` → fetch seed prompt → analyze last chunk → construct continuation instruction → return 3 messages
-  * `[ ]` `gatherContinuationInputs.ts`
-    * `[ ]` Add construction rationale comment explaining the DI structure (deps/params/payload), why `ContextForDocument` is used instead of a primitive record, and why exactly 3 messages are always returned
-    * `[ ]` Refactor function signature from positional `(dbClient, downloadFromStorageFn, chunkId)` to DI `(deps, params, payload)`
-    * `[ ]` Steps 1-4 (fetch root chunk, query related chunks, sort, download seed prompt) — preserve existing logic, adapt to use `deps.dbClient` and `deps.downloadFromStorageFn` instead of positional parameters
-    * `[ ]` Step 5 (currently lines 146-176: build N alternating messages) — replace entirely:
-      * `[ ]` Download all chunk content strings into an ordered array
-      * `[ ]` Call `deps.assembleChunks(assembleChunksDeps, assembleChunksParams, { chunks: chunkContentStrings })` to get the merged object
-      * `[ ]` If `assembleChunks` returns error, return `GatherContinuationInputsError`
-    * `[ ]` Step 6 — Analyze last chunk for continuation instruction type:
-      * `[ ]` Parse last chunk content. If it contains `resume_cursor`, use Path 2 instruction with cursor details
-      * `[ ]` If last chunk was unparseable (raw) or was structurally fixed, use Path 1/3 instruction ("continue from where it ends")
-      * `[ ]` If `payload.expectedSchema` provided, compare assembled object keys against `expectedSchema.content_to_include` (typed as `ContentToInclude`). If keys missing, use Path 4 instruction listing missing keys
-      * `[ ]` Default: generic continuation instruction
-    * `[ ]` Step 7 — Return `GatherContinuationInputsSuccess` with exactly 3 messages:
-      * `[ ]` `{ role: "user", content: seedPromptContent }` — seed prompt
-      * `[ ]` `{ role: "assistant", content: JSON.stringify(assembledObject) }` — assembled document
-      * `[ ]` `{ role: "user", content: continuationInstruction }` — context-aware instruction
-  * `[ ]` `directionality`
-    * `[ ]` Layer: application (prompt assembly)
-    * `[ ]` All dependencies are inward-facing: `assembleChunks` (domain utility), database client (infrastructure), storage download (infrastructure), types (domain)
-    * `[ ]` Provides are outward-facing: consumed by `assembleContinuationPrompt` (same layer, lateral — acceptable as direct caller)
-  * `[ ]` `requirements`
-    * `[ ]` Always returns exactly 3 messages regardless of number of continuation chunks
-    * `[ ]` Assistant message contains the single assembled object as a JSON string, not individual chunk contents
-    * `[ ]` Continuation instruction is context-aware based on last chunk state (resume cursor, truncation, missing keys, or generic)
-    * `[ ]` When `expectedSchema` is provided, missing keys are listed in the continuation instruction
-    * `[ ]` All existing data-fetching logic (root chunk lookup, related chunk query, sort, seed prompt download) is preserved
-    * `[ ]` Function signature transitions to DI structure; callers must be updated (addressed in Node 5 for `prompt-assembler` facade and Node 6 for `assembleContinuationPrompt`)
+* `[✅]` [BE] `supabase/functions/_shared/prompt-assembler/gatherContinuationInputs` **Return assembled 3-message structure instead of N alternating messages**
+  * `[✅]` `objective`
+    * `[✅]` Replace the current N-message alternating user/assistant return with exactly 3 messages: (1) user seed prompt, (2) assistant assembled document from all prior chunks, (3) user context-aware continuation instruction
+    * `[✅]` Use the shared `assembleChunks` utility (Node 2) to assemble all chunk content strings into a single merged object for the assistant message
+    * `[✅]` Construct the continuation instruction based on the last chunk's state: explicit content-level flags (resume cursor), raw/structurally-fixed (continue from end), or missing expected keys (list missing keys)
+    * `[✅]` Accept an optional `expectedSchema` parameter (typed as `ContextForDocument` from `dialectic.interface.ts`) so missing-key detection can inform the continuation instruction — uses the explicit application type, not a primitive `Record<string, unknown>`
+  * `[✅]` `role`
+    * `[✅]` Application — prompt assembly pipeline component
+  * `[✅]` `module`
+    * `[✅]` Prompt assembler — continuation input gathering
+    * `[✅]` Boundary: fetches chunk data from database/storage and transforms it into a structured 3-message array for downstream prompt assembly
+  * `[✅]` `deps`
+    * `[✅]` `assembleChunks` from Node 2 (`_shared/utils/assembleChunks`) — domain utility, inward-facing; assembles chunk strings into merged object
+    * `[✅]` `SupabaseClient<Database>` — infrastructure, injected via parameter (Supabase client cast exception applies)
+    * `[✅]` `downloadFromStorageFn` — infrastructure adapter, injected via parameter; downloads chunk content from storage
+    * `[✅]` `Messages` from `_shared/types.ts` (line 395-400) — domain type for message structure
+    * `[✅]` No reverse dependency introduced — this function is consumed by `assembleContinuationPrompt` (higher layer)
+  * `[✅]` `context_slice`
+    * `[✅]` From `assembleChunks`: accepts `AssembleChunksDeps`, `AssembleChunksParams`, `AssembleChunksPayload`; returns `AssembleChunksSuccess | AssembleChunksError`
+    * `[✅]` From `SupabaseClient<Database>`: `.from('dialectic_contributions').select().eq().single()`, `.from('dialectic_contributions').select().contains()`, `.from('dialectic_project_resources').select().eq().eq().order().limit().maybeSingle()` — three query patterns
+    * `[✅]` From `downloadFromStorageFn`: accepts `(bucket: string, path: string)`, returns `Promise<DownloadStorageResult>`
+    * `[✅]` Injection shape: all dependencies injected via function parameters — no concrete imports from higher layers
+  * `[✅]` interface/`gatherContinuationInputs.interface.ts`
+    * `[✅]` `GatherContinuationInputsSignature` — function signature type incorporating DI structure
+    * `[✅]` `GatherContinuationInputsDeps` — `{ assembleChunks: AssembleChunksSignature; downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>; dbClient: SupabaseClient<Database>; }` (Supabase client cast exception applies)
+    * `[✅]` `GatherContinuationInputsParams` — `{ chunkId: string; }` — the root chunk ID to gather continuations for
+    * `[✅]` `GatherContinuationInputsPayload` — `{ expectedSchema?: ContextForDocument; }` — optional schema for missing-key detection in continuation instruction; uses the explicit `ContextForDocument` type (which contains `document_key: FileType` and `content_to_include: ContentToInclude`) rather than a primitive record
+    * `[✅]` `GatherContinuationInputsReturn` — `Promise<GatherContinuationInputsSuccess | GatherContinuationInputsError>`
+    * `[✅]` `GatherContinuationInputsSuccess` — `{ success: true; messages: Messages[]; }` — always exactly 3 messages
+    * `[✅]` `GatherContinuationInputsError` — `{ success: false; error: string; }`
+    * `[✅]` Remove the existing `GatherContinuationInputsFn` type export (lines 6-13 of current file) — it is superseded by `GatherContinuationInputsSignature`. Both consumers (`prompt-assembler.interface.ts` and `prompt-assembler.ts`) are updated to use the new type in Node 5. No other consumers exist.
+  * `[✅]` interface/tests/`gatherContinuationInputs.interface.test.ts`
+    * `[✅]` Contract: `GatherContinuationInputsDeps` requires `assembleChunks`, `downloadFromStorageFn`, and `dbClient` — none optional
+    * `[✅]` Contract: `GatherContinuationInputsParams.chunkId` is `string` — not optional
+    * `[✅]` Contract: `GatherContinuationInputsPayload.expectedSchema` is optional `ContextForDocument`
+    * `[✅]` Contract: `GatherContinuationInputsSuccess.messages` is `Messages[]` — not optional
+    * `[✅]` Contract: `GatherContinuationInputsReturn` discriminates on `success: true | false`
+  * `[✅]` interface/guards/`gatherContinuationInputs.interface.guards.ts`
+    * `[✅]` `isGatherContinuationInputsSuccess` — narrows return to success via `success === true`
+    * `[✅]` `isGatherContinuationInputsError` — narrows return to error via `success === false`
+  * `[✅]` unit/`gatherContinuationInputs.test.ts`
+    * `[✅]` Update existing tests to expect 3-message return structure instead of N alternating messages
+    * `[✅]` Test: single chunk (root only) — messages are: (1) user seed prompt, (2) assistant with root chunk content as JSON string, (3) user continuation instruction
+    * `[✅]` Test: multiple chunks — assistant message contains the assembled/merged object from all chunks, not individual chunk contents
+    * `[✅]` Test: continuation instruction references resume cursor when last chunk has `resume_cursor` in its content-level flags (Path 2)
+    * `[✅]` Test: continuation instruction says "continue from where it ends" when last chunk is raw/structurally-fixed (Paths 1/3)
+    * `[✅]` Test: continuation instruction lists missing keys when `expectedSchema` is provided and assembled object is missing keys (Path 4)
+    * `[✅]` Test: when `assembleChunks` returns an error, `gatherContinuationInputs` returns `GatherContinuationInputsError`
+    * `[✅]` Test: when no `expectedSchema` is provided and last chunk has no flags, continuation instruction is a generic "continue from where it ends"
+    * `[✅]` Test: seed prompt is always the first message with role `user`
+    * `[✅]` Test: assembled object is always the second message with role `assistant`
+    * `[✅]` Test: continuation instruction is always the third message with role `user`
+  * `[✅]` `construction`
+    * `[✅]` Canonical entry point: `gatherContinuationInputs(deps, params, payload)` — new DI signature replacing the old positional signature
+    * `[✅]` The function constructs exactly 3 `Messages` objects — no more, no less
+    * `[✅]` The continuation instruction is constructed internally based on last-chunk analysis — not configurable externally
+    * `[✅]` Initialization order: fetch root chunk → fetch related chunks → sort → download all chunk content → call `assembleChunks` → fetch seed prompt → analyze last chunk → construct continuation instruction → return 3 messages
+  * `[✅]` `gatherContinuationInputs.ts`
+    * `[✅]` Add construction rationale comment explaining the DI structure (deps/params/payload), why `ContextForDocument` is used instead of a primitive record, and why exactly 3 messages are always returned
+    * `[✅]` Refactor function signature from positional `(dbClient, downloadFromStorageFn, chunkId)` to DI `(deps, params, payload)`
+    * `[✅]` Steps 1-4 (fetch root chunk, query related chunks, sort, download seed prompt) — preserve existing logic, adapt to use `deps.dbClient` and `deps.downloadFromStorageFn` instead of positional parameters
+    * `[✅]` Step 5 (currently lines 146-176: build N alternating messages) — replace entirely:
+      * `[✅]` Download all chunk content strings into an ordered array
+      * `[✅]` Call `deps.assembleChunks(assembleChunksDeps, assembleChunksParams, { chunks: chunkContentStrings })` to get the merged object
+      * `[✅]` If `assembleChunks` returns error, return `GatherContinuationInputsError`
+    * `[✅]` Step 6 — Analyze last chunk for continuation instruction type:
+      * `[✅]` Parse last chunk content. If it contains `resume_cursor`, use Path 2 instruction with cursor details
+      * `[✅]` If last chunk was unparseable (raw) or was structurally fixed, use Path 1/3 instruction ("continue from where it ends")
+      * `[✅]` If `payload.expectedSchema` provided, compare assembled object keys against `expectedSchema.content_to_include` (typed as `ContentToInclude`). If keys missing, use Path 4 instruction listing missing keys
+      * `[✅]` Default: generic continuation instruction
+    * `[✅]` Step 7 — Return `GatherContinuationInputsSuccess` with exactly 3 messages:
+      * `[✅]` `{ role: "user", content: seedPromptContent }` — seed prompt
+      * `[✅]` `{ role: "assistant", content: JSON.stringify(assembledObject) }` — assembled document
+      * `[✅]` `{ role: "user", content: continuationInstruction }` — context-aware instruction
+  * `[✅]` `directionality`
+    * `[✅]` Layer: application (prompt assembly)
+    * `[✅]` All dependencies are inward-facing: `assembleChunks` (domain utility), database client (infrastructure), storage download (infrastructure), types (domain)
+    * `[✅]` Provides are outward-facing: consumed by `assembleContinuationPrompt` (same layer, lateral — acceptable as direct caller)
+  * `[✅]` `requirements`
+    * `[✅]` Always returns exactly 3 messages regardless of number of continuation chunks
+    * `[✅]` Assistant message contains the single assembled object as a JSON string, not individual chunk contents
+    * `[✅]` Continuation instruction is context-aware based on last chunk state (resume cursor, truncation, missing keys, or generic)
+    * `[✅]` When `expectedSchema` is provided, missing keys are listed in the continuation instruction
+    * `[✅]` All existing data-fetching logic (root chunk lookup, related chunk query, sort, seed prompt download) is preserved
+    * `[✅]` Function signature transitions to DI structure; callers must be updated (addressed in Node 5 for `prompt-assembler` facade and Node 6 for `assembleContinuationPrompt`)
 
 ## Node 5
 
-* `[ ]` [BE] `supabase/functions/_shared/prompt-assembler/prompt-assembler` **Update facade to use new GatherContinuationInputs DI signature**
-  * `[ ]` `objective`
-    * `[ ]` Update the `PromptAssembler` class to store and pass the new DI-signature version of `gatherContinuationInputs` from Node 4
-    * `[ ]` Replace `GatherContinuationInputsFn` with `GatherContinuationInputsSignature` in imports, stored field type, and constructor parameter type
-    * `[ ]` The facade is a pass-through wiring layer — it stores the function reference and forwards it to `assembleContinuationPrompt` via deps; it does not invoke `gatherContinuationInputs` directly
-  * `[ ]` `role`
-    * `[ ]` Application — prompt assembly facade/orchestrator
-  * `[ ]` `module`
-    * `[ ]` Prompt assembler — dependency wiring layer between `gatherContinuationInputs` and `assembleContinuationPrompt`
-    * `[ ]` Boundary: constructs deps objects for assembly functions, delegates all assembly work
-  * `[ ]` `deps`
-    * `[ ]` `GatherContinuationInputsSignature` from Node 4 (`gatherContinuationInputs.interface.ts`) — new DI function signature type, inward-facing
-    * `[ ]` `gatherContinuationInputs` from Node 4 (`gatherContinuationInputs.ts`) — concrete implementation with new DI signature, inward-facing
-    * `[ ]` `AssembleContinuationPromptDeps` from `prompt-assembler.interface.ts` — deps type passed to `assembleContinuationPrompt`, modified in this node
-    * `[ ]` No reverse dependency introduced — the facade is consumed by `processSimpleJob` (higher layer)
-  * `[ ]` `context_slice`
-    * `[ ]` From `GatherContinuationInputsSignature`: the function type stored as private field and passed through to `assembleContinuationPrompt` deps
-    * `[ ]` No direct invocation of `gatherContinuationInputs` — facade stores and forwards only
-    * `[ ]` Injection shape: function reference injected via constructor parameter, stored as private field
-  * `[ ]` interface/`prompt-assembler.interface.ts`
-    * `[ ]` `AssembleContinuationPromptDeps` (line 38-52): update `gatherContinuationInputs` property type from `GatherContinuationInputsFn` to `GatherContinuationInputsSignature`
-    * `[ ]` Update import: remove `GatherContinuationInputsFn` import, add `GatherContinuationInputsSignature` import from `gatherContinuationInputs.interface.ts`
-    * `[ ]` `IPromptAssembler` — update if it types the stored field
-  * `[ ]` interface/tests/ — no new type contracts needed; the `GatherContinuationInputsSignature` contract is covered in Node 4
-  * `[ ]` interface/guards/ — no new guards needed
-  * `[ ]` unit/`prompt-assembler.test.ts`
-    * `[ ]` Test: constructor accepts new-signature `gatherContinuationInputs` function
-    * `[ ]` Test: `assembleContinuationPrompt` deps receive the stored function with correct type
-    * `[ ]` Test: default `gatherContinuationInputs` (when not injected via constructor) matches new DI signature
-    * `[ ]` Test: all non-continuation assembly paths (seed, planner, turn) are unaffected
-  * `[ ]` `construction`
-    * `[ ]` Canonical entry point: `new PromptAssembler(dbClient, fileManager, ...)` — existing constructor, parameter type updated
-    * `[ ]` `gatherContinuationInputsFn` private field type changes from `GatherContinuationInputsFn` to `GatherContinuationInputsSignature`
-    * `[ ]` Default assignment (line 74) continues to reference the concrete `gatherContinuationInputs` function — its signature already changed in Node 4
-  * `[ ]` `prompt-assembler.ts`
-    * `[ ]` Add construction rationale comment explaining why the facade stores function references rather than invoking them directly — this enables DI and testability
-    * `[ ]` Line 24: change import from `GatherContinuationInputsFn` to `GatherContinuationInputsSignature` (from `gatherContinuationInputs.interface.ts`)
-    * `[ ]` Line 47: change stored field type from `GatherContinuationInputsFn` to `GatherContinuationInputsSignature`
-    * `[ ]` Line 61: change constructor parameter type accordingly
-    * `[ ]` Line 74: default assignment — `gatherContinuationInputs` concrete function already has new signature from Node 4, no logic change needed
-    * `[ ]` No other lines of the class are modified
-  * `[ ]` `directionality`
-    * `[ ]` Layer: application (facade)
-    * `[ ]` All dependencies are inward-facing: types (domain), concrete functions (application)
-    * `[ ]` Provides are outward-facing: consumed by `processSimpleJob` (worker layer)
-  * `[ ]` `requirements`
-    * `[ ]` Facade compiles with new `GatherContinuationInputsSignature` function type
-    * `[ ]` Default `gatherContinuationInputs` works when not injected via constructor
-    * `[ ]` All existing non-continuation prompt assembly paths (seed, planner, turn) are completely unaffected
-    * `[ ]` The old `GatherContinuationInputsFn` type alias is no longer imported or used by the facade
+* `[✅]` [BE] `supabase/functions/_shared/prompt-assembler/prompt-assembler` **Update facade to use new GatherContinuationInputs DI signature**
+  * `[✅]` `objective`
+    * `[✅]` Update the `PromptAssembler` class to store and pass the new DI-signature version of `gatherContinuationInputs` from Node 4
+    * `[✅]` Replace `GatherContinuationInputsFn` with `GatherContinuationInputsSignature` in imports, stored field type, and constructor parameter type
+    * `[✅]` The facade is a pass-through wiring layer — it stores the function reference and forwards it to `assembleContinuationPrompt` via deps; it does not invoke `gatherContinuationInputs` directly
+  * `[✅]` `role`
+    * `[✅]` Application — prompt assembly facade/orchestrator
+  * `[✅]` `module`
+    * `[✅]` Prompt assembler — dependency wiring layer between `gatherContinuationInputs` and `assembleContinuationPrompt`
+    * `[✅]` Boundary: constructs deps objects for assembly functions, delegates all assembly work
+  * `[✅]` `deps`
+    * `[✅]` `GatherContinuationInputsSignature` from Node 4 (`gatherContinuationInputs.interface.ts`) — new DI function signature type, inward-facing
+    * `[✅]` `gatherContinuationInputs` from Node 4 (`gatherContinuationInputs.ts`) — concrete implementation with new DI signature, inward-facing
+    * `[✅]` `AssembleContinuationPromptDeps` from `prompt-assembler.interface.ts` — deps type passed to `assembleContinuationPrompt`, modified in this node
+    * `[✅]` No reverse dependency introduced — the facade is consumed by `processSimpleJob` (higher layer)
+  * `[✅]` `context_slice`
+    * `[✅]` From `GatherContinuationInputsSignature`: the function type stored as private field and passed through to `assembleContinuationPrompt` deps
+    * `[✅]` No direct invocation of `gatherContinuationInputs` — facade stores and forwards only
+    * `[✅]` Injection shape: function reference injected via constructor parameter, stored as private field
+  * `[✅]` interface/`prompt-assembler.interface.ts`
+    * `[✅]` `AssembleContinuationPromptDeps` (line 38-52): update `gatherContinuationInputs` property type from `GatherContinuationInputsFn` to `GatherContinuationInputsSignature`
+    * `[✅]` Update import: remove `GatherContinuationInputsFn` import, add `GatherContinuationInputsSignature` import from `gatherContinuationInputs.interface.ts`
+    * `[✅]` `IPromptAssembler` — update if it types the stored field
+  * `[✅]` interface/tests/ — no new type contracts needed; the `GatherContinuationInputsSignature` contract is covered in Node 4
+  * `[✅]` interface/guards/ — no new guards needed
+  * `[✅]` unit/`prompt-assembler.test.ts`
+    * `[✅]` Test: constructor accepts new-signature `gatherContinuationInputs` function
+    * `[✅]` Test: `assembleContinuationPrompt` deps receive the stored function with correct type
+    * `[✅]` Test: default `gatherContinuationInputs` (when not injected via constructor) matches new DI signature
+    * `[✅]` Test: all non-continuation assembly paths (seed, planner, turn) are unaffected
+  * `[✅]` `construction`
+    * `[✅]` Canonical entry point: `new PromptAssembler(dbClient, fileManager, ...)` — existing constructor, parameter type updated
+    * `[✅]` `gatherContinuationInputsFn` private field type changes from `GatherContinuationInputsFn` to `GatherContinuationInputsSignature`
+    * `[✅]` Default assignment (line 74) continues to reference the concrete `gatherContinuationInputs` function — its signature already changed in Node 4
+  * `[✅]` `prompt-assembler.ts`
+    * `[✅]` Add construction rationale comment explaining why the facade stores function references rather than invoking them directly — this enables DI and testability
+    * `[✅]` Line 24: change import from `GatherContinuationInputsFn` to `GatherContinuationInputsSignature` (from `gatherContinuationInputs.interface.ts`)
+    * `[✅]` Line 47: change stored field type from `GatherContinuationInputsFn` to `GatherContinuationInputsSignature`
+    * `[✅]` Line 61: change constructor parameter type accordingly
+    * `[✅]` Line 74: default assignment — `gatherContinuationInputs` concrete function already has new signature from Node 4, no logic change needed
+    * `[✅]` No other lines of the class are modified
+  * `[✅]` `directionality`
+    * `[✅]` Layer: application (facade)
+    * `[✅]` All dependencies are inward-facing: types (domain), concrete functions (application)
+    * `[✅]` Provides are outward-facing: consumed by `processSimpleJob` (worker layer)
+  * `[✅]` `requirements`
+    * `[✅]` Facade compiles with new `GatherContinuationInputsSignature` function type
+    * `[✅]` Default `gatherContinuationInputs` works when not injected via constructor
+    * `[✅]` All existing non-continuation prompt assembly paths (seed, planner, turn) are completely unaffected
+    * `[✅]` The old `GatherContinuationInputsFn` type alias is no longer imported or used by the facade
 
 ## Node 6
 
-* `[ ]` [BE] `supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt` **Stop flattening messages; propagate structured 3-message array**
-  * `[ ]` `objective`
-    * `[ ]` Remove the flatten loop (lines 157-163) that strips roles and joins all message content into a single string
-    * `[ ]` Instead, propagate the structured 3-message array from `gatherContinuationInputs` (Node 4) through `AssembledPrompt` so downstream consumers can route messages into `conversationHistory` + `currentUserPrompt`
-    * `[ ]` Add optional `messages?: Messages[]` field to the `AssembledPrompt` type in `prompt-assembler.interface.ts`
-    * `[ ]` Keep `promptContent` set to the final user message (continuation instruction) for backward compatibility with file upload
-    * `[ ]` Update the call to `gatherContinuationInputs` to use the new DI signature from Node 4
-  * `[ ]` `role`
-    * `[ ]` Application — prompt assembly pipeline component
-  * `[ ]` `module`
-    * `[ ]` Prompt assembler — continuation prompt assembly
-    * `[ ]` Boundary: receives structured messages from `gatherContinuationInputs`, preserves their structure in the returned `AssembledPrompt`, and saves the prompt to storage
-  * `[ ]` `deps`
-    * `[ ]` `AssembledPrompt` from `prompt-assembler.interface.ts` (line 104-107) — return type, modified in this node to add `messages`
-    * `[ ]` `AssembleContinuationPromptDeps` from `prompt-assembler.interface.ts` — deps type, already updated in Node 5 to use `GatherContinuationInputsSignature`
-    * `[ ]` `gatherContinuationInputs` from Node 4 via Node 5 facade — now returns `GatherContinuationInputsSuccess | GatherContinuationInputsError` via DI signature
-    * `[ ]` `Messages` from `_shared/types.ts` (line 395-400) — domain type for message structure
-    * `[ ]` `isRecord` from `_shared/utils/type_guards.ts` — domain guard, inward-facing
-    * `[ ]` `FileType` from `_shared/types/file_manager.types.ts` — domain enum, inward-facing
-    * `[ ]` `HeaderContext` from `dialectic-service/dialectic.interface.ts` — domain type, inward-facing
-    * `[ ]` No reverse dependency introduced
-  * `[ ]` `context_slice`
-    * `[ ]` From `gatherContinuationInputs`: new DI signature returning `GatherContinuationInputsSuccess` with `messages: Messages[]` (always 3 messages)
-    * `[ ]` From `AssembledPrompt`: `{ promptContent: string; source_prompt_resource_id: string; messages?: Messages[]; }` — the new optional field
-    * `[ ]` Injection shape: all dependencies via `AssembleContinuationPromptDeps` — no concrete imports from higher layers
-  * `[ ]` interface/`prompt-assembler.interface.ts`
-    * `[ ]` `AssembledPrompt` (line 104-107): add `messages?: Messages[]` — optional because only the continuation path sets it; non-continuation paths return `AssembledPrompt` without `messages`
-    * `[ ]` `AssembleContinuationPromptDeps` — `gatherContinuationInputs` property type already updated to `GatherContinuationInputsSignature` in Node 5; no additional change needed here
-    * `[ ]` Import `Messages` type if not already imported
-  * `[ ]` interface/tests/`assembleContinuationPrompt.interface.test.ts`
-    * `[ ]` Contract: `AssembledPrompt` accepts `{ promptContent: string, source_prompt_resource_id: string, messages: [...] }` — compiles with messages
-    * `[ ]` Contract: `AssembledPrompt` accepts `{ promptContent: string, source_prompt_resource_id: string }` — compiles without messages (backward compatible)
-    * `[ ]` Contract: `AssembledPrompt.messages` is `Messages[] | undefined` — optional, not required
-  * `[ ]` interface/guards/`assembleContinuationPrompt.interface.guards.ts`
-    * `[ ]` `isAssembledPromptWithMessages` — narrows `AssembledPrompt` to confirm `messages` is present and is a non-empty array
-  * `[ ]` unit/`assembleContinuationPrompt.test.ts`
-    * `[ ]` Update existing tests to account for the new return shape
-    * `[ ]` Test: when `gatherContinuationInputs` returns success with 3 messages, `assembled.messages` contains those 3 messages
-    * `[ ]` Test: `assembled.promptContent` is the final user message (third message content) plus any header context, not the flattened blob of all messages
-    * `[ ]` Test: when `gatherContinuationInputs` returns error, `assembleContinuationPrompt` throws with the error message
-    * `[ ]` Test: file upload still receives `promptContent` (for storage), not the structured messages
-    * `[ ]` Test: `source_prompt_resource_id` is still populated from the file upload response
-  * `[ ]` `construction`
-    * `[ ]` Canonical entry point: `assembleContinuationPrompt(deps)` — existing signature shape, deps type updated
-    * `[ ]` `messages` is set on the returned `AssembledPrompt` only when `gatherContinuationInputs` returns structured messages
-    * `[ ]` `promptContent` is set to the continuation instruction (third message) concatenated with any header context — this preserves file upload content
-    * `[ ]` Object completeness: `promptContent` and `source_prompt_resource_id` always present; `messages` present on continuation path
-  * `[ ]` `assembleContinuationPrompt.ts`
-    * `[ ]` Add construction rationale comment explaining why messages are propagated as structured array instead of flattened, and why `promptContent` is kept for file upload backward compatibility
-    * `[ ]` Update the call to `gatherContinuationInputs` (line 151-155) to use the new DI signature: pass deps/params/payload instead of positional args
-    * `[ ]` Handle the `gatherContinuationInputs` return: check for `success === false` and throw; on success, extract `messages`
-    * `[ ]` Remove the flatten loop (lines 157-161): no longer iterate messages to push content into `promptParts`
-    * `[ ]` Instead, construct `promptParts` from header context (if any) + the third message content (continuation instruction)
-    * `[ ]` Set `messages` on the returned `AssembledPrompt`: `return { promptContent: finalPrompt, source_prompt_resource_id: response.record.id, messages: gatherResult.messages }`
-    * `[ ]` All other logic (model fetch, header context fetch, root contribution resolution, file upload) remains unchanged
-  * `[ ]` `directionality`
-    * `[ ]` Layer: application (prompt assembly)
-    * `[ ]` All dependencies are inward-facing: `gatherContinuationInputs` (same layer, lateral — direct producer), types (domain), guards (domain), database client (infrastructure), file manager (infrastructure)
-    * `[ ]` Provides are outward-facing: consumed by `processSimpleJob` (higher layer — worker) via `ctx.promptAssembler.assemble()`
-  * `[ ]` `requirements`
-    * `[ ]` Messages from `gatherContinuationInputs` are propagated through `AssembledPrompt` without flattening
-    * `[ ]` `promptContent` contains the continuation instruction (+ header context) for file upload — not the full flattened blob
-    * `[ ]` `AssembledPrompt.messages` is optional — non-continuation assembly paths are unaffected
-    * `[ ]` Backward compatibility: consumers that only read `promptContent` and `source_prompt_resource_id` continue to work unchanged
-    * `[ ]` Consumers that check for `messages` (Node 8: `processSimpleJob`) can populate `conversationHistory` from the structured array
+* `[✅]` [BE] `supabase/functions/_shared/prompt-assembler/assembleContinuationPrompt` **Stop flattening messages; propagate structured 3-message array**
+  * `[✅]` `objective`
+    * `[✅]` Remove the flatten loop (lines 157-163) that strips roles and joins all message content into a single string
+    * `[✅]` Instead, propagate the structured 3-message array from `gatherContinuationInputs` (Node 4) through `AssembledPrompt` so downstream consumers can route messages into `conversationHistory` + `currentUserPrompt`
+    * `[✅]` Add optional `messages?: Messages[]` field to the `AssembledPrompt` type in `prompt-assembler.interface.ts`
+    * `[✅]` Keep `promptContent` set to the final user message (continuation instruction) for backward compatibility with file upload
+    * `[✅]` Update the call to `gatherContinuationInputs` to use the new DI signature from Node 4
+  * `[✅]` `role`
+    * `[✅]` Application — prompt assembly pipeline component
+  * `[✅]` `module`
+    * `[✅]` Prompt assembler — continuation prompt assembly
+    * `[✅]` Boundary: receives structured messages from `gatherContinuationInputs`, preserves their structure in the returned `AssembledPrompt`, and saves the prompt to storage
+  * `[✅]` `deps`
+    * `[✅]` `AssembledPrompt` from `prompt-assembler.interface.ts` (line 104-107) — return type, modified in this node to add `messages`
+    * `[✅]` `AssembleContinuationPromptDeps` from `prompt-assembler.interface.ts` — deps type, already updated in Node 5 to use `GatherContinuationInputsSignature`
+    * `[✅]` `gatherContinuationInputs` from Node 4 via Node 5 facade — now returns `GatherContinuationInputsSuccess | GatherContinuationInputsError` via DI signature
+    * `[✅]` `Messages` from `_shared/types.ts` (line 395-400) — domain type for message structure
+    * `[✅]` `isRecord` from `_shared/utils/type_guards.ts` — domain guard, inward-facing
+    * `[✅]` `FileType` from `_shared/types/file_manager.types.ts` — domain enum, inward-facing
+    * `[✅]` `HeaderContext` from `dialectic-service/dialectic.interface.ts` — domain type, inward-facing
+    * `[✅]` No reverse dependency introduced
+  * `[✅]` `context_slice`
+    * `[✅]` From `gatherContinuationInputs`: new DI signature returning `GatherContinuationInputsSuccess` with `messages: Messages[]` (always 3 messages)
+    * `[✅]` From `AssembledPrompt`: `{ promptContent: string; source_prompt_resource_id: string; messages?: Messages[]; }` — the new optional field
+    * `[✅]` Injection shape: all dependencies via `AssembleContinuationPromptDeps` — no concrete imports from higher layers
+  * `[✅]` interface/`prompt-assembler.interface.ts`
+    * `[✅]` `AssembledPrompt` (line 104-107): add `messages?: Messages[]` — optional because only the continuation path sets it; non-continuation paths return `AssembledPrompt` without `messages`
+    * `[✅]` `AssembleContinuationPromptDeps` — `gatherContinuationInputs` property type already updated to `GatherContinuationInputsSignature` in Node 5; no additional change needed here
+    * `[✅]` Import `Messages` type if not already imported
+  * `[✅]` interface/tests/`assembleContinuationPrompt.interface.test.ts`
+    * `[✅]` Contract: `AssembledPrompt` accepts `{ promptContent: string, source_prompt_resource_id: string, messages: [...] }` — compiles with messages
+    * `[✅]` Contract: `AssembledPrompt` accepts `{ promptContent: string, source_prompt_resource_id: string }` — compiles without messages (backward compatible)
+    * `[✅]` Contract: `AssembledPrompt.messages` is `Messages[] | undefined` — optional, not required
+  * `[✅]` interface/guards/`assembleContinuationPrompt.interface.guards.ts`
+    * `[✅]` `isAssembledPromptWithMessages` — narrows `AssembledPrompt` to confirm `messages` is present and is a non-empty array
+  * `[✅]` unit/`assembleContinuationPrompt.test.ts`
+    * `[✅]` Update existing tests to account for the new return shape
+    * `[✅]` Test: when `gatherContinuationInputs` returns success with 3 messages, `assembled.messages` contains those 3 messages
+    * `[✅]` Test: `assembled.promptContent` is the final user message (third message content) plus any header context, not the flattened blob of all messages
+    * `[✅]` Test: when `gatherContinuationInputs` returns error, `assembleContinuationPrompt` throws with the error message
+    * `[✅]` Test: file upload still receives `promptContent` (for storage), not the structured messages
+    * `[✅]` Test: `source_prompt_resource_id` is still populated from the file upload response
+  * `[✅]` `construction`
+    * `[✅]` Canonical entry point: `assembleContinuationPrompt(deps)` — existing signature shape, deps type updated
+    * `[✅]` `messages` is set on the returned `AssembledPrompt` only when `gatherContinuationInputs` returns structured messages
+    * `[✅]` `promptContent` is set to the continuation instruction (third message) concatenated with any header context — this preserves file upload content
+    * `[✅]` Object completeness: `promptContent` and `source_prompt_resource_id` always present; `messages` present on continuation path
+  * `[✅]` `assembleContinuationPrompt.ts`
+    * `[✅]` Add construction rationale comment explaining why messages are propagated as structured array instead of flattened, and why `promptContent` is kept for file upload backward compatibility
+    * `[✅]` Update the call to `gatherContinuationInputs` (line 151-155) to use the new DI signature: pass deps/params/payload instead of positional args
+    * `[✅]` Handle the `gatherContinuationInputs` return: check for `success === false` and throw; on success, extract `messages`
+    * `[✅]` Remove the flatten loop (lines 157-161): no longer iterate messages to push content into `promptParts`
+    * `[✅]` Instead, construct `promptParts` from header context (if any) + the third message content (continuation instruction)
+    * `[✅]` Set `messages` on the returned `AssembledPrompt`: `return { promptContent: finalPrompt, source_prompt_resource_id: response.record.id, messages: gatherResult.messages }`
+    * `[✅]` All other logic (model fetch, header context fetch, root contribution resolution, file upload) remains unchanged
+  * `[✅]` `directionality`
+    * `[✅]` Layer: application (prompt assembly)
+    * `[✅]` All dependencies are inward-facing: `gatherContinuationInputs` (same layer, lateral — direct producer), types (domain), guards (domain), database client (infrastructure), file manager (infrastructure)
+    * `[✅]` Provides are outward-facing: consumed by `processSimpleJob` (higher layer — worker) via `ctx.promptAssembler.assemble()`
+  * `[✅]` `requirements`
+    * `[✅]` Messages from `gatherContinuationInputs` are propagated through `AssembledPrompt` without flattening
+    * `[✅]` `promptContent` contains the continuation instruction (+ header context) for file upload — not the full flattened blob
+    * `[✅]` `AssembledPrompt.messages` is optional — non-continuation assembly paths are unaffected
+    * `[✅]` Backward compatibility: consumers that only read `promptContent` and `source_prompt_resource_id` continue to work unchanged
+    * `[✅]` Consumers that check for `messages` (Node 8: `processSimpleJob`) can populate `conversationHistory` from the structured array
 
 ## Node 7
 
-* `[ ]` [BE] `supabase/functions/_shared/services/file_manager` **Add expectedSchema parameter + refactor Phase 2/3 to use assembleChunks**
-  * `[ ]` `objective`
-    * `[ ]` (Fix 2) Add an optional `expectedSchema?: ContextForDocument` parameter to `assembleAndSaveFinalDocument`. Between the merge (line 846) and upload (line 905): if `expectedSchema` is provided, walk `mergedObject` against `expectedSchema.content_to_include` (typed as `ContentToInclude`). For every key in the schema where `mergedObject` has a missing key, empty string (`""`), or empty array (`[]`), replace the value with `"[Continuation limit reached — value not generated]"`. Recurse for nested `ContentToInclude` objects. Uses the explicit application type throughout — no conversion to primitive records.
-    * `[ ]` (Fix 3.1) Refactor Phase 2 (lines 774-797) and Phase 3 (lines 799-840) to use the shared `assembleChunks` utility from Node 2. Remove the inline `mergeObjects` helper (lines 752-769) — this logic now lives inside `assembleChunks`.
-    * `[ ]` Existing behavior must be preserved — the refactor is implementation-only, not behavioral.
-  * `[ ]` `role`
-    * `[ ]` Application — file management service
-  * `[ ]` `module`
-    * `[ ]` File manager — document assembly and storage
-    * `[ ]` Boundary: assembles continuation fragments into a final document, optionally fills missing keys from expected schema, uploads to storage
-  * `[ ]` `deps`
-    * `[ ]` `assembleChunks` from Node 2 (`_shared/utils/assembleChunks`) — domain utility, inward-facing; replaces inline Phase 2/3 logic
-    * `[ ]` `sanitizeJsonContent` from `_shared/utils/jsonSanitizer.ts` — infrastructure utility, inward-facing (currently used inline, will be passed through `assembleChunks` deps)
-    * `[ ]` `isRecord` from `_shared/utils/type-guards/type_guards.common.ts` — domain guard, inward-facing
-    * `[ ]` `isJsonSanitizationResult` from type guards — domain guard, inward-facing (currently used in Phase 2/3, may be removable after refactor)
-    * `[ ]` Supabase client — infrastructure, injected via constructor (`this.supabase`)
-    * `[ ]` No reverse dependency introduced
-  * `[ ]` `context_slice`
-    * `[ ]` From `assembleChunks`: accepts `AssembleChunksDeps`, `AssembleChunksParams`, `AssembleChunksPayload`; returns `AssembleChunksSuccess | AssembleChunksError`
-    * `[ ]` From `this.supabase`: storage download (`.storage.from().download()`), contribution queries
-    * `[ ]` Injection shape: `assembleChunks` injected as a new dependency on the `FileManagerService` class or passed as a parameter; Supabase client already injected via constructor
-  * `[ ]` interface/`file_manager.interface.ts` (or existing type location)
-    * `[ ]` `assembleAndSaveFinalDocument` signature: add optional second parameter `expectedSchema?: ContextForDocument`
-    * `[ ]` Import `ContextForDocument` from `dialectic-service/dialectic.interface.ts`
-    * `[ ]` If `assembleAndSaveFinalDocument` is defined in an interface (e.g., `IFileManager`), update the interface to include the new optional parameter
-  * `[ ]` interface/tests/`file_manager.assemble.interface.test.ts`
-    * `[ ]` Contract: `assembleAndSaveFinalDocument` accepts `(rootContributionId: string)` — existing signature still valid
-    * `[ ]` Contract: `assembleAndSaveFinalDocument` accepts `(rootContributionId: string, expectedSchema: ContextForDocument)` — new signature valid
-    * `[ ]` Contract: `expectedSchema` is optional — callers that don't provide it are unaffected
-  * `[ ]` interface/guards/ — no new guards needed for this node; the `assembleChunks` guards from Node 2 handle the assembly result
-  * `[ ]` unit/`file_manager.assemble.test.ts`
-    * `[ ]` Test: (Fix 2) when `expectedSchema` is provided and merged object is missing keys, those keys are filled with `"[Continuation limit reached — value not generated]"`
-    * `[ ]` Test: (Fix 2) when `expectedSchema` is provided and merged object already has values for all keys, those values are preserved — no overwriting
-    * `[ ]` Test: (Fix 2) when `expectedSchema` has nested objects and merged object is missing nested keys, the fill recurses correctly
-    * `[ ]` Test: (Fix 2) when `expectedSchema` is provided and merged object has empty string values, those are replaced with the placeholder
-    * `[ ]` Test: (Fix 2) when `expectedSchema` is provided and merged object has empty array values, those are replaced with the placeholder
-    * `[ ]` Test: (Fix 2) when `expectedSchema` is not provided (normal path), behavior is unchanged — no fill logic runs
-    * `[ ]` Test: (Fix 3.1) existing assembly tests must continue to pass after Phase 2/3 refactor — same inputs produce same outputs
-    * `[ ]` Test: (Fix 3.1) when `assembleChunks` returns an error, `assembleAndSaveFinalDocument` throws with a descriptive error
-  * `[ ]` `construction`
-    * `[ ]` `assembleAndSaveFinalDocument(rootContributionId, expectedSchema?: ContextForDocument)` — existing method on `FileManagerService` class, signature extended
-    * `[ ]` `assembleChunks` dependency: either injected via constructor (preferred — consistent with other service deps) or imported directly (acceptable for a pure utility)
-    * `[ ]` Schema fill logic is a private method or inline block between merge and upload — not a separate exported function
-    * `[ ]` Initialization order: download chunks → call `assembleChunks` → (optional) fill from schema → stringify → upload
-  * `[ ]` `file_manager.ts`
-    * `[ ]` Add construction rationale comment explaining why `ContextForDocument` is used instead of a primitive record, and how `content_to_include` maps to the schema fill walk
-    * `[ ]` Add optional `expectedSchema?: ContextForDocument` parameter to `assembleAndSaveFinalDocument` (line 684-686)
-    * `[ ]` Remove inline `mergeObjects` helper (lines 752-769) — this logic is now inside `assembleChunks`
-    * `[ ]` Replace Phase 2 (lines 774-797) and Phase 3 (lines 799-840) with a single call to `assembleChunks`:
-      * `[ ]` Collect `downloadedChunks.map(d => d.text)` into a `string[]`
-      * `[ ]` Call `assembleChunks(assembleChunksDeps, assembleChunksParams, { chunks })`
-      * `[ ]` If result is `AssembleChunksError`, throw with descriptive error including chunk IDs and paths
-      * `[ ]` If result is `AssembleChunksSuccess`, set `mergedObject = result.mergedObject`
-    * `[ ]` After merge (line 846 equivalent), before upload: if `expectedSchema` is provided, walk `mergedObject` against `expectedSchema.content_to_include` (typed as `ContentToInclude`):
-      * `[ ]` For each key in `content_to_include`: if key is missing in `mergedObject`, or value is `""`, or value is `[]`, set `mergedObject[key] = "[Continuation limit reached — value not generated]"`
-      * `[ ]` If `content_to_include` value is a nested `ContentToInclude` and merged value is also an object, recurse
-      * `[ ]` If `content_to_include` value is a nested `ContentToInclude` and merged value is missing/empty, set entire nested object with placeholders
-    * `[ ]` All other logic (download chunks, path construction, render check, upload, is_latest_edit update) remains unchanged
-  * `[ ]` integration/`file_manager.assembleChunks.integration.test.ts`
-    * `[ ]` **Boundary**: `assembleAndSaveFinalDocument` (service) → real `assembleChunks` (domain utility) → real `sanitizeJsonContent` (infrastructure utility). Real Supabase storage for chunk download and final upload. Mocked: nothing within this boundary — the point is to prove the real `assembleChunks` produces identical results to the replaced Phase 2/3 inline code.
-    * `[ ]` **Fixture setup** (follows existing `file_manager.assemble.integration.test.ts` pattern):
-      * `[ ]` `initializeSupabaseAdminClient()` → `setSharedAdminClient()` → `initializeTestDeps()`
-      * `[ ]` `coreCreateAndSetupTestUser()` for auth/JWT; `coreEnsureTestUserAndWallet()` for wallet
-      * `[ ]` `createUniqueProjectAndSession()` helper per test for isolation
-      * `[ ]` Per-test helper `createContinuationChain(chunks: { content: string, type: 'raw' | 'parseable_with_metadata' | 'structurally_fixed' }[])`: inserts a root `dialectic_contributions` row, then N continuation rows each with `target_contribution_id` pointing to the previous; uploads each chunk's content string to Supabase storage at the contribution's `storage_path/file_name`; returns the root contribution ID
-    * `[ ]` **Test: raw-only chain** — 3 chunks of raw truncated JSON (e.g., `'{"executive_summary":"The project'`, `' aims to deliver'`, `' value to stakeholders"}'`). Call `assembleAndSaveFinalDocument(rootId)`. Download the final assembled file from storage. Assert: parsed content equals `{ "executive_summary": "The project aims to deliver value to stakeholders" }`. Assert: `is_latest_edit` is `true` on the final contribution, `false` on all intermediaries.
-    * `[ ]` **Test: parseable-only chain** — 3 chunks of valid JSON, chunk 1 has `continuation_needed: true` and `resume_cursor` metadata, chunk 2 has `continuation_needed: true`, chunk 3 has no metadata. Call `assembleAndSaveFinalDocument(rootId)`. Assert: merged object contains all content keys from all 3 chunks deep-merged. Assert: no `continuation_needed`, `stop_reason`, or `resume_cursor` keys in the final document (metadata stripped).
-    * `[ ]` **Test: mixed chain** — chunk 1 is raw truncated JSON, chunk 2 is valid JSON with `continuation_needed: true`, chunk 3 is raw truncated JSON. Call `assembleAndSaveFinalDocument(rootId)`. Assert: raw groups are sanitized, parseable chunk is merged, final document contains content from all 3 chunks in order. Assert: string `content` fields from adjacent chunks are concatenated (not overwritten).
-    * `[ ]` **Test: expectedSchema fill** — 2-chunk parseable chain that produces a merged object missing keys defined in a `ContextForDocument` fixture. Call `assembleAndSaveFinalDocument(rootId, expectedSchema)`. Assert: missing keys are filled with `"[Continuation limit reached — value not generated]"`. Assert: existing keys with real values are NOT overwritten.
-    * `[ ]` **Test: no expectedSchema (normal path)** — same 2-chunk chain, call without `expectedSchema`. Assert: missing keys remain absent (no fill logic). Assert: behavior identical to pre-refactor — this is the parity proof.
-    * `[ ]` **Cleanup**: `cleanupProjectAndSession()` per test in `finally` block; `coreCleanupTestResources()` in `afterAll`
-  * `[ ]` `directionality`
-    * `[ ]` Layer: application (service)
-    * `[ ]` All dependencies are inward-facing: `assembleChunks` (domain utility), sanitizer (infrastructure), guards (domain), Supabase client (infrastructure)
-    * `[ ]` Provides are outward-facing: consumed by `executeModelCallAndSave` (worker layer) which calls `assembleAndSaveFinalDocument`
-  * `[ ]` `requirements`
-    * `[ ]` (Fix 2) When `expectedSchema` is provided, missing/empty keys are filled with `"[Continuation limit reached — value not generated]"` before upload
-    * `[ ]` (Fix 2) When `expectedSchema` is not provided, behavior is identical to current — no fill logic runs
-    * `[ ]` (Fix 2) Fill is recursive for nested objects
-    * `[ ]` (Fix 3.1) Phase 2/3 replacement produces identical merge results for all existing test cases
-    * `[ ]` (Fix 3.1) Inline `mergeObjects` is removed — single source of truth is now `assembleChunks`
-    * `[ ]` (Fix 3.1) Integration proof sequence: after refactoring Phase 2/3 to use `assembleChunks`, run `file_manager.assemble.test.ts` with the real `assembleChunks` wired in (not mock) to prove merge logic parity with the replaced inline code. Only after all existing tests pass against the real implementation, insert the `assembleChunks` mock for ongoing unit test isolation. This sequence is mandatory — the parity proof must precede mocking.
-    * `[ ]` (Fix 3.1) Dedicated integration test in this node (`file_manager.assembleChunks.integration.test.ts`) — prevents merge logic regression after unit tests are mocked
-    * `[ ]` All existing tests continue to pass — refactor is implementation-only
+* `[✅]` [BE] `supabase/functions/_shared/services/file_manager` **Add expectedSchema parameter + refactor Phase 2/3 to use assembleChunks**
+  * `[✅]` `objective`
+    * `[✅]` (Fix 2) Add an optional `expectedSchema?: ContextForDocument` parameter to `assembleAndSaveFinalDocument`. Between the merge (line 846) and upload (line 905): if `expectedSchema` is provided, walk `mergedObject` against `expectedSchema.content_to_include` (typed as `ContentToInclude`). For every key in the schema where `mergedObject` has a missing key, empty string (`""`), or empty array (`[]`), replace the value with `"[Continuation limit reached — value not generated]"`. Recurse for nested `ContentToInclude` objects. Uses the explicit application type throughout — no conversion to primitive records.
+    * `[✅]` (Fix 3.1) Refactor Phase 2 (lines 774-797) and Phase 3 (lines 799-840) to use the shared `assembleChunks` utility from Node 2. Remove the inline `mergeObjects` helper (lines 752-769) — this logic now lives inside `assembleChunks`.
+    * `[✅]` Existing behavior must be preserved — the refactor is implementation-only, not behavioral.
+  * `[✅]` `role`
+    * `[✅]` Application — file management service
+  * `[✅]` `module`
+    * `[✅]` File manager — document assembly and storage
+    * `[✅]` Boundary: assembles continuation fragments into a final document, optionally fills missing keys from expected schema, uploads to storage
+  * `[✅]` `deps`
+    * `[✅]` `assembleChunks` from Node 2 (`_shared/utils/assembleChunks`) — domain utility, inward-facing; replaces inline Phase 2/3 logic
+    * `[✅]` `sanitizeJsonContent` from `_shared/utils/jsonSanitizer.ts` — infrastructure utility, inward-facing (currently used inline, will be passed through `assembleChunks` deps)
+    * `[✅]` `isRecord` from `_shared/utils/type-guards/type_guards.common.ts` — domain guard, inward-facing
+    * `[✅]` `isJsonSanitizationResult` from type guards — domain guard, inward-facing (currently used in Phase 2/3, may be removable after refactor)
+    * `[✅]` Supabase client — infrastructure, injected via constructor (`this.supabase`)
+    * `[✅]` No reverse dependency introduced
+  * `[✅]` `context_slice`
+    * `[✅]` From `assembleChunks`: accepts `AssembleChunksDeps`, `AssembleChunksParams`, `AssembleChunksPayload`; returns `AssembleChunksSuccess | AssembleChunksError`
+    * `[✅]` From `this.supabase`: storage download (`.storage.from().download()`), contribution queries
+    * `[✅]` Injection shape: `assembleChunks` injected as a new dependency on the `FileManagerService` class or passed as a parameter; Supabase client already injected via constructor
+  * `[✅]` interface/`file_manager.interface.ts` (or existing type location)
+    * `[✅]` `assembleAndSaveFinalDocument` signature: add optional second parameter `expectedSchema?: ContextForDocument`
+    * `[✅]` Import `ContextForDocument` from `dialectic-service/dialectic.interface.ts`
+    * `[✅]` If `assembleAndSaveFinalDocument` is defined in an interface (e.g., `IFileManager`), update the interface to include the new optional parameter
+  * `[✅]` interface/tests/`file_manager.assemble.interface.test.ts`
+    * `[✅]` Contract: `assembleAndSaveFinalDocument` accepts `(rootContributionId: string)` — existing signature still valid
+    * `[✅]` Contract: `assembleAndSaveFinalDocument` accepts `(rootContributionId: string, expectedSchema: ContextForDocument)` — new signature valid
+    * `[✅]` Contract: `expectedSchema` is optional — callers that don't provide it are unaffected
+  * `[✅]` interface/guards/ — no new guards needed for this node; the `assembleChunks` guards from Node 2 handle the assembly result
+  * `[✅]` unit/`file_manager.assemble.test.ts`
+    * `[✅]` Test: (Fix 2) when `expectedSchema` is provided and merged object is missing keys, those keys are filled with `"[Continuation limit reached — value not generated]"`
+    * `[✅]` Test: (Fix 2) when `expectedSchema` is provided and merged object already has values for all keys, those values are preserved — no overwriting
+    * `[✅]` Test: (Fix 2) when `expectedSchema` has nested objects and merged object is missing nested keys, the fill recurses correctly
+    * `[✅]` Test: (Fix 2) when `expectedSchema` is provided and merged object has empty string values, those are replaced with the placeholder
+    * `[✅]` Test: (Fix 2) when `expectedSchema` is provided and merged object has empty array values, those are replaced with the placeholder
+    * `[✅]` Test: (Fix 2) when `expectedSchema` is not provided (normal path), behavior is unchanged — no fill logic runs
+    * `[✅]` Test: (Fix 3.1) existing assembly tests must continue to pass after Phase 2/3 refactor — same inputs produce same outputs
+    * `[✅]` Test: (Fix 3.1) when `assembleChunks` returns an error, `assembleAndSaveFinalDocument` throws with a descriptive error
+  * `[✅]` `construction`
+    * `[✅]` `assembleAndSaveFinalDocument(rootContributionId, expectedSchema?: ContextForDocument)` — existing method on `FileManagerService` class, signature extended
+    * `[✅]` `assembleChunks` dependency: either injected via constructor (preferred — consistent with other service deps) or imported directly (acceptable for a pure utility)
+    * `[✅]` Schema fill logic is a private method or inline block between merge and upload — not a separate exported function
+    * `[✅]` Initialization order: download chunks → call `assembleChunks` → (optional) fill from schema → stringify → upload
+  * `[✅]` `file_manager.ts`
+    * `[✅]` Add construction rationale comment explaining why `ContextForDocument` is used instead of a primitive record, and how `content_to_include` maps to the schema fill walk
+    * `[✅]` Add optional `expectedSchema?: ContextForDocument` parameter to `assembleAndSaveFinalDocument` (line 684-686)
+    * `[✅]` Remove inline `mergeObjects` helper (lines 752-769) — this logic is now inside `assembleChunks`
+    * `[✅]` Replace Phase 2 (lines 774-797) and Phase 3 (lines 799-840) with a single call to `assembleChunks`:
+      * `[✅]` Collect `downloadedChunks.map(d => d.text)` into a `string[]`
+      * `[✅]` Call `assembleChunks(assembleChunksDeps, assembleChunksParams, { chunks })`
+      * `[✅]` If result is `AssembleChunksError`, throw with descriptive error including chunk IDs and paths
+      * `[✅]` If result is `AssembleChunksSuccess`, set `mergedObject = result.mergedObject`
+    * `[✅]` After merge (line 846 equivalent), before upload: if `expectedSchema` is provided, walk `mergedObject` against `expectedSchema.content_to_include` (typed as `ContentToInclude`):
+      * `[✅]` For each key in `content_to_include`: if key is missing in `mergedObject`, or value is `""`, or value is `[]`, set `mergedObject[key] = "[Continuation limit reached — value not generated]"`
+      * `[✅]` If `content_to_include` value is a nested `ContentToInclude` and merged value is also an object, recurse
+      * `[✅]` If `content_to_include` value is a nested `ContentToInclude` and merged value is missing/empty, set entire nested object with placeholders
+    * `[✅]` All other logic (download chunks, path construction, render check, upload, is_latest_edit update) remains unchanged
+  * `[✅]` integration/`file_manager.assembleChunks.integration.test.ts`
+    * `[✅]` **Boundary**: `assembleAndSaveFinalDocument` (service) → real `assembleChunks` (domain utility) → real `sanitizeJsonContent` (infrastructure utility). Real Supabase storage for chunk download and final upload. Mocked: nothing within this boundary — the point is to prove the real `assembleChunks` produces identical results to the replaced Phase 2/3 inline code.
+    * `[✅]` **Fixture setup** (follows existing `file_manager.assemble.integration.test.ts` pattern):
+      * `[✅]` `initializeSupabaseAdminClient()` → `setSharedAdminClient()` → `initializeTestDeps()`
+      * `[✅]` `coreCreateAndSetupTestUser()` for auth/JWT; `coreEnsureTestUserAndWallet()` for wallet
+      * `[✅]` `createUniqueProjectAndSession()` helper per test for isolation
+      * `[✅]` Per-test helper `createContinuationChain(chunks: { content: string, type: 'raw' | 'parseable_with_metadata' | 'structurally_fixed' }[])`: inserts a root `dialectic_contributions` row, then N continuation rows each with `target_contribution_id` pointing to the previous; uploads each chunk's content string to Supabase storage at the contribution's `storage_path/file_name`; returns the root contribution ID
+    * `[✅]` **Test: raw-only chain** — 3 chunks of raw truncated JSON (e.g., `'{"executive_summary":"The project'`, `' aims to deliver'`, `' value to stakeholders"}'`). Call `assembleAndSaveFinalDocument(rootId)`. Download the final assembled file from storage. Assert: parsed content equals `{ "executive_summary": "The project aims to deliver value to stakeholders" }`. Assert: `is_latest_edit` is `true` on the final contribution, `false` on all intermediaries.
+    * `[✅]` **Test: parseable-only chain** — 3 chunks of valid JSON, chunk 1 has `continuation_needed: true` and `resume_cursor` metadata, chunk 2 has `continuation_needed: true`, chunk 3 has no metadata. Call `assembleAndSaveFinalDocument(rootId)`. Assert: merged object contains all content keys from all 3 chunks deep-merged. Assert: no `continuation_needed`, `stop_reason`, or `resume_cursor` keys in the final document (metadata stripped).
+    * `[✅]` **Test: mixed chain** — chunk 1 is raw truncated JSON, chunk 2 is valid JSON with `continuation_needed: true`, chunk 3 is raw truncated JSON. Call `assembleAndSaveFinalDocument(rootId)`. Assert: raw groups are sanitized, parseable chunk is merged, final document contains content from all 3 chunks in order. Assert: string `content` fields from adjacent chunks are concatenated (not overwritten).
+    * `[✅]` **Test: expectedSchema fill** — 2-chunk parseable chain that produces a merged object missing keys defined in a `ContextForDocument` fixture. Call `assembleAndSaveFinalDocument(rootId, expectedSchema)`. Assert: missing keys are filled with `"[Continuation limit reached — value not generated]"`. Assert: existing keys with real values are NOT overwritten.
+    * `[✅]` **Test: no expectedSchema (normal path)** — same 2-chunk chain, call without `expectedSchema`. Assert: missing keys remain absent (no fill logic). Assert: behavior identical to pre-refactor — this is the parity proof.
+    * `[✅]` **Cleanup**: `cleanupProjectAndSession()` per test in `finally` block; `coreCleanupTestResources()` in `afterAll`
+  * `[✅]` `directionality`
+    * `[✅]` Layer: application (service)
+    * `[✅]` All dependencies are inward-facing: `assembleChunks` (domain utility), sanitizer (infrastructure), guards (domain), Supabase client (infrastructure)
+    * `[✅]` Provides are outward-facing: consumed by `executeModelCallAndSave` (worker layer) which calls `assembleAndSaveFinalDocument`
+  * `[✅]` `requirements`
+    * `[✅]` (Fix 2) When `expectedSchema` is provided, missing/empty keys are filled with `"[Continuation limit reached — value not generated]"` before upload
+    * `[✅]` (Fix 2) When `expectedSchema` is not provided, behavior is identical to current — no fill logic runs
+    * `[✅]` (Fix 2) Fill is recursive for nested objects
+    * `[✅]` (Fix 3.1) Phase 2/3 replacement produces identical merge results for all existing test cases
+    * `[✅]` (Fix 3.1) Inline `mergeObjects` is removed — single source of truth is now `assembleChunks`
+    * `[✅]` (Fix 3.1) Integration proof sequence: after refactoring Phase 2/3 to use `assembleChunks`, run `file_manager.assemble.test.ts` with the real `assembleChunks` wired in (not mock) to prove merge logic parity with the replaced inline code. Only after all existing tests pass against the real implementation, insert the `assembleChunks` mock for ongoing unit test isolation. This sequence is mandatory — the parity proof must precede mocking.
+    * `[✅]` (Fix 3.1) Dedicated integration test in this node (`file_manager.assembleChunks.integration.test.ts`) — prevents merge logic regression after unit tests are mocked
+    * `[✅]` All existing tests continue to pass — refactor is implementation-only
 
 ## Node 8
 
-* `[ ]` [BE] `supabase/functions/dialectic-worker/processSimpleJob` **Route structured messages into conversationHistory for continuation path**
-  * `[ ]` `objective`
-    * `[ ]` When `assembled.messages` is present (continuation path from Node 6), populate `conversationHistory` from the first two messages (seed prompt + assembled assistant content) and set `currentUserPrompt` to the third (continuation instruction)
-    * `[ ]` When `assembled.messages` is absent (non-continuation path), existing behavior is completely unchanged — `conversationHistory` stays empty, `currentUserPrompt` is `assembled.promptContent`
-    * `[ ]` This is the critical routing change that makes the model receive a proper 3-message conversation instead of one giant undifferentiated user message
-  * `[ ]` `role`
-    * `[ ]` Application — worker-level job orchestration
-  * `[ ]` `module`
-    * `[ ]` Dialectic worker — prompt construction payload routing
-    * `[ ]` Boundary: receives `AssembledPrompt` from the prompt assembler and routes its content into `PromptConstructionPayload` for `executeModelCallAndSave`
-  * `[ ]` `deps`
-    * `[ ]` `AssembledPrompt` from `prompt-assembler.interface.ts` — now has optional `messages?: Messages[]` (added in Node 6)
-    * `[ ]` `PromptConstructionPayload` from `dialectic.interface.ts` (line 1521-1528) — `{ conversationHistory: Messages[], currentUserPrompt: Prompt, ... }`
-    * `[ ]` `Messages` from `_shared/types.ts` (line 395-400) — domain type
-    * `[ ]` `isAssembledPromptWithMessages` guard from Node 6 — narrows `AssembledPrompt` to confirm `messages` is present
-    * `[ ]` No reverse dependency introduced — `processSimpleJob` consumes `AssembledPrompt` (inward-facing)
-  * `[ ]` `context_slice`
-    * `[ ]` From `AssembledPrompt`: `{ promptContent: string; source_prompt_resource_id: string; messages?: Messages[]; }`
-    * `[ ]` From `PromptConstructionPayload`: `{ conversationHistory: Messages[]; currentUserPrompt: Prompt; ... }`
-    * `[ ]` The routing logic only reads `assembled.messages` and writes to `conversationHistory` + `currentUserPrompt` — no other fields touched
-  * `[ ]` interface/ — no new interface types needed for this node; `AssembledPrompt` and `PromptConstructionPayload` already exist and are sufficient
-  * `[ ]` interface/tests/ — no new type contracts needed; the `AssembledPrompt.messages` contract is covered in Node 6
-  * `[ ]` interface/guards/ — no new guards needed; `isAssembledPromptWithMessages` from Node 6 is used
-  * `[ ]` unit/`processSimpleJob.test.ts`
-    * `[ ]` Test: when `assembled.messages` is present with 3 messages, `conversationHistory` contains the first two messages (seed prompt user message + assembled assistant message) and `currentUserPrompt` is the third message content (continuation instruction)
-    * `[ ]` Test: when `assembled.messages` is absent, `conversationHistory` is empty and `currentUserPrompt` is `assembled.promptContent` — existing behavior unchanged
-    * `[ ]` Test: when `assembled.messages` is present, `source_prompt_resource_id` is still populated from `assembled.source_prompt_resource_id` — no regression
-    * `[ ]` Test: the `executeModelCallAndSave` call receives the correctly routed `promptConstructionPayload` in both continuation and non-continuation paths
-  * `[ ]` `construction`
-    * `[ ]` `processSimpleJob` is an existing function — no signature change
-    * `[ ]` The routing logic is a conditional block inserted between the `assembled` assignment (line 294) and the `promptConstructionPayload` construction (line 296)
-    * `[ ]` No new objects constructed — the existing `conversationHistory` array (line 126) and `currentUserPrompt` field are populated differently based on the presence of `assembled.messages`
-  * `[ ]` `processSimpleJob.ts`
-    * `[ ]` Add construction rationale comment explaining the conditional routing: why `conversationHistory` is populated only when structured messages are present, and why this preserves backward compatibility for non-continuation paths
-    * `[ ]` After `const assembled = await ctx.promptAssembler.assemble(assembleOptions)` (line 294):
-      * `[ ]` Check if `assembled.messages` is present and is a non-empty array (use `isAssembledPromptWithMessages` guard or inline check)
-      * `[ ]` If present: push `assembled.messages[0]` (seed prompt, role: user) and `assembled.messages[1]` (assembled content, role: assistant) into `conversationHistory`; set `currentUserPrompt` to `assembled.messages[2].content` (continuation instruction)
-      * `[ ]` If absent: existing behavior — `currentUserPrompt = assembled.promptContent`, `conversationHistory` stays empty
-    * `[ ]` Update the `promptConstructionPayload` construction (lines 296-301) to use the conditionally-set values:
-      * `[ ]` `conversationHistory` already declared at line 126 — just push into it when messages are present
-      * `[ ]` `currentUserPrompt` is either `assembled.messages[2].content` (continuation) or `assembled.promptContent` (non-continuation)
-    * `[ ]` No other lines of the function are modified
-    * `[ ]` `executeModelCallAndSave` already correctly maps `conversationHistory` → `ChatApiRequest.messages` and `currentUserPrompt` → `ChatApiRequest.message` — no changes needed downstream
-  * `[ ]` `directionality`
-    * `[ ]` Layer: application (worker)
-    * `[ ]` All dependencies are inward-facing: `AssembledPrompt` (domain type from prompt assembler), `PromptConstructionPayload` (domain type), `Messages` (domain type), guard (domain)
-    * `[ ]` Provides are outward-facing: the populated `promptConstructionPayload` is consumed by `executeModelCallAndSave` (same layer, lateral)
-  * `[ ]` `requirements`
-    * `[ ]` When continuation messages are present, the model receives a 3-message conversation: user (seed), assistant (assembled content), user (continuation instruction)
-    * `[ ]` When continuation messages are absent, the model receives a single user message (existing behavior) — no regression
-    * `[ ]` `conversationHistory` flows through to `ChatApiRequest.messages` and `currentUserPrompt` flows through to `ChatApiRequest.message` — the existing downstream mapping in `executeModelCallAndSave` handles this correctly without changes
-    * `[ ]` This is the fix that eliminates the progressive degradation described in Defect 3a — the model can now distinguish its own prior output from new instructions
+* `[✅]` [BE] `supabase/functions/dialectic-worker/processSimpleJob` **Route structured messages into conversationHistory for continuation path**
+  * `[✅]` `objective`
+    * `[✅]` When `assembled.messages` is present (continuation path from Node 6), populate `conversationHistory` from the first two messages (seed prompt + assembled assistant content) and set `currentUserPrompt` to the third (continuation instruction)
+    * `[✅]` When `assembled.messages` is absent (non-continuation path), existing behavior is completely unchanged — `conversationHistory` stays empty, `currentUserPrompt` is `assembled.promptContent`
+    * `[✅]` This is the critical routing change that makes the model receive a proper 3-message conversation instead of one giant undifferentiated user message
+  * `[✅]` `role`
+    * `[✅]` Application — worker-level job orchestration
+  * `[✅]` `module`
+    * `[✅]` Dialectic worker — prompt construction payload routing
+    * `[✅]` Boundary: receives `AssembledPrompt` from the prompt assembler and routes its content into `PromptConstructionPayload` for `executeModelCallAndSave`
+  * `[✅]` `deps`
+    * `[✅]` `AssembledPrompt` from `prompt-assembler.interface.ts` — now has optional `messages?: Messages[]` (added in Node 6)
+    * `[✅]` `PromptConstructionPayload` from `dialectic.interface.ts` (line 1521-1528) — `{ conversationHistory: Messages[], currentUserPrompt: Prompt, ... }`
+    * `[✅]` `Messages` from `_shared/types.ts` (line 395-400) — domain type
+    * `[✅]` `isAssembledPromptWithMessages` guard from Node 6 — narrows `AssembledPrompt` to confirm `messages` is present
+    * `[✅]` No reverse dependency introduced — `processSimpleJob` consumes `AssembledPrompt` (inward-facing)
+  * `[✅]` `context_slice`
+    * `[✅]` From `AssembledPrompt`: `{ promptContent: string; source_prompt_resource_id: string; messages?: Messages[]; }`
+    * `[✅]` From `PromptConstructionPayload`: `{ conversationHistory: Messages[]; currentUserPrompt: Prompt; ... }`
+    * `[✅]` The routing logic only reads `assembled.messages` and writes to `conversationHistory` + `currentUserPrompt` — no other fields touched
+  * `[✅]` interface/ — no new interface types needed for this node; `AssembledPrompt` and `PromptConstructionPayload` already exist and are sufficient
+  * `[✅]` interface/tests/ — no new type contracts needed; the `AssembledPrompt.messages` contract is covered in Node 6
+  * `[✅]` interface/guards/ — no new guards needed; `isAssembledPromptWithMessages` from Node 6 is used
+  * `[✅]` unit/`processSimpleJob.test.ts`
+    * `[✅]` Test: when `assembled.messages` is present with 3 messages, `conversationHistory` contains the first two messages (seed prompt user message + assembled assistant message) and `currentUserPrompt` is the third message content (continuation instruction)
+    * `[✅]` Test: when `assembled.messages` is absent, `conversationHistory` is empty and `currentUserPrompt` is `assembled.promptContent` — existing behavior unchanged
+    * `[✅]` Test: when `assembled.messages` is present, `source_prompt_resource_id` is still populated from `assembled.source_prompt_resource_id` — no regression
+    * `[✅]` Test: the `executeModelCallAndSave` call receives the correctly routed `promptConstructionPayload` in both continuation and non-continuation paths
+  * `[✅]` `construction`
+    * `[✅]` `processSimpleJob` is an existing function — no signature change
+    * `[✅]` The routing logic is a conditional block inserted between the `assembled` assignment (line 294) and the `promptConstructionPayload` construction (line 296)
+    * `[✅]` No new objects constructed — the existing `conversationHistory` array (line 126) and `currentUserPrompt` field are populated differently based on the presence of `assembled.messages`
+  * `[✅]` `processSimpleJob.ts`
+    * `[✅]` Add construction rationale comment explaining the conditional routing: why `conversationHistory` is populated only when structured messages are present, and why this preserves backward compatibility for non-continuation paths
+    * `[✅]` After `const assembled = await ctx.promptAssembler.assemble(assembleOptions)` (line 294):
+      * `[✅]` Check if `assembled.messages` is present and is a non-empty array (use `isAssembledPromptWithMessages` guard or inline check)
+      * `[✅]` If present: push `assembled.messages[0]` (seed prompt, role: user) and `assembled.messages[1]` (assembled content, role: assistant) into `conversationHistory`; set `currentUserPrompt` to `assembled.messages[2].content` (continuation instruction)
+      * `[✅]` If absent: existing behavior — `currentUserPrompt = assembled.promptContent`, `conversationHistory` stays empty
+    * `[✅]` Update the `promptConstructionPayload` construction (lines 296-301) to use the conditionally-set values:
+      * `[✅]` `conversationHistory` already declared at line 126 — just push into it when messages are present
+      * `[✅]` `currentUserPrompt` is either `assembled.messages[2].content` (continuation) or `assembled.promptContent` (non-continuation)
+    * `[✅]` No other lines of the function are modified
+    * `[✅]` `executeModelCallAndSave` already correctly maps `conversationHistory` → `ChatApiRequest.messages` and `currentUserPrompt` → `ChatApiRequest.message` — no changes needed downstream
+  * `[✅]` `directionality`
+    * `[✅]` Layer: application (worker)
+    * `[✅]` All dependencies are inward-facing: `AssembledPrompt` (domain type from prompt assembler), `PromptConstructionPayload` (domain type), `Messages` (domain type), guard (domain)
+    * `[✅]` Provides are outward-facing: the populated `promptConstructionPayload` is consumed by `executeModelCallAndSave` (same layer, lateral)
+  * `[✅]` `requirements`
+    * `[✅]` When continuation messages are present, the model receives a 3-message conversation: user (seed), assistant (assembled content), user (continuation instruction)
+    * `[✅]` When continuation messages are absent, the model receives a single user message (existing behavior) — no regression
+    * `[✅]` `conversationHistory` flows through to `ChatApiRequest.messages` and `currentUserPrompt` flows through to `ChatApiRequest.message` — the existing downstream mapping in `executeModelCallAndSave` handles this correctly without changes
+    * `[✅]` This is the fix that eliminates the progressive degradation described in Defect 3a — the model can now distinguish its own prior output from new instructions
 
 ## Node 9
 
-* `[ ]` [BE] `supabase/functions/dialectic-worker/executeModelCallAndSave` **Handle continuation-limit-reached, structurally-fixed trigger, and missing-keys trigger**
-  * `[ ]` `objective`
-    * `[ ]` (Fix 2) After `continueJob` returns, check for `continueResult.reason === 'continuation_limit_reached'`: log a warning, set `modelProcessingResult.status` to `'continuation_limit_reached'`, and call `assembleAndSaveFinalDocument(rootIdFromSaved, expectedSchema)` passing the matching `ContextForDocument` from `context_for_documents` — treating continuation-limit-reached as a final chunk that triggers the existing assembly path with schema fill
-    * `[ ]` (Fix 3.4) After sanitization succeeds with `wasStructurallyFixed === true`: if `continueUntilComplete` is set, override `shouldContinue = true` — the response was truncated and the sanitizer repaired it, so it is not a complete response
-    * `[ ]` (Fix 3.5) After successful parse with `finish_reason === 'stop'` and no content-level continuation flags: compare the parsed object's keys against `context_for_documents` from the job payload. If required keys are missing, set `shouldContinue = true`
-  * `[ ]` `role`
-    * `[ ]` Application — worker-level model call execution and continuation orchestration
-  * `[ ]` `module`
-    * `[ ]` Dialectic worker — model response processing and continuation decision logic
-    * `[ ]` Boundary: receives model responses, determines continuation needs, triggers assembly when done
-  * `[ ]` `deps`
-    * `[ ]` `continueJob` from Node 3 — now returns `IContinueJobResult` with optional `reason: 'continuation_limit_reached'`
-    * `[ ]` `isContinuationLimitReached` guard from Node 3 — narrows `IContinueJobResult` to confirm cap-hit
-    * `[ ]` `assembleAndSaveFinalDocument` from Node 7 — now accepts optional `expectedSchema?: ContextForDocument` parameter
-    * `[ ]` `ModelProcessingResult` from Node 3 — status union now includes `'continuation_limit_reached'`
-    * `[ ]` `DialecticExecuteJobPayload.context_for_documents` — `ContextForDocument[]` defining expected document schema
-    * `[ ]` `sanitizeJsonContent` / `JsonSanitizationResult` — already used, `wasStructurallyFixed` flag now acted upon
-    * `[ ]` `isRecord` from type guards — already used for parsed content checks
-    * `[ ]` No reverse dependency introduced
-  * `[ ]` `context_slice`
-    * `[ ]` From `continueJob`: `IContinueJobResult` with `{ enqueued: boolean; error?: Error; reason?: string; }`
-    * `[ ]` From `assembleAndSaveFinalDocument`: `(rootContributionId: string, expectedSchema?: ContextForDocument) => Promise<{ finalPath: string | null; error: Error | null; }>`
-    * `[ ]` From `job.payload.context_for_documents`: `ContextForDocument[]` — each entry has `document_key` and `content_to_include` defining expected keys
-    * `[ ]` From `sanitizationResult`: `{ wasStructurallyFixed: boolean; ... }` — already available after sanitization
-    * `[ ]` Injection shape: all dependencies already injected via `deps` parameter — no new injection points needed
-  * `[ ]` interface/ — no new interface types needed for this node; all types modified in Nodes 3 and 7 are consumed here
-  * `[ ]` interface/tests/ — no new type contracts needed; contracts for `IContinueJobResult.reason` and `ModelProcessingResult.status` covered in Node 3
-  * `[ ]` interface/guards/ — no new guards needed; `isContinuationLimitReached` from Node 3 is used
-  * `[ ]` unit/`executeModelCallAndSave.continuationCount.test.ts`
-    * `[ ]` Test: when `continueResult.reason === 'continuation_limit_reached'`, `modelProcessingResult.status` is set to `'continuation_limit_reached'`
-    * `[ ]` Test: when `continueResult.reason === 'continuation_limit_reached'`, `assembleAndSaveFinalDocument` is called with `rootIdFromSaved` and `expectedSchema` from `context_for_documents`
-    * `[ ]` Test: when `continueResult.reason === 'continuation_limit_reached'` but `rootIdFromSaved` is null or equals `contribution.id` (single chunk), `assembleAndSaveFinalDocument` is NOT called — no assembly needed for single-chunk artifacts
-    * `[ ]` Test: when `continueResult.enqueued === true` (normal continuation), `assembleAndSaveFinalDocument` is NOT called and status is `'needs_continuation'` — existing behavior preserved
-    * `[ ]` Test: when `continueResult.enqueued === false` with no reason (continueUntilComplete is false), `assembleAndSaveFinalDocument` is NOT called and status is `'completed'` — existing behavior preserved
-  * `[ ]` unit/`executeModelCallAndSave.continue.test.ts`
-    * `[ ]` Test: (Fix 3.4) when `sanitizationResult.wasStructurallyFixed === true` and `job.payload.continueUntilComplete === true`, `shouldContinue` is set to `true` even if `finish_reason` was not a continuation reason
-    * `[ ]` Test: (Fix 3.4) when `sanitizationResult.wasStructurallyFixed === true` but `job.payload.continueUntilComplete === false`, `shouldContinue` is NOT overridden — structural fix is logged but not acted upon (same as current behavior for non-continuation jobs)
-    * `[ ]` Test: (Fix 3.4) when `sanitizationResult.wasStructurallyFixed === false` and `job.payload.continueUntilComplete === true`, `shouldContinue` is not changed by the structural fix check — only the existing continuation logic applies
-    * `[ ]` Test: (Fix 3.5) when `finish_reason === 'stop'`, no content-level flags, but parsed object is missing keys defined in `context_for_documents`, `shouldContinue` is set to `true`
-    * `[ ]` Test: (Fix 3.5) when `finish_reason === 'stop'`, no content-level flags, and parsed object has all keys from `context_for_documents`, `shouldContinue` remains `false` — normal completion
-    * `[ ]` Test: (Fix 3.5) when `context_for_documents` is not present in job payload, missing-key check is skipped — `shouldContinue` determined by existing logic only
-    * `[ ]` Test: (Fix 3.5) when `finish_reason === 'stop'`, content-level flags ARE present (e.g., `continuation_needed: true`), `shouldContinue` is already `true` from flag check — missing-key check is not needed (but is harmless if it runs)
-  * `[ ]` `construction`
-    * `[ ]` `executeModelCallAndSave` is an existing function — no signature change
-    * `[ ]` Fix 3.4 logic is inserted after sanitization (after line 1139), before the content-level flag check
-    * `[ ]` Fix 3.5 logic is inserted after the content-level flag check (after line 1176), before `needsContinuation` is computed
-    * `[ ]` Fix 2 logic is inserted after `continueResult` handling (after line 1839), before the `isFinalChunk` block
-    * `[ ]` No new functions created — all three fixes are conditional blocks added to the existing function flow
-  * `[ ]` `executeModelCallAndSave.ts`
-    * `[ ]` Add construction rationale comment explaining the three new continuation triggers (structural fix, missing keys, continuation limit) and why each uses `ContextForDocument` / `ContentToInclude` instead of primitive records for schema comparison
-    * `[ ]` (Fix 3.4) After sanitization logging (line 1139): add conditional block:
-      * `[ ]` `if (sanitizationResult.wasStructurallyFixed && job.payload.continueUntilComplete && !shouldContinue)`
-      * `[ ]` Log warning: `'[executeModelCallAndSave] Response was structurally fixed by sanitizer — treating as truncated, triggering continuation'`
-      * `[ ]` Set `shouldContinue = true`
-    * `[ ]` (Fix 3.5) After content-level flag check (line 1176): add conditional block:
-      * `[ ]` Only run if `!shouldContinue && isRecord(parsedContent) && job.payload.continueUntilComplete`
-      * `[ ]` Find the matching `ContextForDocument` from `job.payload.context_for_documents` by matching `document_key` to the current document's file type; compare parsed object keys against `matchedDoc.content_to_include` (typed as `ContentToInclude`)
-      * `[ ]` If any expected keys are missing from `parsedContent`, log warning listing missing keys and set `shouldContinue = true`
-    * `[ ]` (Fix 2) After `continueResult.error` check (line 1839): add conditional block:
-      * `[ ]` `if (continueResult.enqueued === false && continueResult.reason === 'continuation_limit_reached')` (or use `isContinuationLimitReached` guard)
-      * `[ ]` Log warning: `'[executeModelCallAndSave] Continuation limit reached for job — triggering final assembly with schema fill'`
-      * `[ ]` Set `modelProcessingResult.status = 'continuation_limit_reached'`
-      * `[ ]` Find the matching `ContextForDocument` from `job.payload.context_for_documents` by matching `document_key` to the current document's file type — pass the typed `ContextForDocument` directly, no conversion
-      * `[ ]` If `rootIdFromSaved && rootIdFromSaved !== contribution.id && !shouldRender`: call `await deps.fileManager.assembleAndSaveFinalDocument(rootIdFromSaved, matchedContextForDocument)`
-    * `[ ]` Update `ModelProcessingResult` construction (line 1818-1823): the status ternary `needsContinuation ? 'needs_continuation' : 'completed'` remains as-is — the Fix 2 block overrides `status` to `'continuation_limit_reached'` after construction when the cap is hit
-  * `[ ]` `directionality`
-    * `[ ]` Layer: application (worker)
-    * `[ ]` All dependencies are inward-facing: `continueJob` (same layer, lateral), `assembleAndSaveFinalDocument` (service layer), interface types (domain), guards (domain), sanitizer (infrastructure)
-    * `[ ]` Provides are outward-facing: `ModelProcessingResult` consumed by `processSimpleJob` (same layer) and job completion logic
-  * `[ ]` `requirements`
-    * `[ ]` (Fix 2) When continuation limit is reached, final document assembly runs with schema fill — fragments are not left unmerged
-    * `[ ]` (Fix 2) `ModelProcessingResult.status` is `'continuation_limit_reached'` — distinguishable from `'completed'` and `'needs_continuation'`
-    * `[ ]` (Fix 3.4) Structurally-fixed responses trigger continuation when `continueUntilComplete` is set — truncated responses from stream failures are no longer silently accepted as complete
-    * `[ ]` (Fix 3.5) Missing expected keys trigger continuation when `continueUntilComplete` is set — semantically incomplete responses are no longer accepted as complete
-    * `[ ]` All existing continuation logic (provider-level explicit, content-level explicit) is preserved — the new triggers are additive
-    * `[ ]` Non-continuation jobs (`continueUntilComplete` is false) are completely unaffected by Fix 3.4 and Fix 3.5
-  * `[ ]` integration/`continuation_prompt_assembly.integration.test.ts`
-    * `[ ]` **Boundary**: Full continuation prompt pipeline from chunk storage through to the `ChatApiRequest` payload that would be sent to the model. Real code paths: `assembleChunks` → `gatherContinuationInputs` → `assembleContinuationPrompt` → `processSimpleJob` routing → `executeModelCallAndSave` payload construction. Mocked: `callUnifiedAIModel` (intercepted to capture the `ChatApiRequest` it receives and return a fixed response), `tokenWalletService`, `ragService`. Real: Supabase storage, database, `FileManagerService`, `PromptAssembler`, `continueJob`, `retryJob`.
-    * `[ ]` **Fixture setup** (follows existing `continuation_dispatch.integration.test.ts` pattern):
-      * `[ ]` `initializeSupabaseAdminClient()` → `setSharedAdminClient()` → `initializeTestDeps()`
-      * `[ ]` `coreCreateAndSetupTestUser()` for auth/JWT; `coreEnsureTestUserAndWallet()` with 1M token balance
-      * `[ ]` Fetch or create test AI model in `ai_providers` with `MOCK_MODEL_CONFIG`
-      * `[ ]` `createUniqueProjectAndSession()` helper for isolation
-      * `[ ]` Create a seed prompt resource in `dialectic_project_resources` with `resource_type: 'seed_prompt'` containing the original instruction text
-      * `[ ]` Create a continuation chain of 3 contributions in the database with mixed chunk types:
-        * `[ ]` Chunk 0 (root): raw truncated JSON uploaded to storage — `'{"executive_summary":"The project aims to'` — simulates provider-level `finish_reason: 'length'` truncation
-        * `[ ]` Chunk 1: valid JSON with continuation metadata uploaded to storage — `'{"executive_summary":" deliver value","methodology":"Agile","continuation_needed":true,"resume_cursor":{"document_key":"methodology","section_id":"overview"}}'` — simulates content-level explicit continuation
-        * `[ ]` Chunk 2: valid JSON without metadata uploaded to storage — `'{"methodology":" framework with iterative sprints","timeline":"6 months"}'` — simulates a normal completion chunk
-        * `[ ]` Each chunk's contribution row has `target_contribution_id` linking to the previous, `continuation_count` incrementing
-      * `[ ]` Create an EXECUTE job row in `dialectic_generation_jobs` with `status: 'processing'`, `payload` containing `continueUntilComplete: true`, `continuation_count: 3`, and `context_for_documents` defining `executive_summary`, `methodology`, `timeline`, and `budget` as expected keys
-      * `[ ]` Wire `executeModelCallAndSave` deps with a `callUnifiedAIModel` mock that captures the `ChatApiRequest` argument into a test-accessible variable before returning a fixed `UnifiedAIResponse`
-    * `[ ]` **Test: 3-message conversation structure reaches the model** — Run `processSimpleJob` (or the continuation assembly path that feeds into `executeModelCallAndSave`) with the fixture job and continuation chain. Inspect the captured `ChatApiRequest`. Assert:
-      * `[ ]` `ChatApiRequest.messages` has exactly 2 entries: one `user` message (seed prompt) and one `assistant` message (assembled content)
-      * `[ ]` The `user` message content matches the seed prompt text from `dialectic_project_resources`
-      * `[ ]` The `assistant` message content is a JSON string that, when parsed, contains the deep-merged content from all 3 chunks: `executive_summary` is the concatenation `"The project aims to deliver value"`, `methodology` is `"Agile framework with iterative sprints"`, `timeline` is `"6 months"`
-      * `[ ]` No `continuation_needed`, `stop_reason`, or `resume_cursor` keys exist in the assembled assistant content
-      * `[ ]` `ChatApiRequest.message` (the current user prompt) is a continuation instruction string, NOT a flattened blob of all messages — it does not contain the seed prompt text or the assembled JSON content
-    * `[ ]` **Test: continuation instruction is context-aware** — Same fixture, inspect the captured `ChatApiRequest.message`. Assert: the continuation instruction references the missing `budget` key (present in `context_for_documents` but absent from the assembled object). The instruction tells the model to generate content for `budget` without repeating existing keys.
-    * `[ ]` **Test: mixed chunk types are correctly assembled** — Same fixture, but verify the assembly path specifically. Assert: chunk 0 (raw) was sanitized before merge, chunk 1 (parseable with metadata) had metadata stripped, chunk 2 (parseable without metadata) was merged as-is. The final assembled object in the assistant message is a valid, coherent JSON object — not a concatenation of raw strings or a blob with duplicate keys.
-    * `[ ]` **Test: non-continuation path is unaffected** — Create a job without `assembled.messages` (non-continuation, normal seed prompt). Run through the same `processSimpleJob` path. Assert: `ChatApiRequest.messages` is empty (no conversation history), `ChatApiRequest.message` is the assembled prompt content. Existing behavior preserved.
-    * `[ ]` **Cleanup**: `cleanupProjectAndSession()` per test in `finally` block; `coreCleanupTestResources()` in `afterAll`
+* `[✅]` [BE] `supabase/functions/dialectic-worker/executeModelCallAndSave` **Handle continuation-limit-reached, structurally-fixed trigger, and missing-keys trigger**
+  * `[✅]` `objective`
+    * `[✅]` (Fix 2) After `continueJob` returns, check for `continueResult.reason === 'continuation_limit_reached'`: log a warning, set `modelProcessingResult.status` to `'continuation_limit_reached'`, and call `assembleAndSaveFinalDocument(rootIdFromSaved, expectedSchema)` passing the matching `ContextForDocument` from `context_for_documents` — treating continuation-limit-reached as a final chunk that triggers the existing assembly path with schema fill
+    * `[✅]` (Fix 3.4) After sanitization succeeds with `wasStructurallyFixed === true`: if `continueUntilComplete` is set, override `shouldContinue = true` — the response was truncated and the sanitizer repaired it, so it is not a complete response
+    * `[✅]` (Fix 3.5) After successful parse with `finish_reason === 'stop'` and no content-level continuation flags: compare the parsed object's keys against `context_for_documents` from the job payload. If required keys are missing, set `shouldContinue = true`
+  * `[✅]` `role`
+    * `[✅]` Application — worker-level model call execution and continuation orchestration
+  * `[✅]` `module`
+    * `[✅]` Dialectic worker — model response processing and continuation decision logic
+    * `[✅]` Boundary: receives model responses, determines continuation needs, triggers assembly when done
+  * `[✅]` `deps`
+    * `[✅]` `continueJob` from Node 3 — now returns `IContinueJobResult` with optional `reason: 'continuation_limit_reached'`
+    * `[✅]` `isContinuationLimitReached` guard from Node 3 — narrows `IContinueJobResult` to confirm cap-hit
+    * `[✅]` `assembleAndSaveFinalDocument` from Node 7 — now accepts optional `expectedSchema?: ContextForDocument` parameter
+    * `[✅]` `ModelProcessingResult` from Node 3 — status union now includes `'continuation_limit_reached'`
+    * `[✅]` `DialecticExecuteJobPayload.context_for_documents` — `ContextForDocument[]` defining expected document schema
+    * `[✅]` `sanitizeJsonContent` / `JsonSanitizationResult` — already used, `wasStructurallyFixed` flag now acted upon
+    * `[✅]` `isRecord` from type guards — already used for parsed content checks
+    * `[✅]` No reverse dependency introduced
+  * `[✅]` `context_slice`
+    * `[✅]` From `continueJob`: `IContinueJobResult` with `{ enqueued: boolean; error?: Error; reason?: string; }`
+    * `[✅]` From `assembleAndSaveFinalDocument`: `(rootContributionId: string, expectedSchema?: ContextForDocument) => Promise<{ finalPath: string | null; error: Error | null; }>`
+    * `[✅]` From `job.payload.context_for_documents`: `ContextForDocument[]` — each entry has `document_key` and `content_to_include` defining expected keys
+    * `[✅]` From `sanitizationResult`: `{ wasStructurallyFixed: boolean; ... }` — already available after sanitization
+    * `[✅]` Injection shape: all dependencies already injected via `deps` parameter — no new injection points needed
+  * `[✅]` interface/ — no new interface types needed for this node; all types modified in Nodes 3 and 7 are consumed here
+  * `[✅]` interface/tests/ — no new type contracts needed; contracts for `IContinueJobResult.reason` and `ModelProcessingResult.status` covered in Node 3
+  * `[✅]` interface/guards/ — no new guards needed; `isContinuationLimitReached` from Node 3 is used
+  * `[✅]` unit/`executeModelCallAndSave.continuationCount.test.ts`
+    * `[✅]` Test: when `continueResult.reason === 'continuation_limit_reached'`, `modelProcessingResult.status` is set to `'continuation_limit_reached'`
+    * `[✅]` Test: when `continueResult.reason === 'continuation_limit_reached'`, `assembleAndSaveFinalDocument` is called with `rootIdFromSaved` and `expectedSchema` from `context_for_documents`
+    * `[✅]` Test: when `continueResult.reason === 'continuation_limit_reached'` but `rootIdFromSaved` is null or equals `contribution.id` (single chunk), `assembleAndSaveFinalDocument` is NOT called — no assembly needed for single-chunk artifacts
+    * `[✅]` Test: when `continueResult.enqueued === true` (normal continuation), `assembleAndSaveFinalDocument` is NOT called and status is `'needs_continuation'` — existing behavior preserved
+    * `[✅]` Test: when `continueResult.enqueued === false` with no reason (continueUntilComplete is false), `assembleAndSaveFinalDocument` is NOT called and status is `'completed'` — existing behavior preserved
+  * `[✅]` unit/`executeModelCallAndSave.continue.test.ts`
+    * `[✅]` Test: (Fix 3.4) when `sanitizationResult.wasStructurallyFixed === true` and `job.payload.continueUntilComplete === true`, `shouldContinue` is set to `true` even if `finish_reason` was not a continuation reason
+    * `[✅]` Test: (Fix 3.4) when `sanitizationResult.wasStructurallyFixed === true` but `job.payload.continueUntilComplete === false`, `shouldContinue` is NOT overridden — structural fix is logged but not acted upon (same as current behavior for non-continuation jobs)
+    * `[✅]` Test: (Fix 3.4) when `sanitizationResult.wasStructurallyFixed === false` and `job.payload.continueUntilComplete === true`, `shouldContinue` is not changed by the structural fix check — only the existing continuation logic applies
+    * `[✅]` Test: (Fix 3.5) when `finish_reason === 'stop'`, no content-level flags, but parsed object is missing keys defined in `context_for_documents`, `shouldContinue` is set to `true`
+    * `[✅]` Test: (Fix 3.5) when `finish_reason === 'stop'`, no content-level flags, and parsed object has all keys from `context_for_documents`, `shouldContinue` remains `false` — normal completion
+    * `[✅]` Test: (Fix 3.5) when `context_for_documents` is not present in job payload, missing-key check is skipped — `shouldContinue` determined by existing logic only
+    * `[✅]` Test: (Fix 3.5) when `finish_reason === 'stop'`, content-level flags ARE present (e.g., `continuation_needed: true`), `shouldContinue` is already `true` from flag check — missing-key check is not needed (but is harmless if it runs)
+  * `[✅]` `construction`
+    * `[✅]` `executeModelCallAndSave` is an existing function — no signature change
+    * `[✅]` Fix 3.4 logic is inserted after sanitization (after line 1139), before the content-level flag check
+    * `[✅]` Fix 3.5 logic is inserted after the content-level flag check (after line 1176), before `needsContinuation` is computed
+    * `[✅]` Fix 2 logic is inserted after `continueResult` handling (after line 1839), before the `isFinalChunk` block
+    * `[✅]` No new functions created — all three fixes are conditional blocks added to the existing function flow
+  * `[✅]` `executeModelCallAndSave.ts`
+    * `[✅]` Add construction rationale comment explaining the three new continuation triggers (structural fix, missing keys, continuation limit) and why each uses `ContextForDocument` / `ContentToInclude` instead of primitive records for schema comparison
+    * `[✅]` (Fix 3.4) After sanitization logging (line 1139): add conditional block:
+      * `[✅]` `if (sanitizationResult.wasStructurallyFixed && job.payload.continueUntilComplete && !shouldContinue)`
+      * `[✅]` Log warning: `'[executeModelCallAndSave] Response was structurally fixed by sanitizer — treating as truncated, triggering continuation'`
+      * `[✅]` Set `shouldContinue = true`
+    * `[✅]` (Fix 3.5) After content-level flag check (line 1176): add conditional block:
+      * `[✅]` Only run if `!shouldContinue && isRecord(parsedContent) && job.payload.continueUntilComplete`
+      * `[✅]` Find the matching `ContextForDocument` from `job.payload.context_for_documents` by matching `document_key` to the current document's file type; compare parsed object keys against `matchedDoc.content_to_include` (typed as `ContentToInclude`)
+      * `[✅]` If any expected keys are missing from `parsedContent`, log warning listing missing keys and set `shouldContinue = true`
+    * `[✅]` (Fix 2) After `continueResult.error` check (line 1839): add conditional block:
+      * `[✅]` `if (continueResult.enqueued === false && continueResult.reason === 'continuation_limit_reached')` (or use `isContinuationLimitReached` guard)
+      * `[✅]` Log warning: `'[executeModelCallAndSave] Continuation limit reached for job — triggering final assembly with schema fill'`
+      * `[✅]` Set `modelProcessingResult.status = 'continuation_limit_reached'`
+      * `[✅]` Find the matching `ContextForDocument` from `job.payload.context_for_documents` by matching `document_key` to the current document's file type — pass the typed `ContextForDocument` directly, no conversion
+      * `[✅]` If `rootIdFromSaved && rootIdFromSaved !== contribution.id && !shouldRender`: call `await deps.fileManager.assembleAndSaveFinalDocument(rootIdFromSaved, matchedContextForDocument)`
+    * `[✅]` Update `ModelProcessingResult` construction (line 1818-1823): the status ternary `needsContinuation ? 'needs_continuation' : 'completed'` remains as-is — the Fix 2 block overrides `status` to `'continuation_limit_reached'` after construction when the cap is hit
+  * `[✅]` `directionality`
+    * `[✅]` Layer: application (worker)
+    * `[✅]` All dependencies are inward-facing: `continueJob` (same layer, lateral), `assembleAndSaveFinalDocument` (service layer), interface types (domain), guards (domain), sanitizer (infrastructure)
+    * `[✅]` Provides are outward-facing: `ModelProcessingResult` consumed by `processSimpleJob` (same layer) and job completion logic
+  * `[✅]` `requirements`
+    * `[✅]` (Fix 2) When continuation limit is reached, final document assembly runs with schema fill — fragments are not left unmerged
+    * `[✅]` (Fix 2) `ModelProcessingResult.status` is `'continuation_limit_reached'` — distinguishable from `'completed'` and `'needs_continuation'`
+    * `[✅]` (Fix 3.4) Structurally-fixed responses trigger continuation when `continueUntilComplete` is set — truncated responses from stream failures are no longer silently accepted as complete
+    * `[✅]` (Fix 3.5) Missing expected keys trigger continuation when `continueUntilComplete` is set — semantically incomplete responses are no longer accepted as complete
+    * `[✅]` All existing continuation logic (provider-level explicit, content-level explicit) is preserved — the new triggers are additive
+    * `[✅]` Non-continuation jobs (`continueUntilComplete` is false) are completely unaffected by Fix 3.4 and Fix 3.5
+  * `[✅]` integration/`continuation_prompt_assembly.integration.test.ts`
+    * `[✅]` **Boundary**: Full continuation prompt pipeline from chunk storage through to the `ChatApiRequest` payload that would be sent to the model. Real code paths: `assembleChunks` → `gatherContinuationInputs` → `assembleContinuationPrompt` → `processSimpleJob` routing → `executeModelCallAndSave` payload construction. Mocked: `callUnifiedAIModel` (intercepted to capture the `ChatApiRequest` it receives and return a fixed response), `tokenWalletService`, `ragService`. Real: Supabase storage, database, `FileManagerService`, `PromptAssembler`, `continueJob`, `retryJob`.
+    * `[✅]` **Fixture setup** (follows existing `continuation_dispatch.integration.test.ts` pattern):
+      * `[✅]` `initializeSupabaseAdminClient()` → `setSharedAdminClient()` → `initializeTestDeps()`
+      * `[✅]` `coreCreateAndSetupTestUser()` for auth/JWT; `coreEnsureTestUserAndWallet()` with 1M token balance
+      * `[✅]` Fetch or create test AI model in `ai_providers` with `MOCK_MODEL_CONFIG`
+      * `[✅]` `createUniqueProjectAndSession()` helper for isolation
+      * `[✅]` Create a seed prompt resource in `dialectic_project_resources` with `resource_type: 'seed_prompt'` containing the original instruction text
+      * `[✅]` Create a continuation chain of 3 contributions in the database with mixed chunk types:
+        * `[✅]` Chunk 0 (root): raw truncated JSON uploaded to storage — `'{"executive_summary":"The project aims to'` — simulates provider-level `finish_reason: 'length'` truncation
+        * `[✅]` Chunk 1: valid JSON with continuation metadata uploaded to storage — `'{"executive_summary":" deliver value","methodology":"Agile","continuation_needed":true,"resume_cursor":{"document_key":"methodology","section_id":"overview"}}'` — simulates content-level explicit continuation
+        * `[✅]` Chunk 2: valid JSON without metadata uploaded to storage — `'{"methodology":" framework with iterative sprints","timeline":"6 months"}'` — simulates a normal completion chunk
+        * `[✅]` Each chunk's contribution row has `target_contribution_id` linking to the previous, `continuation_count` incrementing
+      * `[✅]` Create an EXECUTE job row in `dialectic_generation_jobs` with `status: 'processing'`, `payload` containing `continueUntilComplete: true`, `continuation_count: 3`, and `context_for_documents` defining `executive_summary`, `methodology`, `timeline`, and `budget` as expected keys
+      * `[✅]` Wire `executeModelCallAndSave` deps with a `callUnifiedAIModel` mock that captures the `ChatApiRequest` argument into a test-accessible variable before returning a fixed `UnifiedAIResponse`
+    * `[✅]` **Test: 3-message conversation structure reaches the model** — Run `processSimpleJob` (or the continuation assembly path that feeds into `executeModelCallAndSave`) with the fixture job and continuation chain. Inspect the captured `ChatApiRequest`. Assert:
+      * `[✅]` `ChatApiRequest.messages` has exactly 2 entries: one `user` message (seed prompt) and one `assistant` message (assembled content)
+      * `[✅]` The `user` message content matches the seed prompt text from `dialectic_project_resources`
+      * `[✅]` The `assistant` message content is a JSON string that, when parsed, contains the deep-merged content from all 3 chunks: `executive_summary` is the concatenation `"The project aims to deliver value"`, `methodology` is `"Agile framework with iterative sprints"`, `timeline` is `"6 months"`
+      * `[✅]` No `continuation_needed`, `stop_reason`, or `resume_cursor` keys exist in the assembled assistant content
+      * `[✅]` `ChatApiRequest.message` (the current user prompt) is a continuation instruction string, NOT a flattened blob of all messages — it does not contain the seed prompt text or the assembled JSON content
+    * `[✅]` **Test: continuation instruction is context-aware** — Same fixture, inspect the captured `ChatApiRequest.message`. Assert: the continuation instruction references the missing `budget` key (present in `context_for_documents` but absent from the assembled object). The instruction tells the model to generate content for `budget` without repeating existing keys.
+    * `[✅]` **Test: mixed chunk types are correctly assembled** — Same fixture, but verify the assembly path specifically. Assert: chunk 0 (raw) was sanitized before merge, chunk 1 (parseable with metadata) had metadata stripped, chunk 2 (parseable without metadata) was merged as-is. The final assembled object in the assistant message is a valid, coherent JSON object — not a concatenation of raw strings or a blob with duplicate keys.
+    * `[✅]` **Test: non-continuation path is unaffected** — Create a job without `assembled.messages` (non-continuation, normal seed prompt). Run through the same `processSimpleJob` path. Assert: `ChatApiRequest.messages` is empty (no conversation history), `ChatApiRequest.message` is the assembled prompt content. Existing behavior preserved.
+    * `[✅]` **Cleanup**: `cleanupProjectAndSession()` per test in `finally` block; `coreCleanupTestResources()` in `afterAll`
   * `[ ]` **Commit** `fix: continuation-to-retry bug — preserve error details, fix prompt assembly, add continuation triggers`
     * `[ ]` Node 1: New migration preserving error details in retry-exhausted trigger
     * `[ ]` Node 2: New shared `assembleChunks/` utility with interface, guards, tests, mock, provides

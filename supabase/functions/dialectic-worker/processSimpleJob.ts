@@ -68,6 +68,7 @@ export async function processSimpleJob(
             current_stage_id: sessionData.current_stage_id,
             created_at: sessionData.created_at,
             updated_at: sessionData.updated_at,
+            viewing_stage_id: sessionData.viewing_stage_id,
         };
 
         const { data: providerData, error: providerError } = await dbClient.from('ai_providers').select('*').eq('id', model_id).single();
@@ -292,11 +293,28 @@ export async function processSimpleJob(
             assembleOptions.sourceContributionId = sourceContributionId;
         }
         const assembled = await ctx.promptAssembler.assemble(assembleOptions);
-        
+
+        // Continuation routing: when the assembler returns structured messages (continuation path),
+        // populate conversationHistory with the seed + assistant messages and extract the
+        // continuation instruction as currentUserPrompt. When messages are absent (non-continuation),
+        // existing behavior is preserved — conversationHistory stays empty, currentUserPrompt is promptContent.
+        let routedUserPrompt: string;
+        if (assembled.messages && assembled.messages.length >= 3) {
+            conversationHistory.push(assembled.messages[0]);
+            conversationHistory.push(assembled.messages[1]);
+            const thirdMessageContent = assembled.messages[2].content;
+            if (thirdMessageContent === null) {
+                throw new Error('Continuation message content is null — cannot route as currentUserPrompt');
+            }
+            routedUserPrompt = thirdMessageContent;
+        } else {
+            routedUserPrompt = assembled.promptContent;
+        }
+
         const promptConstructionPayload: PromptConstructionPayload = {
             conversationHistory,
             resourceDocuments,
-            currentUserPrompt: assembled.promptContent,
+            currentUserPrompt: routedUserPrompt,
             source_prompt_resource_id: assembled.source_prompt_resource_id,
         };
         promptConstructionPayload.sourceContributionId = sourceContributionId;

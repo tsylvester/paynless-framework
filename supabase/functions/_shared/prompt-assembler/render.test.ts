@@ -65,6 +65,7 @@ Deno.test("render", async (t) => {
     active_recipe_instance_id: null,
     expected_output_template_ids: [],
     recipe_template_id: null,
+    minimum_balance: 0,
   };
 
   const defaultContext: DynamicContextVariables = {
@@ -850,6 +851,7 @@ Return only the JSON object shown above, with every placeholder replaced with ac
             style_guide_markdown: "Be concise and professional.",
           },
         }],
+        minimum_balance: 0,
       };
 
       const context: DynamicContextVariables & { header_context: Json } = {

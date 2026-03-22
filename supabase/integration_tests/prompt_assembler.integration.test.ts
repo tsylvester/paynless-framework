@@ -35,7 +35,6 @@ import {
   type StageContext,
 } from '../functions/_shared/prompt-assembler/prompt-assembler.interface.ts';
 import { renderPrompt } from '../functions/_shared/prompt-renderer.ts';
-import { downloadFromStorage } from '../functions/_shared/supabase_storage_utils.ts';
 import { gatherInputsForStage } from '../functions/_shared/prompt-assembler/gatherInputsForStage.ts';
 import { gatherContext } from '../functions/_shared/prompt-assembler/gatherContext.ts';
 import { render } from '../functions/_shared/prompt-assembler/render.ts';
@@ -80,7 +79,9 @@ import { countTokens } from '../functions/_shared/utils/tokenizer_utils.ts';
 import { createMockTokenWalletService } from '../functions/_shared/services/tokenWalletService.mock.ts';
 import { getExtensionFromMimeType } from '../functions/_shared/path_utils.ts';
 import type { GenerateContributionsPayload, GenerateContributionsDeps } from '../functions/dialectic-service/dialectic.interface.ts';
-
+import { assembleChunks } from '../functions/_shared/utils/assembleChunks/assembleChunks.ts';
+import { gatherContinuationInputs } from '../functions/_shared/prompt-assembler/gatherContinuationInputs.ts';
+import { downloadFromStorage } from '../functions/_shared/supabase_storage_utils.ts';
 describe('PromptAssembler Integration Test Suite', () => {
   let adminClient: SupabaseClient<Database>;
   let fileManager: IFileManager;
@@ -97,7 +98,7 @@ describe('PromptAssembler Integration Test Suite', () => {
     adminClient = initializeSupabaseAdminClient();
     setSharedAdminClient(adminClient);
 
-    fileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger });
+    fileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger, assembleChunks });
     promptAssembler = new PromptAssembler(adminClient, fileManager);
 
     const mockDocumentRenderer: IDocumentRenderer = {
@@ -185,7 +186,8 @@ describe('PromptAssembler Integration Test Suite', () => {
     formData.append('projectName', `Stage-Fetch-${crypto.randomUUID()}`);
     formData.append('initialUserPromptText', 'Temp');
     formData.append('selectedDomainId', domain.id);
-    
+    formData.append('idempotencyKey', crypto.randomUUID());
+
     const { data: tempProject, error: projectError } = await createProject(formData, adminClient, user);
     if (projectError || !tempProject) {
       throw new Error(`Failed to create temp project: ${JSON.stringify(projectError)}`);
@@ -193,7 +195,8 @@ describe('PromptAssembler Integration Test Suite', () => {
     
     const sessionPayload: StartSessionPayload = {
       projectId: tempProject.id,
-      selectedModelIds: [],
+      selectedModels: [],
+      idempotencyKey: crypto.randomUUID(),
     };
     
     const { data: tempSession, error: sessionError } = await startSession(user, adminClient, sessionPayload, testDeps);
@@ -211,6 +214,7 @@ describe('PromptAssembler Integration Test Suite', () => {
         walletId: '',
         user_jwt: '',
         is_test_job: true,
+        idempotencyKey: crypto.randomUUID(),
       };
       
       const deps: GenerateContributionsDeps = {
@@ -254,6 +258,7 @@ describe('PromptAssembler Integration Test Suite', () => {
       'A test project for the prompt assembler.',
     );
     formData.append('selectedDomainId', domain.id);
+    formData.append('idempotencyKey', crypto.randomUUID());
 
     const { data: projectData, error: projectError } = await createProject(
       formData,
@@ -267,7 +272,8 @@ describe('PromptAssembler Integration Test Suite', () => {
 
     const sessionPayload: StartSessionPayload = {
       projectId: project.id,
-      selectedModelIds: [],
+      selectedModels: [],
+      idempotencyKey: crypto.randomUUID(),
     };
 
     const { data: sessionData, error: sessionError } = await startSession(
@@ -536,9 +542,10 @@ describe('PromptAssembler Integration Test Suite', () => {
 
     const sessionContext: SessionContext = {
       ...session,
+      idempotency_key: crypto.randomUUID(),
       status: session.status,
       current_stage_id: session.current_stage_id,
-      selected_model_ids: session.selected_models?.map(model => model.id),
+      selected_model_ids: session.selected_models.map(model => model.id),
     };
 
     for (const stageDto of stagesWithRecipes) {
@@ -750,6 +757,9 @@ describe('PromptAssembler Integration Test Suite', () => {
                 session: sessionContext,
                 stage: stageWithRecipe,
                 gatherContext,
+                assembleChunks,
+                gatherContinuationInputs,
+                downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
               };
               const assembledContinuation = await promptAssembler
                 .assembleContinuationPrompt(continuationDeps);
@@ -863,6 +873,7 @@ describe('PromptAssembler Integration Test Suite', () => {
         walletId: walletData.wallet_id,
         user_jwt: jwt,
         is_test_job: true,
+        idempotencyKey: crypto.randomUUID(),
       };
       
       const generateDeps: GenerateContributionsDeps = {
@@ -900,7 +911,7 @@ describe('PromptAssembler Integration Test Suite', () => {
         output_type: FileType.HeaderContext,
         canonicalPathParams: {
           stageSlug: stageSlug,
-          contributionType: 'thesis',
+          contributionType: stageSlug,
         },
         inputs: {},
         document_key: FileType.HeaderContext,
@@ -913,6 +924,7 @@ describe('PromptAssembler Integration Test Suite', () => {
         stageSlug: stageSlug,
         walletId: walletData.wallet_id,
         user_jwt: jwt,
+        idempotencyKey: crypto.randomUUID(),
       };
 
       if (!isDialecticExecuteJobPayload(executeJobPayload)) {
@@ -1067,6 +1079,7 @@ describe('PromptAssembler Integration Test Suite', () => {
         stageSlug: stageSlug,
         walletId: walletData.wallet_id,
         user_jwt: jwt,
+        idempotencyKey: crypto.randomUUID(),
       };
 
       if (!isDialecticExecuteJobPayload(executePayload)) {
@@ -1328,6 +1341,7 @@ describe('PromptAssembler Integration Test Suite', () => {
         stageSlug: stageSlug,
         walletId: walletData.wallet_id,
         user_jwt: jwt,
+        idempotencyKey: crypto.randomUUID(),
       };
 
       if (!isDialecticExecuteJobPayload(executePayload)) {
@@ -1530,6 +1544,7 @@ describe('PromptAssembler Integration Test Suite', () => {
         stageSlug: stageSlug,
         walletId: walletData.wallet_id,
         user_jwt: jwt,
+        idempotencyKey: crypto.randomUUID(),
       };
 
       if (!isDialecticExecuteJobPayload(headerContextExecutePayload)) {
@@ -1735,6 +1750,7 @@ describe('PromptAssembler Integration Test Suite', () => {
         user_jwt: jwt,
         is_test_job: true,
         model_slug: testModel.api_identifier,
+        idempotencyKey: crypto.randomUUID(),
       };
 
       if(!isDialecticPlanJobPayload(planJobPayload)) {
@@ -1764,6 +1780,7 @@ describe('PromptAssembler Integration Test Suite', () => {
         max_retries: 3,
         attempt_count: 0,
         parent_job_id: null,
+        idempotency_key: crypto.randomUUID(),
       };
 
       // 3. Prepare context with REAL planner dependencies

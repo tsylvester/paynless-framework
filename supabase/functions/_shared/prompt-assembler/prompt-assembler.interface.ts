@@ -4,13 +4,15 @@ import {
   DialecticRecipeStep,
 } from "../../dialectic-service/dialectic.interface.ts";
 import { GatherContextFn } from "./gatherContext.ts";
-import { GatherContinuationInputsFn } from "./gatherContinuationInputs.ts";
+import { GatherContinuationInputsSignature } from "./gatherContinuationInputs.interface.ts";
+import { AssembleChunksSignature } from "../utils/assembleChunks/assembleChunks.interface.ts";
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { IFileManager, FileType } from "../types/file_manager.types.ts";
 import { DownloadStorageResult, DownloadFromStorageFn } from "../supabase_storage_utils.ts";
 import { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
 import { Json } from "../../types_db.ts";
 import { InputRule } from "../../dialectic-service/dialectic.interface.ts";
+import { Messages } from "../types.ts";
 
 export type RenderFn = (
   renderPromptFn: RenderPromptFunctionType,
@@ -43,7 +45,8 @@ export interface AssembleContinuationPromptDeps {
   session: SessionContext;
   stage: StageContext;
   gatherContext: GatherContextFn;
-  gatherContinuationInputs: GatherContinuationInputsFn;
+  assembleChunks: AssembleChunksSignature;
+  gatherContinuationInputs: GatherContinuationInputsSignature;
   downloadFromStorage: (
     bucket: string,
     path: string,
@@ -104,6 +107,7 @@ export interface IPromptAssembler {
 export type AssembledPrompt = {
     promptContent: string;
     source_prompt_resource_id: string;
+    messages?: Messages[];
 };
 
 export type AssemblePromptOptions = {

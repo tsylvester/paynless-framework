@@ -17,11 +17,11 @@ import {
     AssembleContinuationPromptDeps
 } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "../supabase_storage_utils.ts";
-import { Messages } from "../types.ts";
 import type { IPromptAssembler } from "./prompt-assembler.interface.ts";
 import { gatherInputsForStage, GatherInputsForStageFn } from "./gatherInputsForStage.ts";
 import { gatherContext, GatherContextFn } from "./gatherContext.ts";
-import { gatherContinuationInputs, GatherContinuationInputsFn } from "./gatherContinuationInputs.ts";
+import { gatherContinuationInputs } from "./gatherContinuationInputs.ts";
+import { GatherContinuationInputsSignature } from "./gatherContinuationInputs.interface.ts";
 import { assembleSeedPrompt } from "./assembleSeedPrompt.ts";
 import { assemblePlannerPrompt } from "./assemblePlannerPrompt.ts";
 import { assembleTurnPrompt } from "./assembleTurnPrompt.ts";
@@ -30,7 +30,14 @@ import { IFileManager } from "../types/file_manager.types.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import { RenderFn } from "./prompt-assembler.interface.ts";
 import { render } from "./render.ts";
+import { assembleChunks } from "../utils/assembleChunks/assembleChunks.ts";
 
+/**
+ * PromptAssembler holds references to prompt-assembly collaborators (e.g. `gatherContinuationInputs`)
+ * instead of calling them from the facade. Callers inject implementations so tests can substitute
+ * doubles and `assemble*` routes forward the same references in `deps` without the facade
+ * executing gathering logic itself.
+ */
 export class PromptAssembler implements IPromptAssembler {
     private dbClient: SupabaseClient<Database>;
     private fileManager: IFileManager;
@@ -44,7 +51,7 @@ export class PromptAssembler implements IPromptAssembler {
     private gatherContextFn: GatherContextFn;
     private renderFn: RenderFn;
     private gatherInputsForStageFn: GatherInputsForStageFn;
-    private gatherContinuationInputsFn: GatherContinuationInputsFn;
+    private gatherContinuationInputsFn: GatherContinuationInputsSignature;
 
     constructor(
         dbClient: SupabaseClient<Database>,
@@ -58,7 +65,7 @@ export class PromptAssembler implements IPromptAssembler {
         gatherContextFn?: GatherContextFn,
         renderFn?: RenderFn,
         gatherInputsForStageFn?: GatherInputsForStageFn,
-        gatherContinuationInputsFn?: GatherContinuationInputsFn
+        gatherContinuationInputsFn?: GatherContinuationInputsSignature
     ) {
         this.dbClient = dbClient;
         this.fileManager = fileManager;
@@ -93,6 +100,7 @@ export class PromptAssembler implements IPromptAssembler {
                     session: options.session,
                     stage: options.stage,
                     gatherContext: this.gatherContextFn,
+                    assembleChunks,
                     gatherContinuationInputs: this.gatherContinuationInputsFn,
                     downloadFromStorage: this.downloadFromStorageFn,
                     sourceContributionId
@@ -268,14 +276,6 @@ export class PromptAssembler implements IPromptAssembler {
             session,
             iterationNumber,
             modelId,
-        );
-    }
-
-    private async _gatherContinuationInputs(rootContributionId: string): Promise<Messages[]> {
-        return this.gatherContinuationInputsFn(
-            this.dbClient,
-            this.downloadFromStorageFn,
-            rootContributionId
         );
     }
 }
