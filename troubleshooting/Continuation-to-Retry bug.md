@@ -1036,13 +1036,13 @@ Every file that must be touched across all three fixes, listed once, in implemen
     * `[✅]` **Test: mixed chunk types are correctly assembled** — Same fixture, but verify the assembly path specifically. Assert: chunk 0 (raw) was sanitized before merge, chunk 1 (parseable with metadata) had metadata stripped, chunk 2 (parseable without metadata) was merged as-is. The final assembled object in the assistant message is a valid, coherent JSON object — not a concatenation of raw strings or a blob with duplicate keys.
     * `[✅]` **Test: non-continuation path is unaffected** — Create a job without `assembled.messages` (non-continuation, normal seed prompt). Run through the same `processSimpleJob` path. Assert: `ChatApiRequest.messages` is empty (no conversation history), `ChatApiRequest.message` is the assembled prompt content. Existing behavior preserved.
     * `[✅]` **Cleanup**: `cleanupProjectAndSession()` per test in `finally` block; `coreCleanupTestResources()` in `afterAll`
-  * `[ ]` **Commit** `fix: continuation-to-retry bug — preserve error details, fix prompt assembly, add continuation triggers`
-    * `[ ]` Node 1: New migration preserving error details in retry-exhausted trigger
-    * `[ ]` Node 2: New shared `assembleChunks/` utility with interface, guards, tests, mock, provides
-    * `[ ]` Node 3: `continueJob` returns distinguishable result on cap hit; `IContinueJobResult.reason` and `ModelProcessingResult.status` updated; duplicate `ModelProcessingResult` deleted; guards moved to `type_guards.modelProcessingResult.ts`
-    * `[ ]` Node 4: `gatherContinuationInputs` returns 3-message structure with context-aware continuation instruction using `ContextForDocument`; old `GatherContinuationInputsFn` type removed
-    * `[ ]` Node 5: `prompt-assembler` facade updated to use new `GatherContinuationInputsSignature` DI type
-    * `[ ]` Node 6: `assembleContinuationPrompt` propagates structured messages; `AssembledPrompt.messages` added
-    * `[ ]` Node 7: `file_manager.assembleAndSaveFinalDocument` gains `expectedSchema?: ContextForDocument` parameter; Phase 2/3 refactored to use `assembleChunks`; integration test proves merge parity
-    * `[ ]` Node 8: `processSimpleJob` routes structured messages into `conversationHistory` + `currentUserPrompt`
-    * `[ ]` Node 9: `executeModelCallAndSave` handles continuation-limit-reached, structurally-fixed trigger, missing-keys trigger; continuation pipeline integration test proves 3-message structure reaches the model
+  * `[✅]` **Commit** `fix: continuation-to-retry bug — preserve error details, fix prompt assembly, add continuation triggers`
+    * `[✅]` Node 1: New migration preserving error details in retry-exhausted trigger
+    * `[✅]` Node 2: New shared `assembleChunks/` utility with interface, guards, tests, mock, provides
+    * `[✅]` Node 3: `continueJob` returns distinguishable result on cap hit; `IContinueJobResult.reason` and `ModelProcessingResult.status` updated; duplicate `ModelProcessingResult` deleted; guards moved to `type_guards.modelProcessingResult.ts`
+    * `[✅]` Node 4: `gatherContinuationInputs` returns 3-message structure with context-aware continuation instruction using `ContextForDocument`; old `GatherContinuationInputsFn` type removed
+    * `[✅]` Node 5: `prompt-assembler` facade updated to use new `GatherContinuationInputsSignature` DI type
+    * `[✅]` Node 6: `assembleContinuationPrompt` propagates structured messages; `AssembledPrompt.messages` added
+    * `[✅]` Node 7: `file_manager.assembleAndSaveFinalDocument` gains `expectedSchema?: ContextForDocument` parameter; Phase 2/3 refactored to use `assembleChunks`; integration test proves merge parity
+    * `[✅]` Node 8: `processSimpleJob` routes structured messages into `conversationHistory` + `currentUserPrompt`
+    * `[✅]` Node 9: `executeModelCallAndSave` handles continuation-limit-reached, structurally-fixed trigger, missing-keys trigger; continuation pipeline integration test proves 3-message structure reaches the model
