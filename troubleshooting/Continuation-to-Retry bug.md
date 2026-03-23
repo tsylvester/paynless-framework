@@ -1046,3 +1046,142 @@ Every file that must be touched across all three fixes, listed once, in implemen
     * `[✅]` Node 7: `file_manager.assembleAndSaveFinalDocument` gains `expectedSchema?: ContextForDocument` parameter; Phase 2/3 refactored to use `assembleChunks`; integration test proves merge parity
     * `[✅]` Node 8: `processSimpleJob` routes structured messages into `conversationHistory` + `currentUserPrompt`
     * `[✅]` Node 9: `executeModelCallAndSave` handles continuation-limit-reached, structurally-fixed trigger, missing-keys trigger; continuation pipeline integration test proves 3-message structure reaches the model
+
+---
+
+## Fix 4: Session Context Desync Guard — Prevent UI Crash During Navigation
+
+### Problem
+
+When navigating to a session page (after `startDialecticSession` or via deep-link/refresh), `fetchDialecticProjectDetails` resets `activeContextSessionId` to `null` (line 497 of `dialecticStore.ts`). `StageTabCard` throws `"Unified progress required"` because it reads `selectActiveContextSessionId` as `null`, producing a `null` unified progress object that it then dereferences.
+
+Two flows produce this desync:
+
+1. **Post-start navigation:** `startDialecticSession` calls `fetchDialecticProjectDetails(successData.project_id)` without `preserveContext: true` → context reset to `sessionId: null` → caller navigates → `DialecticSessionDetailsPage` mounts → deep-link `useEffect` calls `activateProjectAndSessionContextForDeepLink` → which calls `fetchDialecticProjectDetails` again → context reset to `sessionId: null` again → `fetchAndSetCurrentSessionDetails` finally sets the correct ID.
+
+2. **Deep-link / browser refresh:** `activateProjectAndSessionContextForDeepLink` calls `fetchDialecticProjectDetails(projectId)` without `preserveContext: true` → context reset to `sessionId: null` → `fetchAndSetCurrentSessionDetails` eventually corrects it.
+
+Between the reset and the correction, the store has `activeContextSessionId: null` while `activeSessionDetail` may still reference a prior session, and components that assume alignment crash.
+
+### Solution
+
+Four defense-in-depth guards:
+
+**Option A — Set context at end of `startDialecticSession`:** After `fetchDialecticProjectDetails` completes at line 767, explicitly call `setActiveDialecticContext({ projectId: successData.project_id, sessionId: successData.id, stage: null })`. The project fetch runs normally, then the caller immediately sets the correct session context.
+
+**Option B — Set context in `activateProjectAndSessionContextForDeepLink` after project fetch:** After `fetchDialecticProjectDetails(projectId)` completes at line 3103, explicitly call `setActiveDialecticContext({ projectId, sessionId, stage: null })`. Both values are already available as function parameters.
+
+**Option C — Clear `activeSessionDetail` when session context is cleared:** When `setActiveDialecticContext` receives `sessionId: null`, also set `activeSessionDetail: null` and `activeSessionDetailError: null`. This maintains the invariant that session detail is never present without a matching session context.
+
+**Option D — UI gate on `sessionContextReady`:** Derive a boolean requiring `activeContextProjectId === urlProjectId && activeContextSessionId === urlSessionId && activeSessionDetail?.id === urlSessionId && !isLoadingProject && !isLoadingSession`. Do not render session-scoped chrome until this is true; show a loading skeleton instead.
+
+### Files to Touch
+
+| File | Change | Tests |
+|---|---|---|
+| `packages/store/src/dialecticStore.ts` | (A) In `startDialecticSession`, after line 767 project refetch, call `setActiveDialecticContext` with the new session ID. (B) In `activateProjectAndSessionContextForDeepLink`, after line 3103 project fetch, call `setActiveDialecticContext` with the target `projectId` and `sessionId`. (C) In `setActiveDialecticContext`, when `context.sessionId === null`, also set `activeSessionDetail: null` and `activeSessionDetailError: null`. | Update `dialecticStore.session.test.ts` |
+| `apps/web/src/pages/DialecticSessionDetailsPage.tsx` | (D) Derive `sessionContextReady` from URL params + store state. Replace the existing `isLoading` gate with `!sessionContextReady` → skeleton. Preserve error gates. Session chrome only renders when ready. | Update `DialecticSessionDetailsPage.test.tsx` |
+
+### Files Confirmed No Change Needed
+
+| File | Reason |
+|---|---|
+| `packages/store/src/dialecticStore.selectors.ts` | No new selectors required; existing `selectActiveContextSessionId` is sufficient. |
+| `apps/web/src/components/dialectic/StageTabCard.tsx` | The crash is caused by bad input state, not a defect in `StageTabCard`. The fix prevents the bad state from reaching the component. |
+| Existing `preserveContext: true` callers (lines 825, 1575, 2060, 2239) | These paths already manage context explicitly and do not flow through the modified code. |
+
+### Checklist
+
+*   `[✅]` packages/store/src/`dialecticStore` **Eliminate transient null-session context during navigation and deep-link hydration**
+    *   `[✅]` `objective`
+        *   `[✅]` After `startDialecticSession` completes and refetches project details, the store must have `activeContextSessionId` set to the newly created session ID before the function returns — preventing a null-context window when the caller navigates
+        *   `[✅]` After `activateProjectAndSessionContextForDeepLink` fetches project details, the store must have `activeContextSessionId` set to the target `sessionId` parameter before `fetchAndSetCurrentSessionDetails` runs — preventing a null-context window during deep-link hydration
+        *   `[✅]` Whenever `setActiveDialecticContext` receives `sessionId: null`, it must also clear `activeSessionDetail` and `activeSessionDetailError` to maintain the invariant that session detail is never present without a matching session context
+    *   `[✅]` `role`
+        *   `[✅]` State management (store layer) — these actions govern the authoritative session context that all downstream UI consumers depend on
+    *   `[✅]` `module`
+        *   `[✅]` Dialectic store — session context lifecycle
+        *   `[✅]` Boundary: state transitions for `activeContextSessionId`, `activeSessionDetail`, `activeSessionDetailError` during navigation and hydration flows
+    *   `[✅]` `deps`
+        *   `[✅]` `api.dialectic().getProjectDetails` — adapter layer, fetched within `fetchDialecticProjectDetails` (existing, no change)
+        *   `[✅]` `api.dialectic().startSession` — adapter layer, fetched within `startDialecticSession` (existing, no change)
+        *   `[✅]` `setActiveDialecticContext` — internal store action, called by `startDialecticSession` and `activateProjectAndSessionContextForDeepLink` (modified in this node)
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` `startDialecticSession` requires access to `successData.project_id` and `successData.id` after the API call succeeds — both are already available at line 767
+        *   `[✅]` `activateProjectAndSessionContextForDeepLink` requires its own `projectId` and `sessionId` parameters — both are already function arguments at line 3083-3085
+        *   `[✅]` `setActiveDialecticContext` requires access to `activeSessionDetail` and `activeSessionDetailError` in the store state — already accessible via `set()`
+        *   `[✅]` No new injections or concrete imports required
+    *   `[✅]` unit/`dialecticStore.session.test.ts`
+        *   `[✅]` Test: `startDialecticSession` — after success, `activeContextSessionId` equals the returned session ID (not null)
+        *   `[✅]` Test: `startDialecticSession` — after success, `activeContextProjectId` equals the returned project ID
+        *   `[✅]` Test: `activateProjectAndSessionContextForDeepLink` — after project fetch completes but before session fetch, `activeContextSessionId` equals the target `sessionId` parameter (not null)
+        *   `[✅]` Test: `setActiveDialecticContext({ projectId: 'x', sessionId: null, stage: null })` — `activeSessionDetail` is set to null
+        *   `[✅]` Test: `setActiveDialecticContext({ projectId: 'x', sessionId: null, stage: null })` — `activeSessionDetailError` is set to null
+        *   `[✅]` Test: `setActiveDialecticContext({ projectId: 'x', sessionId: 'y', stage: null })` — `activeSessionDetail` is NOT cleared (only cleared when sessionId is null)
+    *   `[✅]` `dialecticStore.ts`
+        *   `[✅]` **Option A** — In `startDialecticSession`, after `await get().fetchDialecticProjectDetails(successData.project_id)` at line 767, add: `get().setActiveDialecticContext({ projectId: successData.project_id, sessionId: successData.id, stage: null })`
+        *   `[✅]` **Option B** — In `activateProjectAndSessionContextForDeepLink`, after `await state.fetchDialecticProjectDetails(projectId)` at line 3103, add: `get().setActiveDialecticContext({ projectId, sessionId, stage: null })`
+        *   `[✅]` **Option C** — In `setActiveDialecticContext` (lines 2511-2524), add: when `context.sessionId === null`, also set `activeSessionDetail: null` and `activeSessionDetailError: null`
+    *   `[✅]` `directionality`
+        *   `[✅]` Store layer (state management)
+        *   `[✅]` All dependencies are inward-facing (store actions calling other store actions and existing API adapters)
+        *   `[✅]` All state mutations are consumed outward by UI layer via selectors
+    *   `[✅]` `requirements`
+        *   `[✅]` After `startDialecticSession` returns successfully, `activeContextSessionId` must equal the new session's ID
+        *   `[✅]` After `activateProjectAndSessionContextForDeepLink` completes its project fetch, `activeContextSessionId` must equal the target `sessionId` — not null
+        *   `[✅]` `activeSessionDetail` must never be non-null when `activeContextSessionId` is null
+        *   `[✅]` Existing `preserveContext: true` callers (lines 825, 1575, 2060, 2239) are unaffected — those paths already manage context explicitly and do not flow through the modified code
+        *   `[✅]` All existing store tests continue to pass
+
+*   `[✅]` apps/web/src/pages/`DialecticSessionDetailsPage` **Gate session UI chrome on unified context readiness**
+    *   `[✅]` `objective`
+        *   `[✅]` No session-scoped UI components (`StageTabCard`, `SessionInfoCard`, `SessionContributionsDisplayCard`, `GenerateContributionButton`) render until the store state fully matches the URL parameters
+        *   `[✅]` During the transient window where context is not yet ready, display a loading skeleton — not an error state
+    *   `[✅]` `role`
+        *   `[✅]` UI layer — page-level rendering contract that enforces store/URL alignment before mounting session-dependent children
+    *   `[✅]` `module`
+        *   `[✅]` Dialectic session details page — render gating
+        *   `[✅]` Boundary: the page component's return path, between the existing loading/error checks and the session chrome render
+    *   `[✅]` `deps`
+        *   `[✅]` `useParams` — provides `urlProjectId` and `urlSessionId` from the route (existing, no change)
+        *   `[✅]` `useDialecticStore` — provides `activeContextProjectId`, `activeContextSessionId`, `activeSessionDetail`, `isLoadingProjectDetail`, `isLoadingActiveSessionDetail` (existing selectors, no change)
+        *   `[✅]` Store-level guards from prior node — provider, store layer, inward-facing, ensures context is set correctly so the readiness condition resolves to `true` promptly
+        *   `[✅]` Confirm no reverse dependency is introduced
+    *   `[✅]` `context_slice`
+        *   `[✅]` `urlProjectId` and `urlSessionId` from `useParams` (already used at line 23-26)
+        *   `[✅]` `activeContextProjectId`, `activeContextSessionId`, `activeSessionDetail` from store (already subscribed at lines 37-45)
+        *   `[✅]` `isLoadingProjectDetail`, `isLoadingActiveSessionDetail` from store (already subscribed at lines 57-63)
+        *   `[✅]` No new injections or concrete imports required
+    *   `[✅]` unit/`DialecticSessionDetailsPage.test.tsx`
+        *   `[✅]` Test: when `activeContextSessionId` does not match `urlSessionId`, skeleton loading is rendered, `StageTabCard` is not in the document
+        *   `[✅]` Test: when `activeContextProjectId` does not match `urlProjectId`, skeleton loading is rendered, `StageTabCard` is not in the document
+        *   `[✅]` Test: when `activeSessionDetail` is null but `activeContextSessionId` matches URL, skeleton loading is rendered
+        *   `[✅]` Test: when `activeSessionDetail.id` does not match `urlSessionId`, skeleton loading is rendered
+        *   `[✅]` Test: when all four conditions align (`activeContextProjectId === urlProjectId`, `activeContextSessionId === urlSessionId`, `activeSessionDetail?.id === urlSessionId`, not loading), session chrome renders normally
+        *   `[✅]` Test: existing error-state rendering (projectError, sessionError) is unchanged
+    *   `[✅]` `DialecticSessionDetailsPage.tsx`
+        *   `[✅]` Derive `sessionContextReady` as: `activeContextProjectId === urlProjectId && activeContextSessionId === urlSessionId && activeSessionDetail?.id === urlSessionId && !isLoadingProject && !isLoadingSession`
+        *   `[✅]` Replace the existing `isLoading` gate (line 121) with a check on `!sessionContextReady` — when not ready, render the existing skeleton loading UI
+        *   `[✅]` Preserve the existing error gates (lines 136-153) — errors still short-circuit before the session chrome
+        *   `[✅]` The existing `!activeSessionDetail` gate (line 155) remains as a fallback for the case where loading completes but session was not found
+        *   `[✅]` The session chrome block (lines 174-244) only renders when `sessionContextReady` is true and `activeSessionDetail` is non-null
+    *   `[✅]` integration/`DialecticSessionDetailsPage.integration.test.ts`
+        *   `[✅]` Test: simulate the full `activateProjectAndSessionContextForDeepLink` flow with store — page transitions from skeleton to rendered session chrome when context aligns
+        *   `[✅]` Test: simulate store desync (project fetched, session not yet fetched) — page shows skeleton, not a crash or error
+    *   `[✅]` `directionality`
+        *   `[✅]` UI layer
+        *   `[✅]` All dependencies are inward-facing (reads from store via selectors, reads URL params from router)
+        *   `[✅]` No outward-facing provides — this is a leaf page component
+    *   `[✅]` `requirements`
+        *   `[✅]` `StageTabCard` never mounts when `activeContextSessionId` is null or mismatched with URL
+        *   `[✅]` Loading skeleton is shown during transient desync — never an error state for a transient condition
+        *   `[✅]` All existing page behavior (error display, deep-link hydration, auto-start generation) is preserved
+        *   `[✅]` All existing page tests continue to pass
+    *   `[✅]` **Commit** `fix(store,ui): guard session context during navigation and deep-link hydration`
+        *   `[✅]` `dialecticStore.ts` — `startDialecticSession` sets session context after project refetch
+        *   `[✅]` `dialecticStore.ts` — `activateProjectAndSessionContextForDeepLink` sets session context after project fetch
+        *   `[✅]` `dialecticStore.ts` — `setActiveDialecticContext` clears `activeSessionDetail` when `sessionId` is null
+        *   `[✅]` `dialecticStore.session.test.ts` — tests for all three store-level guards
+        *   `[✅]` `DialecticSessionDetailsPage.tsx` — `sessionContextReady` gate prevents session chrome rendering during desync
+        *   `[✅]` `DialecticSessionDetailsPage.test.tsx` — tests for readiness gating behavior

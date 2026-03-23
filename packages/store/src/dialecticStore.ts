@@ -765,6 +765,8 @@ export const useDialecticStore = create<DialecticStore>()(
 						`[DialecticStore] Session started for project ${successData.project_id}. Refetching project details.`,
 					);
 					await get().fetchDialecticProjectDetails(successData.project_id);
+					// Restore session context after project fetch (which resets sessionId to null)
+					get().setActiveDialecticContext({ projectId: successData.project_id, sessionId: successData.id, stage: null });
 				} else {
 					logger.info(
 						"[DialecticStore] Session started, but no project_id in response. Refetching project list.",
@@ -2520,6 +2522,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			activeContextProjectId: context.projectId,
 			activeContextSessionId: context.sessionId,
 			activeContextStage: context.stage,
+			...(context.sessionId === null ? { activeSessionDetail: null, activeSessionDetailError: null } : {}),
 		});
 	},
 
@@ -3102,7 +3105,10 @@ export const useDialecticStore = create<DialecticStore>()(
       logger.info(`[DialecticStore] Project context differs or not set. Fetching project details for ${projectId} before session.`);
       await state.fetchDialecticProjectDetails(projectId);
     }
-    
+
+    // Set session context after project fetch to prevent null-session window during hydration
+    get().setActiveDialecticContext({ projectId, sessionId, stage: null });
+
     if (!get().projectDetailError) {
         logger.info(`[DialecticStore] Proceeding to fetch session details for ${sessionId}.`);
         await get().fetchAndSetCurrentSessionDetails(sessionId);

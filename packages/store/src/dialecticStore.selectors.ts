@@ -891,6 +891,7 @@ export const selectUnifiedProjectProgress = (
         const stepStatuses = progress.stepStatuses;
         const stepsDetail: StepProgressDetail[] = [];
         let stageStatus: UnifiedProjectStatus = 'not_started';
+        let allStepsCompleted = true;
 
         for (const recipeStep of recipe.steps) {
             const stepKey = recipeStep.step_key;
@@ -902,6 +903,8 @@ export const selectUnifiedProjectProgress = (
                     : raw === 'paused_nsf' ? 'paused_nsf'
                     : raw === 'paused_user' ? 'paused_user'
                     : 'not_started';
+
+            if (stepStatus !== 'completed') allStepsCompleted = false;
 
             if (stepStatus === 'failed') stageStatus = 'failed';
             else if (stepStatus === 'in_progress' && stageStatus !== 'failed') stageStatus = 'in_progress';
@@ -916,6 +919,8 @@ export const selectUnifiedProjectProgress = (
                 status: stepStatus,
             });
         }
+
+        if (allStepsCompleted && recipe.steps.length > 0) stageStatus = 'completed';
 
         const totalStepsForStage = progress.progress.totalSteps;
         const completedStepsForStage = progress.progress.completedSteps;
@@ -953,7 +958,14 @@ export const selectUnifiedProjectProgress = (
             }
         }
 
-        if (stageStatus === 'not_started' && totalDocumentsForStage > 0 && completedDocumentsForStage === totalDocumentsForStage) stageStatus = 'completed';
+        // Stage completion requires both conditions independently:
+        // 1. All steps completed (tracked by allStepsCompleted above)
+        // 2. All documents completed
+        const allDocumentsCompleted = completedDocumentsForStage === totalDocumentsForStage;
+        if (stageStatus === 'completed' && !allDocumentsCompleted && totalDocumentsForStage > 0) {
+            // Steps are done but documents aren't — stage is still in progress
+            stageStatus = 'in_progress';
+        }
 
         stageDetails.push({
             stageSlug,

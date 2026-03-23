@@ -181,6 +181,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const projectWithSession: DialecticProject = {
         ...projectBaseForUnified,
@@ -222,6 +223,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -286,6 +288,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -366,6 +369,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -427,6 +431,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-def',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe1: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -493,6 +498,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-def',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe1: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -578,6 +584,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -669,6 +676,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -740,6 +748,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -837,6 +846,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -900,6 +910,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -977,6 +988,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const projectWithSession: DialecticProject = {
         ...projectBaseForUnified,
@@ -1016,6 +1028,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1109,6 +1122,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1178,6 +1192,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1252,6 +1267,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1316,6 +1332,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1380,6 +1397,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1444,6 +1462,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-def',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe1: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1520,6 +1539,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1575,6 +1595,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1622,6 +1643,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1669,6 +1691,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const projectWithSession: DialecticProject = {
         ...projectBaseForUnified,
@@ -1702,6 +1725,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const projectWithSession: DialecticProject = {
         ...projectBaseForUnified,
@@ -1732,6 +1756,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const projectWithSession: DialecticProject = {
         ...projectBaseForUnified,
@@ -1767,6 +1792,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const projectWithTemplate: DialecticProject = {
         ...projectBaseForUnified,
@@ -1798,6 +1824,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1860,6 +1887,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1912,6 +1940,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -1964,6 +1993,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -2005,7 +2035,7 @@ describe('selectUnifiedProjectProgress', () => {
       expect(firstStage.stageStatus).toBe('in_progress');
     });
 
-    it('stageStatus is completed when all documents complete, even if some steps are not completed', () => {
+    it('stageStatus is NOT completed when documents are complete but steps are not', () => {
       const session: DialecticSession = {
         id: sessionId,
         project_id: 'proj-1',
@@ -2018,6 +2048,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -2077,7 +2108,7 @@ describe('selectUnifiedProjectProgress', () => {
       };
       const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
       const firstStage = result.stageDetails[0];
-      expect(firstStage.stageStatus).toBe('completed');
+      expect(firstStage.stageStatus).not.toBe('completed');
       expect(firstStage.completedDocuments).toBe(1);
       expect(firstStage.totalDocuments).toBe(1);
     });
@@ -2095,6 +2126,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -2148,6 +2180,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -2212,7 +2245,7 @@ describe('selectUnifiedProjectProgress', () => {
       expect(firstStage.stageStatus).toBe('completed');
     });
 
-    it('stageStatus is not_started when totalDocuments is 0 (no jobs yet)', () => {
+    it('stageStatus is completed when all steps are completed and stage has no documents', () => {
       const session: DialecticSession = {
         id: sessionId,
         project_id: 'proj-1',
@@ -2223,8 +2256,9 @@ describe('selectUnifiedProjectProgress', () => {
         status: null,
         associated_chat_id: null,
         current_stage_id: 'stage-abc',
-        created_at: new Date().toISOString(),
+        created_at: new Date().toISOString(), 
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
@@ -2275,6 +2309,73 @@ describe('selectUnifiedProjectProgress', () => {
       const firstStage = result.stageDetails[0];
       expect(firstStage.totalDocuments).toBe(0);
       expect(firstStage.completedDocuments).toBe(0);
+      expect(firstStage.stageStatus).toBe('completed');
+    });
+
+    it('stageStatus is not_started when steps have not started and no documents exist', () => {
+      const session: DialecticSession = {
+        id: sessionId,
+        project_id: 'proj-1',
+        session_description: null,
+        user_input_reference_url: null,
+        iteration_count: iterationNumber,
+        selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
+        status: null,
+        associated_chat_id: null,
+        current_stage_id: 'stage-abc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
+      };
+      const recipe: DialecticStageRecipe = {
+        stageSlug: 'mock-stage-1',
+        instanceId: 'inst-1',
+        steps: [
+          {
+            id: 'plan-step',
+            step_key: 'plan_step',
+            step_slug: 'plan-step',
+            step_name: 'Plan Step',
+            execution_order: 1,
+            parallel_group: 1,
+            branch_key: 'b1',
+            job_type: 'PLAN',
+            prompt_type: 'Planner',
+            output_type: 'header_context',
+            granularity_strategy: 'all_to_one',
+            inputs_required: [],
+            inputs_relevance: [],
+            outputs_required: [],
+          },
+        ],
+        edges: [],
+      };
+      const progressKey = progressKeyForStage('mock-stage-1');
+      const projectWithSession: DialecticProject = {
+        ...projectBaseForUnified,
+        dialectic_sessions: [session],
+      };
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectWithSession,
+        currentProcessTemplate: templateForUnified,
+        selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
+        recipesByStageSlug: { 'mock-stage-1': recipe, 'mock-stage-2': recipe2Minimal },
+        stageRunProgress: {
+          [progressKey]: {
+            stepStatuses: {},
+            documents: {},
+            jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
+          },
+          [progressKeyForStage('mock-stage-2')]: emptyStageProgress,
+        },
+      };
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+      const firstStage = result.stageDetails[0];
+      expect(firstStage.totalDocuments).toBe(0);
+      expect(firstStage.completedDocuments).toBe(0);
       expect(firstStage.stageStatus).toBe('not_started');
     });
 
@@ -2291,6 +2392,7 @@ describe('selectUnifiedProjectProgress', () => {
         current_stage_id: 'stage-abc',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
       };
       const recipe: DialecticStageRecipe = {
         stageSlug: 'mock-stage-1',
