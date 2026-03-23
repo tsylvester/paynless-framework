@@ -323,7 +323,7 @@ describe("countTokens", () => {
     );
     const moreDocs = countTokens(
       deps,
-      { ...baseReq, resourceDocuments: [...(baseReq.resourceDocuments || []), { content: "Doc B" }] },
+      { ...baseReq, resourceDocuments: [...(baseReq.resourceDocuments || []), { id: "d2", content: "Doc B" }] },
       cfg,
     );
 
@@ -394,8 +394,8 @@ describe("countTokens", () => {
       tokenization_strategy: { type: "rough_char_count", chars_per_token_ratio: 1 },
     };
     const deps = buildDeps();
-    const base = countTokens(deps, makePayload({ resourceDocuments: [ { content: "Doc A" } ] }), cfg);
-    const more = countTokens(deps, makePayload({ resourceDocuments: [ { content: "Doc A" }, { content: "Doc B longer" } ] }), cfg);
+    const base = countTokens(deps, makePayload({ resourceDocuments: [ { id: "d1", content: "Doc A" } ] }), cfg);
+    const more = countTokens(deps, makePayload({ resourceDocuments: [ { id: "d1", content: "Doc A" }, { id: "d2", content: "Doc B longer" } ] }), cfg);
     assertEquals(base > 0, true);
     assertEquals(more > base, true);
   });
@@ -427,7 +427,7 @@ describe("countTokens", () => {
     const onlyMessage = countTokens(deps, makePayload({ message: "Hello" }), cfg);
     const plusSys = countTokens(deps, makePayload({ message: "Hello", systemInstruction: "You are helpful." }), cfg);
     const plusMsgs = countTokens(deps, makePayload({ message: "Hello", systemInstruction: "You are helpful.", messages: [ { role: "user", content: "Hi" } ] }), cfg);
-    const plusDocs = countTokens(deps, makePayload({ message: "Hello", systemInstruction: "You are helpful.", messages: [ { role: "user", content: "Hi" } ], resourceDocuments: [ { content: "Doc A" } ] }), cfg);
+    const plusDocs = countTokens(deps, makePayload({ message: "Hello", systemInstruction: "You are helpful.", messages: [ { role: "user", content: "Hi" } ], resourceDocuments: [ { id: "d1", content: "Doc A" } ] }), cfg);
     assertEquals(onlyMessage > 0, true);
     assertEquals(plusSys > onlyMessage, true);
     assertEquals(plusMsgs > plusSys, true);

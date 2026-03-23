@@ -52,6 +52,7 @@ const MOCK_PROVIDER: Tables<'ai_providers'> = {
     description: "A mock Google model for testing.",
     is_active: true,
     is_default_embedding: false,
+    is_default_generation: false,
     is_enabled: true,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -177,8 +178,8 @@ Deno.test("GoogleAdapter - resourceDocuments: when present appear as inlineData 
             providerId: 'test-provider',
             promptId: '__none__',
             resourceDocuments: [
-                { id: 'd1', content: 'Doc A content', document_key: 'business_case', stage_slug: 'thesis' },
-                { id: 'd2', content: 'Doc B content', document_key: 'feature_spec', stage_slug: 'thesis' },
+                { id: 'd1', content: 'Doc A content', document_key: 'business_case', stage_slug: 'thesis', type: 'text/plain' },
+                { id: 'd2', content: 'Doc B content', document_key: 'feature_spec', stage_slug: 'thesis', type: 'text/plain' },
             ],
         };
 
@@ -211,7 +212,7 @@ Deno.test("GoogleAdapter - resourceDocuments: mime_type is text/plain", async ()
             message: 'User prompt',
             providerId: 'test-provider',
             promptId: '__none__',
-            resourceDocuments: [{ content: 'Doc content', document_key: 'key', stage_slug: 'thesis' }],
+            resourceDocuments: [{ id: 'd1', content: 'Doc content', document_key: 'key', stage_slug: 'thesis', type: 'rendered_document' }],
         };
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
@@ -240,7 +241,7 @@ Deno.test("GoogleAdapter - resourceDocuments: document label text precedes each 
             message: 'User prompt',
             providerId: 'test-provider',
             promptId: '__none__',
-            resourceDocuments: [{ content: 'Doc content', document_key: 'key', stage_slug: 'thesis' }],
+            resourceDocuments: [{ id: 'd1', content: 'Doc content', document_key: 'key', stage_slug: 'thesis', type: 'rendered_document' }],
         };
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);

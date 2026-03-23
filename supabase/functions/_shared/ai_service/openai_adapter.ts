@@ -3,6 +3,7 @@ import type { ChatCompletionMessageParam } from 'npm:openai/resources/chat/compl
 import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, EmbeddingResponse } from '../types.ts';
 import type { Tables } from '../../types_db.ts';
 import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
+import { isResourceDocument } from '../utils/type-guards/type_guards.chat.ts';
 
 
 /**
@@ -59,9 +60,18 @@ export class OpenAiAdapter {
     })).filter(msg => msg.content);
 
     if (request.resourceDocuments && request.resourceDocuments.length > 0) {
-      const docParts: string[] = request.resourceDocuments.map((doc) =>
-        `[Document: ${doc.document_key ?? ''} from ${doc.stage_slug ?? ''}]\n${doc.content}`
-      );
+      const docParts: string[] = request.resourceDocuments.map((doc) => {
+        if (isResourceDocument(doc)) {
+          if (doc.document_key.length === 0) {
+            throw new Error('[OpenAiAdapter] ResourceDocument has empty document_key');
+          }
+          if (doc.stage_slug.length === 0) {
+            throw new Error('[OpenAiAdapter] ResourceDocument has empty stage_slug');
+          }
+          return `[Document: ${doc.document_key} from ${doc.stage_slug}]\n${doc.content}`;
+        }
+        return `[Document: ${doc.id}]\n${doc.content}`;
+      });
       openaiMessages.push({ role: 'user', content: docParts.join('\n\n') });
     }
 
@@ -75,14 +85,13 @@ export class OpenAiAdapter {
     };
 
     // Guardrail: Respect client-provided cap; otherwise cap by the tighter of model caps
-    const isOSeries = modelApiName.startsWith('gpt-4o') || modelApiName.startsWith('o');
+    const usesLegacyMaxTokens = modelApiName.startsWith('gpt-3.5-turbo') || modelApiName.startsWith('gpt-4-turbo') || modelApiName === 'gpt-4';
     const applyCap = (cap: number) => {
       if (!(cap > 0)) return;
-      if (isOSeries) {
-        // Prefer new param for o-series
-        payload.max_completion_tokens = cap;
-      } else {
+      if (usesLegacyMaxTokens) {
         payload.max_tokens = cap;
+      } else {
+        payload.max_completion_tokens = cap;
       }
     };
 

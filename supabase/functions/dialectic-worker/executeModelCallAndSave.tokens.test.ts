@@ -292,6 +292,7 @@ Deno.test('should orchestrate RAG and debit tokens for un-indexed history chunks
         ...mockFullProviderData.config,
         context_window_tokens: 100, // triggers compression
         provider_max_output_tokens: 50, // bounds planned output
+        provider_max_input_tokens: 200,
     };
     const { client: dbClient } = setupMockClient({
         'ai_providers': {
@@ -396,6 +397,7 @@ Deno.test('does not debit when compression tokensUsedForIndexing is zero', async
         ...mockFullProviderData.config,
         context_window_tokens: 100,
         provider_max_output_tokens: 50,
+        provider_max_input_tokens: 200,
     };
     const { client: dbClient } = setupMockClient({
         'ai_providers': {
@@ -619,7 +621,7 @@ Deno.test('should perform affordable compression, checking balance once', async 
     
     // Configure the RAG service to return a result that is small enough to pass the test.
     mockRagService.setConfig({
-        mockContextResult: '', // Make compression maximally effective
+        mockContextResult: 'brief summary', // Make compression maximally effective
     });
 
     if (!isRecord(mockFullProviderData.config)) {
@@ -694,6 +696,7 @@ Deno.test('should use source documents for token estimation before prompt assemb
         ...mockFullProviderData.config,
         context_window_tokens: 100,
         provider_max_output_tokens: 50,
+        provider_max_input_tokens: 200,
     };
 
     const { client: dbClient, clearAllStubs } = setupMockClient({

@@ -1185,3 +1185,172 @@ Four defense-in-depth guards:
         *   `[✅]` `dialecticStore.session.test.ts` — tests for all three store-level guards
         *   `[✅]` `DialecticSessionDetailsPage.tsx` — `sessionContextReady` gate prevents session chrome rendering during desync
         *   `[✅]` `DialecticSessionDetailsPage.test.tsx` — tests for readiness gating behavior
+
+
+* `[✅]` [BE] dialectic-worker/`executeModelCallAndSave` **Stop stripping identity fields from resourceDocuments before passing to adapters**
+  * `[✅]` `objective`
+    * `[✅]` `executeModelCallAndSave` gathers identity-rich documents via `gatherArtifacts()` returning `ResourceDocuments[number]` with `id`, `content`, `document_key`, `stage_slug`, and `type`
+    * `[✅]` At line 457, it strips these to `{ id, content }` via `idContentDocs`, then at line 587 strips again in the `chatApiRequest` construction
+    * `[✅]` This guarantees every adapter receives documents missing `document_key`, `stage_slug`, and `type` — making it impossible for any adapter to identify what the documents are or construct valid provider-specific payloads
+    * `[✅]` The fix must pass the full `ResourceDocuments[number]` objects through to adapters without stripping identity fields
+    * `[✅]` The `idContentDocs` variable and its usage at lines 457, 459, 486, 587, and 682 must be replaced with the identity-rich documents
+  * `[✅]` `role`
+    * `[✅]` Infrastructure — this is the execution boundary that wires gathered data to adapter consumers
+  * `[✅]` `module`
+    * `[✅]` dialectic-worker execution pipeline
+    * `[✅]` Boundary: receives gathered artifacts from database, constructs `ChatApiRequest`, delegates to AI adapters
+  * `[✅]` `deps`
+    * `[✅]` `gatherArtifacts` (internal) — produces `ResourceDocuments[number]` — domain layer — provides document identity and content
+    * `[✅]` `ResourceDocuments` type from `_shared/types.ts` — domain layer — defines the shape of documents passed to adapters
+    * `[✅]` `ChatApiRequest` type — port layer — defines the adapter request contract
+    * `[✅]` Confirm no reverse dependency is introduced
+  * `[✅]` `context_slice`
+    * `[✅]` Requires `ResourceDocuments` type (already imported)
+    * `[✅]` Requires `ChatApiRequest` interface (already imported)
+    * `[✅]` No new concrete imports required — this is a data passthrough fix
+  * `[✅]` interface/`types.ts`
+    * `[✅]` Verify `ResourceDocuments` type already includes `document_key`, `stage_slug`, `type` as optional fields — it does (lines 166-172 of `_shared/types.ts`)
+    * `[✅]` No type changes required; the type already supports the full shape, the caller just wasn't using it
+  * `[✅]` unit/`executeModelCallAndSave.test.ts`
+    * `[✅]` Add test: when `gatherArtifacts` returns documents with `id`, `content`, `document_key`, `stage_slug`, `type`, the `chatApiRequest.resourceDocuments` passed to the adapter must contain all five fields
+    * `[✅]` Add test: the `resourceDocuments` array must not contain any element where `document_key`, `stage_slug`, or `type` is `undefined`
+    * `[✅]` Update any existing test fixtures that construct `resourceDocuments` to use the `ResourceDocuments` type, lines 1240, 1261-1269 capture logic strips to `{ id, content }`, line 1876 comment, assertions at 1306/1379-1381
+  * `[✅]` unit/`executeModelCallAndSave.rag.test.ts`
+    * `[✅]`  lines 84, 108, 214 capture/normalization typed as `{ id?: string; content: string }` instead of `ResourceDocuments[number]`
+  * `[✅]` unit/`executeModelCallAndSave.rag2.test.ts`
+    * `[✅]`  line 435 comment, assertions at 421-436
+  * `[✅]` `construction`
+    * `[✅]` Remove the `idContentDocs` intermediate variable (line 457) that strips identity fields
+    * `[✅]` Replace all usages of `idContentDocs` with the original typed variable
+    * `[✅]` The `chatApiRequest.resourceDocuments` mapping at line 587 must pass the full typed object, not `{ id: d.id, content: d.content }`
+    * `[✅]` The `workingResourceDocs` at line 682 must also use the fulll typed object
+    * `[✅]` Prohibited: constructing partial objects then backfilling — pass the complete objects from the start
+  * `[✅]` `executeModelCallAndSave.ts`
+    * `[✅]` Remove line 457: `const idContentDocs: ResourceDocuments = identityRichDocs.map(d => ({ id: d.id, content: d.content }));`
+    * `[✅]` Update line 459: `const initialResourceDocuments` must reference `identityRichDocs` directly (or a properly typed copy)
+    * `[✅]` Update line 587: `resourceDocuments: currentResourceDocuments` (remove the `.map((d) => ({ id: d.id, content: d.content }))` stripping)
+    * `[✅]` Update line 682: `const workingResourceDocs: ResourceDocuments = [...identityRichDocs]` (or equivalent scoped source)
+    * `[✅]` Verify no other location re-strips the documents before they reach adapters
+  * `[✅]` `directionality`
+    * `[✅]` Layer: infrastructure (execution boundary)
+    * `[✅]` All dependencies are inward-facing (types, domain artifacts)
+    * `[✅]` All provides are outward-facing (ChatApiRequest to adapters)
+  * `[✅]` `requirements`
+    * `[✅]` Every `ResourceDocuments` element reaching an adapter must contain `id`, `content`, `document_key`, `stage_slug`, and `type`
+    * `[✅]` No stripping of identity fields between `gatherArtifacts` and adapter invocation
+    * `[✅]` Existing compression path (lines 644-680) must continue to work identically
+    * `[✅]` All existing tests must continue to pass with updated fixtures
+
+* `[✅]` [BE] _shared/ai_service/`anthropic_adapter` **Demand valid document data or omit invalid document blocks — no fallback defaults**
+  * `[✅]` `objective`
+    * `[✅]` The Anthropic adapter at lines 104-110 constructs `document` content blocks using `doc.document_key ?? doc.id ?? ''` for `title` and `doc.stage_slug ?? ''` for `context`
+    * `[✅]` The `?? ''` fallbacks violate application standards: they paper over missing data with values that are both semantically wrong and rejected by the Anthropic API (`context` must be at least 1 character)
+    * `[✅]` The fix must validate each document before constructing a document block: if `document_key` or `stage_slug` is missing/empty, reject the document (throw) rather than silently producing an invalid API payload
+    * `[✅]` Valid documents must produce a well-formed `document` content block with `title` from `document_key` and `context` from `stage_slug`
+  * `[✅]` `role`
+    * `[✅]` Adapter — translates domain request into Anthropic-specific API payload
+  * `[✅]` `module`
+    * `[✅]` AI service adapter layer
+    * `[✅]` Boundary: receives `ChatApiRequest` with `resourceDocuments`, produces Anthropic `MessageParam[]`
+  * `[✅]` `deps`
+    * `[✅]` `ResourceDocuments` type from `_shared/types.ts` — domain layer — defines document shape
+    * `[✅]` `ChatApiRequest` type — port layer — defines incoming request contract
+    * `[✅]` Anthropic SDK `MessageParam` type — external dependency — defines valid content block shapes
+    * `[✅]` Confirm no reverse dependency is introduced
+  * `[✅]` `context_slice`
+    * `[✅]` Requires `ResourceDocuments` type (already imported via `ChatApiRequest`)
+    * `[✅]` Requires Anthropic SDK types (already imported)
+    * `[✅]` No new imports required
+  * `[✅]` interface/`types.ts`
+    * `[✅]` No type changes required — the `ResourceDocuments` type already has the fields; the adapter must validate they are present at runtime
+  * `[✅]` unit/`anthropic_adapter.test.ts`
+    * `[✅]` Add test: when `resourceDocuments` contains a document with valid `document_key` and `stage_slug`, the adapter constructs a `document` block with `title` equal to `document_key` and `context` equal to `stage_slug`
+    * `[✅]` Add test: when `resourceDocuments` contains a document where `document_key` is missing or empty string, the adapter throws an error indicating invalid document data
+    * `[✅]` Add test: when `resourceDocuments` contains a document where `stage_slug` is missing or empty string, the adapter throws an error indicating invalid document data
+    * `[✅]` Add test: when `resourceDocuments` is empty array, no document blocks are prepended (existing behavior preserved)
+    * `[✅]` Add test: when `resourceDocuments` is undefined, no document blocks are prepended (existing behavior preserved)
+    * `[✅]` Update any existing test that relies on fallback behavior to instead provide full valid document objects
+  * `[✅]` `construction`
+    * `[✅]` Before mapping `resourceDocuments` to document blocks, validate each element has non-empty `document_key` and `stage_slug`
+    * `[✅]` If validation fails, throw a descriptive error (not silently skip, not fallback)
+    * `[✅]` Construct `title` directly from `doc.document_key` and `context` directly from `doc.stage_slug` — no `??` fallbacks
+    * `[✅]` Prohibited: default values, fallback strings, silent skipping of invalid documents
+  * `[✅]` `anthropic_adapter.ts`
+    * `[✅]` Add validation loop before document block construction (before line 105): for each doc in `request.resourceDocuments`, assert `doc.document_key` is a non-empty string and `doc.stage_slug` is a non-empty string; throw if not
+    * `[✅]` Replace line 108: `title: doc.document_key` (remove `?? doc.id ?? ''`)
+    * `[✅]` Replace line 109: `context: doc.stage_slug` (remove `?? ''`)
+    * `[✅]` The adapter must fail fast and loud when it receives bad data, not silently produce an invalid Anthropic API request
+  * `[✅]` `directionality`
+    * `[✅]` Layer: adapter
+    * `[✅]` All dependencies are inward-facing (types, domain request)
+    * `[✅]` Provides outward-facing Anthropic API call
+  * `[✅]` `requirements`
+    * `[✅]` Document blocks sent to Anthropic API must have non-empty `title` and non-empty `context`
+    * `[✅]` No `?? ''` or other fallback defaults in document block construction
+    * `[✅]` Adapter throws a clear error if any document is missing `document_key` or `stage_slug`
+    * `[✅]` Existing tests for non-document scenarios must continue to pass unchanged
+
+* `[✅]` [BE] _shared/ai_service/`openai_adapter` **Fix max_tokens parameter selection for GPT-5+ models and demand valid document data**
+  * `[✅]` `objective`
+    * `[✅]` The `isOSeries` check at line 78 (`modelApiName.startsWith('gpt-4o') || modelApiName.startsWith('o')`) does not match `gpt-5.2` or any future GPT-5+ model, causing the adapter to send `max_tokens` which GPT-5.2 rejects with `400 Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.`
+    * `[✅]` The parameter selection logic must be updated to correctly identify all models that require `max_completion_tokens` — GPT-5+ models require `max_completion_tokens`, not just o-series
+    * `[✅]` Additionally, the document construction at lines 61-66 uses `doc.document_key ?? ''` and `doc.stage_slug ?? ''` fallback defaults that violate application standards — these must validate and reject bad data
+  * `[✅]` `role`
+    * `[✅]` Adapter — translates domain request into OpenAI-specific API payload
+  * `[✅]` `module`
+    * `[✅]` AI service adapter layer
+    * `[✅]` Boundary: receives `ChatApiRequest` with `resourceDocuments`, produces OpenAI `ChatCompletionCreateParams`
+  * `[✅]` `deps`
+    * `[✅]` `ResourceDocuments` type from `_shared/types.ts` — domain layer — defines document shape
+    * `[✅]` `ChatApiRequest` type — port layer — defines incoming request contract
+    * `[✅]` OpenAI SDK types — external dependency — defines valid request parameter shapes
+    * `[✅]` Confirm no reverse dependency is introduced
+  * `[✅]` `context_slice`
+    * `[✅]` Requires `ResourceDocuments` type (already imported via `ChatApiRequest`)
+    * `[✅]` Requires OpenAI SDK types (already imported)
+    * `[✅]` No new imports required
+  * `[✅]` interface/`types.ts`
+    * `[✅]` No type changes required
+  * `[✅]` unit/`openai_adapter.test.ts`
+    * `[✅]` Add test: when model is `gpt-5.2`, the request payload uses `max_completion_tokens` (not `max_tokens`)
+    * `[✅]` Add test: when model is `gpt-5.2-mini` or similar GPT-5+ variant, the request payload uses `max_completion_tokens`
+    * `[✅]` Add test: when model is `gpt-4o`, the request payload uses `max_completion_tokens` (existing o-series behavior preserved)
+    * `[✅]` Add test: when model is `o1` or `o3`, the request payload uses `max_completion_tokens` (existing o-series behavior preserved)
+    * `[✅]` Add test: when model is `gpt-4-turbo`, the request payload uses `max_tokens` (legacy behavior preserved for older models)
+    * `[✅]` Add test: when `resourceDocuments` contains a document where `document_key` is missing or empty, the adapter throws an error
+    * `[✅]` Add test: when `resourceDocuments` contains a document where `stage_slug` is missing or empty, the adapter throws an error
+    * `[✅]` Add test: when `resourceDocuments` contains valid documents, the text label includes `document_key` and `stage_slug` correctly
+    * `[✅]` Update any existing test that relies on fallback behavior to provide full valid document objects
+  * `[✅]` `construction`
+    * `[✅]` Rename `isOSeries` to a broader check that captures all models requiring `max_completion_tokens`: o-series (`o1`, `o3`, etc.), GPT-4o variants, and GPT-5+ models
+    * `[✅]` The check must be forward-compatible — `gpt-5`, `gpt-5.2`, `gpt-6`, etc. should all route to `max_completion_tokens`
+    * `[✅]` One approach: invert the logic — use `max_completion_tokens` by default and only use `max_tokens` for known legacy models (`gpt-4-turbo`, `gpt-4`, `gpt-3.5-turbo`)
+    * `[✅]` Add validation before document text construction: assert `doc.document_key` and `doc.stage_slug` are non-empty strings; throw if not
+    * `[✅]` Prohibited: default values, fallback strings, silent acceptance of missing identity fields
+  * `[✅]` `openai_adapter.ts`
+    * `[✅]` Replace the `isOSeries` check (line 78) with a `usesLegacyMaxTokens` check that identifies legacy models (`gpt-3.5-turbo*`, `gpt-4-turbo*`, `gpt-4` without `-o` suffix) — all other models get `max_completion_tokens`
+    * `[✅]` Invert the conditional at lines 81-86: default to `max_completion_tokens`, only use `max_tokens` for explicitly identified legacy models
+    * `[✅]` Add validation at line 61-66: before constructing doc labels, validate each document has non-empty `document_key` and `stage_slug`; throw if not
+    * `[✅]` Remove `?? ''` fallbacks from the document label template string
+  * `[✅]` integration/`openai_adapter.integration.test.ts`
+    * `[✅]` If not already present, add integration test confirming the full flow from `executeModelCallAndSave` through `openai_adapter` sends `max_completion_tokens` for a GPT-5.2 model configuration
+    * `[✅]` Add integration test confirming identity-rich `resourceDocuments` flow through to the adapter's document label construction without stripping
+  * `[✅]` `directionality`
+    * `[✅]` Layer: adapter
+    * `[✅]` All dependencies are inward-facing (types, domain request)
+    * `[✅]` Provides outward-facing OpenAI API call
+  * `[✅]` `requirements`
+    * `[✅]` GPT-5+ models must use `max_completion_tokens` parameter
+    * `[✅]` O-series and GPT-4o models must continue to use `max_completion_tokens`
+    * `[✅]` Legacy models (GPT-4-turbo, GPT-4, GPT-3.5-turbo) must continue to use `max_tokens`
+    * `[✅]` The parameter selection logic must be forward-compatible for future model names
+    * `[✅]` No `?? ''` or other fallback defaults in document label construction
+    * `[✅]` Adapter throws a clear error if any document is missing `document_key` or `stage_slug`
+    * `[✅]` All existing tests for non-document, non-max-tokens scenarios must continue to pass unchanged
+  * `[ ]` **Commit** `fix(be): pass full resourceDocuments to adapters, reject invalid document data, fix OpenAI max_tokens for GPT-5+`
+    * `[ ]` executeModelCallAndSave.ts — removed identity-stripping of resourceDocuments
+    * `[ ]` anthropic_adapter.ts — validate document fields, remove fallback defaults, throw on bad data
+    * `[ ]` openai_adapter.ts — invert max_tokens logic to default to max_completion_tokens for non-legacy models, validate document fields, remove fallback defaults
+    * `[ ]` executeModelCallAndSave.test.ts — tests proving full identity fields pass through
+    * `[ ]` anthropic_adapter.test.ts — tests proving validation rejects bad data, accepts good data
+    * `[ ]` openai_adapter.test.ts — tests proving correct parameter selection per model, validation rejects bad data

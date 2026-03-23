@@ -36,7 +36,7 @@ import {
   FileType, 
   DialecticStageSlug 
 } from '../_shared/types/file_manager.types.ts';
-import { LogMetadata, FinishReason } from '../_shared/types.ts';
+import { LogMetadata, FinishReason, ResourceDocument, ResourceDocuments } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { isDocumentRelationships } from '../_shared/utils/type_guards.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
@@ -61,7 +61,8 @@ import { IEmbeddingClient } from '../_shared/services/indexing_service.interface
 import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { DownloadFromStorageFn, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { createMockDownloadFromStorage } from '../_shared/supabase_storage_utils.mock.ts';
-
+import { AiModelExtendedConfig, ChatApiRequest } from '../_shared/types.ts';
+import { isResourceDocument } from '../_shared/utils/type-guards/type_guards.chat.ts';
 const encoded = new TextEncoder().encode('test content');
 const buffer = new ArrayBuffer(encoded.length);
 new Uint8Array(buffer).set(encoded);
@@ -186,18 +187,25 @@ export const mockProviderData: SelectedAiProvider = {
       api_identifier: 'mock-ai-v1',
   };
 
+export const mockFullProviderConfig: AiModelExtendedConfig = {
+    tokenization_strategy: { type: 'rough_char_count' },
+    context_window_tokens: 10000,
+    input_token_cost_rate: 0.001,
+    output_token_cost_rate: 0.002,
+    provider_max_input_tokens: 100,
+    provider_max_output_tokens: 50,
+    api_identifier: 'mock-ai-v1',
+};
+if (!isJson(mockFullProviderConfig)) {
+    throw new Error('Mock full provider config is not valid JSON');
+}
 export const mockFullProviderData: Tables<'ai_providers'> = {
     id: 'model-def',
     provider: 'mock-provider',
     name: 'Mock AI',
     api_identifier: 'mock-ai-v1',
     created_at: new Date().toISOString(),
-    config: {
-        tokenization_strategy: { type: 'rough_char_count' },
-        context_window_tokens: 10000,
-        input_token_cost_rate: 0.001,
-        output_token_cost_rate: 0.002,
-    },
+    config: mockFullProviderConfig,
     description: null,
     is_active: true,
     is_enabled: true,
@@ -598,6 +606,7 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
         context_window_tokens: 10, // very small limit
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
+        provider_max_input_tokens: 100,
     };
 
     if (!isJson(limitedConfigObject)) {
@@ -1237,7 +1246,7 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
   const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
 
   // Stub countTokens to verify resourceDocuments are present and influence count
-  let sizedPayload: { systemInstruction?: string; message?: string; messages?: { role: 'system'|'user'|'assistant'; content: string }[]; resourceDocuments?: { id?: string; content: string }[] } | null = null;
+  let sizedPayload: { systemInstruction?: string; message?: string; messages?: { role: 'system'|'user'|'assistant'; content: string }[]; resourceDocuments?: ResourceDocuments } | null = null;
   const countTokensStub = stub(deps, 'countTokens', (_deps, payload) => {
     // Capture normalized four-field payload
     if (isRecord(payload)) {
@@ -1258,15 +1267,25 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
         }
       }
       const docsUnknown = payload['resourceDocuments'];
-      const docs: { id?: string; content: string }[] = [];
+      const docs: ResourceDocument[] = [];
       if (Array.isArray(docsUnknown)) {
         for (const d of docsUnknown) {
-          if (isRecord(d)) {
-            const idVal = typeof d['id'] === 'string' ? d['id'] : undefined;
-            const contentVal = typeof d['content'] === 'string' ? d['content'] : undefined;
-            if (typeof contentVal === 'string') {
-              docs.push({ id: idVal, content: contentVal });
+          if (isResourceDocument(d)) {
+            const idVal: string | undefined = typeof d['id'] === 'string' ? d['id'] : undefined;
+            const documentKey: string | undefined = typeof d['document_key'] === 'string' ? d['document_key'] : undefined;
+            const stageSlug: string | undefined = typeof d['stage_slug'] === 'string' ? d['stage_slug'] : undefined;
+            const typeVal: string | undefined = typeof d['type'] === 'string' ? d['type'] : undefined;
+            if (!idVal || !documentKey || !stageSlug || !typeVal) {
+              throw new Error('Invalid resource document');
             }
+            const entry: ResourceDocument = {
+              id: idVal,
+              content: d['content'],
+              document_key: documentKey,
+              stage_slug: stageSlug,
+              type: typeVal,
+            };
+            docs.push(entry);
           }
         }
       }
@@ -1300,10 +1319,23 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
 
   // Adapter received resourceDocuments forwarded
   assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
-  const sent = callUnifiedAISpy.calls[0].args[0];
+  const sent: ChatApiRequest = callUnifiedAISpy.calls[0].args[0];
+  if(!isChatApiRequest(sent)) {
+    throw new Error('Adapter should receive a ChatApiRequest');
+  }
+  if(!Array.isArray(sent.resourceDocuments) || sent.resourceDocuments.length === 0) {
+    throw new Error('Resource documents must be an array');
+  }
+  if(!isResourceDocument(sent.resourceDocuments[0])) {
+    throw new Error('Resource document must be a valid ResourceDocument');
+  }
   assert(isChatApiRequest(sent), 'Adapter should receive a ChatApiRequest');
   assert(Array.isArray(sent.resourceDocuments) && sent.resourceDocuments.length === 1, 'resourceDocuments must be forwarded to adapter');
   assertEquals(sent.resourceDocuments[0].content, 'Rendered document content');
+  assertEquals(sent.resourceDocuments[0].id, 'doc-r1');
+  assertEquals(sent.resourceDocuments[0].document_key, FileType.RenderedDocument);
+  assertEquals(sent.resourceDocuments[0].stage_slug, 'thesis');
+  assertEquals(sent.resourceDocuments[0].type, 'document');
   assert(Array.isArray(sent.messages), 'messages must be an array');
 
   countTokensStub.restore();
@@ -1365,7 +1397,16 @@ Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resour
   await executeModelCallAndSave(params);
 
   assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
-  const sent = callUnifiedAISpy.calls[0].args[0];
+  const sent: ChatApiRequest = callUnifiedAISpy.calls[0].args[0];
+  if(!isChatApiRequest(sent)) {
+    throw new Error('Adapter should receive a ChatApiRequest');
+  }
+  if(!Array.isArray(sent.resourceDocuments) || sent.resourceDocuments.length === 0) {
+    throw new Error('Resource documents must be an array');
+  }
+  if(!isResourceDocument(sent.resourceDocuments[0])) {
+    throw new Error('Resource document must be a valid ResourceDocument');
+  }
   assert(isChatApiRequest(sent), 'Adapter should receive a ChatApiRequest');
 
   // Wallet should be forwarded from job payload
@@ -1379,6 +1420,10 @@ Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resour
   assertExists(sent.resourceDocuments);
   assertEquals(sent.resourceDocuments.length, 1);
   assertEquals(sent.resourceDocuments[0].content, 'Full ChatApiRequest doc content');
+  assertEquals(sent.resourceDocuments[0].id, 'doc-xyz');
+  assertEquals(sent.resourceDocuments[0].document_key, FileType.RenderedDocument);
+  assertEquals(sent.resourceDocuments[0].stage_slug, 'thesis');
+  assertEquals(sent.resourceDocuments[0].type, 'document');
 });
 
 Deno.test('executeModelCallAndSave - identity: sized payload equals sent request (non-oversized)', async () => {
@@ -1872,8 +1917,8 @@ Deno.test('executeModelCallAndSave - gathers artifacts across contributions/reso
     assert(!msgContents.includes(c), 'resource doc content must not be merged into messages');
   }
 
-  // Identity-rich fields are preserved for compression candidates, not for the
-  // sent ChatApiRequest.resourceDocuments (which carry only id/content).
+  // Identity-rich fields from gatherArtifacts must appear on sent ChatApiRequest.resourceDocuments
+  // (id, content, document_key, stage_slug, type), not only id/content.
 });
 
 Deno.test('executeModelCallAndSave - scoped selection includes only artifacts matching inputsRequired', async () => {
@@ -2288,4 +2333,144 @@ Deno.test('executeModelCallAndSave - optional inputsRequired document missing do
 
   callUnifiedAISpy.restore();
   clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - adapter receives resourceDocuments with id, content, document_key, stage_slug, and type from gatherArtifacts', async () => {
+  const mockResourceDocIdentity: Tables<'dialectic_project_resources'> = {
+    id: 'doc-identity-1',
+    stage_slug: 'thesis',
+    project_id: 'project-abc',
+    session_id: 'session-456',
+    iteration_number: 1,
+    resource_type: 'rendered_document',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
+    file_name: 'modelA_1_rendered_document.md',
+    mime_type: 'text/markdown',
+    storage_bucket: 'test-bucket',
+    size_bytes: 100,
+    user_id: 'user-789',
+    source_contribution_id: null,
+    resource_description: null,
+  };
+
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [mockResourceDocIdentity],
+          error: null,
+        });
+      },
+    },
+  });
+
+  const encodedDocContent = new TextEncoder().encode('Identity-rich body');
+  const docContentBuffer = new ArrayBuffer(encodedDocContent.byteLength);
+  new Uint8Array(docContentBuffer).set(encodedDocContent);
+  const mockDownloadForTest = createMockDownloadFromStorage({ mode: 'success', data: docContentBuffer });
+
+  const deps = getMockDeps({ downloadFromStorage: mockDownloadForTest });
+  const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
+
+  const promptConstructionPayload: PromptConstructionPayload = {
+    systemInstruction: 'SYS',
+    conversationHistory: [{ role: 'user', content: 'HIST' }],
+    resourceDocuments: [],
+    currentUserPrompt: 'CURR',
+  };
+
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+    promptConstructionPayload,
+    inputsRequired: [ { type: 'document', document_key: FileType.RenderedDocument, required: true, slug: 'thesis' } ],
+  });
+
+  await executeModelCallAndSave(params);
+
+  assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
+  const sent: ChatApiRequest = callUnifiedAISpy.calls[0].args[0];
+  if(!isChatApiRequest(sent)) {
+    throw new Error('Adapter should receive a ChatApiRequest');
+  }
+  if(!Array.isArray(sent.resourceDocuments) || sent.resourceDocuments.length === 0) {
+    throw new Error('Resource documents must be an array');
+  }
+  if(!isResourceDocument(sent.resourceDocuments[0])) {
+    throw new Error('Resource document must be a valid ResourceDocument');
+  }
+  assert(isChatApiRequest(sent), 'Adapter should receive a ChatApiRequest');
+  assert(Array.isArray(sent.resourceDocuments) && sent.resourceDocuments.length === 1, 'resourceDocuments must be forwarded');
+  assertEquals(sent.resourceDocuments[0].id, 'doc-identity-1');
+  assertEquals(sent.resourceDocuments[0].content, 'Identity-rich body');
+  assertEquals(sent.resourceDocuments[0].document_key, FileType.RenderedDocument);
+  assertEquals(sent.resourceDocuments[0].stage_slug, 'thesis');
+  assertEquals(sent.resourceDocuments[0].type, 'document');
+});
+
+Deno.test('executeModelCallAndSave - adapter resourceDocuments must not have undefined document_key, stage_slug, or type', async () => {
+  const mockResourceDocNoUndef: Tables<'dialectic_project_resources'> = {
+    id: 'doc-no-undef',
+    stage_slug: 'thesis',
+    project_id: 'project-abc',
+    session_id: 'session-456',
+    iteration_number: 1,
+    resource_type: 'rendered_document',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    storage_path: 'project-abc/session_session-456/iteration_1/thesis/documents',
+    file_name: 'modelA_1_rendered_document.md',
+    mime_type: 'text/markdown',
+    storage_bucket: 'test-bucket',
+    size_bytes: 100,
+    user_id: 'user-789',
+    source_contribution_id: null,
+    resource_description: null,
+  };
+
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': { select: { data: [mockFullProviderData], error: null } },
+    'dialectic_project_resources': {
+      select: () => {
+        return Promise.resolve({
+          data: [mockResourceDocNoUndef],
+          error: null,
+        });
+      },
+    },
+  });
+
+  const encodedDocContent = new TextEncoder().encode('Body for undefined-guard test');
+  const docContentBuffer = new ArrayBuffer(encodedDocContent.byteLength);
+  new Uint8Array(docContentBuffer).set(encodedDocContent);
+  const mockDownloadForTest = createMockDownloadFromStorage({ mode: 'success', data: docContentBuffer });
+
+  const deps = getMockDeps({ downloadFromStorage: mockDownloadForTest });
+  const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
+
+  const promptConstructionPayload: PromptConstructionPayload = {
+    systemInstruction: 'SYS',
+    conversationHistory: [{ role: 'user', content: 'HIST' }],
+    resourceDocuments: [],
+    currentUserPrompt: 'CURR',
+  };
+
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+    promptConstructionPayload,
+    inputsRequired: [ { type: 'document', document_key: FileType.RenderedDocument, required: true, slug: 'thesis' } ],
+  });
+
+  await executeModelCallAndSave(params);
+
+  assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
+  const sent = callUnifiedAISpy.calls[0].args[0];
+  assert(isChatApiRequest(sent), 'Adapter should receive a ChatApiRequest');
+  assert(Array.isArray(sent.resourceDocuments), 'resourceDocuments must be an array');
+  for (const doc of sent.resourceDocuments) {
+    assert(isResourceDocument(doc), 'resource document must be a valid ResourceDocument');
+    assert(doc.document_key !== undefined, 'document_key must be defined on each resource document');
+    assert(doc.stage_slug !== undefined, 'stage_slug must be defined on each resource document');
+    assert(doc.type !== undefined, 'type must be defined on each resource document');
+  }
 });

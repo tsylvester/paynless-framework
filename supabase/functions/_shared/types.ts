@@ -162,14 +162,17 @@ export interface EmailMarketingService {
 }
 
 // --- AI Adapter/API Types (Not DB Tables) ---
-
-export type ResourceDocuments = {
-  id?: string;
+export interface OutboundDocument {
+  id: string;
   content: string;
-  document_key?: string;
-  stage_slug?: string;
-  type?: string;
-}[];
+}
+export interface ResourceDocument extends OutboundDocument {
+  document_key: string;
+  stage_slug: string;
+  type: string;
+}
+
+export type ResourceDocuments = ResourceDocument[];
 
 /** Shape of a single part passed to Gemini sendMessage (text or inlineData). Used by GoogleAdapter tests. */
 export interface GeminiSendMessagePart {
@@ -219,7 +222,7 @@ export interface ChatApiRequest {
     role: 'system' | 'user' | 'assistant';
     content: string;
   }[];
-  resourceDocuments?: ResourceDocuments;
+  resourceDocuments?: OutboundDocument[] | ResourceDocuments;
   organizationId?: string; // uuid, optional for org chats - ADDED
   rewindFromMessageId?: string; // uuid, optional for rewinding - ADDED
   max_tokens_to_generate?: number; // ADDED: Max tokens for the AI to generate in its response

@@ -14,6 +14,7 @@ import type {
     GetUserFn,
     GetUserFnResult,
     FactoryDependencies,
+    ChatApiRequest,
 } from '../_shared/types.ts';
 import { logger } from '../_shared/logger.ts';
 import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
@@ -108,7 +109,7 @@ export async function handler(
                 return createErrorResponse(`Invalid request body: ${errorMessages}`, 400, req);
             }
 
-            const requestBody = parsedResult.data;
+            const requestBody: ChatApiRequest = parsedResult.data;
             logger.info('Received chat POST request (validated):', { body: requestBody });
 
             // Check if streaming is requested

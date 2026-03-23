@@ -1,6 +1,6 @@
 // supabase/functions/_shared/ai_service/openai_adapter.test.ts
 import "npm:openai/shims/web";
-import { assert, assertEquals, assertExists, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertExists, assertNotEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { APIPromise } from 'npm:openai/core';
 import type { FinalRequestOptions } from 'npm:openai/core';
@@ -41,6 +41,7 @@ const MOCK_PROVIDER: Tables<'ai_providers'> = {
     description: "A mock OpenAI model for testing.",
     is_active: true,
     is_default_embedding: false,
+    is_default_generation: false,
     is_enabled: true,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -314,8 +315,8 @@ Deno.test("OpenAiAdapter - resourceDocuments: when present appear as text in mes
             providerId: 'test-provider',
             promptId: '__none__',
             resourceDocuments: [
-                { id: 'd1', content: 'Doc A content', document_key: 'business_case', stage_slug: 'thesis' },
-                { id: 'd2', content: 'Doc B content', document_key: 'feature_spec', stage_slug: 'thesis' },
+                { id: 'd1', content: 'Doc A content' },
+                { id: 'd2', content: 'Doc B content' },
             ],
         };
 
@@ -343,7 +344,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: document labels are present in mes
             providerId: 'test-provider',
             promptId: '__none__',
             resourceDocuments: [
-                { content: 'Doc content', document_key: 'success_metrics', stage_slug: 'thesis' },
+                { id: 'd1', content: 'Doc content', document_key: 'success_metrics', stage_slug: 'thesis', type: 'rendered_document' },
             ],
         };
 
@@ -428,8 +429,252 @@ Deno.test("OpenAiAdapter - Specific Tests: listModels returns clean config (does
         // Assert it does NOT have any config property (it should be undefined)
         // This ensures no dirty values from the provider are leaked, and no fake defaults are invented.
         assertEquals(gpt4o.config, undefined, "config should be undefined");
-        
+
     } finally {
         listStub.restore();
+    }
+});
+
+// --- max_completion_tokens vs max_tokens model coverage ---
+
+Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for gpt-5.2", async () => {
+    const GPT5_CONFIG: AiModelExtendedConfig = {
+        api_identifier: 'openai-gpt-5.2',
+        input_token_cost_rate: 5.0,
+        output_token_cost_rate: 15.0,
+        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    };
+
+    if (!isJson(GPT5_CONFIG)) {
+        throw new Error('GPT5_CONFIG is not a valid JSON object');
+    }
+
+    const GPT5_PROVIDER: Tables<'ai_providers'> = {
+        ...MOCK_PROVIDER,
+        api_identifier: 'openai-gpt-5.2',
+        config: GPT5_CONFIG,
+    };
+
+    const adapter = new OpenAiAdapter(GPT5_PROVIDER, 'sk-test-key', mockLogger);
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+
+    try {
+        const request: ChatApiRequest = {
+            message: 'Hello',
+            providerId: 'provider-uuid-test',
+            promptId: 'prompt-uuid-test',
+            messages: [{ role: 'user', content: 'Hi' }],
+            max_tokens_to_generate: 200,
+        };
+
+        await adapter.sendMessage(request, GPT5_PROVIDER.api_identifier);
+
+        assertEquals(chatCreateStub.calls.length, 1);
+        const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
+        const mct: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_completion_tokens')?.value
+            : undefined;
+        const mt: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_tokens')?.value
+            : undefined;
+        assertExists(mct);
+        assertEquals(mct, 200);
+        assertEquals(mt === undefined || mt === null, true);
+    } finally {
+        chatCreateStub.restore();
+    }
+});
+
+Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for gpt-5.2-mini", async () => {
+    const GPT5_MINI_CONFIG: AiModelExtendedConfig = {
+        api_identifier: 'openai-gpt-5.2-mini',
+        input_token_cost_rate: 2.0,
+        output_token_cost_rate: 8.0,
+        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    };
+
+    if (!isJson(GPT5_MINI_CONFIG)) {
+        throw new Error('GPT5_MINI_CONFIG is not a valid JSON object');
+    }
+
+    const GPT5_MINI_PROVIDER: Tables<'ai_providers'> = {
+        ...MOCK_PROVIDER,
+        api_identifier: 'openai-gpt-5.2-mini',
+        config: GPT5_MINI_CONFIG,
+    };
+
+    const adapter = new OpenAiAdapter(GPT5_MINI_PROVIDER, 'sk-test-key', mockLogger);
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+
+    try {
+        const request: ChatApiRequest = {
+            message: 'Hello',
+            providerId: 'provider-uuid-test',
+            promptId: 'prompt-uuid-test',
+            messages: [{ role: 'user', content: 'Hi' }],
+            max_tokens_to_generate: 150,
+        };
+
+        await adapter.sendMessage(request, GPT5_MINI_PROVIDER.api_identifier);
+
+        assertEquals(chatCreateStub.calls.length, 1);
+        const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
+        const mct: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_completion_tokens')?.value
+            : undefined;
+        const mt: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_tokens')?.value
+            : undefined;
+        assertExists(mct);
+        assertEquals(mct, 150);
+        assertEquals(mt === undefined || mt === null, true);
+    } finally {
+        chatCreateStub.restore();
+    }
+});
+
+Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o1 model", async () => {
+    const O1_CONFIG: AiModelExtendedConfig = {
+        api_identifier: 'openai-o1',
+        input_token_cost_rate: 5.0,
+        output_token_cost_rate: 15.0,
+        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    };
+
+    if (!isJson(O1_CONFIG)) {
+        throw new Error('O1_CONFIG is not a valid JSON object');
+    }
+
+    const O1_PROVIDER: Tables<'ai_providers'> = {
+        ...MOCK_PROVIDER,
+        api_identifier: 'openai-o1',
+        config: O1_CONFIG,
+    };
+
+    const adapter = new OpenAiAdapter(O1_PROVIDER, 'sk-test-key', mockLogger);
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+
+    try {
+        const request: ChatApiRequest = {
+            message: 'Hello',
+            providerId: 'provider-uuid-test',
+            promptId: 'prompt-uuid-test',
+            messages: [{ role: 'user', content: 'Hi' }],
+            max_tokens_to_generate: 300,
+        };
+
+        await adapter.sendMessage(request, O1_PROVIDER.api_identifier);
+
+        assertEquals(chatCreateStub.calls.length, 1);
+        const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
+        const mct: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_completion_tokens')?.value
+            : undefined;
+        const mt: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_tokens')?.value
+            : undefined;
+        assertExists(mct);
+        assertEquals(mct, 300);
+        assertEquals(mt === undefined || mt === null, true);
+    } finally {
+        chatCreateStub.restore();
+    }
+});
+
+Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for gpt-4-turbo", async () => {
+    const GPT4_TURBO_CONFIG: AiModelExtendedConfig = {
+        api_identifier: 'openai-gpt-4-turbo',
+        input_token_cost_rate: 2.5,
+        output_token_cost_rate: 10.0,
+        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    };
+
+    if (!isJson(GPT4_TURBO_CONFIG)) {
+        throw new Error('GPT4_TURBO_CONFIG is not a valid JSON object');
+    }
+
+    const GPT4_TURBO_PROVIDER: Tables<'ai_providers'> = {
+        ...MOCK_PROVIDER,
+        api_identifier: 'openai-gpt-4-turbo',
+        config: GPT4_TURBO_CONFIG,
+    };
+
+    const adapter = new OpenAiAdapter(GPT4_TURBO_PROVIDER, 'sk-test-key', mockLogger);
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+
+    try {
+        const request: ChatApiRequest = {
+            message: 'Hello',
+            providerId: 'provider-uuid-test',
+            promptId: 'prompt-uuid-test',
+            messages: [{ role: 'user', content: 'Hi' }],
+            max_tokens_to_generate: 100,
+        };
+
+        await adapter.sendMessage(request, GPT4_TURBO_PROVIDER.api_identifier);
+
+        assertEquals(chatCreateStub.calls.length, 1);
+        const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
+        const mt: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_tokens')?.value
+            : undefined;
+        const mct: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+            ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_completion_tokens')?.value
+            : undefined;
+        assertExists(mt);
+        assertEquals(mt, 100);
+        assertEquals(mct === undefined || mct === null, true);
+    } finally {
+        chatCreateStub.restore();
+    }
+});
+
+// --- resourceDocuments validation tests ---
+
+Deno.test("OpenAiAdapter - resourceDocuments: throws when document_key is empty", async () => {
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+        const request: ChatApiRequest = {
+            message: 'User prompt',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            resourceDocuments: [
+                { id: 'd1', content: 'Doc content', document_key: '', stage_slug: 'thesis', type: 'rendered_document' },
+            ],
+        };
+
+        await assertRejects(
+            () => adapter.sendMessage(request, MOCK_PROVIDER.api_identifier),
+            Error,
+            'document_key',
+        );
+    } finally {
+        chatCreateStub.restore();
+    }
+});
+
+Deno.test("OpenAiAdapter - resourceDocuments: throws when stage_slug is empty", async () => {
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+        const request: ChatApiRequest = {
+            message: 'User prompt',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            resourceDocuments: [
+                { id: 'd1', content: 'Doc content', document_key: 'success_metrics', stage_slug: '', type: 'rendered_document' },
+            ],
+        };
+
+        await assertRejects(
+            () => adapter.sendMessage(request, MOCK_PROVIDER.api_identifier),
+            Error,
+            'stage_slug',
+        );
+    } finally {
+        chatCreateStub.restore();
     }
 });
