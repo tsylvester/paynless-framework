@@ -5,6 +5,7 @@ import type { Database, Json } from '../types_db.ts';
 import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from './cors-headers.ts';
 import type { CountTokensDeps, CountableChatPayload } from './types/tokenizer.types.ts';
 import { createClient, SupabaseClient, User } from "npm:@supabase/supabase-js";
+import { GenerateContentResponse } from "npm:@google/generative-ai";
 import { Tables } from '../types_db.ts';
 import type { ITokenWalletService } from './types/tokenWallet.types.ts';
 import type { prepareChatContext } from '../chat/prepareChatContext.ts';
@@ -185,15 +186,15 @@ export interface GoogleGetGenerativeModelStubReturn {
   startChat(_opts?: unknown): GoogleStartChatStubReturn;
 }
 
+/** Return shape of chat.sendMessageStream() for GoogleAdapter tests. */
+export interface GoogleSendMessageStreamStubReturn {
+  stream: AsyncIterable<GenerateContentResponse>;
+  response: Promise<GenerateContentResponse>;
+}
+
 /** Minimal shape returned by startChat in stubbed getGenerativeModel. */
 export interface GoogleStartChatStubReturn {
-  sendMessage(_parts: unknown): Promise<{
-    response: {
-      candidates: unknown[];
-      usageMetadata: unknown;
-      text: () => string;
-    };
-  }>;
+  sendMessageStream(_parts: unknown): Promise<GoogleSendMessageStreamStubReturn>;
 }
 
 /** Shape of generationConfig captured from startChat opts in GoogleAdapter tests. */

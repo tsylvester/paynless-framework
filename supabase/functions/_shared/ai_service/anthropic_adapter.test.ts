@@ -2,8 +2,7 @@
 import { assertEquals, assertExists, assert, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import Anthropic from 'npm:@anthropic-ai/sdk';
-import { APIPromise } from 'npm:@anthropic-ai/sdk@0.71.2/core/api-promise';
-import type { Message, MessageParam, TextBlock } from 'npm:@anthropic-ai/sdk/resources/messages';
+import type { Message, MessageParam, RawMessageStreamEvent } from 'npm:@anthropic-ai/sdk/resources/messages';
 
 import { AnthropicAdapter } from './anthropic_adapter.ts';
 import { testAdapterContract, type MockApi } from './adapter_test_contract.ts';
@@ -46,6 +45,7 @@ const MOCK_ANTHROPIC_SUCCESS_RESPONSE: Message = {
   type: "message",
   role: "assistant",
   model: "claude-3-opus-20240229",
+  container: null,
   content: [{ type: "text", text: " Okay, how can I help you today? ", citations: [] }],
   stop_reason: "end_turn",
   stop_sequence: null,
@@ -55,7 +55,8 @@ const MOCK_ANTHROPIC_SUCCESS_RESPONSE: Message = {
       cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 },
       cache_creation_input_tokens: 0,
       cache_read_input_tokens: 0,
-      server_tool_use: { web_search_requests: 0 },
+      inference_geo: null,
+      server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
       service_tier: "standard",
   },
 };
@@ -67,29 +68,44 @@ const MOCK_ANTHROPIC_MODELS_RESPONSE = {
     ]
 };
 
-function createMockMessagePromise(msg: Message): APIPromise<Message> {
-    const client = new Anthropic({ apiKey: 'sk-ant-test-key' });
-    const response = new Response(JSON.stringify(msg), {
-        headers: { 'request-id': 'test-request-id' },
-    });
-    type ResponsePromise = ConstructorParameters<typeof APIPromise>[1];
-    type ResponseProps = Awaited<ResponsePromise>;
+/** Simulates SDK `MessageStream`: text deltas for async iteration + `finalMessage()` for usage/stop_reason. */
+type MockMessageStream = AsyncIterable<RawMessageStreamEvent> & {
+    finalMessage: () => Promise<Message>;
+};
 
-    const props: ResponseProps = {
-        response,
-        options: {
-            method: 'post',
-            path: '/v1/messages',
+function createMockMessageStream(finalMsg: Message, textDeltas: string[]): MockMessageStream {
+    return {
+        async *[Symbol.asyncIterator]() {
+            for (const piece of textDeltas) {
+                const ev: RawMessageStreamEvent = {
+                    type: 'content_block_delta',
+                    index: 0,
+                    delta: { type: 'text_delta', text: piece },
+                };
+                yield ev;
+            }
         },
-        controller: new AbortController(),
-        requestLogID: 'test-request-log-id',
-        retryOfRequestLogID: undefined,
-        startTime: Date.now(),
+        async finalMessage() {
+            return finalMsg;
+        },
     };
+}
 
-    const responsePromise: ResponsePromise = Promise.resolve(props);
-    const parseResponse = () => msg;
-    return new APIPromise<Message>(client, responsePromise, parseResponse);
+function createMockMessageStreamThrowingAfterFirstDelta(finalMsg: Message): MockMessageStream {
+    return {
+        async *[Symbol.asyncIterator]() {
+            const first: RawMessageStreamEvent = {
+                type: 'content_block_delta',
+                index: 0,
+                delta: { type: 'text_delta', text: 'partial' },
+            };
+            yield first;
+            throw new Error('simulated stream failure');
+        },
+        async finalMessage() {
+            return finalMsg;
+        },
+    };
 }
 
 // This is the mock API that the test contract will spy on.
@@ -142,11 +158,14 @@ Deno.test("AnthropicAdapter: Contract Compliance", async (t) => {
 
 // --- Provider-Specific Tests ---
 
+const DEFAULT_TEXT_DELTAS: string[] = [ " Okay, how can I help you today? " ];
+
 Deno.test("AnthropicAdapter - Specific Tests: Alternating Role Filtering", async () => {
-    // For this specific test, we need to stub the underlying client library `create` method
-    // because we are testing the internal logic of the REAL sendMessage method, not the contract.
-    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
-            
+    // Stub `messages.stream` (stream-to-buffer path); exercises real sendMessage, not the contract mock.
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
+
     try {
         const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
         const request: ChatApiRequest = {
@@ -163,8 +182,8 @@ Deno.test("AnthropicAdapter - Specific Tests: Alternating Role Filtering", async
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
         
-        assertEquals(messagesCreateStub.calls.length, 1);
-        const callArgs = messagesCreateStub.calls[0].args[0];
+        assertEquals(messagesStreamStub.calls.length, 1);
+        const callArgs = messagesStreamStub.calls[0].args[0];
         
         // The adapter merges the last two user messages.
         assertEquals(callArgs.messages.length, 3, "Should have 3 messages after combining");
@@ -180,12 +199,14 @@ Deno.test("AnthropicAdapter - Specific Tests: Alternating Role Filtering", async
         assertTextBlockContent(callArgs.messages[2], 'Third user message');
         
     } finally {
-        messagesCreateStub.restore();
+        messagesStreamStub.restore();
     }
 });
 
 Deno.test("AnthropicAdapter - Specific Tests: forwards client max_tokens_to_generate to Anthropic", async () => {
-    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
 
     try {
         const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
@@ -200,16 +221,18 @@ Deno.test("AnthropicAdapter - Specific Tests: forwards client max_tokens_to_gene
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
 
-        assertEquals(messagesCreateStub.calls.length, 1);
-        const callArgs = messagesCreateStub.calls[0].args[0];
+        assertEquals(messagesStreamStub.calls.length, 1);
+        const callArgs = messagesStreamStub.calls[0].args[0];
         assertEquals(callArgs.max_tokens, K, 'Anthropic payload must use client-provided max_tokens_to_generate');
     } finally {
-        messagesCreateStub.restore();
+        messagesStreamStub.restore();
     }
 });
 
 Deno.test("AnthropicAdapter - Specific Tests: does NOT inject 4096 default when client cap is absent", async () => {
-    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
 
     try {
         // Provide a provider config with a model hard cap so the adapter need not inject 4096
@@ -243,19 +266,21 @@ Deno.test("AnthropicAdapter - Specific Tests: does NOT inject 4096 default when 
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
 
-        assertEquals(messagesCreateStub.calls.length, 1);
-        const callArgs = messagesCreateStub.calls[0].args[0];
+        assertEquals(messagesStreamStub.calls.length, 1);
+        const callArgs = messagesStreamStub.calls[0].args[0];
         // With no client cap, adapter should use model hard cap (not 4096 fallback)
         assertEquals(callArgs.max_tokens, 250, 'Adapter must use model hard cap when client cap is absent');
     } finally {
-        messagesCreateStub.restore();
+        messagesStreamStub.restore();
     }
 });
 
 // --- resourceDocuments tests ---
 
 Deno.test("AnthropicAdapter - resourceDocuments: when present appear as type document blocks in API call", async () => {
-    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
 
     try {
         const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
@@ -272,8 +297,8 @@ Deno.test("AnthropicAdapter - resourceDocuments: when present appear as type doc
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
 
-        assertEquals(messagesCreateStub.calls.length, 1);
-        const callArgs = messagesCreateStub.calls[0].args[0];
+        assertEquals(messagesStreamStub.calls.length, 1);
+        const callArgs = messagesStreamStub.calls[0].args[0];
         const firstMessage = callArgs.messages[0];
         assert(Array.isArray(firstMessage.content), 'First message content must be array');
         const content = firstMessage.content;
@@ -291,12 +316,14 @@ Deno.test("AnthropicAdapter - resourceDocuments: when present appear as type doc
         assert(textBlock && textBlock.type === 'text', 'Must have text block after document blocks');
         assert(typeof textBlock.text === 'string' && textBlock.text.includes('User prompt'), 'Text block must contain user message');
     } finally {
-        messagesCreateStub.restore();
+        messagesStreamStub.restore();
     }
 });
 
 Deno.test("AnthropicAdapter - resourceDocuments: empty resourceDocuments does not add document blocks", async () => {
-    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
 
     try {
         const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
@@ -310,20 +337,22 @@ Deno.test("AnthropicAdapter - resourceDocuments: empty resourceDocuments does no
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
 
-        assertEquals(messagesCreateStub.calls.length, 1);
-        const callArgs = messagesCreateStub.calls[0].args[0];
+        assertEquals(messagesStreamStub.calls.length, 1);
+        const callArgs = messagesStreamStub.calls[0].args[0];
         const firstMessage = callArgs.messages[0];
         assert(Array.isArray(firstMessage.content), 'First message content must be array');
         const content = firstMessage.content;
         const documentBlocks = content.filter((c) => c.type === 'document');
         assertEquals(documentBlocks.length, 0, 'Must not add document blocks when resourceDocuments is empty');
     } finally {
-        messagesCreateStub.restore();
+        messagesStreamStub.restore();
     }
 });
 
 Deno.test("AnthropicAdapter - resourceDocuments: document blocks prepended before user text content", async () => {
-    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
 
     try {
         const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
@@ -337,7 +366,7 @@ Deno.test("AnthropicAdapter - resourceDocuments: document blocks prepended befor
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
 
-        const callArgs = messagesCreateStub.calls[0].args[0];
+        const callArgs = messagesStreamStub.calls[0].args[0];
         const msgContent = callArgs.messages[0].content;
         assert(Array.isArray(msgContent), 'First message content must be array');
         const content = msgContent;
@@ -347,12 +376,14 @@ Deno.test("AnthropicAdapter - resourceDocuments: document blocks prepended befor
         assert(textIndex >= 0, 'Must have text block');
         assert(documentIndex < textIndex, 'Document blocks must be prepended before text content');
     } finally {
-        messagesCreateStub.restore();
+        messagesStreamStub.restore();
     }
 });
 
 Deno.test("AnthropicAdapter - resourceDocuments: OutboundDocument uses id for title and omits context", async () => {
-    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
 
     try {
         const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
@@ -367,8 +398,8 @@ Deno.test("AnthropicAdapter - resourceDocuments: OutboundDocument uses id for ti
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
 
-        assertEquals(messagesCreateStub.calls.length, 1);
-        const callArgs = messagesCreateStub.calls[0].args[0];
+        assertEquals(messagesStreamStub.calls.length, 1);
+        const callArgs = messagesStreamStub.calls[0].args[0];
         const firstMessage = callArgs.messages[0];
         assert(Array.isArray(firstMessage.content), 'First message content must be array');
         const content = firstMessage.content;
@@ -377,12 +408,14 @@ Deno.test("AnthropicAdapter - resourceDocuments: OutboundDocument uses id for ti
         assertEquals(docBlock.title, 'd1', 'OutboundDocument title must be doc.id');
         assertEquals(docBlock.context, undefined, 'OutboundDocument must not have a context field');
     } finally {
-        messagesCreateStub.restore();
+        messagesStreamStub.restore();
     }
 });
 
 Deno.test("AnthropicAdapter - resourceDocuments: throws when ResourceDocument has empty document_key", async () => {
-    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
 
     try {
         const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
@@ -407,12 +440,14 @@ Deno.test("AnthropicAdapter - resourceDocuments: throws when ResourceDocument ha
             'Invalid resource document',
         );
     } finally {
-        messagesCreateStub.restore();
+        messagesStreamStub.restore();
     }
 });
 
 Deno.test("AnthropicAdapter - resourceDocuments: throws when ResourceDocument has empty stage_slug", async () => {
-    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
 
     try {
         const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
@@ -437,12 +472,14 @@ Deno.test("AnthropicAdapter - resourceDocuments: throws when ResourceDocument ha
             'Invalid resource document',
         );
     } finally {
-        messagesCreateStub.restore();
+        messagesStreamStub.restore();
     }
 });
 
 Deno.test("AnthropicAdapter - resourceDocuments: undefined resourceDocuments does not add document blocks", async () => {
-    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
 
     try {
         const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
@@ -455,14 +492,157 @@ Deno.test("AnthropicAdapter - resourceDocuments: undefined resourceDocuments doe
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
 
-        assertEquals(messagesCreateStub.calls.length, 1);
-        const callArgs = messagesCreateStub.calls[0].args[0];
+        assertEquals(messagesStreamStub.calls.length, 1);
+        const callArgs = messagesStreamStub.calls[0].args[0];
         const firstMessage = callArgs.messages[0];
         assert(Array.isArray(firstMessage.content), 'First message content must be array');
         const content = firstMessage.content;
         const documentBlocks = content.filter((c) => c.type === 'document');
         assertEquals(documentBlocks.length, 0, 'Must not add document blocks when resourceDocuments is undefined');
     } finally {
-        messagesCreateStub.restore();
+        messagesStreamStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - stream: content is concatenation of multiple text deltas", async () => {
+    const multiDeltaFinal: Message = {
+        ...MOCK_ANTHROPIC_SUCCESS_RESPONSE,
+        content: [{ type: "text", text: "Hello world", citations: [] }],
+    };
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(multiDeltaFinal, ["Hello ", "world"])
+    );
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, "sk-ant-test-key", mockLogger);
+        const request: ChatApiRequest = {
+            message: "hi",
+            providerId: "test-provider",
+            promptId: "__none__",
+            max_tokens_to_generate: 200,
+            messages: [{ role: "user", content: "u" }],
+        };
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        assertEquals(result.content, "Hello world");
+    } finally {
+        messagesStreamStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - stream: token_usage matches finalMessage.usage mapping", async () => {
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, "sk-ant-test-key", mockLogger);
+        const request: ChatApiRequest = {
+            message: "hi",
+            providerId: "test-provider",
+            promptId: "__none__",
+            max_tokens_to_generate: 200,
+            messages: [{ role: "user", content: "u" }],
+        };
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        const u = MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage;
+        assertEquals(result.token_usage, {
+            prompt_tokens: u.input_tokens,
+            completion_tokens: u.output_tokens,
+            total_tokens: (u.input_tokens ?? 0) + (u.output_tokens ?? 0),
+        });
+    } finally {
+        messagesStreamStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - stream: maps end_turn stop_reason to finish_reason stop", async () => {
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(MOCK_ANTHROPIC_SUCCESS_RESPONSE, DEFAULT_TEXT_DELTAS)
+    );
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, "sk-ant-test-key", mockLogger);
+        const request: ChatApiRequest = {
+            message: "hi",
+            providerId: "test-provider",
+            promptId: "__none__",
+            max_tokens_to_generate: 200,
+            messages: [{ role: "user", content: "u" }],
+        };
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        assertEquals(result.finish_reason, "stop");
+    } finally {
+        messagesStreamStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - stream: maps max_tokens stop_reason to finish_reason length", async () => {
+    const maxTokMsg: Message = {
+        ...MOCK_ANTHROPIC_SUCCESS_RESPONSE,
+        stop_reason: "max_tokens",
+    };
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(maxTokMsg, DEFAULT_TEXT_DELTAS)
+    );
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, "sk-ant-test-key", mockLogger);
+        const request: ChatApiRequest = {
+            message: "hi",
+            providerId: "test-provider",
+            promptId: "__none__",
+            max_tokens_to_generate: 200,
+            messages: [{ role: "user", content: "u" }],
+        };
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        assertEquals(result.finish_reason, "length");
+    } finally {
+        messagesStreamStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - stream: empty assistant text throws descriptive error", async () => {
+    const emptyFinal: Message = {
+        ...MOCK_ANTHROPIC_SUCCESS_RESPONSE,
+        content: [{ type: "text", text: "", citations: [] }],
+    };
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStream(emptyFinal, [])
+    );
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, "sk-ant-test-key", mockLogger);
+        const request: ChatApiRequest = {
+            message: "hi",
+            providerId: "test-provider",
+            promptId: "__none__",
+            max_tokens_to_generate: 200,
+            messages: [{ role: "user", content: "u" }],
+        };
+        await assertRejects(
+            () => adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier),
+            Error,
+            "Received empty response from Anthropic.",
+        );
+    } finally {
+        messagesStreamStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - stream: error during stream iteration propagates", async () => {
+    const messagesStreamStub = stub(Anthropic.Messages.prototype, "stream", () =>
+        createMockMessageStreamThrowingAfterFirstDelta(MOCK_ANTHROPIC_SUCCESS_RESPONSE)
+    );
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, "sk-ant-test-key", mockLogger);
+        const request: ChatApiRequest = {
+            message: "hi",
+            providerId: "test-provider",
+            promptId: "__none__",
+            max_tokens_to_generate: 200,
+            messages: [{ role: "user", content: "u" }],
+        };
+        await assertRejects(
+            () => adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier),
+            Error,
+            "simulated stream failure",
+        );
+    } finally {
+        messagesStreamStub.restore();
     }
 });

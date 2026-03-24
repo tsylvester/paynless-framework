@@ -157,17 +157,28 @@ export class AnthropicAdapter {
         this.logger.error('AnthropicAdapter: No max tokens for payload', { modelApiName });
         throw new Error('AnthropicAdapter: No max tokens for payload');
       }
-      const response = await this.client.messages.create({
+      const stream = this.client.messages.stream({
         model: modelApiName,
         system: systemPrompt || undefined,
         messages: anthropicMessages,
         max_tokens: maxTokensForPayload,
       });
 
-      const assistantMessageContent =
-        response.content?.[0]?.type === 'text'
-        ? response.content[0].text.trim()
-        : null;
+      let textBuffer = '';
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          textBuffer += event.delta.text;
+        }
+      }
+
+      const response = await stream.finalMessage();
+
+      const assistantMessageContent: string | null =
+        textBuffer.trim() !== ''
+          ? textBuffer.trim()
+          : (response.content?.[0]?.type === 'text'
+              ? response.content[0].text.trim()
+              : null);
 
       if (!assistantMessageContent) {
           this.logger.error("Anthropic response missing message content:", { response: response, modelApiName });

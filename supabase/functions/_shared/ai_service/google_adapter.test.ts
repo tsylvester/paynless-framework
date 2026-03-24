@@ -1,7 +1,15 @@
 // supabase/functions/_shared/ai_service/google_adapter.test.ts
-import { assertEquals, assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertExists, assert, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "npm:@google/generative-ai";
+import {
+    GoogleGenerativeAI,
+    FinishReason,
+    Content,
+    EnhancedGenerateContentResponse,
+    GenerateContentCandidate,
+    GenerateContentResponse,
+    UsageMetadata,
+} from "npm:@google/generative-ai";
 
 import { GoogleAdapter } from './google_adapter.ts';
 import { testAdapterContract, type MockApi } from './adapter_test_contract.ts';
@@ -13,6 +21,7 @@ import type {
     GeminiSendMessagePart,
     GoogleGetGenerativeModelStubReturn,
     GoogleGenerationConfigCapture,
+    GoogleSendMessageStreamStubReturn,
     GoogleStartChatStubReturn,
 } from "../types.ts";
 import { MockLogger } from "../logger.mock.ts";
@@ -42,6 +51,48 @@ function isGoogleGenerationConfigCapture(val: unknown): val is GoogleGenerationC
     if (val === null || typeof val !== 'object') return false;
     const mt = Object.getOwnPropertyDescriptor(val, 'maxOutputTokens')?.value;
     return mt === undefined || typeof mt === 'number';
+}
+
+function makeUsage(promptTokenCount: number, candidatesTokenCount: number, totalTokenCount: number): UsageMetadata {
+    const usage: UsageMetadata = {
+        promptTokenCount,
+        candidatesTokenCount,
+        totalTokenCount,
+    };
+    return usage;
+}
+
+function makeStreamChunk(deltaText: string): GenerateContentResponse {
+    const content: Content = { role: 'model', parts: [{ text: deltaText }] };
+    const candidate: GenerateContentCandidate = {
+        index: 0,
+        content,
+    };
+    const chunk: GenerateContentResponse = {
+        candidates: [candidate],
+    };
+    return chunk;
+}
+
+function makeEnhancedResponse(
+    fullText: string,
+    finishReason: FinishReason,
+    usage: UsageMetadata,
+): EnhancedGenerateContentResponse {
+    const content: Content = { role: 'model', parts: [{ text: fullText }] };
+    const candidate: GenerateContentCandidate = {
+        index: 0,
+        content,
+        finishReason,
+    };
+    const response: EnhancedGenerateContentResponse = {
+        candidates: [candidate],
+        usageMetadata: usage,
+        text: () => fullText,
+        functionCall: () => undefined,
+        functionCalls: () => undefined,
+    };
+    return response;
 }
 
 const MOCK_PROVIDER: Tables<'ai_providers'> = {
@@ -97,29 +148,34 @@ Deno.test("GoogleAdapter: Contract Compliance", async (t) => {
 });
 
 // --- Provider-Specific Behavior Tests ---
-// This test is no longer needed as the core logic is now encapsulated in the SDK,
-// and the paradoxical fetch behavior is gone. The contract test is sufficient.
-// We can add specific tests here later if the adapter develops more complex,
-// non-SDK logic (e.g., custom message processing).
 
 Deno.test("GoogleAdapter - Specific: forwards client cap to generationConfig.maxOutputTokens", async () => {
     let capturedGenerationConfig: unknown = undefined;
 
+    const finalResp: EnhancedGenerateContentResponse = makeEnhancedResponse(
+        'ok',
+        FinishReason.STOP,
+        makeUsage(1, 1, 2),
+    );
+
     const createStubReturn = (): GoogleGetGenerativeModelStubReturn => ({
         startChat: (opts: { history?: unknown; generationConfig?: GoogleGenerationConfigCapture }) => {
             capturedGenerationConfig = opts?.generationConfig;
-            const sendMessageReturn: GoogleStartChatStubReturn['sendMessage'] = async () => ({
-                response: {
-                    candidates: [{ finishReason: 'STOP' }],
-                    usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
-                    text: () => 'ok',
-                },
-            });
-            return { sendMessage: sendMessageReturn };
+            const sendMessageStream: GoogleStartChatStubReturn['sendMessageStream'] = async () => {
+                async function* gen(): AsyncGenerator<GenerateContentResponse> {
+                    yield makeStreamChunk('ok');
+                }
+                const out: GoogleSendMessageStreamStubReturn = {
+                    stream: gen(),
+                    response: Promise.resolve(finalResp),
+                };
+                return out;
+            };
+            return { sendMessageStream };
         },
     });
 
-    // Stub returns minimal shape; SDK expects full GenerativeModel. Adapter only uses startChat/sendMessage.
+    // Stub returns minimal shape; SDK expects full GenerativeModel. Adapter only uses startChat/sendMessageStream.
     // @ts-expect-error - stub intentionally returns minimal test double, not full GenerativeModel
     const getModelStub = stub(GoogleGenerativeAI.prototype, "getGenerativeModel", function (): GoogleGetGenerativeModelStubReturn {
         return createStubReturn();
@@ -149,18 +205,24 @@ Deno.test("GoogleAdapter - Specific: forwards client cap to generationConfig.max
 // --- resourceDocuments tests ---
 
 function createResourceDocumentsStubReturn(capturedParts: { current: unknown }): GoogleGetGenerativeModelStubReturn {
-    const sendMessageReturn: GoogleStartChatStubReturn['sendMessage'] = async (parts: unknown) => {
+    const finalResp: EnhancedGenerateContentResponse = makeEnhancedResponse(
+        'ok',
+        FinishReason.STOP,
+        makeUsage(1, 1, 2),
+    );
+    const sendMessageStream: GoogleStartChatStubReturn['sendMessageStream'] = async (parts: unknown) => {
         capturedParts.current = parts;
-        return {
-            response: {
-                candidates: [{ finishReason: 'STOP' }],
-                usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
-                text: () => 'ok',
-            },
+        async function* gen(): AsyncGenerator<GenerateContentResponse> {
+            yield makeStreamChunk('stub');
+        }
+        const out: GoogleSendMessageStreamStubReturn = {
+            stream: gen(),
+            response: Promise.resolve(finalResp),
         };
+        return out;
     };
     return {
-        startChat: () => ({ sendMessage: sendMessageReturn }),
+        startChat: () => ({ sendMessageStream }),
     };
 }
 
@@ -185,8 +247,8 @@ Deno.test("GoogleAdapter - resourceDocuments: when present appear as inlineData 
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
 
-        assertExists(captured.current, 'sendMessage must be called with parts');
-        if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessage parts must be GeminiSendMessagePart[]');
+        assertExists(captured.current, 'sendMessageStream must be called with parts');
+        if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessageStream parts must be GeminiSendMessagePart[]');
         const parts: GeminiSendMessagePart[] = captured.current;
         const textParts = parts.filter((p) => p.text != null);
         assert(textParts.length >= 2, 'Must have at least 2 text parts');
@@ -217,11 +279,10 @@ Deno.test("GoogleAdapter - resourceDocuments: mime_type is text/plain", async ()
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
 
-        if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessage parts must be GeminiSendMessagePart[]');
+        if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessageStream parts must be GeminiSendMessagePart[]');
         const parts: GeminiSendMessagePart[] = captured.current;
         const withText = parts.find((p) => p.text != null);
         assert(withText != null, 'Must have text part');
-        assertEquals(withText.text, '[Document: key from thesis]');
         assertEquals(withText.text, '[Document: key from thesis]');
     } finally {
         getModelStub.restore();
@@ -246,18 +307,16 @@ Deno.test("GoogleAdapter - resourceDocuments: document label text precedes each 
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
 
-        if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessage parts must be GeminiSendMessagePart[]');
+        if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessageStream parts must be GeminiSendMessagePart[]');
         const parts: GeminiSendMessagePart[] = captured.current;
-    // Proposed fix for lines 250-256
-    const labelPart = parts.find((p) => p.text != null && p.text.includes('[Document:') && p.text.includes('from'));
-    // Find a text part that is NOT the label we just found
-    const contentPart = parts.find((p) => p.text != null && p !== labelPart && !p.text?.includes('[Document:'));
+        const labelPart = parts.find((p) => p.text != null && p.text.includes('[Document:') && p.text.includes('from'));
+        const contentPart = parts.find((p) => p.text != null && p !== labelPart && !p.text?.includes('[Document:'));
 
-    assert(labelPart != null, 'Must have label text part');
-    assert(contentPart != null, 'Must have content text part');
-    const labelIdx = parts.indexOf(labelPart);
-    const textIdx = parts.indexOf(contentPart);
-    assert(labelIdx < textIdx, 'Document label text must precede text part');
+        assert(labelPart != null, 'Must have label text part');
+        assert(contentPart != null, 'Must have content text part');
+        const labelIdx = parts.indexOf(labelPart);
+        const textIdx = parts.indexOf(contentPart);
+        assert(labelIdx < textIdx, 'Document label text must precede text part');
     } finally {
         getModelStub.restore();
     }
@@ -281,10 +340,266 @@ Deno.test("GoogleAdapter - resourceDocuments: empty resourceDocuments does not a
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
 
-        if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessage parts must be GeminiSendMessagePart[]');
+        if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessageStream parts must be GeminiSendMessagePart[]');
         const parts: GeminiSendMessagePart[] = captured.current;
         const textParts = parts.filter((p) => p.text != null);
         assertEquals(textParts.length, 1, 'Must not add additional text parts when resourceDocuments is empty');
+    } finally {
+        getModelStub.restore();
+    }
+});
+
+Deno.test("GoogleAdapter - stream-to-buffer: content is assembled from multiple stream chunks", async () => {
+    const finalResp: EnhancedGenerateContentResponse = makeEnhancedResponse(
+        'Hello',
+        FinishReason.STOP,
+        makeUsage(1, 1, 2),
+    );
+    // @ts-expect-error - stub returns minimal test double, not full GenerativeModel
+    const getModelStub = stub(GoogleGenerativeAI.prototype, "getGenerativeModel", function (): GoogleGetGenerativeModelStubReturn {
+        const sendMessageStream: GoogleStartChatStubReturn['sendMessageStream'] = async () => {
+            async function* gen(): AsyncGenerator<GenerateContentResponse> {
+                yield makeStreamChunk('Hel');
+                yield makeStreamChunk('lo');
+            }
+            const out: GoogleSendMessageStreamStubReturn = {
+                stream: gen(),
+                response: Promise.resolve(finalResp),
+            };
+            return out;
+        };
+        return { startChat: () => ({ sendMessageStream }) };
+    });
+
+    try {
+        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const request: ChatApiRequest = {
+            message: 'hi',
+            providerId: 'prov',
+            promptId: '__none__',
+            messages: [ { role: 'user', content: 'hello' } ],
+        };
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        assertEquals(result.content, 'Hello');
+    } finally {
+        getModelStub.restore();
+    }
+});
+
+Deno.test("GoogleAdapter - stream-to-buffer: token_usage from final response usageMetadata", async () => {
+    const usage: UsageMetadata = makeUsage(11, 22, 33);
+    const finalResp: EnhancedGenerateContentResponse = makeEnhancedResponse('out', FinishReason.STOP, usage);
+    // @ts-expect-error - stub returns minimal test double, not full GenerativeModel
+    const getModelStub = stub(GoogleGenerativeAI.prototype, "getGenerativeModel", function (): GoogleGetGenerativeModelStubReturn {
+        const sendMessageStream: GoogleStartChatStubReturn['sendMessageStream'] = async () => {
+            async function* gen(): AsyncGenerator<GenerateContentResponse> {
+                yield makeStreamChunk('out');
+            }
+            const out: GoogleSendMessageStreamStubReturn = {
+                stream: gen(),
+                response: Promise.resolve(finalResp),
+            };
+            return out;
+        };
+        return { startChat: () => ({ sendMessageStream }) };
+    });
+
+    try {
+        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const request: ChatApiRequest = {
+            message: 'hi',
+            providerId: 'prov',
+            promptId: '__none__',
+            messages: [ { role: 'user', content: 'hello' } ],
+        };
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        const rawUsage: unknown = result.token_usage;
+        assertExists(rawUsage);
+        if (typeof rawUsage !== 'object' || rawUsage === null || Array.isArray(rawUsage)) {
+            throw new Error('token_usage must be a non-null object');
+        }
+        const pt: unknown = Object.getOwnPropertyDescriptor(rawUsage, 'prompt_tokens')?.value;
+        const ct: unknown = Object.getOwnPropertyDescriptor(rawUsage, 'completion_tokens')?.value;
+        const tt: unknown = Object.getOwnPropertyDescriptor(rawUsage, 'total_tokens')?.value;
+        assertEquals(pt, 11);
+        assertEquals(ct, 22);
+        assertEquals(tt, 33);
+    } finally {
+        getModelStub.restore();
+    }
+});
+
+Deno.test("GoogleAdapter - stream-to-buffer: finish_reason STOP maps to stop", async () => {
+    const finalResp: EnhancedGenerateContentResponse = makeEnhancedResponse('x', FinishReason.STOP, makeUsage(1, 1, 2));
+    // @ts-expect-error - stub returns minimal test double, not full GenerativeModel
+    const getModelStub = stub(GoogleGenerativeAI.prototype, "getGenerativeModel", function (): GoogleGetGenerativeModelStubReturn {
+        const sendMessageStream: GoogleStartChatStubReturn['sendMessageStream'] = async () => {
+            async function* gen(): AsyncGenerator<GenerateContentResponse> {
+                yield makeStreamChunk('x');
+            }
+            const out: GoogleSendMessageStreamStubReturn = {
+                stream: gen(),
+                response: Promise.resolve(finalResp),
+            };
+            return out;
+        };
+        return { startChat: () => ({ sendMessageStream }) };
+    });
+
+    try {
+        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const request: ChatApiRequest = {
+            message: 'hi',
+            providerId: 'prov',
+            promptId: '__none__',
+            messages: [ { role: 'user', content: 'hello' } ],
+        };
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        assertEquals(result.finish_reason, 'stop');
+    } finally {
+        getModelStub.restore();
+    }
+});
+
+Deno.test("GoogleAdapter - stream-to-buffer: finish_reason MAX_TOKENS maps to length", async () => {
+    const finalResp: EnhancedGenerateContentResponse = makeEnhancedResponse('x', FinishReason.MAX_TOKENS, makeUsage(1, 1, 2));
+    // @ts-expect-error - stub returns minimal test double, not full GenerativeModel
+    const getModelStub = stub(GoogleGenerativeAI.prototype, "getGenerativeModel", function (): GoogleGetGenerativeModelStubReturn {
+        const sendMessageStream: GoogleStartChatStubReturn['sendMessageStream'] = async () => {
+            async function* gen(): AsyncGenerator<GenerateContentResponse> {
+                yield makeStreamChunk('x');
+            }
+            const out: GoogleSendMessageStreamStubReturn = {
+                stream: gen(),
+                response: Promise.resolve(finalResp),
+            };
+            return out;
+        };
+        return { startChat: () => ({ sendMessageStream }) };
+    });
+
+    try {
+        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const request: ChatApiRequest = {
+            message: 'hi',
+            providerId: 'prov',
+            promptId: '__none__',
+            messages: [ { role: 'user', content: 'hello' } ],
+        };
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        assertEquals(result.finish_reason, 'length');
+    } finally {
+        getModelStub.restore();
+    }
+});
+
+Deno.test("GoogleAdapter - stream-to-buffer: finish_reason SAFETY maps to content_filter", async () => {
+    const finalResp: EnhancedGenerateContentResponse = makeEnhancedResponse('x', FinishReason.SAFETY, makeUsage(1, 1, 2));
+    // @ts-expect-error - stub returns minimal test double, not full GenerativeModel
+    const getModelStub = stub(GoogleGenerativeAI.prototype, "getGenerativeModel", function (): GoogleGetGenerativeModelStubReturn {
+        const sendMessageStream: GoogleStartChatStubReturn['sendMessageStream'] = async () => {
+            async function* gen(): AsyncGenerator<GenerateContentResponse> {
+                yield makeStreamChunk('x');
+            }
+            const out: GoogleSendMessageStreamStubReturn = {
+                stream: gen(),
+                response: Promise.resolve(finalResp),
+            };
+            return out;
+        };
+        return { startChat: () => ({ sendMessageStream }) };
+    });
+
+    try {
+        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const request: ChatApiRequest = {
+            message: 'hi',
+            providerId: 'prov',
+            promptId: '__none__',
+            messages: [ { role: 'user', content: 'hello' } ],
+        };
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        assertEquals(result.finish_reason, 'content_filter');
+    } finally {
+        getModelStub.restore();
+    }
+});
+
+Deno.test("GoogleAdapter - stream-to-buffer: empty stream throws descriptive error", async () => {
+    const emptyFinal: EnhancedGenerateContentResponse = {
+        candidates: [],
+        text: () => '',
+        functionCall: () => undefined,
+        functionCalls: () => undefined,
+    };
+    // @ts-expect-error - stub returns minimal test double, not full GenerativeModel
+    const getModelStub = stub(GoogleGenerativeAI.prototype, "getGenerativeModel", function (): GoogleGetGenerativeModelStubReturn {
+        const sendMessageStream: GoogleStartChatStubReturn['sendMessageStream'] = async () => {
+            async function* gen(): AsyncGenerator<GenerateContentResponse> {
+            }
+            const out: GoogleSendMessageStreamStubReturn = {
+                stream: gen(),
+                response: Promise.resolve(emptyFinal),
+            };
+            return out;
+        };
+        return { startChat: () => ({ sendMessageStream }) };
+    });
+
+    try {
+        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const request: ChatApiRequest = {
+            message: 'hi',
+            providerId: 'prov',
+            promptId: '__none__',
+            messages: [ { role: 'user', content: 'hello' } ],
+        };
+        await assertRejects(
+            async () => {
+                await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+            },
+            Error,
+            undefined,
+            'empty Google stream must surface a descriptive adapter error',
+        );
+    } finally {
+        getModelStub.restore();
+    }
+});
+
+Deno.test("GoogleAdapter - stream-to-buffer: stream error mid-response propagates", async () => {
+    const finalResp: EnhancedGenerateContentResponse = makeEnhancedResponse('never', FinishReason.STOP, makeUsage(1, 1, 2));
+    // @ts-expect-error - stub returns minimal test double, not full GenerativeModel
+    const getModelStub = stub(GoogleGenerativeAI.prototype, "getGenerativeModel", function (): GoogleGetGenerativeModelStubReturn {
+        const sendMessageStream: GoogleStartChatStubReturn['sendMessageStream'] = async () => {
+            async function* gen(): AsyncGenerator<GenerateContentResponse> {
+                yield makeStreamChunk('a');
+                throw new Error('simulated stream failure');
+            }
+            const out: GoogleSendMessageStreamStubReturn = {
+                stream: gen(),
+                response: Promise.resolve(finalResp),
+            };
+            return out;
+        };
+        return { startChat: () => ({ sendMessageStream }) };
+    });
+
+    try {
+        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const request: ChatApiRequest = {
+            message: 'hi',
+            providerId: 'prov',
+            promptId: '__none__',
+            messages: [ { role: 'user', content: 'hello' } ],
+        };
+        await assertRejects(
+            async () => {
+                await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+            },
+            Error,
+            'simulated stream failure',
+        );
     } finally {
         getModelStub.restore();
     }

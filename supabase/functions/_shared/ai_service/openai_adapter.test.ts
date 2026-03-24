@@ -1,14 +1,15 @@
 // supabase/functions/_shared/ai_service/openai_adapter.test.ts
 import "npm:openai/shims/web";
-import { assert, assertEquals, assertExists, assertNotEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertExists, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { APIPromise } from 'npm:openai/core';
 import type { FinalRequestOptions } from 'npm:openai/core';
-import type { ChatCompletion, ChatCompletionCreateParams, ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
+import type { ChatCompletionChunk, ChatCompletionCreateParams, ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
 import type { Model, ModelsPage } from 'npm:openai/resources/models';
 import type { PagePromise } from 'npm:openai/core';
 import type { CreateEmbeddingResponse } from 'npm:openai/resources/embeddings';
 import OpenAI from 'npm:openai';
+import { Stream } from 'npm:openai/streaming';
 
 import { OpenAiAdapter } from './openai_adapter.ts';
 import { testAdapterContract, type MockApi } from './adapter_test_contract.ts';
@@ -48,21 +49,60 @@ const MOCK_PROVIDER: Tables<'ai_providers'> = {
     config: MOCK_MODEL_CONFIG,
 };
 
-const MOCK_OPENAI_SUCCESS_RESPONSE: ChatCompletion = {
+/** Trimmed assistant text matching the legacy batch mock (`General Kenobi!`). */
+const MOCK_OPENAI_ASSISTANT_TEXT: string = 'General Kenobi!';
+
+const MOCK_OPENAI_STREAM_USAGE = {
+  prompt_tokens: 50,
+  completion_tokens: 10,
+  total_tokens: 60,
+};
+
+const MOCK_CHUNK_BASE: Pick<ChatCompletionChunk, 'id' | 'object' | 'created' | 'model'> = {
   id: 'chatcmpl-xxxxxxxx',
-  object: 'chat.completion',
+  object: 'chat.completion.chunk',
   created: 1700000000,
   model: 'gpt-4o',
-  choices: [
-    {
-      index: 0,
-      message: { role: 'assistant', content: ' \n\nGeneral Kenobi! ', refusal: null },
-      logprobs: null,
-      finish_reason: 'stop',
-    },
-  ],
-  usage: { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60 },
 };
+
+/** Default stream: multiple deltas + final chunk with finish_reason and usage (stream_options.include_usage). */
+function buildDefaultOpenAiStreamChunks(): ChatCompletionChunk[] {
+  return [
+    {
+      ...MOCK_CHUNK_BASE,
+      choices: [
+        {
+          index: 0,
+          delta: { content: ' \n\n' },
+          finish_reason: null,
+        },
+      ],
+    },
+    {
+      ...MOCK_CHUNK_BASE,
+      choices: [
+        {
+          index: 0,
+          delta: { content: 'General Kenobi! ' },
+          finish_reason: null,
+        },
+      ],
+    },
+    {
+      ...MOCK_CHUNK_BASE,
+      choices: [
+        {
+          index: 0,
+          delta: {},
+          finish_reason: 'stop',
+        },
+      ],
+      usage: MOCK_OPENAI_STREAM_USAGE,
+    },
+  ];
+}
+
+const DEFAULT_OPENAI_STREAM_CHUNKS: ChatCompletionChunk[] = buildDefaultOpenAiStreamChunks();
 
 const MOCK_OPENAI_MODELS_RESPONSE_DATA: Model[] = [
     { id: "gpt-4o", object: "model", created: 1715367049, owned_by: "openai-internal" },
@@ -105,7 +145,41 @@ function createMockAPIPromise<T extends object>(resp: T): APIPromise<T> {
     const parseResponse = (_props: ApiResponseProps) =>
         Promise.resolve(Object.assign({}, resp, { _request_id: requestId }));
     return new APIPromise<T>(responsePromise, parseResponse as any);
-} 
+}
+
+function makeStreamFromChunks(chunks: ChatCompletionChunk[]): Stream<ChatCompletionChunk> {
+  const controller: AbortController = new AbortController();
+  async function* iterator(): AsyncGenerator<ChatCompletionChunk> {
+    for (const chunk of chunks) {
+      yield chunk;
+    }
+  }
+  return new Stream<ChatCompletionChunk>(() => iterator(), controller);
+}
+
+/** Resolves like `client.chat.completions.create({ stream: true, ... })` — `Stream<ChatCompletionChunk>`. */
+function createMockStreamCompletionPromise(
+  chunks: ChatCompletionChunk[],
+): APIPromise<Stream<ChatCompletionChunk>> {
+  const responsePromise: ApiResponsePromise = Promise.resolve(buildApiResponseProps());
+  const parseResponse = (_props: ApiResponseProps) => {
+    const streamBody: Stream<ChatCompletionChunk> = makeStreamFromChunks(chunks);
+    return Promise.resolve(streamBody);
+  };
+  return new APIPromise<Stream<ChatCompletionChunk>>(responsePromise, parseResponse);
+}
+
+function assertStreamCreatePayload(chatCreateStub: { calls: { args: unknown[] }[] }): void {
+  const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
+  assertEquals(Object.getOwnPropertyDescriptor(payloadUnknown, 'stream')?.value, true);
+  const streamOptions: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
+    ? Object.getOwnPropertyDescriptor(payloadUnknown, 'stream_options')?.value
+    : undefined;
+  if (typeof streamOptions !== 'object' || streamOptions === null) {
+    throw new Error('stream_options must be an object');
+  }
+  assertEquals(Object.getOwnPropertyDescriptor(streamOptions, 'include_usage')?.value, true);
+}
 
 class MockPagePromise<T extends Page<Item>, Item> extends APIPromise<T> implements PagePromise<T, Item> {
     constructor(private page: T) {
@@ -140,16 +214,15 @@ class MockPagePromise<T extends Page<Item>, Item> extends APIPromise<T> implemen
 
 const mockOpenAiApi: MockApi = {
     sendMessage: async (request: ChatApiRequest): Promise<AdapterResponsePayload> => {
-        const tokenUsage = MOCK_OPENAI_SUCCESS_RESPONSE.usage!;
         return {
             role: 'assistant',
-            content: MOCK_OPENAI_SUCCESS_RESPONSE.choices[0].message.content!.trim(),
+            content: MOCK_OPENAI_ASSISTANT_TEXT,
             ai_provider_id: request.providerId,
             system_prompt_id: request.promptId,
             token_usage: {
-                prompt_tokens: tokenUsage.prompt_tokens,
-                completion_tokens: tokenUsage.completion_tokens,
-                total_tokens: tokenUsage.total_tokens,
+                prompt_tokens: MOCK_OPENAI_STREAM_USAGE.prompt_tokens,
+                completion_tokens: MOCK_OPENAI_STREAM_USAGE.completion_tokens,
+                total_tokens: MOCK_OPENAI_STREAM_USAGE.total_tokens,
             },
             finish_reason: 'stop',
         };
@@ -234,7 +307,7 @@ Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
 
 Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o-series", async () => {
     const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
         const request: ChatApiRequest = {
@@ -248,6 +321,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o-seri
         await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
+        assertStreamCreatePayload(chatCreateStub);
         const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
         const mct: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
             ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_completion_tokens')?.value
@@ -274,7 +348,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for legacy chat model
     };
 
     const adapter = new OpenAiAdapter(LEGACY_PROVIDER, 'sk-test-key', mockLogger);
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
         const request: ChatApiRequest = {
@@ -288,6 +362,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for legacy chat model
         await adapter.sendMessage(request, LEGACY_PROVIDER.api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
+        assertStreamCreatePayload(chatCreateStub);
         const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
         const mt: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
             ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_tokens')?.value
@@ -306,7 +381,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for legacy chat model
 // --- resourceDocuments tests ---
 
 Deno.test("OpenAiAdapter - resourceDocuments: when present appear as text in messages", async () => {
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
         const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
@@ -323,6 +398,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: when present appear as text in mes
         await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
+        assertStreamCreatePayload(chatCreateStub);
         const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
         if (!isChatCompletionCreateParams(payloadUnknown)) throw new Error('payload must be ChatCompletionCreateParams');
         const allContent = payloadUnknown.messages.map(getMessageTextContent).join('\n');
@@ -335,7 +411,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: when present appear as text in mes
 });
 
 Deno.test("OpenAiAdapter - resourceDocuments: document labels are present in message content", async () => {
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
         const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
@@ -351,6 +427,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: document labels are present in mes
         await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
+        assertStreamCreatePayload(chatCreateStub);
         const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
         if (!isChatCompletionCreateParams(payloadUnknown)) throw new Error('payload must be ChatCompletionCreateParams');
         const allContent = payloadUnknown.messages.map(getMessageTextContent).join('\n');
@@ -363,7 +440,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: document labels are present in mes
 });
 
 Deno.test("OpenAiAdapter - resourceDocuments: empty resourceDocuments does not add placeholder messages", async () => {
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
         const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
@@ -377,6 +454,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: empty resourceDocuments does not a
         await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
+        assertStreamCreatePayload(chatCreateStub);
         const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
         if (!isChatCompletionCreateParams(payloadUnknown)) throw new Error('payload must be ChatCompletionCreateParams');
         assertEquals(payloadUnknown.messages.length, 1, 'Must not add extra messages when resourceDocuments is empty');
@@ -456,7 +534,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for gpt-5.
     };
 
     const adapter = new OpenAiAdapter(GPT5_PROVIDER, 'sk-test-key', mockLogger);
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
         const request: ChatApiRequest = {
@@ -470,6 +548,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for gpt-5.
         await adapter.sendMessage(request, GPT5_PROVIDER.api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
+        assertStreamCreatePayload(chatCreateStub);
         const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
         const mct: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
             ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_completion_tokens')?.value
@@ -504,7 +583,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for gpt-5.
     };
 
     const adapter = new OpenAiAdapter(GPT5_MINI_PROVIDER, 'sk-test-key', mockLogger);
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
         const request: ChatApiRequest = {
@@ -518,6 +597,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for gpt-5.
         await adapter.sendMessage(request, GPT5_MINI_PROVIDER.api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
+        assertStreamCreatePayload(chatCreateStub);
         const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
         const mct: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
             ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_completion_tokens')?.value
@@ -552,7 +632,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o1 mod
     };
 
     const adapter = new OpenAiAdapter(O1_PROVIDER, 'sk-test-key', mockLogger);
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
         const request: ChatApiRequest = {
@@ -566,6 +646,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o1 mod
         await adapter.sendMessage(request, O1_PROVIDER.api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
+        assertStreamCreatePayload(chatCreateStub);
         const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
         const mct: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
             ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_completion_tokens')?.value
@@ -600,7 +681,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for gpt-4-turbo", asy
     };
 
     const adapter = new OpenAiAdapter(GPT4_TURBO_PROVIDER, 'sk-test-key', mockLogger);
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
         const request: ChatApiRequest = {
@@ -614,6 +695,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for gpt-4-turbo", asy
         await adapter.sendMessage(request, GPT4_TURBO_PROVIDER.api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
+        assertStreamCreatePayload(chatCreateStub);
         const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
         const mt: unknown = typeof payloadUnknown === 'object' && payloadUnknown !== null
             ? Object.getOwnPropertyDescriptor(payloadUnknown, 'max_tokens')?.value
@@ -632,7 +714,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for gpt-4-turbo", asy
 // --- resourceDocuments validation tests ---
 
 Deno.test("OpenAiAdapter - resourceDocuments: throws when document_key is empty", async () => {
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
         const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
@@ -656,7 +738,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: throws when document_key is empty"
 });
 
 Deno.test("OpenAiAdapter - resourceDocuments: throws when stage_slug is empty", async () => {
-    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockAPIPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
         const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
@@ -677,4 +759,259 @@ Deno.test("OpenAiAdapter - resourceDocuments: throws when stage_slug is empty", 
     } finally {
         chatCreateStub.restore();
     }
+});
+
+// --- stream-to-buffer (SDK mock: async iterable ChatCompletionChunk) ---
+
+function createMockStreamCompletionPromiseThrowingAfterFirstDelta(): APIPromise<Stream<ChatCompletionChunk>> {
+  const responsePromise: ApiResponsePromise = Promise.resolve(buildApiResponseProps());
+  const parseResponse = (_props: ApiResponseProps) => {
+    const controller: AbortController = new AbortController();
+    async function* iterator(): AsyncGenerator<ChatCompletionChunk> {
+      yield {
+        ...MOCK_CHUNK_BASE,
+        choices: [{ index: 0, delta: { content: 'partial' }, finish_reason: null }],
+      };
+      throw new Error('simulated stream failure');
+    }
+    const streamBody: Stream<ChatCompletionChunk> = new Stream<ChatCompletionChunk>(() => iterator(), controller);
+    return Promise.resolve(streamBody);
+  };
+  return new APIPromise<Stream<ChatCompletionChunk>>(responsePromise, parseResponse);
+}
+
+Deno.test("OpenAiAdapter - stream: content is concatenation of multiple delta.content events", async () => {
+  const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () =>
+    createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS)
+  );
+
+  try {
+    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const request: ChatApiRequest = {
+      message: 'Hello',
+      providerId: 'provider-uuid-test',
+      promptId: 'prompt-uuid-test',
+      messages: [{ role: 'user', content: 'Hi' }],
+    };
+
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+
+    assertEquals(chatCreateStub.calls.length, 1);
+    assertStreamCreatePayload(chatCreateStub);
+    assertEquals(result.content.trim(), MOCK_OPENAI_ASSISTANT_TEXT);
+  } finally {
+    chatCreateStub.restore();
+  }
+});
+
+Deno.test("OpenAiAdapter - stream: token_usage is taken from final chunk usage field", async () => {
+  const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () =>
+    createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS)
+  );
+
+  try {
+    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const request: ChatApiRequest = {
+      message: 'Hello',
+      providerId: 'provider-uuid-test',
+      promptId: 'prompt-uuid-test',
+      messages: [{ role: 'user', content: 'Hi' }],
+    };
+
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+
+    assertExists(result.token_usage);
+    if (typeof result.token_usage !== 'object' || result.token_usage === null) {
+      throw new Error('token_usage must be a non-null object');
+    }
+    const usage: object = result.token_usage;
+    const promptTokens: unknown = Object.getOwnPropertyDescriptor(usage, 'prompt_tokens')?.value;
+    const completionTokens: unknown = Object.getOwnPropertyDescriptor(usage, 'completion_tokens')?.value;
+    const totalTokens: unknown = Object.getOwnPropertyDescriptor(usage, 'total_tokens')?.value;
+    assertEquals(promptTokens, MOCK_OPENAI_STREAM_USAGE.prompt_tokens);
+    assertEquals(completionTokens, MOCK_OPENAI_STREAM_USAGE.completion_tokens);
+    assertEquals(totalTokens, MOCK_OPENAI_STREAM_USAGE.total_tokens);
+  } finally {
+    chatCreateStub.restore();
+  }
+});
+
+Deno.test("OpenAiAdapter - stream: maps finish_reason stop from streamed chunks", async () => {
+  const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () =>
+    createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS)
+  );
+
+  try {
+    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const request: ChatApiRequest = {
+      message: 'Hello',
+      providerId: 'provider-uuid-test',
+      promptId: 'prompt-uuid-test',
+      messages: [{ role: 'user', content: 'Hi' }],
+    };
+
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+
+    assertEquals(result.finish_reason, 'stop');
+  } finally {
+    chatCreateStub.restore();
+  }
+});
+
+Deno.test("OpenAiAdapter - stream: maps finish_reason length from streamed chunks", async () => {
+  const lengthChunks: ChatCompletionChunk[] = [
+    {
+      ...MOCK_CHUNK_BASE,
+      choices: [{ index: 0, delta: { content: 'trunc' }, finish_reason: null }],
+    },
+    {
+      ...MOCK_CHUNK_BASE,
+      choices: [{ index: 0, delta: {}, finish_reason: 'length' }],
+      usage: MOCK_OPENAI_STREAM_USAGE,
+    },
+  ];
+  const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () =>
+    createMockStreamCompletionPromise(lengthChunks)
+  );
+
+  try {
+    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const request: ChatApiRequest = {
+      message: 'Hello',
+      providerId: 'provider-uuid-test',
+      promptId: 'prompt-uuid-test',
+      messages: [{ role: 'user', content: 'Hi' }],
+    };
+
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+
+    assertEquals(result.finish_reason, 'length');
+  } finally {
+    chatCreateStub.restore();
+  }
+});
+
+Deno.test("OpenAiAdapter - stream: maps finish_reason content_filter from streamed chunks", async () => {
+  const filterChunks: ChatCompletionChunk[] = [
+    {
+      ...MOCK_CHUNK_BASE,
+      choices: [{ index: 0, delta: { content: 'blocked' }, finish_reason: null }],
+    },
+    {
+      ...MOCK_CHUNK_BASE,
+      choices: [{ index: 0, delta: {}, finish_reason: 'content_filter' }],
+      usage: MOCK_OPENAI_STREAM_USAGE,
+    },
+  ];
+  const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () =>
+    createMockStreamCompletionPromise(filterChunks)
+  );
+
+  try {
+    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const request: ChatApiRequest = {
+      message: 'Hello',
+      providerId: 'provider-uuid-test',
+      promptId: 'prompt-uuid-test',
+      messages: [{ role: 'user', content: 'Hi' }],
+    };
+
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+
+    assertEquals(result.finish_reason, 'content_filter');
+  } finally {
+    chatCreateStub.restore();
+  }
+});
+
+Deno.test("OpenAiAdapter - stream: chunks with null delta.content are skipped without error", async () => {
+  const nullDeltaChunks: ChatCompletionChunk[] = [
+    {
+      ...MOCK_CHUNK_BASE,
+      choices: [{ index: 0, delta: { content: 'hello' }, finish_reason: null }],
+    },
+    {
+      ...MOCK_CHUNK_BASE,
+      choices: [{ index: 0, delta: { content: null }, finish_reason: null }],
+    },
+    {
+      ...MOCK_CHUNK_BASE,
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      usage: MOCK_OPENAI_STREAM_USAGE,
+    },
+  ];
+  const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () =>
+    createMockStreamCompletionPromise(nullDeltaChunks)
+  );
+
+  try {
+    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const request: ChatApiRequest = {
+      message: 'Hello',
+      providerId: 'provider-uuid-test',
+      promptId: 'prompt-uuid-test',
+      messages: [{ role: 'user', content: 'Hi' }],
+    };
+
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+
+    assertEquals(result.content.trim(), 'hello');
+  } finally {
+    chatCreateStub.restore();
+  }
+});
+
+Deno.test("OpenAiAdapter - stream: empty text stream throws descriptive error", async () => {
+  const emptyTextChunks: ChatCompletionChunk[] = [
+    {
+      ...MOCK_CHUNK_BASE,
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      usage: MOCK_OPENAI_STREAM_USAGE,
+    },
+  ];
+  const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () =>
+    createMockStreamCompletionPromise(emptyTextChunks)
+  );
+
+  try {
+    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const request: ChatApiRequest = {
+      message: 'Hello',
+      providerId: 'provider-uuid-test',
+      promptId: 'prompt-uuid-test',
+      messages: [{ role: 'user', content: 'Hi' }],
+    };
+
+    await assertRejects(
+      () => adapter.sendMessage(request, MOCK_PROVIDER.api_identifier),
+      Error,
+      'empty',
+    );
+  } finally {
+    chatCreateStub.restore();
+  }
+});
+
+Deno.test("OpenAiAdapter - stream: error during stream iteration propagates", async () => {
+  const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () =>
+    createMockStreamCompletionPromiseThrowingAfterFirstDelta()
+  );
+
+  try {
+    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const request: ChatApiRequest = {
+      message: 'Hello',
+      providerId: 'provider-uuid-test',
+      promptId: 'prompt-uuid-test',
+      messages: [{ role: 'user', content: 'Hi' }],
+    };
+
+    await assertRejects(
+      () => adapter.sendMessage(request, MOCK_PROVIDER.api_identifier),
+      Error,
+      'simulated stream failure',
+    );
+  } finally {
+    chatCreateStub.restore();
+  }
 });

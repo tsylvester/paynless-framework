@@ -1,5 +1,5 @@
 import OpenAI from 'npm:openai';
-import type { ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
+import type { ChatCompletionChunk, ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
 import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, EmbeddingResponse } from '../types.ts';
 import type { Tables } from '../../types_db.ts';
 import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
@@ -79,9 +79,11 @@ export class OpenAiAdapter {
       openaiMessages.push({ role: 'user', content: request.message });
     }
 
-    const payload: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
+    const payload: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
       model: modelApiName,
       messages: openaiMessages,
+      stream: true,
+      stream_options: { include_usage: true },
     };
 
     // Guardrail: Respect client-provided cap; otherwise cap by the tighter of model caps
@@ -112,17 +114,36 @@ export class OpenAiAdapter {
     this.logger.info(`Sending request to OpenAI model: ${modelApiName}`);
     
     try {
-      const completion = await this.client.chat.completions.create(payload);
-      
-      const choice = completion.choices?.[0];
-      const aiContent = choice?.message?.content?.trim() || null;
-      
+      const stream = await this.client.chat.completions.create(payload);
+
+      let assembled: string = '';
+      let finishReasonFromStream: ChatCompletionChunk.Choice['finish_reason'] | undefined = undefined;
+      let tokenUsageFromStream: ChatCompletionChunk['usage'] = undefined;
+
+      for await (const chunk of stream) {
+        const choice = chunk.choices?.[0];
+        if (choice !== undefined) {
+          const deltaContent: string | null | undefined = choice.delta?.content;
+          if (typeof deltaContent === 'string') {
+            assembled += deltaContent;
+          }
+          if (choice.finish_reason != null) {
+            finishReasonFromStream = choice.finish_reason;
+          }
+        }
+        if (chunk.usage != null) {
+          tokenUsageFromStream = chunk.usage;
+        }
+      }
+
+      const aiContent: string | null = assembled.trim() || null;
+
       if (!aiContent) {
-        this.logger.error("OpenAI response missing message content:", { response: completion, modelApiName });
+        this.logger.error('OpenAI streamed response has no message content.', { modelApiName });
         throw new Error('OpenAI response content is empty or missing.');
       }
 
-      const finishReason = choice?.finish_reason;
+      const finishReason: ChatCompletionChunk.Choice['finish_reason'] | undefined = finishReasonFromStream;
       let finish_reason: AdapterResponsePayload['finish_reason'];
 
       switch (finishReason) {
@@ -149,7 +170,7 @@ export class OpenAiAdapter {
           break;
       }
       
-      const tokenUsage = completion.usage;
+      const tokenUsage = tokenUsageFromStream;
 
       if (!tokenUsage) {
         this.logger.error('[OpenAiAdapter] OpenAI response did not include usage data.', { modelApiName });

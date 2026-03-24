@@ -3,7 +3,7 @@ import {
     GoogleGenerativeAI,
     type Content,
     type ModelParams,
-    type GenerateContentResult,
+    type GenerateContentStreamResult,
     type Part,
 } from "npm:@google/generative-ai";
 import { isResourceDocument } from '../utils/type-guards/type_guards.chat.ts';
@@ -109,11 +109,32 @@ export class GoogleAdapter {
             finalParts = [...documentParts, ...lastMessage.parts];
         }
 
-        const result: GenerateContentResult = await chat.sendMessage(finalParts);
-        const response = result.response;
+        const streamResult: GenerateContentStreamResult = await chat.sendMessageStream(finalParts);
+        try {
+            for await (const _chunk of streamResult.stream) {
+                void _chunk;
+            }
+        } catch (e) {
+            if (e instanceof Error) {
+                throw e;
+            }
+            throw new Error(String(e));
+        }
+        const response = await streamResult.response;
         const candidate = response.candidates?.[0];
 
-        const assistantMessageContent = response.text().trim();
+        let assistantMessageContent: string;
+        try {
+            assistantMessageContent = response.text().trim();
+        } catch (e) {
+            if (e instanceof Error) {
+                throw e;
+            }
+            throw new Error(String(e));
+        }
+        if (assistantMessageContent === '') {
+            throw new Error('Google Gemini stream completed with no assistant text.');
+        }
 
         const tokenUsage: Json | null = response.usageMetadata
             ? {
