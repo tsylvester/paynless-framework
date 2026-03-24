@@ -1347,10 +1347,10 @@ Four defense-in-depth guards:
     * `[✅]` No `?? ''` or other fallback defaults in document label construction
     * `[✅]` Adapter throws a clear error if any document is missing `document_key` or `stage_slug`
     * `[✅]` All existing tests for non-document, non-max-tokens scenarios must continue to pass unchanged
-  * `[ ]` **Commit** `fix(be): pass full resourceDocuments to adapters, reject invalid document data, fix OpenAI max_tokens for GPT-5+`
-    * `[ ]` executeModelCallAndSave.ts — removed identity-stripping of resourceDocuments
-    * `[ ]` anthropic_adapter.ts — validate document fields, remove fallback defaults, throw on bad data
-    * `[ ]` openai_adapter.ts — invert max_tokens logic to default to max_completion_tokens for non-legacy models, validate document fields, remove fallback defaults
-    * `[ ]` executeModelCallAndSave.test.ts — tests proving full identity fields pass through
-    * `[ ]` anthropic_adapter.test.ts — tests proving validation rejects bad data, accepts good data
-    * `[ ]` openai_adapter.test.ts — tests proving correct parameter selection per model, validation rejects bad data
+  * `[✅]` **Commit** `fix(be): pass full resourceDocuments to adapters, reject invalid document data, fix OpenAI max_tokens for GPT-5+`
+    * `[✅]` executeModelCallAndSave.ts — removed identity-stripping of resourceDocuments
+    * `[✅]` anthropic_adapter.ts — validate document fields, remove fallback defaults, throw on bad data
+    * `[✅]` openai_adapter.ts — invert max_tokens logic to default to max_completion_tokens for non-legacy models, validate document fields, remove fallback defaults
+    * `[✅]` executeModelCallAndSave.test.ts — tests proving full identity fields pass through
+    * `[✅]` anthropic_adapter.test.ts — tests proving validation rejects bad data, accepts good data
+    * `[✅]` openai_adapter.test.ts — tests proving correct parameter selection per model, validation rejects bad data
