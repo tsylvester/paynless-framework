@@ -45,9 +45,12 @@ vi.mock('@paynless/store', async () => {
     useWalletStore: walletStoreMock.useWalletStore,
     selectActiveChatWalletInfo: walletStoreMock.selectActiveChatWalletInfo,
     selectViewingStage: actualPaynlessStore.selectViewingStage,
-    useAiStore: (selector: (state: { continueUntilComplete: boolean; newChatContext: string | null }) => unknown) => {
-      return selector({ continueUntilComplete: false, newChatContext: 'personal' });
-    },
+    useAiStore: Object.assign(
+      (selector: (state: { continueUntilComplete: boolean; newChatContext: string | null }) => unknown) => {
+        return selector({ continueUntilComplete: false, newChatContext: 'personal' });
+      },
+      { getState: () => ({ continueUntilComplete: false, newChatContext: 'personal' }) },
+    ),
   };
 });
 

@@ -1149,6 +1149,8 @@ export interface UseStartContributionGenerationReturn {
   viewingStage: DialecticStage | null;
   activeSession: DialecticSession | null;
   stageThreshold: number | undefined;
+  isViewingAheadOfCurrentStage: boolean;
+  viewingAheadReason: string | null;
 }
 
 export interface FailedAttemptError {

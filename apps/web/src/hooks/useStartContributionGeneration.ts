@@ -9,6 +9,7 @@ import {
   selectUnifiedProjectProgress,
   selectSelectedModels,
   selectActiveChatWalletInfo,
+  selectSortedStages,
 } from "@paynless/store";
 import {
   type DialecticSession,
@@ -83,6 +84,34 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
       : false,
   );
 
+  const sortedStages = useDialecticStore(selectSortedStages);
+
+  const { isViewingAheadOfCurrentStage, viewingAheadReason } = useMemo(() => {
+    if (!activeSession || !viewingStage || !sortedStages.length) {
+      return { isViewingAheadOfCurrentStage: false, viewingAheadReason: null };
+    }
+    const currentStageId = activeSession.current_stage_id;
+    if (!currentStageId) {
+      return { isViewingAheadOfCurrentStage: false, viewingAheadReason: null };
+    }
+    const currentIndex = sortedStages.findIndex((s) => s.id === currentStageId);
+    const viewingIndex = sortedStages.findIndex((s) => s.id === viewingStage.id);
+    if (currentIndex === -1 || viewingIndex === -1 || viewingIndex <= currentIndex) {
+      return { isViewingAheadOfCurrentStage: false, viewingAheadReason: null };
+    }
+    const currentStageName = sortedStages[currentIndex]?.display_name ?? "the current stage";
+    if (viewingIndex === currentIndex + 1) {
+      return {
+        isViewingAheadOfCurrentStage: true,
+        viewingAheadReason: `Submit your responses for "${currentStageName}" first to unlock this stage.`,
+      };
+    }
+    return {
+      isViewingAheadOfCurrentStage: true,
+      viewingAheadReason: `Complete prior stages first. You are currently on "${currentStageName}".`,
+    };
+  }, [activeSession, viewingStage, sortedStages]);
+
   const isSessionGenerating = useMemo((): boolean => {
     if (!activeContextSessionId) return false;
     const sessions = generatingSessions[activeContextSessionId];
@@ -138,7 +167,8 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     activeSession == null ||
     !isStageReady ||
     !isWalletReady ||
-    !balanceMeetsThreshold;
+    !balanceMeetsThreshold ||
+    isViewingAheadOfCurrentStage;
 
   const showBalanceCallout =
     viewingStage != null &&
@@ -294,5 +324,7 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     viewingStage,
     activeSession,
     stageThreshold,
+    isViewingAheadOfCurrentStage,
+    viewingAheadReason,
   };
 }
