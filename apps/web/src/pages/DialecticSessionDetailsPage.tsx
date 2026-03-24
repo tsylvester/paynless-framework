@@ -118,7 +118,14 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 
 	const isLoading = isLoadingProject || isLoadingSession;
 
-	if (isLoading && !activeSessionDetail && !sessionError) {
+	const sessionContextReady =
+		activeContextProjectId === urlProjectId &&
+		activeContextSessionId === urlSessionId &&
+		activeSessionDetail?.id === urlSessionId &&
+		!isLoadingProject &&
+		!isLoadingSession;
+
+	if (!sessionContextReady && !projectError && !sessionError) {
 		return (
 			<div className="container mx-auto p-4">
 				<h1 className="text-2xl font-bold mb-4">Loading session details...</h1>

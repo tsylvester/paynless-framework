@@ -69,7 +69,7 @@ Deno.test("TokenWalletService (Refactored using Test Utility)", async (t) => {
       });
 
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-      const orgResource = findProcessedResource(processedResources, "testOrg");
+      const orgResource = findProcessedResource(processedResources, "organizations", "testOrg");
       assertExists(orgResource, "Organization resource should be processed.");
       const orgId = orgResource.id;
       assertExists(orgId, "Organization ID should exist.");
@@ -122,7 +122,7 @@ Deno.test("TokenWalletService (Refactored using Test Utility)", async (t) => {
         }],
       });
 
-      const orgResource = findProcessedResource(processedResources, "testOrg");
+      const orgResource = findProcessedResource(processedResources, "organizations", "testOrg");
       const orgId = orgResource!.id!;
 
       // 2. Setup User B (non-admin member)
@@ -175,7 +175,7 @@ Deno.test("TokenWalletService (Refactored using Test Utility)", async (t) => {
           linkUserId: true,
         }],
       });
-      const orgResource = findProcessedResource(processedResources, "testOrg");
+      const orgResource = findProcessedResource(processedResources, "organizations", "testOrg");
       const orgId = orgResource!.id!;
 
       // 2. Setup User B (the non-member)
@@ -252,7 +252,7 @@ Deno.test("TokenWalletService (Refactored using Test Utility)", async (t) => {
         }],
       });
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-      const orgId = findProcessedResource(processedResources, "testOrg")!.id!;
+      const orgId = findProcessedResource(processedResources, "organizations", "testOrg")!.id!;
 
       // Get the org wallet and credit it using the admin client for setup
       const orgWallet = await tokenWalletService.getWalletForContext(primaryUserId, orgId);
@@ -298,7 +298,7 @@ Deno.test("TokenWalletService (Refactored using Test Utility)", async (t) => {
             }],
         });
         const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-        const orgId = findProcessedResource(processedResources, "testOrg")!.id!;
+        const orgId = findProcessedResource(processedResources, "organizations", "testOrg")!.id!;
 
         const orgWallet = await tokenWalletService.getWalletForContext(primaryUserId, orgId);
         assertExists(orgWallet);
@@ -362,7 +362,7 @@ Deno.test("TokenWalletService (Refactored using Test Utility)", async (t) => {
                 linkUserId: true,
             }],
         });
-        const orgId = findProcessedResource(processedResources, "testOrg")!.id!;
+        const orgId = findProcessedResource(processedResources, "organizations", "testOrg")!.id!;
 
         const userB = await setupSecondUserWithWallet(adminClient);
         const {data: member, error} = await adminClient.from("organization_members").insert({

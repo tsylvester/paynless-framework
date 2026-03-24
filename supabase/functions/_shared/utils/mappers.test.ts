@@ -73,6 +73,7 @@ describe('mapToStageWithRecipeSteps', () => {
         id: 'stage-1',
         recipe_template_id: 'template-1',
         slug: 'synthesis',
+        minimum_balance: 0,
     };
 
     const mockInstanceData: Tables<'dialectic_stage_recipe_instances'> = {
@@ -170,6 +171,7 @@ describe('mapToStageWithRecipeSteps', () => {
         id: 'stage-casing',
         recipe_template_id: 'template-casing',
         slug: 'casing-test',
+        minimum_balance: 0,
     };
 
     const mockInstanceData: Tables<'dialectic_stage_recipe_instances'> = {

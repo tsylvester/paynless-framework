@@ -5726,59 +5726,59 @@ Deno.test("DocumentRenderer - concatenate then sanitize/parse pipeline", async (
     clearAllStubs?.();
   });
 
-  await t.step("when sanitization/parse fails, error is thrown with chunk IDs and storage paths", async () => {
-    const path1 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
-    const path2 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json";
-    const fragment1 = `{"content": "unclosed`;
-    const fragment2 = `string`;
+  await t.step(
+    "concatenated mid-string fragments are structurally repaired; Phase 2 parses and render completes",
+    async () => {
+      const path1 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_0_business_case_raw.json";
+      const path2 = "proj_x/session_s/iteration_1/thesis/documents/gpt-4o-mini_1_business_case_raw.json";
+      const fragment1 = `{"executive_summary": "unclosed`;
+      const fragment2 = `string`;
 
-    const contributions: Array<Database["public"]["Tables"]["dialectic_contributions"]["Row"]> = [
-      { ...baseContributionRow, id: "chunk-err-1", document_relationships: { thesis: "chunk-err-1" }, raw_response_storage_path: path1 },
-      {
-        ...baseContributionRow,
-        id: "chunk-err-2",
-        file_name: "gpt-4o-mini_1_business_case_raw.json",
-        raw_response_storage_path: path2,
-        target_contribution_id: "chunk-err-1",
-        edit_version: 2,
-        created_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
-        updated_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
-        document_relationships: { thesis: "chunk-err-1" },
-      },
-    ];
+      const contributions: Array<Database["public"]["Tables"]["dialectic_contributions"]["Row"]> = [
+        { ...baseContributionRow, id: "chunk-err-1", document_relationships: { thesis: "chunk-err-1" }, raw_response_storage_path: path1 },
+        {
+          ...baseContributionRow,
+          id: "chunk-err-2",
+          file_name: "gpt-4o-mini_1_business_case_raw.json",
+          raw_response_storage_path: path2,
+          target_contribution_id: "chunk-err-1",
+          edit_version: 2,
+          created_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
+          updated_at: new Date(2025, 0, 1, 12, 1, 0).toISOString(),
+          document_relationships: { thesis: "chunk-err-1" },
+        },
+      ];
 
-    const mockDownloadFromStorage = async (
-      _supabase: SupabaseClient<Database>,
-      _bucket: string,
-      path: string,
-    ): Promise<{ data: ArrayBuffer; error: null }> => {
-      if (path === path1) return { data: (await new Blob([fragment1]).arrayBuffer()), error: null };
-      if (path === path2) return { data: (await new Blob([fragment2]).arrayBuffer()), error: null };
-      return { data: (await new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE]).arrayBuffer()), error: null };
-    };
+      const mockDownloadFromStorage = async (
+        _supabase: SupabaseClient<Database>,
+        _bucket: string,
+        path: string,
+      ): Promise<{ data: ArrayBuffer; error: null }> => {
+        if (path === path1) return { data: (await new Blob([fragment1]).arrayBuffer()), error: null };
+        if (path === path2) return { data: (await new Blob([fragment2]).arrayBuffer()), error: null };
+        return { data: (await new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE]).arrayBuffer()), error: null };
+      };
 
-    const { dbClient, clearAllStubs } = setup({
-      genericMockResults: {
-        dialectic_contributions: { select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" } },
-        dialectic_projects: { select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" } },
-        dialectic_document_templates: { select: defaultTemplateSelect },
-      },
-    });
+      const { dbClient, clearAllStubs } = setup({
+        genericMockResults: {
+          dialectic_contributions: { select: { data: contributions, error: null, count: null, status: 200, statusText: "OK" } },
+          dialectic_projects: { select: { data: [{ id: "project_123", selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" } },
+          dialectic_document_templates: { select: defaultTemplateSelect },
+        },
+      });
 
-    const params: RenderDocumentParams = {
-      projectId: "project_123",
-      sessionId: "session_concat",
-      iterationNumber: 1,
-      stageSlug: "thesis",
-      documentIdentity: "chunk-err-1",
-      documentKey: FileType.business_case,
-      sourceContributionId: "chunk-err-1",
-      template_filename: "thesis_business_case.md",
-    };
+      const params: RenderDocumentParams = {
+        projectId: "project_123",
+        sessionId: "session_concat",
+        iterationNumber: 1,
+        stageSlug: "thesis",
+        documentIdentity: "chunk-err-1",
+        documentKey: FileType.business_case,
+        sourceContributionId: "chunk-err-1",
+        template_filename: "thesis_business_case.md",
+      };
 
-    let thrown: Error | undefined;
-    try {
-      await renderDocument(dbClient, {
+      const result: RenderDocumentResult = await renderDocument(dbClient, {
         downloadFromStorage: mockDownloadFromStorage,
         fileManager: (() => {
           const fm = new MockFileManagerService();
@@ -5789,16 +5789,14 @@ Deno.test("DocumentRenderer - concatenate then sanitize/parse pipeline", async (
         notifyUserId: "user_123",
         logger: logger,
       }, params);
-    } catch (e) {
-      thrown = e instanceof Error ? e : new Error(String(e));
-    }
 
-    assert(thrown !== undefined, "renderDocument must throw when concatenated content fails to parse");
-    const msg = thrown?.message ?? "";
-    assert(msg.includes("chunk-err-1") || msg.includes("chunk-err-2"), "error message must include chunk IDs");
-    assert(msg.includes(path1) || msg.includes(path2), "error message must include storage path");
-    assert(msg.includes("parse") || msg.includes("sanitiz"), "error message must include parse or sanitization failure details");
-    clearAllStubs?.();
-  });
+      const rendered = new TextDecoder().decode(result.renderedBytes);
+      assert(
+        rendered.includes("unclosedstring"),
+        "repaired concatenated JSON must surface executive_summary in rendered output (template binds {executive_summary}, not content)",
+      );
+      clearAllStubs?.();
+    },
+  );
 });
 

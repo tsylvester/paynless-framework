@@ -16,6 +16,7 @@ describe('mapToStageWithRecipeSteps', () => {
             id: 'stage-antithesis',
             recipe_template_id: 'template-antithesis',
             slug: 'antithesis',
+            minimum_balance: 0,
             dialectic_stage_recipe_instances: [{
                 cloned_at: null,
                 created_at: '2025-11-05T11:59:00.000Z',
@@ -230,6 +231,7 @@ describe('mapToStageWithRecipeSteps', () => {
             id: 'stage-antithesis',
             recipe_template_id: 'template-antithesis',
             slug: 'antithesis',
+            minimum_balance: 0,
             dialectic_stage_recipe_instances: [{
                 cloned_at: null,
                 created_at: '2025-11-05T11:59:00.000Z',
@@ -283,6 +285,7 @@ describe('mapToStageWithRecipeSteps', () => {
             id: 'stage-antithesis',
             recipe_template_id: 'template-antithesis',
             slug: 'antithesis',
+            minimum_balance: 0,
             dialectic_stage_recipe_instances: [{
                 cloned_at: null,
                 created_at: '2025-11-05T11:59:00.000Z',
@@ -336,6 +339,7 @@ describe('mapToStageWithRecipeSteps', () => {
             id: 'stage-antithesis',
             recipe_template_id: 'template-antithesis',
             slug: 'antithesis',
+            minimum_balance: 0,
             dialectic_stage_recipe_instances: [{
                 cloned_at: null,
                 created_at: '2025-11-05T11:59:00.000Z',
@@ -389,6 +393,7 @@ describe('mapToStageWithRecipeSteps', () => {
             id: 'stage-antithesis',
             recipe_template_id: 'template-antithesis',
             slug: 'antithesis',
+            minimum_balance: 0,
             dialectic_stage_recipe_instances: [{
                 cloned_at: null,
                 created_at: '2025-11-05T11:59:00.000Z',
@@ -442,6 +447,7 @@ describe('mapToStageWithRecipeSteps', () => {
             id: 'stage-antithesis',
             recipe_template_id: 'template-antithesis',
             slug: 'antithesis',
+            minimum_balance: 0,
             dialectic_stage_recipe_instances: [{
                 cloned_at: null,
                 created_at: '2025-11-05T11:59:00.000Z',
@@ -495,6 +501,7 @@ describe('mapToStageWithRecipeSteps', () => {
             id: 'stage-antithesis',
             recipe_template_id: 'template-antithesis',
             slug: 'antithesis',
+            minimum_balance: 0,
             dialectic_stage_recipe_instances: [{
                 cloned_at: null,
                 created_at: '2025-11-05T11:59:00.000Z',

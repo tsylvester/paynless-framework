@@ -6,6 +6,7 @@ import {
     type GenerateContentResult,
     type Part,
 } from "npm:@google/generative-ai";
+import { isResourceDocument } from '../utils/type-guards/type_guards.chat.ts';
 import type {
     ProviderModelInfo,
     ChatApiRequest,
@@ -101,7 +102,7 @@ export class GoogleAdapter {
         if (request.resourceDocuments && request.resourceDocuments.length > 0) {
             const documentParts: Part[] = [];
             for (const doc of request.resourceDocuments) {
-                const label = `[Document: ${doc.document_key} from ${doc.stage_slug}]`;
+                const label = isResourceDocument(doc) ? `[Document: ${doc.document_key} from ${doc.stage_slug}]` : `[Document: ${doc.id}]`;
                 documentParts.push({ text: label });
                 documentParts.push({ text: doc.content });
             }

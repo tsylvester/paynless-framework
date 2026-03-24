@@ -2,13 +2,13 @@ import {
   UnifiedAIResponse,
   ModelProcessingResult,
   ExecuteModelCallAndSaveParams,
-  SourceDocument,
   DialecticRenderJobPayload,
   DocumentRelationships,
   InputRule,
   DialecticProjectResourceRow,
   DialecticContributionRow,
   DialecticFeedbackRow,
+  ContextForDocument,
 } from '../dialectic-service/dialectic.interface.ts';
 import { 
     FileType, 
@@ -452,10 +452,8 @@ export async function executeModelCallAndSave(
         }
     }
 
-    const identityRichDocs: Required<ResourceDocuments[number]>[] = scopedDocs;
-    const idContentDocs: ResourceDocuments = identityRichDocs.map(d => ({ id: d.id, content: d.content }));
+    const resourceDocuments: ResourceDocuments = scopedDocs;
     // 8.h.iv/8.h.ix: Always use executor-gathered + inputsRequired-scoped documents; no assembler fallback
-    const initialResourceDocuments: ResourceDocuments = [...idContentDocs];
 
     const {
         countTokens,
@@ -482,7 +480,6 @@ export async function executeModelCallAndSave(
 
     // Track the single source of truth for what we size and what we send
     let currentAssembledMessages: Messages[] = initialAssembledMessages;
-    let currentResourceDocuments: ResourceDocuments = [...initialResourceDocuments];
 
     // Build normalized messages for initial sizing
     const initialEffectiveMessages: { role: 'system'|'user'|'assistant'; content: string }[] = initialAssembledMessages
@@ -494,7 +491,7 @@ export async function executeModelCallAndSave(
         systemInstruction,
         message: currentUserPrompt,
         messages: normalizedInitialMessages,
-        resourceDocuments: currentResourceDocuments.map(d => ({ id: d.id, content: d.content })),
+        resourceDocuments,
     };
     const initialTokenCount = deps.countTokens(tokenizerDeps, fullPayload, extendedModelConfig);
     const maxTokens = extendedModelConfig.context_window_tokens || extendedModelConfig.context_window_tokens;
@@ -583,7 +580,7 @@ export async function executeModelCallAndSave(
         promptId: '__none__',
         systemInstruction: systemInstruction,
         walletId: walletId,
-        resourceDocuments: currentResourceDocuments.map((d) => ({ id: d.id, content: d.content })),
+        resourceDocuments,
         continue_until_complete: job.payload.continueUntilComplete,
         isDialectic: true,
     };
@@ -639,48 +636,9 @@ export async function executeModelCallAndSave(
         );
 
         const workingHistory = [...conversationHistory];
-        // For compression scoring, use identity-rich documents gathered/scoped from the database (mapped to full SourceDocument shape)
-        const workingResourceDocsSourceFull: SourceDocument[] = identityRichDocs.map((d) => ({
-            id: d.id,
-            session_id: job.session_id,
-            user_id: null,
-            stage: d.stage_slug,
-            iteration_number: job.iteration_number,
-            model_id: null,
-            model_name: null,
-            prompt_template_id_used: null,
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            is_header: false,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: null,
-            tokens_used_output: null,
-            processing_time_ms: null,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            contribution_type: null,
-            file_name: null,
-            storage_bucket: '',
-            storage_path: '',
-            size_bytes: null,
-            mime_type: '',
-            source_prompt_resource_id: null,
-            // Identity and content
-            content: d.content,
-            document_key: d.document_key,
-            type: d.type,
-            stage_slug: d.stage_slug,
-            document_relationships: null,
-        }));
         // For sizing and sending, maintain a simple list of id/content paired to the above
-        const workingResourceDocs: ResourceDocuments = [...idContentDocs];
         // Validation before compression: all identity fields must be present and non-empty
-        for (const doc of workingResourceDocsSourceFull) {
+        for (const doc of resourceDocuments) {
             const hasDocKey = typeof doc.document_key === 'string' && doc.document_key !== '';
             const hasType = typeof doc.type === 'string' && doc.type !== '';
             const hasStage = typeof doc.stage_slug === 'string' && doc.stage_slug !== '';
@@ -693,9 +651,10 @@ export async function executeModelCallAndSave(
         // --- Preflight: estimate if we can compress to a feasible target and still afford final call ---
         const safetyBufferTokensPre = 32;
 
-        const providerMaxInputForPre = (typeof extendedModelConfig.provider_max_input_tokens === 'number' && extendedModelConfig.provider_max_input_tokens > 0)
-            ? extendedModelConfig.provider_max_input_tokens
-            : 0;
+        if (!extendedModelConfig.provider_max_input_tokens) {
+            throw new Error('Provider max input tokens is not defined');
+        }
+        const providerMaxInputForPre = extendedModelConfig.provider_max_input_tokens
 
         const getAllowedInputFor = (balanceTokens: number, tokenCount: number): number => {
             const plannedOut = getMaxOutputTokens(
@@ -704,21 +663,19 @@ export async function executeModelCallAndSave(
                 extendedModelConfig,
                 deps.logger,
             );
-            return providerMaxInputForPre > 0
-                ? providerMaxInputForPre - (plannedOut + safetyBufferTokensPre)
-                : Infinity;
+            return providerMaxInputForPre - (plannedOut + safetyBufferTokensPre)
         };
 
         const solveTargetForBalance = (balanceTokens: number): number => {
             let t = Math.min(
-                typeof maxTokens === 'number' && maxTokens > 0 ? maxTokens : Infinity,
+                maxTokens,
                 initialTokenCount,
             );
             // Small fixed-point iteration to converge t <= allowedInputFor(t)
             for (let i = 0; i < 5; i++) {
                 const allowed = getAllowedInputFor(balanceTokens, t);
                 const next = Math.min(
-                    typeof maxTokens === 'number' && maxTokens > 0 ? maxTokens : Infinity,
+                    maxTokens,
                     allowed,
                 );
                 if (!(next < t - 1)) break; // Stop when close enough or expanding
@@ -773,16 +730,14 @@ export async function executeModelCallAndSave(
                 extendedModelConfig,
                 deps.logger,
             );
-            const providerMaxInput = (typeof extendedModelConfig.provider_max_input_tokens === 'number' && extendedModelConfig.provider_max_input_tokens > 0)
-                ? extendedModelConfig.provider_max_input_tokens
-                : 0;
+            if (!extendedModelConfig.provider_max_input_tokens) {
+                throw new Error('Provider max input tokens is not defined');
+            }
             const safetyBuffer = 32;
-            return providerMaxInput > 0
-                ? providerMaxInput - (plannedMaxOutput + safetyBuffer)
-                : Infinity;
+            return extendedModelConfig.provider_max_input_tokens - (plannedMaxOutput + safetyBuffer);
         };
         
-        const candidates = await compressionStrategy(dbClient, deps, workingResourceDocsSourceFull, workingHistory, currentUserPrompt, params.inputsRelevance);
+        const candidates = await compressionStrategy(dbClient, deps, resourceDocuments, workingHistory, currentUserPrompt, params.inputsRelevance);
         console.log(`[DEBUG] Number of compression candidates found: ${candidates.length}`);
 
         // Prefetch which candidates are already indexed so we don't re-index them during compression
@@ -867,15 +822,16 @@ export async function executeModelCallAndSave(
                 }
             }
             
-            const newContent = ragResult.context || '';
+            const newContent = ragResult.context;
+            if (!newContent) {
+                throw new Error(`RAG context is empty for candidate ${victim.id}`);
+            }
             if (victim.sourceType === 'history') {
                 const historyIndex = workingHistory.findIndex(h => h.id === victim.id);
                 if (historyIndex > -1) workingHistory[historyIndex].content = newContent;
             } else {
-                const docIndex = workingResourceDocs.findIndex(d => d.id === victim.id);
-                if (docIndex > -1) workingResourceDocs[docIndex].content = newContent;
-                const srcIdx = workingResourceDocsSourceFull.findIndex(d => d.id === victim.id);
-                if (srcIdx > -1) workingResourceDocsSourceFull[srcIdx].content = newContent;
+                const docIndex = resourceDocuments.findIndex(d => d.id === victim.id);
+                if (docIndex > -1) resourceDocuments[docIndex].content = newContent;
             }
             
             // Enforce strict user/assistant alternation after each compression
@@ -908,7 +864,6 @@ export async function executeModelCallAndSave(
             // Rebuild the entire payload after each compression step
             // Keep the sized payload components as the ones we will send when it fits
             currentAssembledMessages = loopAssembledMessages;
-            currentResourceDocuments = [...workingResourceDocs];
 
             // Keep ChatApiRequest in sync and size based on the same object
             chatApiRequest = {
@@ -917,7 +872,7 @@ export async function executeModelCallAndSave(
                 messages: currentAssembledMessages
                         .filter(isApiChatMessage)
                         .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
-                resourceDocuments: currentResourceDocuments.map((d) => ({ id: d.id, content: d.content })),
+                resourceDocuments,
             };
             const loopPayload: CountableChatPayload = {
                 systemInstruction: chatApiRequest.systemInstruction,
@@ -931,7 +886,7 @@ export async function executeModelCallAndSave(
         // If still above either constraint, fail clearly
         const allowedInputCheck = computeAllowedInput(currentTokenCount);
         if (currentTokenCount > Math.min(
-            typeof maxTokens === 'number' && maxTokens > 0 ? maxTokens : Infinity,
+            maxTokens,
             allowedInputCheck,
         )) {
             throw new ContextWindowError(
@@ -954,7 +909,7 @@ export async function executeModelCallAndSave(
             messages: currentAssembledMessages
                     .filter(isApiChatMessage)
                     .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
-            resourceDocuments: currentResourceDocuments.map((d) => ({ id: d.id, content: d.content })),
+            resourceDocuments,
         };
         const finalPayloadAfterCompression: CountableChatPayload = {
             systemInstruction: chatApiRequest.systemInstruction,
@@ -972,14 +927,10 @@ export async function executeModelCallAndSave(
         );
 
         const providerMaxInputTokensPost =
-            (typeof extendedModelConfig.provider_max_input_tokens === 'number' && extendedModelConfig.provider_max_input_tokens > 0)
-                ? extendedModelConfig.provider_max_input_tokens
-                : 0;
+            extendedModelConfig.provider_max_input_tokens
 
         const safetyBufferTokensPost = 32;
-        const allowedInputPost = providerMaxInputTokensPost > 0
-            ? providerMaxInputTokensPost - (plannedMaxOutputTokensPost + safetyBufferTokensPost)
-            : Infinity;
+        const allowedInputPost = providerMaxInputTokensPost - (plannedMaxOutputTokensPost + safetyBufferTokensPost)
 
         if (allowedInputPost !== Infinity && allowedInputPost <= 0) {
             throw new ContextWindowError(
@@ -1101,6 +1052,10 @@ export async function executeModelCallAndSave(
 
     let shouldContinue = isDialecticContinueReason(resolvedFinish);
 
+    // Continuation triggers (additive): structural JSON repair flags incomplete output; missing keys
+    // vs ContextForDocument.content_to_include (typed template, not untyped records); continuation cap
+    // merges chunk fragments with optional schema fill via assembleAndSaveFinalDocument.
+
     // Decide intermediate vs not before sanitize/parse. Run sanitize/parse only when the chunk
     // is not an intermediate continuation chunk (single-complete and final paths still get validated).
     const isIntermediateChunk = shouldContinue && !!job.payload.continueUntilComplete;
@@ -1137,6 +1092,11 @@ export async function executeModelCallAndSave(
                 wasStructurallyFixed: sanitizationResult.wasStructurallyFixed
             });
         }
+
+        if (sanitizationResult.wasStructurallyFixed && job.payload.continueUntilComplete && !shouldContinue) {
+            deps.logger.warn('[executeModelCallAndSave] Response was structurally fixed by sanitizer — treating as truncated, triggering continuation');
+            shouldContinue = true;
+        }
         
         let parsedContent: unknown;
         try {
@@ -1172,6 +1132,34 @@ export async function executeModelCallAndSave(
                 (typeof parsedContent.resume_cursor === 'string' && parsedContent.resume_cursor.trim() !== '')
             ) {
                 shouldContinue = true;
+            }
+        }
+
+        if (!shouldContinue && isRecord(parsedContent) && job.payload.continueUntilComplete) {
+            const contextDocsUnknown = job.payload.context_for_documents;
+            if (Array.isArray(contextDocsUnknown) && typeof job.payload.document_key === 'string') {
+                let matchedContextForKeys: ContextForDocument | undefined = undefined;
+                for (let docIdx = 0; docIdx < contextDocsUnknown.length; docIdx++) {
+                    const docRow = contextDocsUnknown[docIdx];
+                    if (docRow.document_key === job.payload.document_key) {
+                        matchedContextForKeys = docRow;
+                        break;
+                    }
+                }
+                if (matchedContextForKeys !== undefined) {
+                    const templateKeys: string[] = Object.keys(matchedContextForKeys.content_to_include);
+                    const missingKeys: string[] = [];
+                    for (let keyIdx = 0; keyIdx < templateKeys.length; keyIdx++) {
+                        const templateKey: string = templateKeys[keyIdx];
+                        if (!(templateKey in parsedContent)) {
+                            missingKeys.push(templateKey);
+                        }
+                    }
+                    if (missingKeys.length > 0) {
+                        deps.logger.warn(`[executeModelCallAndSave] Parsed response missing expected keys from context_for_documents: ${missingKeys.join(', ')}`, { jobId, missingKeys });
+                        shouldContinue = true;
+                    }
+                }
             }
         }
     }
@@ -1836,6 +1824,35 @@ export async function executeModelCallAndSave(
 
         if (continueResult.error) {
           deps.logger.error(`[dialectic-worker] [executeModelCallAndSave] Failed to enqueue continuation for job ${job.id}.`, { error: continueResult.error.message });
+        }
+        if (!continueResult.error && continueResult.enqueued === false && continueResult.reason === 'continuation_limit_reached') {
+            deps.logger.warn('[executeModelCallAndSave] Continuation limit reached for job — triggering final assembly with schema fill', { jobId: job.id });
+            modelProcessingResult.status = 'continuation_limit_reached';
+
+            const capRelationships = contribution.document_relationships;
+            let rootIdForCapAssembly: string | undefined = undefined;
+            if (isRecord(capRelationships)) {
+                const capCandidate: unknown = capRelationships[stageSlug];
+                if (typeof capCandidate === 'string' && capCandidate.trim() !== '') {
+                    rootIdForCapAssembly = capCandidate;
+                }
+            }
+
+            let matchedContextForCap: ContextForDocument | undefined = undefined;
+            const capContextDocsUnknown = job.payload.context_for_documents;
+            if (Array.isArray(capContextDocsUnknown) && typeof job.payload.document_key === 'string') {
+                for (let capIdx = 0; capIdx < capContextDocsUnknown.length; capIdx++) {
+                    const capDoc = capContextDocsUnknown[capIdx];
+                    if (capDoc.document_key === job.payload.document_key) {
+                        matchedContextForCap = capDoc;
+                        break;
+                    }
+                }
+            }
+
+            if (rootIdForCapAssembly !== undefined && rootIdForCapAssembly !== contribution.id && !shouldRender) {
+                await deps.fileManager.assembleAndSaveFinalDocument(rootIdForCapAssembly, matchedContextForCap);
+            }
         }
         if (projectOwnerUserId) {
             // Calculate continuation number for the newly enqueued job (matches continueJob.ts logic)

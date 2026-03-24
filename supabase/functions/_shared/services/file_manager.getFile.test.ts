@@ -14,6 +14,9 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import { Database } from '../../types_db.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
 import { MockLogger } from '../logger.mock.ts'
+import { createAssembleChunksMock } from '../utils/assembleChunks/assembleChunks.mock.ts'
+
+const assembleChunksMock = createAssembleChunksMock()
 
 Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
@@ -33,7 +36,7 @@ Deno.test('FileManagerService', async (t) => {
 
     setup = createMockSupabaseClient('test-user-id', config)
     logger = new MockLogger()
-    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath, logger })
+    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath, logger, assembleChunks: assembleChunksMock.assembleChunks })
   }
 
   const afterEach = () => {

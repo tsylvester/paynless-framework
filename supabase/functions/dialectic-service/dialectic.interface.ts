@@ -266,6 +266,9 @@ export type DatabaseRecipeSteps = Tables<"dialectic_stages"> & {
 	})[];
 };
 
+export type DialecticSessionRow = Database["public"]["Tables"]["dialectic_sessions"]["Row"];
+export type SyncMapRow = Database["public"]["Tables"]["dialectic_sync_maps"]["Row"];
+export type GitHubConnectionRow = Database["public"]["Tables"]["github_connections"]["Row"];
 export type DialecticProjectRow =
 	Database["public"]["Tables"]["dialectic_projects"]["Row"];
 export type DialecticProjectInsert =
@@ -716,8 +719,22 @@ type GetStageDocumentFeedbackAction = {
 };
 
 // --- START: syncToGitHub and updateProjectGitHubSettings ---
+export interface SyncMapEntry {
+	documentKey: string;
+	friendlyName: string;
+	stageGroup: string;
+	layer: "research" | "decision" | "action";
+	audience: "leadership" | "management" | "build" | null;
+	sortOrder: number;
+	available: boolean;
+	updatedSinceLastSync: boolean;
+}
+
 export interface SyncToGitHubPayload {
 	projectId: string;
+	selectedModelIds: string[];
+	selectedDocumentKeys: string[];
+	includeRulesFile: boolean;
 }
 
 export interface GitHubRepoSettings {
@@ -730,9 +747,11 @@ export interface GitHubRepoSettings {
 }
 
 export interface SyncToGitHubResponse {
-	commitSha: string;
+	commitSha: string | null;
 	filesUpdated: number;
 	syncedAt: string;
+	syncedDocumentKeys: string[];
+	skippedDocumentKeys: string[];
 }
 
 export interface SyncToGitHubDeps {
@@ -800,6 +819,96 @@ type UpdateProjectGitHubSettingsAction = {
 	action: "updateProjectGitHubSettings";
 	payload: UpdateProjectGitHubSettingsPayload;
 };
+
+// getSyncMap: return = success payload only; Success = { data, error?: undefined }; Failure = { error, data?: undefined }; Result = Success | Failure.
+export interface GetSyncMapPayload {
+	projectId: string;
+}
+
+export interface GetSyncMapDeps {
+	supabaseClient: SupabaseClient<Database>;
+	logger: ILogger;
+}
+
+export interface GetSyncMapParams {
+	user: User;
+}
+
+export interface GetSyncMapReturn {
+	syncMap: SyncMapEntry[];
+}
+
+export interface GetSyncMapSuccess {
+	data: GetSyncMapReturn;
+	error?: undefined;
+}
+
+export interface GetSyncMapFailure {
+	error: ServiceError;
+	data?: undefined;
+}
+
+export type GetSyncMapResult = GetSyncMapSuccess | GetSyncMapFailure;
+
+export type GetSyncMapFn = (
+	deps: GetSyncMapDeps,
+	params: GetSyncMapParams,
+	payload: GetSyncMapPayload
+) => Promise<GetSyncMapResult>;
+
+export interface ModelSyncInfo {
+	modelId: string;
+	modelName: string;
+	modelSlug: string;
+	documentCount: number;
+}
+
+export interface GetAvailableModelsForSyncPayload {
+	projectId: string;
+}
+
+export interface GetAvailableModelsForSyncDeps {
+	supabaseClient: SupabaseClient<Database>;
+	storageUtils: IStorageUtils;
+	logger: ILogger;
+}
+
+export interface GetAvailableModelsForSyncParams {
+	user: User;
+}
+
+export interface GetAvailableModelsForSyncReturn {
+	models: ModelSyncInfo[];
+	recommendedModelId: string | null;
+}
+
+export interface GetAvailableModelsForSyncSuccess {
+	data: GetAvailableModelsForSyncReturn;
+	error?: undefined;
+}
+
+export interface GetAvailableModelsForSyncFailure {
+	error: ServiceError;
+	data?: undefined;
+}
+
+export type GetAvailableModelsForSyncResult = GetAvailableModelsForSyncSuccess | GetAvailableModelsForSyncFailure;
+
+export type GetAvailableModelsForSyncFn = (
+	deps: GetAvailableModelsForSyncDeps,
+	params: GetAvailableModelsForSyncParams,
+	payload: GetAvailableModelsForSyncPayload
+) => Promise<GetAvailableModelsForSyncResult>;
+
+type GetSyncMapAction = {
+	action: "getSyncMap";
+	payload: GetSyncMapPayload;
+};
+
+type GetAvailableModelsForSyncAction = {
+	action: "getAvailableModelsForSync";
+	payload: GetAvailableModelsForSyncPayload;
+};
 // --- END: syncToGitHub and updateProjectGitHubSettings ---
 
 // The main union type for all possible JSON requests to the service.
@@ -833,7 +942,9 @@ export type DialecticServiceRequest =
 	| GetStageDocumentFeedbackAction
 	| SubmitStageDocumentFeedbackAction
 	| SyncToGitHubAction
-	| UpdateProjectGitHubSettingsAction;
+	| UpdateProjectGitHubSettingsAction
+	| GetSyncMapAction
+	| GetAvailableModelsForSyncAction;
 
 // --- END: Discriminated Union ---
 
@@ -1107,7 +1218,7 @@ export type DialecticStage =
 
 export interface ModelProcessingResult {
 	modelId: string;
-	status: "completed" | "failed" | "needs_continuation";
+	status: "completed" | "failed" | "needs_continuation" | "continuation_limit_reached";
 	attempts: number;
 	contributionId?: string;
 	error?: string;
@@ -1789,13 +1900,6 @@ export type SeedPromptData = {
 	path: string;
 	fileName: string;
 };
-export interface ModelProcessingResult {
-	modelId: string;
-	status: "completed" | "failed" | "needs_continuation";
-	attempts: number;
-	contributionId?: string;
-	error?: string;
-}
 
 export interface IContinueJobDeps {
 	logger: ILogger;
@@ -1804,6 +1908,7 @@ export interface IContinueJobDeps {
 export interface IContinueJobResult {
 	enqueued: boolean;
 	error?: Error;
+	reason?: string;
 }
 
 export type Job =

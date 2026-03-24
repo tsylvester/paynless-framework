@@ -24,6 +24,9 @@ import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { StartSessionDeps, SeedPromptRecipeStep } from './dialectic.interface.ts';
 import { gatherInputsForStage } from "../_shared/prompt-assembler/gatherInputsForStage.ts";
 import { renderPrompt } from "../_shared/prompt-renderer.ts";
+import { createAssembleChunksMock } from "../_shared/utils/assembleChunks/assembleChunks.mock.ts";
+
+const assembleChunksMock = createAssembleChunksMock()
 
 export async function startSession(
   user: User,
@@ -32,7 +35,7 @@ export async function startSession(
   partialDeps?: Partial<StartSessionDeps>
 ): Promise<{ data?: StartSessionSuccessResponse; error?: { message: string; status?: number; details?: string, code?: string } }> {
     const log: ILogger = partialDeps?.logger || logger;
-    const fileManager: IFileManager = partialDeps?.fileManager || new FileManagerService(dbClient, { constructStoragePath, logger });
+    const fileManager: IFileManager = partialDeps?.fileManager || new FileManagerService(dbClient, { constructStoragePath, logger, assembleChunks: assembleChunksMock.assembleChunks });
     const randomUUID = partialDeps?.randomUUID || (() => crypto.randomUUID());
     const getAiProviderAdapterDep = partialDeps?.getAiProviderAdapter || getAiProviderAdapter;
 

@@ -206,6 +206,7 @@ Deno.test('gatherArtifacts - queries resources first and finds rendered document
             current_stage_id: 'stage-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         },
         promptConstructionPayload: {
             systemInstruction: undefined,
@@ -320,6 +321,7 @@ Deno.test('gatherArtifacts - prefers resources over contributions when both exis
             current_stage_id: 'stage-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         },
         promptConstructionPayload: {
             systemInstruction: undefined,
@@ -398,6 +400,7 @@ Deno.test('gatherArtifacts - throws error when required rendered document not fo
             current_stage_id: 'stage-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         },
         promptConstructionPayload: {
             systemInstruction: undefined,
@@ -518,6 +521,7 @@ Deno.test('gatherArtifacts - finds required seed_prompt in dialectic_project_res
             current_stage_id: 'stage-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         },
         promptConstructionPayload: {
             systemInstruction: undefined,
@@ -625,6 +629,7 @@ Deno.test('gatherArtifacts - continues to query contributions for intermediate a
             current_stage_id: 'stage-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         },
         promptConstructionPayload: {
             systemInstruction: undefined,
@@ -734,6 +739,7 @@ Deno.test('gatherArtifacts - queries dialectic_contributions by session_id only,
             current_stage_id: 'stage-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         },
         promptConstructionPayload: {
             systemInstruction: undefined,
@@ -853,6 +859,7 @@ Deno.test('gatherArtifacts - finds required project_resource initial_user_prompt
             current_stage_id: 'stage-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         },
         promptConstructionPayload: {
             systemInstruction: undefined,
@@ -932,6 +939,7 @@ Deno.test('gatherArtifacts - skips optional document input when not found in res
             current_stage_id: 'stage-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         },
         promptConstructionPayload: {
             systemInstruction: undefined,
@@ -1016,6 +1024,7 @@ Deno.test('gatherArtifacts - required input with failed storage download throws,
             current_stage_id: 'stage-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         },
         promptConstructionPayload: {
             systemInstruction: undefined,
@@ -1110,6 +1119,7 @@ Deno.test('gatherArtifacts - optional input with failed storage download skips, 
             current_stage_id: 'stage-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         },
         promptConstructionPayload: {
             systemInstruction: undefined,

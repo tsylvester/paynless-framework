@@ -21,7 +21,7 @@ import {
   getTestUserAuthToken
 } from "../_shared/_integration.test.utils.ts"; 
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
-import type { MockQueryBuilderState, MockResolveQueryResult, MockPGRSTError } from "../_shared/supabase.mock.ts";
+import type { MockQueryBuilderState, MockResolveQueryResult, PostgresError } from "../_shared/supabase.mock.ts";
 import { defaultDeps, createChatServiceHandler } from "./index.ts"; // Use factory to build handler per request
 import type { SupabaseClient } from "npm:@supabase/supabase-js";
 import { isRecord } from "../_shared/utils/type_guards.ts";
@@ -422,7 +422,7 @@ export async function runEdgeCaseTests(
     });
 
     let userMessageInsertCount = 0;
-    const simulatedAssistantInsertError: MockPGRSTError = { name: "PostgrestError", message: "Simulated DB error on assistant message insert", code: "DB001", details: "Test details", hint: "Test hint" };
+    const simulatedAssistantInsertError: PostgresError = { name: "PostgrestError", message: "Simulated DB error on assistant message insert", code: "DB001", details: "Test details", hint: "Test hint" };
 
     const mockSupabaseSetup = createMockSupabaseClient(
         testUserId, 

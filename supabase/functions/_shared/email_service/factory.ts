@@ -1,8 +1,8 @@
 import { logger } from "../logger.ts";
-import { type EmailMarketingService } from "../types.ts";
-import { KitService, type KitServiceConfig } from "./kit_service.ts";
+import { EmailMarketingService } from "../types.ts";
+import { KitService } from "./kit_service.ts";
+import { KitServiceConfig } from "./kit.interface.ts";
 import { NoOpEmailService } from "./no_op_service.ts";
-import { DummyEmailService } from './dummy_service.ts';
 
 // Interface for the configuration object passed to the factory
 export interface EmailFactoryConfig {

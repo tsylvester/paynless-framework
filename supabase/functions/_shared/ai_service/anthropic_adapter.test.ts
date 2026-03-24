@@ -1,5 +1,5 @@
 // supabase/functions/_shared/ai_service/anthropic_adapter.test.ts
-import { assertEquals, assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertExists, assert, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { APIPromise } from 'npm:@anthropic-ai/sdk@0.71.2/core/api-promise';
@@ -7,7 +7,7 @@ import type { Message, MessageParam, TextBlock } from 'npm:@anthropic-ai/sdk/res
 
 import { AnthropicAdapter } from './anthropic_adapter.ts';
 import { testAdapterContract, type MockApi } from './adapter_test_contract.ts';
-import type { AdapterResponsePayload, ChatApiRequest, ProviderModelInfo, AiModelExtendedConfig } from "../types.ts";
+import type { AdapterResponsePayload, ChatApiRequest, ProviderModelInfo, AiModelExtendedConfig, OutboundDocument, ResourceDocument } from "../types.ts";
 import { MockLogger } from "../logger.mock.ts";
 import { Tables } from "../../types_db.ts";
 import { isJson } from "../utils/type_guards.ts";
@@ -38,6 +38,7 @@ const MOCK_PROVIDER: Tables<'ai_providers'> = {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     config: MOCK_MODEL_CONFIG,
+    is_default_generation: false,
 };
 
 const MOCK_ANTHROPIC_SUCCESS_RESPONSE: Message = {
@@ -230,6 +231,7 @@ Deno.test("AnthropicAdapter - Specific Tests: does NOT inject 4096 default when 
                 tokenization_strategy: MOCK_MODEL_CONFIG.tokenization_strategy,
                 hard_cap_output_tokens: 250,
             },
+            is_default_generation: false,
         };
         const adapter = new AnthropicAdapter(PROVIDER_WITH_HARD_CAP, 'sk-ant-test-key', mockLogger);
         const request: ChatApiRequest = {
@@ -263,8 +265,8 @@ Deno.test("AnthropicAdapter - resourceDocuments: when present appear as type doc
             promptId: '__none__',
             max_tokens_to_generate: 200,
             resourceDocuments: [
-                { id: 'd1', content: 'Doc A content', document_key: 'business_case', stage_slug: 'thesis' },
-                { id: 'd2', content: 'Doc B content', document_key: 'feature_spec', stage_slug: 'thesis' },
+                { id: 'd1', content: 'Doc A content', document_key: 'business_case', stage_slug: 'thesis', type: 'text/plain' },
+                { id: 'd2', content: 'Doc B content', document_key: 'feature_spec', stage_slug: 'thesis', type: 'text/plain' },
             ],
         };
 
@@ -330,7 +332,7 @@ Deno.test("AnthropicAdapter - resourceDocuments: document blocks prepended befor
             providerId: 'test-provider',
             promptId: '__none__',
             max_tokens_to_generate: 200,
-            resourceDocuments: [{ content: 'Doc content', document_key: 'key', stage_slug: 'thesis' }],
+            resourceDocuments: [{ id: 'd1', content: 'Doc content', document_key: 'key', stage_slug: 'thesis', type: 'text/plain' }],
         };
 
         await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
@@ -344,6 +346,122 @@ Deno.test("AnthropicAdapter - resourceDocuments: document blocks prepended befor
         assert(documentIndex >= 0, 'Must have document block');
         assert(textIndex >= 0, 'Must have text block');
         assert(documentIndex < textIndex, 'Document blocks must be prepended before text content');
+    } finally {
+        messagesCreateStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - resourceDocuments: OutboundDocument uses id for title and omits context", async () => {
+    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
+        const outboundDoc: OutboundDocument = { id: 'd1', content: 'Doc content' };
+        const request: ChatApiRequest = {
+            message: 'User prompt',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            max_tokens_to_generate: 200,
+            resourceDocuments: [outboundDoc],
+        };
+
+        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+
+        assertEquals(messagesCreateStub.calls.length, 1);
+        const callArgs = messagesCreateStub.calls[0].args[0];
+        const firstMessage = callArgs.messages[0];
+        assert(Array.isArray(firstMessage.content), 'First message content must be array');
+        const content = firstMessage.content;
+        const docBlock = content.find((c) => c.type === 'document');
+        assert(docBlock, 'Must have a document block for OutboundDocument');
+        assertEquals(docBlock.title, 'd1', 'OutboundDocument title must be doc.id');
+        assertEquals(docBlock.context, undefined, 'OutboundDocument must not have a context field');
+    } finally {
+        messagesCreateStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - resourceDocuments: throws when ResourceDocument has empty document_key", async () => {
+    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
+        const corruptDoc: ResourceDocument = {
+            id: 'd1',
+            content: 'Doc content',
+            document_key: '',
+            stage_slug: 'thesis',
+            type: 'text/plain',
+        };
+        const request: ChatApiRequest = {
+            message: 'User prompt',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            max_tokens_to_generate: 200,
+            resourceDocuments: [corruptDoc],
+        };
+
+        await assertRejects(
+            () => adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier),
+            Error,
+            'Invalid resource document',
+        );
+    } finally {
+        messagesCreateStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - resourceDocuments: throws when ResourceDocument has empty stage_slug", async () => {
+    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
+        const corruptDoc: ResourceDocument = {
+            id: 'd1',
+            content: 'Doc content',
+            document_key: 'business_case',
+            stage_slug: '',
+            type: 'text/plain',
+        };
+        const request: ChatApiRequest = {
+            message: 'User prompt',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            max_tokens_to_generate: 200,
+            resourceDocuments: [corruptDoc],
+        };
+
+        await assertRejects(
+            () => adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier),
+            Error,
+            'Invalid resource document',
+        );
+    } finally {
+        messagesCreateStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - resourceDocuments: undefined resourceDocuments does not add document blocks", async () => {
+    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
+        const request: ChatApiRequest = {
+            message: 'User prompt',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            max_tokens_to_generate: 200,
+        };
+
+        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+
+        assertEquals(messagesCreateStub.calls.length, 1);
+        const callArgs = messagesCreateStub.calls[0].args[0];
+        const firstMessage = callArgs.messages[0];
+        assert(Array.isArray(firstMessage.content), 'First message content must be array');
+        const content = firstMessage.content;
+        const documentBlocks = content.filter((c) => c.type === 'document');
+        assertEquals(documentBlocks.length, 0, 'Must not add document blocks when resourceDocuments is undefined');
     } finally {
         messagesCreateStub.restore();
     }

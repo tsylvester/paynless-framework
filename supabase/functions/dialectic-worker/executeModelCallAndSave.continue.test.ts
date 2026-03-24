@@ -16,15 +16,16 @@ import {
 } from '../_shared/utils/type_guards.ts';
 import { isModelContributionContext } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
-import { 
-    DialecticJobRow, 
-    UnifiedAIResponse, 
-    ExecuteModelCallAndSaveParams, 
+import {
+    DialecticJobRow,
+    UnifiedAIResponse,
+    ExecuteModelCallAndSaveParams,
     DialecticJobPayload,
     DialecticExecuteJobPayload,
     DialecticContributionRow,
     ContributionType,
     DocumentRelationships,
+    ContextForDocument,
 } from '../dialectic-service/dialectic.interface.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { 
@@ -1415,18 +1416,21 @@ Deno.test('executeModelCallAndSave - comprehensive retry triggers', async (t) =>
       name: string;
       response: Partial<UnifiedAIResponse>;
       shouldRetry: boolean;
+      expectedUploadCalls: number;
     };
 
     const testCases: RetryTestCase[] = [
       {
-        name: 'should trigger retry on malformed JSON response',
+        name: 'incomplete JSON may be repaired by the sanitizer (no parse retry)',
         response: { content: '{"bad json:', finish_reason: 'stop' },
-        shouldRetry: true,
+        shouldRetry: false,
+        expectedUploadCalls: 1,
       },
       { 
         name: 'should trigger retry when finish_reason is "error"', 
         response: { finish_reason: 'error' }, 
-        shouldRetry: true 
+        shouldRetry: true,
+        expectedUploadCalls: 0,
       },
     ];
   
@@ -1461,14 +1465,318 @@ Deno.test('executeModelCallAndSave - comprehensive retry triggers', async (t) =>
         await executeModelCallAndSave(params);
   
         // Assert
-        const expectedCalls = tc.shouldRetry ? 1 : 0;
-        assertEquals(retryJobSpy.calls.length, expectedCalls, `retryJob should be called ${expectedCalls} time(s)`);
-        assertEquals(continueJobSpy.calls.length, 0, 'continueJob should never be called for a retryable error');
-        assertEquals(fileManager.uploadAndRegisterFile.calls.length, 0, 'uploadAndRegisterFile should not be called for a retryable error');
+        const expectedRetryCalls = tc.shouldRetry ? 1 : 0;
+        assertEquals(retryJobSpy.calls.length, expectedRetryCalls, `retryJob should be called ${expectedRetryCalls} time(s)`);
+        assertEquals(continueJobSpy.calls.length, 0, 'continueJob should never be called on these paths');
+        assertEquals(
+          fileManager.uploadAndRegisterFile.calls.length,
+          tc.expectedUploadCalls,
+          tc.shouldRetry
+            ? 'uploadAndRegisterFile should not be called when retrying for provider error'
+            : 'uploadAndRegisterFile should run when sanitization yields parseable JSON',
+        );
 
         clearAllStubs?.();
       });
     }
   });
 
+Deno.test('executeModelCallAndSave - Fix 3.4: structurally-fixed trigger for continuation', async (t) => {
+    // Truncated JSON that triggers wasStructurallyFixed = true in sanitizer:
+    // starts with '{' but missing closing '}', sanitizer appends '}'
+    const structurallyTruncatedContent = '{"executive_summary": "partial content"';
 
+    await t.step('Fix 3.4.i: when wasStructurallyFixed === true and continueUntilComplete === true, shouldContinue is set to true', async () => {
+        const { client: dbClient, clearAllStubs } = setupMockClient({
+            'ai_providers': { select: { data: [mockFullProviderData], error: null } }
+        });
+
+        const deps: IExecuteJobContext = getMockDeps();
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+        const continueJobSpy = spy(deps, 'continueJob');
+
+        stub(
+            deps,
+            'callUnifiedAIModel',
+            async (): Promise<UnifiedAIResponse> =>
+                createMockUnifiedAIResponse({
+                    content: structurallyTruncatedContent,
+                    finish_reason: 'stop',
+                }),
+        );
+
+        const payload: DialecticExecuteJobPayload = {
+            ...testPayload,
+            continueUntilComplete: true,
+        };
+        const job = createMockJob(payload);
+        const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+        await executeModelCallAndSave(params);
+
+        assertEquals(continueJobSpy.calls.length, 1,
+            'continueJob should be called when wasStructurallyFixed is true and continueUntilComplete is true');
+
+        clearAllStubs?.();
+    });
+
+    await t.step('Fix 3.4.ii: when wasStructurallyFixed === true but continueUntilComplete === false, shouldContinue is NOT overridden', async () => {
+        const { client: dbClient, clearAllStubs } = setupMockClient({
+            'ai_providers': { select: { data: [mockFullProviderData], error: null } }
+        });
+
+        const deps: IExecuteJobContext = getMockDeps();
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+        const continueJobSpy = spy(deps, 'continueJob');
+
+        stub(
+            deps,
+            'callUnifiedAIModel',
+            async (): Promise<UnifiedAIResponse> =>
+                createMockUnifiedAIResponse({
+                    content: structurallyTruncatedContent,
+                    finish_reason: 'stop',
+                }),
+        );
+
+        const payload: DialecticExecuteJobPayload = {
+            ...testPayload,
+            continueUntilComplete: false,
+        };
+        const job = createMockJob(payload);
+        const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+        await executeModelCallAndSave(params);
+
+        assertEquals(continueJobSpy.calls.length, 0,
+            'continueJob should NOT be called when continueUntilComplete is false, even with structural fix');
+
+        clearAllStubs?.();
+    });
+
+    await t.step('Fix 3.4.iii: when wasStructurallyFixed === false and continueUntilComplete === true, shouldContinue is not changed by structural fix check', async () => {
+        const { client: dbClient, clearAllStubs } = setupMockClient({
+            'ai_providers': { select: { data: [mockFullProviderData], error: null } }
+        });
+
+        const deps: IExecuteJobContext = getMockDeps();
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+        const continueJobSpy = spy(deps, 'continueJob');
+
+        // Valid JSON that does NOT trigger structural fix
+        stub(
+            deps,
+            'callUnifiedAIModel',
+            async (): Promise<UnifiedAIResponse> =>
+                createMockUnifiedAIResponse({
+                    content: '{"result": "complete content"}',
+                    finish_reason: 'stop',
+                }),
+        );
+
+        const payload: DialecticExecuteJobPayload = {
+            ...testPayload,
+            continueUntilComplete: true,
+        };
+        const job = createMockJob(payload);
+        const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+        await executeModelCallAndSave(params);
+
+        assertEquals(continueJobSpy.calls.length, 0,
+            'continueJob should NOT be called when wasStructurallyFixed is false — only existing continuation logic applies');
+
+        clearAllStubs?.();
+    });
+});
+
+Deno.test('executeModelCallAndSave - Fix 3.5: missing-keys trigger for continuation', async (t) => {
+    const expectedSchema: ContextForDocument = {
+        document_key: FileType.business_case,
+        content_to_include: {
+            executive_summary: '',
+            market_analysis: '',
+            financial_projections: '',
+        },
+    };
+
+    await t.step('Fix 3.5.i: when finish_reason is stop, no content flags, but parsed object is missing keys from context_for_documents, shouldContinue is true', async () => {
+        const { client: dbClient, clearAllStubs } = setupMockClient({
+            'ai_providers': { select: { data: [mockFullProviderData], error: null } }
+        });
+
+        const deps: IExecuteJobContext = getMockDeps();
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+        const continueJobSpy = spy(deps, 'continueJob');
+
+        // Response has executive_summary but is missing market_analysis and financial_projections
+        stub(
+            deps,
+            'callUnifiedAIModel',
+            async (): Promise<UnifiedAIResponse> =>
+                createMockUnifiedAIResponse({
+                    content: '{"executive_summary": "We have a great product"}',
+                    finish_reason: 'stop',
+                }),
+        );
+
+        const payload: DialecticExecuteJobPayload = {
+            ...testPayload,
+            output_type: FileType.business_case,
+            document_key: FileType.business_case,
+            continueUntilComplete: true,
+            context_for_documents: [expectedSchema],
+            document_relationships: {
+                source_group: '550e8400-e29b-41d4-a716-446655440000',
+            },
+        };
+        const job = createMockJob(payload);
+        const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+        await executeModelCallAndSave(params);
+
+        assertEquals(continueJobSpy.calls.length, 1,
+            'continueJob should be called when parsed content is missing keys defined in context_for_documents');
+
+        clearAllStubs?.();
+    });
+
+    await t.step('Fix 3.5.ii: when finish_reason is stop, no content flags, and parsed object has all keys from context_for_documents, shouldContinue remains false', async () => {
+        const { client: dbClient, clearAllStubs } = setupMockClient({
+            'ai_providers': { select: { data: [mockFullProviderData], error: null } }
+        });
+
+        const deps: IExecuteJobContext = getMockDeps();
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+        const continueJobSpy = spy(deps, 'continueJob');
+
+        // Response has ALL expected keys
+        stub(
+            deps,
+            'callUnifiedAIModel',
+            async (): Promise<UnifiedAIResponse> =>
+                createMockUnifiedAIResponse({
+                    content: '{"executive_summary": "Great product", "market_analysis": "Growing market", "financial_projections": "Profitable in Y2"}',
+                    finish_reason: 'stop',
+                }),
+        );
+
+        const payload: DialecticExecuteJobPayload = {
+            ...testPayload,
+            output_type: FileType.business_case,
+            document_key: FileType.business_case,
+            continueUntilComplete: true,
+            context_for_documents: [expectedSchema],
+            document_relationships: {
+                source_group: '550e8400-e29b-41d4-a716-446655440000',
+            },
+        };
+        const job = createMockJob(payload);
+        const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+        await executeModelCallAndSave(params);
+
+        assertEquals(continueJobSpy.calls.length, 0,
+            'continueJob should NOT be called when all expected keys are present — normal completion');
+
+        clearAllStubs?.();
+    });
+
+    await t.step('Fix 3.5.iii: when context_for_documents is not present in job payload, missing-key check is skipped', async () => {
+        const { client: dbClient, clearAllStubs } = setupMockClient({
+            'ai_providers': { select: { data: [mockFullProviderData], error: null } }
+        });
+
+        const deps: IExecuteJobContext = getMockDeps();
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+        const continueJobSpy = spy(deps, 'continueJob');
+
+        // Response is missing keys, but no context_for_documents to compare against
+        stub(
+            deps,
+            'callUnifiedAIModel',
+            async (): Promise<UnifiedAIResponse> =>
+                createMockUnifiedAIResponse({
+                    content: '{"executive_summary": "Great product"}',
+                    finish_reason: 'stop',
+                }),
+        );
+
+        const payload: DialecticExecuteJobPayload = {
+            ...testPayload,
+            continueUntilComplete: true,
+            // context_for_documents intentionally omitted
+        };
+        const job = createMockJob(payload);
+        const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+        await executeModelCallAndSave(params);
+
+        assertEquals(continueJobSpy.calls.length, 0,
+            'continueJob should NOT be called when context_for_documents is absent — missing-key check skipped');
+
+        clearAllStubs?.();
+    });
+
+    await t.step('Fix 3.5.iv: when finish_reason is stop and content-level flags ARE present, shouldContinue is already true from flag check', async () => {
+        const { client: dbClient, clearAllStubs } = setupMockClient({
+            'ai_providers': { select: { data: [mockFullProviderData], error: null } }
+        });
+
+        const deps: IExecuteJobContext = getMockDeps();
+        assert(deps.fileManager instanceof MockFileManagerService, 'Expected deps.fileManager to be a MockFileManagerService');
+        const fileManager: MockFileManagerService = deps.fileManager;
+        fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+        const continueJobSpy = spy(deps, 'continueJob');
+
+        // Content has continuation_needed: true AND is missing keys — continuation already triggered by flag
+        stub(
+            deps,
+            'callUnifiedAIModel',
+            async (): Promise<UnifiedAIResponse> =>
+                createMockUnifiedAIResponse({
+                    content: '{"continuation_needed": true, "executive_summary": "Partial"}',
+                    finish_reason: 'stop',
+                }),
+        );
+
+        const payload: DialecticExecuteJobPayload = {
+            ...testPayload,
+            output_type: FileType.business_case,
+            document_key: FileType.business_case,
+            continueUntilComplete: true,
+            context_for_documents: [expectedSchema],
+            document_relationships: {
+                source_group: '550e8400-e29b-41d4-a716-446655440000',
+            },
+        };
+        const job = createMockJob(payload);
+        const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { job });
+
+        await executeModelCallAndSave(params);
+
+        assertEquals(continueJobSpy.calls.length, 1,
+            'continueJob should be called — content-level flag already triggers continuation regardless of missing-key check');
+
+        clearAllStubs?.();
+    });
+});

@@ -50,6 +50,7 @@ Deno.test("AI Adapter Factory - getAiProviderAdapter", () => {
             id: crypto.randomUUID(),
             is_active: true,
             is_default_embedding: false,
+            is_default_generation: false,
             is_enabled: true,
             provider: 'test-provider',
             updated_at: new Date().toISOString(),
@@ -73,6 +74,7 @@ Deno.test("AI Adapter Factory - getAiProviderAdapter", () => {
         id: crypto.randomUUID(),
         is_active: true,
         is_default_embedding: false,
+        is_default_generation: false,
         is_enabled: true,
         provider: 'test-provider',
         updated_at: new Date().toISOString(),
@@ -94,6 +96,7 @@ Deno.test("AI Adapter Factory - getAiProviderAdapter", () => {
         id: crypto.randomUUID(),
         is_active: true,
         is_default_embedding: false,
+        is_default_generation: false,
         is_enabled: true,
         provider: 'test-provider',
         updated_at: new Date().toISOString(),
@@ -144,6 +147,7 @@ Deno.test("should pass the full provider DB config to the adapter, including the
             id: MOCK_PROVIDER_ID,
             is_active: true,
             is_default_embedding: false,
+            is_default_generation: false,
             is_enabled: true,
             provider: 'test-provider',
             updated_at: new Date().toISOString(),
@@ -192,6 +196,7 @@ Deno.test("DI Proof: should return DummyAdapter for a real provider when injecte
             id: crypto.randomUUID(),
             is_active: true,
             is_default_embedding: false,
+            is_default_generation: false,
             is_enabled: true,
             provider: 'test-provider',
             updated_at: new Date().toISOString(),
@@ -231,6 +236,7 @@ Deno.test("DI Proof: should return real adapter when using the default map", () 
             id: crypto.randomUUID(),
             is_active: true,
             is_default_embedding: false,
+            is_default_generation: false,
             is_enabled: true,
             provider: 'test-provider',
             updated_at: new Date().toISOString(),
@@ -280,7 +286,8 @@ Deno.test("Test mode: factory routes to DummyAdapter and passes model config unc
         updated_at: new Date().toISOString(),
         is_default_embedding: false,
         is_enabled: true,
-      } as Tables<'ai_providers'>,
+        is_default_generation: false,
+      },
       apiKey: 'sk-test',
       logger: mockLogger,
       // providerMap intentionally omitted to exercise env-driven test map
@@ -304,11 +311,11 @@ Deno.test("Test mode: factory routes to DummyAdapter and passes model config unc
       // Ignore; structural typing in Deno tests can complicate instanceof with different modules
     }
 
-    const models = await (adapter as InstanceType<typeof DummyAdapter>).listModels();
+    const models = await adapter.listModels();
     if (!Array.isArray(models) || models.length !== 1) throw new Error('listModels should return one model');
-    const cfgCandidate = (models[0] as ProviderModelInfo).config;
+    const cfgCandidate = models[0].config;
     if (!cfgCandidate || typeof cfgCandidate !== 'object') throw new Error('config should be present on ProviderModelInfo');
-    const cfg = cfgCandidate as AiModelExtendedConfig;
+    const cfg = cfgCandidate;
     if (cfg.api_identifier !== mockConfig.api_identifier) throw new Error('api_identifier should be preserved');
     if (cfg.context_window_tokens !== mockConfig.context_window_tokens) throw new Error('context_window_tokens should be preserved');
     if (cfg.provider_max_input_tokens !== mockConfig.provider_max_input_tokens) throw new Error('provider_max_input_tokens should be preserved');

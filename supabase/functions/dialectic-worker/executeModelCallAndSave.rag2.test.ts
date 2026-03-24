@@ -8,6 +8,7 @@ import {
   import {
     isRecord,
 } from '../_shared/utils/type_guards.ts';
+  import { isChatApiRequest, isResourceDocument } from '../_shared/utils/type-guards/type_guards.chat.ts';
   import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
   import { 
     ExecuteModelCallAndSaveParams, 
@@ -20,6 +21,7 @@ import {
   ICompressionStrategy, 
   getSortedCompressionCandidates 
 } from '../_shared/utils/vector_utils.ts';
+import { ResourceDocument } from '../_shared/types.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
 import { IRagService } from '../_shared/services/rag_service.interface.ts';
@@ -336,7 +338,7 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
   });
 
   // Use the real matrix strategy to order candidates; ties will be broken by inputsRelevance
-  const compressionStrategy = getSortedCompressionCandidates;
+  const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
 
   // Two docs with identical similarity; weights decide ordering
   const docHi = {
@@ -421,18 +423,29 @@ Deno.test('compression ordering and identity: removes lowest blended-score first
   // Assert final ChatApiRequest.resourceDocuments order preserved (doc-high then doc-low)
   assertEquals(modelSpy.calls.length, 1, 'Model should be called exactly once');
   const sent = modelSpy.calls[0].args[0];
-  if (!isRecord(sent)) throw new Error('ChatApiRequest missing');
-  const docsUnknown = sent['resourceDocuments'];
-  const docs = Array.isArray(docsUnknown) ? docsUnknown : [];
-  assertEquals(docs.length, 2, 'Two resource documents expected');
-  // Order preserved
-  assert(isRecord(docs[0]) && docs[0]['id'] === 'doc-high', 'First resource doc should remain doc-high');
-  assert(isRecord(docs[1]) && docs[1]['id'] === 'doc-low', 'Second resource doc should remain doc-low');
-  // Content replaced by summaries for compressed victims
-  const firstContent = isRecord(docs[0]) ? docs[0]['content'] : undefined;
-  assert(typeof firstContent === 'string' && firstContent.startsWith('summary:'), 'Compressed document content should be replaced by summary');
+  assert(isChatApiRequest(sent), 'Adapter should receive a ChatApiRequest');
+  const docsUnknown = sent.resourceDocuments;
+  assert(docsUnknown !== undefined, 'resourceDocuments must be present');
+  assertEquals(docsUnknown.length, 2, 'Two resource documents expected');
+  const firstEl = docsUnknown[0];
+  const secondEl = docsUnknown[1];
+  assert(firstEl !== undefined && secondEl !== undefined);
+  if(!isResourceDocument(firstEl) || !isResourceDocument(secondEl)) {
+    throw new Error('Resource documents must be valid ResourceDocuments');
+  }
+  const first = firstEl;
+  const second: ResourceDocument = secondEl;
+  assertEquals(first.id, 'doc-high');
+  assertEquals(second.id, 'doc-low');
+  assertEquals(first.document_key, FileType.product_requirements);
+  assertEquals(first.stage_slug, 'stage-a');
+  assertEquals(first.type, 'document');
+  assertEquals(second.document_key, FileType.business_case);
+  assertEquals(second.stage_slug, 'stage-a');
+  assertEquals(second.type, 'document');
+  assert(first.content.startsWith('summary:'), 'Compressed document content should be replaced by summary');
 
-  // Identity is preserved within compression candidates; ChatApiRequest.resourceDocuments are id/content only
+  // resourceDocuments are ResourceDocuments[number]; identity fields must be present on the ChatApiRequest.
 });
 
 Deno.test('inputsRelevance effects: higher relevance ranks later; stage_slug-specific rule takes precedence; missing identity disables weighting', async () => {

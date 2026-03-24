@@ -37,6 +37,8 @@ import { FileType, ModelContributionUploadContext } from '../_shared/types/file_
 import { createJobContext, createExecuteJobContext } from './createJobContext.ts';
 import { IJobContext, IExecuteJobContext, JobContextParams } from './JobContext.interface.ts';
 import { createMockJobContextParams } from './JobContext.mock.ts';
+import { AssembledPrompt, AssemblePromptOptions } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
+import { Messages } from '../_shared/types.ts';
 // Helper: wrap a PromptAssembler to forbid direct calls to legacy methods
 function wrapAssemblerForbidLegacy<T extends object>(assembler: T): T {
   const forbidden = new Set(['gatherContext', 'render', 'gatherInputsForStage', 'gatherContinuationInputs']);
@@ -105,6 +107,7 @@ const mockSessionData: DialecticSession = {
   current_stage_id: 'stage-1',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
+  viewing_stage_id: null,
 };
 
 const mockProviderData: SelectedAiProvider = {
@@ -1547,4 +1550,160 @@ Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_r
   assert(isRecord(req1) && req1.document_key === 'header_context');
 
   clearAllStubs?.();
+});
+
+// --- Continuation message routing tests (Node 7) ---
+
+const MOCK_CONTINUATION_ASSEMBLED: AssembledPrompt = {
+    promptContent: 'fallback prompt content for non-message path',
+    source_prompt_resource_id: 'mock-continuation-resource-id',
+    messages: [
+        { role: 'user', content: 'seed prompt content' } as Messages,
+        { role: 'assistant', content: 'assembled assistant content' } as Messages,
+        { role: 'user', content: 'continuation instruction' } as Messages,
+    ],
+};
+
+Deno.test('processSimpleJob - continuation message routing', async (t) => {
+
+    await t.step('when assembled.messages is present with 3 messages, conversationHistory contains first two and currentUserPrompt is the third message content', async () => {
+        const { client: dbClient, clearAllStubs } = setupMockClient();
+        const { promptAssembler, rootCtx } = getMockDeps();
+
+        promptAssembler.assemble = spy(
+            async (_options: AssemblePromptOptions): Promise<AssembledPrompt> => {
+                return MOCK_CONTINUATION_ASSEMBLED;
+            },
+        );
+
+        const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+
+        await processSimpleJob(
+            dbClient as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: mockPayload },
+            'user-789',
+            rootCtx,
+            'auth-token',
+        );
+
+        assertEquals(executeSpy.calls.length, 1, 'Expected executeModelCallAndSave to be called once');
+        const [executorParams] = executeSpy.calls[0].args;
+        const payload = executorParams.promptConstructionPayload;
+
+        assertEquals(payload.conversationHistory.length, 2, 'conversationHistory should contain the first two messages');
+        assertEquals(payload.conversationHistory[0].role, 'user');
+        assertEquals(payload.conversationHistory[0].content, 'seed prompt content');
+        assertEquals(payload.conversationHistory[1].role, 'assistant');
+        assertEquals(payload.conversationHistory[1].content, 'assembled assistant content');
+        assertEquals(payload.currentUserPrompt, 'continuation instruction');
+
+        clearAllStubs?.();
+    });
+
+    await t.step('when assembled.messages is absent, conversationHistory is empty and currentUserPrompt is assembled.promptContent — existing behavior unchanged', async () => {
+        const { client: dbClient, clearAllStubs } = setupMockClient();
+        const { rootCtx } = getMockDeps();
+        // Default mock returns MOCK_ASSEMBLED_PROMPT which has no messages field
+
+        const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+
+        await processSimpleJob(
+            dbClient as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: mockPayload },
+            'user-789',
+            rootCtx,
+            'auth-token',
+        );
+
+        assertEquals(executeSpy.calls.length, 1, 'Expected executeModelCallAndSave to be called once');
+        const [executorParams] = executeSpy.calls[0].args;
+        const payload = executorParams.promptConstructionPayload;
+
+        assertEquals(payload.conversationHistory.length, 0, 'conversationHistory should be empty when messages is absent');
+        assertEquals(payload.currentUserPrompt, MOCK_ASSEMBLED_PROMPT.promptContent);
+
+        clearAllStubs?.();
+    });
+
+    await t.step('when assembled.messages is present, source_prompt_resource_id is still populated from assembled — no regression', async () => {
+        const { client: dbClient, clearAllStubs } = setupMockClient();
+        const { promptAssembler, rootCtx } = getMockDeps();
+
+        promptAssembler.assemble = spy(
+            async (_options: AssemblePromptOptions): Promise<AssembledPrompt> => {
+                return MOCK_CONTINUATION_ASSEMBLED;
+            },
+        );
+
+        const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+
+        await processSimpleJob(
+            dbClient as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: mockPayload },
+            'user-789',
+            rootCtx,
+            'auth-token',
+        );
+
+        assertEquals(executeSpy.calls.length, 1);
+        const [executorParams] = executeSpy.calls[0].args;
+
+        assertEquals(
+            executorParams.promptConstructionPayload.source_prompt_resource_id,
+            MOCK_CONTINUATION_ASSEMBLED.source_prompt_resource_id,
+            'source_prompt_resource_id must come from assembled regardless of message routing path',
+        );
+
+        clearAllStubs?.();
+    });
+
+    await t.step('executeModelCallAndSave receives correctly routed promptConstructionPayload in both continuation and non-continuation paths', async () => {
+        // --- Continuation path ---
+        const { client: dbClient1, clearAllStubs: clear1 } = setupMockClient();
+        const { promptAssembler: pa1, rootCtx: ctx1 } = getMockDeps();
+
+        pa1.assemble = spy(
+            async (_options: AssemblePromptOptions): Promise<AssembledPrompt> => {
+                return MOCK_CONTINUATION_ASSEMBLED;
+            },
+        );
+
+        const executeSpy1 = spy(ctx1, 'executeModelCallAndSave');
+
+        await processSimpleJob(
+            dbClient1 as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: mockPayload },
+            'user-789',
+            ctx1,
+            'auth-token',
+        );
+
+        const continuationPayload = executeSpy1.calls[0].args[0].promptConstructionPayload;
+        assertEquals(continuationPayload.conversationHistory.length, 2, 'Continuation path: conversationHistory should have 2 entries');
+        assertEquals(continuationPayload.currentUserPrompt, 'continuation instruction', 'Continuation path: currentUserPrompt should be third message content');
+        assertEquals(continuationPayload.source_prompt_resource_id, MOCK_CONTINUATION_ASSEMBLED.source_prompt_resource_id);
+
+        clear1?.();
+
+        // --- Non-continuation path ---
+        const { client: dbClient2, clearAllStubs: clear2 } = setupMockClient();
+        const { rootCtx: ctx2 } = getMockDeps();
+
+        const executeSpy2 = spy(ctx2, 'executeModelCallAndSave');
+
+        await processSimpleJob(
+            dbClient2 as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: mockPayload },
+            'user-789',
+            ctx2,
+            'auth-token',
+        );
+
+        const nonContinuationPayload = executeSpy2.calls[0].args[0].promptConstructionPayload;
+        assertEquals(nonContinuationPayload.conversationHistory.length, 0, 'Non-continuation path: conversationHistory should be empty');
+        assertEquals(nonContinuationPayload.currentUserPrompt, MOCK_ASSEMBLED_PROMPT.promptContent, 'Non-continuation path: currentUserPrompt should be assembled.promptContent');
+        assertEquals(nonContinuationPayload.source_prompt_resource_id, MOCK_ASSEMBLED_PROMPT.source_prompt_resource_id);
+
+        clear2?.();
+    });
 });

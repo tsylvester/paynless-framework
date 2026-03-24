@@ -6,9 +6,9 @@ import {
   assert,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { cosineSimilarity, scoreResourceDocuments, scoreHistory, getSortedCompressionCandidates } from "./vector_utils.ts";
-import type { SourceDocument, ExecuteModelCallAndSaveParams } from "../../dialectic-service/dialectic.interface.ts";
+import type { SourceDocument, ExecuteModelCallAndSaveParams} from "../../dialectic-service/dialectic.interface.ts";
 import type { IEmbeddingClient } from "../services/indexing_service.interface.ts";
-import type { EmbeddingResponse, Messages } from '../types.ts';
+import type { EmbeddingResponse, Messages, ResourceDocument, ResourceDocuments } from '../types.ts';
 import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { type Database } from "../../types_db.ts";
@@ -175,6 +175,7 @@ notificationService: {
   sendContributionGenerationContinuedEvent: () => Promise.resolve(),
   sendContributionFailedNotification: () => Promise.resolve(),
   sendContributionGenerationFailedEvent: () => Promise.resolve(),
+  sendContributionGenerationPausedNsfEvent: () => Promise.resolve(),
 },
 downloadFromStorage: () => Promise.resolve({
   data: new ArrayBuffer(0),
@@ -252,9 +253,9 @@ Deno.test("scoreResourceDocuments", async (t) => {
     });
 
     await t.step("should score documents based on cosine similarity", async () => {
-        const documents = [
-            mockSourceDocument({ id: 'doc-high', content: 'high relevance' }),
-            mockSourceDocument({ id: 'doc-low', content: 'low relevance' }),
+        const documents: ResourceDocuments = [
+            { id: 'doc-high', content: 'high relevance', document_key: 'business_case', stage_slug: 'thesis', type: 'document' },
+            { id: 'doc-low', content: 'low relevance', document_key: 'feature_spec', stage_slug: 'thesis', type: 'document' },
         ];
         const result = await scoreResourceDocuments(deps, documents, currentUserPrompt);
         
@@ -307,9 +308,9 @@ Deno.test("scoreHistory", async (t) => {
 
 Deno.test("getSortedCompressionCandidates", async (t) => {
    
-    const resourceDocuments = [
-        mockSourceDocument({ id: 'doc-high', content: 'high relevance' }), // High score
-        mockSourceDocument({ id: 'doc-low', content: 'low relevance' }),   // Low score
+    const resourceDocuments: ResourceDocuments = [
+        { id: 'doc-high', content: 'high relevance', document_key: 'business_case', stage_slug: 'thesis', type: 'document' },
+        { id: 'doc-low', content: 'low relevance', document_key: 'feature_spec', stage_slug: 'thesis', type: 'document' },
     ];
 
     const conversationHistory: Messages[] = [
@@ -358,8 +359,8 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
 
     await t.step("returns indexed document candidates (no exclusion by prior indexing)", async () => {
         // Arrange: single document, history too short to contribute candidates
-        const soloDocuments = [
-            mockSourceDocument({ id: 'doc-indexed', content: 'high relevance' }),
+        const soloDocuments: ResourceDocuments = [
+            { id: 'doc-indexed', content: 'high relevance', document_key: 'business_case', stage_slug: 'thesis', type: 'document' },
         ];
         const shortHistory: Messages[] = [
             { id: 'msg-0', role: 'system', content: 'system prompt' },
@@ -549,9 +550,9 @@ Deno.test("getSortedCompressionCandidates - blended scoring ranks higher-matrix 
   });
 
   // Arrange: two documents with identical similarity to the prompt; relevance rules key by document_key so high-priority doc gets relevance 1, low-priority gets 0
-  const documents: SourceDocument[] = [
-    mockSourceDocument({ id: 'doc-high', content: 'high relevance', document_key: 'business_case', type: 'document' }),
-    mockSourceDocument({ id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', type: 'document' }),
+  const documents: ResourceDocuments = [
+    { id: 'doc-high', content: 'high relevance', document_key: 'business_case', stage_slug: 'thesis', type: 'document' },
+    { id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', stage_slug: 'thesis', type: 'document' },
   ];
 
   const inputsRelevance: RelevanceRule[] = [
@@ -584,9 +585,9 @@ Deno.test("getSortedCompressionCandidates - matrix priority protects high-priori
     },
   });
 
-  const documents: SourceDocument[] = [
-    mockSourceDocument({ id: 'doc-high', content: 'high relevance', document_key: 'business_case', type: 'document' }),
-    mockSourceDocument({ id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', type: 'document' }),
+  const documents: ResourceDocuments = [
+    { id: 'doc-high', content: 'high relevance', document_key: 'business_case', stage_slug: 'thesis', type: 'document' },
+    { id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', stage_slug: 'thesis', type: 'document' },
   ];
 
   const inputsRelevance: RelevanceRule[] = [

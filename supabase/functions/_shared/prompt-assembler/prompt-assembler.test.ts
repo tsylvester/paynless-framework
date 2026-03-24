@@ -45,9 +45,13 @@ import {
   DialecticStageRecipeStep,
   OutputRule,
 } from "../../dialectic-service/dialectic.interface.ts";
-
+import type { GatherContinuationInputsSignature } from "./gatherContinuationInputs.interface.ts";
+import { gatherContinuationInputs } from "./gatherContinuationInputs.ts";
+import { createAssembleChunksMock } from "../utils/assembleChunks/assembleChunks.mock.ts";
 
 // Mock implementations for standalone functions
+const assembleChunksMock = createAssembleChunksMock()
+
 const mockAssembleSeedPrompt = (
   _deps: AssembleSeedPromptDeps,
 ): Promise<AssembledPrompt> =>
@@ -341,7 +345,7 @@ Deno.test("PromptAssembler", async (t) => {
     
     let fileManager: IFileManager | null = null;
     try {
-      fileManager = new FileManagerService(client, { constructStoragePath: () => ({ storagePath: '', fileName: '' }), logger: console });
+      fileManager = new FileManagerService(client, { constructStoragePath: () => ({ storagePath: '', fileName: '' }), logger: console, assembleChunks: assembleChunksMock.assembleChunks });
     } catch (e) {
       // Allow setup to proceed without a file manager if the env var is not set, 
       // so that the constructor test can fail gracefully.
@@ -368,6 +372,7 @@ Deno.test("PromptAssembler", async (t) => {
             new FileManagerService(client, {
               constructStoragePath: () => ({ storagePath: "", fileName: "" }),
               logger: console,
+              assembleChunks: assembleChunksMock.assembleChunks,
             }),
           Error,
           "SB_CONTENT_STORAGE_BUCKET environment variable is not set.",
@@ -518,7 +523,8 @@ Deno.test("PromptAssembler", async (t) => {
           session: mockSession,
           stage: mockStage,
           gatherContext: assembler["gatherContextFn"],
-          gatherContinuationInputs: assembler["gatherContinuationInputsFn"],
+          assembleChunks: assembleChunksMock.assembleChunks,
+          gatherContinuationInputs: gatherContinuationInputs,
           downloadFromStorage: assembler["downloadFromStorageFn"],
         };
 
@@ -746,7 +752,7 @@ Deno.test("PromptAssembler", async (t) => {
 
         assertSpyCalls(continuationSpy, 1);
         const deps: AssembleContinuationPromptDeps = continuationSpy.calls[0].args[0];
-        assertEquals(deps.gatherContinuationInputs, assembler["gatherContinuationInputsFn"]);
+        assertEquals(deps.gatherContinuationInputs, gatherContinuationInputs);
         assertEquals(deps.downloadFromStorage, assembler["downloadFromStorageFn"]);
       } finally {
         teardown();
@@ -1355,6 +1361,187 @@ Deno.test("PromptAssembler", async (t) => {
         assertEquals(gatherContextCalls[0].length, 8);
       } finally {
         uploadStub.restore();
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "assembleContinuationPrompt deps.gatherContinuationInputs is the GatherContinuationInputsSignature passed to the constructor",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        const mockGatherContinuationDi: GatherContinuationInputsSignature = async (
+          _deps,
+          _params,
+          _payload,
+        ) => ({
+          success: true,
+          messages: [{ role: "user", content: "stub" }],
+        });
+        const gatherContinuationSpy = spy(mockGatherContinuationDi);
+        const assembleContinuationSpy = spy(mockAssembleContinuationPrompt);
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          assembleContinuationSpy,
+          undefined,
+          undefined,
+          undefined,
+          gatherContinuationSpy,
+        );
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          job: {
+            ...mockJob,
+            target_contribution_id: "prev-contribution-id",
+          },
+        };
+        await assembler.assemble(options);
+        assertSpyCalls(assembleContinuationSpy, 1);
+        const deps: AssembleContinuationPromptDeps =
+          assembleContinuationSpy.calls[0].args[0];
+        assertEquals(deps.gatherContinuationInputs, gatherContinuationSpy);
+      } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "when no GatherContinuationInputsSignature is injected, deps.gatherContinuationInputs is the gatherContinuationInputs export",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        const assembleContinuationSpy = spy(mockAssembleContinuationPrompt);
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          assembleContinuationSpy,
+        );
+        const options: AssemblePromptOptions = {
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          job: {
+            ...mockJob,
+            target_contribution_id: "prev-contribution-id",
+          },
+        };
+        await assembler.assemble(options);
+        assertSpyCalls(assembleContinuationSpy, 1);
+        const deps: AssembleContinuationPromptDeps =
+          assembleContinuationSpy.calls[0].args[0];
+        assertEquals(deps.gatherContinuationInputs, gatherContinuationInputs);
+      } finally {
+        teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "non-continuation paths do not invoke the injected GatherContinuationInputsSignature",
+    async () => {
+      try {
+        const { client, fileManager } = setup({
+          "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+        });
+        const mockGatherContinuationDi: GatherContinuationInputsSignature = async (
+          _deps,
+          _params,
+          _payload,
+        ) => ({
+          success: true,
+          messages: [{ role: "user", content: "stub" }],
+        });
+        const gatherContinuationSpy = spy(mockGatherContinuationDi);
+        const assembleSeedSpy = spy(mockAssembleSeedPrompt);
+        const assemblePlannerSpy = spy(mockAssemblePlannerPrompt);
+        const assembleTurnSpy = spy(mockAssembleTurnPrompt);
+        const assembler = new PromptAssembler(
+          client,
+          fileManager!,
+          undefined,
+          undefined,
+          assembleSeedSpy,
+          assemblePlannerSpy,
+          assembleTurnSpy,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          gatherContinuationSpy,
+        );
+
+        await assembler.assemble({
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+        });
+        assertSpyCalls(gatherContinuationSpy, 0);
+        assertSpyCalls(assembleSeedSpy, 1);
+
+        await assembler.assemble({
+          project: mockProject,
+          session: mockSession,
+          stage: mockStage,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          job: {
+            ...mockJob,
+            job_type: "PLAN",
+            payload: {
+              job_type: "PLAN",
+              header_context_resource_id: "mock-header-id",
+            },
+          },
+        });
+        assertSpyCalls(gatherContinuationSpy, 0);
+        assertSpyCalls(assemblePlannerSpy, 1);
+
+        await assembler.assemble({
+          project: mockProject,
+          session: mockSession,
+          stage: mockStageForTurn,
+          projectInitialUserPrompt: "init prompt",
+          iterationNumber: 1,
+          job: {
+            ...mockJob,
+            stage_slug: "synthesis",
+            job_type: "EXECUTE",
+            payload: {
+              model_id: "model-1",
+              model_slug: "test-slug",
+              inputs: {},
+              document_key: "synthesis_pairwise_business_case",
+            },
+          },
+        });
+        assertSpyCalls(gatherContinuationSpy, 0);
+        assertSpyCalls(assembleTurnSpy, 1);
+      } finally {
         teardown();
       }
     },

@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Logger } from "../logger.ts";
+import type { ServiceError } from "../types.ts";
 import type { Tables, TablesInsert } from "../../types_db.ts";
 
 export interface GitHubUser {
@@ -98,6 +99,18 @@ export interface GetUserReturn {
   avatar_url: string;
 }
 
+export interface GetUserSuccess {
+  data: GitHubUser;
+  error?: undefined;
+}
+
+export interface GetUserFailure {
+  error: ServiceError;
+  data?: undefined;
+}
+
+export type GetUserResult = GetUserSuccess | GetUserFailure;
+
 export interface ListReposDeps {
   token: string;
 }
@@ -121,6 +134,18 @@ export interface ListReposReturn {
   length: number;
 }
 
+export interface ListReposSuccess {
+  data: GitHubRepo[];
+  error?: undefined;
+}
+
+export interface ListReposFailure {
+  error: ServiceError;
+  data?: undefined;
+}
+
+export type ListReposResult = ListReposSuccess | ListReposFailure;
+
 export interface ListBranchesDeps {
   token: string;
 }
@@ -142,6 +167,18 @@ export interface ListBranchesReturn {
   [index: number]: ListBranchesReturnItem;
   length: number;
 }
+
+export interface ListBranchesSuccess {
+  data: GitHubBranch[];
+  error?: undefined;
+}
+
+export interface ListBranchesFailure {
+  error: ServiceError;
+  data?: undefined;
+}
+
+export type ListBranchesResult = ListBranchesSuccess | ListBranchesFailure;
 
 export interface CreateRepoDeps {
   token: string;
@@ -165,6 +202,18 @@ export interface CreateRepoReturn {
   private: boolean;
   html_url: string;
 }
+
+export interface CreateRepoSuccess {
+  data: GitHubRepo;
+  error?: undefined;
+}
+
+export interface CreateRepoFailure {
+  error: ServiceError;
+  data?: undefined;
+}
+
+export type CreateRepoResult = CreateRepoSuccess | CreateRepoFailure;
 
 export interface PushFilesDeps {
   token: string;
@@ -191,6 +240,18 @@ export interface PushFilesReturn {
   commitSha: string;
   filesUpdated: number;
 }
+
+export interface PushFilesSuccess {
+  data: GitHubPushResult;
+  error?: undefined;
+}
+
+export interface PushFilesFailure {
+  error: ServiceError;
+  data?: undefined;
+}
+
+export type PushFilesResult = PushFilesSuccess | PushFilesFailure;
 
 export interface GenerateInstallationTokenDeps {
   appId: string;
@@ -247,8 +308,22 @@ export interface GetInstallationTokenParams {
 /** Payload for getInstallationToken helper (github-service). */
 export interface GetInstallationTokenPayload {}
 
-/** Return type for getInstallationToken helper (github-service). */
-export type GetInstallationTokenReturn = string | null;
+/** Success branch: token available. */
+export interface GetInstallationTokenSuccess {
+  data: string;
+  error?: undefined;
+}
+
+/** Failure branch: structured error (no connection, suspended, token generation failed). */
+export interface GetInstallationTokenFailure {
+  error: ServiceError;
+  data?: undefined;
+}
+
+/** Return type for getInstallationToken helper (github-service). Discriminated union. */
+export type GetInstallationTokenReturn =
+  | GetInstallationTokenSuccess
+  | GetInstallationTokenFailure;
 
 /** Signature for getInstallationToken helper (github-service). */
 export interface IGetInstallationToken {
@@ -277,6 +352,30 @@ export interface StoreInstallationPayload {
 
 /** Payload for getConnectionStatus action. */
 export interface GetConnectionStatusPayload {}
+
+/** Response when no github_connections row exists. */
+export interface GetConnectionStatusDisconnected {
+  connected: false;
+}
+
+/** Response when a github_connections row exists. */
+export interface GetConnectionStatusConnected {
+  connected: true;
+  username: string;
+  github_user_id: string;
+  suspended: boolean;
+}
+
+/** Response body when getConnectionStatus fails (e.g. select error). */
+export interface GetConnectionStatusError {
+  error: string;
+}
+
+/** Response body for getConnectionStatus action (success or error). */
+export type GetConnectionStatusResponse =
+  | GetConnectionStatusDisconnected
+  | GetConnectionStatusConnected
+  | GetConnectionStatusError;
 
 /** Payload for disconnectGitHub action. */
 export interface DisconnectGitHubPayload {}
@@ -320,15 +419,29 @@ export interface GithubServiceDeps {
 }
 
 export interface IGitHubAdapter {
-  getUser(): Promise<GitHubUser>;
-  listRepos(): Promise<GitHubRepo[]>;
-  listBranches(owner: string, repo: string): Promise<GitHubBranch[]>;
-  createRepo(payload: GitHubCreateRepoPayload): Promise<GitHubRepo>;
+  getUser(
+    deps: GetUserDeps,
+    params: GetUserParams,
+    payload: GetUserPayload
+  ): Promise<GetUserResult>;
+  listRepos(
+    deps: ListReposDeps,
+    params: ListReposParams,
+    payload: ListReposPayload
+  ): Promise<ListReposResult>;
+  listBranches(
+    deps: ListBranchesDeps,
+    params: ListBranchesParams,
+    payload: ListBranchesPayload
+  ): Promise<ListBranchesResult>;
+  createRepo(
+    deps: CreateRepoDeps,
+    params: CreateRepoParams,
+    payload: CreateRepoPayload
+  ): Promise<CreateRepoResult>;
   pushFiles(
-    owner: string,
-    repo: string,
-    branch: string,
-    files: GitHubPushFile[],
-    commitMessage: string
-  ): Promise<GitHubPushResult>;
+    deps: PushFilesDeps,
+    params: PushFilesParams,
+    payload: PushFilesPayload
+  ): Promise<PushFilesResult>;
 }

@@ -7,16 +7,14 @@ import { type EmailMarketingService } from "../types.ts";
 // Define mock Kit config values
 const mockKitApiKey = "fake-key";
 const mockKitBaseUrl = "https://fake-kit.com";
-const mockKitTagId = "fake-tag";
 const mockKitUserIdField = "fields[user_id]";
 const mockKitCreatedAtField = "fields[created_at]";
 
 // Base config for Kit provider for tests
 const baseKitConfig: EmailFactoryConfig = {
-    provider: 'kit', 
+    provider: 'kit',
     kitApiKey: mockKitApiKey,
     kitBaseUrl: mockKitBaseUrl,
-    kitTagId: mockKitTagId,
     kitCustomUserIdField: mockKitUserIdField,
     kitCustomCreatedAtField: mockKitCreatedAtField,
 };
@@ -26,7 +24,6 @@ const validKitConfig: EmailFactoryConfig = {
     provider: "kit",
     kitApiKey: "test-key",
     kitBaseUrl: "https://test.kit.api",
-    kitTagId: "12345",
     kitCustomUserIdField: "cf_user_id",
     kitCustomCreatedAtField: "cf_created_at",
 };
@@ -67,12 +64,6 @@ Deno.test("Email Marketing Service Factory Tests", async (t) => {
 
     await t.step("should return NoOpEmailService when provider is 'kit' but baseUrl is missing", () => {
         const config: EmailFactoryConfig = { ...validKitConfig, kitBaseUrl: undefined };
-        const service: EmailMarketingService = getEmailMarketingService(config);
-        assertInstanceOf(service, NoOpEmailService, "Fallback to NoOpService expected");
-    });
-
-    await t.step("should return NoOpEmailService when provider is 'kit' but tagId is missing", () => {
-        const config: EmailFactoryConfig = { ...validKitConfig, kitTagId: undefined };
         const service: EmailMarketingService = getEmailMarketingService(config);
         assertInstanceOf(service, NoOpEmailService, "Fallback to NoOpService expected");
     });

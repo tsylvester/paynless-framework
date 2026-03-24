@@ -329,6 +329,7 @@ export async function exportProject(
                     created_at: session.created_at,
                     updated_at: session.updated_at,
                     contributions: validContributions,
+                    viewing_stage_id: session.viewing_stage_id,
                 });
             }
         }

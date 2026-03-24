@@ -17,7 +17,7 @@ import { defaultDeps, createChatServiceHandler } from "./index.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database, Json } from "../types_db.ts";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
-import type { MockQueryBuilderState, MockPGRSTError } from "../_shared/supabase.mock.ts";
+import type { MockQueryBuilderState, PostgresError } from "../_shared/supabase.mock.ts";
 import { DEFAULT_INPUT_TOKEN_COST_RATE, DEFAULT_OUTPUT_TOKEN_COST_RATE } from "../_shared/config/token_cost_defaults.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";
 
@@ -126,7 +126,7 @@ export async function runSpecificConfigsTests(
           {
               genericMockResults: {
                   ai_providers: {
-                      select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+                      select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                           const idFilter = state.filters.find(f => f.column === 'id' && f.value === providerIdForTest);
                           if (state.operation === 'select' && idFilter) {
                               return { data: [mockProviderDataForDbQuery], error: null, count: 1, status: 200, statusText: "OK" };
@@ -135,7 +135,7 @@ export async function runSpecificConfigsTests(
                       }
                   },
                   token_wallets: {
-                      select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+                      select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                           const userIdFilter = state.filters.find(f => f.column === 'user_id' && f.value === testUserId);
                           if (state.operation === 'select' && userIdFilter) {
                               return { 
@@ -150,7 +150,7 @@ export async function runSpecificConfigsTests(
                       }
                   },
                   chats: {
-                      insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+                      insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                           console.log(`[Test Specific Config Mock DB] Mocking insert for chats table. Data: ${JSON.stringify(state.insertData)}`);
                           const chatData = state.insertData;
                           let user_id: string = crypto.randomUUID();
@@ -173,7 +173,7 @@ export async function runSpecificConfigsTests(
                       }
                   },
                   chat_messages: {
-                      insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+                      insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                           console.log(`[Test Specific Config Mock DB] Mocking insert for chat_messages table. Data: ${JSON.stringify(state.insertData)}`);
                           const messageData = state.insertData;
                           
@@ -308,7 +308,7 @@ export async function runSpecificConfigsTests(
         {
           genericMockResults: {
             ai_providers: {
-              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                 const idFilter = state.filters.find(f => f.column === 'id' && f.value === providerIdForTest);
                 if (state.operation === 'select' && idFilter) {
                   return { data: [mockProviderDataForDbQuery], error: null, count: 1, status: 200, statusText: "OK" };
@@ -317,7 +317,7 @@ export async function runSpecificConfigsTests(
               }
             },
             token_wallets: {
-              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                 const userIdFilter = state.filters.find(f => f.column === 'user_id' && f.value === testUserId && f.operator === 'eq');
                 if (state.operation === 'select' && userIdFilter) {
                   return {
@@ -329,7 +329,7 @@ export async function runSpecificConfigsTests(
               }
             },
             chats: {
-              insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+              insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                 const chatData = state.insertData;
                 let user_id: string = crypto.randomUUID();
                 let title: string = 'test';
@@ -348,7 +348,7 @@ export async function runSpecificConfigsTests(
               }
             },
             chat_messages: {
-              insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+              insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                 const messageData = state.insertData;
                 const insertedMessages = (Array.isArray(messageData) ? messageData : [messageData]).map(msg => ({
                   id: msg.id || crypto.randomUUID(), chat_id: msg.chat_id, user_id: msg.user_id, role: msg.role, content: msg.content,
@@ -475,7 +475,7 @@ export async function runSpecificConfigsTests(
         {
           genericMockResults: {
             ai_providers: {
-              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                 const idFilter = state.filters.find(f => f.column === 'id' && f.value === providerIdForTest);
                 if (state.operation === 'select' && idFilter) {
                   return { data: [mockProviderDataForDbQuery], error: null, count: 1, status: 200, statusText: "OK" };
@@ -484,7 +484,7 @@ export async function runSpecificConfigsTests(
               }
             },
             token_wallets: {
-              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                 const userIdFilter = state.filters.find(f => f.column === 'user_id' && f.value === testUserId && f.operator === 'eq');
                 if (state.operation === 'select' && userIdFilter) {
                   return { data: [{ wallet_id: crypto.randomUUID(), user_id: testUserId, balance: initialBalance, currency: "AI_TOKEN" }], error: null, count: 1, status: 200, statusText: "OK" };
@@ -493,7 +493,7 @@ export async function runSpecificConfigsTests(
               }
             },
             chats: { // Standard mock for chat creation
-              insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+              insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                 const chatData = state.insertData;
                 let user_id: string = crypto.randomUUID();
                 let title: string = 'test';
@@ -509,7 +509,7 @@ export async function runSpecificConfigsTests(
               }
             },
             chat_messages: { // Standard mock for message insertion
-              insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+              insert: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                 const messageData = state.insertData;
                 const insertedMessages = (Array.isArray(messageData) ? messageData : [messageData]).map(msg => ({
                   id: msg.id || crypto.randomUUID(), chat_id: msg.chat_id, user_id: msg.user_id, role: msg.role, content: msg.content,
@@ -625,7 +625,7 @@ export async function runSpecificConfigsTests(
           {
               genericMockResults: {
                   ai_providers: {
-                      select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+                      select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                           const idFilter = state.filters.find(f => f.column === 'id' && f.value === providerIdForTest);
                           if (state.operation === 'select' && idFilter) {
                               // Return the inactive provider data for this test
@@ -637,7 +637,7 @@ export async function runSpecificConfigsTests(
                   },
                   // Token wallets might be queried by the getWalletForContext call even if the main logic exits early.
                   token_wallets: {
-                      select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+                      select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                           const userIdFilter = state.filters.find(f => f.column === 'user_id' && f.value === testUserId && f.operator === 'eq');
                           if (state.operation === 'select' && userIdFilter) {
                               return { data: [{ wallet_id: crypto.randomUUID(), user_id: testUserId, balance: initialBalance, currency: "AI_TOKEN" }], error: null, count: 1, status: 200, statusText: "OK" };
@@ -715,7 +715,7 @@ export async function runSpecificConfigsTests(
         {
           genericMockResults: {
             ai_providers: {
-              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                 // This mock specifically expects the query for the nonExistentProviderId to find nothing.
                 const idFilter = state.filters.find(f => f.column === 'id' && f.value === nonExistentProviderId);
                 if (state.operation === 'select' && idFilter) {
@@ -726,7 +726,7 @@ export async function runSpecificConfigsTests(
               }
             },
             token_wallets: { // Still need to mock wallet for balance check
-              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }> => {
+              select: async (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | PostgresError | null; count: number | null; status: number; statusText: string; }> => {
                 const userIdFilter = state.filters.find(f => f.column === 'user_id' && f.value === testUserId && f.operator === 'eq');
                 if (state.operation === 'select' && userIdFilter) {
                   return { data: [{ wallet_id: crypto.randomUUID(), user_id: testUserId, balance: initialBalance, currency: "AI_TOKEN" }], error: null, count: 1, status: 200, statusText: "OK" };

@@ -1,7 +1,7 @@
 // supabase/functions/_shared/utils/vector_utils.ts
 
-import { type SourceDocument, type RelevanceRule } from '../../dialectic-service/dialectic.interface.ts';
-import { type ILogger, type Messages } from '../types.ts';
+import { type RelevanceRule } from '../../dialectic-service/dialectic.interface.ts';
+import { type ILogger, type Messages, type ResourceDocument, type ResourceDocuments } from '../types.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../../types_db.ts';
 import { IEmbeddingClient } from '../services/indexing_service.interface.ts';
@@ -24,7 +24,7 @@ export interface ICompressionStrategy {
     (
         dbClient: SupabaseClient<Database>,
         deps: CompressionDeps,
-        documents: SourceDocument[],
+        documents: ResourceDocuments,
         history: Messages[],
         currentUserPrompt: string,
         inputsRelevance?: RelevanceRule[],
@@ -101,7 +101,7 @@ export type CompressionCandidate = {
  */
 export async function scoreResourceDocuments(
     deps: CompressionDeps,
-    documents: SourceDocument[],
+    documents: ResourceDocuments,
     currentUserPrompt: string,
 ): Promise<CompressionCandidate[]> {
     if (!deps.embeddingClient) {
@@ -115,8 +115,6 @@ export async function scoreResourceDocuments(
 
     for (let i = 0; i < documents.length; i++) {
         const doc = documents[i];
-        if (!doc.id || !doc.content) continue;
-
         const docEmbeddingResponse = await deps.embeddingClient.getEmbedding(doc.content);
         const relevance = cosineSimilarity(promptEmbeddingResponse.embedding, docEmbeddingResponse.embedding);
         
@@ -190,7 +188,7 @@ export function scoreHistory(
 export async function getSortedCompressionCandidates(
     dbClient: SupabaseClient<Database>,
     deps: CompressionDeps,
-    documents: SourceDocument[],
+    documents: ResourceDocuments,
     history: Messages[],
     currentUserPrompt: string,
     inputsRelevance?: RelevanceRule[],
@@ -215,7 +213,7 @@ export async function getSortedCompressionCandidates(
     }
 
     // Helper to compute an effective score for a document candidate using matrix weighting
-    function getEffectiveScoreForDocumentCandidate(candidate: CompressionCandidate, correspondingDoc: SourceDocument): number {
+    function getEffectiveScoreForDocumentCandidate(candidate: CompressionCandidate, correspondingDoc: ResourceDocument): number {
         const baseSimilarity = candidate.valueScore; // cosine similarity already computed
 
         // Identity: require document_key and type; stage_slug is only used if a rule provides it.

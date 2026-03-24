@@ -25,6 +25,7 @@ import { EmbeddingClient } from './indexing_service.ts';
 import { DummyAdapter } from '../ai_service/dummy_adapter.ts';
 import { MOCK_PROVIDER } from '../ai_service/dummy_adapter.test.ts';
 import { createMockTokenWalletService } from '../services/tokenWalletService.mock.ts';
+import { FileType } from '../types/file_manager.types.ts';
 
 // Helper to create a compliant PostgrestError mock
 const createMockPostgrestError = (message: string): PostgrestError & { name: string } => ({
@@ -51,8 +52,8 @@ describe('RagService', () => {
 
   const emptyInputsRelevance: RelevanceRule[] = [];
   const sampleInputsRelevance: RelevanceRule[] = [
-    { document_key: 'business_case', type: 'document', relevance: 1.0 },
-    { document_key: 'feature_spec', type: 'document', relevance: 0.9 },
+    { document_key: FileType.business_case, type: 'document', relevance: 1.0 },
+    { document_key: FileType.feature_spec, type: 'document', relevance: 0.9 },
   ];
 
   const mockModelConfig: AiModelExtendedConfig = {

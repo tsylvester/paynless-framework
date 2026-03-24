@@ -4,6 +4,7 @@ import type { MessageParam } from 'npm:@anthropic-ai/sdk/resources/messages';
 import type { AdapterResponsePayload, ChatApiRequest, ILogger, ProviderModelInfo, AiModelExtendedConfig } from '../types.ts';
 import type { Tables, Database } from '../../types_db.ts';
 import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
+import { isResourceDocument } from '../utils/type-guards/type_guards.chat.ts';
 
 
 // Anthropic API constants
@@ -102,12 +103,28 @@ export class AnthropicAdapter {
 
     // Prepend resourceDocuments as Claude document content blocks to the first user message.
     if (request.resourceDocuments && request.resourceDocuments.length > 0) {
-        const documentBlocks: MessageParam['content'] = request.resourceDocuments.map((doc) => ({
-            type: 'document',
-            source: { type: 'text', media_type: 'text/plain', data: doc.content },
-            title: doc.document_key ?? doc.id ?? '',
-            context: doc.stage_slug ?? '',
-        }));
+        for (const doc of request.resourceDocuments) {
+            if (isResourceDocument(doc)) {
+                if (!doc.document_key || !doc.stage_slug) {
+                    throw new Error(`Invalid resource document: document_key and stage_slug must be non-empty strings (id=${doc.id})`);
+                }
+            }
+        }
+        const documentBlocks: MessageParam['content'] = request.resourceDocuments.map((doc) => {
+            if (isResourceDocument(doc)) {
+                return {
+                    type: 'document',
+                    source: { type: 'text', media_type: 'text/plain', data: doc.content },
+                    title: doc.document_key,
+                    context: doc.stage_slug,
+                };
+            }
+            return {
+                type: 'document',
+                source: { type: 'text', media_type: 'text/plain', data: doc.content },
+                title: doc.id,
+            };
+        });
         const firstUserIndex = anthropicMessages.findIndex((m) => m.role === 'user');
         if (firstUserIndex >= 0) {
             const first = anthropicMessages[firstUserIndex];

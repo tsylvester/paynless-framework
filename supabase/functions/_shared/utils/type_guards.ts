@@ -24,8 +24,6 @@ export {
     isFailedAttemptError, 
     isFailedAttemptErrorArray, 
     isJobInsert, 
-    isJobResultsWithModelProcessing, 
-    isModelProcessingResult, 
     isPlanJobInsert, 
     validatePayload,
     isDialecticContinueReason,
@@ -54,3 +52,8 @@ export {
     isTokenUsage, 
     isUserRole 
 } from "./type-guards/type_guards.chat.ts";
+export { 
+    isModelProcessingResult, 
+    isModelProcessingResultStatus, 
+    isJobResultsWithModelProcessing 
+} from "./type-guards/type_guards.modelProcessingResult.ts";

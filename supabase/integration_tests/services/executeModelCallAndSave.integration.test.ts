@@ -54,6 +54,38 @@ import { getExtensionFromMimeType } from "../../functions/_shared/path_utils.ts"
 import { IDocumentRenderer } from "../../functions/_shared/services/document_renderer.interface.ts";
 import { processRenderJob } from "../../functions/dialectic-worker/processRenderJob.ts";
 import { IRenderJobDeps } from "../../functions/dialectic-service/dialectic.interface.ts";
+import { assembleChunks } from "../../functions/_shared/utils/assembleChunks/assembleChunks.ts";
+import { IExecuteJobContext, IRenderJobContext } from "../../functions/dialectic-worker/JobContext.interface.ts";
+import { PromptAssembler } from "../../functions/_shared/prompt-assembler/prompt-assembler.ts";
+import { extractSourceGroupFragment } from "../../functions/_shared/utils/path_utils.ts";
+import { shouldEnqueueRenderJob } from "../../functions/_shared/utils/shouldEnqueueRenderJob.ts";
+import { defaultProviderMap, getAiProviderAdapter } from "../../functions/_shared/ai_service/factory.ts";
+import {
+  EmbeddingClient,
+  IndexingService,
+  LangchainTextSplitter,
+} from "../../functions/_shared/services/indexing_service.ts";
+import { RagService } from "../../functions/_shared/services/rag_service.ts";
+import type { AiModelExtendedConfig } from "../../functions/_shared/types.ts";
+import { isAiModelExtendedConfig } from "../../functions/_shared/utils/type_guards.ts";
+
+async function fetchAiProviderConfigFromDb(
+  dbClient: SupabaseClient<Database>,
+  modelId: string,
+): Promise<AiModelExtendedConfig> {
+  const { data, error } = await dbClient
+    .from("ai_providers")
+    .select("*")
+    .eq("id", modelId)
+    .single();
+  if (error || !data) {
+    throw new Error("Failed to fetch AI provider config");
+  }
+  if (!isAiModelExtendedConfig(data.config)) {
+    throw new Error("Failed to fetch AI provider config");
+  }
+  return data.config;
+}
 
 describe("executeModelCallAndSave Integration Tests", () => {
   let adminClient: SupabaseClient<Database>;
@@ -65,6 +97,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
   let fileManager: FileManagerService;
   let testModelId: string;
   let testWalletId: string;
+  let textSplitter: LangchainTextSplitter;
+  let embeddingClient: EmbeddingClient;
 
   beforeAll(async () => {
     initializeTestDeps();
@@ -78,13 +112,14 @@ describe("executeModelCallAndSave Integration Tests", () => {
     assertExists(user, "Test user could not be created");
     testUser = user;
 
-    fileManager = new FileManagerService(adminClient, { constructStoragePath });
+    fileManager = new FileManagerService(adminClient, { constructStoragePath, logger: testLogger, assembleChunks });
 
     // Create test project using FormData
     const formData = new FormData();
     formData.append("projectName", "ExecuteModelCallAndSave Integration Test Project");
     formData.append("initialUserPromptText", "Test prompt for executeModelCallAndSave integration test");
-    
+    formData.append("idempotencyKey", crypto.randomUUID());
+
     // Fetch domain ID for software_development
     const { data: domain, error: domainError } = await adminClient
       .from("dialectic_domains")
@@ -170,7 +205,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
     // Start a session
     const sessionPayload: StartSessionPayload = {
       projectId: testProject.id,
-      selectedModelIds: [testModelId],
+      selectedModels: [{ id: testModelId, displayName: "Mock Model" }],
+      idempotencyKey: crypto.randomUUID(),
     };
     const sessionResult = await startSession(testUser, adminClient, sessionPayload);
     if (sessionResult.error) {
@@ -180,6 +216,41 @@ describe("executeModelCallAndSave Integration Tests", () => {
       throw new Error("Session creation returned no data");
     }
     testSession = sessionResult.data;
+
+    const textSplitterInstance: LangchainTextSplitter = new LangchainTextSplitter();
+    textSplitter = textSplitterInstance;
+
+    const { data: embeddingModelProvider, error: embeddingModelError } = await adminClient
+      .from("ai_providers")
+      .select("*")
+      .eq("is_default_embedding", true)
+      .single();
+
+    assert(!embeddingModelError, `Failed to fetch default embedding model: ${embeddingModelError?.message}`);
+    assertExists(embeddingModelProvider, "Default embedding model must exist in ai_providers");
+    if (!embeddingModelProvider) {
+      throw new Error("Default embedding model must exist in ai_providers");
+    }
+    const embeddingProviderRow = embeddingModelProvider;
+
+    const openAiApiKeyRaw: string | undefined = Deno.env.get("OPENAI_API_KEY");
+    if (openAiApiKeyRaw === undefined || openAiApiKeyRaw.length === 0) {
+      throw new Error("OPENAI_API_KEY must be set for embedding client in integration tests");
+    }
+    const openAiApiKey: string = openAiApiKeyRaw;
+
+    const embeddingAdapter = getAiProviderAdapter({
+      provider: embeddingProviderRow,
+      apiKey: openAiApiKey,
+      logger: testLogger,
+      providerMap: defaultProviderMap,
+    });
+    if (embeddingAdapter === null) {
+      throw new Error("Failed to create embedding adapter for integration tests");
+    }
+
+    const embeddingClientInstance: EmbeddingClient = new EmbeddingClient(embeddingAdapter);
+    embeddingClient = embeddingClientInstance;
   });
 
   afterAll(async () => {
@@ -284,6 +355,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       documentIdentity: docIdentity,
       documentKey: documentKey,
       sourceContributionId: contributionId,
+      template_filename: templateName,
     };
 
     const renderResult = await renderDocument(adminClient, renderDeps, renderParams);
@@ -336,7 +408,6 @@ describe("executeModelCallAndSave Integration Tests", () => {
 
     // Create an EXECUTE job payload that requires the rendered document as input
     const executeJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: FileType.business_case_critique,
@@ -349,10 +420,12 @@ describe("executeModelCallAndSave Integration Tests", () => {
       walletId: testWalletId,
       user_jwt: testUserJwt,
       canonicalPathParams: {
-        contributionType: "antithesis",
+        contributionType: targetStageSlug,
         stageSlug: targetStageSlug,
       },
       document_key: FileType.business_case_critique,
+      document_relationships: { source_group: contributionId },
+      idempotencyKey: crypto.randomUUID(),
     };
 
     if (!isJson(executeJobPayload)) {
@@ -378,6 +451,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       prerequisite_job_id: null,
       payload: executeJobPayload,
       is_test_job: false,
+      idempotency_key: crypto.randomUUID(), 
       job_type: "EXECUTE",
     };
 
@@ -386,7 +460,22 @@ describe("executeModelCallAndSave Integration Tests", () => {
       getBalance: () => Promise.resolve("1000000"),
     }).instance;
 
-    const deps: IDialecticJobDeps = {
+    const indexingService: IndexingService = new IndexingService(
+      adminClient,
+      testLogger,
+      textSplitter,
+      embeddingClient,
+      tokenWalletService,
+    );
+    const ragService: RagService = new RagService({
+      dbClient: adminClient,
+      logger: testLogger,
+      indexingService,
+      embeddingClient,
+      tokenWalletService,
+    });
+
+    const deps: IExecuteJobContext = {
       callUnifiedAIModel: (chatApiRequest, userAuthToken, deps) => callUnifiedAIModel(chatApiRequest, userAuthToken, { ...(deps || {}), isTest: true }),
       getExtensionFromMimeType,
       logger: testLogger,
@@ -395,39 +484,19 @@ describe("executeModelCallAndSave Integration Tests", () => {
       notificationService: new NotificationService(adminClient),
       getSeedPromptForStage: (dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn) => getSeedPromptForStage(dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn),
       retryJob: (deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId) => retryJob(deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId),
-      downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       randomUUID: crypto.randomUUID,
       deleteFromStorage: () => Promise.resolve({ error: null }),
-      executeModelCallAndSave: async () => {},
       tokenWalletService: tokenWalletService,
       countTokens,
-      documentRenderer: {
-        renderDocument: async () => ({
-          pathContext: {
-            projectId: "",
-            sessionId: "",
-            iteration: 0,
-            stageSlug: "",
-            documentKey: "",
-            fileType: FileType.RenderedDocument,
-            modelSlug: "",
-          },
-          renderedBytes: new Uint8Array(),
-        }),
-      },
-      embeddingClient: {
-        getEmbedding: async () => ({
-          embedding: [],
-          usage: { prompt_tokens: 0, total_tokens: 0 },
-        }),
-      },
-      ragService: {
-        getContextForModel: async () => ({
-          context: "",
-          tokensUsedForIndexing: 0,
-          error: undefined,
-        }),
-      },
+      embeddingClient: embeddingClient,
+      ragService: ragService,
+      promptAssembler: new PromptAssembler(adminClient, fileManager),
+      extractSourceGroupFragment: extractSourceGroupFragment,
+      shouldEnqueueRenderJob: shouldEnqueueRenderJob,
+      indexingService: indexingService,
+      getAiProviderAdapter: getAiProviderAdapter,
+      getAiProviderConfig: fetchAiProviderConfigFromDb,
     };
 
     // Set up inputsRequired to require the rendered document from the source stage
@@ -461,15 +530,16 @@ describe("executeModelCallAndSave Integration Tests", () => {
       sessionData: {
         id: testSession.id,
         project_id: testSession.project_id,
-        session_description: testSession.session_description ?? null,
-        user_input_reference_url: testSession.user_input_reference_url ?? null,
+        session_description: testSession.session_description,
+        user_input_reference_url: testSession.user_input_reference_url,
         iteration_count: testSession.iteration_count,
-        selected_model_ids: testSession.selected_model_ids ?? null,
-        status: testSession.status ?? "pending_thesis",
+        selected_models: testSession.selected_models,
+        status: testSession.status,
         created_at: testSession.created_at,
         updated_at: testSession.updated_at,
         current_stage_id: testSession.current_stage_id,
-        associated_chat_id: testSession.associated_chat_id ?? null,
+        associated_chat_id: testSession.associated_chat_id,
+        viewing_stage_id: testSession.viewing_stage_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -598,7 +668,6 @@ describe("executeModelCallAndSave Integration Tests", () => {
 
     // Create an EXECUTE job that will produce a markdown document (root chunk, no document_relationships)
     const executeJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -615,7 +684,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
         stageSlug: stageSlug,
       },
       document_key: documentKey,
-      // Omit document_relationships to create a root chunk
+      idempotencyKey: crypto.randomUUID(),
+      document_relationships: { source_group: contributionId },
     };
 
     if (!isJson(executeJobPayload)) {
@@ -641,6 +711,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       prerequisite_job_id: null,
       payload: executeJobPayload,
       is_test_job: false,
+      idempotency_key: crypto.randomUUID(),
       job_type: "EXECUTE",
     };
 
@@ -649,7 +720,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       getBalance: () => Promise.resolve("1000000"),
     }).instance;
 
-    const deps: IDialecticJobDeps = {
+    const deps: IExecuteJobContext = {
       callUnifiedAIModel: async () => ({
         content: JSON.stringify({
           content: `# Business Case Document\n\nThis is a test business case document that will be rendered.`
@@ -676,28 +747,19 @@ describe("executeModelCallAndSave Integration Tests", () => {
       notificationService: new NotificationService(adminClient),
       getSeedPromptForStage: (dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn) => getSeedPromptForStage(dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn),
       retryJob: (deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId) => retryJob(deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId),
-      downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       randomUUID: crypto.randomUUID,
       deleteFromStorage: () => Promise.resolve({ error: null }),
-      executeModelCallAndSave: async () => {},
       tokenWalletService: tokenWalletService,
       countTokens,
-      documentRenderer: {
-        renderDocument: renderDocument,
-      },
-      embeddingClient: {
-        getEmbedding: async () => ({
-          embedding: [],
-          usage: { prompt_tokens: 0, total_tokens: 0 },
-        }),
-      },
-      ragService: {
-        getContextForModel: async () => ({
-          context: "",
-          tokensUsedForIndexing: 0,
-          error: undefined,
-        }),
-      },
+      promptAssembler: new PromptAssembler(adminClient, fileManager),
+      extractSourceGroupFragment: extractSourceGroupFragment,
+      shouldEnqueueRenderJob: shouldEnqueueRenderJob,
+      indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService),
+      getAiProviderAdapter: getAiProviderAdapter,
+      getAiProviderConfig: fetchAiProviderConfigFromDb,
+      ragService: new RagService({ dbClient: adminClient, logger: testLogger, indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService), embeddingClient: embeddingClient, tokenWalletService: tokenWalletService }),
+      embeddingClient: embeddingClient,
     };
 
     // Insert the EXECUTE job into the database so it exists when we try to create a child RENDER job
@@ -751,15 +813,16 @@ describe("executeModelCallAndSave Integration Tests", () => {
       sessionData: {
         id: testSession.id,
         project_id: testSession.project_id,
-        session_description: testSession.session_description ?? null,
-        user_input_reference_url: testSession.user_input_reference_url ?? null,
+        session_description: testSession.session_description,
+        user_input_reference_url: testSession.user_input_reference_url,
         iteration_count: testSession.iteration_count,
-        selected_model_ids: testSession.selected_model_ids ?? null,
-        status: testSession.status ?? "pending_thesis",
+        selected_models: testSession.selected_models,
+        status: testSession.status,
         created_at: testSession.created_at,
         updated_at: testSession.updated_at,
         current_stage_id: testSession.current_stage_id,
-        associated_chat_id: testSession.associated_chat_id ?? null,
+        associated_chat_id: testSession.associated_chat_id,
+        viewing_stage_id: testSession.viewing_stage_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -836,14 +899,15 @@ describe("executeModelCallAndSave Integration Tests", () => {
     assertEquals(renderPayload.sourceContributionId, renderPayload.documentIdentity, "For root chunks, sourceContributionId must equal documentIdentity (both are contribution.id)");
 
     // 3) Process the RENDER job via processRenderJob with the enqueued job
-    const renderJobDeps: IRenderJobDeps = {
-      documentRenderer: {
-        renderDocument: renderDocument,
-      },
-      downloadFromStorage: downloadFromStorage,
+    const renderJobDeps: IRenderJobContext = {
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
+      deleteFromStorage: () => Promise.resolve({ error: null }),
       fileManager: fileManager,
       notificationService: new NotificationService(adminClient),
       logger: testLogger,
+      documentRenderer: {
+        renderDocument: renderDocument,
+      },
     };
 
     // 4) Verify processRenderJob does not throw validation errors
@@ -1016,7 +1080,6 @@ describe("executeModelCallAndSave Integration Tests", () => {
 
     // Create an EXECUTE job that will produce a markdown document
     const executeJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -1033,7 +1096,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
         stageSlug: stageSlug,
       },
       document_key: documentKey,
-      document_relationships: { [stageSlug]: docIdentity },
+      document_relationships: { [stageSlug]: docIdentity, source_group: docIdentity },
+      idempotencyKey: crypto.randomUUID(),
     };
 
     if (!isJson(executeJobPayload)) {
@@ -1059,6 +1123,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       prerequisite_job_id: null,
       payload: executeJobPayload,
       is_test_job: false,
+      idempotency_key: crypto.randomUUID(),
       job_type: "EXECUTE",
     };
 
@@ -1067,7 +1132,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       getBalance: () => Promise.resolve("1000000"),
     }).instance;
 
-    const deps: IDialecticJobDeps = {
+    const deps: IExecuteJobContext = {
       callUnifiedAIModel: async () => ({
         content: JSON.stringify({
           content: `# Business Case Document\n\nThis is a test business case document that will be rendered.`
@@ -1094,28 +1159,19 @@ describe("executeModelCallAndSave Integration Tests", () => {
       notificationService: new NotificationService(adminClient),
       getSeedPromptForStage: (dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn) => getSeedPromptForStage(dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn),
       retryJob: (deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId) => retryJob(deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId),
-      downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       randomUUID: crypto.randomUUID,
       deleteFromStorage: () => Promise.resolve({ error: null }),
-      executeModelCallAndSave: async () => {},
       tokenWalletService: tokenWalletService,
       countTokens,
-      documentRenderer: {
-        renderDocument: renderDocument,
-      },
-      embeddingClient: {
-        getEmbedding: async () => ({
-          embedding: [],
-          usage: { prompt_tokens: 0, total_tokens: 0 },
-        }),
-      },
-      ragService: {
-        getContextForModel: async () => ({
-          context: "",
-          tokensUsedForIndexing: 0,
-          error: undefined,
-        }),
-      },
+      promptAssembler: new PromptAssembler(adminClient, fileManager),
+      extractSourceGroupFragment: extractSourceGroupFragment,
+      shouldEnqueueRenderJob: shouldEnqueueRenderJob,
+      indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService),
+      getAiProviderAdapter: getAiProviderAdapter,
+      getAiProviderConfig: fetchAiProviderConfigFromDb,
+      ragService: new RagService({ dbClient: adminClient, logger: testLogger, indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService), embeddingClient: embeddingClient, tokenWalletService: tokenWalletService }),
+      embeddingClient: embeddingClient,
     };
 
     // Insert the EXECUTE job into the database so it exists when we try to create a child RENDER job
@@ -1169,15 +1225,16 @@ describe("executeModelCallAndSave Integration Tests", () => {
       sessionData: {
         id: testSession.id,
         project_id: testSession.project_id,
-        session_description: testSession.session_description ?? null,
-        user_input_reference_url: testSession.user_input_reference_url ?? null,
+        session_description: testSession.session_description,
+        user_input_reference_url: testSession.user_input_reference_url,
         iteration_count: testSession.iteration_count,
-        selected_model_ids: testSession.selected_model_ids ?? null,
-        status: testSession.status ?? "pending_thesis",
+        selected_models: testSession.selected_models,
+        status: testSession.status,
         created_at: testSession.created_at,
         updated_at: testSession.updated_at,
         current_stage_id: testSession.current_stage_id,
-        associated_chat_id: testSession.associated_chat_id ?? null,
+        associated_chat_id: testSession.associated_chat_id,
+        viewing_stage_id: testSession.viewing_stage_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -1253,14 +1310,15 @@ describe("executeModelCallAndSave Integration Tests", () => {
     assert(renderPayload.sourceContributionId !== renderPayload.documentIdentity, "For continuation chunks, sourceContributionId (this chunk's contribution.id) must NOT equal documentIdentity (root's ID from document_relationships)");
 
     // 3) Process the RENDER job via processRenderJob with the enqueued job
-    const renderJobDeps: IRenderJobDeps = {
+    const renderJobDeps: IRenderJobContext = {
       documentRenderer: {
         renderDocument: renderDocument,
       },
-      downloadFromStorage: downloadFromStorage,
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       fileManager: fileManager,
       notificationService: new NotificationService(adminClient),
       logger: testLogger,
+      deleteFromStorage: () => Promise.resolve({ error: null }),
     };
 
     // 4) Verify processRenderJob does not throw validation errors
@@ -1375,7 +1433,9 @@ describe("executeModelCallAndSave Integration Tests", () => {
     // Create a unique session for this test to avoid storage collisions
     const sessionPayload: StartSessionPayload = {
       projectId: testProject.id,
-      selectedModelIds: [testModelId],
+      selectedModels: [{ id: testModelId, displayName: "Mock Model" }],
+      sessionDescription: "Test session for executeModelCallAndSave integration test",
+      idempotencyKey: crypto.randomUUID(),
     };
     const sessionResult = await startSession(testUser, adminClient, sessionPayload);
     if (sessionResult.error) {
@@ -1410,7 +1470,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       getBalance: () => Promise.resolve("1000000"),
     }).instance;
 
-    const deps: IDialecticJobDeps = {
+    const deps: IExecuteJobContext = {
       callUnifiedAIModel: async () => ({
         content: contributionContent,
         finish_reason: 'stop',
@@ -1433,32 +1493,24 @@ describe("executeModelCallAndSave Integration Tests", () => {
       notificationService: new NotificationService(adminClient),
       getSeedPromptForStage: (dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn) => getSeedPromptForStage(dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn),
       retryJob: (deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId) => retryJob(deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId),
-      downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       randomUUID: crypto.randomUUID,
       deleteFromStorage: () => Promise.resolve({ error: null }),
-      executeModelCallAndSave: async () => {},
       tokenWalletService: tokenWalletService,
       countTokens,
-      documentRenderer: {
-        renderDocument: renderDocument,
-      },
-      embeddingClient: {
-        getEmbedding: async () => ({
-          embedding: [],
-          usage: { prompt_tokens: 0, total_tokens: 0 },
-        }),
-      },
-      ragService: {
-        getContextForModel: async () => ({
-          context: "",
-          tokensUsedForIndexing: 0,
-          error: undefined,
-        }),
-      },
+      promptAssembler: new PromptAssembler(adminClient, fileManager),
+      extractSourceGroupFragment: extractSourceGroupFragment,
+      shouldEnqueueRenderJob: shouldEnqueueRenderJob,
+      indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService),
+      getAiProviderAdapter: getAiProviderAdapter,
+      getAiProviderConfig: fetchAiProviderConfigFromDb,
+      ragService: new RagService({ dbClient: adminClient, logger: testLogger, indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService), embeddingClient: embeddingClient, tokenWalletService: tokenWalletService }),
+      embeddingClient: embeddingClient,
     };
 
+    const sourceGroupIdForJob: string = crypto.randomUUID();
+
     const executeJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -1475,7 +1527,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
         stageSlug: stageSlug,
       },
       document_key: documentKey,
-      // Omit document_relationships - executeModelCallAndSave will set it to { [stageSlug]: contribution.id } for root chunks
+      document_relationships: { source_group: sourceGroupIdForJob },
+      idempotencyKey: crypto.randomUUID(),
     };
 
     if (!isJson(executeJobPayload)) {
@@ -1501,6 +1554,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       prerequisite_job_id: null,
       payload: executeJobPayload,
       is_test_job: false,
+      idempotency_key: crypto.randomUUID(),
       job_type: "EXECUTE",
     };
 
@@ -1557,12 +1611,13 @@ describe("executeModelCallAndSave Integration Tests", () => {
         session_description: testSessionForThisTest.session_description,
         user_input_reference_url: testSessionForThisTest.user_input_reference_url,
         iteration_count: testSessionForThisTest.iteration_count,
-        selected_model_ids: testSessionForThisTest.selected_model_ids,
+        selected_models: testSessionForThisTest.selected_models,
         status: testSessionForThisTest.status,
         created_at: testSessionForThisTest.created_at,
         updated_at: testSessionForThisTest.updated_at,
         current_stage_id: testSessionForThisTest.current_stage_id,
         associated_chat_id: testSessionForThisTest.associated_chat_id,
+        viewing_stage_id: testSessionForThisTest.viewing_stage_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -1641,14 +1696,15 @@ describe("executeModelCallAndSave Integration Tests", () => {
     assertEquals(renderPayload.sourceContributionId, renderPayload.documentIdentity, "For root chunks, sourceContributionId must equal documentIdentity (both are contribution.id)");
 
     // 3) Process the RENDER job via processRenderJob
-    const renderJobDeps: IRenderJobDeps = {
+    const renderJobDeps: IRenderJobContext = {
       documentRenderer: {
         renderDocument: renderDocument,
       },
-      downloadFromStorage: downloadFromStorage,
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       fileManager: fileManager,
       notificationService: new NotificationService(adminClient),
       logger: testLogger,
+      deleteFromStorage: () => Promise.resolve({ error: null }),
     };
 
     await processRenderJob(
@@ -1744,7 +1800,9 @@ describe("executeModelCallAndSave Integration Tests", () => {
     // Create a unique session for this test to avoid storage collisions
     const sessionPayload: StartSessionPayload = {
       projectId: testProject.id,
-      selectedModelIds: [testModelId],
+      selectedModels: [{ id: testModelId, displayName: "Mock Model" }],
+      sessionDescription: "Test session for executeModelCallAndSave integration test",
+      idempotencyKey: crypto.randomUUID(),
     };
     const sessionResult = await startSession(testUser, adminClient, sessionPayload);
     if (sessionResult.error) {
@@ -1786,7 +1844,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
     let rootContributionId: string | undefined;
 
     // Create root chunk deps with rootContent
-    const rootDeps: IDialecticJobDeps = {
+    const rootDeps: IExecuteJobContext = {
       callUnifiedAIModel: async () => ({
         content: rootContent,
         finish_reason: 'stop',
@@ -1809,33 +1867,25 @@ describe("executeModelCallAndSave Integration Tests", () => {
       notificationService: new NotificationService(adminClient),
       getSeedPromptForStage: (dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn) => getSeedPromptForStage(dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn),
       retryJob: (deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId) => retryJob(deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId),
-      downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       randomUUID: crypto.randomUUID,
       deleteFromStorage: () => Promise.resolve({ error: null }),
-      executeModelCallAndSave: async () => {},
       tokenWalletService: tokenWalletService,
       countTokens,
-      documentRenderer: {
-        renderDocument: renderDocument,
-      },
-      embeddingClient: {
-        getEmbedding: async () => ({
-          embedding: [],
-          usage: { prompt_tokens: 0, total_tokens: 0 },
-        }),
-      },
-      ragService: {
-        getContextForModel: async () => ({
-          context: "",
-          tokensUsedForIndexing: 0,
-          error: undefined,
-        }),
-      },
+      promptAssembler: new PromptAssembler(adminClient, fileManager),
+      extractSourceGroupFragment: extractSourceGroupFragment,
+      shouldEnqueueRenderJob: shouldEnqueueRenderJob,
+      indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService),
+      getAiProviderAdapter: getAiProviderAdapter,
+      getAiProviderConfig: fetchAiProviderConfigFromDb,
+      ragService: new RagService({ dbClient: adminClient, logger: testLogger, indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService), embeddingClient: embeddingClient, tokenWalletService: tokenWalletService }),
+      embeddingClient: embeddingClient,
     };
+
+    const rootSourceGroupId: string = crypto.randomUUID();
 
     // First, create the root chunk contribution via executeModelCallAndSave
     const rootExecuteJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -1852,7 +1902,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
         stageSlug: stageSlug,
       },
       document_key: documentKey,
-      // Omit document_relationships - executeModelCallAndSave will set it to { [stageSlug]: contribution.id } for root chunks
+      document_relationships: { source_group: rootSourceGroupId },
+      idempotencyKey: crypto.randomUUID(),
     };
 
     if (!isJson(rootExecuteJobPayload)) {
@@ -1879,6 +1930,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       payload: rootExecuteJobPayload,
       is_test_job: false,
       job_type: "EXECUTE",
+      idempotency_key: crypto.randomUUID(),
     };
 
     const { data: insertedRootJob, error: rootInsertError } = await adminClient
@@ -1934,12 +1986,13 @@ describe("executeModelCallAndSave Integration Tests", () => {
         session_description: testSessionForThisTest.session_description,
         user_input_reference_url: testSessionForThisTest.user_input_reference_url,
         iteration_count: testSessionForThisTest.iteration_count,
-        selected_model_ids: testSessionForThisTest.selected_model_ids,
+        selected_models: testSessionForThisTest.selected_models,
         status: testSessionForThisTest.status,
         created_at: testSessionForThisTest.created_at,
         updated_at: testSessionForThisTest.updated_at,
         current_stage_id: testSessionForThisTest.current_stage_id,
         associated_chat_id: testSessionForThisTest.associated_chat_id,
+        viewing_stage_id: testSessionForThisTest.viewing_stage_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -2039,7 +2092,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
     }
 
     // Create continuation chunk deps
-    const deps: IDialecticJobDeps = {
+    const deps: IExecuteJobContext = {
       callUnifiedAIModel: async () => ({
         content: continuationContent,
         finish_reason: 'stop',
@@ -2062,33 +2115,23 @@ describe("executeModelCallAndSave Integration Tests", () => {
       notificationService: new NotificationService(adminClient),
       getSeedPromptForStage: (dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn) => getSeedPromptForStage(dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn),
       retryJob: (deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId) => retryJob(deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId),
-      downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       randomUUID: crypto.randomUUID,
       deleteFromStorage: () => Promise.resolve({ error: null }),
-      executeModelCallAndSave: async () => {},
       tokenWalletService: tokenWalletService,
       countTokens,
-      documentRenderer: {
-        renderDocument: renderDocument,
-      },
-      embeddingClient: {
-        getEmbedding: async () => ({
-          embedding: [],
-          usage: { prompt_tokens: 0, total_tokens: 0 },
-        }),
-      },
-      ragService: {
-        getContextForModel: async () => ({
-          context: "",
-          tokensUsedForIndexing: 0,
-          error: undefined,
-        }),
-      },
+      promptAssembler: new PromptAssembler(adminClient, fileManager),
+      extractSourceGroupFragment: extractSourceGroupFragment,
+      shouldEnqueueRenderJob: shouldEnqueueRenderJob,
+      indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService),
+      getAiProviderAdapter: getAiProviderAdapter,
+      getAiProviderConfig: fetchAiProviderConfigFromDb,
+      ragService: new RagService({ dbClient: adminClient, logger: testLogger, indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService), embeddingClient: embeddingClient, tokenWalletService: tokenWalletService }),
+      embeddingClient: embeddingClient,
     };
 
     // 2) Create a continuation chunk contribution via executeModelCallAndSave with id: continuationContributionId, target_contribution_id: rootContributionId, and document_relationships: { [stageSlug]: rootContributionId }
     const continuationExecuteJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -2107,7 +2150,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
       document_key: documentKey,
       target_contribution_id: rootContributionId, // Required for continuation chunks
       continuation_count: 1, // Required for continuation chunks
-      document_relationships: { [stageSlug]: rootContributionId },
+      document_relationships: { [stageSlug]: rootContributionId, source_group: rootContributionId },
+      idempotencyKey: crypto.randomUUID(),
     };
 
     if (!isJson(continuationExecuteJobPayload)) {
@@ -2133,6 +2177,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       prerequisite_job_id: null,
       payload: continuationExecuteJobPayload,
       is_test_job: false,
+      idempotency_key: crypto.randomUUID(),
       job_type: "EXECUTE",
     };
 
@@ -2189,12 +2234,13 @@ describe("executeModelCallAndSave Integration Tests", () => {
         session_description: testSessionForThisTest.session_description,
         user_input_reference_url: testSessionForThisTest.user_input_reference_url,
         iteration_count: testSessionForThisTest.iteration_count,
-        selected_model_ids: testSessionForThisTest.selected_model_ids,
+        selected_models: testSessionForThisTest.selected_models,
         status: testSessionForThisTest.status,
         created_at: testSessionForThisTest.created_at,
         updated_at: testSessionForThisTest.updated_at,
         current_stage_id: testSessionForThisTest.current_stage_id,
         associated_chat_id: testSessionForThisTest.associated_chat_id,
+        viewing_stage_id: testSessionForThisTest.viewing_stage_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -2418,14 +2464,15 @@ describe("executeModelCallAndSave Integration Tests", () => {
     assert(continuationRenderPayload.sourceContributionId !== continuationRenderPayload.documentIdentity, "For continuation chunks, sourceContributionId (this chunk's contribution.id) must NOT equal documentIdentity (root's ID from document_relationships)");
 
     // 5) Process the RENDER job via processRenderJob
-    const renderJobDeps: IRenderJobDeps = {
+    const renderJobDeps: IRenderJobContext = {
       documentRenderer: {
         renderDocument: renderDocument,
       },
-      downloadFromStorage: downloadFromStorage,
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       fileManager: fileManager,
       notificationService: new NotificationService(adminClient),
       logger: testLogger,
+      deleteFromStorage: () => Promise.resolve({ error: null }),
     };
 
     await processRenderJob(
@@ -2530,7 +2577,9 @@ describe("executeModelCallAndSave Integration Tests", () => {
     // Create a unique session for this test to avoid storage collisions
     const sessionPayload: StartSessionPayload = {
       projectId: testProject.id,
-      selectedModelIds: [testModelId],
+      selectedModels: [{ id: testModelId, displayName: "Mock Model" }],
+      sessionDescription: "Test session for executeModelCallAndSave integration test",
+      idempotencyKey: crypto.randomUUID(),
     };
     const sessionResult = await startSession(testUser, adminClient, sessionPayload);
     if (sessionResult.error) {
@@ -2576,7 +2625,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
     let rootId: string | undefined;
 
     // Create root chunk deps with rootContent
-    const rootDeps: IDialecticJobDeps = {
+    const rootDeps: IExecuteJobContext = {
       callUnifiedAIModel: async () => ({
         content: rootContent,
         finish_reason: 'stop',
@@ -2599,33 +2648,25 @@ describe("executeModelCallAndSave Integration Tests", () => {
       notificationService: new NotificationService(adminClient),
       getSeedPromptForStage: (dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn) => getSeedPromptForStage(dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn),
       retryJob: (deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId) => retryJob(deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId),
-      downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       randomUUID: crypto.randomUUID,
       deleteFromStorage: () => Promise.resolve({ error: null }),
-      executeModelCallAndSave: async () => {},
       tokenWalletService: tokenWalletService,
       countTokens,
-      documentRenderer: {
-        renderDocument: renderDocument,
-      },
-      embeddingClient: {
-        getEmbedding: async () => ({
-          embedding: [],
-          usage: { prompt_tokens: 0, total_tokens: 0 },
-        }),
-      },
-      ragService: {
-        getContextForModel: async () => ({
-          context: "",
-          tokensUsedForIndexing: 0,
-          error: undefined,
-        }),
-      },
+      promptAssembler: new PromptAssembler(adminClient, fileManager),
+      extractSourceGroupFragment: extractSourceGroupFragment,
+      shouldEnqueueRenderJob: shouldEnqueueRenderJob,
+      indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService),
+      getAiProviderAdapter: getAiProviderAdapter,
+      getAiProviderConfig: fetchAiProviderConfigFromDb,
+      ragService: new RagService({ dbClient: adminClient, logger: testLogger, indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService), embeddingClient: embeddingClient, tokenWalletService: tokenWalletService }),
+      embeddingClient: embeddingClient,
     };
+
+    const rootSourceGroupId7b3: string = crypto.randomUUID();
 
     // Create root chunk via executeModelCallAndSave
     const rootExecuteJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -2642,7 +2683,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
         stageSlug: stageSlug,
       },
       document_key: documentKey,
-      // Omit document_relationships - executeModelCallAndSave will set it to { [stageSlug]: contribution.id } for root chunks
+      document_relationships: { source_group: rootSourceGroupId7b3 },
+      idempotencyKey: crypto.randomUUID(),
     };
 
     if (!isJson(rootExecuteJobPayload)) {
@@ -2669,6 +2711,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       payload: rootExecuteJobPayload,
       is_test_job: false,
       job_type: "EXECUTE",
+      idempotency_key: crypto.randomUUID(),
     };
 
     const { data: insertedRootJob, error: rootInsertError } = await adminClient
@@ -2724,12 +2767,13 @@ describe("executeModelCallAndSave Integration Tests", () => {
         session_description: testSessionForThisTest.session_description,
         user_input_reference_url: testSessionForThisTest.user_input_reference_url,
         iteration_count: testSessionForThisTest.iteration_count,
-        selected_model_ids: testSessionForThisTest.selected_model_ids,
+        selected_models: testSessionForThisTest.selected_models,
         status: testSessionForThisTest.status,
         created_at: testSessionForThisTest.created_at,
         updated_at: testSessionForThisTest.updated_at,
         current_stage_id: testSessionForThisTest.current_stage_id,
         associated_chat_id: testSessionForThisTest.associated_chat_id,
+        viewing_stage_id: testSessionForThisTest.viewing_stage_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -2782,7 +2826,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
 
     // Create continuation chunks deps
     let callCount = 0;
-    const deps: IDialecticJobDeps = {
+    const deps: IExecuteJobContext = {
       callUnifiedAIModel: async () => {
         callCount++;
         const content = callCount === 1 ? cont1Content : cont2Content;
@@ -2809,33 +2853,23 @@ describe("executeModelCallAndSave Integration Tests", () => {
       notificationService: new NotificationService(adminClient),
       getSeedPromptForStage: (dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn) => getSeedPromptForStage(dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn),
       retryJob: (deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId) => retryJob(deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId),
-      downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       randomUUID: crypto.randomUUID,
       deleteFromStorage: () => Promise.resolve({ error: null }),
-      executeModelCallAndSave: async () => {},
       tokenWalletService: tokenWalletService,
       countTokens,
-      documentRenderer: {
-        renderDocument: renderDocument,
-      },
-      embeddingClient: {
-        getEmbedding: async () => ({
-          embedding: [],
-          usage: { prompt_tokens: 0, total_tokens: 0 },
-        }),
-      },
-      ragService: {
-        getContextForModel: async () => ({
-          context: "",
-          tokensUsedForIndexing: 0,
-          error: undefined,
-        }),
-      },
+      promptAssembler: new PromptAssembler(adminClient, fileManager),
+      extractSourceGroupFragment: extractSourceGroupFragment,
+      shouldEnqueueRenderJob: shouldEnqueueRenderJob,
+      indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService),
+      getAiProviderAdapter: getAiProviderAdapter,
+      getAiProviderConfig: fetchAiProviderConfigFromDb,
+      ragService: new RagService({ dbClient: adminClient, logger: testLogger, indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService), embeddingClient: embeddingClient, tokenWalletService: tokenWalletService }),
+      embeddingClient: embeddingClient,
     };
 
     // Create first continuation chunk
     const cont1ExecuteJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -2854,7 +2888,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
       document_key: documentKey,
       target_contribution_id: rootId, // Required for continuation chunks
       continuation_count: 1, // Required for continuation chunks
-      document_relationships: { [stageSlug]: rootId },
+      document_relationships: { [stageSlug]: rootId, source_group: rootId },
+      idempotencyKey: crypto.randomUUID(),
     };
 
     if (!isJson(cont1ExecuteJobPayload)) {
@@ -2880,6 +2915,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       prerequisite_job_id: null,
       payload: cont1ExecuteJobPayload,
       is_test_job: false,
+      idempotency_key: crypto.randomUUID(),
       job_type: "EXECUTE",
     };
 
@@ -2936,12 +2972,13 @@ describe("executeModelCallAndSave Integration Tests", () => {
         session_description: testSessionForThisTest.session_description,
         user_input_reference_url: testSessionForThisTest.user_input_reference_url,
         iteration_count: testSessionForThisTest.iteration_count,
-        selected_model_ids: testSessionForThisTest.selected_model_ids,
+        selected_models: testSessionForThisTest.selected_models,
         status: testSessionForThisTest.status,
         created_at: testSessionForThisTest.created_at,
         updated_at: testSessionForThisTest.updated_at,
         current_stage_id: testSessionForThisTest.current_stage_id,
         associated_chat_id: testSessionForThisTest.associated_chat_id,
+        viewing_stage_id: testSessionForThisTest.viewing_stage_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -3007,7 +3044,6 @@ describe("executeModelCallAndSave Integration Tests", () => {
 
     // 2) Trigger a RENDER job via executeModelCallAndSave when the second continuation chunk (cont2Id) is created
     const cont2ExecuteJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -3026,7 +3062,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
       document_key: documentKey,
       target_contribution_id: cont1Id, // Required for continuation chunks (cont2 continues from cont1)
       continuation_count: 2, // Required for continuation chunks (second continuation)
-      document_relationships: { [stageSlug]: rootId },
+      document_relationships: { [stageSlug]: rootId, source_group: rootId },
+      idempotencyKey: crypto.randomUUID(),
     };
 
     if (!isJson(cont2ExecuteJobPayload)) {
@@ -3057,6 +3094,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       payload: cont2ExecuteJobPayload,
       is_test_job: false,
       job_type: "EXECUTE",
+      idempotency_key: crypto.randomUUID(),
     };
 
     const { data: insertedCont2Job, error: cont2InsertError } = await adminClient
@@ -3112,12 +3150,13 @@ describe("executeModelCallAndSave Integration Tests", () => {
         session_description: testSessionForThisTest.session_description,
         user_input_reference_url: testSessionForThisTest.user_input_reference_url,
         iteration_count: testSessionForThisTest.iteration_count,
-        selected_model_ids: testSessionForThisTest.selected_model_ids,
+        selected_models: testSessionForThisTest.selected_models,
         status: testSessionForThisTest.status,
         created_at: testSessionForThisTest.created_at,
         updated_at: testSessionForThisTest.updated_at,
         current_stage_id: testSessionForThisTest.current_stage_id,
         associated_chat_id: testSessionForThisTest.associated_chat_id,
+        viewing_stage_id: testSessionForThisTest.viewing_stage_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -3218,14 +3257,15 @@ describe("executeModelCallAndSave Integration Tests", () => {
     assertEquals(cont2RenderPayload.documentIdentity, rootId, "documentIdentity should equal rootId (the semantic identifier for the document chain)");
 
     // 4) Process the RENDER job via processRenderJob
-    const renderJobDeps: IRenderJobDeps = {
+    const renderJobDeps: IRenderJobContext = {
       documentRenderer: {
         renderDocument: renderDocument,
       },
-      downloadFromStorage: downloadFromStorage,
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       fileManager: fileManager,
       notificationService: new NotificationService(adminClient),
       logger: testLogger,
+      deleteFromStorage: () => Promise.resolve({ error: null }),
     };
 
     // 5) Verify renderDocument queries using documentIdentity: rootId and finds all three chunks
@@ -3363,7 +3403,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       getBalance: () => Promise.resolve("1000000"),
     }).instance;
 
-    const deps: IDialecticJobDeps = {
+    const deps: IExecuteJobContext = {
       callUnifiedAIModel: async () => ({
         content: JSON.stringify({
           content: `# Business Case Document\n\nThis is test content.`
@@ -3390,44 +3430,25 @@ describe("executeModelCallAndSave Integration Tests", () => {
       notificationService: new NotificationService(adminClient),
       getSeedPromptForStage: (dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn) => getSeedPromptForStage(dbClient, projectId, sessionId, stageSlug, iterationNumber, downloadFromStorageFn),
       retryJob: (deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId) => retryJob(deps, dbClient, job, currentAttempt, failedContributionAttempts, projectOwnerUserId),
-      downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+      downloadFromStorage: (supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(supabase, bucket, path),
       randomUUID: crypto.randomUUID,
       deleteFromStorage: () => Promise.resolve({ error: null }),
-      executeModelCallAndSave: async () => {},
       tokenWalletService: tokenWalletService,
       countTokens,
-      documentRenderer: {
-        renderDocument: async () => ({
-          pathContext: {
-            projectId: "",
-            sessionId: "",
-            iteration: 0,
-            stageSlug: "",
-            documentKey: "",
-            fileType: FileType.RenderedDocument,
-            modelSlug: "",
-          },
-          renderedBytes: new Uint8Array(),
-        }),
-      },
-      embeddingClient: {
-        getEmbedding: async () => ({
-          embedding: [],
-          usage: { prompt_tokens: 0, total_tokens: 0 },
-        }),
-      },
-      ragService: {
-        getContextForModel: async () => ({
-          context: "",
-          tokensUsedForIndexing: 0,
-          error: undefined,
-        }),
-      },
+      promptAssembler: new PromptAssembler(adminClient, fileManager),
+      extractSourceGroupFragment: extractSourceGroupFragment,
+      shouldEnqueueRenderJob: shouldEnqueueRenderJob,
+      indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService),
+      getAiProviderAdapter: getAiProviderAdapter,
+      getAiProviderConfig: fetchAiProviderConfigFromDb,
+      embeddingClient: embeddingClient,
+      ragService: new RagService({ dbClient: adminClient, logger: testLogger, indexingService: new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, tokenWalletService), embeddingClient: embeddingClient, tokenWalletService: tokenWalletService }),
     };
+
+    const rootJobSourceGroupId: string = crypto.randomUUID();
 
     // 1) Create a root chunk (no target_contribution_id, no continuation_count)
     const rootJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -3444,8 +3465,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
         stageSlug: stageSlug,
       },
       document_key: documentKey,
-      // No target_contribution_id - this is a root chunk
-      // No continuation_count - root chunks don't have continuation_count
+      document_relationships: { source_group: rootJobSourceGroupId },
+      idempotencyKey: crypto.randomUUID(),
     };
 
     if (!isJson(rootJobPayload)) {
@@ -3472,6 +3493,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       payload: rootJobPayload,
       is_test_job: false,
       job_type: "EXECUTE",
+      idempotency_key: crypto.randomUUID(),
     };
 
     // Insert the root job into the database
@@ -3525,15 +3547,16 @@ describe("executeModelCallAndSave Integration Tests", () => {
       sessionData: {
         id: testSession.id,
         project_id: testSession.project_id,
-        session_description: testSession.session_description ?? null,
-        user_input_reference_url: testSession.user_input_reference_url ?? null,
+        session_description: testSession.session_description,
+        user_input_reference_url: testSession.user_input_reference_url,
         iteration_count: testSession.iteration_count,
-        selected_model_ids: testSession.selected_model_ids ?? null,
-        status: testSession.status ?? "pending_thesis",
+        selected_models: testSession.selected_models,
+        status: testSession.status,
         created_at: testSession.created_at,
         updated_at: testSession.updated_at,
         current_stage_id: testSession.current_stage_id,
-        associated_chat_id: testSession.associated_chat_id ?? null,
+        associated_chat_id: testSession.associated_chat_id,
+        viewing_stage_id: testSession.viewing_stage_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],
@@ -3598,7 +3621,6 @@ describe("executeModelCallAndSave Integration Tests", () => {
     // 3) Create a continuation chunk with continuation_count: 1
     const docIdentity = crypto.randomUUID();
     const continuationJobPayload: DialecticExecuteJobPayload = {
-      job_type: "execute",
       prompt_template_id: "__none__",
       inputs: {},
       output_type: documentKey,
@@ -3617,7 +3639,8 @@ describe("executeModelCallAndSave Integration Tests", () => {
       document_key: documentKey,
       target_contribution_id: rootContributionId,
       continuation_count: 1, // Required for continuation chunks
-      document_relationships: { [stageSlug]: docIdentity },
+      document_relationships: { [stageSlug]: docIdentity, source_group: rootContributionId },
+      idempotencyKey: crypto.randomUUID(),
     };
 
     if (!isJson(continuationJobPayload)) {
@@ -3648,6 +3671,7 @@ describe("executeModelCallAndSave Integration Tests", () => {
       payload: continuationJobPayload,
       is_test_job: false,
       job_type: "EXECUTE",
+      idempotency_key: crypto.randomUUID(),
     };
 
     // Insert the continuation job into the database
@@ -3701,15 +3725,16 @@ describe("executeModelCallAndSave Integration Tests", () => {
       sessionData: {
         id: testSession.id,
         project_id: testSession.project_id,
-        session_description: testSession.session_description ?? null,
-        user_input_reference_url: testSession.user_input_reference_url ?? null,
+        session_description: testSession.session_description,
+        user_input_reference_url: testSession.user_input_reference_url,
         iteration_count: testSession.iteration_count,
-        selected_model_ids: testSession.selected_model_ids ?? null,
-        status: testSession.status ?? "pending_thesis",
+        selected_models: testSession.selected_models,
+        status: testSession.status,
         created_at: testSession.created_at,
         updated_at: testSession.updated_at,
         current_stage_id: testSession.current_stage_id,
-        associated_chat_id: testSession.associated_chat_id ?? null,
+        associated_chat_id: testSession.associated_chat_id,
+        viewing_stage_id: testSession.viewing_stage_id,
       },
       compressionStrategy: getSortedCompressionCandidates,
       inputsRelevance: [],

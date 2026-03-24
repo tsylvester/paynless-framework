@@ -15,7 +15,7 @@ import {
     SourceDocument,
     DocumentRelationships,
 } from '../dialectic-service/dialectic.interface.ts';
-import { Messages, AiModelExtendedConfig } from '../_shared/types.ts';
+import { Messages, AiModelExtendedConfig, ResourceDocument, ResourceDocuments } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
@@ -81,7 +81,7 @@ Deno.test('resource documents are used for sizing but not included in ChatApiReq
         systemInstruction?: string;
         message?: string;
         messages?: { role: 'system'|'user'|'assistant'; content: string }[];
-        resourceDocuments?: { id?: string; content: string }[];
+        resourceDocuments?: ResourceDocuments;
     } | null = null;
     let messagesSeenByCounter: string[] | null = null;
     const countStub = stub(deps, 'countTokens', (...args: unknown[]) => {
@@ -105,13 +105,26 @@ Deno.test('resource documents are used for sizing but not included in ChatApiReq
             }
 
             const docsUnknown = payload['resourceDocuments'];
-            const docs: { id?: string; content: string }[] = [];
+            const docs: ResourceDocument[] = [];
             if (Array.isArray(docsUnknown)) {
                 for (const d of docsUnknown) {
-                    if (isRecord(d) && typeof d.content === 'string') {
-                        const docId = typeof d.id === 'string' ? d.id : undefined;
-                        docs.push({ id: docId, content: d.content });
-                        collected.push(`user:${d.content}`);
+                    if (isRecord(d) && typeof d['content'] === 'string') {
+                        const docId: string | undefined = typeof d['id'] === 'string' ? d['id'] : undefined;
+                        const documentKey: string | undefined = typeof d['document_key'] === 'string' ? d['document_key'] : undefined;
+                        const stageSlug: string | undefined = typeof d['stage_slug'] === 'string' ? d['stage_slug'] : undefined;
+                        const typeVal: string | undefined = typeof d['type'] === 'string' ? d['type'] : undefined;
+                        if (!docId || !documentKey || !stageSlug || !typeVal) {
+                          throw new Error('Invalid resource document');
+                        }
+                        const entry: ResourceDocument = {
+                            id: docId,
+                            content: d['content'],
+                            document_key: documentKey,
+                            stage_slug: stageSlug,
+                            type: typeVal,
+                        };
+                        docs.push(entry);
+                        collected.push(`user:${d['content']}`);
                     }
                 }
             }
@@ -211,14 +224,24 @@ Deno.test('resource documents are used for sizing but not included in ChatApiReq
 
     // Normalize resourceDocuments without casts
     const docsUnknown2 = Array.isArray(arg['resourceDocuments']) ? arg['resourceDocuments'] : [];
-    const normalizedDocs: { id?: string; content: string }[] = [];
+    const normalizedDocs: ResourceDocument[] = [];
     for (const d of docsUnknown2) {
-        if (isRecord(d)) {
-            const idVal = typeof d['id'] === 'string' ? d['id'] : undefined;
-            const contentVal = typeof d['content'] === 'string' ? d['content'] : undefined;
-            if (typeof contentVal === 'string') {
-                normalizedDocs.push({ id: idVal, content: contentVal });
+        if (isRecord(d) && typeof d['content'] === 'string') {
+            const idVal: string | undefined = typeof d['id'] === 'string' ? d['id'] : undefined;
+            const documentKey: string | undefined = typeof d['document_key'] === 'string' ? d['document_key'] : undefined;
+            const stageSlug: string | undefined = typeof d['stage_slug'] === 'string' ? d['stage_slug'] : undefined;
+            const typeVal: string | undefined = typeof d['type'] === 'string' ? d['type'] : undefined;
+            if (!idVal || !documentKey || !stageSlug || !typeVal) {
+              throw new Error('Invalid resource document');
             }
+            const entry: ResourceDocument = {
+                id: idVal,
+                content: d['content'],
+                document_key: documentKey,
+                stage_slug: stageSlug,
+                type: typeVal,
+            };
+            normalizedDocs.push(entry);
         }
     }
 
@@ -248,6 +271,7 @@ Deno.test('should only pass un-indexed documents to the RAG service', async () =
     const limitedConfig = {
         ...mockFullProviderData.config,
         context_window_tokens: 100,
+        provider_max_input_tokens: 200,
         provider_max_output_tokens: 50,
     };
 
@@ -480,6 +504,7 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
         ...mockFullProviderData.config,
         context_window_tokens: 100, // Force compression with real tokenizer
         provider_max_output_tokens: 50,
+        provider_max_input_tokens: 200,
     };
     if (!isRecord(limitedConfig)) throw new Error("Test config error");
 
