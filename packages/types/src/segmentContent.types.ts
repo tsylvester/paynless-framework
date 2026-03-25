@@ -30,6 +30,8 @@ export interface SegmentContent {
   painStatement: string;
   scenario: string;
   exampleInput: string;
+  transformHeadline?: string;
+  transformSubheadline?: string;
   featuredDocs: [SegmentFeaturedDoc, SegmentFeaturedDoc];
   howItWorksSteps: [
     SegmentHowItWorksStep,
