@@ -1,10 +1,9 @@
 // supabase/functions/dialectic-worker/JobContext.interface.ts
 
-import { ILogger } from '../_shared/types.ts';
-import { IFileManager } from '../_shared/types/file_manager.types.ts';
+import { FinishReason, GetAiProviderAdapterFn, ILogger, ResourceDocument } from '../_shared/types.ts';
+import { IFileManager, ModelContributionUploadContext } from '../_shared/types/file_manager.types.ts';
 import { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
 import { DeleteFromStorageFn } from '../_shared/supabase_storage_utils.ts';
-import { GetAiProviderAdapterFn } from '../_shared/types.ts';
 import { IRagService } from '../_shared/services/rag_service.interface.ts';
 import { IIndexingService } from '../_shared/services/indexing_service.interface.ts';
 import { IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
@@ -24,6 +23,7 @@ import {
     DialecticJobRow,
     DialecticPlanJobPayload,
     DialecticRecipeStep,
+    InputRule,
     SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
 import { IPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
@@ -35,6 +35,12 @@ import { GetGranularityPlannerFn } from '../dialectic-service/dialectic.interfac
 import { ExecuteModelCallAndSaveParams } from '../dialectic-service/dialectic.interface.ts';
 import { Database } from '../types_db.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { ValidatedCostRates } from '../_shared/utils/validateModelCostRates.ts';
+import {
+    DetermineContinuationParams,
+    DetermineContinuationResult,
+} from '../_shared/utils/determineContinuation/determineContinuation.interface.ts';
+import { BuildUploadContextParams } from '../_shared/utils/buildUploadContext/buildUploadContext.interface.ts';
 
 /**
  * Function type for continueJob orchestration utility.
@@ -79,6 +85,70 @@ export type FindSourceDocumentsFn = (
     parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
     inputsRequired: DialecticRecipeStep['inputs_required'],
 ) => Promise<SourceDocument[]>;
+
+/**
+ * Selects the row with the latest `created_at` from a non-empty array.
+ * Matches `_shared/utils/pickLatest.ts`.
+ */
+export type PickLatestFn = <T extends { created_at: string }>(rows: T[]) => T;
+
+/**
+ * Filters gathered resource documents to inputs-required scope.
+ * Matches `_shared/utils/applyInputsRequiredScope.ts`.
+ */
+export type ApplyInputsRequiredScopeFn = (
+    docs: Required<ResourceDocument>[],
+    inputsRequired: InputRule[] | undefined,
+) => Required<ResourceDocument>[];
+
+/**
+ * Parses and validates a wallet balance string.
+ * Matches `_shared/utils/validateWalletBalance.ts`.
+ */
+export type ValidateWalletBalanceFn = (
+    walletBalanceStr: string,
+    walletId: string,
+) => number;
+
+/**
+ * Validates input/output token cost rates from model config.
+ * Matches `_shared/utils/validateModelCostRates.ts`.
+ */
+export type ValidateModelCostRatesFn = (
+    inputRate: number | null,
+    outputRate: number | null,
+) => ValidatedCostRates;
+
+/**
+ * Resolves finish_reason from a unified AI response.
+ * Matches `_shared/utils/resolveFinishReason.ts`.
+ */
+export type ResolveFinishReasonFn = (aiResponse: UnifiedAIResponse) => FinishReason;
+
+/**
+ * Gates whether the current chunk is intermediate (skip sanitize/parse).
+ * Matches `_shared/utils/isIntermediateChunk.ts`.
+ */
+export type IsIntermediateChunkFn = (
+    resolvedFinish: FinishReason,
+    continueUntilComplete: boolean,
+) => boolean;
+
+/**
+ * Decides whether the job should continue (continuation triggers).
+ * Matches `_shared/utils/determineContinuation/determineContinuation.ts`.
+ */
+export type DetermineContinuationFn = (
+    params: DetermineContinuationParams,
+) => DetermineContinuationResult;
+
+/**
+ * Assembles `ModelContributionUploadContext` from pre-resolved fields.
+ * Matches `_shared/utils/buildUploadContext/buildUploadContext.ts`.
+ */
+export type BuildUploadContextFn = (
+    params: BuildUploadContextParams,
+) => ModelContributionUploadContext;
 
 /**
  * Base context providing logging capabilities.
@@ -158,6 +228,15 @@ export interface IExecuteJobContext extends
     // Orchestration callbacks (needed by executeModelCallAndSave)
     readonly continueJob: ContinueJobFn;
     readonly retryJob: RetryJobFn;
+    // utilities (wired at composition root from `_shared/utils/`)
+    readonly pickLatest: PickLatestFn;
+    readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
+    readonly validateWalletBalance: ValidateWalletBalanceFn;
+    readonly validateModelCostRates: ValidateModelCostRatesFn;
+    readonly resolveFinishReason: ResolveFinishReasonFn;
+    readonly isIntermediateChunk: IsIntermediateChunkFn;
+    readonly determineContinuation: DetermineContinuationFn;
+    readonly buildUploadContext: BuildUploadContextFn;
 }
 
 /**
@@ -232,4 +311,12 @@ export interface JobContextParams {
     readonly continueJob: ContinueJobFn;
     readonly retryJob: RetryJobFn;
     readonly executeModelCallAndSave: ExecuteModelCallAndSaveFn;
+    readonly pickLatest: PickLatestFn;
+    readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
+    readonly validateWalletBalance: ValidateWalletBalanceFn;
+    readonly validateModelCostRates: ValidateModelCostRatesFn;
+    readonly resolveFinishReason: ResolveFinishReasonFn;
+    readonly isIntermediateChunk: IsIntermediateChunkFn;
+    readonly determineContinuation: DetermineContinuationFn;
+    readonly buildUploadContext: BuildUploadContextFn;
 }

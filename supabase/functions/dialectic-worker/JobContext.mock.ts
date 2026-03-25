@@ -14,6 +14,14 @@ import { IJobContext } from './JobContext.interface.ts';
 import { createJobContext } from './createJobContext.ts';
 import { createMockFindSourceDocuments } from './findSourceDocuments.mock.ts';
 import { extractSourceGroupFragment } from '../_shared/utils/path_utils.ts';
+import { pickLatest } from '../_shared/utils/pickLatest.ts';
+import { applyInputsRequiredScope } from '../_shared/utils/applyInputsRequiredScope.ts';
+import { validateWalletBalance } from '../_shared/utils/validateWalletBalance.ts';
+import { validateModelCostRates } from '../_shared/utils/validateModelCostRates.ts';
+import { resolveFinishReason } from '../_shared/utils/resolveFinishReason.ts';
+import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';
+import { determineContinuation } from '../_shared/utils/determineContinuation/determineContinuation.ts';
+import { buildUploadContext } from '../_shared/utils/buildUploadContext/buildUploadContext.ts';
 
 type JobContextParamsOverrides = { [K in keyof JobContextParams]?: JobContextParams[K] };
 
@@ -94,6 +102,14 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         continueJob: async () => ({ enqueued: false }),
         retryJob: async () => ({}),
         executeModelCallAndSave: async () => {},
+        pickLatest: pickLatest,
+        applyInputsRequiredScope: applyInputsRequiredScope,
+        validateWalletBalance: validateWalletBalance,
+        validateModelCostRates: validateModelCostRates,
+        resolveFinishReason: resolveFinishReason,
+        isIntermediateChunk: isIntermediateChunk,
+        determineContinuation: determineContinuation,
+        buildUploadContext: buildUploadContext,
     };
 
     if (!overrides) {
@@ -107,7 +123,8 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
 }
 
 /**
- * Helper: Creates mock IJobContext with all 24 fields
+ * Helper: Creates mock IJobContext with the same production utility bindings as
+ * `createMockJobContextParams` (including the eight EMCAS pure utilities from `_shared/utils/`).
  */
 export function createMockRootContext(overrides?: JobContextParamsOverrides): IJobContext {
     return createJobContext(createMockJobContextParams(overrides));

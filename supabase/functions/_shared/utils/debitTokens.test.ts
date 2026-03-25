@@ -1,10 +1,10 @@
 import { assertEquals, assertRejects, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import { createMockTokenWalletService, MockTokenWalletService } from "../_shared/services/tokenWalletService.mock.ts";
-import { logger } from "../_shared/logger.ts";
+import { createMockTokenWalletService, MockTokenWalletService } from "../services/tokenWalletService.mock.ts";
+import { logger } from "../logger.ts";
 import { debitTokens, DebitTokensDeps, DebitTokensParams } from './debitTokens.ts';
-import { TokenWallet, ITokenWalletService } from "../_shared/types/tokenWallet.types.ts";
-import { AiModelExtendedConfig, TokenUsage } from "../_shared/types.ts";
+import { TokenWallet, ITokenWalletService } from "../types/tokenWallet.types.ts";
+import { AiModelExtendedConfig, TokenUsage } from "../types.ts";
 
 Deno.test('debitTokens: happy path - debit and db operation succeed', async () => {
     // Arrange

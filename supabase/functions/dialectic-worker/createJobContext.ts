@@ -50,6 +50,18 @@ export function createJobContext(params: JobContextParams): IJobContext {
         randomUUID: params.randomUUID,
         shouldEnqueueRenderJob: params.shouldEnqueueRenderJob,
 
+        continueJob: params.continueJob,
+        retryJob: params.retryJob,
+
+        pickLatest: params.pickLatest,
+        applyInputsRequiredScope: params.applyInputsRequiredScope,
+        validateWalletBalance: params.validateWalletBalance,
+        validateModelCostRates: params.validateModelCostRates,
+        resolveFinishReason: params.resolveFinishReason,
+        isIntermediateChunk: params.isIntermediateChunk,
+        determineContinuation: params.determineContinuation,
+        buildUploadContext: params.buildUploadContext,
+
         // From IPlanJobContext (PLAN-specific)
         getGranularityPlanner: params.getGranularityPlanner,
         planComplexStage: params.planComplexStage,
@@ -59,8 +71,6 @@ export function createJobContext(params: JobContextParams): IJobContext {
         documentRenderer: params.documentRenderer,
 
         // From IJobContext (orchestration)
-        continueJob: params.continueJob,
-        retryJob: params.retryJob,
         executeModelCallAndSave: params.executeModelCallAndSave,
     };
 }
@@ -107,9 +117,17 @@ export function createExecuteJobContext(root: IJobContext): IExecuteJobContext {
         randomUUID: root.randomUUID,
         shouldEnqueueRenderJob: root.shouldEnqueueRenderJob,
 
-        // Orchestration callbacks (needed by executeModelCallAndSave)
         continueJob: root.continueJob,
         retryJob: root.retryJob,
+
+        pickLatest: root.pickLatest,
+        applyInputsRequiredScope: root.applyInputsRequiredScope,
+        validateWalletBalance: root.validateWalletBalance,
+        validateModelCostRates: root.validateModelCostRates,
+        resolveFinishReason: root.resolveFinishReason,
+        isIntermediateChunk: root.isIntermediateChunk,
+        determineContinuation: root.determineContinuation,
+        buildUploadContext: root.buildUploadContext,
     };
 }
 

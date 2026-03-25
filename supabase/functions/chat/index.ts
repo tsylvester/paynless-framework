@@ -26,7 +26,7 @@ import { prepareChatContext } from './prepareChatContext.ts';
 import { handleNormalPath } from './handleNormalPath.ts';
 import { handleRewindPath } from './handleRewindPath.ts';
 import { handleDialecticPath } from "./handleDialecticPath.ts";
-import { debitTokens } from './debitTokens.ts';
+import { debitTokens } from '../_shared/utils/debitTokens.ts';
 
 // --- Main Handler ---
 export async function handler(

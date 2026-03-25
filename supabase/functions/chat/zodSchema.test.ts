@@ -1,6 +1,6 @@
 import { assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { ChatApiRequestSchema, AiModelExtendedConfigSchema } from "./zodSchema.ts";
-
+import { ResourceDocuments } from "../_shared/types.ts";
 Deno.test("ChatApiRequestSchema - accepts optional systemInstruction pass-through", () => {
   const valid = ChatApiRequestSchema.safeParse({
     message: "Hello",
@@ -31,6 +31,10 @@ Deno.test("ChatApiRequestSchema - accepts and preserves isDialectic flag", () =>
 });
 
 Deno.test("ChatApiRequestSchema - accepts optional resourceDocuments array", () => {
+  const resourceDocuments: ResourceDocuments = [
+    { id: "doc-1", content: "Reference A", document_key: "doc-1", stage_slug: "stage-1", type: "text/plain" },
+    { id: "doc-2", content: "Reference B", document_key: "doc-2", stage_slug: "stage-2", type: "text/plain" },
+  ];
   const req = {
     message: "Hello",
     providerId: crypto.randomUUID(),
@@ -39,10 +43,7 @@ Deno.test("ChatApiRequestSchema - accepts optional resourceDocuments array", () 
       { role: 'user', content: 'Hello' },
       { role: 'assistant', content: 'Hi there' },
     ],
-    resourceDocuments: [
-      { id: "doc-1", content: "Reference A" },
-      { content: "Reference B" },
-    ],
+    resourceDocuments: resourceDocuments,
   };
   const result = ChatApiRequestSchema.safeParse(req);
   assert(result.success, "Schema should accept optional resourceDocuments array");

@@ -6,7 +6,7 @@ import {
 } from "../_shared/types.ts";
 import { findOrCreateChat } from "./findOrCreateChat.ts";
 import { constructMessageHistory } from "./constructMessageHistory.ts";
-import { debitTokens } from "./debitTokens.ts";
+import { debitTokens } from "../_shared/utils/debitTokens.ts";
 import { handleContinuationLoop } from "./continue.ts";
 import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
 import { TokenUsageSchema } from "./zodSchema.ts";

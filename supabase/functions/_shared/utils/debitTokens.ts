@@ -1,8 +1,8 @@
-import { ILogger, TokenUsage } from "../_shared/types.ts";
-import { ITokenWalletService, TokenWallet, TokenWalletTransactionType } from "../_shared/types/tokenWallet.types.ts";
-import { calculateActualChatCost } from "../_shared/utils/cost_utils.ts";
-import { AiModelExtendedConfig } from "../_shared/types.ts";
-import { TokenUsageSchema } from "./zodSchema.ts";
+import { ILogger, TokenUsage } from "../types.ts";
+import { ITokenWalletService, TokenWallet, TokenWalletTransactionType } from "../types/tokenWallet.types.ts";
+import { calculateActualChatCost } from "./cost_utils.ts";
+import { AiModelExtendedConfig } from "../types.ts";
+import { TokenUsageSchema } from "../../chat/zodSchema.ts";
 
 export interface DebitTokensDeps {
     logger: ILogger;

@@ -7,7 +7,7 @@ import {
     ChatMessageRow,
     ChatMessageRole,
 } from "../_shared/types.ts";
-import { debitTokens } from "./debitTokens.ts";
+import { debitTokens } from "../_shared/utils/debitTokens.ts";
 import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
 import { TokenUsageSchema } from "./zodSchema.ts";
 import { isChatMessageRow, isChatMessageRole } from "../_shared/utils/type_guards.ts";

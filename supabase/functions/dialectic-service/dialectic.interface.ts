@@ -53,7 +53,7 @@ import type {
 	DeconstructStoragePathFn,
 } from "../_shared/utils/path_deconstructor.types.ts";
 import type { ICompressionStrategy } from "../_shared/utils/vector_utils.ts";
-import type { debitTokens } from "../chat/debitTokens.ts";
+import type { debitTokens } from "../_shared/utils/debitTokens.ts";
 import type {
 	IExecuteJobContext,
 	IPlanJobContext,

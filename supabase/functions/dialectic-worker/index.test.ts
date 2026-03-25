@@ -34,6 +34,14 @@ import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { renderDocument } from '../_shared/services/document_renderer.ts';
 import { createMockJobContextParams } from './JobContext.mock.ts';
 import { createJobContext } from './createJobContext.ts';
+import { pickLatest } from '../_shared/utils/pickLatest.ts';
+import { applyInputsRequiredScope } from '../_shared/utils/applyInputsRequiredScope.ts';
+import { validateWalletBalance } from '../_shared/utils/validateWalletBalance.ts';
+import { validateModelCostRates } from '../_shared/utils/validateModelCostRates.ts';
+import { resolveFinishReason } from '../_shared/utils/resolveFinishReason.ts';
+import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';
+import { determineContinuation } from '../_shared/utils/determineContinuation/determineContinuation.ts';
+import { buildUploadContext } from '../_shared/utils/buildUploadContext/buildUploadContext.ts';
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
 // Global mock objects
@@ -561,6 +569,21 @@ Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', asy
 
     // Wallet service must be injected
     assertExists(deps.tokenWalletService, 'Token wallet service should be present');
+});
+
+// Worker composition root must bind the same `_shared/utils` implementations as `createMockJobContextParams`
+// so execute path tests and production share one wiring contract.
+Deno.test('createDialecticWorkerDeps: binds EMCAS pure utilities to production implementations', async () => {
+    const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
+
+    assertStrictEquals(deps.pickLatest, pickLatest);
+    assertStrictEquals(deps.applyInputsRequiredScope, applyInputsRequiredScope);
+    assertStrictEquals(deps.validateWalletBalance, validateWalletBalance);
+    assertStrictEquals(deps.validateModelCostRates, validateModelCostRates);
+    assertStrictEquals(deps.resolveFinishReason, resolveFinishReason);
+    assertStrictEquals(deps.isIntermediateChunk, isIntermediateChunk);
+    assertStrictEquals(deps.determineContinuation, determineContinuation);
+    assertStrictEquals(deps.buildUploadContext, buildUploadContext);
 });
 
 Deno.test('createDialecticWorkerDeps: constructs DummyAdapter embedding client when default embedding provider is dummy', async () => {

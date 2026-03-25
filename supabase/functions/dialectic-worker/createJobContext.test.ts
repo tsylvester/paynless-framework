@@ -50,6 +50,20 @@ describe('createJobContext Factory and Slicers', () => {
             assertEquals(result.extractSourceGroupFragment, mockExtractSourceGroupFragment);
             assertEquals(result.extractSourceGroupFragment, params.extractSourceGroupFragment);
         });
+
+        it('maps each EMCAS pure utility from params with reference equality', () => {
+            const params = createMockJobContextParams();
+            const result = createJobContext(params);
+
+            assertEquals(result.pickLatest, params.pickLatest);
+            assertEquals(result.applyInputsRequiredScope, params.applyInputsRequiredScope);
+            assertEquals(result.validateWalletBalance, params.validateWalletBalance);
+            assertEquals(result.validateModelCostRates, params.validateModelCostRates);
+            assertEquals(result.resolveFinishReason, params.resolveFinishReason);
+            assertEquals(result.isIntermediateChunk, params.isIntermediateChunk);
+            assertEquals(result.determineContinuation, params.determineContinuation);
+            assertEquals(result.buildUploadContext, params.buildUploadContext);
+        });
     });
 
     describe('createExecuteJobContext', () => {
@@ -79,14 +93,29 @@ describe('createJobContext Factory and Slicers', () => {
             assertEquals(result.extractSourceGroupFragment, root.extractSourceGroupFragment);
         });
 
-        it('does NOT include plan-specific fields', () => {
+        it('does NOT include plan, render, or root-orchestration-only fields', () => {
             const root = createMockRootContext();
             const result = createExecuteJobContext(root);
 
-            // Runtime check: planComplexStage should NOT be present
             assertEquals('planComplexStage' in result, false);
             assertEquals('getGranularityPlanner' in result, false);
             assertEquals('findSourceDocuments' in result, false);
+            assertEquals('documentRenderer' in result, false);
+            assertEquals('executeModelCallAndSave' in result, false);
+        });
+
+        it('copies each EMCAS pure utility from root with reference equality', () => {
+            const root = createMockRootContext();
+            const result = createExecuteJobContext(root);
+
+            assertEquals(result.pickLatest, root.pickLatest);
+            assertEquals(result.applyInputsRequiredScope, root.applyInputsRequiredScope);
+            assertEquals(result.validateWalletBalance, root.validateWalletBalance);
+            assertEquals(result.validateModelCostRates, root.validateModelCostRates);
+            assertEquals(result.resolveFinishReason, root.resolveFinishReason);
+            assertEquals(result.isIntermediateChunk, root.isIntermediateChunk);
+            assertEquals(result.determineContinuation, root.determineContinuation);
+            assertEquals(result.buildUploadContext, root.buildUploadContext);
         });
     });
 

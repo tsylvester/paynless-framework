@@ -12,7 +12,7 @@ import type { prepareChatContext } from '../chat/prepareChatContext.ts';
 import type { handleNormalPath } from '../chat/handleNormalPath.ts';
 import type { handleRewindPath } from '../chat/handleRewindPath.ts';
 import type { handleDialecticPath } from '../chat/handleDialecticPath.ts';
-import type { debitTokens } from '../chat/debitTokens.ts';
+import type { debitTokens } from './utils/debitTokens.ts';
 import { SystemInstruction } from '../dialectic-service/dialectic.interface.ts';
 
 export type GetAiProviderAdapterFn = (

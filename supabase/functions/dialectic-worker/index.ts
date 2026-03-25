@@ -45,6 +45,14 @@ import { createJobContext } from './createJobContext.ts';
 import { findSourceDocuments } from './findSourceDocuments.ts';
 import { pauseJobsForNsf } from './pauseJobsForNsf.ts';
 import { assembleChunks } from '../_shared/utils/assembleChunks/assembleChunks.ts';
+import { pickLatest } from '../_shared/utils/pickLatest.ts';
+import { applyInputsRequiredScope } from '../_shared/utils/applyInputsRequiredScope.ts';
+import { validateWalletBalance } from '../_shared/utils/validateWalletBalance.ts';
+import { validateModelCostRates } from '../_shared/utils/validateModelCostRates.ts';
+import { resolveFinishReason } from '../_shared/utils/resolveFinishReason.ts';
+import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';
+import { determineContinuation } from '../_shared/utils/determineContinuation/determineContinuation.ts';
+import { buildUploadContext } from '../_shared/utils/buildUploadContext/buildUploadContext.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -134,6 +142,14 @@ export async function createDialecticWorkerDeps(
         ...params,
         compressionStrategy: getSortedCompressionCandidates,
       }),
+    pickLatest,
+    applyInputsRequiredScope,
+    validateWalletBalance,
+    validateModelCostRates,
+    resolveFinishReason,
+    isIntermediateChunk,
+    determineContinuation,
+    buildUploadContext,
   });
 }
 

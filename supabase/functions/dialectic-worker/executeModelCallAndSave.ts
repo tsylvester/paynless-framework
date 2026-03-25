@@ -21,9 +21,8 @@ import {
     isDialecticExecuteJobPayload, 
     isContributionType, 
     isApiChatMessage, 
-    isDialecticContinueReason, 
-    isRecord, 
-    isFinishReason, 
+    isDialecticContinueReason,
+    isRecord,
     isDocumentRelationships,
     isJson,
     isDialecticRenderJobPayload,
@@ -198,16 +197,8 @@ export async function executeModelCallAndSave(
         throw new Error(`Model ${fullProviderData.id} has invalid or missing configuration.`);
     }
 
-    const extendedModelConfig: AiModelExtendedConfig = {
-        model_id: fullProviderData.id,
-        api_identifier: fullProviderData.api_identifier,
-        input_token_cost_rate: modelConfig.input_token_cost_rate,
-        output_token_cost_rate: modelConfig.output_token_cost_rate,
-        tokenization_strategy: modelConfig.tokenization_strategy,
-        context_window_tokens: modelConfig.context_window_tokens,
-        provider_max_output_tokens: modelConfig.provider_max_output_tokens,
-        provider_max_input_tokens: modelConfig.provider_max_input_tokens,
-    };
+    modelConfig.model_id = fullProviderData.id;
+    const extendedModelConfig: AiModelExtendedConfig = modelConfig;
 
     const {
         systemInstruction,
@@ -221,17 +212,6 @@ export async function executeModelCallAndSave(
         const rules: InputRule[] = params.inputsRequired;
 
         const gathered: Required<ResourceDocuments[number]>[] = [];
-
-        const pickLatest = <T extends { created_at: string }>(rows: T[]): T => {
-            if (rows.length === 0) throw new Error('No matching rows found after filtering');
-            let latest: T = rows[0];
-            let bestTs = Date.parse(rows[0].created_at);
-            for (let i = 1; i < rows.length; i++) {
-                const ts = Date.parse(rows[i].created_at);
-                if (ts > bestTs) { bestTs = ts; latest = rows[i]; }
-            }
-            return latest;
-        };
 
         for (const rule of rules) {
             if (!rule.document_key) continue;
@@ -271,7 +251,7 @@ export async function executeModelCallAndSave(
                         const parsed = deconstructStoragePath({ storageDir: row.storage_path, fileName: row.file_name, dbOriginalFileName: row.file_name });
                         return row.stage_slug === rStage && parsed.documentKey === rKey;
                     });
-                    const latest: DialecticProjectResourceRow = pickLatest(filtered);
+                    const latest: DialecticProjectResourceRow = deps.pickLatest(filtered);
                     const downloadResult = await deps.downloadFromStorage(dbClient, latest.storage_bucket, latest.storage_path + '/' + latest.file_name);
                     if (downloadResult.error || !downloadResult.data) {
                         throw new Error(`Failed to download content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`);
@@ -303,7 +283,7 @@ export async function executeModelCallAndSave(
                         const parsed = deconstructStoragePath({ storageDir: row.storage_path, fileName: row.file_name, dbOriginalFileName: row.file_name });
                         return row.stage_slug === rStage && parsed.documentKey === rKey;
                     });
-                    const latest: DialecticFeedbackRow = pickLatest(filtered);
+                    const latest: DialecticFeedbackRow = deps.pickLatest(filtered);
                     const downloadResult = await deps.downloadFromStorage(dbClient, latest.storage_bucket, latest.storage_path + '/' + latest.file_name);
                     if (downloadResult.error || !downloadResult.data) {
                         throw new Error(`Failed to download feedback content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`);
@@ -332,7 +312,7 @@ export async function executeModelCallAndSave(
                         if (rule.required === false) continue;
                         throw new Error(`Required seed_prompt for stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources.`);
                     }
-                    const latest: DialecticProjectResourceRow = pickLatest(data);
+                    const latest: DialecticProjectResourceRow = deps.pickLatest(data);
                     const downloadResult = await deps.downloadFromStorage(dbClient, latest.storage_bucket, latest.storage_path + '/' + latest.file_name);
                     if (downloadResult.error || !downloadResult.data) {
                         throw new Error(`Failed to download seed_prompt content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`);
@@ -360,7 +340,7 @@ export async function executeModelCallAndSave(
                         if (rule.required === false) continue;
                         throw new Error(`Required project_resource for document_key '${rKey}' was not found in dialectic_project_resources.`);
                     }
-                    const latest: DialecticProjectResourceRow = pickLatest(data);
+                    const latest: DialecticProjectResourceRow = deps.pickLatest(data);
                     const downloadResult = await deps.downloadFromStorage(dbClient, latest.storage_bucket, latest.storage_path + '/' + latest.file_name);
                     if (downloadResult.error || !downloadResult.data) {
                         throw new Error(`Failed to download project_resource content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`);
@@ -391,7 +371,7 @@ export async function executeModelCallAndSave(
                         const parsed = deconstructStoragePath({ storageDir: row.storage_path, fileName: row.file_name, dbOriginalFileName: row.file_name });
                         return row.stage === rStage && parsed.documentKey === rKey;
                     });
-                    const latest: DialecticContributionRow = pickLatest(filtered);
+                    const latest: DialecticContributionRow = deps.pickLatest(filtered);
                     if (!latest.file_name) throw new Error(`Contribution row '${latest.id}' has null file_name — data integrity violation.`);
                     const downloadResult = await deps.downloadFromStorage(dbClient, latest.storage_bucket, latest.storage_path + '/' + latest.file_name);
                     if (downloadResult.error || !downloadResult.data) {
@@ -417,26 +397,8 @@ export async function executeModelCallAndSave(
         return Array.from(unique.values());
     };
 
-    // 8.h.ii: Scope selection strictly to inputsRequired
-    const applyInputsRequiredScope = (docs: Required<ResourceDocuments[number]>[]): Required<ResourceDocuments[number]>[] => {
-        if (!params.inputsRequired || params.inputsRequired.length === 0) return [];
-        const scopeRules: InputRule[] = params.inputsRequired;
-        const filtered: Required<ResourceDocuments[number]>[] = [];
-        for (const d of docs) {
-            let match = false;
-            for (const scopeRule of scopeRules) {
-                if (scopeRule.type === d.type && scopeRule.slug === d.stage_slug && scopeRule.document_key === d.document_key) {
-                    match = true;
-                    break;
-                }
-            }
-            if (match) filtered.push(d);
-        }
-        return filtered;
-    };
-
     const gatheredDocs = await gatherArtifacts();
-    const scopedDocs = applyInputsRequiredScope(gatheredDocs);
+    const scopedDocs = deps.applyInputsRequiredScope(gatheredDocs, params.inputsRequired);
 
     // Fail-fast: validate each required inputsRequired rule has a matching doc before expensive API call
     if (params.inputsRequired) {
@@ -507,17 +469,13 @@ export async function executeModelCallAndSave(
 
     // Fetch and parse wallet balance
     const walletBalanceStr = await tokenWalletService.getBalance(walletId);
-    const walletBalance = parseFloat(walletBalanceStr);
-    if (!Number.isFinite(walletBalance) || walletBalance < 0) {
-        throw new Error(`Could not parse wallet balance for walletId: ${walletId}`);
-    }
+    const walletBalance = deps.validateWalletBalance(walletBalanceStr, walletId);
 
     // Validate model cost rates
-    const inputRate = extendedModelConfig.input_token_cost_rate;
-    const outputRate = extendedModelConfig.output_token_cost_rate;
-    if (typeof inputRate !== 'number' || inputRate < 0 || typeof outputRate !== 'number' || outputRate <= 0) {
-        throw new Error('Model configuration is missing valid token cost rates.');
-    }
+    const { inputRate, outputRate } = deps.validateModelCostRates(
+        extendedModelConfig.input_token_cost_rate,
+        extendedModelConfig.output_token_cost_rate,
+    );
 
     const isOversized = Boolean(maxTokens && initialTokenCount > maxTokens);
     let ssotMaxOutputNonOversized: number | undefined = undefined;
@@ -1026,12 +984,7 @@ export async function executeModelCallAndSave(
 
     // Resolve finish_reason BEFORE sanitization so truncation-signaled responses
     // can skip JSON parsing (incomplete chunks are expected to be invalid JSON).
-    let resolvedFinish: FinishReason = null;
-    if (isFinishReason(aiResponse.finish_reason)) {
-        resolvedFinish = aiResponse.finish_reason;
-    } else if (isRecord(aiResponse.rawProviderResponse) && isFinishReason(aiResponse.rawProviderResponse['finish_reason'])) {
-        resolvedFinish = aiResponse.rawProviderResponse['finish_reason'];
-    }
+    const resolvedFinish: FinishReason = deps.resolveFinishReason(aiResponse);
 
     if (resolvedFinish === 'error') {
         await deps.retryJob(
@@ -1052,16 +1005,12 @@ export async function executeModelCallAndSave(
 
     let shouldContinue = isDialecticContinueReason(resolvedFinish);
 
-    // Continuation triggers (additive): structural JSON repair flags incomplete output; missing keys
-    // vs ContextForDocument.content_to_include (typed template, not untyped records); continuation cap
-    // merges chunk fragments with optional schema fill via assembleAndSaveFinalDocument.
-
     // Decide intermediate vs not before sanitize/parse. Run sanitize/parse only when the chunk
     // is not an intermediate continuation chunk (single-complete and final paths still get validated).
-    const isIntermediateChunk = shouldContinue && !!job.payload.continueUntilComplete;
+    const isIntermediate = deps.isIntermediateChunk(resolvedFinish, !!job.payload.continueUntilComplete);
 
     let contentForStorage: string;
-    if (isIntermediateChunk) {
+    if (isIntermediate) {
         contentForStorage = aiResponse.content;
         deps.logger.info(`[executeModelCallAndSave] Skipping sanitize/parse for intermediate continuation chunk (finish_reason: ${resolvedFinish})`, { jobId });
     } else {
@@ -1093,17 +1042,12 @@ export async function executeModelCallAndSave(
             });
         }
 
-        if (sanitizationResult.wasStructurallyFixed && job.payload.continueUntilComplete && !shouldContinue) {
-            deps.logger.warn('[executeModelCallAndSave] Response was structurally fixed by sanitizer — treating as truncated, triggering continuation');
-            shouldContinue = true;
-        }
-        
         let parsedContent: unknown;
         try {
             parsedContent = JSON.parse(sanitizationResult.sanitized);
         } catch (e) {
             deps.logger.warn(`[executeModelCallAndSave] Malformed JSON response for job ${job.id} after sanitization. Triggering retry.`, { error: e instanceof Error ? e.message : String(e) });
-            
+
             await deps.retryJob(
                 { logger: deps.logger, notificationService: deps.notificationService },
                 dbClient,
@@ -1117,51 +1061,22 @@ export async function executeModelCallAndSave(
                 }],
                 projectOwnerUserId
             );
-            
+
             return;
         }
 
         contentForStorage = sanitizationResult.sanitized;
 
-        // Check content-level continuation flags when finish_reason didn't indicate continuation
-        if (!shouldContinue && isRecord(parsedContent)) {
-            if (
-                parsedContent.continuation_needed === true ||
-                parsedContent.stop_reason === 'continuation' ||
-                parsedContent.stop_reason === 'token_limit' ||
-                (typeof parsedContent.resume_cursor === 'string' && parsedContent.resume_cursor.trim() !== '')
-            ) {
-                shouldContinue = true;
-            }
-        }
-
-        if (!shouldContinue && isRecord(parsedContent) && job.payload.continueUntilComplete) {
-            const contextDocsUnknown = job.payload.context_for_documents;
-            if (Array.isArray(contextDocsUnknown) && typeof job.payload.document_key === 'string') {
-                let matchedContextForKeys: ContextForDocument | undefined = undefined;
-                for (let docIdx = 0; docIdx < contextDocsUnknown.length; docIdx++) {
-                    const docRow = contextDocsUnknown[docIdx];
-                    if (docRow.document_key === job.payload.document_key) {
-                        matchedContextForKeys = docRow;
-                        break;
-                    }
-                }
-                if (matchedContextForKeys !== undefined) {
-                    const templateKeys: string[] = Object.keys(matchedContextForKeys.content_to_include);
-                    const missingKeys: string[] = [];
-                    for (let keyIdx = 0; keyIdx < templateKeys.length; keyIdx++) {
-                        const templateKey: string = templateKeys[keyIdx];
-                        if (!(templateKey in parsedContent)) {
-                            missingKeys.push(templateKey);
-                        }
-                    }
-                    if (missingKeys.length > 0) {
-                        deps.logger.warn(`[executeModelCallAndSave] Parsed response missing expected keys from context_for_documents: ${missingKeys.join(', ')}`, { jobId, missingKeys });
-                        shouldContinue = true;
-                    }
-                }
-            }
-        }
+        // Delegate continuation decision to extracted utility
+        const continuationResult = deps.determineContinuation({
+            finishReasonContinue: isDialecticContinueReason(resolvedFinish),
+            wasStructurallyFixed: sanitizationResult.wasStructurallyFixed,
+            parsedContent,
+            continueUntilComplete: !!job.payload.continueUntilComplete,
+            documentKey: job.payload.document_key,
+            contextForDocuments: job.payload.context_for_documents,
+        });
+        shouldContinue = continuationResult.shouldContinue;
     }
 
     const needsContinuation = job.payload.continueUntilComplete && shouldContinue;
@@ -1322,42 +1237,33 @@ export async function executeModelCallAndSave(
     if (!documentKey) {
         throw new Error('document_key is required');
     }
-    const uploadContext: ModelContributionUploadContext = {
-        pathContext: {
-            projectId: job.payload.projectId,
-            fileType: storageFileType,
-            sessionId,
-            iteration: iterationNumber,
-            modelSlug: providerDetails.api_identifier,
-            attemptCount: job.attempt_count,
-            ...restOfCanonicalPathParams,
-            documentKey: documentKey,
-            contributionType,
-            isContinuation: isContinuationForStorage,
-            turnIndex: isContinuationForStorage ? job.payload.continuation_count : undefined,
-            ...(sourceGroupFragment ? { sourceGroupFragment } : {}),
-        },
-        fileContent: contentForStorage, 
-        mimeType: "application/json",
-        sizeBytes: contentForStorage.length, 
-        userId: projectOwnerUserId,
+    const uploadContext: ModelContributionUploadContext = deps.buildUploadContext({
+        projectId: job.payload.projectId,
+        storageFileType,
+        sessionId,
+        iterationNumber,
+        modelSlug: providerDetails.api_identifier,
+        attemptCount: job.attempt_count,
+        restOfCanonicalPathParams,
+        documentKey,
+        contributionType,
+        isContinuationForStorage,
+        continuationCount: job.payload.continuation_count,
+        sourceGroupFragment,
+        contentForStorage,
+        projectOwnerUserId,
         description,
-        contributionMetadata: {
-            sessionId, 
-            modelIdUsed: providerDetails.id, 
-            modelNameDisplay: providerDetails.name,
-            stageSlug, 
-            iterationNumber, 
-            contributionType: contributionType,
-            tokensUsedInput: aiResponse.inputTokens, 
-            tokensUsedOutput: aiResponse.outputTokens,
+        providerDetails: { id: providerDetails.id, name: providerDetails.name },
+        aiResponse: {
+            inputTokens: aiResponse.inputTokens,
+            outputTokens: aiResponse.outputTokens,
             processingTimeMs: aiResponse.processingTimeMs,
-            source_prompt_resource_id: promptConstructionPayload.source_prompt_resource_id,
-            target_contribution_id: targetContributionId,
-            document_relationships,
-            isIntermediate: 'isIntermediate' in job.payload && job.payload.isIntermediate,
         },
-    };
+        sourcePromptResourceId: promptConstructionPayload.source_prompt_resource_id,
+        targetContributionId,
+        documentRelationships: document_relationships,
+        isIntermediate: 'isIntermediate' in job.payload && job.payload.isIntermediate,
+    });
 
     deps.logger.info('[executeModelCallAndSave] Saving validated JSON to raw file', { 
         jobId, 
