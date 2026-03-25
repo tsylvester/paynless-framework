@@ -132,7 +132,7 @@ dialectic-worker edge function
 |----------|--------|-------|
 | Dialectic worker | worker → HTTP → chat → adapter | worker → adapter (direct) |
 | Browser chat (SSE) | browser → chat → adapter | No change |
-| `callUnifiedAIModel` | HTTP fetch to chat | Direct adapter call (same function, rewritten internals) |
+| `callUnifiedAIModel` | HTTP fetch to chat | DELETED — `executeModelCallAndSave` calls adapter directly, no intermediary needed |
 
 ### Quantitative targets
 
@@ -157,26 +157,25 @@ Before splitting EMCAS, define the contracts that the extracted modules will imp
     *   Input contract: job, dbClient, deps (same as current EMCAS params)
     *   Output contract: fully prepared `ChatApiRequest`, resolved provider, resolved artifacts, affordability result
 
-*   `[ ]` **0.3 Extract pure utilities from EMCAS internals**
+*   `[✅]` **0.3 Extract pure utilities from EMCAS internals**
     These are low-risk, high-value extractions that reduce EMCAS line count and enable isolated testing. Each follows the pattern: define interface → write failing test → implement → verify existing tests still pass.
 
-    *   `[ ]` 0.3.a `pickLatest` — pure utility, selects latest record by `created_at` (current lines ~225-234)
-    *   `[ ]` 0.3.b `sanitizeMessage` — pure string transform, removes placeholder braces
-    *   `[ ]` 0.3.c `applyInputsRequiredScope` — pure filter, scopes docs to `inputsRequired` rules (current lines ~421-436)
-    *   `[ ]` 0.3.d `buildExtendedModelConfig` — pure transform, constructs `AiModelExtendedConfig` (current lines ~196-211)
-    *   `[ ]` 0.3.e `validateWalletBalance` — pure validation, parses and validates balance string
-    *   `[ ]` 0.3.f `validateModelCostRates` — pure validation, checks input/output rates
-    *   `[ ]` 0.3.g `resolveFinishReason` — pure extraction from AI response (current lines ~1029-1034)
-    *   `[ ]` 0.3.h `determineContinuation` — pure decision based on finish reason + parsed content (current lines ~1053-1164)
-    *   `[ ]` 0.3.i `buildUploadContext` — pure construction of `ModelContributionUploadContext` (current lines ~1325-1360)
+    *   `[✅]` 0.3.a `pickLatest` — pure utility, selects latest record by `created_at` (current lines ~225-234)
+    *   `[✅]` 0.3.b `sanitizeMessage` — pure string transform, removes placeholder braces
+    *   `[✅]` 0.3.c `applyInputsRequiredScope` — pure filter, scopes docs to `inputsRequired` rules (current lines ~421-436)
+    *   `[✅]` 0.3.e `validateWalletBalance` — pure validation, parses and validates balance string
+    *   `[✅]` 0.3.f `validateModelCostRates` — pure validation, checks input/output rates
+    *   `[✅]` 0.3.g `resolveFinishReason` — pure extraction from AI response (current lines ~1029-1034)
+    *   `[✅]` 0.3.h `determineContinuation` — pure decision based on finish reason + parsed content (current lines ~1053-1164)
+    *   `[✅]` 0.3.i `buildUploadContext` — pure construction of `ModelContributionUploadContext` (current lines ~1325-1360)
 
-*   `[ ]` **0.4 Extract token debit logic as a shared utility**
+*   `[✅]` **0.4 Extract token debit logic as a shared utility**
     Currently lives inside the chat function's `debitTokens`. The direct-adapter path needs the same logic. Extract once, use in both chat (browser path) and the new `executeModelCallAndSave` (dialectic path).
 
-*   `[ ]` **0.5 Replace EMCAS inline implementations with extracted utilities**
+*   `[✅]` **0.5 Replace EMCAS inline implementations with extracted utilities**
     Swap each inline implementation for a call to the extracted utility. Run all ~700 existing tests after each swap to prove behavior preservation.
 
-*   `[ ]` **0.6 Commit: `refactor(BE): extract pure utilities from executeModelCallAndSave`**
+*   `[✅]` **0.6 Commit: `refactor(BE): extract pure utilities from executeModelCallAndSave`**
 
 #### Detailed Work Nodes — Phase 0
 
@@ -641,7 +640,7 @@ Before splitting EMCAS, define the contracts that the extracted modules will imp
         *   `[✅]` Functional: exact behavioral parity with EMCAS lines ~1325-1360
         *   `[✅]` Functional: all validation, sourceGroup resolution, and DB queries remain at the call site — this function only assembles the final object
         *   `[✅]` Acceptance: all fourteen unit tests pass GREEN
-        *   `[ ]` Acceptance: no existing EMCAS tests are modified or broken (verified at wiring node)
+        *   `[✅]` Acceptance: no existing EMCAS tests are modified or broken (verified at wiring node)
 
 *   `[✅]` _shared/services/`debitTokens` **Relocate token debit logic from chat/ to _shared/ for cross-consumer use**
     *   `[✅]` `objective`
@@ -830,11 +829,10 @@ Before splitting EMCAS, define the contracts that the extracted modules will imp
         *   `[✅]`   `createJobContext.test.ts` — factory/slicer coverage
         *   `[✅]`   `executeModelCallAndSave.test.ts` — `getMockDeps` extended defaults
     *   `[✅]` **Commit** `refactor(BE): extract pure utilities from executeModelCallAndSave`
-        *   `[✅]` 9 new utility files under `_shared/utils/` (pickLatest, applyInputsRequiredScope, buildExtendedModelConfig, validateWalletBalance, validateModelCostRates, resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext)
-        *   `[✅]` 9 new test files under `_shared/utils/` (one per utility)
+        *   `[✅]` 8 new utility files under `_shared/utils/` (pickLatest, applyInputsRequiredScope, validateWalletBalance, validateModelCostRates, resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext)
+        *   `[✅]` 8 new test files under `_shared/utils/` (one per utility)
         *   `[✅]` `determineContinuation` interface, interface tests, interface guards, and mock files
         *   `[✅]` `isIntermediateChunk` has no interface files (two primitive arguments, boolean return)
-        *   `[✅]` `buildExtendedModelConfig` interface file
         *   `[✅]` `validateModelCostRates` interface file
         *   `[✅]` `buildUploadContext` interface, interface tests, interface guards files
         *   `[✅]` `debitTokens.ts` and `debitTokens.test.ts` relocated from `chat/` to `_shared/services/`
@@ -892,6 +890,1168 @@ This is the highest-priority phase. It creates the architectural seam needed for
 
 *   `[ ]` **1.8 Commit: `feat(BE): direct adapter call for dialectic jobs, eliminate chat hop`**
 
+---
+
+#### Phase 1 — Detailed Implementation Nodes
+
+*   `[ ]` _shared/ai_service/anthropic_adapter **Add `sendMessageStream()` to Anthropic adapter — owns `AdapterStreamChunk` type and `AiProviderAdapter` interface change** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Expose the Anthropic SDK's existing internal stream (`this.client.messages.stream()`) to callers as an `AsyncGenerator<AdapterStreamChunk>` so that `executeModelCallAndSave` can accumulate content incrementally and implement soft-timeout checkpointing
+        *   `[ ]` Define the `AdapterStreamChunk` discriminated union type used by all adapters
+        *   `[ ]` Add `sendMessageStream()` to the `AiProviderAdapter` type contract so all adapters must implement it
+        *   `[ ]` Existing `sendMessage()` remains unchanged — it is still used by the `chat/` browser SSE path
+    *   `[ ]` `role`
+        *   `[ ]` Adapter — translates provider-specific streaming events into a uniform application-level chunk type
+    *   `[ ]` `module`
+        *   `[ ]` AI service adapter layer (`_shared/ai_service/`)
+        *   `[ ]` Boundary: receives a `ChatApiRequest` + model identifier, yields `AdapterStreamChunk` items, does NOT save or debit tokens
+    *   `[ ]` `deps`
+        *   `[ ]` `npm:@anthropic-ai/sdk` — Anthropic client SDK, provides `messages.stream()` which returns an async iterable of `RawMessageStreamEvent`
+            *   Abstraction layer: adapter (wraps external infra)
+            *   Direction: inward (adapter depends on external SDK)
+            *   Context slice: `Anthropic` client instance (`this.client`), already injected via constructor
+        *   `[ ]` `_shared/types.ts` — owns `AiProviderAdapter`, `ChatApiRequest`, `AdapterResponsePayload`, `FinishReason`, `AiModelExtendedConfig`
+            *   Abstraction layer: domain types
+            *   Direction: inward (adapter depends on domain types)
+            *   Context slice: type imports only
+        *   `[ ]` Confirm no reverse dependency is introduced — `types.ts` does not import from any adapter
+    *   `[ ]` `context_slice`
+        *   `[ ]` From constructor: `this.client` (Anthropic SDK instance), `this.logger` (ILogger), `this.modelConfig` (AiModelExtendedConfig)
+        *   `[ ]` From caller: `request: ChatApiRequest`, `modelIdentifier: string` — same signature as existing `sendMessage()`
+        *   `[ ]` Injection shape: class instance methods; no new constructor params needed
+        *   `[ ]` Confirm no concrete imports from higher or lateral layers
+    *   `[ ]` `_shared/types.ts`/interface
+        *   `[ ]` Add `AdapterStreamChunk` — discriminated union with three variants:
+            *   `{ type: 'text_delta'; text: string }` — incremental text content from the model
+            *   `{ type: 'usage'; tokenUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }` — token usage data emitted at end of stream
+            *   `{ type: 'done'; finish_reason: FinishReason }` — signals stream completion with the standardized finish reason
+        *   `[ ]` Add `sendMessageStream` to the `AiProviderAdapter` type (line 250-263 of `types.ts`). Current type is `export type AiProviderAdapter = new (...) => { sendMessage(...): Promise<AdapterResponsePayload>; listModels(): ...; getEmbedding?(...): ... }`. Add: `sendMessageStream(request: ChatApiRequest, modelIdentifier: string): AsyncGenerator<AdapterStreamChunk>;`
+    *   `[ ]` `_shared/types.ts`/interface tests — `_shared/utils/type-guards/type_guards.adapterStreamChunk.test.ts`
+        *   `[ ]` Test that a valid `text_delta` chunk passes the `isAdapterStreamChunk` guard
+        *   `[ ]` Test that a valid `usage` chunk passes the guard
+        *   `[ ]` Test that a valid `done` chunk passes the guard
+        *   `[ ]` Test that an object missing `type` fails the guard
+        *   `[ ]` Test that an object with an unknown `type` string fails the guard
+        *   `[ ]` Test that a `text_delta` with non-string `text` fails the guard
+        *   `[ ]` Test that a `usage` chunk with missing `tokenUsage` fields fails the guard
+        *   `[ ]` Test that a `done` chunk with invalid `finish_reason` fails the guard
+    *   `[ ]` `_shared/utils/type-guards/type_guards.adapterStreamChunk.ts`/interface guards
+        *   `[ ]` `isAdapterStreamChunk(value: unknown): value is AdapterStreamChunk` — validates discriminated union by checking `type` field and variant-specific properties
+        *   `[ ]` `isTextDeltaChunk(value: unknown): value is AdapterStreamChunk & { type: 'text_delta' }` — narrowing guard for text delta variant
+        *   `[ ]` `isUsageChunk(value: unknown): value is AdapterStreamChunk & { type: 'usage' }` — narrowing guard for usage variant
+        *   `[ ]` `isDoneChunk(value: unknown): value is AdapterStreamChunk & { type: 'done' }` — narrowing guard for done variant
+    *   `[ ]` unit/`anthropic_adapter.test.ts`
+        *   `[ ]` Test: `sendMessageStream` yields `text_delta` chunks containing the streamed text from Anthropic SDK's `content_block_delta` events
+        *   `[ ]` Test: `sendMessageStream` yields a `usage` chunk with `prompt_tokens`, `completion_tokens`, `total_tokens` derived from `stream.finalMessage().usage`
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'stop'` when Anthropic `stop_reason` is `'end_turn'`
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'length'` when Anthropic `stop_reason` is `'max_tokens'`
+        *   `[ ]` Test: `sendMessageStream` throws on empty message history (same validation as `sendMessage`)
+        *   `[ ]` Test: `sendMessageStream` throws on Anthropic API error (wraps `Anthropic.APIError`)
+        *   `[ ]` Test: `sendMessageStream` applies the same message formatting (system prompt extraction, consecutive-role merging, alternating-role enforcement) as `sendMessage` — verify by checking the SDK call args
+        *   `[ ]` Test: `sendMessageStream` respects `max_tokens` from request or model config, same logic as `sendMessage` lines 148-159
+    *   `[ ]` `construction`
+        *   `[ ]` No new constructors — `sendMessageStream` is an instance method on the existing `AnthropicAdapter` class
+        *   `[ ]` Prohibited: standalone function construction — must be a class method to access `this.client`, `this.logger`, `this.modelConfig`
+        *   `[ ]` Completeness: method must be added to the class AND to the `AiProviderAdapter` type contract in `types.ts`
+    *   `[ ]` `anthropic_adapter.ts`
+        *   `[ ]` Add `async *sendMessageStream(request: ChatApiRequest, modelIdentifier: string): AsyncGenerator<AdapterStreamChunk>` method
+        *   `[ ]` Reuse the existing message preparation logic from `sendMessage` (lines 56-165): system prompt extraction, message merging, alternating role enforcement, resource document injection, max_tokens calculation. Extract to a private helper `_prepareAnthropicRequest` to avoid duplication, or inline if the duplication is minimal enough to keep in one file
+        *   `[ ]` Create the stream via `this.client.messages.stream({ model, system, messages, max_tokens })` — same as `sendMessage` line 160
+        *   `[ ]` Iterate the stream: for each `content_block_delta` event with `delta.type === 'text_delta'`, yield `{ type: 'text_delta', text: event.delta.text }`
+        *   `[ ]` After stream iteration completes, call `await stream.finalMessage()` to get the final response
+        *   `[ ]` Yield `{ type: 'usage', tokenUsage: { prompt_tokens: response.usage.input_tokens, completion_tokens: response.usage.output_tokens, total_tokens: input + output } }`
+        *   `[ ]` Map `response.stop_reason` to `FinishReason` using the same switch logic as `sendMessage` lines 194-211
+        *   `[ ]` Yield `{ type: 'done', finish_reason: mappedFinishReason }`
+        *   `[ ]` Wrap in try/catch with the same Anthropic.APIError handling as `sendMessage` lines 223-234
+    *   `[ ]` provides/`anthropic_adapter.ts`
+        *   `[ ]` Exports `AnthropicAdapter` class (existing) — now with both `sendMessage()` and `sendMessageStream()` methods
+        *   `[ ]` Semantic guarantee: `sendMessageStream` yields at minimum one `done` chunk on success; throws on API or validation errors before yielding
+        *   `[ ]` Stability: `sendMessage` behavior is unchanged — existing callers (chat path) are not affected
+    *   `[ ]` mock — no separate mock file needed for anthropic_adapter; tests stub `this.client.messages.stream` directly (existing pattern in `anthropic_adapter.test.ts`)
+    *   `[ ]` integration — deferred; anthropic_adapter is a leaf adapter with no downstream consumers yet (consumers are wired in later nodes)
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: adapter
+        *   `[ ]` All dependencies are inward-facing (SDK, domain types)
+        *   `[ ]` All provides are outward-facing (exposes stream interface to worker layer)
+    *   `[ ]` `requirements`
+        *   `[ ]` `sendMessageStream` must yield `text_delta` chunks for every content delta from the Anthropic stream
+        *   `[ ]` `sendMessageStream` must yield exactly one `usage` chunk and exactly one `done` chunk per call, in that order, after all `text_delta` chunks
+        *   `[ ]` `sendMessageStream` must apply identical message validation and formatting as `sendMessage` — a request valid for `sendMessage` must be valid for `sendMessageStream` and vice versa
+        *   `[ ]` `AdapterStreamChunk` type must be a discriminated union on `type` field, importable from `_shared/types.ts`
+        *   `[ ]` `AiProviderAdapter` type contract must include `sendMessageStream` so that all adapter classes are required to implement it
+        *   `[ ]` No changes to `sendMessage`, `listModels`, `getEmbedding`, or constructor
+        *   `[ ]` Type guard `isAdapterStreamChunk` and variant guards must be available for downstream consumers
+
+*   `[ ]` _shared/ai_service/openai_adapter **Add `sendMessageStream()` to OpenAI adapter** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Expose the OpenAI SDK's streaming response (already used internally by `sendMessage`) as an `AsyncGenerator<AdapterStreamChunk>` so `executeModelCallAndSave` can accumulate content incrementally
+        *   `[ ]` Existing `sendMessage()` remains unchanged
+    *   `[ ]` `role`
+        *   `[ ]` Adapter — translates OpenAI-specific streaming `ChatCompletionChunk` events into uniform `AdapterStreamChunk` items
+    *   `[ ]` `module`
+        *   `[ ]` AI service adapter layer (`_shared/ai_service/`)
+        *   `[ ]` Boundary: receives `ChatApiRequest` + model identifier, yields `AdapterStreamChunk` items, does NOT save or debit tokens
+    *   `[ ]` `deps`
+        *   `[ ]` `npm:openai` — OpenAI client SDK, provides `chat.completions.create()` with `stream: true` returning async iterable of `ChatCompletionChunk`
+            *   Abstraction layer: adapter (wraps external infra)
+            *   Direction: inward (adapter depends on external SDK)
+            *   Context slice: `this.client` (OpenAI instance), already injected via constructor
+        *   `[ ]` `_shared/types.ts` — owns `AiProviderAdapter`, `ChatApiRequest`, `AdapterStreamChunk`, `FinishReason`, `AiModelExtendedConfig`
+            *   Abstraction layer: domain types
+            *   Direction: inward (adapter depends on domain types)
+            *   Context slice: type imports only
+        *   `[ ]` Depends on prior node: `AdapterStreamChunk` type and updated `AiProviderAdapter` contract from the anthropic_adapter node
+    *   `[ ]` `context_slice`
+        *   `[ ]` From constructor: `this.client` (OpenAI SDK instance), `this.logger` (ILogger), `this.modelConfig` (AiModelExtendedConfig)
+        *   `[ ]` From caller: `request: ChatApiRequest`, `modelIdentifier: string` — same signature as existing `sendMessage()`
+        *   `[ ]` Injection shape: class instance methods; no new constructor params needed
+    *   `[ ]` interface — no new interface changes; `sendMessageStream` was added to `AiProviderAdapter` in the anthropic_adapter node. This node implements that contract.
+    *   `[ ]` interface tests — covered by the anthropic_adapter node's type guard tests for `AdapterStreamChunk`
+    *   `[ ]` interface guards — covered by the anthropic_adapter node's `isAdapterStreamChunk` and variant guards
+    *   `[ ]` unit/`openai_adapter.test.ts`
+        *   `[ ]` Test: `sendMessageStream` yields `text_delta` chunks for each `ChatCompletionChunk` with `choices[0].delta.content` present
+        *   `[ ]` Test: `sendMessageStream` yields a `usage` chunk with `prompt_tokens`, `completion_tokens`, `total_tokens` from the stream's final chunk (the chunk where `chunk.usage != null`, enabled by `stream_options: { include_usage: true }`)
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'stop'` when OpenAI `finish_reason` is `'stop'`
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'length'` when OpenAI `finish_reason` is `'length'`
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'content_filter'` when OpenAI `finish_reason` is `'content_filter'`
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'unknown'` for unrecognized finish reasons
+        *   `[ ]` Test: `sendMessageStream` throws on OpenAI API error (wraps `OpenAI.APIError`)
+        *   `[ ]` Test: `sendMessageStream` applies the same message formatting as `sendMessage` — model name stripping (`openai-` prefix removal), resource document injection, max_tokens/max_completion_tokens selection based on model name
+        *   `[ ]` Test: `sendMessageStream` throws when usage data is missing from the stream (no chunk with `usage != null`)
+    *   `[ ]` `construction`
+        *   `[ ]` No new constructors — `sendMessageStream` is an instance method on the existing `OpenAiAdapter` class
+        *   `[ ]` Prohibited: standalone function construction — must be a class method to access `this.client`, `this.logger`, `this.modelConfig`
+    *   `[ ]` `openai_adapter.ts`
+        *   `[ ]` Add `async *sendMessageStream(request: ChatApiRequest, modelIdentifier: string): AsyncGenerator<AdapterStreamChunk>` method
+        *   `[ ]` Reuse the existing message preparation logic from `sendMessage` (lines 39-112): model name stripping, model mismatch check, message mapping, resource document injection, payload construction with `stream: true` and `stream_options: { include_usage: true }`, max_tokens/max_completion_tokens cap logic
+        *   `[ ]` Extract shared prep to a private helper `_prepareOpenAiPayload` to avoid duplication, or inline if minimal
+        *   `[ ]` Create the stream via `await this.client.chat.completions.create(payload)` — same call as `sendMessage` line 117
+        *   `[ ]` Iterate the stream: for each `ChatCompletionChunk`, check `chunk.choices?.[0]?.delta?.content` — if string, yield `{ type: 'text_delta', text: deltaContent }`
+        *   `[ ]` Track `finish_reason` from `chunk.choices?.[0]?.finish_reason` when not null (same as `sendMessage` lines 130-131)
+        *   `[ ]` Track `usage` from `chunk.usage` when not null (same as `sendMessage` lines 134-136)
+        *   `[ ]` After stream iteration, validate usage data exists (same check as `sendMessage` lines 175-178) — throw if missing
+        *   `[ ]` Yield `{ type: 'usage', tokenUsage: { prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens, total_tokens: usage.total_tokens } }`
+        *   `[ ]` Map `finish_reason` using same switch as `sendMessage` lines 149-171: `'stop'`→`'stop'`, `'length'`→`'length'`, `'tool_calls'`→`'tool_calls'`, `'content_filter'`→`'content_filter'`, `'function_call'`→`'function_call'`, default→`'unknown'`
+        *   `[ ]` Yield `{ type: 'done', finish_reason: mappedFinishReason }`
+        *   `[ ]` Wrap in try/catch with same `OpenAI.APIError` handling as `sendMessage` lines 195-204
+    *   `[ ]` provides/`openai_adapter.ts`
+        *   `[ ]` Exports `OpenAiAdapter` class (existing) — now with both `sendMessage()` and `sendMessageStream()` methods
+        *   `[ ]` Semantic guarantee: `sendMessageStream` yields at minimum one `done` chunk on success; throws on API, validation, or missing-usage errors before yielding
+        *   `[ ]` Stability: `sendMessage` behavior is unchanged
+    *   `[ ]` mock — no separate mock file needed; tests stub `this.client.chat.completions.create` directly (existing pattern in `openai_adapter.test.ts`)
+    *   `[ ]` integration — deferred; openai_adapter is a leaf adapter with no downstream consumers yet
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: adapter
+        *   `[ ]` All dependencies are inward-facing (SDK, domain types)
+        *   `[ ]` All provides are outward-facing (exposes stream interface to worker layer)
+    *   `[ ]` `requirements`
+        *   `[ ]` `sendMessageStream` must yield `text_delta` chunks for every content delta from the OpenAI stream
+        *   `[ ]` `sendMessageStream` must yield exactly one `usage` chunk and exactly one `done` chunk per call, in that order, after all `text_delta` chunks
+        *   `[ ]` `sendMessageStream` must apply identical message preparation and max_tokens logic as `sendMessage` — including the `usesLegacyMaxTokens` check for `gpt-3.5-turbo`/`gpt-4-turbo`/`gpt-4` models (line 90)
+        *   `[ ]` `sendMessageStream` must request `stream_options: { include_usage: true }` so that token usage is available in the stream
+        *   `[ ]` `sendMessageStream` must throw if usage data is not present in the stream response
+        *   `[ ]` No changes to `sendMessage`, `listModels`, `getEmbedding`, or constructor
+
+*   `[ ]` _shared/ai_service/google_adapter **Add `sendMessageStream()` to Google adapter** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Expose the Google Gemini SDK's streaming response (already used internally by `sendMessage` via `chat.sendMessageStream()`) as an `AsyncGenerator<AdapterStreamChunk>` so `executeModelCallAndSave` can accumulate content incrementally
+        *   `[ ]` Existing `sendMessage()` remains unchanged
+    *   `[ ]` `role`
+        *   `[ ]` Adapter — translates Google-specific streaming `GenerateContentResponse` chunks into uniform `AdapterStreamChunk` items
+    *   `[ ]` `module`
+        *   `[ ]` AI service adapter layer (`_shared/ai_service/`)
+        *   `[ ]` Boundary: receives `ChatApiRequest` + model identifier, yields `AdapterStreamChunk` items, does NOT save or debit tokens
+    *   `[ ]` `deps`
+        *   `[ ]` `npm:@google/generative-ai` — Google Generative AI SDK, provides `chat.sendMessageStream()` returning `GenerateContentStreamResult` with `.stream` (async iterable of `GenerateContentResponse`) and `.response` (final `EnhancedGenerateContentResponse`)
+            *   Abstraction layer: adapter (wraps external infra)
+            *   Direction: inward (adapter depends on external SDK)
+            *   Context slice: `this.client` (GoogleGenerativeAI instance), already injected via constructor
+        *   `[ ]` `_shared/types.ts` — owns `AiProviderAdapter`, `ChatApiRequest`, `AdapterStreamChunk`, `FinishReason`, `AiModelExtendedConfig`
+            *   Abstraction layer: domain types
+            *   Direction: inward (adapter depends on domain types)
+            *   Context slice: type imports only
+        *   `[ ]` Depends on prior nodes: `AdapterStreamChunk` type and updated `AiProviderAdapter` contract from the anthropic_adapter node
+    *   `[ ]` `context_slice`
+        *   `[ ]` From constructor: `this.client` (GoogleGenerativeAI instance), `this.logger` (ILogger), `this.modelConfig` (AiModelExtendedConfig), `this.apiKey` (string)
+        *   `[ ]` From caller: `request: ChatApiRequest`, `modelIdentifier: string` — same signature as existing `sendMessage()`
+        *   `[ ]` Injection shape: class instance methods; no new constructor params needed
+    *   `[ ]` interface — no new interface changes; `sendMessageStream` was added to `AiProviderAdapter` in the anthropic_adapter node. This node implements that contract.
+    *   `[ ]` interface tests — covered by the anthropic_adapter node's type guard tests for `AdapterStreamChunk`
+    *   `[ ]` interface guards — covered by the anthropic_adapter node's `isAdapterStreamChunk` and variant guards
+    *   `[ ]` unit/`google_adapter.test.ts`
+        *   `[ ]` Test: `sendMessageStream` yields `text_delta` chunks for each `GenerateContentResponse` chunk in the stream where `candidates[0].content.parts[0].text` is present
+        *   `[ ]` Test: `sendMessageStream` yields a `usage` chunk with `prompt_tokens`, `completion_tokens`, `total_tokens` derived from `response.usageMetadata` (`promptTokenCount`, `candidatesTokenCount`, `totalTokenCount`)
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'stop'` when Google `finishReason` is `'STOP'`
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'length'` when Google `finishReason` is `'MAX_TOKENS'`
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'content_filter'` when Google `finishReason` is `'SAFETY'` or `'RECITATION'`
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'unknown'` for unrecognized finish reasons
+        *   `[ ]` Test: `sendMessageStream` throws when message history does not end with a user message (same validation as `sendMessage` lines 83-87)
+        *   `[ ]` Test: `sendMessageStream` throws when the stream itself throws an error (existing error propagation pattern at `sendMessage` lines 117-122)
+        *   `[ ]` Test: `sendMessageStream` applies the same message formatting as `sendMessage` — model name stripping (`google-` prefix removal), system message filtering, `assistant`→`model` role mapping, resource document injection as parts, `maxOutputTokens` cap from request or model config
+    *   `[ ]` `construction`
+        *   `[ ]` No new constructors — `sendMessageStream` is an instance method on the existing `GoogleAdapter` class
+        *   `[ ]` Prohibited: standalone function construction — must be a class method to access `this.client`, `this.logger`, `this.modelConfig`
+    *   `[ ]` `google_adapter.ts`
+        *   `[ ]` Add `async *sendMessageStream(request: ChatApiRequest, modelIdentifier: string): AsyncGenerator<AdapterStreamChunk>` method
+        *   `[ ]` Reuse the existing message preparation logic from `sendMessage` (lines 51-111): model name stripping, message mapping (system filtered, user→user, assistant→model), history/lastMessage split, validation that last message is user role, `model.startChat()` with history and `generationConfig.maxOutputTokens` cap, resource document injection into `finalParts`
+        *   `[ ]` Extract shared prep to a private helper `_prepareGoogleChat` to avoid duplication, or inline if minimal
+        *   `[ ]` Create the stream via `await chat.sendMessageStream(finalParts)` — same call as `sendMessage` line 112
+        *   `[ ]` Iterate `streamResult.stream`: for each `GenerateContentResponse` chunk, extract text from `chunk.candidates?.[0]?.content?.parts?.[0]?.text` — if present, yield `{ type: 'text_delta', text: chunkText }`
+        *   `[ ]` After stream iteration completes, call `await streamResult.response` to get the `EnhancedGenerateContentResponse`
+        *   `[ ]` Extract usage from `response.usageMetadata`: yield `{ type: 'usage', tokenUsage: { prompt_tokens: usageMetadata.promptTokenCount || 0, completion_tokens: usageMetadata.candidatesTokenCount || 0, total_tokens: usageMetadata.totalTokenCount || 0 } }`
+        *   `[ ]` Map `response.candidates?.[0]?.finishReason` using the same switch as `sendMessage` lines 148-164: `'STOP'`→`'stop'`, `'MAX_TOKENS'`→`'length'`, `'SAFETY'`/`'RECITATION'`→`'content_filter'`, default→`'unknown'`
+        *   `[ ]` Yield `{ type: 'done', finish_reason: mappedFinishReason }`
+        *   `[ ]` Wrap stream iteration in try/catch with the same error re-throw pattern as `sendMessage` lines 117-122
+    *   `[ ]` provides/`google_adapter.ts`
+        *   `[ ]` Exports `GoogleAdapter` class (existing) — now with both `sendMessage()` and `sendMessageStream()` methods
+        *   `[ ]` Semantic guarantee: `sendMessageStream` yields at minimum one `done` chunk on success; throws on validation or stream errors before yielding
+        *   `[ ]` Stability: `sendMessage` behavior is unchanged
+    *   `[ ]` mock — no separate mock file needed; tests stub `chat.sendMessageStream` via the mock pattern already established in `google_adapter.test.ts` (mocking `getGenerativeModel` to return a mock model with `startChat` returning a mock chat)
+    *   `[ ]` integration — deferred; google_adapter is a leaf adapter with no downstream consumers yet
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: adapter
+        *   `[ ]` All dependencies are inward-facing (SDK, domain types)
+        *   `[ ]` All provides are outward-facing (exposes stream interface to worker layer)
+    *   `[ ]` `requirements`
+        *   `[ ]` `sendMessageStream` must yield `text_delta` chunks for every content part from each Google stream chunk
+        *   `[ ]` `sendMessageStream` must yield exactly one `usage` chunk and exactly one `done` chunk per call, in that order, after all `text_delta` chunks
+        *   `[ ]` `sendMessageStream` must apply identical message preparation, validation, and maxOutputTokens logic as `sendMessage`
+        *   `[ ]` `sendMessageStream` must throw if message history does not end with a user message
+        *   `[ ]` No changes to `sendMessage`, `listModels`, or constructor
+
+*   `[ ]` _shared/ai_service/dummy_adapter **Add `sendMessageStream()` stub to DummyAdapter; update factory.test.ts mock adapter — last adapter node** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Implement `sendMessageStream()` on `DummyAdapter` as a deterministic stub that yields echo-based chunks — required because `DummyAdapter` is production code (present in `defaultProviderMap` in `factory.ts`) and the `AiProviderAdapter` type contract now requires it
+        *   `[ ]` Update the `CapturingDummyAdapter` mock class in `factory.test.ts` (line 115-129) to include a `sendMessageStream` stub so that factory tests continue to satisfy the `AiProviderAdapter` contract
+        *   `[ ]` Verify all factory tests still pass after this node — this is the final adapter node
+    *   `[ ]` `role`
+        *   `[ ]` Adapter — test/development adapter that simulates streaming without any external service
+    *   `[ ]` `module`
+        *   `[ ]` AI service adapter layer (`_shared/ai_service/`)
+        *   `[ ]` Boundary: receives `ChatApiRequest` + model identifier, yields `AdapterStreamChunk` items deterministically without network calls
+    *   `[ ]` `deps`
+        *   `[ ]` `_shared/types.ts` — owns `AiProviderAdapter`, `ChatApiRequest`, `AdapterStreamChunk`, `FinishReason`, `AiModelExtendedConfig`
+            *   Abstraction layer: domain types
+            *   Direction: inward (adapter depends on domain types)
+            *   Context slice: type imports only
+        *   `[ ]` `_shared/utils/tokenizer_utils.ts` — `countTokens` function (already imported by `DummyAdapter`)
+            *   Abstraction layer: utility
+            *   Direction: inward
+            *   Context slice: used for token counting in usage chunk
+        *   `[ ]` Depends on prior nodes: `AdapterStreamChunk` type and updated `AiProviderAdapter` contract from the anthropic_adapter node
+    *   `[ ]` `context_slice`
+        *   `[ ]` From constructor: `this.logger` (ILogger), `this.modelConfig` (AiModelExtendedConfig), `this.providerId` (string)
+        *   `[ ]` From caller: `request: ChatApiRequest`, `modelIdentifier: string`
+        *   `[ ]` Injection shape: class instance method; no new constructor params needed
+    *   `[ ]` interface — no new interface changes; `sendMessageStream` was added to `AiProviderAdapter` in the anthropic_adapter node
+    *   `[ ]` interface tests — covered by the anthropic_adapter node's type guard tests for `AdapterStreamChunk`
+    *   `[ ]` interface guards — covered by the anthropic_adapter node
+    *   `[ ]` unit/`dummy_adapter.test.ts`
+        *   `[ ]` Test: `sendMessageStream` yields a single `text_delta` chunk containing the echo text (same format as `sendMessage` — `"Echo from {modelIdentifier}: {message}"`)
+        *   `[ ]` Test: `sendMessageStream` yields a `usage` chunk with `prompt_tokens`, `completion_tokens`, `total_tokens` calculated by the `countTokens` utility (same as `sendMessage`'s `createResponse` logic at lines 190-210)
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'stop'` for normal messages
+        *   `[ ]` Test: `sendMessageStream` yields a `done` chunk with `finish_reason: 'max_tokens'` when message contains `SIMULATE_MAX_TOKENS`
+        *   `[ ]` Test: `sendMessageStream` throws when message contains `SIMULATE_ERROR` (same behavior as `sendMessage` lines 97-100)
+    *   `[ ]` unit/`factory.test.ts` — mock adapter update
+        *   `[ ]` Test: verify `factory.test.ts` still passes after updating `CapturingDummyAdapter` (line 115-129) to include `sendMessageStream` — add `async *sendMessageStream(): AsyncGenerator<AdapterStreamChunk> { throw new Error("Method not implemented."); }` stub to the class
+    *   `[ ]` `construction`
+        *   `[ ]` No new constructors — `sendMessageStream` is an instance method on the existing `DummyAdapter` class
+        *   `[ ]` `CapturingDummyAdapter` in `factory.test.ts` gets a matching stub method
+    *   `[ ]` `dummy_adapter.ts`
+        *   `[ ]` Add `import type { AdapterStreamChunk } from '../types.ts'` to existing import line
+        *   `[ ]` Add `async *sendMessageStream(request: ChatApiRequest, modelIdentifier: string): AsyncGenerator<AdapterStreamChunk>` method
+        *   `[ ]` Compute echo content using same logic as `sendMessage`: check for `SIMULATE_ERROR` (throw), `SIMULATE_MAX_TOKENS` (set finish_reason to `'max_tokens'`, modify content), otherwise `"Echo from {modelIdentifier}: {message}"` with finish_reason `'stop'`
+        *   `[ ]` Yield single `{ type: 'text_delta', text: content }` — DummyAdapter has no real stream, so one delta chunk containing the full echo is sufficient
+        *   `[ ]` Compute token usage using `countTokens` + `createResponse` pattern (lines 190-210): `promptTokens` from request, `completionTokens` from content
+        *   `[ ]` Yield `{ type: 'usage', tokenUsage: { prompt_tokens, completion_tokens, total_tokens: prompt + completion } }`
+        *   `[ ]` Yield `{ type: 'done', finish_reason: finishReason }`
+    *   `[ ]` `factory.test.ts`
+        *   `[ ]` Update `CapturingDummyAdapter` class (line 115-129) to add `async *sendMessageStream` stub method that throws `"Method not implemented."` — matches the existing pattern of `sendMessage` and `listModels` stubs in that class
+    *   `[ ]` provides/`dummy_adapter.ts`
+        *   `[ ]` Exports `DummyAdapter` class (existing) — now with both `sendMessage()` and `sendMessageStream()` methods
+        *   `[ ]` Semantic guarantee: `sendMessageStream` yields deterministic echo-based chunks without network calls; throws on `SIMULATE_ERROR`
+        *   `[ ]` Stability: `sendMessage` behavior is unchanged
+    *   `[ ]` mock — no separate mock file needed
+    *   `[ ]` integration — run `factory.test.ts` to confirm all factory tests pass with updated type contract. This is the final adapter node — all four adapters now implement `sendMessageStream()`.
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: adapter
+        *   `[ ]` All dependencies are inward-facing (domain types, utilities)
+        *   `[ ]` All provides are outward-facing (exposes stream interface to worker layer)
+    *   `[ ]` `requirements`
+        *   `[ ]` `sendMessageStream` must yield at least one `text_delta`, one `usage`, and one `done` chunk for successful calls
+        *   `[ ]` `sendMessageStream` must respect `SIMULATE_ERROR` and `SIMULATE_MAX_TOKENS` keywords identically to `sendMessage`
+        *   `[ ]` `CapturingDummyAdapter` in `factory.test.ts` must include `sendMessageStream` stub to satisfy the `AiProviderAdapter` type contract
+        *   `[ ]` All existing `factory.test.ts` tests must continue to pass
+        *   `[ ]` No changes to `sendMessage`, `listModels`, `getEmbedding`, or constructor
+
+*   `[ ]` dialectic-worker/enqueueRenderJob **NEW FILE — Copy Zone H (~274 lines) from intact EMCAS. Extraction only — EMCAS unchanged.** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Create `enqueueRenderJob.ts` by copying Zone H from `executeModelCallAndSave.ts` (lines ~1399-1673) into a standalone pure function
+        *   `[ ]` Zone H encompasses: the `shouldEnqueueRenderJob` decision, render payload validation and construction (documentKey, documentIdentity, sourceContributionId, template_filename extraction from recipe steps), RENDER job DB insert with idempotency handling (23505 duplicate detection), and post-insert logging
+        *   `[ ]` This is a COPY-OUT extraction: `executeModelCallAndSave.ts` is NOT modified in this node — Zone H remains in place. The slim operation happens in a later node.
+        *   `[ ]` Define the `EnqueueRenderJobParams` interface for all inputs Zone H currently reads from surrounding scope
+        *   `[ ]` Define the `EnqueueRenderJobDeps` interface for all injected dependencies (dbClient, logger, shouldEnqueueRenderJob, notificationService)
+    *   `[ ]` `role`
+        *   `[ ]` Pure utility — conditionally creates and inserts a RENDER job into the `dialectic_generation_jobs` table based on output type analysis
+    *   `[ ]` `module`
+        *   `[ ]` Dialectic worker (`dialectic-worker/`)
+        *   `[ ]` Boundary: receives validated contribution data + job metadata, conditionally inserts a RENDER job row, returns void. Does NOT call the model, does NOT save contributions.
+    *   `[ ]` `deps`
+        *   `[ ]` `dbClient: SupabaseClient<Database>` — for RENDER job insert and idempotency lookups
+            *   Abstraction layer: infrastructure (DB access)
+            *   Direction: inward (utility depends on infra)
+            *   Context slice: `dialectic_generation_jobs` table insert/select, `dialectic_stages` select, `dialectic_stage_recipe_instances` select, `dialectic_stage_recipe_steps` / `dialectic_recipe_template_steps` select
+        *   `[ ]` `logger: ILogger` — for info/error logging
+            *   Abstraction layer: infrastructure
+            *   Direction: inward
+        *   `[ ]` `shouldEnqueueRenderJob: ShouldEnqueueRenderJobFn` — determines if output type requires rendering
+            *   Abstraction layer: domain utility (already defined in `_shared/types/shouldEnqueueRenderJob.interface.ts`)
+            *   Direction: inward
+        *   `[ ]` `_shared/utils/errors.ts` — `RenderJobValidationError`, `RenderJobEnqueueError` error classes
+            *   Abstraction layer: domain types
+            *   Direction: inward
+        *   `[ ]` `_shared/types/shouldEnqueueRenderJob.interface.ts` — `ShouldEnqueueRenderJobFn`, `ShouldEnqueueRenderJobDeps`, `ShouldEnqueueRenderJobParams`
+            *   Abstraction layer: domain types
+            *   Direction: inward
+        *   `[ ]` `_shared/types.ts` — `DialecticRenderJobPayload`, `isDialecticRenderJobPayload`
+            *   Abstraction layer: domain types
+            *   Direction: inward
+        *   `[ ]` `_shared/utils/type_guards.ts` — `isJson`, `isRecord`, `isFileType`
+            *   Abstraction layer: domain utilities
+            *   Direction: inward
+    *   `[ ]` `context_slice`
+        *   `[ ]` All data currently read from enclosing scope in Zone H must become explicit params or payload fields:
+        *   `[ ]` **Params** (job context and identifiers):
+            *   `jobId: string` — the EXECUTE job ID (used for idempotency key `${jobId}_render` and parent_job_id)
+            *   `sessionId: string` — from `job.session_id`
+            *   `stageSlug: string` — from job payload
+            *   `iterationNumber: number` — from job payload
+            *   `outputType: string` — the `output_type` from job payload
+            *   `projectId: string` — project identifier
+            *   `projectOwnerUserId: string` — for the RENDER job's `user_id`
+            *   `userAuthToken: string` — JWT for the RENDER job payload
+            *   `modelId: string` — model ID for the RENDER job payload
+            *   `walletId: string` — wallet ID for the RENDER job payload
+            *   `isTestJob: boolean` — from `job.is_test_job`
+        *   `[ ]` **Payload** (contribution-derived data from EMCAS result):
+            *   `contributionId: string` — the saved contribution's ID
+            *   `needsContinuation: boolean` — if true, skip render entirely
+            *   `documentKey: string | undefined` — the document key for the output
+            *   `stageRelationshipForStage: string | undefined` — the `document_relationships[stageSlug]` value, already persisted
+            *   `fileType: string` — the resolved file type
+            *   `storageFileType: string` — for logging only
+        *   `[ ]` Injection shape: deps object + params object + payload object, all passed to top-level function
+    *   `[ ]` `enqueueRenderJob.interface.ts`/interface
+        *   `[ ]` `EnqueueRenderJobDeps` — interface containing: `dbClient`, `logger`, `shouldEnqueueRenderJob`
+        *   `[ ]` `EnqueueRenderJobParams` — per-call identifiers and job context: `jobId`, `sessionId`, `stageSlug`, `iterationNumber`, `outputType`, `projectId`, `projectOwnerUserId`, `userAuthToken`, `modelId`, `walletId`, `isTestJob`
+        *   `[ ]` `EnqueueRenderJobPayload` — contribution-derived data from EMCAS result: `contributionId`, `needsContinuation`, `documentKey`, `stageRelationshipForStage`, `fileType`, `storageFileType`
+        *   `[ ]` `EnqueueRenderJobReturn` = `EnqueueRenderJobSuccessReturn | EnqueueRenderJobErrorReturn`
+            *   `[ ]` `EnqueueRenderJobSuccessReturn`: `{ renderJobId: string | null }` — string when a RENDER job was enqueued (the inserted or recovered row ID is proof of success), null when render was legitimately skipped (`needsContinuation` true or `is_json`)
+            *   `[ ]` `EnqueueRenderJobErrorReturn`: `{ error: RenderJobValidationError | RenderJobEnqueueError, retriable: boolean }` — error classification for retry/fail handling
+        *   `[ ]` `EnqueueRenderJobFn` — function type: `(deps: EnqueueRenderJobDeps, params: EnqueueRenderJobParams, payload: EnqueueRenderJobPayload) => Promise<EnqueueRenderJobReturn>`
+    *   `[ ]` `enqueueRenderJob.interface.test.ts`/interface tests
+        *   `[ ]` Test: `EnqueueRenderJobDeps` interface accepts a valid deps object with dbClient, logger, shouldEnqueueRenderJob
+        *   `[ ]` Test: `EnqueueRenderJobParams` interface accepts a valid params object with all job context fields
+        *   `[ ]` Test: `EnqueueRenderJobPayload` interface accepts a valid payload object with all contribution-derived fields
+        *   `[ ]` Test: `EnqueueRenderJobSuccessReturn` interface accepts `{ renderJobId: string }` and `{ renderJobId: null }`
+        *   `[ ]` Test: `EnqueueRenderJobErrorReturn` interface accepts a valid error return object
+        *   `[ ]` Test: compile-time type safety — missing required fields on deps, params, or payload produce type errors
+    *   `[ ]` `type-guards/enqueueRenderJob.type_guards.ts`/interface guards
+        *   `[ ]` `isEnqueueRenderJobDeps(value: unknown): value is EnqueueRenderJobDeps` — validates deps shape
+        *   `[ ]` `isEnqueueRenderJobParams(value: unknown): value is EnqueueRenderJobParams` — validates all job context fields present and correctly typed
+        *   `[ ]` `isEnqueueRenderJobPayload(value: unknown): value is EnqueueRenderJobPayload` — validates all contribution-derived fields present and correctly typed
+        *   `[ ]` `isEnqueueRenderJobSuccessReturn(value: unknown): value is EnqueueRenderJobSuccessReturn` — validates success return shape
+        *   `[ ]` `isEnqueueRenderJobErrorReturn(value: unknown): value is EnqueueRenderJobErrorReturn` — validates error return shape
+    *   `[ ]` `type-guards/enqueueRenderJob.type_guards.test.ts`/interface guard tests
+        *   `[ ]` Test: valid deps object passes `isEnqueueRenderJobDeps`
+        *   `[ ]` Test: valid params object passes `isEnqueueRenderJobParams`
+        *   `[ ]` Test: missing `jobId` fails params guard
+        *   `[ ]` Test: valid payload object passes `isEnqueueRenderJobPayload`
+        *   `[ ]` Test: missing `contributionId` fails payload guard
+        *   `[ ]` Test: valid success return passes `isEnqueueRenderJobSuccessReturn`
+        *   `[ ]` Test: valid error return passes `isEnqueueRenderJobErrorReturn`
+    *   `[ ]` unit/`enqueueRenderJob.test.ts`
+        *   `[ ]` Test: when `payload.needsContinuation` is true, returns `EnqueueRenderJobSuccessReturn` with `renderJobId: null` without calling `shouldEnqueueRenderJob` or inserting anything
+        *   `[ ]` Test: when `shouldEnqueueRenderJob` returns `{ shouldRender: false, reason: 'is_json' }`, returns `EnqueueRenderJobSuccessReturn` with `renderJobId: null` (logs skip)
+        *   `[ ]` Test: when `shouldEnqueueRenderJob` returns `{ shouldRender: false, reason: 'stage_not_found' }`, returns `EnqueueRenderJobErrorReturn` (query/config error)
+        *   `[ ]` Test: when `shouldEnqueueRenderJob` returns `{ shouldRender: true, reason: 'is_markdown' }`, constructs RENDER payload, inserts into `dialectic_generation_jobs`, returns `EnqueueRenderJobSuccessReturn` with `renderJobId` = inserted row ID
+        *   `[ ]` Test: RENDER job insert includes `idempotency_key` = `${params.jobId}_render`, `job_type` = `'RENDER'`, `status` = `'pending'`, `parent_job_id` = `params.jobId`
+        *   `[ ]` Test: when DB insert returns 23505 (duplicate idempotency_key), recovers by selecting existing row, returns `EnqueueRenderJobSuccessReturn` with `renderJobId` = recovered row ID (does NOT return error)
+        *   `[ ]` Test: when DB insert returns 23505 but recovery select fails, returns `EnqueueRenderJobErrorReturn` with `RenderJobEnqueueError`
+        *   `[ ]` Test: when DB insert returns programmer error (FK violation, RLS), returns `EnqueueRenderJobErrorReturn` with `RenderJobEnqueueError`
+        *   `[ ]` Test: when DB insert returns transient error, returns `EnqueueRenderJobErrorReturn` with `RenderJobEnqueueError` and `retriable: true`
+        *   `[ ]` Test: when `payload.documentKey` is missing/invalid, returns `EnqueueRenderJobErrorReturn` with `RenderJobValidationError`
+        *   `[ ]` Test: when `payload.stageRelationshipForStage` is missing/invalid, returns `EnqueueRenderJobErrorReturn` with `RenderJobValidationError`
+        *   `[ ]` Test: template_filename extraction queries correct tables based on `is_cloned` flag (cloned → `dialectic_stage_recipe_steps`, not cloned → `dialectic_recipe_template_steps`)
+        *   `[ ]` Test: RENDER payload includes `template_filename` extracted from matching recipe step's `outputs_required.files_to_generate[].template_filename` where `from_document_key` matches `payload.documentKey`
+    *   `[ ]` `construction`
+        *   `[ ]` Top-level exported async function: `enqueueRenderJob(deps: EnqueueRenderJobDeps, params: EnqueueRenderJobParams, payload: EnqueueRenderJobPayload): Promise<EnqueueRenderJobReturn>`
+        *   `[ ]` Prohibited: class construction — this is a pure function, not a method
+        *   `[ ]` Prohibited: referencing any EMCAS-specific state — all inputs via params
+    *   `[ ]` `enqueueRenderJob.ts`
+        *   `[ ]` Copy Zone H logic (EMCAS lines ~1399-1673) verbatim, replacing scope variable references with `deps.`, `params.`, and `payload.` prefixed access
+        *   `[ ]` Early return `{ renderJobId: null }` if `payload.needsContinuation` is true
+        *   `[ ]` Call `deps.shouldEnqueueRenderJob({ dbClient: deps.dbClient, logger: deps.logger }, { outputType: params.outputType, stageSlug: params.stageSlug })`
+        *   `[ ]` Error-reason handling: throw for transient/config error reasons (`stage_not_found`, `instance_not_found`, `steps_not_found`, `parse_error`, `query_error`, `no_active_recipe`)
+        *   `[ ]` Skip logging for `is_json` reason
+        *   `[ ]` For `is_markdown` reason: validate `payload.documentKey` and `payload.stageRelationshipForStage`, extract `template_filename` from recipe steps (same DB query chain: stage → recipe instance → recipe steps → matching step → `outputs_required.files_to_generate[]`), construct `DialecticRenderJobPayload`, insert into `dialectic_generation_jobs` with idempotency handling, return `{ renderJobId: insertedRow.id }`
+        *   `[ ]` EMCAS is NOT modified — this is extraction only
+    *   `[ ]` provides/`enqueueRenderJob.ts`
+        *   `[ ]` Exports `enqueueRenderJob` function
+        *   `[ ]` Exports `EnqueueRenderJobFn`, `EnqueueRenderJobDeps`, `EnqueueRenderJobParams`, `EnqueueRenderJobPayload`, `EnqueueRenderJobReturn`, `EnqueueRenderJobSuccessReturn`, `EnqueueRenderJobErrorReturn` types (re-exported from interface file)
+        *   `[ ]` Semantic guarantee: returns `EnqueueRenderJobSuccessReturn` with `renderJobId` (string when enqueued, null when skipped) or `EnqueueRenderJobErrorReturn` with error classification
+    *   `[ ]` mock — `enqueueRenderJob.mock.ts`: export a mock `enqueueRenderJob` function (spy/stub) for use in `prepareModelJob` tests and future EMCAS slim tests
+    *   `[ ]` integration — deferred; `enqueueRenderJob` is not yet called by any production code (EMCAS still has Zone H inline). Integration happens when EMCAS is slimmed.
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: domain utility (worker layer)
+        *   `[ ]` All dependencies are inward-facing (DB client, logger, domain types, shared utilities)
+        *   `[ ]` All provides are outward-facing (consumed by `prepareModelJob` in the next node, and later by slimmed EMCAS)
+    *   `[ ]` `requirements`
+        *   `[ ]` `enqueueRenderJob` must reproduce Zone H behavior exactly — same validation, same DB queries, same error categorization, same idempotency handling
+        *   `[ ]` All scope variables from EMCAS must become explicit parameters — no implicit closure over EMCAS state
+        *   `[ ]` `executeModelCallAndSave.ts` must NOT be modified in this node
+        *   `[ ]` Error types must use existing `RenderJobValidationError` and `RenderJobEnqueueError` from `_shared/utils/errors.ts`
+        *   `[ ]` Template filename extraction must support both cloned and non-cloned recipe instances (same branching logic as EMCAS lines 1497-1521)
+
+*   `[ ]` dialectic-worker/prepareModelJob **NEW FILE — Copy Zones A-D (~920 lines) from intact EMCAS. Orchestrator that calls slim EMCAS + enqueueRenderJob. Extraction only — EMCAS unchanged.** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Create `prepareModelJob.ts` by copying Zones A-D from `executeModelCallAndSave.ts` (lines ~62-947) into a standalone orchestrator function
+        *   `[ ]` Zone A (lines ~62-181): job payload destructuring and field validation (stageSlug, walletId, iterationNumber, projectId, sessionId, model_id, user_jwt)
+        *   `[ ]` Zone B (lines ~183-417): provider fetch, model config validation, artifact gathering via `gatherArtifacts()`, `applyInputsRequiredScope`, fail-fast required-document validation
+        *   `[ ]` Zone C (lines ~420-529): token counting setup, initial token count, wallet balance fetch, cost rate validation, affordability checks (oversized vs non-oversized), output budget calculation, safety-margin and NSF guards
+        *   `[ ]` Zone D (lines ~531-947): ChatApiRequest construction, compression strategy execution if oversized (RAG indexing, semantic search, document replacement loop), final re-sizing and re-budgeting, user_jwt validation
+        *   `[ ]` After Zones A-D, `prepareModelJob` calls slimmed `executeModelCallAndSave` (passed as a dep) with the prepared `ChatApiRequest` and validated context, then calls `enqueueRenderJob` (passed as a dep) with the contribution result
+        *   `[ ]` This is a COPY-OUT extraction: `executeModelCallAndSave.ts` is NOT modified in this node
+    *   `[ ]` `role`
+        *   `[ ]` Orchestrator — prepares all inputs for the model call (validation, artifact resolution, sizing, compression) and coordinates the call + post-call render enqueue
+    *   `[ ]` `module`
+        *   `[ ]` Dialectic worker (`dialectic-worker/`)
+        *   `[ ]` Boundary: receives raw job + provider details + prompt payload, outputs nothing (calls EMCAS and enqueueRenderJob internally). All side effects (DB writes, model calls) happen via injected deps.
+    *   `[ ]` `deps`
+        *   `[ ]` `executeModelCallAndSave` — slimmed EMCAS function (injected, not imported directly) that takes a prepared `ChatApiRequest` + validated context and returns the saved contribution + model response metadata
+            *   Abstraction layer: domain function
+            *   Direction: outward (orchestrator calls domain function)
+            *   Context slice: function signature only — `prepareModelJob` does not know EMCAS internals
+        *   `[ ]` `enqueueRenderJob` — the function from the prior node (injected, not imported directly)
+            *   Abstraction layer: domain function
+            *   Direction: outward (orchestrator calls domain function)
+        *   `[ ]` All deps that Zones A-D use: `logger`, `countTokens`, `embeddingClient`, `ragService`, `tokenWalletService`, `validateWalletBalance`, `validateModelCostRates`, `pickLatest`, `downloadFromStorage`, `applyInputsRequiredScope`, `retryJob`, `notificationService`, `shouldEnqueueRenderJob`
+            *   These are on `IPrepareModelJobContext` (created in the createJobContext node) — `prepareModelJob` receives its own dedicated context slice
+        *   `[ ]` `dbClient: SupabaseClient<Database>` — for provider fetch, artifact queries, contribution queries
+        *   `[ ]` `_shared/utils/errors.ts` — `ContextWindowError`
+        *   `[ ]` `_shared/utils/affordability_utils.ts` — `getMaxOutputTokens`
+        *   `[ ]` `_shared/utils/type_guards.ts` — various type guards used in payload validation
+        *   `[ ]` `_shared/types/tokenizer.types.ts` — `CountTokensDeps`, `CountableChatPayload`
+    *   `[ ]` `context_slice`
+        *   `[ ]` Input per §7: `deps: PrepareModelJobDeps` (injected functions), `params: PrepareModelJobParams` (job context/identifiers), `payload: PrepareModelJobPayload` (prompt preparation data)
+        *   `[ ]` Output: `PrepareModelJobReturn` = `PrepareModelJobSuccessReturn | PrepareModelJobErrorReturn` — returns contribution, continuation state, and render job ID to `processSimpleJob`
+        *   `[ ]` Injection shape: three-arg function `(deps, params, payload)` per §7
+    *   `[ ]` `executeModelCallAndSave.interface.ts`/interface — **EMCAS contract for reduced scope (Zones E-G + post-save). Created in this node because `prepareModelJob` is the first consumer. Moved from `dialectic.interface.ts` and `JobContext.interface.ts`, restructured per §7.**
+        *   `[ ]` `ExecuteModelCallAndSaveDeps` — context slice for slim EMCAS (separated from params per §7):
+            *   `[ ]` `logger: ILogger`
+            *   `[ ]` `fileManager: IFileManager`
+            *   `[ ]` `getAiProviderAdapter: GetAiProviderAdapterFn`
+            *   `[ ]` `getAiProviderConfig: GetAiProviderConfigFn`
+            *   `[ ]` `tokenWalletService: ITokenWalletService`
+            *   `[ ]` `notificationService: NotificationServiceType`
+            *   `[ ]` `getExtensionFromMimeType: GetExtensionFromMimeTypeFn`
+            *   `[ ]` `extractSourceGroupFragment: ExtractSourceGroupFragmentFn`
+            *   `[ ]` `randomUUID: () => string`
+            *   `[ ]` `continueJob: ContinueJobFn`
+            *   `[ ]` `retryJob: RetryJobFn`
+            *   `[ ]` `resolveFinishReason: ResolveFinishReasonFn`
+            *   `[ ]` `isIntermediateChunk: IsIntermediateChunkFn`
+            *   `[ ]` `determineContinuation: DetermineContinuationFn`
+            *   `[ ]` `buildUploadContext: BuildUploadContextFn`
+        *   `[ ]` `ExecuteModelCallAndSaveParams` — per-call parameters (moved from `dialectic.interface.ts`, corrected for reduced scope — deps removed, payload separated per §7):
+            *   `[ ]` `dbClient: SupabaseClient<Database>`
+            *   `[ ]` `job: DialecticJobRow`
+            *   `[ ]` `providerDetails: SelectedAiProvider`
+            *   `[ ]` `extendedModelConfig: AiModelExtendedConfig`
+            *   `[ ]` `userAuthToken: string`
+            *   `[ ]` `sessionData: DialecticSession`
+            *   `[ ]` `projectOwnerUserId: string`
+            *   `[ ]` Pre-validated fields from job payload: `stageSlug: string`, `iterationNumber: number`, `projectId: string`, `sessionId: string`, `model_id: string`, `walletId: string`, `output_type: string`
+        *   `[ ]` `ExecuteModelCallAndSavePayload` — the prepared model request (separated from params per §7):
+            *   `[ ]` `chatApiRequest: ChatApiRequest` — fully prepared by `prepareModelJob`
+        *   `[ ]` `ExecuteModelCallAndSaveReturn` — return type (was `Promise<void>`, now returns data `prepareModelJob` needs for render enqueue):
+            *   `[ ]` `= ExecuteModelCallAndSaveSuccessReturn | ExecuteModelCallAndSaveErrorReturn`
+            *   `[ ]` `ExecuteModelCallAndSaveSuccessReturn`: `contribution: DialecticContributionRow`, `needsContinuation: boolean`, `stageRelationshipForStage: string | undefined`, `documentKey: string | undefined`, `fileType: string`, `storageFileType: string`
+            *   `[ ]` `ExecuteModelCallAndSaveErrorReturn`: error classification for retry/fail handling
+        *   `[ ]` `ExecuteModelCallAndSaveFn` — function type (moved from `JobContext.interface.ts`, updated signature per §7):
+            *   `[ ]` `(deps: ExecuteModelCallAndSaveDeps, params: ExecuteModelCallAndSaveParams, payload: ExecuteModelCallAndSavePayload) => Promise<ExecuteModelCallAndSaveReturn>`
+    *   `[ ]` `executeModelCallAndSave.interface.test.ts`/interface tests
+        *   `[ ]` Test: `ExecuteModelCallAndSaveDeps` interface accepts a valid deps object with all required fields
+        *   `[ ]` Test: `ExecuteModelCallAndSaveParams` interface accepts a valid params object with all required fields (no `deps` field — deps are separate per §7)
+        *   `[ ]` Test: `ExecuteModelCallAndSavePayload` interface accepts a valid payload object with `chatApiRequest`
+        *   `[ ]` Test: `ExecuteModelCallAndSaveSuccessReturn` interface accepts a valid success return object
+        *   `[ ]` Test: `ExecuteModelCallAndSaveErrorReturn` interface accepts a valid error return object
+        *   `[ ]` Test: compile-time type safety — missing required fields on deps, params, or payload produce type errors
+    *   `[ ]` `type-guards/executeModelCallAndSave.type_guards.ts`/interface guards
+        *   `[ ]` `isExecuteModelCallAndSaveDeps(value: unknown): value is ExecuteModelCallAndSaveDeps` — validates all dep fields present and correctly typed
+        *   `[ ]` `isExecuteModelCallAndSaveParams(value: unknown): value is ExecuteModelCallAndSaveParams` — validates all param fields present and correctly typed
+        *   `[ ]` `isExecuteModelCallAndSavePayload(value: unknown): value is ExecuteModelCallAndSavePayload` — validates payload contains `chatApiRequest`
+        *   `[ ]` `isExecuteModelCallAndSaveSuccessReturn(value: unknown): value is ExecuteModelCallAndSaveSuccessReturn` — validates success return shape
+        *   `[ ]` `isExecuteModelCallAndSaveErrorReturn(value: unknown): value is ExecuteModelCallAndSaveErrorReturn` — validates error return shape
+    *   `[ ]` `type-guards/executeModelCallAndSave.type_guards.test.ts`/interface guard tests
+        *   `[ ]` Test: valid deps passes `isExecuteModelCallAndSaveDeps`
+        *   `[ ]` Test: missing required dep field fails guard
+        *   `[ ]` Test: valid params passes `isExecuteModelCallAndSaveParams`
+        *   `[ ]` Test: missing required param field fails guard
+        *   `[ ]` Test: valid payload passes `isExecuteModelCallAndSavePayload`
+        *   `[ ]` Test: missing `chatApiRequest` fails payload guard
+        *   `[ ]` Test: valid success return passes `isExecuteModelCallAndSaveSuccessReturn`
+        *   `[ ]` Test: valid error return passes `isExecuteModelCallAndSaveErrorReturn`
+    *   `[ ]` `prepareModelJob.interface.ts`/interface
+        *   `[ ]` `PrepareModelJobDeps` — contains injected functions: `executeModelCallAndSave: ExecuteModelCallAndSaveFn` (from `executeModelCallAndSave.interface.ts`), `enqueueRenderJob: EnqueueRenderJobFn` (from `enqueueRenderJob.interface.ts`)
+        *   `[ ]` `PrepareModelJobParams` — per-call identifiers and context (corrected per §7 — deps separated, payload separated): `dbClient`, `authToken`, `job`, `projectOwnerUserId`, `providerDetails`, `sessionData`
+        *   `[ ]` `PrepareModelJobPayload` — the prompt preparation data to be processed: `promptConstructionPayload`, `compressionStrategy`, `inputsRelevance?`, `inputsRequired?`
+        *   `[ ]` `PrepareModelJobReturn` = `PrepareModelJobSuccessReturn | PrepareModelJobErrorReturn`
+            *   `[ ]` `PrepareModelJobSuccessReturn`: `{ contribution: DialecticContributionRow, needsContinuation: boolean, renderJobId: string | null }` — contribution from EMCAS, render job ID from enqueueRenderJob (null if skipped)
+            *   `[ ]` `PrepareModelJobErrorReturn`: error classification for retry/fail handling at the processSimpleJob level
+        *   `[ ]` `PrepareModelJobFn` — function type: `(deps: PrepareModelJobDeps, params: PrepareModelJobParams, payload: PrepareModelJobPayload) => Promise<PrepareModelJobReturn>`
+    *   `[ ]` `prepareModelJob.interface.test.ts`/interface tests
+        *   `[ ]` Test: `PrepareModelJobDeps` interface accepts valid dep functions typed as `ExecuteModelCallAndSaveFn` and `EnqueueRenderJobFn`
+        *   `[ ]` Test: `PrepareModelJobParams` interface accepts a valid params object with all job context fields
+        *   `[ ]` Test: `PrepareModelJobPayload` interface accepts a valid payload object with `promptConstructionPayload`, `compressionStrategy`, optional `inputsRelevance`, optional `inputsRequired`
+        *   `[ ]` Test: `PrepareModelJobSuccessReturn` interface accepts a valid success return object
+        *   `[ ]` Test: `PrepareModelJobErrorReturn` interface accepts a valid error return object
+        *   `[ ]` Test: compile-time type safety — missing required fields on deps, params, or payload produce type errors
+    *   `[ ]` `type-guards/prepareModelJob.type_guards.ts`/interface guards
+        *   `[ ]` `isPrepareModelJobDeps(value: unknown): value is PrepareModelJobDeps` — validates dep functions present
+        *   `[ ]` `isPrepareModelJobParams(value: unknown): value is PrepareModelJobParams` — validates required job context fields
+        *   `[ ]` `isPrepareModelJobPayload(value: unknown): value is PrepareModelJobPayload` — validates prompt preparation data fields
+        *   `[ ]` `isPrepareModelJobSuccessReturn(value: unknown): value is PrepareModelJobSuccessReturn` — validates success return shape
+        *   `[ ]` `isPrepareModelJobErrorReturn(value: unknown): value is PrepareModelJobErrorReturn` — validates error return shape
+    *   `[ ]` `type-guards/prepareModelJob.type_guards.test.ts`/interface guard tests
+        *   `[ ]` Test: valid deps passes guard
+        *   `[ ]` Test: valid params passes guard
+        *   `[ ]` Test: missing required param fields fail guard
+        *   `[ ]` Test: valid payload passes guard
+        *   `[ ]` Test: missing `promptConstructionPayload` fails payload guard
+        *   `[ ]` Test: valid success return passes guard
+        *   `[ ]` Test: valid error return passes guard
+    *   `[ ]` unit/`prepareModelJob.test.ts`
+        *   `[ ]` Test: calls `deps.executeModelCallAndSave` with a correctly constructed `ChatApiRequest` as payload after Zone A-D processing (mock EMCAS, verify call args include deps, params, payload)
+        *   `[ ]` Test: calls `deps.enqueueRenderJob` after EMCAS succeeds, passing correct params and payload derived from job context and EMCAS success return
+        *   `[ ]` Test: returns `PrepareModelJobSuccessReturn` with contribution from EMCAS, needsContinuation, and renderJobId from enqueueRenderJob
+        *   `[ ]` Test: returns `PrepareModelJobErrorReturn` when job payload is missing required `stageSlug`
+        *   `[ ]` Test: returns `PrepareModelJobErrorReturn` when job payload is missing required `walletId`
+        *   `[ ]` Test: returns `PrepareModelJobErrorReturn` when job payload is missing required `iterationNumber`
+        *   `[ ]` Test: returns `PrepareModelJobErrorReturn` when provider config is invalid (not `AiModelExtendedConfig`)
+        *   `[ ]` Test: returns `PrepareModelJobErrorReturn` with `ContextWindowError` when input tokens exceed context window and compression services are unavailable
+        *   `[ ]` Test: applies compression strategy when oversized and verifies reduced token count in the `ChatApiRequest` payload passed to EMCAS
+        *   `[ ]` Test: wallet affordability check returns `PrepareModelJobErrorReturn` when estimated cost exceeds balance
+        *   `[ ]` Test: non-oversized path sets `max_tokens_to_generate` on ChatApiRequest based on `getMaxOutputTokens` calculation
+        *   `[ ]` Test: when `gatherArtifacts` finds no required document, returns `PrepareModelJobErrorReturn` with descriptive error
+        *   `[ ]` Test: when EMCAS returns `ExecuteModelCallAndSaveErrorReturn`, error propagates as `PrepareModelJobErrorReturn` without calling `enqueueRenderJob`
+        *   `[ ]` Test: when `enqueueRenderJob` returns `EnqueueRenderJobErrorReturn` after EMCAS succeeds, error propagates as `PrepareModelJobErrorReturn`
+    *   `[ ]` `construction`
+        *   `[ ]` Top-level exported async function: `prepareModelJob(deps: PrepareModelJobDeps, params: PrepareModelJobParams, payload: PrepareModelJobPayload): Promise<PrepareModelJobReturn>`
+        *   `[ ]` Prohibited: class construction — this is a pure orchestrator function
+        *   `[ ]` Prohibited: direct import of `executeModelCallAndSave` or `enqueueRenderJob` — they are injected via deps for testability
+    *   `[ ]` `prepareModelJob.ts`
+        *   `[ ]` Copy Zone A (lines ~62-181): destructure `params`, validate `user_jwt`, validate `isDialecticExecuteJobPayload`, validate each field (stageSlug, walletId, iterationNumber, projectId, sessionId, model_id) with same error messages
+        *   `[ ]` Copy Zone B (lines ~183-417): fetch full provider data from `ai_providers`, validate `isAiModelExtendedConfig`, extract `promptConstructionPayload` fields, define and call `gatherArtifacts()` inner function (queries `dialectic_project_resources`, `dialectic_contributions`, `dialectic_feedback` for each input rule), call `applyInputsRequiredScope`, fail-fast validation
+        *   `[ ]` Copy Zone C (lines ~420-529): set up `tokenizerDeps`, compute `initialTokenCount`, determine `isOversized`, compute `ssotMaxOutputNonOversized` via `getMaxOutputTokens`, enforce safety-margin and NSF checks
+        *   `[ ]` Copy Zone D (lines ~531-947): build `chatApiRequest`, apply SSOT cap, if oversized run compression strategy (preflight cost check, document embedding, RAG search, replacement loop, re-sizing), validate `user_jwt` final
+        *   `[ ]` Call `deps.executeModelCallAndSave(emcasDeps, emcasParams, { chatApiRequest })` with the prepared ChatApiRequest as payload and all validated context as params
+        *   `[ ]` On EMCAS success: call `deps.enqueueRenderJob(renderDeps, renderParams, renderPayload)` with contribution-derived data as payload and job context as params
+        *   `[ ]` Return `PrepareModelJobSuccessReturn` with contribution, needsContinuation, and renderJobId from enqueueRenderJob result
+        *   `[ ]` On EMCAS or enqueueRenderJob error return: propagate as `PrepareModelJobErrorReturn`
+        *   `[ ]` `executeModelCallAndSave.ts` is NOT modified — this is extraction only
+    *   `[ ]` provides/`prepareModelJob.ts`
+        *   `[ ]` Exports `prepareModelJob` function
+        *   `[ ]` Exports `PrepareModelJobFn`, `PrepareModelJobDeps`, `PrepareModelJobParams`, `PrepareModelJobPayload`, `PrepareModelJobReturn`, `PrepareModelJobSuccessReturn`, `PrepareModelJobErrorReturn` types (re-exported from interface file)
+        *   `[ ]` Semantic guarantee: returns `PrepareModelJobSuccessReturn` with contribution, continuation state, and render job ID (null if skipped) or `PrepareModelJobErrorReturn` with error classification
+    *   `[ ]` mock — `prepareModelJob.mock.ts`: export a mock `prepareModelJob` function (spy/stub) for use in `processSimpleJob` tests
+    *   `[ ]` integration — deferred; `prepareModelJob` is not yet called by any production code. Integration happens when `processSimpleJob` is rewired.
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: orchestrator (worker layer)
+        *   `[ ]` Dependencies: inward to domain types/utilities, outward to EMCAS and enqueueRenderJob (both injected)
+        *   `[ ]` Provides: outward to `processSimpleJob` caller
+    *   `[ ]` `requirements`
+        *   `[ ]` `prepareModelJob` must reproduce Zones A-D behavior exactly — same validation, same artifact gathering, same token counting, same compression, same ChatApiRequest construction
+        *   `[ ]` All scope variables from EMCAS Zones A-D must become explicit parameters or derived from params — no implicit closure over EMCAS state
+        *   `[ ]` `executeModelCallAndSave.ts` must NOT be modified in this node
+        *   `[ ]` `prepareModelJob` must call EMCAS before `enqueueRenderJob` — render enqueue depends on the saved contribution
+        *   `[ ]` If EMCAS throws, `enqueueRenderJob` must NOT be called
+        *   `[ ]` The `gatherArtifacts` inner function must be copied verbatim (it will be deduplicated in Phase 2 when prompt assembler is refactored)
+
+*   `[ ]` dialectic-worker/createJobContext **Decompose `IExecuteJobContext` into per-function context slices, remove `callUnifiedAIModel`, replace `executeModelCallAndSave` with `prepareModelJob`, add new slicers** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Delete `IExecuteJobContext` — the monolithic execute context is replaced by two per-function context slices that give each function exactly the deps it needs and nothing more
+        *   `[ ]` Create `IExecuteModelCallContext` — the context slice for slimmed `executeModelCallAndSave` (Zones E-G + post-save). Contains only the deps that the model-call-and-save function actually uses: adapter access, file management, wallet, notifications, continuation/retry orchestration, and post-call utilities
+        *   `[ ]` Create `IPrepareModelJobContext` — the context slice for `prepareModelJob` (Zones A-D). Contains only the deps that the preparation/orchestration function actually uses: RAG, token counting, prompt assembly, artifact gathering, wallet validation, and render-enqueue decision
+        *   `[ ]` Remove `callUnifiedAIModel` from `IModelContext` and `JobContextParams` — it is no longer needed because slimmed EMCAS calls `adapter.sendMessageStream()` directly
+        *   `[ ]` Replace `executeModelCallAndSave: ExecuteModelCallAndSaveFn` with `prepareModelJob: PrepareModelJobFn` on `IJobContext` and `JobContextParams`
+        *   `[ ]` Add `createExecuteModelCallContext` slicer — slices `IJobContext` → `IExecuteModelCallContext` for use by the composition root when wiring slim EMCAS
+        *   `[ ]` Add `createPrepareModelJobContext` slicer — slices `IJobContext` → `IPrepareModelJobContext` for use by the composition root when wiring `prepareModelJob`
+        *   `[ ]` Delete `createExecuteJobContext` slicer — replaced by the two new slicers above
+        *   `[ ]` Update `IJobContext` to extend `IExecuteModelCallContext`, `IPrepareModelJobContext`, `IPlanJobContext`, `IRenderJobContext` instead of extending `IExecuteJobContext`
+        *   `[ ]` Update `JobContext.mock.ts` to remove `callUnifiedAIModel` mock, replace `executeModelCallAndSave` mock with `prepareModelJob` mock, and reflect the new context interfaces
+        *   `[ ]` Update all type guards and type guard tests to reflect the new context interfaces
+    *   `[ ]` `role`
+        *   `[ ]` Factory/slicer — constructs and narrows dependency contexts for job processing
+    *   `[ ]` `module`
+        *   `[ ]` Dialectic worker (`dialectic-worker/`)
+        *   `[ ]` Boundary: composition root wiring — no business logic, only dependency assembly
+    *   `[ ]` `deps`
+        *   `[ ]` `JobContext.interface.ts` — owns `IModelContext`, `IExecuteModelCallContext` (new), `IPrepareModelJobContext` (new), `IJobContext`, `JobContextParams`, and all function-type aliases (`ContinueJobFn`, `RetryJobFn`, etc.)
+            *   Abstraction layer: interface definitions
+            *   Direction: inward (factory depends on interfaces)
+        *   `[ ]` `prepareModelJob.interface.ts` — owns `PrepareModelJobFn` type (imported by `JobContext.interface.ts` to type the `IJobContext.prepareModelJob` field)
+            *   Abstraction layer: interface definitions
+            *   Direction: inward
+        *   `[ ]` `executeModelCallAndSave.interface.ts` — owns `ExecuteModelCallAndSaveFn` type (moved here from `JobContext.interface.ts` in the EMCAS slim node; this node removes the old definition)
+            *   Abstraction layer: interface definitions
+            *   Direction: inward
+        *   `[ ]` `JobContext.mock.ts` — mock implementation of `IJobContext` for tests
+            *   Abstraction layer: test infrastructure
+        *   `[ ]` Confirm no reverse dependency is introduced — `JobContext.interface.ts` does not import from any factory or slicer implementation
+    *   `[ ]` `context_slice`
+        *   `[ ]` `IModelContext` (lines 175-179): remove `callUnifiedAIModel` field; result: `{ getAiProviderAdapter, getAiProviderConfig }`
+        *   `[ ]` `IExecuteJobContext` (lines 214-240): DELETE entirely — replaced by `IExecuteModelCallContext` and `IPrepareModelJobContext`
+        *   `[ ]` `IExecuteModelCallContext` (NEW): slim EMCAS deps — extends `ILoggerContext`, `IModelContext` (updated), `ITokenContext`, `INotificationContext`; direct fields: `fileManager`, `getExtensionFromMimeType`, `extractSourceGroupFragment`, `randomUUID`, `continueJob`, `retryJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`
+        *   `[ ]` `IPrepareModelJobContext` (NEW): prepareModelJob deps — extends `ILoggerContext`, `IModelContext` (updated), `IRagContext`, `ITokenContext`, `INotificationContext`; direct fields: `downloadFromStorage`, `getSeedPromptForStage`, `promptAssembler`, `pickLatest`, `applyInputsRequiredScope`, `validateWalletBalance`, `validateModelCostRates`, `shouldEnqueueRenderJob`
+        *   `[ ]` `IJobContext` (lines 273-280): change extends from `IExecuteJobContext, IPlanJobContext, IRenderJobContext` to `IExecuteModelCallContext, IPrepareModelJobContext, IPlanJobContext, IRenderJobContext`; replace `executeModelCallAndSave: ExecuteModelCallAndSaveFn` with `prepareModelJob: PrepareModelJobFn`; `continueJob` and `retryJob` inherited from `IExecuteModelCallContext` (no re-declaration needed)
+        *   `[ ]` `JobContextParams` (lines 287-322): remove `callUnifiedAIModel`; replace `executeModelCallAndSave` with `prepareModelJob`; field list is the flattened union of all context interfaces (33 fields total after removals/additions)
+        *   `[ ]` `createJobContext` factory: remove `callUnifiedAIModel: params.callUnifiedAIModel` (line 29); replace `executeModelCallAndSave: params.executeModelCallAndSave` (line 74) with `prepareModelJob: params.prepareModelJob`
+        *   `[ ]` `createExecuteJobContext` slicer (lines 85-131): DELETE entirely
+        *   `[ ]` `createExecuteModelCallContext` slicer (NEW): slices `IJobContext` → `IExecuteModelCallContext` with only the fields slim EMCAS needs
+        *   `[ ]` `createPrepareModelJobContext` slicer (NEW): slices `IJobContext` → `IPrepareModelJobContext` with only the fields `prepareModelJob` needs
+        *   `[ ]` `JobContext.mock.ts`: remove `callUnifiedAIModel` mock (line 48); replace `executeModelCallAndSave: async () => {}` (line 104) with `prepareModelJob: async () => {}`; update `getAiProviderAdapter` mock to include `sendMessageStream` stub on its return value (required by updated `AiProviderAdapter` type from adapter nodes)
+    *   `[ ]` `JobContext.interface.ts`/interface
+        *   `[ ]` Remove `callUnifiedAIModel` from `IModelContext` — change from `{ callUnifiedAIModel, getAiProviderAdapter, getAiProviderConfig }` to `{ getAiProviderAdapter, getAiProviderConfig }`
+        *   `[ ]` Remove the `CallUnifiedAIModelFn` import from `dialectic.interface.ts` (line 12) if no longer used anywhere in the file
+        *   `[ ]` Remove the `ExecuteModelCallAndSaveFn` type definition (lines 75-77) — moved to `executeModelCallAndSave.interface.ts` in the EMCAS slim node
+        *   `[ ]` Remove the `ExecuteModelCallAndSaveParams` import from `dialectic.interface.ts` (line 35) if no longer used
+        *   `[ ]` DELETE `IExecuteJobContext` interface (lines 214-240) — replaced by the two new per-function context interfaces below
+        *   `[ ]` ADD `IExecuteModelCallContext` interface — context slice for slimmed `executeModelCallAndSave`:
+            *   Extends: `ILoggerContext`, `IModelContext`, `ITokenContext`, `INotificationContext`
+            *   `readonly fileManager: IFileManager` — file operations for contribution upload (from `IFileContext`, but without `downloadFromStorage`/`deleteFromStorage` which slim EMCAS does not use)
+            *   `readonly getExtensionFromMimeType: GetExtensionFromMimeTypeFn`
+            *   `readonly extractSourceGroupFragment: ExtractSourceGroupFragmentFn`
+            *   `readonly randomUUID: () => string`
+            *   `readonly continueJob: ContinueJobFn`
+            *   `readonly retryJob: RetryJobFn`
+            *   `readonly resolveFinishReason: ResolveFinishReasonFn`
+            *   `readonly isIntermediateChunk: IsIntermediateChunkFn`
+            *   `readonly determineContinuation: DetermineContinuationFn`
+            *   `readonly buildUploadContext: BuildUploadContextFn`
+        *   `[ ]` ADD `IPrepareModelJobContext` interface — context slice for `prepareModelJob`:
+            *   Extends: `ILoggerContext`, `IModelContext`, `IRagContext`, `ITokenContext`, `INotificationContext`
+            *   `readonly downloadFromStorage: DownloadFromStorageFn` — artifact downloads for `gatherArtifacts` (from `IFileContext`, but without `fileManager`/`deleteFromStorage` which `prepareModelJob` does not use)
+            *   `readonly getSeedPromptForStage: GetSeedPromptForStageFn`
+            *   `readonly promptAssembler: IPromptAssembler`
+            *   `readonly pickLatest: PickLatestFn`
+            *   `readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn`
+            *   `readonly validateWalletBalance: ValidateWalletBalanceFn`
+            *   `readonly validateModelCostRates: ValidateModelCostRatesFn`
+            *   `readonly shouldEnqueueRenderJob: ShouldEnqueueRenderJobFn`
+        *   `[ ]` UPDATE `IJobContext` (lines 273-280):
+            *   Change extends from `IExecuteJobContext, IPlanJobContext, IRenderJobContext` to `IExecuteModelCallContext, IPrepareModelJobContext, IPlanJobContext, IRenderJobContext`
+            *   Remove `readonly continueJob: ContinueJobFn` — inherited from `IExecuteModelCallContext`
+            *   Remove `readonly retryJob: RetryJobFn` — inherited from `IExecuteModelCallContext`
+            *   Replace `readonly executeModelCallAndSave: ExecuteModelCallAndSaveFn` with `readonly prepareModelJob: PrepareModelJobFn`
+            *   Add `import { PrepareModelJobFn } from './prepareModelJob.interface.ts'`
+        *   `[ ]` UPDATE `JobContextParams` (lines 287-322):
+            *   Remove `readonly callUnifiedAIModel: CallUnifiedAIModelFn` (line 292)
+            *   Replace `readonly executeModelCallAndSave: ExecuteModelCallAndSaveFn` (line 313) with `readonly prepareModelJob: PrepareModelJobFn`
+            *   All other fields remain — `JobContextParams` is the flattened union of all context interfaces, providing every field the `createJobContext` factory needs to construct `IJobContext`
+    *   `[ ]` `JobContext.interface.ts`/interface tests — no separate interface test file for `JobContext`; type safety is verified by compilation and type guard tests
+    *   `[ ]` `type-guards/JobContext.type_guards.ts`/interface guards
+        *   `[ ]` UPDATE `isIModelContext` (lines 39-51): remove `'callUnifiedAIModel' in value` and `typeof value.callUnifiedAIModel === 'function'` checks
+        *   `[ ]` DELETE `isIExecuteJobContext` (lines 94-122): replaced by the two new guards below
+        *   `[ ]` ADD `isIExecuteModelCallContext(value: unknown): value is IExecuteModelCallContext` — validates: `isILoggerContext`, `isIModelContext` (updated), `isITokenContext`, `isINotificationContext`, then checks direct fields: `fileManager` (object), `getExtensionFromMimeType` (function), `extractSourceGroupFragment` (function), `randomUUID` (function), `continueJob` (function), `retryJob` (function), `resolveFinishReason` (function), `isIntermediateChunk` (function), `determineContinuation` (function), `buildUploadContext` (function)
+        *   `[ ]` ADD `isIPrepareModelJobContext(value: unknown): value is IPrepareModelJobContext` — validates: `isILoggerContext`, `isIModelContext` (updated), `isIRagContext`, `isITokenContext`, `isINotificationContext`, then checks direct fields: `downloadFromStorage` (function), `getSeedPromptForStage` (function), `promptAssembler` (object), `pickLatest` (function), `applyInputsRequiredScope` (function), `validateWalletBalance` (function), `validateModelCostRates` (function), `shouldEnqueueRenderJob` (function)
+        *   `[ ]` UPDATE `isIJobContext` (lines 149-163): replace `isIExecuteJobContext(value)` call with `isIExecuteModelCallContext(value)` and `isIPrepareModelJobContext(value)` calls; replace `'executeModelCallAndSave' in value` with `'prepareModelJob' in value`; replace `typeof value.executeModelCallAndSave === 'function'` with `typeof value.prepareModelJob === 'function'`; remove `continueJob`/`retryJob` checks if they were only in `isIJobContext` (they are now validated by `isIExecuteModelCallContext`)
+    *   `[ ]` `type-guards/JobContext.type_guards.test.ts`/interface guard tests
+        *   `[ ]` Remove all `isIExecuteJobContext` test cases — the guard no longer exists
+        *   `[ ]` ADD test cases for `isIExecuteModelCallContext`:
+            *   `[ ]` Test: valid object with all `IExecuteModelCallContext` fields passes guard
+            *   `[ ]` Test: object missing `fileManager` fails guard
+            *   `[ ]` Test: object missing `continueJob` fails guard
+            *   `[ ]` Test: object missing `resolveFinishReason` fails guard
+            *   `[ ]` Test: object with Zone A-D fields (`getSeedPromptForStage`, `ragService`, etc.) but missing `IExecuteModelCallContext` fields fails guard
+        *   `[ ]` ADD test cases for `isIPrepareModelJobContext`:
+            *   `[ ]` Test: valid object with all `IPrepareModelJobContext` fields passes guard
+            *   `[ ]` Test: object missing `downloadFromStorage` fails guard
+            *   `[ ]` Test: object missing `getSeedPromptForStage` fails guard
+            *   `[ ]` Test: object missing `ragService` (via `isIRagContext`) fails guard
+            *   `[ ]` Test: object with Zone E-G fields (`fileManager`, `continueJob`, etc.) but missing `IPrepareModelJobContext` fields fails guard
+        *   `[ ]` UPDATE `isIModelContext` test cases: remove `callUnifiedAIModel` from valid mock objects; add test that object without `callUnifiedAIModel` still passes
+        *   `[ ]` UPDATE `isIJobContext` test cases: replace `executeModelCallAndSave` with `prepareModelJob` in valid mock objects; remove `callUnifiedAIModel` from mock objects; verify guard passes with new context structure; verify guard fails when `prepareModelJob` is missing
+    *   `[ ]` unit/`createJobContext.test.ts`
+        *   `[ ]` Update `createMockJobContextParams` call sites: remove `callUnifiedAIModel` override, replace `executeModelCallAndSave` override with `prepareModelJob` override
+        *   `[ ]` Verify `createJobContext` returns an object that passes `isIJobContext` with new context structure
+        *   `[ ]` Verify `createJobContext` returns an object with `prepareModelJob` instead of `executeModelCallAndSave`
+        *   `[ ]` Verify `createJobContext` returns an object without `callUnifiedAIModel`
+        *   `[ ]` Remove all `createExecuteJobContext` test cases — the slicer no longer exists
+        *   `[ ]` ADD test cases for `createExecuteModelCallContext`:
+            *   `[ ]` Test: extracts only `IExecuteModelCallContext` fields from root `IJobContext`
+            *   `[ ]` Test: result passes `isIExecuteModelCallContext` guard
+            *   `[ ]` Test: result includes `fileManager`, `getAiProviderAdapter`, `continueJob`, `retryJob`, `resolveFinishReason`, `determineContinuation`, `buildUploadContext`
+            *   `[ ]` Test: result does NOT include `getSeedPromptForStage`, `promptAssembler`, `ragService`, `countTokens`, `pickLatest`, `applyInputsRequiredScope`, `validateWalletBalance`, `validateModelCostRates`, `shouldEnqueueRenderJob`, `downloadFromStorage`, `prepareModelJob`
+        *   `[ ]` ADD test cases for `createPrepareModelJobContext`:
+            *   `[ ]` Test: extracts only `IPrepareModelJobContext` fields from root `IJobContext`
+            *   `[ ]` Test: result passes `isIPrepareModelJobContext` guard
+            *   `[ ]` Test: result includes `downloadFromStorage`, `getSeedPromptForStage`, `promptAssembler`, `ragService`, `countTokens`, `pickLatest`, `applyInputsRequiredScope`, `validateWalletBalance`, `validateModelCostRates`, `shouldEnqueueRenderJob`
+            *   `[ ]` Test: result does NOT include `fileManager`, `continueJob`, `retryJob`, `getExtensionFromMimeType`, `extractSourceGroupFragment`, `randomUUID`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `prepareModelJob`
+        *   `[ ]` Verify `createPlanJobContext` still works unchanged — passes `isIPlanJobContext`
+        *   `[ ]` Verify `createRenderJobContext` still works unchanged — passes `isIRenderJobContext`
+    *   `[ ]` `construction`
+        *   `[ ]` No new constructors — modifications to existing factory function and interfaces
+        *   `[ ]` Prohibited: adding any new deps to replace `callUnifiedAIModel` — the adapter factory (`getAiProviderAdapter`) is already present on `IModelContext`
+    *   `[ ]` `createJobContext.ts`
+        *   `[ ]` In `createJobContext` factory:
+            *   `[ ]` Remove `callUnifiedAIModel: params.callUnifiedAIModel,` (line 29)
+            *   `[ ]` Replace `executeModelCallAndSave: params.executeModelCallAndSave,` (line 74) with `prepareModelJob: params.prepareModelJob,`
+            *   `[ ]` Remove `continueJob` and `retryJob` from the explicit IJobContext-level fields if they are now inherited from `IExecuteModelCallContext`
+        *   `[ ]` DELETE `createExecuteJobContext` slicer (lines 85-131) — replaced by two new slicers
+        *   `[ ]` ADD `createExecuteModelCallContext(root: IJobContext): IExecuteModelCallContext`:
+            *   `[ ]` `logger: root.logger` (from `ILoggerContext`)
+            *   `[ ]` `getAiProviderAdapter: root.getAiProviderAdapter` (from `IModelContext`)
+            *   `[ ]` `getAiProviderConfig: root.getAiProviderConfig` (from `IModelContext`)
+            *   `[ ]` `tokenWalletService: root.tokenWalletService` (from `ITokenContext`)
+            *   `[ ]` `notificationService: root.notificationService` (from `INotificationContext`)
+            *   `[ ]` `fileManager: root.fileManager` (direct — contribution upload)
+            *   `[ ]` `getExtensionFromMimeType: root.getExtensionFromMimeType`
+            *   `[ ]` `extractSourceGroupFragment: root.extractSourceGroupFragment`
+            *   `[ ]` `randomUUID: root.randomUUID`
+            *   `[ ]` `continueJob: root.continueJob`
+            *   `[ ]` `retryJob: root.retryJob`
+            *   `[ ]` `resolveFinishReason: root.resolveFinishReason`
+            *   `[ ]` `isIntermediateChunk: root.isIntermediateChunk`
+            *   `[ ]` `determineContinuation: root.determineContinuation`
+            *   `[ ]` `buildUploadContext: root.buildUploadContext`
+        *   `[ ]` ADD `createPrepareModelJobContext(root: IJobContext): IPrepareModelJobContext`:
+            *   `[ ]` `logger: root.logger` (from `ILoggerContext`)
+            *   `[ ]` `getAiProviderAdapter: root.getAiProviderAdapter` (from `IModelContext`)
+            *   `[ ]` `getAiProviderConfig: root.getAiProviderConfig` (from `IModelContext`)
+            *   `[ ]` `ragService: root.ragService` (from `IRagContext`)
+            *   `[ ]` `indexingService: root.indexingService` (from `IRagContext`)
+            *   `[ ]` `embeddingClient: root.embeddingClient` (from `IRagContext`)
+            *   `[ ]` `countTokens: root.countTokens` (from `IRagContext`)
+            *   `[ ]` `tokenWalletService: root.tokenWalletService` (from `ITokenContext`)
+            *   `[ ]` `notificationService: root.notificationService` (from `INotificationContext`)
+            *   `[ ]` `downloadFromStorage: root.downloadFromStorage` (direct — artifact downloads)
+            *   `[ ]` `getSeedPromptForStage: root.getSeedPromptForStage`
+            *   `[ ]` `promptAssembler: root.promptAssembler`
+            *   `[ ]` `pickLatest: root.pickLatest`
+            *   `[ ]` `applyInputsRequiredScope: root.applyInputsRequiredScope`
+            *   `[ ]` `validateWalletBalance: root.validateWalletBalance`
+            *   `[ ]` `validateModelCostRates: root.validateModelCostRates`
+            *   `[ ]` `shouldEnqueueRenderJob: root.shouldEnqueueRenderJob`
+        *   `[ ]` `createPlanJobContext` — unchanged
+        *   `[ ]` `createRenderJobContext` — unchanged
+    *   `[ ]` `JobContext.mock.ts`
+        *   `[ ]` Remove the `callUnifiedAIModel` mock (line 48 and surrounding mock implementation lines 48-55)
+        *   `[ ]` Replace `executeModelCallAndSave: async () => {}` mock (line 104) with `prepareModelJob: async () => {}`
+        *   `[ ]` Update `getAiProviderAdapter` mock (lines 56-65) to include `sendMessageStream` stub on its return value — required because the updated `AiProviderAdapter` type contract (from adapter nodes) now mandates `sendMessageStream`
+    *   `[ ]` provides/`createJobContext.ts`
+        *   `[ ]` Exports `createJobContext` (unchanged)
+        *   `[ ]` Exports `createExecuteModelCallContext` (NEW — replaces `createExecuteJobContext`)
+        *   `[ ]` Exports `createPrepareModelJobContext` (NEW — replaces the prepare-specific portion of the old `createExecuteJobContext`)
+        *   `[ ]` Exports `createPlanJobContext` (unchanged)
+        *   `[ ]` Exports `createRenderJobContext` (unchanged)
+        *   `[ ]` Does NOT export `createExecuteJobContext` — deleted
+        *   `[ ]` Semantic guarantee: `IExecuteJobContext` no longer exists; `IJobContext` exposes `prepareModelJob` instead of `executeModelCallAndSave`; each function gets exactly the deps it needs via its own context slice — any code referencing removed interfaces or fields will get a compile error, ensuring all callers are updated
+    *   `[ ]` mock — `JobContext.mock.ts` updated in this node (see above)
+    *   `[ ]` integration — run `createJobContext.test.ts` to verify factory and all slicers work. Note: `executeModelCallAndSave.ts` still references `IExecuteJobContext` and `deps.callUnifiedAIModel` — these will cause type errors until the EMCAS slim node updates to use `IExecuteModelCallContext`. `processSimpleJob.ts` still references `ctx.executeModelCallAndSave` and `createExecuteJobContext` — these will cause type errors until the processSimpleJob node updates. Both are expected RED states resolved in subsequent nodes.
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: composition root (worker layer)
+        *   `[ ]` All dependencies are inward-facing (interfaces, type definitions)
+        *   `[ ]` All provides are outward-facing (context objects and slicers used by job processors and composition root)
+    *   `[ ]` `requirements`
+        *   `[ ]` `IExecuteJobContext` must be deleted and replaced by `IExecuteModelCallContext` and `IPrepareModelJobContext`
+        *   `[ ]` `callUnifiedAIModel` must be removed from ALL interfaces, params, factories, slicers, mocks, and type guards in this node
+        *   `[ ]` `executeModelCallAndSave` must be replaced with `prepareModelJob` on `IJobContext`, `JobContextParams`, `createJobContext.ts` factory, `JobContext.mock.ts`, and all relevant type guards and type guard tests
+        *   `[ ]` `createExecuteJobContext` slicer must be deleted and replaced by `createExecuteModelCallContext` and `createPrepareModelJobContext`
+        *   `[ ]` `getAiProviderAdapter` must remain on `IModelContext` and be present in both `IExecuteModelCallContext` and `IPrepareModelJobContext` (via `IModelContext` extension)
+        *   `[ ]` Each new context interface must contain ONLY the deps its target function uses — no shared fat context
+        *   `[ ]` `IExecuteModelCallContext` must NOT include: `callUnifiedAIModel`, `getSeedPromptForStage`, `promptAssembler`, `ragService`, `indexingService`, `embeddingClient`, `countTokens`, `pickLatest`, `applyInputsRequiredScope`, `validateWalletBalance`, `validateModelCostRates`, `shouldEnqueueRenderJob`, `downloadFromStorage`, `deleteFromStorage`
+        *   `[ ]` `IPrepareModelJobContext` must NOT include: `callUnifiedAIModel`, `fileManager`, `deleteFromStorage`, `getExtensionFromMimeType`, `extractSourceGroupFragment`, `randomUUID`, `continueJob`, `retryJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`
+        *   `[ ]` No business logic changes — this is purely a wiring/interface update
+        *   `[ ]` Type guard tests and factory tests must pass with the new context interfaces
+        *   `[ ]` `executeModelCallAndSave.ts` is NOT modified in this node (that happens in the EMCAS slim node)
+        *   `[ ]` `processSimpleJob.ts` is NOT modified in this node (that happens in the processSimpleJob node)
+
+*   `[ ]` dialectic-worker/executeModelCallAndSave **SLIM existing file — remove Zones A-D and H, replace HTTP call with direct adapter streaming + buffer accumulation + soft-timeout** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Remove Zones A-D (lines ~62-947): payload validation, artifact gathering, token counting, wallet checks, compression, ChatApiRequest construction — all now live in `prepareModelJob`
+        *   `[ ]` Remove Zone H (lines ~1399-1673): render job enqueue logic — now lives in `enqueueRenderJob`
+        *   `[ ]` Replace the `deps.callUnifiedAIModel` HTTP call (lines 948-957) with direct `adapter.sendMessageStream()` call, buffer accumulation of `text_delta` chunks, usage/done extraction from stream chunks
+        *   `[ ]` Add soft-timeout checkpoint: if streaming exceeds ~350 seconds, stop accumulating, treat current buffer as content with `finish_reason: 'length'`, triggering continuation if applicable
+        *   `[ ]` Change function signature to implement `ExecuteModelCallAndSaveFn` from `executeModelCallAndSave.interface.ts` (defined in the prepareModelJob node): `(deps: ExecuteModelCallAndSaveDeps, params: ExecuteModelCallAndSaveParams, payload: ExecuteModelCallAndSavePayload) => Promise<ExecuteModelCallAndSaveReturn>`
+        *   `[ ]` The remaining file contains: adapter streaming → response assembly → finish_reason resolution → sanitization → continuation logic → storage upload → wallet debit → prompt link update → notifications. Roughly ~625 lines.
+    *   `[ ]` `role`
+        *   `[ ]` Domain function — executes the model call via adapter streaming, saves the contribution, handles continuation and retry logic
+    *   `[ ]` `module`
+        *   `[ ]` Dialectic worker (`dialectic-worker/`)
+        *   `[ ]` Boundary: receives prepared `ChatApiRequest` + validated context, streams from adapter, saves to DB/storage, returns contribution metadata to caller
+    *   `[ ]` `deps`
+        *   `[ ]` `adapter` instance — obtained via `deps.getAiProviderAdapter()` using the provider details passed from `prepareModelJob`. The adapter must implement `sendMessageStream()` (from prior adapter nodes)
+            *   Abstraction layer: adapter (external infra wrapped)
+            *   Direction: outward (EMCAS calls adapter)
+            *   Context slice: `adapter.sendMessageStream(chatApiRequest, modelIdentifier)` returns `AsyncGenerator<AdapterStreamChunk>`
+        *   `[ ]` All deps on `ExecuteModelCallAndSaveDeps` (from `executeModelCallAndSave.interface.ts`) that the post-call logic uses: `logger`, `fileManager`, `getExtensionFromMimeType`, `extractSourceGroupFragment`, `randomUUID`, `continueJob`, `retryJob`, `notificationService`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `tokenWalletService`, `getAiProviderAdapter`, `getAiProviderConfig`
+        *   `[ ]` Removed deps: `callUnifiedAIModel` (removed in prior node), `countTokens`, `embeddingClient`, `ragService`, `getSeedPromptForStage`, `promptAssembler`, `pickLatest`, `applyInputsRequiredScope`, `validateWalletBalance`, `validateModelCostRates`, `shouldEnqueueRenderJob` — all moved to `prepareModelJob`
+        *   `[ ]` `dbClient: SupabaseClient<Database>` — for contribution save, wallet debit, prompt link update
+    *   `[ ]` `context_slice`
+        *   `[ ]` Implements `ExecuteModelCallAndSaveFn` — all types (`ExecuteModelCallAndSaveDeps`, `ExecuteModelCallAndSaveParams`, `ExecuteModelCallAndSavePayload`, `ExecuteModelCallAndSaveReturn`) are defined in `executeModelCallAndSave.interface.ts` (created in the prepareModelJob node). This node does not re-define them.
+        *   `[ ]` Deps are received as the first argument (was previously `IExecuteJobContext` on params — now separated per §7)
+        *   `[ ]` Payload contains `chatApiRequest` (was previously inside params — now separated per §7)
+        *   `[ ]` Returns `ExecuteModelCallAndSaveReturn` (was `void`) — `ExecuteModelCallAndSaveSuccessReturn` provides contribution data for render enqueue, `ExecuteModelCallAndSaveErrorReturn` provides error classification
+    *   `[ ]` `executeModelCallAndSave.ts` / updated implementation
+        *   `[ ]` Import `ExecuteModelCallAndSaveDeps`, `ExecuteModelCallAndSaveParams`, `ExecuteModelCallAndSavePayload`, `ExecuteModelCallAndSaveReturn` from `./executeModelCallAndSave.interface.ts` (created in the prepareModelJob node)
+        *   `[ ]` Change function signature to `(deps: ExecuteModelCallAndSaveDeps, params: ExecuteModelCallAndSaveParams, payload: ExecuteModelCallAndSavePayload): Promise<ExecuteModelCallAndSaveReturn>`
+        *   `[ ]` Replace all `params.deps.X` references with `deps.X` (deps are now a separate argument per §7)
+        *   `[ ]` Replace `params.chatApiRequest` with `payload.chatApiRequest` (payload is now a separate argument per §7)
+    *   `[ ]` interface tests — already defined in `executeModelCallAndSave.interface.test.ts` (created in the prepareModelJob node). No additional interface test work in this node.
+    *   `[ ]` interface guards — already defined in `type-guards/executeModelCallAndSave.type_guards.ts` (created in the prepareModelJob node). No additional guard work in this node.
+    *   `[ ]` unit/`executeModelCallAndSave.test.ts`
+        *   `[ ]` Update ALL test fixtures: tests now provide `(deps, params, payload)` per §7 — deps is `ExecuteModelCallAndSaveDeps`, params is pre-validated context, payload contains `chatApiRequest`
+        *   `[ ]` Update mock deps: replace `callUnifiedAIModel` mock with a mock `getAiProviderAdapter` that returns a mock adapter with `sendMessageStream()` returning a controlled `AsyncGenerator<AdapterStreamChunk>`
+        *   `[ ]` Test: `adapter.sendMessageStream` is called with `payload.chatApiRequest` and correct `modelIdentifier` from `params.providerDetails.api_identifier`
+        *   `[ ]` Test: text_delta chunks are accumulated into a single content string
+        *   `[ ]` Test: usage chunk provides token counts that are used for wallet debit
+        *   `[ ]` Test: done chunk provides `finish_reason` that is passed to `deps.resolveFinishReason`
+        *   `[ ]` Test: soft-timeout — when streaming exceeds 350 seconds, accumulation stops and finish_reason becomes `'length'`
+        *   `[ ]` Test: all existing post-call tests (sanitization, continuation, storage upload, wallet debit, retry logic) still pass with the new streaming-based response assembly
+        *   `[ ]` Test: function returns `ExecuteModelCallAndSaveSuccessReturn` with `contribution`, `needsContinuation`, `stageRelationshipForStage`, `documentKey`, `fileType`, `storageFileType`
+        *   `[ ]` Test: function returns `ExecuteModelCallAndSaveErrorReturn` on adapter/DB failures
+        *   `[ ]` Existing render-related tests (`executeModelCallAndSave.render.test.ts`) need updating: Zone H assertions are removed (render enqueue is now external). These tests should verify that the success return includes the data needed for render enqueue but the function does NOT perform the insert itself.
+    *   `[ ]` `construction`
+        *   `[ ]` Same top-level exported async function `executeModelCallAndSave` — name stays, signature changes to `(deps: ExecuteModelCallAndSaveDeps, params: ExecuteModelCallAndSaveParams, payload: ExecuteModelCallAndSavePayload): Promise<ExecuteModelCallAndSaveReturn>`
+        *   `[ ]` Prohibited: importing `prepareModelJob` or `enqueueRenderJob` — EMCAS is called BY them, not the other way around
+    *   `[ ]` `executeModelCallAndSave.ts` — changes
+        *   `[ ]` **DELETE** lines ~62-947 (Zones A-D): all payload validation, artifact gathering, token counting, wallet checks, compression, ChatApiRequest construction
+        *   `[ ]` **DELETE** lines ~1399-1673 (Zone H): render job enqueue logic
+        *   `[ ]` **REPLACE** lines 948-957 (model call via `deps.callUnifiedAIModel`) with:
+            *   Get adapter instance via `deps.getAiProviderAdapter` using `params.providerDetails` — keeps adapter construction close to where it's used
+        *   `[ ]` **ADD** streaming buffer accumulation:
+            ```
+            const startTime = Date.now();
+            const SOFT_TIMEOUT_MS = 350_000; // 350 seconds
+            let assembledContent = '';
+            let tokenUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null = null;
+            let streamFinishReason: FinishReason = 'unknown';
+            let timedOut = false;
+
+            const stream = adapter.sendMessageStream(payload.chatApiRequest, params.providerDetails.api_identifier);
+            for await (const chunk of stream) {
+                if (chunk.type === 'text_delta') {
+                    assembledContent += chunk.text;
+                    // Soft-timeout checkpoint
+                    if (Date.now() - startTime > SOFT_TIMEOUT_MS) {
+                        timedOut = true;
+                        streamFinishReason = 'length';
+                        break;
+                    }
+                } else if (chunk.type === 'usage') {
+                    tokenUsage = chunk.tokenUsage;
+                } else if (chunk.type === 'done') {
+                    streamFinishReason = chunk.finish_reason;
+                }
+            }
+            ```
+        *   `[ ]` **ADD** response assembly — construct `UnifiedAIResponse`-equivalent from accumulated data:
+            *   `content = assembledContent.trim() || null`
+            *   `tokenUsage` from usage chunk
+            *   `finish_reason` from done chunk (or `'length'` if timed out)
+            *   `rawProviderResponse = { token_usage: tokenUsage, finish_reason: streamFinishReason }` (adapter-agnostic)
+            *   `processingTimeMs = Date.now() - startTime`
+        *   `[ ]` **KEEP** all post-response logic unchanged: `resolveFinishReason`, retry on error/empty, sanitization, continuation decision, storage upload, wallet debit, prompt link update, notifications, continuation job enqueue
+        *   `[ ]` **CHANGE** return: instead of `return;` (void), return `ExecuteModelCallAndSaveSuccessReturn` with `{ contribution, needsContinuation, stageRelationshipForStage, documentKey, fileType, storageFileType }` — all data `prepareModelJob` needs to call `enqueueRenderJob`. On failure, return `ExecuteModelCallAndSaveErrorReturn`.
+    *   `[ ]` provides/`executeModelCallAndSave.ts`
+        *   `[ ]` Exports `executeModelCallAndSave` function (same name, new signature implementing `ExecuteModelCallAndSaveFn`)
+        *   `[ ]` All types (`ExecuteModelCallAndSaveFn`, `ExecuteModelCallAndSaveDeps`, `ExecuteModelCallAndSaveParams`, `ExecuteModelCallAndSavePayload`, `ExecuteModelCallAndSaveReturn`, `ExecuteModelCallAndSaveSuccessReturn`, `ExecuteModelCallAndSaveErrorReturn`) are exported from `executeModelCallAndSave.interface.ts` (created in the prepareModelJob node)
+        *   `[ ]` Semantic guarantee: streams from adapter, saves contribution, handles retry/continuation, returns `ExecuteModelCallAndSaveSuccessReturn` or `ExecuteModelCallAndSaveErrorReturn`. Does NOT validate payload, gather artifacts, count tokens, check wallet, compress, or enqueue render jobs.
+    *   `[ ]` mock — update existing EMCAS mocks used by `processSimpleJob.test.ts` to match new signature
+    *   `[ ]` integration — deferred to final wiring node. At this point, EMCAS has a new signature but is not yet called by `prepareModelJob` (which doesn't exist in production code yet).
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: domain function (worker layer)
+        *   `[ ]` Dependencies: inward to domain types/utilities, outward to adapter (streaming)
+        *   `[ ]` Provides: outward to `prepareModelJob` orchestrator
+    *   `[ ]` `requirements`
+        *   `[ ]` Slimmed EMCAS must NOT contain any Zone A-D or Zone H logic
+        *   `[ ]` Slimmed EMCAS must call `adapter.sendMessageStream()` directly instead of `deps.callUnifiedAIModel()`
+        *   `[ ]` Streaming buffer accumulation must yield identical `content`, `tokenUsage`, and `finish_reason` as the old `UnifiedAIResponse` for the same model output
+        *   `[ ]` Soft-timeout at ~350s must set `finish_reason = 'length'` and break the stream, allowing continuation logic to trigger
+        *   `[ ]` All post-call logic (sanitization, continuation, storage, wallet debit, notifications) must remain functionally identical
+        *   `[ ]` Function must return `ExecuteModelCallAndSaveSuccessReturn` (contribution data, continuation state, render-enqueue fields) or `ExecuteModelCallAndSaveErrorReturn` instead of being void
+        *   `[ ]` All ~700 EMCAS tests must be updated and pass (test updates are part of this node)
+        *   `[ ]` Render-related test files (`executeModelCallAndSave.render.test.ts`, etc.) must be updated to remove Zone H assertions — verify data is returned for external render enqueue instead
+
+*   `[ ]` dialectic-worker/processSimpleJob **Update caller to route through `prepareModelJob` instead of directly calling EMCAS** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Replace the `ctx.executeModelCallAndSave({...})` call at line 323 with a call to `prepareModelJob` (which orchestrates slim EMCAS + enqueueRenderJob internally)
+        *   `[ ]` `processSimpleJob` continues to own: session/provider/stage/recipe resolution, prompt assembly, notification lifecycle (started/completed/failed events), error classification and immediate failure handling
+        *   `[ ]` `IJobContext` already exposes `prepareModelJob` instead of `executeModelCallAndSave` (updated in the createJobContext node)
+    *   `[ ]` `role`
+        *   `[ ]` Job processor — resolves context from DB, assembles prompt, delegates model execution to `prepareModelJob`, handles lifecycle notifications
+    *   `[ ]` `module`
+        *   `[ ]` Dialectic worker (`dialectic-worker/`)
+        *   `[ ]` Boundary: receives raw job from queue, queries DB for context, delegates to `prepareModelJob`, emits lifecycle events
+    *   `[ ]` `deps`
+        *   `[ ]` `ctx: IJobContext` — the full job context, which will now include `prepareModelJob` instead of `executeModelCallAndSave`
+            *   Abstraction layer: composition root
+            *   Direction: inward (processSimpleJob depends on context)
+        *   `[ ]` `prepareModelJob` — the orchestrator from the prior node (accessed via `ctx.prepareModelJob` or similar)
+            *   Abstraction layer: domain orchestrator
+            *   Direction: outward (processSimpleJob calls orchestrator)
+        *   `[ ]` All existing deps remain: `dbClient`, `ctx.logger`, `ctx.notificationService`, `ctx.promptAssembler`, `ctx.downloadFromStorage`
+        *   `[ ]` New deps from createJobContext node: `createExecuteModelCallContext`, `createPrepareModelJobContext` (replace deleted `createExecuteJobContext`)
+    *   `[ ]` `context_slice`
+        *   `[ ]` Same function signature: `processSimpleJob(dbClient, job, projectOwnerUserId, ctx, authToken)`
+        *   `[ ]` Change at line 323: replace `ctx.executeModelCallAndSave({...})` with `ctx.prepareModelJob(prepareModelJobDeps, prepareModelJobParams, prepareModelJobPayload)` — three-arg call per §7
+        *   `[ ]` Construct `prepareModelJobDeps` using `createPrepareModelJobContext(ctx)` for context deps, plus `executeModelCallAndSave` and `enqueueRenderJob` as injected function deps
+        *   `[ ]` Separate previously-flat params into `PrepareModelJobParams` (job context/identifiers) and `PrepareModelJobPayload` (prompt preparation data)
+    *   `[ ]` `processSimpleJob.ts` / interface — N/A (processSimpleJob has no separate interface file; `IJobContext` changes completed in the createJobContext node)
+    *   `[ ]` interface tests — N/A (processSimpleJob has no separate interface)
+    *   `[ ]` interface guards — N/A (IJobContext type guards updated in the createJobContext node)
+    *   `[ ]` unit/`processSimpleJob.test.ts`
+        *   `[ ]` Update mock `ctx` to provide `prepareModelJob` mock instead of `executeModelCallAndSave` mock
+        *   `[ ]` Test: `prepareModelJob` is called with correct three-arg signature (deps, params, payload) — params contain job context, payload contains prompt preparation data
+        *   `[ ]` Test: lifecycle notifications (execute_started, execute_completed) still fire at the correct points
+        *   `[ ]` Test: error classification (ContextWindowError, AUTH_MISSING, INSUFFICIENT_FUNDS, etc.) still works with `PrepareModelJobErrorReturn`
+        *   `[ ]` Test: when `prepareModelJob` returns `PrepareModelJobErrorReturn`, error is handled by the existing error classification logic
+    *   `[ ]` `construction`
+        *   `[ ]` Same exported async function `processSimpleJob` — no constructor changes
+    *   `[ ]` `processSimpleJob.ts`
+        *   `[ ]` Line ~322-323: replace `createExecuteJobContext(ctx)` + `await ctx.executeModelCallAndSave({...})` with:
+            *   `[ ]` Construct `PrepareModelJobDeps` from `createPrepareModelJobContext(ctx)` plus the injected `executeModelCallAndSave` and `enqueueRenderJob` functions (from ctx or imported)
+            *   `[ ]` Construct `PrepareModelJobParams` from job context fields (`dbClient`, `authToken`, `job`, `projectOwnerUserId`, `providerDetails`, `sessionData`)
+            *   `[ ]` Construct `PrepareModelJobPayload` from prompt preparation data (`promptConstructionPayload`, `compressionStrategy`, `inputsRelevance`, `inputsRequired`)
+            *   `[ ]` `const result = await ctx.prepareModelJob(deps, params, payload)` — three-arg call
+        *   `[ ]` Handle `PrepareModelJobReturn`: check for success vs error return, route error returns to existing error classification logic
+        *   `[ ]` No other changes to `processSimpleJob.ts` logic — all prompt assembly, notification, and error handling remain
+    *   `[ ]` provides/`processSimpleJob.ts`
+        *   `[ ]` Exports `processSimpleJob` function (unchanged name and signature)
+        *   `[ ]` Semantic guarantee: same behavior as before — resolves context, calls model orchestrator, emits notifications
+    *   `[ ]` mock — update `processSimpleJob` mocks if used by other test files
+    *   `[ ]` integration — deferred to final wiring node
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: job processor (worker layer)
+        *   `[ ]` Dependencies: inward to DB, context, domain types
+        *   `[ ]` Provides: outward to job queue handler (`processJob`)
+    *   `[ ]` `requirements`
+        *   `[ ]` `processSimpleJob` must call `ctx.prepareModelJob(deps, params, payload)` instead of `ctx.executeModelCallAndSave({...})`
+        *   `[ ]` All data previously passed as a single params object to `executeModelCallAndSave` must be split into `PrepareModelJobDeps`, `PrepareModelJobParams`, and `PrepareModelJobPayload` per §7
+        *   `[ ]` All existing `processSimpleJob.test.ts` tests must be updated and pass
+        *   `[ ]` No changes to prompt assembly, notification lifecycle, or error classification logic
+        *   `[ ]` No changes to `JobContext.interface.ts`, `createJobContext.ts`, `JobContext.mock.ts`, or type guards — those were updated in the createJobContext node
+
+*   `[ ]` dialectic-service/generateContribution **Remove `callUnifiedAIModel` from `GenerateContributionsDeps`, delete dead types `CallUnifiedAIModelFn` and `CallModelDependencies`** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Remove the optional `callUnifiedAIModel?` field from `GenerateContributionsDeps` — the field is unused by `generateContribution.ts` and the function it wrapped (`callModel.ts`) is being deleted
+        *   `[ ]` Delete `CallUnifiedAIModelFn` type from `dialectic.interface.ts` — all consumers removed: worker's `JobContext.interface.ts` no longer imports it (createJobContext node), `callModel.ts` is being deleted (dialectic-service/index node), `GenerateContributionsDeps` no longer references it (this node)
+        *   `[ ]` Delete `CallModelDependencies` interface from `dialectic.interface.ts` — only used by `callModel.ts` (being deleted) and `GenerateContributionsDeps` (field removed)
+        *   `[ ]` Update `generateContribution.test.ts` — remove `callUnifiedAIModel` from all ~18 mock `GenerateContributionsDeps` construction sites
+    *   `[ ]` `role`
+        *   `[ ]` Service function — creates and enqueues dialectic generation jobs
+    *   `[ ]` `module`
+        *   `[ ]` Dialectic service (`dialectic-service/`)
+        *   `[ ]` Boundary: receives payload + user + deps, inserts job rows into `dialectic_generation_jobs`. Does not call models directly.
+    *   `[ ]` `deps`
+        *   `[ ]` `dialectic.interface.ts` — owns `GenerateContributionsDeps`, `CallUnifiedAIModelFn`, `CallModelDependencies`
+            *   Abstraction layer: interface definitions
+            *   Direction: inward (function depends on interfaces)
+        *   `[ ]` `IDialecticJobDeps extends GenerateContributionsDeps` — inherits `callUnifiedAIModel?`. Since the field is optional, its removal does not break `IDialecticJobDeps` consumers.
+    *   `[ ]` `context_slice`
+        *   `[ ]` `GenerateContributionsDeps` (`dialectic.interface.ts` lines 1231-1243): remove `callUnifiedAIModel?` field
+        *   `[ ]` `CallUnifiedAIModelFn` (`dialectic.interface.ts` lines 103-107): DELETE entirely
+        *   `[ ]` `CallModelDependencies` (`dialectic.interface.ts` lines 1211-1214): DELETE entirely
+    *   `[ ]` `dialectic.interface.ts`/interface
+        *   `[ ]` Remove `callUnifiedAIModel?` field from `GenerateContributionsDeps`
+        *   `[ ]` DELETE `CallUnifiedAIModelFn` type (lines 103-107)
+        *   `[ ]` DELETE `CallModelDependencies` interface (lines 1211-1214)
+        *   `[ ]` Verify `IDialecticJobDeps extends GenerateContributionsDeps` (~line 1958) is unaffected — the removed field was optional, so no break
+    *   `[ ]` interface tests — N/A (`GenerateContributionsDeps` has no dedicated type guard)
+    *   `[ ]` interface guards — N/A
+    *   `[ ]` unit/`generateContribution.test.ts`
+        *   `[ ]` Remove `callUnifiedAIModel` field from all ~18 mock `GenerateContributionsDeps` object constructions throughout the test file
+        *   `[ ]` Verify all existing tests still pass — `generateContribution.ts` never used the field
+    *   `[ ]` `construction`
+        *   `[ ]` No changes to `generateContribution.ts` source — the function never referenced `deps.callUnifiedAIModel`
+    *   `[ ]` `generateContribution.ts`
+        *   `[ ]` No source changes — the function receives `deps: GenerateContributionsDeps` but never accesses `deps.callUnifiedAIModel`. The interface change is transparent to the implementation.
+    *   `[ ]` provides/`generateContribution.ts`
+        *   `[ ]` Exports `generateContributions` function (unchanged)
+        *   `[ ]` Semantic guarantee: `GenerateContributionsDeps` no longer includes any AI model call capability — job enqueue only
+    *   `[ ]` mock — N/A (no dedicated mock file for generateContribution)
+    *   `[ ]` integration — run `generateContribution.test.ts` to verify all tests pass with the updated interface
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: service (dialectic-service)
+        *   `[ ]` All dependencies are inward-facing (interfaces, DB client)
+        *   `[ ]` All provides are outward-facing (consumed by dialectic-service handler)
+    *   `[ ]` `requirements`
+        *   `[ ]` `callUnifiedAIModel` must be completely removed from `GenerateContributionsDeps`
+        *   `[ ]` `CallUnifiedAIModelFn` type must be deleted from `dialectic.interface.ts`
+        *   `[ ]` `CallModelDependencies` interface must be deleted from `dialectic.interface.ts`
+        *   `[ ]` `generateContribution.ts` source must NOT be modified — only interface and test changes
+        *   `[ ]` All `generateContribution.test.ts` tests must pass after fixture updates
+        *   `[ ]` `IDialecticJobDeps` must remain functional after inheriting the updated `GenerateContributionsDeps`
+
+*   `[ ]` dialectic-worker/index **Rewire composition root — remove `callUnifiedAIModel`, wire `prepareModelJob` + adapter factory. Integration tests.** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Remove `callUnifiedAIModel` import and wiring from `dialectic-worker/index.ts` — it is no longer a dependency
+        *   `[ ]` Replace `executeModelCallAndSave` wiring with `prepareModelJob` wiring in `createJobContext` call
+        *   `[ ]` Wire `prepareModelJob` to receive `executeModelCallAndSave` (slim) and `enqueueRenderJob` as its injected deps
+        *   `[ ]` Run all worker-side tests to verify the pipeline
+    *   `[ ]` `role`
+        *   `[ ]` Composition root — assembles all production dependencies and wires them into the job context
+    *   `[ ]` `module`
+        *   `[ ]` Dialectic worker entry point (`dialectic-worker/index.ts`)
+        *   `[ ]` Boundary: Deno edge function entry, creates admin client, constructs all services, wires `IJobContext`, delegates to `processJob`
+    *   `[ ]` `deps`
+        *   `[ ]` `prepareModelJob` — imported from `./prepareModelJob.ts`
+            *   Abstraction layer: domain orchestrator
+            *   Direction: outward (composition root wires orchestrator)
+        *   `[ ]` `executeModelCallAndSave` — imported from `./executeModelCallAndSave.ts` (slim version)
+            *   Abstraction layer: domain function
+            *   Direction: outward (composition root wires domain function into orchestrator)
+        *   `[ ]` `enqueueRenderJob` — imported from `./enqueueRenderJob.ts`
+            *   Abstraction layer: domain utility
+            *   Direction: outward (composition root wires utility into orchestrator)
+        *   `[ ]` Removed dep: `callUnifiedAIModel` from `../dialectic-service/callModel.ts` — no longer imported
+        *   `[ ]` All other existing deps remain unchanged (fileManager, tokenWalletService, ragService, etc.)
+    *   `[ ]` `context_slice`
+        *   `[ ]` `dialectic-worker/index.ts` line 18: remove `import { callUnifiedAIModel } from '../dialectic-service/callModel.ts'`
+        *   `[ ]` `dialectic-worker/index.ts` line 30: keep `import { executeModelCallAndSave } from './executeModelCallAndSave.ts'` (slim version)
+        *   `[ ]` `dialectic-worker/index.ts`: add `import { prepareModelJob } from './prepareModelJob.ts'`
+        *   `[ ]` `dialectic-worker/index.ts`: add `import { enqueueRenderJob } from './enqueueRenderJob.ts'`
+        *   `[ ]` `dialectic-worker/index.ts` line 106: remove `callUnifiedAIModel,` from `createJobContext` params
+        *   `[ ]` `dialectic-worker/index.ts` lines 140-144: replace `executeModelCallAndSave` wiring with `prepareModelJob` wiring that binds slim EMCAS and enqueueRenderJob as deps
+    *   `[ ]` interface — no new interface changes in this node (all interface changes done in prior nodes)
+    *   `[ ]` interface tests — N/A
+    *   `[ ]` interface guards — N/A
+    *   `[ ]` unit/`index.test.ts`
+        *   `[ ]` Update mock context to provide `prepareModelJob` instead of `executeModelCallAndSave`
+        *   `[ ]` Update tests that verify `callUnifiedAIModel` is wired — remove those assertions
+        *   `[ ]` Add test: verify `prepareModelJob` is called when an EXECUTE job is processed
+        *   `[ ]` Verify render job processing tests still pass (render path is unchanged — `processRenderJob` is unaffected)
+        *   `[ ]` Verify plan job processing tests still pass (plan path is unchanged)
+    *   `[ ]` `construction`
+        *   `[ ]` No new constructors — modifications to existing composition root function
+    *   `[ ]` `dialectic-worker/index.ts`
+        *   `[ ]` Remove: `import { callUnifiedAIModel } from '../dialectic-service/callModel.ts'`
+        *   `[ ]` Add: `import { prepareModelJob } from './prepareModelJob.ts'`
+        *   `[ ]` Add: `import { enqueueRenderJob } from './enqueueRenderJob.ts'`
+        *   `[ ]` In `createJobContext({...})` call:
+            *   Remove: `callUnifiedAIModel,` (line 106)
+            *   Replace lines 140-144 (`executeModelCallAndSave: (params) => executeModelCallAndSave({...})`) with partial application that binds deps:
+                ```
+                prepareModelJob: (params: PrepareModelJobParams, payload: PrepareModelJobPayload) =>
+                  prepareModelJob(
+                    { executeModelCallAndSave, enqueueRenderJob },
+                    params,
+                    payload,
+                  ),
+                ```
+    *   `[ ]` provides/`dialectic-worker/index.ts`
+        *   `[ ]` Exports the Deno edge function handler (unchanged)
+        *   `[ ]` Semantic guarantee: EXECUTE jobs now flow through `prepareModelJob` → slim `executeModelCallAndSave` (direct adapter streaming) → `enqueueRenderJob`, bypassing the `/chat` HTTP hop entirely
+    *   `[ ]` mock — N/A (composition root is not mocked)
+    *   `[ ]` integration
+        *   `[ ]` Run ALL EMCAS test files: `executeModelCallAndSave.test.ts`, `executeModelCallAndSave.render.test.ts`, `executeModelCallAndSave.continue.test.ts`, `executeModelCallAndSave.chunks.test.ts`, `executeModelCallAndSave.assembleDocument.test.ts`, `executeModelCallAndSave.renderErrors.test.ts`
+        *   `[ ]` Run `processSimpleJob.test.ts`
+        *   `[ ]` Run `createJobContext.test.ts`
+        *   `[ ]` Run `index.test.ts`
+        *   `[ ]` Run `prepareModelJob.test.ts`
+        *   `[ ]` Run `enqueueRenderJob.test.ts`
+        *   `[ ]` Run all adapter tests: `anthropic_adapter.test.ts`, `openai_adapter.test.ts`, `google_adapter.test.ts`, `dummy_adapter.test.ts`, `factory.test.ts`
+        *   `[ ]` Run type guard tests: `JobContext.type_guards.test.ts`, `enqueueRenderJob.type_guards.test.ts`, `prepareModelJob.type_guards.test.ts`, `type_guards.adapterStreamChunk.test.ts`
+        *   `[ ]` All tests must pass
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: composition root (application boundary)
+        *   `[ ]` All dependencies are outward-facing (assembles and injects concrete implementations)
+        *   `[ ]` No business logic — pure wiring
+    *   `[ ]` `requirements`
+        *   `[ ]` `callUnifiedAIModel` must not be imported or wired anywhere in `dialectic-worker/`
+        *   `[ ]` `callModel.ts` is NOT touched in this node — deletion happens in the dialectic-service/index node after all imports are removed
+        *   `[ ]` `prepareModelJob` must receive `executeModelCallAndSave` and `enqueueRenderJob` as injected deps (not imported directly within `prepareModelJob.ts`)
+        *   `[ ]` The adapter factory (`getAiProviderAdapter`) must remain wired — it is used by slim EMCAS to obtain adapter instances for streaming
+        *   `[ ]` All ~700+ tests across the affected files must pass
+        *   `[ ]` No changes to `chat/index.ts`, `_shared/cors-headers.ts`, or `_shared/prompt-assembler/`
+        *   `[ ]` No changes to `dialectic-service/` — service-side cleanup is handled in the generateContribution and dialectic-service/index nodes
+
+*   `[ ]` dialectic-service/index **Remove `callUnifiedAIModel` wiring from handler, DELETE `callModel.ts` and `callModel.test.ts`. Commit.** `[BE]`
+    *   `[ ]` `objective`
+        *   `[ ]` Remove `import { callUnifiedAIModel } from './callModel.ts'` from `dialectic-service/index.ts` — no remaining consumers
+        *   `[ ]` Remove `callUnifiedAIModel: callUnifiedAIModel,` from the `GenerateContributionsDeps` construction in the generateContributions handler (line 454) — field no longer exists on the interface (removed in the generateContribution node)
+        *   `[ ]` DELETE `dialectic-service/callModel.ts` (146 lines) — all consumers removed: EMCAS calls adapter directly (EMCAS slim node), worker index no longer imports it (worker/index node), service index no longer imports it (this node), `GenerateContributionsDeps` no longer has the field (generateContribution node)
+        *   `[ ]` DELETE `dialectic-service/callModel.test.ts` (~814 lines) — tests for a deleted function
+    *   `[ ]` `role`
+        *   `[ ]` Service entry point / handler — routes HTTP requests to service functions
+    *   `[ ]` `module`
+        *   `[ ]` Dialectic service (`dialectic-service/`)
+        *   `[ ]` Boundary: Deno edge function entry, parses requests, constructs deps, delegates to handlers
+    *   `[ ]` `deps`
+        *   `[ ]` `callModel.ts` — being DELETED (was the only import target from this module)
+            *   Abstraction layer: adapter (HTTP intermediary to /chat)
+            *   Direction: removed
+        *   `[ ]` `dialectic.interface.ts` — `GenerateContributionsDeps` already updated in the generateContribution node (no `callUnifiedAIModel` field)
+    *   `[ ]` `context_slice`
+        *   `[ ]` `dialectic-service/index.ts` line 105: remove `import { callUnifiedAIModel } from './callModel.ts'`
+        *   `[ ]` `dialectic-service/index.ts` line 454: remove `callUnifiedAIModel: callUnifiedAIModel,` from `GenerateContributionsDeps` construction
+    *   `[ ]` interface — no interface changes in this node (done in the generateContribution node)
+    *   `[ ]` interface tests — N/A
+    *   `[ ]` interface guards — N/A
+    *   `[ ]` unit — N/A (handler behavior verified via integration tests)
+    *   `[ ]` `construction`
+        *   `[ ]` No new constructors — removal of import and wiring only
+    *   `[ ]` `dialectic-service/index.ts`
+        *   `[ ]` Remove: `import { callUnifiedAIModel } from './callModel.ts'` (line 105)
+        *   `[ ]` Remove: `callUnifiedAIModel: callUnifiedAIModel,` from deps construction (line 454)
+    *   `[ ]` DELETE `dialectic-service/callModel.ts`
+        *   `[ ]` File contains `callUnifiedAIModel` function (~146 lines) — an HTTP fetch wrapper to the `/chat` edge function
+        *   `[ ]` All consumers removed: EMCAS uses `adapter.sendMessageStream()` directly, worker index no longer imports it, service index no longer imports it, `GenerateContributionsDeps` no longer has the field
+        *   `[ ]` `UnifiedAIResponse` type (used by `callModel.ts` return) is NOT deleted — it remains in `dialectic.interface.ts` and is used by other functions for processing AI responses
+    *   `[ ]` DELETE `dialectic-service/callModel.test.ts`
+        *   `[ ]` Contains ~814 lines of tests for `callUnifiedAIModel` — testing HTTP fetch behavior, error handling, response parsing
+        *   `[ ]` All tests are for a deleted function — no value in keeping them
+    *   `[ ]` provides/`dialectic-service/index.ts`
+        *   `[ ]` Exports the Deno edge function handler (unchanged)
+        *   `[ ]` Semantic guarantee: `generateContributions` handler no longer provides `callUnifiedAIModel` in deps — the function never used it, this cleans up dead wiring
+    *   `[ ]` mock — N/A
+    *   `[ ]` integration
+        *   `[ ]` Run `generateContribution.test.ts` — verify handler still works without `callUnifiedAIModel` wiring
+        *   `[ ]` Verify no remaining imports of `callModel.ts` anywhere in the codebase
+        *   `[ ]` Verify no remaining references to `CallUnifiedAIModelFn` anywhere in the codebase
+        *   `[ ]` Verify no remaining references to `CallModelDependencies` anywhere in the codebase
+    *   `[ ]` `directionality`
+        *   `[ ]` Layer: composition root (service boundary)
+        *   `[ ]` Removed dependency: `callModel.ts` (deleted)
+        *   `[ ]` No business logic changes — pure cleanup
+    *   `[ ]` `requirements`
+        *   `[ ]` `callModel.ts` must be DELETED, not deprecated
+        *   `[ ]` `callModel.test.ts` must be DELETED
+        *   `[ ]` `callUnifiedAIModel` must not be imported or referenced anywhere in `dialectic-service/`
+        *   `[ ]` `UnifiedAIResponse` must NOT be deleted — it is still used by other functions
+        *   `[ ]` No changes to `generateContribution.ts` — source was already clean
+    *   `[ ]` **Commit: `feat(BE): direct adapter call for dialectic jobs, eliminate chat hop`**
+
+*   `[ ]` dialectic-worker/test-sort **Sort all 20 EMCAS test files to their correct new owners** `[TEST-UNIT]` `[TEST-INT]`
+    *   `[ ]` `objective`
+        *   `[ ]` Process every one of the 20 EMCAS test files (~700+ tests across 17 unit + 3 integration files)
+        *   `[ ]` For each test: identify which zone(s) it exercises (A-D → prepareModelJob, H → enqueueRenderJob, E-G + post-save → slimmed EMCAS)
+        *   `[ ]` Map each test to its correct new owner and lift & shift to the new owner's test file
+        *   `[ ]` Update mocks and fixtures to match each new owner's §7-compliant interface (deps, params, return)
+        *   `[ ]` For tests that cross zone boundaries: disassemble into separate unit tests for each new owner
+        *   `[ ]` Create new integration tests proving the decomposed functions work together:
+            *   `[ ]` prepareModelJob → executeModelCallAndSave (Zones A-D → E-G)
+            *   `[ ]` executeModelCallAndSave → enqueueRenderJob (E-G → H via return data)
+            *   `[ ]` prepareModelJob → executeModelCallAndSave → enqueueRenderJob (full chain)
+        *   `[ ]` After sorting, slimmed EMCAS owns only the tests valid for its reduced scope (Zones E-G + post-save)
+    *   `[ ]` `requirements`
+        *   `[ ]` All ~700+ tests must be accounted for — none dropped, none orphaned
+        *   `[ ]` Each new owner's test file uses that owner's §7 interface (deps, params, return), not the old monolith's bundled params
+        *   `[ ]` No test may assert behavior that its owner does not implement (e.g., no Zone A validation tests in slimmed EMCAS)
+        *   `[ ]` All tests must pass after sorting is complete
+    *   `[ ]` **Commit: `test(BE): sort EMCAS test files to decomposed function owners`**
+
 ### Phase 2: Eliminate the triple-fetch
 
 With EMCAS split into `prepareModelJob` + `executeModelCallAndSave`, the boundary contract between them is explicit. This phase pushes artifact resolution upstream so it happens once.
@@ -941,7 +2101,10 @@ These are the largest internal extractions. They're lower priority because they 
 | `dialectic-worker/executeModelCallAndSave.ts` | Currently: monolith. After: focused model call + save module | Rewritten (Zones E–G only) |
 | `dialectic-worker/prepareModelJob.ts` | New file (renamed from old EMCAS) | Zones A–D orchestration |
 | `dialectic-worker/enqueueRenderJob.ts` | New file | Zone H extracted |
-| `dialectic-service/callModel.ts` | HTTP fetch to chat | Rewritten: direct adapter call |
+| `dialectic-service/callModel.ts` | HTTP fetch to chat | DELETED — all consumers removed |
+| `dialectic-service/callModel.test.ts` | Tests for callModel | DELETED — tests for deleted function |
+| `dialectic-service/dialectic.interface.ts` | Service interfaces | Remove `CallUnifiedAIModelFn`, `CallModelDependencies`, `callUnifiedAIModel?` from `GenerateContributionsDeps` |
+| `dialectic-service/generateContribution.test.ts` | Contribution tests | Remove `callUnifiedAIModel` from mock fixtures |
 | `_shared/ai_service/*_adapter.ts` | Adapters (3 files) | Add `sendMessageStream()` |
 | `dialectic-worker/index.ts` | Worker entry + deps | Wire direct adapter path |
 | `dialectic-worker/processSimpleJob.ts` | Job processor | Pass artifacts through to prepareModelJob |
