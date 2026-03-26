@@ -257,6 +257,11 @@ export type AiProviderAdapter = new (
     modelIdentifier: string, // The specific API identifier for the model (e.g., 'gpt-4o')
   ): Promise<AdapterResponsePayload>;
 
+  sendMessageStream(
+    request: ChatApiRequest,
+    modelIdentifier: string,
+  ): AsyncGenerator<AdapterStreamChunk>;
+
   listModels(): Promise<ProviderModelInfo[]>;
 
   getEmbedding?(text: string): Promise<EmbeddingResponse>;
@@ -284,7 +289,23 @@ export type FinishReason = 'stop'
 | 'max_tokens' 
 | 'content_truncated' 
 | 'next_document' 
+| 'tool_use'
 | null;
+
+/**
+ * Uniform streaming chunk emitted by AI provider adapters (discriminated on `type`).
+ */
+export type AdapterStreamChunk =
+  | { type: 'text_delta'; text: string }
+  | {
+      type: 'usage';
+      tokenUsage: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+      };
+    }
+  | { type: 'done'; finish_reason: FinishReason };
 
 export enum ContinueReason {
     MaxTokens = 'max_tokens',

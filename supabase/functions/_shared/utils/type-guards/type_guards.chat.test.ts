@@ -264,7 +264,7 @@ Deno.test('Type Guard: isChatMessageRow', async (t) => {
 Deno.test('Type Guard: isFinishReason and isContinueReason', async (t) => {
     await t.step('isFinishReason accepts full set and null; isContinueReason only accepts continuation subset', () => {
         const all: (FinishReason)[] = [
-            'stop','length','tool_calls','content_filter','function_call','error','unknown','max_tokens','content_truncated',null
+            'stop','length','tool_calls','content_filter','function_call','error','unknown','max_tokens','content_truncated','tool_use',null
         ];
         for (const r of all) {
             // unknown → FinishReason
@@ -274,7 +274,7 @@ Deno.test('Type Guard: isFinishReason and isContinueReason', async (t) => {
 
         // Continuation subset
         const contTrue: FinishReason[] = ['max_tokens','length','content_truncated','unknown'];
-        const contFalse: FinishReason[] = ['stop','tool_calls','content_filter','function_call','error', null];
+        const contFalse: FinishReason[] = ['stop','tool_calls','content_filter','function_call','error','tool_use', null];
 
         for (const r of contTrue) {
             assert(isContinueReason(r));
