@@ -239,8 +239,8 @@ Deno.test('Type Guard: isChatMessageRow', async (t) => {
         assert(isChatMessageRow(message));
     });
 
-    await t.step('should return false if a required field is missing (e.g., chat_id)', () => {
-        const { chat_id, ...invalidMessage } = baseMessage;
+    await t.step('should return false if a required field is missing (e.g., id)', () => {
+        const { id, ...invalidMessage } = baseMessage;
         assert(!isChatMessageRow(invalidMessage));
     });
 

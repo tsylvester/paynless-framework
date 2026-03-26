@@ -394,8 +394,8 @@ export interface ILogger {
   // type ChatRow = Database['public']['Tables']['chats']['Row']; // Not directly used in handlePostRequest return
   
   export interface ChatHandlerSuccessResponse {
-    userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
-    assistantMessage: ChatMessageRow;  // Always populated on success
+    userMessage?: ChatMessageInsert;       // Populated for normal new messages and new user message in rewind
+    assistantMessage: ChatMessageInsert;  // Always populated on success
     chatId?: string;                   // ID of the chat session, optional for 'headless' dialectic jobs
     finish_reason?: FinishReason;      // ADDED: The reason the AI provider finished generating tokens
     isRewind?: boolean;                 // True if this was a rewind operation

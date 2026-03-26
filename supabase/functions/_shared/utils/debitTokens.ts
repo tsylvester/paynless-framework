@@ -1,25 +1,9 @@
-import { ILogger, TokenUsage } from "../types.ts";
-import { ITokenWalletService, TokenWallet, TokenWalletTransactionType } from "../types/tokenWallet.types.ts";
 import { calculateActualChatCost } from "./cost_utils.ts";
-import { AiModelExtendedConfig } from "../types.ts";
 import { TokenUsageSchema } from "../../chat/zodSchema.ts";
+import type { DebitTokensDeps, DebitTokensParams, DebitTokensPayload, DebitTokensReturn } from "./debitTokens.interface.ts";
+import type { TokenWalletTransactionType } from "../types/tokenWallet.types.ts";
 
-export interface DebitTokensDeps {
-    logger: ILogger;
-    tokenWalletService: ITokenWalletService;
-}
-
-export interface DebitTokensParams<T> {
-    wallet: TokenWallet;
-    tokenUsage: TokenUsage | null;
-    modelConfig: AiModelExtendedConfig;
-    userId: string;
-    chatId?: string;
-    relatedEntityId: string;
-    databaseOperation: () => Promise<T>;
-}
-
-export async function debitTokens<T>(
+export async function debitTokens(
     { logger, tokenWalletService }: DebitTokensDeps,
     {
         wallet,
@@ -29,8 +13,9 @@ export async function debitTokens<T>(
         chatId,
         relatedEntityId,
         databaseOperation,
-    }: DebitTokensParams<T>
-): Promise<T> {
+    }: DebitTokensParams,
+    _payload: DebitTokensPayload = {}
+): Promise<DebitTokensReturn> {
     let transactionRecordedSuccessfully = false;
     const parsedTokenUsage = TokenUsageSchema.nullable().safeParse(tokenUsage);
     if (!parsedTokenUsage.success) {
@@ -40,8 +25,12 @@ export async function debitTokens<T>(
     const tokenUsageFromAdapter = parsedTokenUsage.data;
     
     if (!tokenUsageFromAdapter) {
+        const NoTokenUsageError = new Error('Token usage data is null or invalid; debit calculation and operation will be skipped.');
         logger.info('Token usage data is null or invalid; debit calculation and operation will be skipped.');
-        return await databaseOperation();
+        return {
+            error: NoTokenUsageError,
+            retriable: false,
+        };
     }
     
     const actualTokensToDebit = calculateActualChatCost(tokenUsageFromAdapter, modelConfig, logger);
@@ -95,7 +84,13 @@ export async function debitTokens<T>(
 
     try {
         const result = await databaseOperation();
-        return result;
+        return {
+            result: {
+                userMessage: result.userMessage,
+                assistantMessage: result.assistantMessage,
+            },
+            transactionRecordedSuccessfully: true,
+        };
     } catch (dbError) {
         const errorDetails = dbError instanceof Error ? dbError.message : String(dbError);
 

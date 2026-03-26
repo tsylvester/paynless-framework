@@ -105,8 +105,8 @@ export async function handleNormalPath(
     }
 
     const tokenizerDeps: CountTokensDeps = {
-        getEncoding: (name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
-        countTokensAnthropic: (text: string) => (text ?? '').length,
+        getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input).map((_, i) => i) }),
+        countTokensAnthropic: (text: string) => (text).length,
         logger: logger,
     };
 
@@ -261,7 +261,7 @@ export async function handleNormalPath(
         }
 
         const assistantMessageId = crypto.randomUUID();
-        const { userMessage, assistantMessage } = await debitTokens(
+        const debitTokensResult = await debitTokens(
             { logger, tokenWalletService: tokenWalletService! },
             {
                 wallet,
@@ -317,17 +317,23 @@ export async function handleNormalPath(
             }
         );
         
+        if ('error' in debitTokensResult) {
+            throw debitTokensResult.error;
+        }
+
         return {
-            userMessage,
-            assistantMessage,
+            userMessage: debitTokensResult.result.userMessage,
+            assistantMessage: debitTokensResult.result.assistantMessage,
             chatId: currentChatId,
             finish_reason: adapterResponsePayload.finish_reason,
         };
 
     } catch (err) {
         const typedErr = err instanceof Error ? err : new Error(String(err));
-        // This is a critical failure, likely from the database operation within debitTokens.
-        // We re-throw it to ensure the caller (and the test's assertRejects) knows the operation failed catastrophically.
+        if (typedErr.message.includes('Insufficient funds')) {
+            logger.warn('Insufficient funds during debitTokens for normal path.', { error: typedErr.message });
+            return { error: { message: typedErr.message, status: 402 } };
+        }
         logger.error('Error during debitTokens transaction for normal path. Re-throwing.', { error: typedErr.message });
         throw typedErr;
     }

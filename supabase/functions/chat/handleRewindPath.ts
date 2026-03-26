@@ -6,6 +6,7 @@ import {
     ChatMessageInsert,
     ChatMessageRow,
     ChatMessageRole,
+    PerformChatRewindArgs,
 } from "../_shared/types.ts";
 import { debitTokens } from "../_shared/utils/debitTokens.ts";
 import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
@@ -27,7 +28,6 @@ export async function handleRewindPath(
         modelConfig,
         actualSystemPromptText,
         finalSystemPromptIdForDb,
-        apiKey,
     } = context;
     const { logger, tokenWalletService, countTokens: countTokensFn } = deps;
     const {
@@ -94,8 +94,8 @@ export async function handleRewindPath(
     );
 
     const tokenizerDeps: CountTokensDeps = {
-        getEncoding: (name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
-        countTokensAnthropic: (text: string) => (text ?? '').length,
+        getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input).map((_, i) => i) }),
+        countTokensAnthropic: (text: string) => (text).length,
         logger: logger,
     };
 
@@ -237,8 +237,7 @@ export async function handleRewindPath(
             return { error: { message: 'Received invalid token usage data from AI provider.', status: 502 } };
         }
 
-        let newAssistantMessageData: Tables<'chat_messages'> | null = null;
-        await debitTokens(
+        const debitTokensResult = await debitTokens(
             { logger, tokenWalletService: tokenWalletService! },
             {
                 wallet,
@@ -248,19 +247,21 @@ export async function handleRewindPath(
                 chatId: currentChatId,
                 relatedEntityId: newAssistantMessageId,
                 databaseOperation: async () => {
-                    const rpcParams = {
+                    const rpcParams: PerformChatRewindArgs = {
                         p_chat_id: currentChatId,
                         p_rewind_from_message_id: rewindFromMessageId!,
                         p_user_id: userId,
                         p_new_user_message_id: newUserMessageId,
                         p_new_user_message_content: userMessageContent,
                         p_new_user_message_ai_provider_id: requestProviderId,
-                        p_new_user_message_system_prompt_id: finalSystemPromptIdForDb === null ? undefined : finalSystemPromptIdForDb,
                         p_new_assistant_message_id: newAssistantMessageId,
                         p_new_assistant_message_content: adapterResponsePayload.content,
-                        p_new_assistant_message_token_usage: adapterResponsePayload.token_usage === null ? undefined : adapterResponsePayload.token_usage,
+                        p_new_assistant_message_token_usage: adapterResponsePayload.token_usage,
                         p_new_assistant_message_ai_provider_id: requestProviderId,
-                        p_new_assistant_message_system_prompt_id: finalSystemPromptIdForDb === null ? undefined : finalSystemPromptIdForDb,
+                        ...(finalSystemPromptIdForDb !== null && {
+                            p_new_user_message_system_prompt_id: finalSystemPromptIdForDb,
+                            p_new_assistant_message_system_prompt_id: finalSystemPromptIdForDb,
+                        }),
                     };
 
                     const { data: rpcData, error: rpcError } = await supabaseClient.rpc('perform_chat_rewind', rpcParams);
@@ -277,34 +278,33 @@ export async function handleRewindPath(
                         logger.error('Rewind error: RPC returned invalid data.', { data: firstRow });
                         throw new Error('Invalid data returned from perform_chat_rewind RPC.');
                     }
-                    newAssistantMessageData = firstRow;
+                    const newUserMessageData: Tables<'chat_messages'> = {
+                        id: newUserMessageId,
+                        chat_id: currentChatId,
+                        user_id: userId,
+                        role: 'user',
+                        content: userMessageContent,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        is_active_in_thread: true,
+                        token_usage: null,
+                        ai_provider_id: requestProviderId,
+                        system_prompt_id: finalSystemPromptIdForDb,
+                        error_type: null,
+                        response_to_message_id: null,
+                    };
+                    return { userMessage: newUserMessageData, assistantMessage: firstRow };
                 }
             }
         );
 
-        const newUserMessageData: Tables<'chat_messages'> = {
-            id: newUserMessageId,
-            chat_id: currentChatId,
-            user_id: userId,
-            role: 'user',
-            content: userMessageContent,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            is_active_in_thread: true,
-            token_usage: null,
-            ai_provider_id: requestProviderId,
-            system_prompt_id: finalSystemPromptIdForDb,
-            error_type: null,
-            response_to_message_id: null,
-        };
-
-        if (!newAssistantMessageData) {
-            throw new Error('Failed to retrieve new assistant message post-rewind from RPC.');
+        if ('error' in debitTokensResult) {
+            throw debitTokensResult.error;
         }
 
         return {
-            userMessage: newUserMessageData,
-            assistantMessage: newAssistantMessageData,
+            userMessage: debitTokensResult.result.userMessage,
+            assistantMessage: debitTokensResult.result.assistantMessage,
             chatId: currentChatId,
             isRewind: true,
             finish_reason: adapterResponsePayload.finish_reason,
@@ -312,6 +312,10 @@ export async function handleRewindPath(
 
     } catch (err) {
         const typedErr = err instanceof Error ? err : new Error(String(err));
+        if (typedErr.message.includes('Insufficient funds')) {
+            logger.warn('Insufficient funds during debitTokens for rewind path.', { error: typedErr.message });
+            return { error: { message: typedErr.message, status: 402 } };
+        }
         logger.error('Error during debitTokens transaction for rewind path.', { error: typedErr.message });
         throw typedErr;
     }

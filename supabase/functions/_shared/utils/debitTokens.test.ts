@@ -2,7 +2,8 @@ import { assertEquals, assertRejects, assert } from "https://deno.land/std@0.224
 import { spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { createMockTokenWalletService, MockTokenWalletService } from "../services/tokenWalletService.mock.ts";
 import { logger } from "../logger.ts";
-import { debitTokens, DebitTokensDeps, DebitTokensParams } from './debitTokens.ts';
+import { debitTokens } from './debitTokens.ts';
+import type { DebitTokensDeps, DebitTokensParams, DebitTokensSuccess } from './debitTokens.interface.ts';
 import { TokenWallet, ITokenWalletService } from "../types/tokenWallet.types.ts";
 import { AiModelExtendedConfig, TokenUsage } from "../types.ts";
 
@@ -22,10 +23,37 @@ Deno.test('debitTokens: happy path - debit and db operation succeed', async () =
             tiktoken_encoding_name: 'cl100k_base',
         },
     };
-    const expectedResult = { data: 'DB operation successful' };
-    const dbOperation = spy(() => Promise.resolve(expectedResult));
+    const createdAt = '2026-01-01T00:00:00.000Z';
+    const updatedAt = '2026-01-01T00:00:01.000Z';
+    const expectedResult: DebitTokensSuccess = {
+        result: {
+            userMessage: {
+                id: 'test-user-message',
+                chat_id: 'test-chat',
+                user_id: 'test-user',
+                role: 'user',
+                content: 'test-user-message',
+                created_at: createdAt,
+                updated_at: updatedAt,
+            },
+            assistantMessage: {
+                id: 'test-assistant-message',
+                chat_id: 'test-chat',
+                user_id: 'test-user',
+                role: 'assistant',
+                content: 'test-assistant-message',
+                created_at: createdAt,
+                updated_at: updatedAt,
+            }
+        },
+        transactionRecordedSuccessfully: true
+    };
+    const dbOperation = spy(() => Promise.resolve({
+        userMessage: expectedResult.result.userMessage,
+        assistantMessage: expectedResult.result.assistantMessage,
+    }));
 
-    const params: DebitTokensParams<typeof expectedResult> = {
+    const params: DebitTokensParams = {
         wallet,
         tokenUsage,
         modelConfig,
@@ -62,9 +90,9 @@ Deno.test('debitTokens: debit fails for insufficient funds', async () => {
             tiktoken_encoding_name: 'cl100k_base',
         },
     };
-    const dbOperation = spy(() => Promise.resolve());
+    const dbOperation = spy(() => Promise.resolve({ userMessage: { chat_id: 'test-chat', user_id: 'test-user', role: 'user', content: 'test-user-message', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, assistantMessage: { chat_id: 'test-chat', user_id: 'test-user', role: 'assistant', content: 'test-assistant-message', created_at: new Date().toISOString(), updated_at: new Date().toISOString() } }));
 
-    const params: DebitTokensParams<void> = { 
+    const params: DebitTokensParams = { 
         wallet, 
         tokenUsage, 
         modelConfig, 
@@ -102,7 +130,7 @@ Deno.test('debitTokens: rollback - debit succeeds, db operation fails', async ()
     const dbError = new Error("DB insert failed");
     const dbOperation = spy(() => Promise.reject(dbError));
 
-    const params: DebitTokensParams<void> = { 
+    const params: DebitTokensParams = { 
         wallet, 
         tokenUsage, 
         modelConfig, 
@@ -143,10 +171,37 @@ Deno.test('debitTokens: zero debit amount skips transaction but runs db op', asy
             tiktoken_encoding_name: 'cl100k_base',
         },
     };
-    const expectedResult = { data: 'DB op success with zero debit' };
-    const dbOperation = spy(() => Promise.resolve(expectedResult));
+    const createdAt = '2026-01-02T00:00:00.000Z';
+    const updatedAt = '2026-01-02T00:00:01.000Z';
+    const expectedResult: DebitTokensSuccess = {
+        result: {
+            userMessage: {
+                id: 'test-user-message',
+                chat_id: 'test-chat',
+                user_id: 'test-user',
+                role: 'user',
+                content: 'test-user-message',
+                created_at: createdAt,
+                updated_at: updatedAt,
+            },
+            assistantMessage: {
+                id: 'test-assistant-message',
+                chat_id: 'test-chat',
+                user_id: 'test-user',
+                role: 'assistant',
+                content: 'test-assistant-message',
+                created_at: createdAt,
+                updated_at: updatedAt,
+            }
+        },
+        transactionRecordedSuccessfully: true
+    };
+    const dbOperation = spy(() => Promise.resolve({
+        userMessage: expectedResult.result.userMessage,
+        assistantMessage: expectedResult.result.assistantMessage,
+    }));
 
-    const params: DebitTokensParams<typeof expectedResult> = { 
+    const params: DebitTokensParams = { 
         wallet, 
         tokenUsage, 
         modelConfig, 
@@ -186,7 +241,7 @@ Deno.test('debitTokens: handles message insert error from handleNormalPath', asy
     const dbError = new Error("Test: Message insert failed");
     const dbOperation = spy(() => Promise.reject(dbError));
 
-    const params: DebitTokensParams<void> = {
+    const params: DebitTokensParams = {
         wallet,
         tokenUsage,
         modelConfig,
@@ -228,9 +283,9 @@ Deno.test('debitTokens: returns 500 if recordTransaction (debit) fails', async (
             tiktoken_encoding_name: 'cl100k_base',
         },
     };
-    const dbOperation = spy(() => Promise.resolve());
+    const dbOperation = spy(() => Promise.resolve({ userMessage: { chat_id: 'test-chat', user_id: 'test-user', role: 'user', content: 'test-user-message', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, assistantMessage: { chat_id: 'test-chat', user_id: 'test-user', role: 'assistant', content: 'test-assistant-message', created_at: new Date().toISOString(), updated_at: new Date().toISOString() } }));
 
-    const params: DebitTokensParams<void> = {
+    const params: DebitTokensParams = {
         wallet,
         tokenUsage,
         modelConfig,
@@ -270,7 +325,7 @@ Deno.test('debitTokens: handles message insert error from handleNormalPath', asy
     const dbError = new Error("Test: Message insert failed");
     const dbOperation = spy(() => Promise.reject(dbError));
 
-    const params: DebitTokensParams<void> = {
+    const params: DebitTokensParams = {
         wallet,
         tokenUsage,
         modelConfig,

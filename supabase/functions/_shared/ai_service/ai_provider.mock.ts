@@ -5,8 +5,11 @@ import type {
     ChatApiRequest,
     ILogger,
     ProviderModelInfo,
+    AdapterStreamChunk,
   } from '../types.ts';
+import { isTokenUsage } from '../utils/type_guards.ts';
   
+
   /**
    * Defines the test-only control methods for the mock adapter.
    */
@@ -46,6 +49,19 @@ import type {
           throw mockError;
         }
         return Promise.resolve(mockResponse);
+      },
+      async *sendMessageStream(
+        _request: ChatApiRequest,
+        _modelIdentifier: string,
+      ): AsyncGenerator<AdapterStreamChunk> {
+        if (mockError) {
+          throw mockError;
+        }
+        yield { type: 'text_delta', text: mockResponse.content };
+        if (isTokenUsage(mockResponse.token_usage)) {
+          yield { type: 'usage', tokenUsage: mockResponse.token_usage };
+        }
+        yield { type: 'done', finish_reason: mockResponse.finish_reason ?? 'stop' };
       },
       listModels: async (): Promise<ProviderModelInfo[]> => {
         return Promise.resolve([]);

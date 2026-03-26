@@ -72,12 +72,11 @@ export async function handler(
     const isTestMode = req.headers.get('X-Test-Mode') === 'true';
     let effectiveDeps = deps;
 
-    if (isTestMode) {
-        logger.info('[handler] Test mode detected. Overriding getAiProviderAdapter.');
+    if (isTestMode && deps.getAiProviderAdapter === defaultDeps.getAiProviderAdapter) {
+        logger.info('[handler] Test mode detected and no adapter override present. Using testProviderMap.');
         effectiveDeps = {
             ...deps,
             getAiProviderAdapter: (dependencies: FactoryDependencies) => {
-                // In test mode, we ALWAYS use the testProviderMap.
                 return getAiProviderAdapter({
                     ...dependencies,
                     providerMap: testProviderMap,
