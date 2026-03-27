@@ -786,7 +786,7 @@ Deno.test("AnthropicAdapter - sendMessageStream: done finish_reason length when 
         }
         assertExists(doneChunk);
         assert(doneChunk.type === "done");
-        assertEquals(doneChunk.finish_reason, "length");
+        assertEquals(doneChunk.finish_reason, "max_tokens");
     } finally {
         messagesStreamStub.restore();
     }

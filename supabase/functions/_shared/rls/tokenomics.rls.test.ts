@@ -72,8 +72,8 @@ describe('Tokenomics RLS Tests', () => {
     // Transaction Creation (using adminClient for setup)
     // For user1WalletId (2 transactions)
     await adminClient.from('token_wallet_transactions').insert([
-      { wallet_id: user1WalletId, transaction_type: 'CREDIT', amount: 100, balance_after_txn: 1100, recorded_by_user_id: user1Id },
-      { wallet_id: user1WalletId, transaction_type: 'DEBIT', amount: 50, balance_after_txn: 1050, recorded_by_user_id: user1Id },
+      { wallet_id: user1WalletId, transaction_type: 'CREDIT', amount: 100, balance_after_txn: 1100, recorded_by_user_id: user1Id, idempotency_key: 'test-idempotency-key' },
+      { wallet_id: user1WalletId, transaction_type: 'DEBIT', amount: 50, balance_after_txn: 1050, recorded_by_user_id: user1Id, idempotency_key: 'test-idempotency-key' },
     ]);
     const { data: user1TxnData, error: user1TxnError } = await adminClient
       .from('token_wallet_transactions')
@@ -87,8 +87,8 @@ describe('Tokenomics RLS Tests', () => {
 
     // For org1WalletId (2 transactions)
     await adminClient.from('token_wallet_transactions').insert([
-      { wallet_id: org1WalletId, transaction_type: 'CREDIT', amount: 200, balance_after_txn: 2200, recorded_by_user_id: user1Id }, // user1 is admin
-      { wallet_id: org1WalletId, transaction_type: 'DEBIT', amount: 100, balance_after_txn: 2100, recorded_by_user_id: user1Id },
+      { wallet_id: org1WalletId, transaction_type: 'CREDIT', amount: 200, balance_after_txn: 2200, recorded_by_user_id: user1Id, idempotency_key: 'test-idempotency-key' }, // user1 is admin
+      { wallet_id: org1WalletId, transaction_type: 'DEBIT', amount: 100, balance_after_txn: 2100, recorded_by_user_id: user1Id, idempotency_key: 'test-idempotency-key' },
     ]);
     const { data: org1TxnData, error: org1TxnError } = await adminClient
       .from('token_wallet_transactions')
@@ -102,11 +102,11 @@ describe('Tokenomics RLS Tests', () => {
 
     // For user2WalletId (1 transaction)
     await adminClient.from('token_wallet_transactions').insert([
-      { wallet_id: user2WalletId, transaction_type: 'CREDIT', amount: 75, balance_after_txn: 575, recorded_by_user_id: user2Id },
+      { wallet_id: user2WalletId, transaction_type: 'CREDIT', amount: 75, balance_after_txn: 575, recorded_by_user_id: user2Id, idempotency_key: 'test-idempotency-key' },
     ]);
     // For org2WalletId (1 transaction)
     await adminClient.from('token_wallet_transactions').insert([
-      { wallet_id: org2WalletId, transaction_type: 'CREDIT', amount: 150, balance_after_txn: 3150, recorded_by_user_id: user2Id }, // user2 is admin of org2
+      { wallet_id: org2WalletId, transaction_type: 'CREDIT', amount: 150, balance_after_txn: 3150, recorded_by_user_id: user2Id, idempotency_key: 'test-idempotency-key' }, // user2 is admin of org2
     ]);
   });
 
@@ -304,6 +304,7 @@ describe('Tokenomics RLS Tests', () => {
         const { error } = await user1Client.from('token_wallet_transactions').insert({
           wallet_id: user1WalletId,
           transaction_type: 'CREDIT',
+          idempotency_key: 'test-idempotency-key',
           amount: 10,
           balance_after_txn: 1000, // Arbitrary, RLS should block before check
           recorded_by_user_id: user1Id
@@ -316,6 +317,7 @@ describe('Tokenomics RLS Tests', () => {
         const { error } = await user1Client.from('token_wallet_transactions').insert({
           wallet_id: user2WalletId,
           transaction_type: 'CREDIT',
+          idempotency_key: 'test-idempotency-key',
           amount: 10,
           balance_after_txn: 510,
           recorded_by_user_id: user1Id
@@ -328,6 +330,7 @@ describe('Tokenomics RLS Tests', () => {
         const { error } = await user1Client.from('token_wallet_transactions').insert({
           wallet_id: org1WalletId,
           transaction_type: 'CREDIT',
+          idempotency_key: 'test-idempotency-key',
           amount: 10,
           balance_after_txn: 2010,
           recorded_by_user_id: user1Id
@@ -340,6 +343,7 @@ describe('Tokenomics RLS Tests', () => {
         const { error } = await user1Client.from('token_wallet_transactions').insert({
           wallet_id: org2WalletId,
           transaction_type: 'CREDIT',
+          idempotency_key: 'test-idempotency-key',
           amount: 10,
           balance_after_txn: 3010,
           recorded_by_user_id: user1Id
@@ -352,6 +356,7 @@ describe('Tokenomics RLS Tests', () => {
         const { error } = await anonClient.from('token_wallet_transactions').insert({
           wallet_id: user1WalletId, // Arbitrary wallet
           transaction_type: 'CREDIT',
+          idempotency_key: 'test-idempotency-key',
           amount: 10,
           balance_after_txn: 1010,
           recorded_by_user_id: user1Id // Arbitrary, RLS should block

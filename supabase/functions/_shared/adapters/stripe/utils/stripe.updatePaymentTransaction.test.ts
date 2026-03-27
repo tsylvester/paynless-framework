@@ -1,9 +1,8 @@
 import { StripePaymentAdapter } from '../stripePaymentAdapter.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import { createMockStripe, MockStripe } from '../../../stripe.mock.ts';
-import { createMockSupabaseClient } from '../../../supabase.mock.ts';
+import { createMockSupabaseClient, MockSupabaseClientSetup } from '../../../supabase.mock.ts';
 import { createMockTokenWalletService, MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
-import { MockSupabaseDataConfig } from '../../../types.ts';
 
 
 Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
@@ -21,17 +20,17 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
   const MOCK_STRIPE_PAYMENT_INTENT_ID = 'pi_test_webhook_payment_intent_def456';
   const tokens_to_award = 500;
 
-  const setupMocksAndAdapterForWebhook = (supabaseConfig: MockSupabaseDataConfig = {}) => {
+  const setupMocksAndAdapterForWebhook = (supabaseConfig: MockSupabaseClientSetup) => {
     Deno.env.set('SITE_URL', MOCK_SITE_URL);
     Deno.env.set('STRIPE_WEBHOOK_SECRET', MOCK_WEBHOOK_SECRET);
     mockStripe = createMockStripe();
-    mockSupabaseSetup = createMockSupabaseClient(supabaseConfig);
+    mockSupabaseSetup = createMockSupabaseClient(undefined, supabaseConfig);
     mockTokenWalletService = createMockTokenWalletService();
 
     adapter = new StripePaymentAdapter(
       mockStripe.instance,
       mockSupabaseSetup.client as unknown as SupabaseClient,
-      mockTokenWalletService,
+      mockTokenWalletService.instance,
       MOCK_WEBHOOK_SECRET
     );
   };
