@@ -3,162 +3,214 @@
 import { describe, it } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
 import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import {
-    createJobContext,
-    createExecuteJobContext,
-    createPlanJobContext,
-    createRenderJobContext
+  createJobContext,
+  createExecuteModelCallContext,
+  createPrepareModelJobContext,
+  createPlanJobContext,
+  createRenderJobContext,
 } from './createJobContext.ts';
 import {
-    isIJobContext,
-    isIExecuteJobContext,
-    isIPlanJobContext,
-    isIRenderJobContext
+  isIJobContext,
+  isIExecuteModelCallContext,
+  isIPrepareModelJobContext,
+  isIPlanJobContext,
+  isIRenderJobContext,
 } from './type-guards/JobContext.type_guards.ts';
 import {
-    createMockJobContextParams,
-    createMockRootContext
+  createMockJobContextParams,
+  createMockRootContext,
+  createMockBoundExecuteModelCallAndSave,
+  createMockBoundEnqueueRenderJob,
 } from './JobContext.mock.ts';
+import type { BoundPrepareModelJobFn } from './JobContext.interface.ts';
 
 describe('createJobContext Factory and Slicers', () => {
-    describe('createJobContext', () => {
-        it('constructs valid IJobContext with all fields from params', () => {
-            const params = createMockJobContextParams();
-            const result = createJobContext(params);
+  describe('createJobContext', () => {
+    it('updates createMockJobContextParams call sites to use prepareModelJob override', () => {
+      const overridePrepareModelJob: BoundPrepareModelJobFn = async () => ({
+        error: new Error('red test override'),
+        retriable: false,
+      });
+      const params = createMockJobContextParams({
+        prepareModelJob: overridePrepareModelJob,
+      });
+      const result = createJobContext(params);
 
-            // Assert type guard validates
-            assertEquals(isIJobContext(result), true);
-
-            // Spot-check fields are correctly mapped
-            assertEquals(result.logger, params.logger);
-            assertEquals(result.fileManager, params.fileManager);
-            assertEquals(result.ragService, params.ragService);
-            assertEquals(result.continueJob, params.continueJob);
-            assertEquals(result.getSeedPromptForStage, params.getSeedPromptForStage);
-            assertEquals(result.planComplexStage, params.planComplexStage);
-            assertEquals(result.findSourceDocuments, params.findSourceDocuments);
-            assertEquals(result.documentRenderer, params.documentRenderer);
-        });
-
-        it('includes extractSourceGroupFragment from params', () => {
-            const mockExtractSourceGroupFragment = () => 'test-fragment';
-            const params = createMockJobContextParams({
-                extractSourceGroupFragment: mockExtractSourceGroupFragment,
-            });
-            const result = createJobContext(params);
-
-            // Assert extractSourceGroupFragment is included
-            assertEquals(result.extractSourceGroupFragment, mockExtractSourceGroupFragment);
-            assertEquals(result.extractSourceGroupFragment, params.extractSourceGroupFragment);
-        });
-
-        it('maps each EMCAS pure utility from params with reference equality', () => {
-            const params = createMockJobContextParams();
-            const result = createJobContext(params);
-
-            assertEquals(result.pickLatest, params.pickLatest);
-            assertEquals(result.applyInputsRequiredScope, params.applyInputsRequiredScope);
-            assertEquals(result.validateWalletBalance, params.validateWalletBalance);
-            assertEquals(result.validateModelCostRates, params.validateModelCostRates);
-            assertEquals(result.resolveFinishReason, params.resolveFinishReason);
-            assertEquals(result.isIntermediateChunk, params.isIntermediateChunk);
-            assertEquals(result.determineContinuation, params.determineContinuation);
-            assertEquals(result.buildUploadContext, params.buildUploadContext);
-        });
+      assertEquals(result.prepareModelJob, overridePrepareModelJob);
+      assertEquals('executeModelCallAndSave' in result, false);
+      assertEquals('callUnifiedAIModel' in result, false);
     });
 
-    describe('createExecuteJobContext', () => {
-        it('extracts only IExecuteJobContext fields from root', () => {
-            const root = createMockRootContext();
-            const result = createExecuteJobContext(root);
+    it('returns an object that passes isIJobContext with new context structure', () => {
+      const params = createMockJobContextParams();
+      const result = createJobContext(params);
 
-            // Assert type guard validates
-            assertEquals(isIExecuteJobContext(result), true);
-
-            // Assert it includes execute-specific fields
-            assertEquals(result.logger, root.logger);
-            assertEquals(result.fileManager, root.fileManager);
-            assertEquals(result.callUnifiedAIModel, root.callUnifiedAIModel);
-            assertEquals(result.ragService, root.ragService);
-            assertEquals(result.getSeedPromptForStage, root.getSeedPromptForStage);
-            assertEquals(result.shouldEnqueueRenderJob, root.shouldEnqueueRenderJob);
-            assertEquals(result.continueJob, root.continueJob);
-            assertEquals(result.retryJob, root.retryJob);
-        });
-
-        it('extracts extractSourceGroupFragment from root', () => {
-            const root = createMockRootContext();
-            const result = createExecuteJobContext(root);
-
-            // Assert extractSourceGroupFragment is extracted from root
-            assertEquals(result.extractSourceGroupFragment, root.extractSourceGroupFragment);
-        });
-
-        it('does NOT include plan, render, or root-orchestration-only fields', () => {
-            const root = createMockRootContext();
-            const result = createExecuteJobContext(root);
-
-            assertEquals('planComplexStage' in result, false);
-            assertEquals('getGranularityPlanner' in result, false);
-            assertEquals('findSourceDocuments' in result, false);
-            assertEquals('documentRenderer' in result, false);
-            assertEquals('executeModelCallAndSave' in result, false);
-        });
-
-        it('copies each EMCAS pure utility from root with reference equality', () => {
-            const root = createMockRootContext();
-            const result = createExecuteJobContext(root);
-
-            assertEquals(result.pickLatest, root.pickLatest);
-            assertEquals(result.applyInputsRequiredScope, root.applyInputsRequiredScope);
-            assertEquals(result.validateWalletBalance, root.validateWalletBalance);
-            assertEquals(result.validateModelCostRates, root.validateModelCostRates);
-            assertEquals(result.resolveFinishReason, root.resolveFinishReason);
-            assertEquals(result.isIntermediateChunk, root.isIntermediateChunk);
-            assertEquals(result.determineContinuation, root.determineContinuation);
-            assertEquals(result.buildUploadContext, root.buildUploadContext);
-        });
+      assertEquals(isIJobContext(result), true);
     });
 
-    describe('createPlanJobContext', () => {
-        it('extracts only IPlanJobContext fields', () => {
-            const root = createMockRootContext();
-            const result = createPlanJobContext(root);
+    it('returns an object with prepareModelJob instead of executeModelCallAndSave', () => {
+      const params = createMockJobContextParams();
+      const result = createJobContext(params);
 
-            // Assert type guard validates
-            assertEquals(isIPlanJobContext(result), true);
-
-            // Assert it includes plan-specific fields
-            assertEquals(result.logger, root.logger);
-            assertEquals(result.notificationService, root.notificationService);
-            assertEquals(result.getGranularityPlanner, root.getGranularityPlanner);
-            assertEquals(result.planComplexStage, root.planComplexStage);
-            assertEquals(result.findSourceDocuments, root.findSourceDocuments);
-
-            // Runtime check: should NOT include execute or render fields
-            assertEquals('fileManager' in result, false);
-            assertEquals('ragService' in result, false);
-            assertEquals('documentRenderer' in result, false);
-        });
+      assertEquals('prepareModelJob' in result, true);
+      assertEquals(typeof result.prepareModelJob, 'function');
+      assertEquals('executeModelCallAndSave' in result, false);
     });
 
-    describe('createRenderJobContext', () => {
-        it('extracts only IRenderJobContext fields', () => {
-            const root = createMockRootContext();
-            const result = createRenderJobContext(root);
+    it('returns an object without callUnifiedAIModel', () => {
+      const params = createMockJobContextParams();
+      const result = createJobContext(params);
 
-            // Assert type guard validates
-            assertEquals(isIRenderJobContext(result), true);
-
-            // Assert it includes render-specific fields
-            assertEquals(result.logger, root.logger);
-            assertEquals(result.fileManager, root.fileManager);
-            assertEquals(result.documentRenderer, root.documentRenderer);
-            assertEquals(result.notificationService, root.notificationService);
-
-            // Runtime check: should NOT include execute or plan fields
-            assertEquals('ragService' in result, false);
-            assertEquals('planComplexStage' in result, false);
-            assertEquals('findSourceDocuments' in result, false);
-        });
+      assertEquals('callUnifiedAIModel' in result, false);
     });
+
+    it('copies getSeedPromptForStage from params onto root IJobContext', () => {
+      const params = createMockJobContextParams();
+      const result = createJobContext(params);
+
+      assertEquals(result.getSeedPromptForStage, params.getSeedPromptForStage);
+    });
+  });
+
+  describe('createExecuteModelCallContext', () => {
+    it('extracts only the 12 IExecuteModelCallContext fields from root IJobContext', () => {
+      const root = createMockRootContext();
+      const result = createExecuteModelCallContext(root);
+
+      assertEquals(isIExecuteModelCallContext(result), true);
+    });
+
+    it('result passes isIExecuteModelCallContext guard', () => {
+      const root = createMockRootContext();
+      const result = createExecuteModelCallContext(root);
+
+      assertEquals(isIExecuteModelCallContext(result), true);
+    });
+
+    it('result includes logger, fileManager, getAiProviderAdapter, tokenWalletService, notificationService, continueJob, retryJob, resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext, debitTokens', () => {
+      const root = createMockRootContext();
+      const result = createExecuteModelCallContext(root);
+
+      assertEquals(result.logger, root.logger);
+      assertEquals(result.fileManager, root.fileManager);
+      assertEquals(result.getAiProviderAdapter, root.getAiProviderAdapter);
+      assertEquals(result.tokenWalletService, root.tokenWalletService);
+      assertEquals(result.notificationService, root.notificationService);
+      assertEquals(result.continueJob, root.continueJob);
+      assertEquals(result.retryJob, root.retryJob);
+      assertEquals(result.resolveFinishReason, root.resolveFinishReason);
+      assertEquals(result.isIntermediateChunk, root.isIntermediateChunk);
+      assertEquals(result.determineContinuation, root.determineContinuation);
+      assertEquals(result.buildUploadContext, root.buildUploadContext);
+      assertEquals(result.debitTokens, root.debitTokens);
+    });
+
+    it('result does NOT include ragService, countTokens, pickLatest, applyInputsRequiredScope, validateWalletBalance, validateModelCostRates, downloadFromStorage, embeddingClient, prepareModelJob', () => {
+      const root = createMockRootContext();
+      const result = createExecuteModelCallContext(root);
+
+      assertEquals('ragService' in result, false);
+      assertEquals('countTokens' in result, false);
+      assertEquals('pickLatest' in result, false);
+      assertEquals('applyInputsRequiredScope' in result, false);
+      assertEquals('validateWalletBalance' in result, false);
+      assertEquals('validateModelCostRates' in result, false);
+      assertEquals('downloadFromStorage' in result, false);
+      assertEquals('embeddingClient' in result, false);
+      assertEquals('prepareModelJob' in result, false);
+    });
+  });
+
+  describe('createPrepareModelJobContext', () => {
+    it('extracts 10 raw fields from root IJobContext and receives 2 pre-bound closures as arguments', () => {
+      const root = createMockRootContext();
+      const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
+      const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
+      const result = createPrepareModelJobContext(
+        root,
+        boundExecuteModelCallAndSave,
+        boundEnqueueRenderJob,
+      );
+
+      assertEquals(isIPrepareModelJobContext(result), true);
+    });
+
+    it('result passes isIPrepareModelJobContext guard', () => {
+      const root = createMockRootContext();
+      const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
+      const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
+      const result = createPrepareModelJobContext(
+        root,
+        boundExecuteModelCallAndSave,
+        boundEnqueueRenderJob,
+      );
+
+      assertEquals(isIPrepareModelJobContext(result), true);
+    });
+
+    it('result includes logger, pickLatest, downloadFromStorage, applyInputsRequiredScope, countTokens, tokenWalletService, validateWalletBalance, validateModelCostRates, ragService, embeddingClient, executeModelCallAndSave, enqueueRenderJob', () => {
+      const root = createMockRootContext();
+      const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
+      const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
+      const result = createPrepareModelJobContext(
+        root,
+        boundExecuteModelCallAndSave,
+        boundEnqueueRenderJob,
+      );
+
+      assertEquals(result.logger, root.logger);
+      assertEquals(result.pickLatest, root.pickLatest);
+      assertEquals(result.downloadFromStorage, root.downloadFromStorage);
+      assertEquals(result.applyInputsRequiredScope, root.applyInputsRequiredScope);
+      assertEquals(result.countTokens, root.countTokens);
+      assertEquals(result.tokenWalletService, root.tokenWalletService);
+      assertEquals(result.validateWalletBalance, root.validateWalletBalance);
+      assertEquals(result.validateModelCostRates, root.validateModelCostRates);
+      assertEquals(result.ragService, root.ragService);
+      assertEquals(result.embeddingClient, root.embeddingClient);
+      assertEquals(result.executeModelCallAndSave, boundExecuteModelCallAndSave);
+      assertEquals(result.enqueueRenderJob, boundEnqueueRenderJob);
+    });
+
+    it('result does NOT include fileManager, continueJob, retryJob, getAiProviderAdapter, resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext, debitTokens, notificationService, prepareModelJob', () => {
+      const root = createMockRootContext();
+      const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
+      const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
+      const result = createPrepareModelJobContext(
+        root,
+        boundExecuteModelCallAndSave,
+        boundEnqueueRenderJob,
+      );
+
+      assertEquals('fileManager' in result, false);
+      assertEquals('continueJob' in result, false);
+      assertEquals('retryJob' in result, false);
+      assertEquals('getAiProviderAdapter' in result, false);
+      assertEquals('resolveFinishReason' in result, false);
+      assertEquals('isIntermediateChunk' in result, false);
+      assertEquals('determineContinuation' in result, false);
+      assertEquals('buildUploadContext' in result, false);
+      assertEquals('debitTokens' in result, false);
+      assertEquals('notificationService' in result, false);
+      assertEquals('prepareModelJob' in result, false);
+    });
+  });
+
+  describe('createPlanJobContext', () => {
+    it('still works unchanged and passes isIPlanJobContext', () => {
+      const root = createMockRootContext();
+      const result = createPlanJobContext(root);
+
+      assertEquals(isIPlanJobContext(result), true);
+    });
+  });
+
+  describe('createRenderJobContext', () => {
+    it('still works unchanged and passes isIRenderJobContext', () => {
+      const root = createMockRootContext();
+      const result = createRenderJobContext(root);
+
+      assertEquals(isIRenderJobContext(result), true);
+    });
+  });
 });

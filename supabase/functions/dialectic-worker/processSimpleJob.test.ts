@@ -17,28 +17,37 @@ import {
 import { processSimpleJob } from './processSimpleJob.ts';
 import { 
     DialecticJobRow, 
-    DialecticSession, 
     DialecticContributionRow, 
-    SelectedAiProvider, 
     DialecticJobPayload,
     DialecticExecuteJobPayload,
-    ExecuteModelCallAndSaveParams, 
     DialecticRecipeTemplateStep,
     DialecticStageRecipeStep,
     OutputRule,
     InputRule,
     RelevanceRule,
-    UnifiedAIResponse,
 } from '../dialectic-service/dialectic.interface.ts';
+import type {
+    PrepareModelJobParams,
+    PrepareModelJobPayload,
+    PrepareModelJobSuccessReturn,
+} from './prepareModelJob/prepareModelJob.interface.ts';
+import {
+    isPrepareModelJobErrorReturn,
+    isPrepareModelJobParams,
+    isPrepareModelJobPayload,
+} from './prepareModelJob/prepareModelJob.interface.guard.ts';
+import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { resetMockNotificationService, mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockPromptAssembler, MOCK_ASSEMBLED_PROMPT } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
 import { FileType, ModelContributionUploadContext } from '../_shared/types/file_manager.types.ts';
-import { createJobContext, createExecuteJobContext } from './createJobContext.ts';
-import { IJobContext, IExecuteJobContext, JobContextParams } from './JobContext.interface.ts';
+import { createJobContext } from './createJobContext.ts';
+import { IJobContext, JobContextParams } from './JobContext.interface.ts';
 import { createMockJobContextParams } from './JobContext.mock.ts';
 import { AssembledPrompt, AssemblePromptOptions } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import { Messages } from '../_shared/types.ts';
+import { IPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
+import { IFileManager } from '../_shared/types/file_manager.types.ts';
 // Helper: wrap a PromptAssembler to forbid direct calls to legacy methods
 function wrapAssemblerForbidLegacy<T extends object>(assembler: T): T {
   const forbidden = new Set(['gatherContext', 'render', 'gatherInputsForStage', 'gatherContinuationInputs']);
@@ -95,26 +104,35 @@ const mockJob: DialecticJobRow = {
   idempotency_key: "idempotency-key-1",
 };
 
-const mockSessionData: DialecticSession = {
+const mockSessionData: Tables<'dialectic_sessions'> = {
   id: 'session-456',
   project_id: 'project-abc',
   session_description: 'A mock session',
   user_input_reference_url: null,
   iteration_count: 1,
-  selected_models: [{ id: 'model-def', displayName: 'Mock AI' }],
+  selected_model_ids: ['model-def'],
   status: 'in-progress',
   associated_chat_id: 'chat-789',
   current_stage_id: 'stage-1',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   viewing_stage_id: null,
+  idempotency_key: null,
 };
 
-const mockProviderData: SelectedAiProvider = {
+const mockProviderData: Tables<'ai_providers'> = {
     id: 'model-def',
     provider: 'mock-provider',
     name: 'Mock AI',
     api_identifier: 'mock-ai-v1',
+    config: {},
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    description: null,
+    is_active: true,
+    is_default_embedding: false,
+    is_default_generation: false,
+    is_enabled: true,
 };
 
 const mockContribution: DialecticContributionRow = {
@@ -150,6 +168,32 @@ const mockContribution: DialecticContributionRow = {
     source_prompt_resource_id: null,
 };
 
+function createPrepareModelJobSuccessReturn(): PrepareModelJobSuccessReturn {
+    return {
+        contribution: mockContribution,
+        needsContinuation: false,
+        renderJobId: null,
+    };
+}
+
+function assertPrepareModelJobTwoArgCall(
+    callArgs: unknown[],
+): { params: PrepareModelJobParams; payload: PrepareModelJobPayload } {
+    if (callArgs.length !== 2) {
+        throw new Error(`prepareModelJob must receive exactly 2 arguments, got ${callArgs.length}`);
+    }
+    const rawParams: unknown = callArgs[0];
+    const rawPayload: unknown = callArgs[1];
+    if (!isPrepareModelJobParams(rawParams)) {
+        throw new Error('prepareModelJob first argument is not PrepareModelJobParams');
+    }
+    if (!isPrepareModelJobPayload(rawPayload)) {
+        throw new Error('prepareModelJob second argument is not PrepareModelJobPayload');
+    }
+    const params: PrepareModelJobParams = rawParams;
+    const payload: PrepareModelJobPayload = rawPayload;
+    return { params, payload };
+}
 
 const setupMockClient = (configOverrides: Record<string, any> = {}) => {
     const mockProject: Tables<'dialectic_projects'> & { dialectic_domains: Pick<Tables<'dialectic_domains'>, 'id' | 'name' | 'description'> } = {
@@ -429,13 +473,27 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
 };
 
 const getMockDeps = (overrideParams?: Partial<JobContextParams>): { promptAssembler: MockPromptAssembler, fileManager: MockFileManagerService, rootCtx: IJobContext } => {
-    const mockParams = createMockJobContextParams();
-    const finalParams = { ...mockParams, ...overrideParams };
+    const baseParams: JobContextParams = createMockJobContextParams({
+        prepareModelJob: async () => createPrepareModelJobSuccessReturn(),
+    });
+    const finalParams: JobContextParams = { ...baseParams, ...overrideParams };
 
     const rootCtx = createJobContext(finalParams);
 
-    const promptAssembler = finalParams.promptAssembler as MockPromptAssembler;
-    const fileManager = finalParams.fileManager as MockFileManagerService;
+    const promptAssemblerCandidate: IPromptAssembler = finalParams.promptAssembler;
+    const fileManagerCandidate: IFileManager = finalParams.fileManager;
+
+    if (!(promptAssemblerCandidate instanceof MockPromptAssembler)) {
+        throw new Error(
+            'processSimpleJob tests require promptAssembler to be MockPromptAssembler (subclass or proxy of it).',
+        );
+    }
+    if (!(fileManagerCandidate instanceof MockFileManagerService)) {
+        throw new Error('processSimpleJob tests require fileManager to be MockFileManagerService.');
+    }
+
+    const promptAssembler: MockPromptAssembler = promptAssemblerCandidate;
+    const fileManager: MockFileManagerService = fileManagerCandidate;
 
     return { promptAssembler, fileManager, rootCtx };
 };
@@ -444,7 +502,7 @@ Deno.test('processSimpleJob - Happy Path', async (t) => {
     const { client: dbClient, clearAllStubs } = setupMockClient();
     const { promptAssembler, rootCtx } = getMockDeps();
 
-    const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+    const executeSpy = spy(rootCtx, 'prepareModelJob');
 
     await t.step('should call the executor function with correct parameters', async () => {
         await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', rootCtx, 'auth-token');
@@ -463,14 +521,17 @@ Deno.test('processSimpleJob - Happy Path', async (t) => {
         const hasRecipeStep = 'recipe_step' in stageVal;
         assertEquals(hasRecipeStep, true, 'StageContext must include recipe_step as required by the assembler contract');
         
-        assertEquals(executeSpy.calls.length, 1, 'Expected executeModelCallAndSave to be called once');
-        const [executorParams] = executeSpy.calls[0].args;
-        
-        assertEquals(executorParams.job.id, mockJob.id);
-        assertEquals(executorParams.providerDetails.id, mockProviderData.id);
-        
-        assertEquals(executorParams.promptConstructionPayload.currentUserPrompt, MOCK_ASSEMBLED_PROMPT.promptContent);
-        assertEquals(executorParams.promptConstructionPayload.source_prompt_resource_id, MOCK_ASSEMBLED_PROMPT.source_prompt_resource_id);
+        assertEquals(executeSpy.calls.length, 1, 'Expected prepareModelJob to be called once');
+        const { params: pParams, payload: pPayload } = assertPrepareModelJobTwoArgCall(executeSpy.calls[0].args);
+
+        assertEquals(pParams.job.id, mockJob.id);
+        assertEquals(pParams.providerRow.id, mockProviderData.id);
+        assertEquals(pParams.authToken, 'auth-token');
+        assertEquals(pParams.projectOwnerUserId, 'user-789');
+
+        assertEquals(pPayload.promptConstructionPayload.currentUserPrompt, MOCK_ASSEMBLED_PROMPT.promptContent);
+        assertEquals(pPayload.promptConstructionPayload.source_prompt_resource_id, MOCK_ASSEMBLED_PROMPT.source_prompt_resource_id);
+        assertEquals(pPayload.compressionStrategy, getSortedCompressionCandidates);
     });
 
     clearAllStubs?.();
@@ -536,8 +597,8 @@ Deno.test('processSimpleJob - Failure with Retries Remaining', async (t) => {
     const { client: dbClient, clearAllStubs } = setupMockClient();
     const { rootCtx } = getMockDeps();
 
-    const executorStub = stub(rootCtx, 'executeModelCallAndSave', () => {
-        return Promise.reject(new Error('Executor failed'));
+    const executorStub = stub(rootCtx, 'prepareModelJob', () => {
+        return Promise.resolve({ error: new Error('Executor failed'), retriable: true });
     });
 
     const retryJobSpy = spy(rootCtx, 'retryJob');
@@ -556,8 +617,8 @@ Deno.test('processSimpleJob - Failure with No Retries Remaining', async (t) => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient();
     const { rootCtx } = getMockDeps();
 
-    const executorStub = stub(rootCtx, 'executeModelCallAndSave', () => {
-        return Promise.reject(new Error('Executor failed consistently'));
+    const executorStub = stub(rootCtx, 'prepareModelJob', () => {
+        return Promise.resolve({ error: new Error('Executor failed consistently'), retriable: true });
     });
 
     const retryJobSpy = spy(rootCtx, 'retryJob');
@@ -588,8 +649,8 @@ Deno.test('processSimpleJob - emits job_failed document-centric notification on 
   const { rootCtx } = getMockDeps();
 
   // Force executor to fail so job reaches terminal failure path
-  const executorStub = stub(rootCtx, 'executeModelCallAndSave', () => {
-    return Promise.reject(new Error('Executor failed consistently'));
+  const executorStub = stub(rootCtx, 'prepareModelJob', () => {
+    return Promise.resolve({ error: new Error('Executor failed consistently'), retriable: true });
   });
 
   const jobWithNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
@@ -631,7 +692,9 @@ Deno.test('processSimpleJob - emits execute_started and execute_completed when E
   const { client: dbClient, clearAllStubs } = setupMockClient();
   const { rootCtx } = getMockDeps();
 
-  const executorStub = stub(rootCtx, 'executeModelCallAndSave', () => Promise.resolve());
+  const executorStub = stub(rootCtx, 'prepareModelJob', () =>
+    Promise.resolve(createPrepareModelJobSuccessReturn()),
+  );
 
   const executeJob: typeof mockJob = { ...mockJob, job_type: 'EXECUTE' };
 
@@ -672,8 +735,8 @@ Deno.test('processSimpleJob - emits internal and user-facing failure notificatio
     const { client: dbClient, clearAllStubs } = setupMockClient();
     const { rootCtx } = getMockDeps();
 
-    const executorStub = stub(rootCtx, 'executeModelCallAndSave', () => {
-        return Promise.reject(new Error('Executor failed consistently'));
+    const executorStub = stub(rootCtx, 'prepareModelJob', () => {
+        return Promise.resolve({ error: new Error('Executor failed consistently'), retriable: true });
     });
 
     const jobWithNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
@@ -704,8 +767,11 @@ Deno.test('processSimpleJob - ContextWindowError Handling', async (t) => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient();
     const { rootCtx } = getMockDeps();
 
-    const executorStub = stub(rootCtx, 'executeModelCallAndSave', () => {
-        return Promise.reject(new ContextWindowError('Token limit exceeded during execution.'));
+    const executorStub = stub(rootCtx, 'prepareModelJob', () => {
+        return Promise.resolve({
+            error: new ContextWindowError('Token limit exceeded during execution.'),
+            retriable: false,
+        });
     });
 
     const retryJobSpy = spy(rootCtx, 'retryJob');
@@ -732,7 +798,7 @@ Deno.test('processSimpleJob - renders prompt template and omits systemInstructio
     const { client: dbClient, clearAllStubs } = setupMockClient();
     const { rootCtx, promptAssembler } = getMockDeps();
 
-    const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+    const executeSpy = spy(rootCtx, 'prepareModelJob');
 
     await processSimpleJob(
         dbClient as unknown as SupabaseClient<Database>,
@@ -744,15 +810,15 @@ Deno.test('processSimpleJob - renders prompt template and omits systemInstructio
 
     // Assert desired behavior for new contract
     assertEquals(promptAssembler.assemble.calls.length, 1);
-    assertEquals(executeSpy.calls.length, 1, 'Expected executeModelCallAndSave to be called once');
-    const [executorParams] = executeSpy.calls[0].args;
+    assertEquals(executeSpy.calls.length, 1, 'Expected prepareModelJob to be called once');
+    const { payload: pPayload } = assertPrepareModelJobTwoArgCall(executeSpy.calls[0].args);
     assertEquals(
-        executorParams.promptConstructionPayload.currentUserPrompt,
+        pPayload.promptConstructionPayload.currentUserPrompt,
         MOCK_ASSEMBLED_PROMPT.promptContent,
         'currentUserPrompt should be set to the content from the assembled prompt',
     );
     assertEquals(
-        executorParams.promptConstructionPayload.source_prompt_resource_id,
+        pPayload.promptConstructionPayload.source_prompt_resource_id,
         MOCK_ASSEMBLED_PROMPT.source_prompt_resource_id,
         'source_prompt_resource_id should be passed through from the assembled prompt',
     );
@@ -794,9 +860,7 @@ Deno.test('processSimpleJob - should assemble with sourceContributionId for a co
         target_contribution_id: continuationChunkId,
     };
 
-    // The current implementation will throw an error because the mock for executeModelCallAndSave is not set up
-    // to handle the return from gatherContinuationInputs. This is acceptable for the RED state,
-    // as the primary assertion on the spy call will fail first.
+    // The mock prepareModelJob returns an error by default; continuation assembly is still asserted below.
     try {
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
@@ -822,7 +886,7 @@ Deno.test('processSimpleJob - should dispatch a correctly formed PromptConstruct
     const { rootCtx, promptAssembler } = getMockDeps();
     
     // Arrange
-    const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+    const executeSpy = spy(rootCtx, 'prepareModelJob');
 
     // Act
     await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', rootCtx, 'auth-token');
@@ -830,13 +894,13 @@ Deno.test('processSimpleJob - should dispatch a correctly formed PromptConstruct
     // Assert
     assertEquals(promptAssembler.assemble.calls.length, 1);
     assertEquals(executeSpy.calls.length, 1);
-    const [executorParams] = executeSpy.calls[0].args;
-    
-    const payload = executorParams.promptConstructionPayload;
-    assertEquals(payload.currentUserPrompt, MOCK_ASSEMBLED_PROMPT.promptContent);
-    assertEquals(payload.source_prompt_resource_id, MOCK_ASSEMBLED_PROMPT.source_prompt_resource_id);
+    const { payload: jobPayload } = assertPrepareModelJobTwoArgCall(executeSpy.calls[0].args);
+
+    const promptPayload = jobPayload.promptConstructionPayload;
+    assertEquals(promptPayload.currentUserPrompt, MOCK_ASSEMBLED_PROMPT.promptContent);
+    assertEquals(promptPayload.source_prompt_resource_id, MOCK_ASSEMBLED_PROMPT.source_prompt_resource_id);
     // resourceDocuments are not implemented/synthesized in this job type
-    assertEquals(payload.resourceDocuments.length, 0);
+    assertEquals(promptPayload.resourceDocuments.length, 0);
 
     clearAllStubs?.();
 });
@@ -896,7 +960,7 @@ Deno.test('processSimpleJob - uses file-backed initial prompt when column empty'
       Promise.resolve({ data: arrayBuffer, mimeType: blob.type, error: null })
     );
   
-    const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+    const executeSpy = spy(rootCtx, 'prepareModelJob');
   
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
@@ -906,9 +970,9 @@ Deno.test('processSimpleJob - uses file-backed initial prompt when column empty'
       'auth-token',
     );
   
-    const [executorParams] = executeSpy.calls[0].args;
+    const { payload: jobPayload } = assertPrepareModelJobTwoArgCall(executeSpy.calls[0].args);
     assertEquals(
-      executorParams.promptConstructionPayload.currentUserPrompt,
+      jobPayload.promptConstructionPayload.currentUserPrompt,
         MOCK_ASSEMBLED_PROMPT.promptContent,
       'currentUserPrompt should be the content from the assembled prompt',
     );
@@ -927,7 +991,7 @@ Deno.test('processSimpleJob - fails when stage overlays are missing (no render, 
   const { rootCtx } = getMockDeps();
 
   // We do not stub the assembler; we expect failure before render
-  const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+  const executeSpy = spy(rootCtx, 'prepareModelJob');
 
   // Act
   let threw = false;
@@ -947,7 +1011,7 @@ Deno.test('processSimpleJob - fails when stage overlays are missing (no render, 
   assertEquals(
     executeSpy.calls.length,
     0,
-    'Expected no executeModelCallAndSave when stage overlays are missing (should fail fast)'
+    'Expected no prepareModelJob when stage overlays are missing (should fail fast)'
   );
 
   // Assert: job is marked failed with explicit overlays-missing code
@@ -991,29 +1055,28 @@ Deno.test('processSimpleJob - forwards sourceContributionId for continuation upl
     target_contribution_id: continuationContributionId,
   };
 
-  const recordedCalls: ExecuteModelCallAndSaveParams[] = [];
-  const executorStub = stub(rootCtx, 'executeModelCallAndSave', async (params: ExecuteModelCallAndSaveParams) => {
+  const recordedCalls: PrepareModelJobParams[] = [];
+  const recordedPayloads: PrepareModelJobPayload[] = [];
+  const executorStub = stub(rootCtx, 'prepareModelJob', async (params: PrepareModelJobParams, jobPayload: PrepareModelJobPayload) => {
     recordedCalls.push(params);
+    recordedPayloads.push(jobPayload);
+    return createPrepareModelJobSuccessReturn();
   });
 
-  try {
-    await processSimpleJob(
-      dbClient as unknown as SupabaseClient<Database>,
-      continuationJob,
-      'user-789',
-      rootCtx,
-      'auth-token',
-    );
-  } catch (_e) {
-    // Existing implementation may throw once executor runs; the recorded call is the RED signal.
-  }
+  await processSimpleJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    continuationJob,
+    'user-789',
+    rootCtx,
+    'auth-token',
+  );
 
-  assertEquals(recordedCalls.length, 1, 'Expected executeModelCallAndSave to be invoked once for continuation job.');
-  const [executorParams] = recordedCalls;
-  const payload = executorParams.promptConstructionPayload;
+  assertEquals(recordedCalls.length, 1, 'Expected prepareModelJob to be invoked once for continuation job.');
+  assertEquals(recordedPayloads.length, 1);
+  const promptPayload = recordedPayloads[0].promptConstructionPayload;
 
   assertEquals(
-    payload.sourceContributionId,
+    promptPayload.sourceContributionId,
     continuationContributionId,
     'PromptConstructionPayload must include sourceContributionId for continuation uploads.',
   );
@@ -1065,7 +1128,7 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
     target_contribution_id: continuationContributionId,
   };
 
-  const executorStub = stub(rootCtx, 'executeModelCallAndSave', async (params: ExecuteModelCallAndSaveParams) => {
+  const executorStub = stub(rootCtx, 'prepareModelJob', async (params: PrepareModelJobParams, jobPayload: PrepareModelJobPayload) => {
     if (!isDialecticJobPayload(params.job.payload)) {
       throw new Error('Test setup failed: job payload is not DialecticJobPayload.');
     }
@@ -1073,20 +1136,20 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
     if (!isDialecticExecuteJobPayload(payloadCandidate)) {
       throw new Error('Test setup failed: payload is not DialecticExecuteJobPayload.');
     }
-    const payload = payloadCandidate;
-    const promptContent = params.promptConstructionPayload.currentUserPrompt;
+    const executePayload = payloadCandidate;
+    const promptContent = jobPayload.promptConstructionPayload.currentUserPrompt;
     if (typeof promptContent !== 'string' || promptContent.length === 0) {
       throw new Error('Test setup failed: prompt content missing for continuation job.');
     }
 
     const pathContext: ModelContributionUploadContext['pathContext'] = {
-      projectId: payload.projectId,
+      projectId: executePayload.projectId,
       fileType: continuationPayload.output_type,
-      sessionId: payload.sessionId,
-      iteration: payload.iterationNumber,
-      stageSlug: payload.stageSlug,
+      sessionId: executePayload.sessionId,
+      iteration: executePayload.iterationNumber,
+      stageSlug: executePayload.stageSlug,
       contributionType: continuationPayload.canonicalPathParams.contributionType,
-      modelSlug: params.providerDetails.api_identifier,
+      modelSlug: params.providerRow.api_identifier,
       attemptCount: params.job.attempt_count,
       isContinuation: true,
     };
@@ -1094,17 +1157,17 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
     if (typeof continuationPayload.continuation_count === 'number') {
       pathContext.turnIndex = continuationPayload.continuation_count;
     }
-    if (typeof params.promptConstructionPayload.sourceContributionId === 'string') {
-      pathContext.sourceContributionId = params.promptConstructionPayload.sourceContributionId;
+    if (typeof jobPayload.promptConstructionPayload.sourceContributionId === 'string') {
+      pathContext.sourceContributionId = jobPayload.promptConstructionPayload.sourceContributionId;
     }
 
-    if(!payload.stageSlug) {
+    if (!executePayload.stageSlug) {
       throw new Error('Test setup failed: payload.stageSlug is missing.');
     }
-    if(!payload.iterationNumber) {
+    if (!executePayload.iterationNumber) {
       throw new Error('Test setup failed: payload.iterationNumber is missing.');
     }
-    if(!continuationPayload.canonicalPathParams.contributionType) {
+    if (!continuationPayload.canonicalPathParams.contributionType) {
       throw new Error('Test setup failed: continuationPayload.canonicalPathParams.contributionType is missing.');
     }
     const uploadContext: ModelContributionUploadContext = {
@@ -1115,37 +1178,25 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
       userId: params.projectOwnerUserId,
       description: `Continuation upload for ${continuationPayload.stageSlug}`,
       contributionMetadata: {
-        sessionId: payload.sessionId,
-        modelIdUsed: params.providerDetails.id,
-        modelNameDisplay: params.providerDetails.name,
-        stageSlug: payload.stageSlug,
-        iterationNumber: payload.iterationNumber,
+        sessionId: executePayload.sessionId,
+        modelIdUsed: params.providerRow.id,
+        modelNameDisplay: params.providerRow.name,
+        stageSlug: executePayload.stageSlug,
+        iterationNumber: executePayload.iterationNumber,
         contributionType: continuationPayload.canonicalPathParams.contributionType,
         tokensUsedInput: promptContent.length,
         tokensUsedOutput: 0,
         processingTimeMs: 0,
-        source_prompt_resource_id: params.promptConstructionPayload.source_prompt_resource_id,
-        target_contribution_id: payload.target_contribution_id,
-        document_relationships: payload.document_relationships,
-        isIntermediate: payload.isIntermediate,
+        source_prompt_resource_id: jobPayload.promptConstructionPayload.source_prompt_resource_id,
+        target_contribution_id: executePayload.target_contribution_id,
+        document_relationships: executePayload.document_relationships,
+        isIntermediate: executePayload.isIntermediate,
       },
     };
 
     await fileManager.uploadAndRegisterFile(uploadContext);
+    return createPrepareModelJobSuccessReturn();
   });
-
-  const callUnifiedAIModelStub = stub(rootCtx, 'callUnifiedAIModel', async (): Promise<UnifiedAIResponse> => ({
-    content: JSON.stringify({
-      sections: [],
-      continuation_needed: false,
-    }),
-    finish_reason: 'stop',
-    rawProviderResponse: { finish_reason: 'stop' },
-    contentType: 'application/json',
-    inputTokens: 10,
-    outputTokens: 5,
-    processingTimeMs: 1,
-  }));
 
   await processSimpleJob(
     dbClient as unknown as SupabaseClient<Database>,
@@ -1166,7 +1217,6 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
   );
 
   executorStub.restore();
-  callUnifiedAIModelStub.restore();
   clearAllStubs?.();
 });
 
@@ -1203,7 +1253,7 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
   const { rootCtx } = getMockDeps();
 
   // Spy on executor to ensure it is NOT called when prompt is missing
-  const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+  const executeSpy = spy(rootCtx, 'prepareModelJob');
 
   // Force final-attempt behavior to observe terminal failure status
   const jobNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
@@ -1259,7 +1309,7 @@ Deno.test('processSimpleJob - preserves payload.user_jwt when transforming plan 
   const { client: dbClient, clearAllStubs } = setupMockClient();
   const { rootCtx } = getMockDeps();
 
-  const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+  const executeSpy = spy(rootCtx, 'prepareModelJob');
 
   const planPayloadWithJwt = {
     ...mockPayload,
@@ -1277,9 +1327,9 @@ Deno.test('processSimpleJob - preserves payload.user_jwt when transforming plan 
       'auth-token',
     );
 
-  assertEquals(executeSpy.calls.length, 1, 'Expected executor to be called once');
-  const [execArgs] = executeSpy.calls[0].args;
-  const sentJobPayloadUnknown = execArgs.job.payload;
+  assertEquals(executeSpy.calls.length, 1, 'Expected prepareModelJob to be called once');
+  const { params: pmsParams } = assertPrepareModelJobTwoArgCall(executeSpy.calls[0].args);
+  const sentJobPayloadUnknown = pmsParams.job.payload;
   let preserved = false;
   let preservedValue = '';
   if (isRecord(sentJobPayloadUnknown) && 'user_jwt' in sentJobPayloadUnknown) {
@@ -1298,7 +1348,7 @@ Deno.test('processSimpleJob - preserves payload.user_jwt when transforming plan 
 Deno.test('processSimpleJob - missing user_jwt fails early and does not call executor', async () => {
   const { client: dbClient, clearAllStubs } = setupMockClient();
   const { rootCtx } = getMockDeps();
-  const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+  const executeSpy = spy(rootCtx, 'prepareModelJob');
 
   const planPayloadNoJwt = {
     projectId: 'project-abc',
@@ -1338,8 +1388,8 @@ Deno.test('processSimpleJob - Wallet missing is immediate failure (no retry)', a
   const { rootCtx } = getMockDeps();
 
   // Arrange: executor surfaces wallet-required error
-  const executorStub = stub(rootCtx, 'executeModelCallAndSave', () => {
-    return Promise.reject(new Error('Wallet is required to process model calls.'));
+  const executorStub = stub(rootCtx, 'prepareModelJob', () => {
+    return Promise.resolve({ error: new Error('Wallet is required to process model calls.'), retriable: false });
   });
 
   const retryJobSpy = spy(rootCtx, 'retryJob');
@@ -1397,8 +1447,11 @@ Deno.test('processSimpleJob - Preflight dependency missing is immediate failure 
   const { rootCtx } = getMockDeps();
 
   // Arrange: executor surfaces preflight dependency error
-  const executorStub = stub(rootCtx, 'executeModelCallAndSave', () => {
-    return Promise.reject(new Error('Token wallet service is required for affordability preflight'));
+  const executorStub = stub(rootCtx, 'prepareModelJob', () => {
+    return Promise.resolve({
+      error: new Error('Token wallet service is required for affordability preflight'),
+      retriable: false,
+    });
   });
 
   const retryJobSpy = spy(rootCtx, 'retryJob');
@@ -1515,7 +1568,7 @@ Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_r
   });
   const { rootCtx } = getMockDeps();
 
-  const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+  const executeSpy = spy(rootCtx, 'prepareModelJob');
 
   // Act
     await processSimpleJob(
@@ -1527,12 +1580,12 @@ Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_r
     );
 
   // Assert
-  const [executorParams] = executeSpy.calls[0].args;
-  assert('inputsRelevance' in executorParams && Array.isArray((executorParams).inputsRelevance));
-  assert('inputsRequired' in executorParams && Array.isArray((executorParams).inputsRequired));
+  const { payload: recipeJobPayload } = assertPrepareModelJobTwoArgCall(executeSpy.calls[0].args);
+  assert(Array.isArray(recipeJobPayload.inputsRelevance));
+  assert(Array.isArray(recipeJobPayload.inputsRequired));
 
-  const inputsRelevanceUnknown = (executorParams).inputsRelevance;
-  const inputsRequiredUnknown = (executorParams).inputsRequired;
+  const inputsRelevanceUnknown = recipeJobPayload.inputsRelevance;
+  const inputsRequiredUnknown = recipeJobPayload.inputsRequired;
 
   // Verify lengths
   assert(Array.isArray(inputsRelevanceUnknown) && inputsRelevanceUnknown.length === 2);
@@ -1558,9 +1611,9 @@ const MOCK_CONTINUATION_ASSEMBLED: AssembledPrompt = {
     promptContent: 'fallback prompt content for non-message path',
     source_prompt_resource_id: 'mock-continuation-resource-id',
     messages: [
-        { role: 'user', content: 'seed prompt content' } as Messages,
-        { role: 'assistant', content: 'assembled assistant content' } as Messages,
-        { role: 'user', content: 'continuation instruction' } as Messages,
+        { role: 'user', content: 'seed prompt content' },
+        { role: 'assistant', content: 'assembled assistant content' },
+        { role: 'user', content: 'continuation instruction' },
     ],
 };
 
@@ -1576,7 +1629,7 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
             },
         );
 
-        const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+        const executeSpy = spy(rootCtx, 'prepareModelJob');
 
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
@@ -1586,9 +1639,9 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
             'auth-token',
         );
 
-        assertEquals(executeSpy.calls.length, 1, 'Expected executeModelCallAndSave to be called once');
-        const [executorParams] = executeSpy.calls[0].args;
-        const payload = executorParams.promptConstructionPayload;
+        assertEquals(executeSpy.calls.length, 1, 'Expected prepareModelJob to be called once');
+        const { payload: routePayload } = assertPrepareModelJobTwoArgCall(executeSpy.calls[0].args);
+        const payload = routePayload.promptConstructionPayload;
 
         assertEquals(payload.conversationHistory.length, 2, 'conversationHistory should contain the first two messages');
         assertEquals(payload.conversationHistory[0].role, 'user');
@@ -1605,7 +1658,7 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
         const { rootCtx } = getMockDeps();
         // Default mock returns MOCK_ASSEMBLED_PROMPT which has no messages field
 
-        const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+        const executeSpy = spy(rootCtx, 'prepareModelJob');
 
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
@@ -1615,9 +1668,9 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
             'auth-token',
         );
 
-        assertEquals(executeSpy.calls.length, 1, 'Expected executeModelCallAndSave to be called once');
-        const [executorParams] = executeSpy.calls[0].args;
-        const payload = executorParams.promptConstructionPayload;
+        assertEquals(executeSpy.calls.length, 1, 'Expected prepareModelJob to be called once');
+        const { payload: routePayload } = assertPrepareModelJobTwoArgCall(executeSpy.calls[0].args);
+        const payload = routePayload.promptConstructionPayload;
 
         assertEquals(payload.conversationHistory.length, 0, 'conversationHistory should be empty when messages is absent');
         assertEquals(payload.currentUserPrompt, MOCK_ASSEMBLED_PROMPT.promptContent);
@@ -1635,7 +1688,7 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
             },
         );
 
-        const executeSpy = spy(rootCtx, 'executeModelCallAndSave');
+        const executeSpy = spy(rootCtx, 'prepareModelJob');
 
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
@@ -1646,10 +1699,10 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
         );
 
         assertEquals(executeSpy.calls.length, 1);
-        const [executorParams] = executeSpy.calls[0].args;
+        const { payload: routePayload } = assertPrepareModelJobTwoArgCall(executeSpy.calls[0].args);
 
         assertEquals(
-            executorParams.promptConstructionPayload.source_prompt_resource_id,
+            routePayload.promptConstructionPayload.source_prompt_resource_id,
             MOCK_CONTINUATION_ASSEMBLED.source_prompt_resource_id,
             'source_prompt_resource_id must come from assembled regardless of message routing path',
         );
@@ -1657,7 +1710,7 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
         clearAllStubs?.();
     });
 
-    await t.step('executeModelCallAndSave receives correctly routed promptConstructionPayload in both continuation and non-continuation paths', async () => {
+    await t.step('prepareModelJob receives correctly routed promptConstructionPayload in both continuation and non-continuation paths', async () => {
         // --- Continuation path ---
         const { client: dbClient1, clearAllStubs: clear1 } = setupMockClient();
         const { promptAssembler: pa1, rootCtx: ctx1 } = getMockDeps();
@@ -1668,7 +1721,7 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
             },
         );
 
-        const executeSpy1 = spy(ctx1, 'executeModelCallAndSave');
+        const executeSpy1 = spy(ctx1, 'prepareModelJob');
 
         await processSimpleJob(
             dbClient1 as unknown as SupabaseClient<Database>,
@@ -1678,7 +1731,8 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
             'auth-token',
         );
 
-        const continuationPayload = executeSpy1.calls[0].args[0].promptConstructionPayload;
+        const { payload: continuationJobPayload } = assertPrepareModelJobTwoArgCall(executeSpy1.calls[0].args);
+        const continuationPayload = continuationJobPayload.promptConstructionPayload;
         assertEquals(continuationPayload.conversationHistory.length, 2, 'Continuation path: conversationHistory should have 2 entries');
         assertEquals(continuationPayload.currentUserPrompt, 'continuation instruction', 'Continuation path: currentUserPrompt should be third message content');
         assertEquals(continuationPayload.source_prompt_resource_id, MOCK_CONTINUATION_ASSEMBLED.source_prompt_resource_id);
@@ -1689,7 +1743,7 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
         const { client: dbClient2, clearAllStubs: clear2 } = setupMockClient();
         const { rootCtx: ctx2 } = getMockDeps();
 
-        const executeSpy2 = spy(ctx2, 'executeModelCallAndSave');
+        const executeSpy2 = spy(ctx2, 'prepareModelJob');
 
         await processSimpleJob(
             dbClient2 as unknown as SupabaseClient<Database>,
@@ -1699,11 +1753,61 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
             'auth-token',
         );
 
-        const nonContinuationPayload = executeSpy2.calls[0].args[0].promptConstructionPayload;
+        const { payload: nonContinuationJobPayload } = assertPrepareModelJobTwoArgCall(executeSpy2.calls[0].args);
+        const nonContinuationPayload = nonContinuationJobPayload.promptConstructionPayload;
         assertEquals(nonContinuationPayload.conversationHistory.length, 0, 'Non-continuation path: conversationHistory should be empty');
         assertEquals(nonContinuationPayload.currentUserPrompt, MOCK_ASSEMBLED_PROMPT.promptContent, 'Non-continuation path: currentUserPrompt should be assembled.promptContent');
         assertEquals(nonContinuationPayload.source_prompt_resource_id, MOCK_ASSEMBLED_PROMPT.source_prompt_resource_id);
 
         clear2?.();
     });
+});
+
+Deno.test('processSimpleJob - isPrepareModelJobErrorReturn recognizes prepareModelJob failure objects', () => {
+    const insufficientReturn: unknown = {
+        error: new Error('Insufficient funds for this operation'),
+        retriable: false,
+    };
+    assertEquals(isPrepareModelJobErrorReturn(insufficientReturn), true);
+});
+
+Deno.test('processSimpleJob - INSUFFICIENT_FUNDS from prepareModelJob PrepareModelJobErrorReturn is classified immediately', async () => {
+    resetMockNotificationService();
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+    const { rootCtx } = getMockDeps();
+    const prepareStub = stub(rootCtx, 'prepareModelJob', () =>
+        Promise.resolve({
+            error: new Error('Insufficient funds for this operation'),
+            retriable: false,
+        }),
+    );
+    const retryJobSpy = spy(rootCtx, 'retryJob');
+    let threw = false;
+    try {
+        await processSimpleJob(
+            dbClient as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: mockPayload },
+            'user-789',
+            rootCtx,
+            'auth-token',
+        );
+    } catch (_e) {
+        threw = true;
+    }
+    assertEquals(retryJobSpy.calls.length, 0, 'INSUFFICIENT_FUNDS must not trigger retry');
+    const jobsUpdateSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+    assertExists(jobsUpdateSpies);
+    const failedUpdate = jobsUpdateSpies.callsArgs.find((args: unknown[]) => {
+        const payload = args[0];
+        return (
+            isRecord(payload) &&
+            payload.status === 'failed' &&
+            isRecord(payload.error_details) &&
+            (payload.error_details).code === 'INSUFFICIENT_FUNDS'
+        );
+    });
+    assertExists(failedUpdate);
+    assertEquals(threw, true);
+    prepareStub.restore();
+    clearAllStubs?.();
 });

@@ -7,7 +7,8 @@ import {
 import { spy, stub } from 'jsr:@std/testing@0.225.1/mock';
 import { 
     Database, 
-    Json 
+    Json,
+    Tables,
 } from '../types_db.ts';
 import { createMockSupabaseClient, type MockQueryBuilderState } from '../_shared/supabase.mock.ts';
 import { 
@@ -17,11 +18,11 @@ import {
 import { MockLogger } from '../_shared/logger.mock.ts';
 import { 
     SeedPromptData, 
-    IContinueJobResult 
+    IContinueJobResult,
+    PromptConstructionPayload,
 } from '../dialectic-service/dialectic.interface.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import { UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { 
     createMockJobProcessors, 
@@ -42,6 +43,13 @@ import { resolveFinishReason } from '../_shared/utils/resolveFinishReason.ts';
 import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';
 import { determineContinuation } from '../_shared/utils/determineContinuation/determineContinuation.ts';
 import { buildUploadContext } from '../_shared/utils/buildUploadContext/buildUploadContext.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
+import {
+    PrepareModelJobParams,
+    PrepareModelJobPayload,
+    PrepareModelJobReturn,
+} from './prepareModelJob/prepareModelJob.interface.ts';
+import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
 // Global mock objects
@@ -158,11 +166,10 @@ const mockSupabaseClientInvalidPayload = createMockSupabaseClient(undefined, {
 const mockDeps = createJobContext(createMockJobContextParams({
     logger: mockLogger,
     fileManager: new MockFileManagerService(),
-    callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
-        content: 'Mock content',
-        error: null,
-        finish_reason: 'stop',
-    })),
+    prepareModelJob: spy(async (): Promise<PrepareModelJobReturn> => {
+        const err: Error = new Error('mock prepareModelJob not implemented');
+        return { error: err, retriable: false };
+    }),
     downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ data: new ArrayBuffer(0), error: null })),
     getExtensionFromMimeType: spy(() => '.md'),
     randomUUID: spy(() => 'mock-uuid'),
@@ -180,7 +187,6 @@ const mockDeps = createJobContext(createMockJobContextParams({
     })),
     retryJob: spy(async (): Promise<{ error?: Error }> => ({ error: undefined })),
     notificationService: new NotificationService(mockSupabaseClient.client as unknown as SupabaseClient<Database>),
-    executeModelCallAndSave: spy(async (): Promise<void> => { /* dummy */ }),
     ragService: new MockRagService(),
     countTokens: spy(() => 100),
     getAiProviderConfig: spy(async () => await Promise.resolve({ 
@@ -565,7 +571,7 @@ Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', asy
     assertExists(deps.embeddingClient, 'Embedding client should be provided');
     assertExists(deps.promptAssembler, 'Prompt assembler should be provided');
     assertEquals(typeof deps.countTokens, 'function');
-    assertEquals(typeof deps.executeModelCallAndSave, 'function');
+    assertEquals(typeof deps.prepareModelJob, 'function');
 
     // Wallet service must be injected
     assertExists(deps.tokenWalletService, 'Token wallet service should be present');
@@ -931,7 +937,7 @@ Deno.test('handleJob - RENDER routes via provided processors and propagates args
     assertEquals(typeof Reflect.get(renderCtx, 'deleteFromStorage'), 'function');
 
     // Execute/plan-only fields should not be present on the sliced render context
-    assertEquals('executeModelCallAndSave' in renderCtx, false);
+    assertEquals('prepareModelJob' in renderCtx, false);
     assertEquals('planComplexStage' in renderCtx, false);
 });
 
@@ -1357,4 +1363,143 @@ Deno.test('handleJob - when processJob throws Insufficient funds but pauseJobsFo
     pauseThrowsStub.restore();
     loggerErrorSpy.restore();
     failedEventSpy.restore();
+});
+
+const mockJobExecute: MockJob = {
+    id: 'job-execute-1',
+    user_id: 'user-id',
+    session_id: 'session-exec-1',
+    stage_slug: 'thesis',
+    payload: {
+        sessionId: 'session-exec-1',
+        projectId: 'project-exec-1',
+        model_id: 'model-exec-1',
+        walletId: 'wallet-exec-1',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        user_jwt: 'jwt.token.here',
+        output_type: FileType.business_case,
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: 'thesis',
+        },
+        inputs: {
+            seed_prompt: 'resource-id-1',
+        },
+        prompt_template_id: 'prompt-template-123',
+    },
+    iteration_number: 1,
+    status: 'pending',
+    attempt_count: 0,
+    max_retries: 3,
+    created_at: new Date().toISOString(),
+    started_at: null,
+    completed_at: null,
+    results: null,
+    error_details: null,
+    parent_job_id: null,
+    target_contribution_id: null,
+    prerequisite_job_id: null,
+    is_test_job: false,
+    job_type: 'EXECUTE',
+    idempotency_key: 'idempotency-key-exec-1',
+};
+
+const mockSupabaseClientExecute = createMockSupabaseClient(undefined, {
+    genericMockResults: {
+        'dialectic_generation_jobs': {
+            update: { data: [{ id: 'job-execute-1' }], error: null },
+        },
+    },
+    rpcResults: {
+        'create_notification_for_user': { data: null, error: null },
+    },
+});
+
+const executeTestProviderRow: Tables<'ai_providers'> = {
+    id: 'model-exec-1',
+    provider: 'mock-provider',
+    name: 'Mock AI Execute',
+    api_identifier: 'mock-ai-exec',
+    config: {},
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    description: null,
+    is_active: true,
+    is_default_embedding: false,
+    is_default_generation: false,
+    is_enabled: true,
+};
+
+const executeTestSessionData: Tables<'dialectic_sessions'> = {
+    id: 'session-exec-1',
+    project_id: 'project-exec-1',
+    session_description: 'Execute test session',
+    user_input_reference_url: null,
+    iteration_count: 1,
+    selected_model_ids: ['model-exec-1'],
+    status: 'in-progress',
+    associated_chat_id: 'chat-exec-1',
+    current_stage_id: 'stage-1',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    viewing_stage_id: null,
+    idempotency_key: null,
+};
+
+Deno.test('handleJob - EXECUTE job processing invokes prepareModelJob on root context', async () => {
+    const prepareModelJobSpy = spy(async (): Promise<PrepareModelJobReturn> => {
+        const err: Error = new Error('mock prepareModelJob from execute path');
+        return { error: err, retriable: false };
+    });
+    const testDepsExecute = createJobContext(createMockJobContextParams({
+        ...createMockJobContextParams(),
+        logger: mockLogger,
+        fileManager: new MockFileManagerService(),
+        notificationService: new NotificationService(mockSupabaseClientExecute.client as unknown as SupabaseClient<Database>),
+        prepareModelJob: prepareModelJobSpy,
+    }));
+
+    const { processors } = createMockJobProcessors();
+    processors.processSimpleJob = async (
+        dbClient,
+        job,
+        projectOwnerUserId,
+        _ctx,
+        authToken,
+    ) => {
+        const prepareParams: PrepareModelJobParams = {
+            dbClient,
+            authToken,
+            job,
+            projectOwnerUserId,
+            providerRow: executeTestProviderRow,
+            sessionData: executeTestSessionData,
+        };
+        const promptConstructionPayload: PromptConstructionPayload = {
+            conversationHistory: [],
+            resourceDocuments: [],
+            currentUserPrompt: 'execute-path proof',
+            source_prompt_resource_id: 'source-prompt-exec-1',
+        };
+        const preparePayload: PrepareModelJobPayload = {
+            promptConstructionPayload,
+            compressionStrategy: getSortedCompressionCandidates,
+        };
+        await testDepsExecute.prepareModelJob(prepareParams, preparePayload);
+        await (dbClient as unknown as SupabaseClient<Database>)
+            .from('dialectic_generation_jobs')
+            .update({ status: 'completed', completed_at: new Date().toISOString() })
+            .eq('id', job.id);
+    };
+
+    await handleJob(
+        mockSupabaseClientExecute.client as unknown as SupabaseClient<Database>,
+        mockJobExecute,
+        testDepsExecute,
+        'mock-token',
+        processors,
+    );
+
+    assertEquals(prepareModelJobSpy.calls.length, 1, 'prepareModelJob should be invoked once for EXECUTE path');
 });

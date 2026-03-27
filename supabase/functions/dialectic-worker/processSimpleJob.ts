@@ -1,10 +1,9 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database } from '../types_db.ts';
+import type { Database, Tables } from '../types_db.ts';
 import {
   DialecticJobPayload,
-  DialecticSession,
-  SelectedAiProvider,
-  SelectedModels,
+  DialecticRecipeStep,
+  DialecticSessionRow,
   FailedAttemptError,
   ModelProcessingResult,
   Job,
@@ -12,13 +11,17 @@ import {
   SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
 import { IJobContext } from './JobContext.interface.ts';
-import { createExecuteJobContext } from './createJobContext.ts';
+import type { PrepareModelJobParams, PrepareModelJobPayload } from './prepareModelJob/prepareModelJob.interface.ts';
+import { PrepareModelJobExecutionError } from './prepareModelJob/prepareModelJob.interface.ts';
+import {
+  isPrepareModelJobErrorReturn,
+  isPrepareModelJobSuccessReturn,
+} from './prepareModelJob/prepareModelJob.interface.guard.ts';
 import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { Messages } from '../_shared/types.ts';
 import { StageContext, type AssemblePromptOptions } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
-import { DialecticRecipeStep } from '../dialectic-service/dialectic.interface.ts';
 import { isDialecticRecipeTemplateStep, isDialecticStageRecipeStep } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
@@ -40,7 +43,7 @@ export async function processSimpleJob(
     } = job.payload;
     
     ctx.logger.info(`[dialectic-worker] [processSimpleJob] Starting attempt ${currentAttempt + 1}/${max_retries + 1} for job ID: ${jobId}`);
-    let providerDetails: SelectedAiProvider | undefined;
+    let providerDetails: Tables<'ai_providers'> | undefined;
 
     // Track document key and step for notifications where possible
     let notificationDocumentKey: FileType | undefined;
@@ -51,25 +54,9 @@ export async function processSimpleJob(
         if (!projectId) throw new Error('projectId is required in the payload.');
         if (!sessionId) throw new Error('sessionId is required in the payload.');
 
-        const { data: sessionData, error: sessionError } = await dbClient.from('dialectic_sessions').select('*').eq('id', sessionId).single();
-        if (sessionError || !sessionData) throw new Error(`Session ${sessionId} not found.`);
-
-        const ids = sessionData.selected_model_ids ?? [];
-        const selected_models: SelectedModels[] = ids.map((id) => ({ id, displayName: id }));
-        const sessionForExecute: DialecticSession = {
-            id: sessionData.id,
-            project_id: sessionData.project_id,
-            session_description: sessionData.session_description,
-            user_input_reference_url: sessionData.user_input_reference_url,
-            iteration_count: sessionData.iteration_count,
-            selected_models,
-            status: sessionData.status,
-            associated_chat_id: sessionData.associated_chat_id,
-            current_stage_id: sessionData.current_stage_id,
-            created_at: sessionData.created_at,
-            updated_at: sessionData.updated_at,
-            viewing_stage_id: sessionData.viewing_stage_id,
-        };
+        const { data: sessionQueryResult, error: sessionError } = await dbClient.from('dialectic_sessions').select('*').eq('id', sessionId).single();
+        if (sessionError || !sessionQueryResult) throw new Error(`Session ${sessionId} not found.`);
+        const sessionData: DialecticSessionRow = sessionQueryResult;
 
         const { data: providerData, error: providerError } = await dbClient.from('ai_providers').select('*').eq('id', model_id).single();
         if (providerError || !providerData || !isSelectedAiProvider(providerData)) {
@@ -319,20 +306,43 @@ export async function processSimpleJob(
         };
         promptConstructionPayload.sourceContributionId = sourceContributionId;
 
-        const executeCtx = createExecuteJobContext(ctx);
-        await ctx.executeModelCallAndSave({
+        if (!providerDetails) {
+            throw new Error(`Failed to fetch valid provider details for model ID ${model_id}.`);
+        }
+
+        const prepareParams: PrepareModelJobParams = {
             dbClient,
-            deps: executeCtx,
             authToken,
             job,
             projectOwnerUserId,
-            providerDetails,
-            sessionData: sessionForExecute,
+            providerRow: providerDetails,
+            sessionData,
+        };
+
+        const preparePayload: PrepareModelJobPayload = {
             promptConstructionPayload,
+            compressionStrategy: getSortedCompressionCandidates,
             inputsRelevance: stageContext.recipe_step.inputs_relevance,
             inputsRequired: stageContext.recipe_step.inputs_required,
-            compressionStrategy: getSortedCompressionCandidates,
-        });
+        };
+
+        const prepareResult: unknown = await ctx.prepareModelJob(prepareParams, preparePayload);
+
+        if (isPrepareModelJobErrorReturn(prepareResult)) {
+            const orchestratorError: Error = prepareResult.error;
+            if (orchestratorError instanceof ContextWindowError) {
+                throw orchestratorError;
+            }
+            throw new PrepareModelJobExecutionError(
+                orchestratorError.message,
+                prepareResult.retriable,
+                orchestratorError,
+            );
+        }
+
+        if (!isPrepareModelJobSuccessReturn(prepareResult)) {
+            throw new Error('prepareModelJob returned an invalid result shape');
+        }
 
         if (projectOwnerUserId) {
             await ctx.notificationService.sendJobNotificationEvent({
@@ -348,9 +358,16 @@ export async function processSimpleJob(
         }
 
     } catch (e) {
-        const error = e instanceof Error ? e : new Error(String(e));
-        
-        if (e instanceof ContextWindowError) {
+        let prepareJobRetriable: boolean | undefined = undefined;
+        let error: Error;
+        if (e instanceof PrepareModelJobExecutionError) {
+            prepareJobRetriable = e.retriable;
+            error = e.causeError;
+        } else {
+            error = e instanceof Error ? e : new Error(String(e));
+        }
+
+        if (error instanceof ContextWindowError) {
             ctx.logger.error(`[dialectic-worker] [processSimpleJob] ContextWindowError for job ${jobId}: ${error.message}`);
             await dbClient.from('dialectic_generation_jobs').update({
                 status: 'failed',
@@ -532,6 +549,11 @@ export async function processSimpleJob(
         // File save failures
         if (lower.includes('failed to save contribution')) {
             await emitImmediateFailure('SAVE_FAILED', message);
+            throw error;
+        }
+
+        if (prepareJobRetriable === false) {
+            await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
             throw error;
         }
 

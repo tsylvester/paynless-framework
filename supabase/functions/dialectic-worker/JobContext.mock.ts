@@ -22,8 +22,43 @@ import { resolveFinishReason } from '../_shared/utils/resolveFinishReason.ts';
 import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';
 import { determineContinuation } from '../_shared/utils/determineContinuation/determineContinuation.ts';
 import { buildUploadContext } from '../_shared/utils/buildUploadContext/buildUploadContext.ts';
+import type { AdapterStreamChunk, ChatApiRequest } from '../_shared/types.ts';
+import type { BoundPrepareModelJobFn } from './JobContext.interface.ts';
+import type { DebitTokens } from '../_shared/utils/debitTokens.interface.ts';
+import type { BoundExecuteModelCallAndSaveFn } from './executeModelCallAndSave/executeModelCallAndSave.interface.ts';
+import type { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
 
 type JobContextParamsOverrides = { [K in keyof JobContextParams]?: JobContextParams[K] };
+
+async function* mockSendMessageStream(
+    _request: ChatApiRequest,
+    _modelIdentifier: string,
+): AsyncGenerator<AdapterStreamChunk> {
+    yield { type: 'text_delta', text: 'mock' };
+    yield {
+        type: 'usage',
+        tokenUsage: {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        },
+    };
+    yield { type: 'done', finish_reason: 'stop' };
+}
+
+export function createMockBoundExecuteModelCallAndSave(): BoundExecuteModelCallAndSaveFn {
+    return async () => ({
+        error: new Error('mock bound executeModelCallAndSave not implemented'),
+        retriable: false,
+    });
+}
+
+export function createMockBoundEnqueueRenderJob(): BoundEnqueueRenderJobFn {
+    return async () => ({
+        error: new Error('mock bound enqueueRenderJob not implemented'),
+        retriable: false,
+    });
+}
 
 /**
  * Helper: Creates mock JobContextParams with all required fields
@@ -39,20 +74,20 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
     const logger = new MockLogger();
     const mockDownloadFn = createMockDownloadFromStorage({ mode: 'success', data: new ArrayBuffer(0) });
     const findSourceDocuments = createMockFindSourceDocuments({ mode: 'empty' });
+    const prepareModelJob: BoundPrepareModelJobFn = async () => ({
+        error: new Error('mock prepareModelJob not implemented'),
+        retriable: false,
+    });
+    const debitTokens: DebitTokens = async () => ({
+        error: new Error('mock debitTokens not implemented'),
+        retriable: false,
+    });
 
     const baseParams: JobContextParams = {
         logger: logger,
         fileManager: fileManager,
         downloadFromStorage: mockDownloadFn,
         deleteFromStorage: async () => ({ error: null }),
-        callUnifiedAIModel: async () => ({
-            content: '{"content": "AI response content"}',
-            contentType: 'application/json',
-            inputTokens: 10,
-            outputTokens: 20,
-            processingTimeMs: 100,
-            rawProviderResponse: { mock: 'response' },
-        }),
         getAiProviderAdapter: () => ({
             sendMessage: async () => ({
                 role: 'assistant',
@@ -61,6 +96,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
                 system_prompt_id: null,
                 token_usage: null,
             }),
+            sendMessageStream: mockSendMessageStream,
             listModels: async () => [],
         }),
         getAiProviderConfig: async () => ({
@@ -101,7 +137,8 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         documentRenderer: documentRenderer,
         continueJob: async () => ({ enqueued: false }),
         retryJob: async () => ({}),
-        executeModelCallAndSave: async () => {},
+        prepareModelJob: prepareModelJob,
+        debitTokens: debitTokens,
         pickLatest: pickLatest,
         applyInputsRequiredScope: applyInputsRequiredScope,
         validateWalletBalance: validateWalletBalance,

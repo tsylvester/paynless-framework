@@ -1,12 +1,15 @@
 // supabase/functions/dialectic-worker/createJobContext.ts
 
-import { 
-    IJobContext, 
-    JobContextParams, 
-    IExecuteJobContext, 
-    IPlanJobContext, 
-    IRenderJobContext 
+import {
+    IJobContext,
+    JobContextParams,
+    IExecuteModelCallContext,
+    IPrepareModelJobContext,
+    IPlanJobContext,
+    IRenderJobContext,
 } from './JobContext.interface.ts';
+import { BoundExecuteModelCallAndSaveFn } from './executeModelCallAndSave/executeModelCallAndSave.interface.ts';
+import { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
 
 /**
  * Factory function to construct IJobContext at application boundary.
@@ -26,7 +29,6 @@ export function createJobContext(params: JobContextParams): IJobContext {
         deleteFromStorage: params.deleteFromStorage,
 
         // From IModelContext
-        callUnifiedAIModel: params.callUnifiedAIModel,
         getAiProviderAdapter: params.getAiProviderAdapter,
         getAiProviderConfig: params.getAiProviderConfig,
 
@@ -42,13 +44,8 @@ export function createJobContext(params: JobContextParams): IJobContext {
         // From INotificationContext
         notificationService: params.notificationService,
 
-        // From IExecuteJobContext (EXECUTE-specific)
-        getSeedPromptForStage: params.getSeedPromptForStage,
         promptAssembler: params.promptAssembler,
-        getExtensionFromMimeType: params.getExtensionFromMimeType,
-        extractSourceGroupFragment: params.extractSourceGroupFragment,
-        randomUUID: params.randomUUID,
-        shouldEnqueueRenderJob: params.shouldEnqueueRenderJob,
+        getSeedPromptForStage: params.getSeedPromptForStage,
 
         continueJob: params.continueJob,
         retryJob: params.retryJob,
@@ -71,63 +68,62 @@ export function createJobContext(params: JobContextParams): IJobContext {
         documentRenderer: params.documentRenderer,
 
         // From IJobContext (orchestration)
-        executeModelCallAndSave: params.executeModelCallAndSave,
+        prepareModelJob: params.prepareModelJob,
+        debitTokens: params.debitTokens,
     };
 }
 
 /**
- * Context slicer: Extracts IExecuteJobContext subset from root IJobContext.
- * Used by processJob to pass only EXECUTE-specific dependencies to processSimpleJob/executeModelCallAndSave.
+ * Context slicer: Extracts IExecuteModelCallContext subset from root IJobContext.
+ * Used by processJob to pass only executeModelCallAndSave dependencies.
  *
  * @param root - Complete IJobContext from application boundary
- * @returns IExecuteJobContext with only fields needed for EXECUTE job processing
+ * @returns IExecuteModelCallContext with only fields needed for executeModelCallAndSave
  */
-export function createExecuteJobContext(root: IJobContext): IExecuteJobContext {
+export function createExecuteModelCallContext(root: IJobContext): IExecuteModelCallContext {
     return {
-        // From ILoggerContext
         logger: root.logger,
-
-        // From IFileContext
         fileManager: root.fileManager,
-        downloadFromStorage: root.downloadFromStorage,
-        deleteFromStorage: root.deleteFromStorage,
-
-        // From IModelContext
-        callUnifiedAIModel: root.callUnifiedAIModel,
         getAiProviderAdapter: root.getAiProviderAdapter,
-        getAiProviderConfig: root.getAiProviderConfig,
-
-        // From IRagContext
-        ragService: root.ragService,
-        indexingService: root.indexingService,
-        embeddingClient: root.embeddingClient,
-        countTokens: root.countTokens,
-
-        // From ITokenContext
         tokenWalletService: root.tokenWalletService,
-
-        // From INotificationContext
         notificationService: root.notificationService,
-
-        // EXECUTE-specific utilities
-        getSeedPromptForStage: root.getSeedPromptForStage,
-        promptAssembler: root.promptAssembler,
-        getExtensionFromMimeType: root.getExtensionFromMimeType,
-        extractSourceGroupFragment: root.extractSourceGroupFragment,
-        randomUUID: root.randomUUID,
-        shouldEnqueueRenderJob: root.shouldEnqueueRenderJob,
-
         continueJob: root.continueJob,
         retryJob: root.retryJob,
-
-        pickLatest: root.pickLatest,
-        applyInputsRequiredScope: root.applyInputsRequiredScope,
-        validateWalletBalance: root.validateWalletBalance,
-        validateModelCostRates: root.validateModelCostRates,
         resolveFinishReason: root.resolveFinishReason,
         isIntermediateChunk: root.isIntermediateChunk,
         determineContinuation: root.determineContinuation,
         buildUploadContext: root.buildUploadContext,
+        debitTokens: root.debitTokens,
+    };
+}
+
+/**
+ * Context slicer: Extracts IPrepareModelJobContext subset from root IJobContext.
+ * Picks 10 raw fields from IJobContext and receives 2 pre-bound closures.
+ *
+ * @param root - Complete IJobContext from application boundary
+ * @param boundEmcas - Pre-bound executeModelCallAndSave closure
+ * @param boundRender - Pre-bound enqueueRenderJob closure
+ * @returns IPrepareModelJobContext with only fields needed for prepareModelJob
+ */
+export function createPrepareModelJobContext(
+    root: IJobContext,
+    boundEmcas: BoundExecuteModelCallAndSaveFn,
+    boundRender: BoundEnqueueRenderJobFn,
+): IPrepareModelJobContext {
+    return {
+        logger: root.logger,
+        pickLatest: root.pickLatest,
+        downloadFromStorage: root.downloadFromStorage,
+        applyInputsRequiredScope: root.applyInputsRequiredScope,
+        countTokens: root.countTokens,
+        tokenWalletService: root.tokenWalletService,
+        validateWalletBalance: root.validateWalletBalance,
+        validateModelCostRates: root.validateModelCostRates,
+        ragService: root.ragService,
+        embeddingClient: root.embeddingClient,
+        executeModelCallAndSave: boundEmcas,
+        enqueueRenderJob: boundRender,
     };
 }
 

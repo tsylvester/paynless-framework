@@ -7,9 +7,8 @@ import {
   DialecticPlanJobPayload,
   IJobProcessors,
 } from '../dialectic-service/dialectic.interface.ts';
-import { IJobContext } from './JobContext.interface.ts';
+import { IJobContext, IPlanJobContext, IRenderJobContext } from './JobContext.interface.ts';
 import {
-  createExecuteJobContext,
   createPlanJobContext,
   createRenderJobContext,
 } from './createJobContext.ts';
@@ -44,8 +43,7 @@ export async function processJob(
     case 'EXECUTE': {
       ctx.logger.info(`[dialectic-worker] [processJob] Job ${jobId} is an 'execute' job. Delegating to executor.`);
       if (jobIsExecuteJob(job)) {
-        const executeCtx = createExecuteJobContext(ctx);
-        await processors.processSimpleJob(dbClient, job, projectOwnerUserId, executeCtx, authToken);
+        await processors.processSimpleJob(dbClient, job, projectOwnerUserId, ctx, authToken);
       } else {
         throw new Error(`Unsupported or null job_type for job ${jobId}`);
       }
@@ -54,7 +52,7 @@ export async function processJob(
     case 'PLAN': {
       ctx.logger.info(`[dialectic-worker] [processJob] Delegating 'plan' job ${jobId} to complex planner.`);
       if (jobIsPlanJob(job)) {
-        const planCtx = createPlanJobContext(ctx);
+        const planCtx: IPlanJobContext = createPlanJobContext(ctx);
         await processors.processComplexJob(dbClient, job, projectOwnerUserId, planCtx, authToken);
       } else {
         throw new Error(`Unsupported or null job_type for job ${jobId}`);
@@ -63,7 +61,7 @@ export async function processJob(
     }
     case 'RENDER': {
       ctx.logger.info(`[dialectic-worker] [processJob] Delegating 'render' job ${jobId} to renderer.`);
-      const renderCtx = createRenderJobContext(ctx);
+      const renderCtx: IRenderJobContext = createRenderJobContext(ctx);
       await processors.processRenderJob(dbClient, job, projectOwnerUserId, renderCtx, authToken);
       return;
     }

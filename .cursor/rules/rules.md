@@ -250,70 +250,209 @@
 * "I'll add a new node for integration tests and commits at the end of a series of nodes." NO! DO NOT STRAND INTEGRATION TESTS OR COMMITS! The integration test step is an obligate inclusion in each node, when a call chain is updated, add the integration test to the last node in the dep sequence to prove that the modified call stack works. Then, after proving the call stack works, commit the work.  
 
 ## Example Checklist
-*   `[ ]`   [path]/[function] **Descriptive explanatory title**
-  *   `[ ]`   `objective`  
-    *   `[ ]`   Explain the functional and non-functional requirements to meet the objective
-    *   `[ ]`   Each requirement is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   `role`  
-    *   `[ ]`   Explain the role that this module will play to contribute to delivery of the objective
-    *   `[ ]`   Ex: domain, app, port, adapter, infrastructure
-  *   `[ ]`   `module`  
-    *   `[ ]`   Provide boundaries for the context or feature area of the role this module plays
-    *   `[ ]`   Each boundary is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   `deps`
-    *   `[ ]`   List each dependency as:
-          - Provider node or package import
-          - Abstraction layer (domain/app/port/adapter/infra)
-          - Direction justification
-          - Context slice required
-    *   `[ ]`   Confirm no reverse dependency is introduced
-  *   `[ ]`   `context_slice`
-    *   `[ ]`   Define the minimal surface required from each dependency
-    *   `[ ]`   Define the injection shape (interface only, never concrete)
-    *   `[ ]`   Confirm no concrete imports from higher or lateral layers
-  *   `[ ]`   interface/`interface.ts`  
-    *   `[ ]`   Detail all the interfaces that describe the extent of the object, this includes the signature, return, parameters
-    *   `[ ]`   Each type is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   interface/tests/`[function].interface.test.ts`  
-    *   `[ ]`   Detail the contracts of each type and interface
-    *   `[ ]`   Each contract is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   interface/guards/`[function].interface.guards.ts`  
-    *   `[ ]`   Each guard guarantees the contracts of one type or interface
-    *   `[ ]`   Each guard is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   unit/`[function].test.ts` 
-    *   `[ ]`   Tests that prove the signature, return, and parameter contracts of the function
-    *   `[ ]`   Each test is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   `construction`
-    *   `[ ]`   Define canonical constructor(s) or factory entrypoints
-    *   `[ ]`   Declare prohibited construction contexts
-    *   `[ ]`   Declare object completeness requirements at construction boundary
-    *   `[ ]`   Define initialization order (if applicable)
-  *   `[ ]`   `[function].ts`  
-    *   `[ ]`   Implementation of the requirements of the contracts of the function
-    *   `[ ]`   Each requirement is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   provides/`[function].provides.ts`
-    *   `[ ]`   This is the bounded outer surface of the module, every I/O interaction beyond the module's boundary must flow through `[function].provides.ts` to be valid
-    *   `[ ]`   Each exported symbol, semantic guarantee, stability expectation, route, endpoint, etc is its own nested item so that they can be cleanly compared, revised, iterated
-    *   `[ ]`   Declare all externally visible symbols
-    *   `[ ]`   Declare stability guarantees
-    *   `[ ]`   Declare semantic guarantees
-    *   `[ ]`   Confirm no external access bypasses this file
-  *   `[ ]`   `[function].mock.ts`
-    *   `[ ]`   When called the mock can intercept all internal and external I/O and return proscribed values. All function and object mocks can be constructed against all contracts.  
-    *   `[ ]`   Each exported symbol, semantic guarantee, stability expectation, route, endpoint, etc is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   integration/`[function].integration.test.ts`
-    *   `[ ]`   Tests for every defined and expected interaction with providers and consumers, generally proposed as provider->[function] or [function]->consumer or provider->[function]->consumer
-    *   `[ ]`   Each test is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   `directionality`
-    *   `[ ]`   Declare this node’s layer (domain/app/port/adapter/infra)
-    *   `[ ]`   Confirm all dependencies are inward-facing
-    *   `[ ]`   Confirm all provides are outward-facing
-  *   `[ ]`   `requirements`
-    *   `[ ]`   Detail the functional obligations and acceptance criteria to consider the work correct and complete.
-    *   `[ ]`   Each obligation or criteria is its own nested item so that they can be cleanly compared, revised, iterated
-  *   `[ ]`   **Commit** `[type of work] [address of work] [brief explanation of work]`
-    *   `[ ]`   Detail each change performed on the file in this work increment 
 
+* `[ ]`   [path]/[function] **Descriptive explanatory title**
+
+### 1. Intent & Position
+
+* `[ ]`   `objective`
+  * `[ ]`   Define the *problem being solved* (not the solution)
+  * `[ ]`   Separate:
+    * Functional goals (what must happen)
+    * Non-functional constraints (performance, reliability, etc.)
+
+  * `[ ]`   Each goal is atomic and testable
+
+* `[ ]`   `role`
+  * `[ ]`   Declare the node’s role in the system (domain/app/port/adapter/infra)
+  * `[ ]`   Explain *why this role is appropriate*
+  * `[ ]`   Identify what this node must NOT do (out-of-scope responsibilities)
+
+* `[ ]`   `module`
+  * `[ ]`   Define the bounded context this node belongs to
+  * `[ ]`   List what concepts/data belong inside vs outside this boundary
+  * `[ ]`   Each boundary rule is explicit and reviewable
+
+### 2. Dependencies & Injection
+
+* `[ ]`   `deps`
+  * `[ ]`   For each dependency:
+    * Provider (node or external package)
+    * Layer classification
+    * Direction (why allowed)
+    * Purpose (what capability is needed)
+
+  * `[ ]`   Confirm:
+    * No reverse dependencies
+    * No lateral layer violations
+
+* `[ ]`   `context_slice`
+  * `[ ]`   Define the **minimal interface required** from each dependency
+  * `[ ]`   Specify injection shape (pure interface, no concrete types)
+  * `[ ]`   Confirm:
+    * No over-fetching of dependency surface
+    * No hidden coupling
+
+### 3. Structural Boundary (Shape)
+
+* `[ ]`   `function.interface.ts`
+
+  * `[ ]`   Define:
+    * Input types
+    * Output types
+    * Error types (explicitly)
+
+  * `[ ]`   No implicit/any types unless explicitly justified
+  * `[ ]`   Each type is minimal and composable
+
+### 4. Contract Definition (Truth)
+
+* `[ ]`   `function.interface.contract.test.ts`
+
+  * `[ ]`   Define:
+    * Valid cases (must pass)
+    * Invalid cases (must fail)
+
+  * `[ ]`   Include edge cases and boundary values
+  * `[ ]`   Define invariants (e.g., “id must be non-empty”)
+  * `[ ]`   No implementation details — pure expectation
+
+### 5. Interaction Semantics (Behavioral Structure)
+
+* `[ ]`   `function.interaction.spec`
+  * `[ ]`   Define:
+    * Expected call patterns (who calls this, how)
+    * Required dependency interactions
+
+  * `[ ]`   For each interaction:
+    * Input → output expectation
+    * Side effects (if any)
+
+  * `[ ]`   Define failure modes:
+    * What errors occur
+    * Under what conditions
+
+  * `[ ]`   Define ordering/temporal constraints (if applicable)
+  * `[ ]`   No code — purely declarative
+
+### 6. Enforcement (Runtime Boundary)
+
+* `[ ]`   `[function].interface.guards.ts`
+
+  * `[ ]`   Implement guards for each interface type
+  * `[ ]`   Guards must:
+    * Accept all valid contract cases
+    * Reject all invalid contract cases
+
+* `[ ]`   `[function].guards.test.ts`
+  * `[ ]`   Verify guards against contract tests
+  * `[ ]`   Ensure:
+    * No false positives
+    * No false negatives
+
+### 7. Behavioral Verification
+
+* `[ ]`   `[function].test.ts`
+  * `[ ]`   Validate behavior against:
+    * `requirements`
+    * `interaction.spec`
+
+  * `[ ]`   Focus on:
+    * Correct transformations
+    * Correct branching logic
+
+  * `[ ]`   Do NOT re-test:
+    * Type shape
+    * Guard correctness
+
+### 8. Construction
+
+* `[ ]`   `construction`
+  * `[ ]`   Define:
+    * Factory/constructor entrypoints
+    * Required dependencies at creation
+
+  * `[ ]`   Enforce:
+    * No partially constructed instances
+
+  * `[ ]`   Declare invalid construction contexts
+  * `[ ]`   Define initialization order (if needed)
+
+### 9. Implementation
+
+* `[ ]`   `[function].ts`
+  * `[ ]`   Implement behavior defined in:
+    * `requirements`
+    * `interaction.spec`
+
+  * `[ ]`   Must not:
+    * Introduce undeclared dependencies
+    * Bypass guards or contracts
+
+  * `[ ]`   Each requirement maps to code paths
+
+### 10. External Boundary
+
+* `[ ]`   `[function].provides.ts`
+  * `[ ]`   Declare:
+    * All exported symbols
+    * Public API surface
+
+  * `[ ]`   Define:
+    * Stability guarantees
+    * Semantic guarantees
+
+  * `[ ]`   Enforce:
+    * No external access bypasses this file
+
+### 11. Simulation (NOT specification)
+
+* `[ ]`   `[function].mock.ts`
+  * `[ ]`   Provide controllable implementations of:
+    * All external interactions
+
+  * `[ ]`   Must conform to:
+    * interface
+    * interaction.spec
+
+  * `[ ]`   No new behavior introduced beyond spec
+
+### 12. Edge Validation
+
+* `[ ]`   `[function].integration.test.ts`
+  * `[ ]`   Validate:
+    * provider → function
+    * function → consumer
+    * full chain interactions
+
+  * `[ ]`   Use mocks only for external nodes
+
+### 13. Directionality (Graph Constraint)
+
+* `[ ]`   `directionality`
+  * `[ ]`   Declare node layer
+  * `[ ]`   Confirm:
+    * deps are inward-facing
+    * provides are outward-facing
+
+  * `[ ]`   No cycles unless explicitly justified
+
+### 14. Completion Criteria
+
+* `[ ]`   `requirements`
+  * `[ ]`   Define acceptance criteria (binary pass/fail)
+  * `[ ]`   Each requirement:
+    * Is observable
+    * Is testable
+    * Maps to tests
+
+### 15. Versioning
+
+* `[ ]`   **Commit** `[type] [scope] [summary]`
+  * `[ ]`   List structural changes
+  * `[ ]`   List behavioral changes
+  * `[ ]`   List contract changes
+  
 ## Legend - You must use this EXACT format. Do not modify it, adapt it, or "improve" it. The bullets, square braces, ticks, nesting, and node structuring are ABSOLUTELY MANDATORY and UNALTERABLE. 
 
 *   `[ ]` [path]/[workspace] Unstarted work node. Each node is addressed by its deepest unique segment to disambiguate.

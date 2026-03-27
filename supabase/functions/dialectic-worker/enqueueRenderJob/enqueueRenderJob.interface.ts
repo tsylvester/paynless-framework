@@ -52,3 +52,8 @@ export type EnqueueRenderJobFn = (
   params: EnqueueRenderJobParams,
   payload: EnqueueRenderJobPayload,
 ) => Promise<EnqueueRenderJobReturn>;
+
+export type BoundEnqueueRenderJobFn = (
+  params: EnqueueRenderJobParams,
+  payload: EnqueueRenderJobPayload,
+) => Promise<EnqueueRenderJobReturn>;

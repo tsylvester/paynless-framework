@@ -9,7 +9,6 @@ import { IIndexingService } from '../_shared/services/indexing_service.interface
 import { IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
 import { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
 import { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
-import { CallUnifiedAIModelFn } from '../dialectic-service/dialectic.interface.ts';
 import { GetAiProviderConfigFn } from '../dialectic-service/dialectic.interface.ts';
 import { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
 import {
@@ -32,7 +31,6 @@ import { ExtractSourceGroupFragmentFn } from '../_shared/utils/path_utils.ts';
 import { ShouldEnqueueRenderJobFn } from '../_shared/types/shouldEnqueueRenderJob.interface.ts';
 import { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
 import { GetGranularityPlannerFn } from '../dialectic-service/dialectic.interface.ts';
-import { ExecuteModelCallAndSaveParams } from '../dialectic-service/dialectic.interface.ts';
 import { Database } from '../types_db.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { ValidatedCostRates } from '../_shared/utils/validateModelCostRates.ts';
@@ -41,6 +39,10 @@ import {
     DetermineContinuationResult,
 } from '../_shared/utils/determineContinuation/determineContinuation.interface.ts';
 import { BuildUploadContextParams } from '../_shared/utils/buildUploadContext/buildUploadContext.interface.ts';
+import { DebitTokens } from '../_shared/utils/debitTokens.interface.ts';
+import { BoundExecuteModelCallAndSaveFn } from './executeModelCallAndSave/executeModelCallAndSave.interface.ts';
+import { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
+import { PrepareModelJobParams, PrepareModelJobPayload, PrepareModelJobReturn } from './prepareModelJob/prepareModelJob.interface.ts';
 
 /**
  * Function type for continueJob orchestration utility.
@@ -67,14 +69,6 @@ export type RetryJobFn = (
     failedContributionAttempts: FailedAttemptError[],
     projectOwnerUserId: string
 ) => Promise<{ error?: Error }>;
-
-/**
- * Function type for executeModelCallAndSave.
- * Executes an AI model call and saves the results to storage and database.
- */
-export type ExecuteModelCallAndSaveFn = (
-    params: ExecuteModelCallAndSaveParams
-) => Promise<void>;
 
 /**
  * Function type for findSourceDocuments.
@@ -173,7 +167,6 @@ export interface IFileContext {
  * Used by functions that need to call AI models or manage model providers.
  */
 export interface IModelContext {
-    readonly callUnifiedAIModel: CallUnifiedAIModelFn;
     readonly getAiProviderAdapter: GetAiProviderAdapterFn;
     readonly getAiProviderConfig: GetAiProviderConfigFn;
 }
@@ -206,37 +199,44 @@ export interface INotificationContext {
 }
 
 /**
- * Context for EXECUTE job processing.
- * Provides all dependencies needed by executeModelCallAndSave and related functions.
- * Combines base contexts (logger, file, model, RAG, token, notification) with EXECUTE-specific utilities.
- * Includes orchestration callbacks (continueJob, retryJob) for job lifecycle management.
+ * Context slice for slimmed executeModelCallAndSave (Zones E-G).
+ * 12 fields, no base context extensions — cherry-picks only what Zones E-G actually call.
+ * Constructed by createExecuteModelCallContext slicer from IJobContext raw fields.
  */
-export interface IExecuteJobContext extends
-    ILoggerContext,
-    IFileContext,
-    IModelContext,
-    IRagContext,
-    ITokenContext,
-    INotificationContext {
-    // EXECUTE-specific utilities
-    readonly getSeedPromptForStage: GetSeedPromptForStageFn;
-    readonly promptAssembler: IPromptAssembler;
-    readonly getExtensionFromMimeType: GetExtensionFromMimeTypeFn;
-    readonly extractSourceGroupFragment: ExtractSourceGroupFragmentFn;
-    readonly randomUUID: () => string;
-    readonly shouldEnqueueRenderJob: ShouldEnqueueRenderJobFn;
-    // Orchestration callbacks (needed by executeModelCallAndSave)
+export interface IExecuteModelCallContext {
+    readonly logger: ILogger;
+    readonly fileManager: IFileManager;
+    readonly getAiProviderAdapter: GetAiProviderAdapterFn;
+    readonly tokenWalletService: ITokenWalletService;
+    readonly notificationService: NotificationServiceType;
     readonly continueJob: ContinueJobFn;
     readonly retryJob: RetryJobFn;
-    // utilities (wired at composition root from `_shared/utils/`)
-    readonly pickLatest: PickLatestFn;
-    readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
-    readonly validateWalletBalance: ValidateWalletBalanceFn;
-    readonly validateModelCostRates: ValidateModelCostRatesFn;
     readonly resolveFinishReason: ResolveFinishReasonFn;
     readonly isIntermediateChunk: IsIntermediateChunkFn;
     readonly determineContinuation: DetermineContinuationFn;
     readonly buildUploadContext: BuildUploadContextFn;
+    readonly debitTokens: DebitTokens;
+}
+
+/**
+ * Context slice for prepareModelJob (Zones A-D).
+ * 12 fields, no base context extensions — cherry-picks only what Zones A-D actually call
+ * plus 2 pre-bound orchestrator closures.
+ * Constructed by createPrepareModelJobContext slicer from IJobContext raw fields + pre-bound closures.
+ */
+export interface IPrepareModelJobContext {
+    readonly logger: ILogger;
+    readonly pickLatest: PickLatestFn;
+    readonly downloadFromStorage: DownloadFromStorageFn;
+    readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
+    readonly countTokens: CountTokensFn;
+    readonly tokenWalletService: ITokenWalletService;
+    readonly validateWalletBalance: ValidateWalletBalanceFn;
+    readonly validateModelCostRates: ValidateModelCostRatesFn;
+    readonly ragService: IRagService;
+    readonly embeddingClient: IEmbeddingClient;
+    readonly executeModelCallAndSave: BoundExecuteModelCallAndSaveFn;
+    readonly enqueueRenderJob: BoundEnqueueRenderJobFn;
 }
 
 /**
@@ -265,18 +265,48 @@ export interface IRenderJobContext extends
 }
 
 /**
+ * Pre-bound prepareModelJob closure type.
+ * 2-arg closure constructed at composition root — deps are already bound.
+ */
+export type BoundPrepareModelJobFn = (
+    params: PrepareModelJobParams,
+    payload: PrepareModelJobPayload,
+) => Promise<PrepareModelJobReturn>;
+
+/**
  * Root context interface representing the complete dependency bundle.
  * Constructed once at application boundary and passed to processJob.
- * Extends all composed contexts (IExecuteJobContext, IPlanJobContext, IRenderJobContext).
- * Includes additional orchestration utilities for top-level job management.
+ * Extends IPlanJobContext and IRenderJobContext for plan/render fields.
+ * Does NOT extend IExecuteModelCallContext or IPrepareModelJobContext — those contain
+ * pre-bound closures that IJobContext does not natively have. IJobContext is the fat root
+ * holding all RAW fields; slicers construct per-function contexts from it.
  */
 export interface IJobContext extends
-    IExecuteJobContext,
     IPlanJobContext,
     IRenderJobContext {
+    // Raw fields needed by slicers (not inherited from IPlanJobContext or IRenderJobContext)
+    readonly getAiProviderAdapter: GetAiProviderAdapterFn;
+    readonly getAiProviderConfig: GetAiProviderConfigFn;
+    readonly ragService: IRagService;
+    readonly indexingService: IIndexingService;
+    readonly embeddingClient: IEmbeddingClient;
+    readonly countTokens: CountTokensFn;
+    readonly tokenWalletService: ITokenWalletService;
+    readonly pickLatest: PickLatestFn;
+    readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
+    readonly validateWalletBalance: ValidateWalletBalanceFn;
+    readonly validateModelCostRates: ValidateModelCostRatesFn;
     readonly continueJob: ContinueJobFn;
     readonly retryJob: RetryJobFn;
-    readonly executeModelCallAndSave: ExecuteModelCallAndSaveFn;
+    readonly resolveFinishReason: ResolveFinishReasonFn;
+    readonly isIntermediateChunk: IsIntermediateChunkFn;
+    readonly determineContinuation: DetermineContinuationFn;
+    readonly buildUploadContext: BuildUploadContextFn;
+    readonly debitTokens: DebitTokens;
+    readonly promptAssembler: IPromptAssembler;
+    readonly getSeedPromptForStage: GetSeedPromptForStageFn;
+    // Top-level orchestration — pre-bound closure for job processing
+    readonly prepareModelJob: BoundPrepareModelJobFn;
 }
 
 /**
@@ -289,7 +319,6 @@ export interface JobContextParams {
     readonly fileManager: IFileManager;
     readonly downloadFromStorage: DownloadFromStorageFn;
     readonly deleteFromStorage: DeleteFromStorageFn;
-    readonly callUnifiedAIModel: CallUnifiedAIModelFn;
     readonly getAiProviderAdapter: GetAiProviderAdapterFn;
     readonly getAiProviderConfig: GetAiProviderConfigFn;
     readonly ragService: IRagService;
@@ -310,7 +339,8 @@ export interface JobContextParams {
     readonly documentRenderer: IDocumentRenderer;
     readonly continueJob: ContinueJobFn;
     readonly retryJob: RetryJobFn;
-    readonly executeModelCallAndSave: ExecuteModelCallAndSaveFn;
+    readonly prepareModelJob: BoundPrepareModelJobFn;
+    readonly debitTokens: DebitTokens;
     readonly pickLatest: PickLatestFn;
     readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
     readonly validateWalletBalance: ValidateWalletBalanceFn;

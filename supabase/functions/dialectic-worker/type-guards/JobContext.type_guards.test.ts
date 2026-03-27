@@ -9,13 +9,14 @@ import {
     isIRagContext,
     isITokenContext,
     isINotificationContext,
-    isIExecuteJobContext,
+    isIExecuteModelCallContext,
+    isIPrepareModelJobContext,
     isIPlanJobContext,
     isIRenderJobContext,
     isIJobContext,
 } from './JobContext.type_guards.ts';
 import { createMockRootContext } from '../JobContext.mock.ts';
-import { createExecuteJobContext, createPlanJobContext, createRenderJobContext } from '../createJobContext.ts';
+import { createPlanJobContext, createRenderJobContext } from '../createJobContext.ts';
 
 describe('JobContexts Type Guards', () => {
     describe('isILoggerContext', () => {
@@ -62,15 +63,22 @@ describe('JobContexts Type Guards', () => {
     });
 
     describe('isIModelContext', () => {
-        it('returns true for valid model context with all three fields', () => {
-            const mockCallUnifiedAIModel = () => Promise.resolve({ content: '', error: null });
+        it('returns true for valid model context with getAiProviderAdapter and getAiProviderConfig', () => {
             const mockGetAiProviderAdapter = () => null;
             const mockGetAiProviderConfig = () => Promise.resolve({} as any);
 
             const context = {
-                callUnifiedAIModel: mockCallUnifiedAIModel,
                 getAiProviderAdapter: mockGetAiProviderAdapter,
                 getAiProviderConfig: mockGetAiProviderConfig,
+            };
+
+            assertEquals(isIModelContext(context), true);
+        });
+
+        it('returns true for object without callUnifiedAIModel — field no longer required', () => {
+            const context = {
+                getAiProviderAdapter: () => null,
+                getAiProviderConfig: () => Promise.resolve({} as any),
             };
 
             assertEquals(isIModelContext(context), true);
@@ -113,73 +121,228 @@ describe('JobContexts Type Guards', () => {
         });
     });
 
-    describe('isIExecuteJobContext', () => {
-        it('returns true for valid execute context with all required fields', () => {
+    describe('isIExecuteModelCallContext', () => {
+        it('returns true for valid object with all 12 IExecuteModelCallContext fields', () => {
             const rootContext = createMockRootContext();
-            const context = createExecuteJobContext(rootContext);
-
-            assertEquals(isIExecuteJobContext(context), true);
-        });
-
-        it('returns false for partial execute context missing base context fields', () => {
             const context = {
-                getSeedPromptForStage: async () => ({ content: '', fullPath: '', bucket: '', path: '', fileName: '' }),
-                promptAssembler: { assemble: () => {} },
-                getExtensionFromMimeType: () => '.txt',
-                extractSourceGroupFragment: () => 'test',
-                randomUUID: () => 'uuid',
-                shouldEnqueueRenderJob: async () => ({ shouldRender: false, reason: 'is_json' as const }),
-            };
-
-            assertEquals(isIExecuteJobContext(context), false);
-        });
-
-        it('returns false for partial execute context missing EXECUTE-specific fields', () => {
-            const rootContext = createMockRootContext();
-            const baseContext = {
                 logger: rootContext.logger,
                 fileManager: rootContext.fileManager,
-                downloadFromStorage: rootContext.downloadFromStorage,
-                deleteFromStorage: rootContext.deleteFromStorage,
-                callUnifiedAIModel: rootContext.callUnifiedAIModel,
                 getAiProviderAdapter: rootContext.getAiProviderAdapter,
-                getAiProviderConfig: rootContext.getAiProviderConfig,
+                tokenWalletService: rootContext.tokenWalletService,
+                notificationService: rootContext.notificationService,
+                continueJob: rootContext.continueJob,
+                retryJob: rootContext.retryJob,
+                resolveFinishReason: rootContext.resolveFinishReason,
+                isIntermediateChunk: rootContext.isIntermediateChunk,
+                determineContinuation: rootContext.determineContinuation,
+                buildUploadContext: rootContext.buildUploadContext,
+                debitTokens: rootContext.debitTokens,
+            };
+
+            assertEquals(isIExecuteModelCallContext(context), true);
+        });
+
+        it('returns false for object missing fileManager', () => {
+            const rootContext = createMockRootContext();
+            const context = {
+                logger: rootContext.logger,
+                getAiProviderAdapter: rootContext.getAiProviderAdapter,
+                tokenWalletService: rootContext.tokenWalletService,
+                notificationService: rootContext.notificationService,
+                continueJob: rootContext.continueJob,
+                retryJob: rootContext.retryJob,
+                resolveFinishReason: rootContext.resolveFinishReason,
+                isIntermediateChunk: rootContext.isIntermediateChunk,
+                determineContinuation: rootContext.determineContinuation,
+                buildUploadContext: rootContext.buildUploadContext,
+                debitTokens: rootContext.debitTokens,
+            };
+
+            assertEquals(isIExecuteModelCallContext(context), false);
+        });
+
+        it('returns false for object missing debitTokens', () => {
+            const rootContext = createMockRootContext();
+            const context = {
+                logger: rootContext.logger,
+                fileManager: rootContext.fileManager,
+                getAiProviderAdapter: rootContext.getAiProviderAdapter,
+                tokenWalletService: rootContext.tokenWalletService,
+                notificationService: rootContext.notificationService,
+                continueJob: rootContext.continueJob,
+                retryJob: rootContext.retryJob,
+                resolveFinishReason: rootContext.resolveFinishReason,
+                isIntermediateChunk: rootContext.isIntermediateChunk,
+                determineContinuation: rootContext.determineContinuation,
+                buildUploadContext: rootContext.buildUploadContext,
+            };
+
+            assertEquals(isIExecuteModelCallContext(context), false);
+        });
+
+        it('returns false for object missing getAiProviderAdapter', () => {
+            const rootContext = createMockRootContext();
+            const context = {
+                logger: rootContext.logger,
+                fileManager: rootContext.fileManager,
+                tokenWalletService: rootContext.tokenWalletService,
+                notificationService: rootContext.notificationService,
+                continueJob: rootContext.continueJob,
+                retryJob: rootContext.retryJob,
+                resolveFinishReason: rootContext.resolveFinishReason,
+                isIntermediateChunk: rootContext.isIntermediateChunk,
+                determineContinuation: rootContext.determineContinuation,
+                buildUploadContext: rootContext.buildUploadContext,
+                debitTokens: rootContext.debitTokens,
+            };
+
+            assertEquals(isIExecuteModelCallContext(context), false);
+        });
+
+        it('returns false for object with Zone A-D fields but missing IExecuteModelCallContext fields', () => {
+            const rootContext = createMockRootContext();
+            // Zone A-D fields: ragService, pickLatest, downloadFromStorage, applyInputsRequiredScope,
+            // countTokens, tokenWalletService, validateWalletBalance, validateModelCostRates, embeddingClient
+            // Missing EMCAS fields: fileManager, getAiProviderAdapter, continueJob, retryJob,
+            // resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext, debitTokens
+            const context = {
+                logger: rootContext.logger,
                 ragService: rootContext.ragService,
-                indexingService: rootContext.indexingService,
-                embeddingClient: rootContext.embeddingClient,
+                pickLatest: rootContext.pickLatest,
+                downloadFromStorage: rootContext.downloadFromStorage,
+                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
                 countTokens: rootContext.countTokens,
                 tokenWalletService: rootContext.tokenWalletService,
+                validateWalletBalance: rootContext.validateWalletBalance,
+                validateModelCostRates: rootContext.validateModelCostRates,
+                embeddingClient: rootContext.embeddingClient,
                 notificationService: rootContext.notificationService,
             };
 
-            assertEquals(isIExecuteJobContext(baseContext), false);
+            assertEquals(isIExecuteModelCallContext(context), false);
         });
+    });
 
-        it('returns false when extractSourceGroupFragment is missing', () => {
+    describe('isIPrepareModelJobContext', () => {
+        it('returns true for valid object with all 12 IPrepareModelJobContext fields', () => {
             const rootContext = createMockRootContext();
-            const contextWithoutFragment = createExecuteJobContext(rootContext);
-            // Remove extractSourceGroupFragment to test missing field
-            const { extractSourceGroupFragment, ...context } = contextWithoutFragment;
-
-            assertEquals(isIExecuteJobContext(context), false);
-        });
-
-        it('returns true when extractSourceGroupFragment is present and is a function', () => {
-            const rootContext = createMockRootContext();
-            const context = createExecuteJobContext(rootContext);
-
-            assertEquals(isIExecuteJobContext(context), true);
-        });
-
-        it('returns false when extractSourceGroupFragment is not a function', () => {
-            const rootContext = createMockRootContext();
-            const contextWithInvalidFragment = createExecuteJobContext(rootContext);
             const context = {
-                ...contextWithInvalidFragment,
-                extractSourceGroupFragment: 'not-a-function' as unknown as typeof contextWithInvalidFragment.extractSourceGroupFragment,
+                logger: rootContext.logger,
+                pickLatest: rootContext.pickLatest,
+                downloadFromStorage: rootContext.downloadFromStorage,
+                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
+                countTokens: rootContext.countTokens,
+                tokenWalletService: rootContext.tokenWalletService,
+                validateWalletBalance: rootContext.validateWalletBalance,
+                validateModelCostRates: rootContext.validateModelCostRates,
+                ragService: rootContext.ragService,
+                embeddingClient: rootContext.embeddingClient,
+                executeModelCallAndSave: async () => ({}),
+                enqueueRenderJob: async () => ({}),
             };
 
-            assertEquals(isIExecuteJobContext(context), false);
+            assertEquals(isIPrepareModelJobContext(context), true);
+        });
+
+        it('returns false for object missing downloadFromStorage', () => {
+            const rootContext = createMockRootContext();
+            const context = {
+                logger: rootContext.logger,
+                pickLatest: rootContext.pickLatest,
+                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
+                countTokens: rootContext.countTokens,
+                tokenWalletService: rootContext.tokenWalletService,
+                validateWalletBalance: rootContext.validateWalletBalance,
+                validateModelCostRates: rootContext.validateModelCostRates,
+                ragService: rootContext.ragService,
+                embeddingClient: rootContext.embeddingClient,
+                executeModelCallAndSave: async () => ({}),
+                enqueueRenderJob: async () => ({}),
+            };
+
+            assertEquals(isIPrepareModelJobContext(context), false);
+        });
+
+        it('returns false for object missing ragService', () => {
+            const rootContext = createMockRootContext();
+            const context = {
+                logger: rootContext.logger,
+                pickLatest: rootContext.pickLatest,
+                downloadFromStorage: rootContext.downloadFromStorage,
+                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
+                countTokens: rootContext.countTokens,
+                tokenWalletService: rootContext.tokenWalletService,
+                validateWalletBalance: rootContext.validateWalletBalance,
+                validateModelCostRates: rootContext.validateModelCostRates,
+                embeddingClient: rootContext.embeddingClient,
+                executeModelCallAndSave: async () => ({}),
+                enqueueRenderJob: async () => ({}),
+            };
+
+            assertEquals(isIPrepareModelJobContext(context), false);
+        });
+
+        it('returns false for object missing executeModelCallAndSave (pre-bound)', () => {
+            const rootContext = createMockRootContext();
+            const context = {
+                logger: rootContext.logger,
+                pickLatest: rootContext.pickLatest,
+                downloadFromStorage: rootContext.downloadFromStorage,
+                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
+                countTokens: rootContext.countTokens,
+                tokenWalletService: rootContext.tokenWalletService,
+                validateWalletBalance: rootContext.validateWalletBalance,
+                validateModelCostRates: rootContext.validateModelCostRates,
+                ragService: rootContext.ragService,
+                embeddingClient: rootContext.embeddingClient,
+                enqueueRenderJob: async () => ({}),
+            };
+
+            assertEquals(isIPrepareModelJobContext(context), false);
+        });
+
+        it('returns false for object missing enqueueRenderJob (pre-bound)', () => {
+            const rootContext = createMockRootContext();
+            const context = {
+                logger: rootContext.logger,
+                pickLatest: rootContext.pickLatest,
+                downloadFromStorage: rootContext.downloadFromStorage,
+                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
+                countTokens: rootContext.countTokens,
+                tokenWalletService: rootContext.tokenWalletService,
+                validateWalletBalance: rootContext.validateWalletBalance,
+                validateModelCostRates: rootContext.validateModelCostRates,
+                ragService: rootContext.ragService,
+                embeddingClient: rootContext.embeddingClient,
+                executeModelCallAndSave: async () => ({}),
+            };
+
+            assertEquals(isIPrepareModelJobContext(context), false);
+        });
+
+        it('returns false for object with Zone E-G fields but missing IPrepareModelJobContext fields', () => {
+            const rootContext = createMockRootContext();
+            // Zone E-G fields: fileManager, getAiProviderAdapter, continueJob, retryJob,
+            // resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext, debitTokens
+            // Missing PMJ fields: pickLatest, downloadFromStorage, applyInputsRequiredScope,
+            // countTokens, validateWalletBalance, validateModelCostRates, ragService, embeddingClient,
+            // executeModelCallAndSave, enqueueRenderJob
+            const context = {
+                logger: rootContext.logger,
+                fileManager: rootContext.fileManager,
+                getAiProviderAdapter: rootContext.getAiProviderAdapter,
+                tokenWalletService: rootContext.tokenWalletService,
+                notificationService: rootContext.notificationService,
+                continueJob: rootContext.continueJob,
+                retryJob: rootContext.retryJob,
+                resolveFinishReason: rootContext.resolveFinishReason,
+                isIntermediateChunk: rootContext.isIntermediateChunk,
+                determineContinuation: rootContext.determineContinuation,
+                buildUploadContext: rootContext.buildUploadContext,
+                debitTokens: rootContext.debitTokens,
+            };
+
+            assertEquals(isIPrepareModelJobContext(context), false);
         });
     });
 
@@ -224,26 +387,39 @@ describe('JobContexts Type Guards', () => {
     });
 
     describe('isIJobContext', () => {
-        it('returns true for valid root context with all fields from all composed contexts plus orchestration utilities', () => {
+        it('returns true for valid root context with new context structure', () => {
             const context = createMockRootContext();
 
             assertEquals(isIJobContext(context), true);
         });
 
-        it('returns false for root context missing base context fields', () => {
+        it('returns false for root context missing model context fields', () => {
             const rootContext = createMockRootContext();
-            // Remove model context fields to test missing base context
-            const { callUnifiedAIModel, getAiProviderAdapter, getAiProviderConfig, ...contextMissingModelContext } = rootContext;
+            // Remove model context fields — callUnifiedAIModel no longer exists on IJobContext
+            const { getAiProviderAdapter, getAiProviderConfig, ...contextMissingModelContext } = rootContext;
 
             assertEquals(isIJobContext(contextMissingModelContext), false);
         });
 
-        it('returns false for root context missing orchestration utilities', () => {
+        it('returns false when prepareModelJob is missing', () => {
             const rootContext = createMockRootContext();
-            // Remove orchestration utilities to test missing fields
-            const { continueJob, retryJob, executeModelCallAndSave, ...contextMissingOrchestration } = rootContext;
+            const { prepareModelJob, ...contextMissingPrepareModelJob } = rootContext;
 
-            assertEquals(isIJobContext(contextMissingOrchestration), false);
+            assertEquals(isIJobContext(contextMissingPrepareModelJob), false);
+        });
+
+        it('returns false when getSeedPromptForStage is missing', () => {
+            const rootContext = createMockRootContext();
+            const { getSeedPromptForStage, ...contextMissingSeed } = rootContext;
+
+            assertEquals(isIJobContext(contextMissingSeed), false);
+        });
+
+        it('returns false for root context missing debitTokens', () => {
+            const rootContext = createMockRootContext();
+            const { debitTokens, ...contextMissingDebitTokens } = rootContext;
+
+            assertEquals(isIJobContext(contextMissingDebitTokens), false);
         });
     });
 });
