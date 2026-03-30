@@ -2065,25 +2065,6 @@ This is the highest-priority phase. It creates the architectural seam needed for
         *   `[✅] ` No changes to `generateContribution.ts` — source was already clean
     *   `[✅] ` **Commit: `feat(BE): direct adapter call for dialectic jobs, eliminate chat hop`**
 
-*   `[ ]` dialectic-worker/test-sort **Sort all 20 EMCAS test files to their correct new owners** `[TEST-UNIT]` `[TEST-INT]`
-    *   `[ ]` `objective`
-        *   `[ ]` Process every one of the 20 EMCAS test files (~700+ tests across 17 unit + 3 integration files)
-        *   `[ ]` For each test: identify which zone(s) it exercises (A-D → prepareModelJob, H → enqueueRenderJob, E-G + post-save → slimmed EMCAS)
-        *   `[ ]` Map each test to its correct new owner and lift & shift to the new owner's test file
-        *   `[ ]` Update mocks and fixtures to match each new owner's §7-compliant interface (deps, params, return)
-        *   `[ ]` For tests that cross zone boundaries: disassemble into separate unit tests for each new owner
-        *   `[ ]` Create new integration tests proving the decomposed functions work together:
-            *   `[ ]` prepareModelJob → executeModelCallAndSave (Zones A-D → E-G)
-            *   `[ ]` executeModelCallAndSave → enqueueRenderJob (E-G → H via return data)
-            *   `[ ]` prepareModelJob → executeModelCallAndSave → enqueueRenderJob (full chain)
-        *   `[ ]` After sorting, slimmed EMCAS owns only the tests valid for its reduced scope (Zones E-G + post-save)
-    *   `[ ]` `requirements`
-        *   `[ ]` All ~700+ tests must be accounted for — none dropped, none orphaned
-        *   `[ ]` Each new owner's test file uses that owner's §7 interface (deps, params, return), not the old monolith's bundled params
-        *   `[ ]` No test may assert behavior that its owner does not implement (e.g., no Zone A validation tests in slimmed EMCAS)
-        *   `[ ]` All tests must pass after sorting is complete
-    *   `[ ]` **Commit: `test(BE): sort EMCAS test files to decomposed function owners`**
-
 ### Phase 2: Eliminate the triple-fetch
 
 With EMCAS split into `prepareModelJob` + `executeModelCallAndSave`, the boundary contract between them is explicit. This phase pushes artifact resolution upstream so it happens once.

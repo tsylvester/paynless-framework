@@ -128,6 +128,10 @@ export type CreateMockDialecticContributionRowOverrides = {
   [K in keyof Tables<'dialectic_contributions'>]?: Tables<'dialectic_contributions'>[K];
 };
 
+export type CreateMockDialecticProjectResourcesRowOverrides = {
+  [K in keyof Tables<'dialectic_project_resources'>]?: Tables<'dialectic_project_resources'>[K];
+};
+
 export const mockFullProviderConfig: AiModelExtendedConfig = {
   tokenization_strategy: { type: 'rough_char_count' },
   context_window_tokens: 10000,
@@ -183,6 +187,9 @@ export const testPayloadContinuation: DialecticExecuteJobPayload = {
     thesis: 'parent-contrib-1',
     source_group: '00000000-0000-4000-8000-000000000001',
   },
+  canonicalPathParams: {
+    ...testPayload.canonicalPathParams,
+  },
 };
 
 export const testPayloadDocumentArtifact: DialecticExecuteJobPayload = {
@@ -192,6 +199,9 @@ export const testPayloadDocumentArtifact: DialecticExecuteJobPayload = {
   document_relationships: {
     thesis: 'contrib-test-1',
     source_group: '00000000-0000-4000-8000-000000000002',
+  },
+  canonicalPathParams: {
+    ...testPayload.canonicalPathParams,
   },
 };
 
@@ -586,6 +596,37 @@ export function createMockDialecticContributionRow(
     tokens_used_input: 1,
     tokens_used_output: 1,
     updated_at: new Date().toISOString(),
+    user_id: 'user-789',
+  };
+  if (!overrides) {
+    return base;
+  }
+  return { ...base, ...overrides };
+}
+
+/**
+ * Full valid `dialectic_project_resources` row for EMCAS unit tests (e.g. prompt resource update spies).
+ */
+export function createMockDialecticProjectResourcesRow(
+  overrides?: CreateMockDialecticProjectResourcesRowOverrides,
+): Tables<'dialectic_project_resources'> {
+  const nowIso: string = new Date().toISOString();
+  const base: Tables<'dialectic_project_resources'> = {
+    id: 'mock-dialectic-project-resource-id',
+    created_at: nowIso,
+    updated_at: nowIso,
+    file_name: 'prompt.txt',
+    iteration_number: null,
+    mime_type: 'text/plain',
+    project_id: 'project-abc',
+    resource_description: null,
+    resource_type: 'prompt',
+    session_id: 'session-456',
+    size_bytes: 100,
+    source_contribution_id: null,
+    stage_slug: null,
+    storage_bucket: 'test-bucket',
+    storage_path: 'path/to/prompt',
     user_id: 'user-789',
   };
   if (!overrides) {
