@@ -293,7 +293,19 @@
     * No over-fetching of dependency surface
     * No hidden coupling
 
-### 3. Structural Boundary (Shape)
+### 3. Contract Definition (Truth)
+
+* `[ ]`   `function.interface.test.ts`
+
+  * `[ ]`   Define:
+    * Valid cases (must pass)
+    * Invalid cases (must fail)
+
+  * `[ ]`   Include edge cases and boundary values
+  * `[ ]`   Define invariants (e.g., “id must be non-empty”)
+  * `[ ]`   No implementation details — pure expectation
+
+### 4. Structural Boundary (Shape)
 
 * `[ ]`   `function.interface.ts`
 
@@ -304,18 +316,6 @@
 
   * `[ ]`   No implicit/any types unless explicitly justified
   * `[ ]`   Each type is minimal and composable
-
-### 4. Contract Definition (Truth)
-
-* `[ ]`   `function.interface.contract.test.ts`
-
-  * `[ ]`   Define:
-    * Valid cases (must pass)
-    * Invalid cases (must fail)
-
-  * `[ ]`   Include edge cases and boundary values
-  * `[ ]`   Define invariants (e.g., “id must be non-empty”)
-  * `[ ]`   No implementation details — pure expectation
 
 ### 5. Interaction Semantics (Behavioral Structure)
 
@@ -337,18 +337,19 @@
 
 ### 6. Enforcement (Runtime Boundary)
 
-* `[ ]`   `[function].interface.guards.ts`
+
+* `[ ]`   `[function].guard.test.ts`
+  * `[ ]`   Verify guards against contract tests
+  * `[ ]`   Ensure:
+    * No false positives
+    * No false negatives
+
+* `[ ]`   `[function].guard.ts`
 
   * `[ ]`   Implement guards for each interface type
   * `[ ]`   Guards must:
     * Accept all valid contract cases
     * Reject all invalid contract cases
-
-* `[ ]`   `[function].guards.test.ts`
-  * `[ ]`   Verify guards against contract tests
-  * `[ ]`   Ensure:
-    * No false positives
-    * No false negatives
 
 ### 7. Behavioral Verification
 

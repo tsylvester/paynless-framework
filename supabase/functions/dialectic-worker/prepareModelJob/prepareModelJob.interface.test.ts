@@ -23,10 +23,12 @@ import type {
   InputRule,
   PromptConstructionPayload,
   RelevanceRule,
+  SourceDocument,
 } from "../../dialectic-service/dialectic.interface.ts";
 import type {
   BoundExecuteModelCallAndSaveFn,
 } from "../executeModelCallAndSave/executeModelCallAndSave.interface.ts";
+import { isExecuteModelCallAndSavePayload } from "../executeModelCallAndSave/executeModelCallAndSave.interface.guard.ts";
 import type { BoundEnqueueRenderJobFn } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
 import type {
   PrepareModelJobDeps,
@@ -44,6 +46,7 @@ import {
   isPrepareModelJobPayload,
   isPrepareModelJobSuccessReturn,
 } from "./prepareModelJob.interface.guard.ts";
+import { prepareModelJob } from "./prepareModelJob.ts";
 
 function buildExecuteJobPayload(): DialecticExecuteJobPayload {
   return {
@@ -518,4 +521,148 @@ Deno.test("isPrepareModelJobErrorReturn", () => {
     false,
   );
 });
+
+Deno.test(
+  "Contract: non-empty promptConstructionPayload.resourceDocuments are forwarded to ChatApiRequest.resourceDocuments",
+  async () => {
+    const mockSetup = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        token_wallets: {
+          select: () => Promise.resolve({ data: [{ balance: 100000 }], error: null }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "token-contract",
+      job,
+      projectOwnerUserId: "owner-contract",
+      providerRow: buildAiProvidersRow(),
+      sessionData: buildDialecticSessionRow(),
+    };
+
+    const contributionRowForDocument: DialecticContributionRow = buildDialecticContributionRow();
+    const { document_relationships: _ignoredRelationships, ...contributionWithoutRelationships } =
+      contributionRowForDocument;
+    const sourceDocument: SourceDocument = {
+      ...contributionWithoutRelationships,
+      content: "resource-content-1",
+      document_key: FileType.HeaderContext,
+      stage_slug: "thesis",
+      type: "document",
+    };
+    const payloadWithDocuments: PrepareModelJobPayload = {
+      promptConstructionPayload: {
+        conversationHistory: [],
+        resourceDocuments: [
+          sourceDocument,
+        ],
+        currentUserPrompt: "contract user prompt",
+        source_prompt_resource_id: "source-prompt-resource-id",
+      },
+      compressionStrategy: contractCompressionStrategy,
+      inputsRequired: [
+        { type: "document", slug: "thesis", required: true, document_key: FileType.HeaderContext },
+      ],
+    };
+
+    let capturedEmcasPayload: unknown = undefined;
+    const executeModelCallAndSave: BoundExecuteModelCallAndSaveFn = async (_params, payloadArg) => {
+      if (!isExecuteModelCallAndSavePayload(payloadArg)) {
+        throw new Error("expected ExecuteModelCallAndSavePayload");
+      }
+      capturedEmcasPayload = payloadArg;
+      return {
+        contribution: buildDialecticContributionRow(),
+        needsContinuation: false,
+        stageRelationshipForStage: undefined,
+        documentKey: undefined,
+        fileType: FileType.HeaderContext,
+        storageFileType: FileType.ModelContributionRawJson,
+      };
+    };
+    const enqueueRenderJob: BoundEnqueueRenderJobFn = async () => ({ renderJobId: null });
+
+    const deps: PrepareModelJobDeps = {
+      ...buildPrepareModelJobDepsContract(),
+      executeModelCallAndSave,
+      enqueueRenderJob,
+      countTokens: () => 10,
+    };
+
+    const result: PrepareModelJobReturn = await prepareModelJob(deps, params, payloadWithDocuments);
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
+    if (!isExecuteModelCallAndSavePayload(capturedEmcasPayload)) {
+      throw new Error("expected ExecuteModelCallAndSavePayload to be captured");
+    }
+    assertEquals(capturedEmcasPayload.chatApiRequest.resourceDocuments?.length, 1);
+    assertEquals(capturedEmcasPayload.chatApiRequest.resourceDocuments?.[0].id, "contrib-contract-1");
+  },
+);
+
+Deno.test(
+  "Contract: prepareModelJob does not query artifact tables during execution",
+  async () => {
+    const mockSetup = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        token_wallets: {
+          select: () => Promise.resolve({ data: [{ balance: 100000 }], error: null }),
+        },
+        dialectic_project_resources: {
+          select: () => {
+            throw new Error("artifact query forbidden in prepareModelJob");
+          },
+        },
+        dialectic_feedback: {
+          select: () => {
+            throw new Error("artifact query forbidden in prepareModelJob");
+          },
+        },
+        dialectic_contributions: {
+          select: () => {
+            throw new Error("artifact query forbidden in prepareModelJob");
+          },
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "token-contract",
+      job,
+      projectOwnerUserId: "owner-contract",
+      providerRow: buildAiProvidersRow(),
+      sessionData: buildDialecticSessionRow(),
+    };
+
+    const payloadWithoutArtifactsFetch: PrepareModelJobPayload = {
+      promptConstructionPayload: {
+        conversationHistory: [],
+        resourceDocuments: [],
+        currentUserPrompt: "contract user prompt",
+        source_prompt_resource_id: "source-prompt-resource-id",
+      },
+      compressionStrategy: contractCompressionStrategy,
+    };
+
+    const deps: PrepareModelJobDeps = {
+      ...buildPrepareModelJobDepsContract(),
+      countTokens: () => 10,
+    };
+
+    const result: PrepareModelJobReturn = await prepareModelJob(
+      deps,
+      params,
+      payloadWithoutArtifactsFetch,
+    );
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
+  },
+);
 

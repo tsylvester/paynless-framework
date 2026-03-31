@@ -15,15 +15,25 @@ import {
   isIPrepareModelJobContext,
   isIPlanJobContext,
   isIRenderJobContext,
-} from './type-guards/JobContext.type_guards.ts';
+} from './JobContext.guard.ts';
 import {
   createMockJobContextParams,
   createMockRootContext,
   createMockBoundExecuteModelCallAndSave,
   createMockBoundEnqueueRenderJob,
 } from './JobContext.mock.ts';
-import type { BoundPrepareModelJobFn } from './JobContext.interface.ts';
-
+import type { BoundPrepareModelJobFn, IPrepareModelJobContext } from './JobContext.interface.ts';
+import { createMockSupabaseClient } from '../../_shared/supabase.mock.ts';
+import {
+  buildGatherArtifactsPayload,
+  buildGatherArtifactsParams,
+} from '../gatherArtifacts/gatherArtifacts.mock.ts';
+import type {
+  GatherArtifactsParams,
+  GatherArtifactsPayload,
+} from '../gatherArtifacts/gatherArtifacts.interface.ts';
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { Database } from "../../types_db.ts";
 describe('createJobContext Factory and Slicers', () => {
   describe('createJobContext', () => {
     it('updates createMockJobContextParams call sites to use prepareModelJob override', () => {
@@ -69,6 +79,42 @@ describe('createJobContext Factory and Slicers', () => {
       const result = createJobContext(params);
 
       assertEquals(result.getSeedPromptForStage, params.getSeedPromptForStage);
+    });
+
+    it('has gatherArtifacts present and callable', async () => {
+      const params = createMockJobContextParams();
+      const result = createJobContext(params);
+      const { client: dbClient } = createMockSupabaseClient();
+      const gatherParams = buildGatherArtifactsParams(dbClient as unknown as SupabaseClient<Database>);
+      const gatherPayload = buildGatherArtifactsPayload();
+
+      assertEquals(typeof result.gatherArtifacts, 'function');
+      await result.gatherArtifacts(gatherParams, gatherPayload);
+    });
+
+    it('ctx.gatherArtifacts delegates to the bound gatherArtifacts closure', async () => {
+      const calls: {
+        params: GatherArtifactsParams;
+        payload: GatherArtifactsPayload;
+      }[] = [];
+      const gatherArtifacts = async (
+        paramsArg: GatherArtifactsParams,
+        payloadArg: GatherArtifactsPayload,
+      ) => {
+        calls.push({ params: paramsArg, payload: payloadArg });
+        return { artifacts: [] };
+      };
+      const params = createMockJobContextParams({ gatherArtifacts });
+      const result = createJobContext(params);
+      const { client: dbClient } = createMockSupabaseClient();
+      const gatherParams = buildGatherArtifactsParams(dbClient as unknown as SupabaseClient<Database>);
+      const gatherPayload = buildGatherArtifactsPayload();
+
+      await result.gatherArtifacts(gatherParams, gatherPayload);
+
+      assertEquals(calls.length, 1);
+      assertEquals(calls[0].params, gatherParams);
+      assertEquals(calls[0].payload, gatherPayload);
     });
   });
 
@@ -122,7 +168,7 @@ describe('createJobContext Factory and Slicers', () => {
   });
 
   describe('createPrepareModelJobContext', () => {
-    it('extracts 10 raw fields from root IJobContext and receives 2 pre-bound closures as arguments', () => {
+    it('extracts 8 raw fields from root IJobContext and receives 2 pre-bound closures as arguments', () => {
       const root = createMockRootContext();
       const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
       const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
@@ -148,7 +194,7 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals(isIPrepareModelJobContext(result), true);
     });
 
-    it('result includes logger, pickLatest, downloadFromStorage, applyInputsRequiredScope, countTokens, tokenWalletService, validateWalletBalance, validateModelCostRates, ragService, embeddingClient, executeModelCallAndSave, enqueueRenderJob', () => {
+    it('result includes logger, applyInputsRequiredScope, countTokens, tokenWalletService, validateWalletBalance, validateModelCostRates, ragService, embeddingClient, executeModelCallAndSave, enqueueRenderJob', () => {
       const root = createMockRootContext();
       const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
       const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
@@ -159,8 +205,6 @@ describe('createJobContext Factory and Slicers', () => {
       );
 
       assertEquals(result.logger, root.logger);
-      assertEquals(result.pickLatest, root.pickLatest);
-      assertEquals(result.downloadFromStorage, root.downloadFromStorage);
       assertEquals(result.applyInputsRequiredScope, root.applyInputsRequiredScope);
       assertEquals(result.countTokens, root.countTokens);
       assertEquals(result.tokenWalletService, root.tokenWalletService);
@@ -172,7 +216,7 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals(result.enqueueRenderJob, boundEnqueueRenderJob);
     });
 
-    it('result does NOT include fileManager, continueJob, retryJob, getAiProviderAdapter, resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext, debitTokens, notificationService, prepareModelJob', () => {
+    it('result does NOT include pickLatest, downloadFromStorage, fileManager, continueJob, retryJob, getAiProviderAdapter, resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext, debitTokens, notificationService, prepareModelJob', () => {
       const root = createMockRootContext();
       const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
       const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
@@ -182,6 +226,8 @@ describe('createJobContext Factory and Slicers', () => {
         boundEnqueueRenderJob,
       );
 
+      assertEquals('pickLatest' in result, false);
+      assertEquals('downloadFromStorage' in result, false);
       assertEquals('fileManager' in result, false);
       assertEquals('continueJob' in result, false);
       assertEquals('retryJob' in result, false);
@@ -193,6 +239,38 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals('debitTokens' in result, false);
       assertEquals('notificationService' in result, false);
       assertEquals('prepareModelJob' in result, false);
+    });
+
+    it('TypeScript assignment fails if pickLatest or downloadFromStorage are supplied to IPrepareModelJobContext', () => {
+      const root = createMockRootContext();
+      const validPrepareContext: IPrepareModelJobContext = {
+        logger: root.logger,
+        applyInputsRequiredScope: root.applyInputsRequiredScope,
+        countTokens: root.countTokens,
+        tokenWalletService: root.tokenWalletService,
+        validateWalletBalance: root.validateWalletBalance,
+        validateModelCostRates: root.validateModelCostRates,
+        ragService: root.ragService,
+        embeddingClient: root.embeddingClient,
+        executeModelCallAndSave: async () => ({ error: new Error('mock'), retriable: false }),
+        enqueueRenderJob: async () => ({ error: new Error('mock'), retriable: false }),
+      };
+
+      assertEquals(typeof validPrepareContext.logger, 'object');
+
+      const invalidWithPickLatest: IPrepareModelJobContext = {
+        ...validPrepareContext,
+        pickLatest: root.pickLatest,
+      } as unknown as IPrepareModelJobContext;
+      
+      assertEquals(typeof invalidWithPickLatest, 'object');
+
+      const invalidWithDownloadFromStorage: IPrepareModelJobContext = {
+        ...validPrepareContext,
+        downloadFromStorage: root.downloadFromStorage,
+      } as unknown as IPrepareModelJobContext;
+
+      assertEquals(typeof invalidWithDownloadFromStorage, 'object');
     });
   });
 

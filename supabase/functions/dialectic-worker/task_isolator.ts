@@ -13,7 +13,7 @@ import {
 } from '../dialectic-service/dialectic.interface.ts';
 import { Database } from '../types_db.ts';
 import { extractSourceDocumentIdentifier } from '../_shared/utils/source_document_identifier.ts';
-import { IPlanJobContext } from './JobContext.interface.ts';
+import { IPlanJobContext } from './createJobContext/JobContext.interface.ts';
 
 function isPlannableStep(step: DialecticRecipeStep): step is (DialecticStageRecipeStep | DialecticRecipeTemplateStep) {
     if ('is_skipped' in step && step.is_skipped) {

@@ -114,8 +114,6 @@ export function isIPrepareModelJobContext(value: unknown): value is IPrepareMode
 
     return (
         'logger' in value && typeof value.logger === 'object' && value.logger !== null &&
-        'pickLatest' in value && typeof value.pickLatest === 'function' &&
-        'downloadFromStorage' in value && typeof value.downloadFromStorage === 'function' &&
         'applyInputsRequiredScope' in value && typeof value.applyInputsRequiredScope === 'function' &&
         'countTokens' in value && typeof value.countTokens === 'function' &&
         'tokenWalletService' in value && typeof value.tokenWalletService === 'object' && value.tokenWalletService !== null &&

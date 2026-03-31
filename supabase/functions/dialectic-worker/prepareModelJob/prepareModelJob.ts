@@ -1,8 +1,4 @@
 import {
-  InputRule,
-  DialecticProjectResourceRow,
-  DialecticContributionRow,
-  DialecticFeedbackRow,
 } from '../../dialectic-service/dialectic.interface.ts';
 import {
   FileType,
@@ -28,11 +24,11 @@ import {
 import { CompressionCandidate } from '../../_shared/utils/vector_utils.ts';
 import { ContextWindowError } from '../../_shared/utils/errors.ts';
 import { getMaxOutputTokens } from '../../_shared/utils/affordability_utils.ts';
-import { deconstructStoragePath } from '../../_shared/utils/path_deconstructor.ts';
 import {
   isFileType,
   isModelContributionFileType,
 } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
+import { isResourceDocument } from '../../_shared/utils/type-guards/type_guards.chat.ts';
 import type { ExecuteModelCallAndSaveParams } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
 import type {
   EnqueueRenderJobParams,
@@ -180,199 +176,16 @@ export async function prepareModelJob(
       systemInstruction,
       conversationHistory,
       currentUserPrompt,
+      resourceDocuments: promptConstructionResourceDocuments,
     } = promptConstructionPayload;
-
-    const gatherArtifacts = async (): Promise<Required<ResourceDocuments[number]>[]> => {
-      if (!inputsRequired || inputsRequired.length === 0) return [];
-      const rules: InputRule[] = inputsRequired;
-
-      const gathered: Required<ResourceDocuments[number]>[] = [];
-
-      for (const rule of rules) {
-        if (!rule.document_key) continue;
-        const rType: InputRule['type'] = rule.type;
-        const rStage: string = rule.slug;
-        const rKey: string = rule.document_key;
-
-        try {
-          if (rType === 'document') {
-            deps.logger.info(`[gatherArtifacts] Querying dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
-            const { data, error } = await dbClient
-              .from('dialectic_project_resources')
-              .select('*')
-              .eq('project_id', projectId)
-              .eq('session_id', sessionId)
-              .eq('iteration_number', iterationNumber)
-              .eq('stage_slug', rStage)
-              .eq('resource_type', 'rendered_document');
-            if (error) {
-              deps.logger.error(`[gatherArtifacts] Error querying dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`, { error });
-              if (rule.required === false) {
-                deps.logger.info(`[gatherArtifacts] Error querying optional document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'. Skipping optional input.`);
-                continue;
-              }
-              throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
-            }
-            if (!Array.isArray(data) || data.length === 0) {
-              deps.logger.warn(`[gatherArtifacts] No resources found in dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
-              if (rule.required === false) {
-                deps.logger.info(`[gatherArtifacts] No rendered documents found for optional input rule type 'document' with stage '${rStage}' and document_key '${rKey}'. Skipping optional input.`);
-                continue;
-              }
-              throw new Error(`Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`);
-            }
-            const filtered: DialecticProjectResourceRow[] = data.filter((row: DialecticProjectResourceRow) => {
-              const parsed = deconstructStoragePath({ storageDir: row.storage_path, fileName: row.file_name, dbOriginalFileName: row.file_name });
-              return row.stage_slug === rStage && parsed.documentKey === rKey;
-            });
-            const latest: DialecticProjectResourceRow = deps.pickLatest(filtered);
-            const downloadResult = await deps.downloadFromStorage(dbClient, latest.storage_bucket, latest.storage_path + '/' + latest.file_name);
-            if (downloadResult.error || !downloadResult.data) {
-              throw new Error(`Failed to download content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`);
-            }
-            const content: string = new TextDecoder().decode(downloadResult.data);
-            deps.logger.info(`[gatherArtifacts] Found rendered document in dialectic_project_resources: id='${latest.id}', stage='${rStage}', document_key='${rKey}'`);
-            gathered.push({ id: latest.id, content, document_key: rKey, stage_slug: rStage, type: 'document' });
-          }
-          if (rType === 'feedback') {
-            deps.logger.info(`[gatherArtifacts] Querying dialectic_feedback for feedback input rule: stage='${rStage}', document_key='${rKey}'`);
-            const { data, error } = await dbClient
-              .from('dialectic_feedback')
-              .select('*')
-              .eq('project_id', projectId)
-              .eq('session_id', sessionId)
-              .eq('iteration_number', iterationNumber)
-              .eq('stage_slug', rStage);
-            if (error) {
-              deps.logger.error(`[gatherArtifacts] Error querying dialectic_feedback: stage='${rStage}', document_key='${rKey}'`, { error });
-              if (rule.required === false) continue;
-              throw new Error(`Required feedback for stage '${rStage}' and document_key '${rKey}' query failed.`);
-            }
-            if (!Array.isArray(data) || data.length === 0) {
-              deps.logger.warn(`[gatherArtifacts] No feedback found for stage='${rStage}', document_key='${rKey}'`);
-              if (rule.required === false) continue;
-              throw new Error(`Required feedback for stage '${rStage}' and document_key '${rKey}' was not found in dialectic_feedback.`);
-            }
-            const filtered: DialecticFeedbackRow[] = data.filter((row: DialecticFeedbackRow) => {
-              const parsed = deconstructStoragePath({ storageDir: row.storage_path, fileName: row.file_name, dbOriginalFileName: row.file_name });
-              return row.stage_slug === rStage && parsed.documentKey === rKey;
-            });
-            const latest: DialecticFeedbackRow = deps.pickLatest(filtered);
-            const downloadResult = await deps.downloadFromStorage(dbClient, latest.storage_bucket, latest.storage_path + '/' + latest.file_name);
-            if (downloadResult.error || !downloadResult.data) {
-              throw new Error(`Failed to download feedback content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`);
-            }
-            const content: string = new TextDecoder().decode(downloadResult.data);
-            deps.logger.info(`[gatherArtifacts] Found feedback: id='${latest.id}', stage='${latest.stage_slug}', document_key='${rKey}'`);
-            gathered.push({ id: latest.id, content, document_key: rKey, stage_slug: latest.stage_slug, type: 'feedback' });
-          }
-          if (rType === 'seed_prompt') {
-            deps.logger.info(`[gatherArtifacts] Querying dialectic_project_resources for seed_prompt input rule: stage='${rStage}', document_key='${rKey}'`);
-            const { data, error } = await dbClient
-              .from('dialectic_project_resources')
-              .select('*')
-              .eq('project_id', projectId)
-              .eq('session_id', sessionId)
-              .eq('iteration_number', iterationNumber)
-              .eq('stage_slug', rStage)
-              .eq('resource_type', 'seed_prompt');
-            if (error) {
-              deps.logger.error(`[gatherArtifacts] Error querying dialectic_project_resources for seed_prompt: stage='${rStage}', document_key='${rKey}'`, { error });
-              if (rule.required === false) continue;
-              throw new Error(`Required seed_prompt for stage '${rStage}' and document_key '${rKey}' query failed.`);
-            }
-            if (!Array.isArray(data) || data.length === 0) {
-              deps.logger.warn(`[gatherArtifacts] No seed_prompt resources found for stage='${rStage}', document_key='${rKey}'`);
-              if (rule.required === false) continue;
-              throw new Error(`Required seed_prompt for stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources.`);
-            }
-            const latest: DialecticProjectResourceRow = deps.pickLatest(data);
-            const downloadResult = await deps.downloadFromStorage(dbClient, latest.storage_bucket, latest.storage_path + '/' + latest.file_name);
-            if (downloadResult.error || !downloadResult.data) {
-              throw new Error(`Failed to download seed_prompt content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`);
-            }
-            const content: string = new TextDecoder().decode(downloadResult.data);
-            deps.logger.info(`[gatherArtifacts] Found seed_prompt: id='${latest.id}', stage='${rStage}', document_key='${rKey}'`);
-            gathered.push({ id: latest.id, content, document_key: rKey, stage_slug: rStage, type: 'seed_prompt' });
-          }
-          if (rType === 'project_resource') {
-            const isInitialUserPrompt = rKey === 'initial_user_prompt';
-            const resourceTypeForQuery = isInitialUserPrompt ? 'initial_user_prompt' : 'project_resource';
-            deps.logger.info(`[gatherArtifacts] Querying dialectic_project_resources for project_resource: document_key='${rKey}', resource_type='${resourceTypeForQuery}'`);
-            const { data, error } = await dbClient
-              .from('dialectic_project_resources')
-              .select('*')
-              .eq('project_id', projectId)
-              .eq('resource_type', resourceTypeForQuery);
-            if (error) {
-              deps.logger.error(`[gatherArtifacts] Error querying dialectic_project_resources for project_resource: document_key='${rKey}'`, { error });
-              if (rule.required === false) continue;
-              throw new Error(`Required project_resource for document_key '${rKey}' query failed.`);
-            }
-            if (!Array.isArray(data) || data.length === 0) {
-              deps.logger.warn(`[gatherArtifacts] No project_resource found for document_key='${rKey}'`);
-              if (rule.required === false) continue;
-              throw new Error(`Required project_resource for document_key '${rKey}' was not found in dialectic_project_resources.`);
-            }
-            const latest: DialecticProjectResourceRow = deps.pickLatest(data);
-            const downloadResult = await deps.downloadFromStorage(dbClient, latest.storage_bucket, latest.storage_path + '/' + latest.file_name);
-            if (downloadResult.error || !downloadResult.data) {
-              throw new Error(`Failed to download project_resource content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`);
-            }
-            const content: string = new TextDecoder().decode(downloadResult.data);
-            deps.logger.info(`[gatherArtifacts] Found project_resource: id='${latest.id}', document_key='${rKey}'`);
-            gathered.push({ id: latest.id, content, document_key: rKey, stage_slug: rStage, type: 'project_resource' });
-          } else if (rType === 'header_context' || (rType !== 'document' && rType !== 'feedback' && rType !== 'seed_prompt')) {
-            deps.logger.info(`[gatherArtifacts] Querying dialectic_contributions for intermediate artifact: type='${rType}', stage='${rStage}', document_key='${rKey}'`);
-            const { data, error } = await dbClient
-              .from('dialectic_contributions')
-              .select('*')
-              .eq('session_id', sessionId)
-              .eq('iteration_number', iterationNumber)
-              .eq('stage', rStage);
-            if (error) {
-              deps.logger.error(`[gatherArtifacts] Error querying dialectic_contributions for type='${rType}': stage='${rStage}', document_key='${rKey}'`, { error });
-              if (rule.required === false) continue;
-              throw new Error(`Required ${rType} for stage '${rStage}' and document_key '${rKey}' query failed.`);
-            }
-            if (!Array.isArray(data) || data.length === 0) {
-              deps.logger.warn(`[gatherArtifacts] No contributions found for type='${rType}', stage='${rStage}', document_key='${rKey}'`);
-              if (rule.required === false) continue;
-              throw new Error(`Required ${rType} for stage '${rStage}' and document_key '${rKey}' was not found in dialectic_contributions.`);
-            }
-            const filtered: DialecticContributionRow[] = data.filter((row: DialecticContributionRow) => {
-              if (!row.file_name) return false;
-              const parsed = deconstructStoragePath({ storageDir: row.storage_path, fileName: row.file_name, dbOriginalFileName: row.file_name });
-              return row.stage === rStage && parsed.documentKey === rKey;
-            });
-            const latest: DialecticContributionRow = deps.pickLatest(filtered);
-            if (!latest.file_name) throw new Error(`Contribution row '${latest.id}' has null file_name — data integrity violation.`);
-            const downloadResult = await deps.downloadFromStorage(dbClient, latest.storage_bucket, latest.storage_path + '/' + latest.file_name);
-            if (downloadResult.error || !downloadResult.data) {
-              throw new Error(`Failed to download ${rType} content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`);
-            }
-            const content: string = new TextDecoder().decode(downloadResult.data);
-            deps.logger.info(`[gatherArtifacts] Found ${rType}: id='${latest.id}', stage='${latest.stage}', document_key='${rKey}'`);
-            gathered.push({ id: latest.id, content, document_key: rKey, stage_slug: latest.stage, type: rType });
-          }
-        } catch (err) {
-          if (rule.required === false) {
-            deps.logger.info(`[gatherArtifacts] Error processing optional input rule type='${rType}', stage='${rStage}', document_key='${rKey}'. Skipping.`, { error: err });
-            continue;
-          }
-          throw err;
-        }
+    const resourceDocumentsFromPayload: ResourceDocuments = [];
+    for (const doc of promptConstructionResourceDocuments) {
+      if (!isResourceDocument(doc)) {
+        throw new Error('promptConstructionPayload.resourceDocuments contains invalid resource document fields');
       }
-
-      const unique = new Map<string, Required<ResourceDocuments[number]>>();
-      for (const d of gathered) {
-        if (!unique.has(d.id)) unique.set(d.id, d);
-      }
-      return Array.from(unique.values());
-    };
-
-    const gatheredDocs = await gatherArtifacts();
-    const scopedDocs = deps.applyInputsRequiredScope(gatheredDocs, inputsRequired);
+      resourceDocumentsFromPayload.push(doc);
+    }
+    const scopedDocs = deps.applyInputsRequiredScope(resourceDocumentsFromPayload, inputsRequired);
 
     if (inputsRequired) {
       for (const vRule of inputsRequired) {

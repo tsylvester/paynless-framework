@@ -40,6 +40,7 @@ import type {
   InputRule,
   PromptConstructionPayload,
   RelevanceRule,
+  SourceDocument,
 } from "../../dialectic-service/dialectic.interface.ts";
 import type {
   BoundExecuteModelCallAndSaveFn,
@@ -82,7 +83,6 @@ import {
   malformedPayloadMissingStageSlug,
   malformedPayloadMissingUserJwt,
   malformedPayloadMissingWalletId,
-  modelConfigToJson,
 } from "./prepareModelJob.mock.ts";
 
 function assertEmcasFirstCallShape(emcas: Spy<BoundExecuteModelCallAndSaveFn>): void {
@@ -115,7 +115,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -157,7 +157,8 @@ Deno.test(
       executeModelCallAndSave: emcas,
       enqueueRenderJob: enqueue,
     });
-    await prepareModelJob(deps, params, preparePayload);
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
     assertEmcasFirstCallShape(emcas);
     const first = emcas.calls[0];
     assertExists(first);
@@ -181,7 +182,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -266,7 +267,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -451,7 +452,7 @@ Deno.test(
       authToken: "jwt.contract",
       job,
       projectOwnerUserId: "owner-contract",
-      providerRow: buildAiProviderRow({ not_valid: true } as Json),
+      providerRow: buildAiProviderRow({ not_valid: true } as unknown as AiModelExtendedConfig),
       sessionData: buildDialecticSessionRow(),
     };
     const contractCompressionStrategy: ICompressionStrategy = async () => [];
@@ -502,10 +503,10 @@ Deno.test(
       job,
       projectOwnerUserId: "owner-contract",
       providerRow: buildAiProviderRow(
-        modelConfigToJson({
+        {
           ...buildExtendedModelFixture(),
           context_window_tokens: 50,
-        }),
+        },
       ),
       sessionData: buildDialecticSessionRow(),
     };
@@ -552,16 +553,12 @@ Deno.test(
     const longEncoded: Uint8Array = new TextEncoder().encode(longPrompt);
     const longDocBuffer: ArrayBuffer = new ArrayBuffer(longEncoded.byteLength);
     new Uint8Array(longDocBuffer).set(longEncoded);
-    const downloadFromStorage: DownloadFromStorageFn = createMockDownloadFromStorage({
-      mode: "success",
-      data: longDocBuffer,
-    });
     const mockSetup = createMockSupabaseClient("user-unit", {
       genericMockResults: {
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -569,27 +566,6 @@ Deno.test(
           select: () =>
             Promise.resolve({
               data: [buildTokenWalletRow({})],
-              error: null,
-            }),
-        },
-        dialectic_project_resources: {
-          select: () =>
-            Promise.resolve({
-              data: [
-                {
-                  id: "c1",
-                  project_id: "project-contract",
-                  session_id: "session-contract",
-                  iteration_number: 1,
-                  stage_slug: "thesis",
-                  resource_type: "rendered_document",
-                  storage_path:
-                    "project-contract/session_session-contract/iteration_1/1_thesis/documents",
-                  file_name: "model-contract_1_header_context.md",
-                  storage_bucket: "contract-bucket",
-                  created_at: new Date().toISOString(),
-                },
-              ],
               error: null,
             }),
         },
@@ -622,7 +598,7 @@ Deno.test(
     ];
     const replacementCompression: ICompressionStrategy = async () => [
       {
-        id: "c1",
+        id: "doc-1",
         content: "short",
         sourceType: "document",
         originalIndex: 0,
@@ -630,10 +606,21 @@ Deno.test(
         effectiveScore: 1,
       },
     ];
+    const contributionRowForResourceDocument: DialecticContributionRow = buildDialecticContributionRow();
+    const { document_relationships: _ignoredRelationships, ...contributionWithoutRelationships } =
+      contributionRowForResourceDocument;
+    const oversizedResourceDocument: SourceDocument = {
+      ...contributionWithoutRelationships,
+      id: "doc-1",
+      content: longPrompt,
+      document_key: FileType.HeaderContext,
+      stage_slug: "thesis",
+      type: "document",
+    };
     const preparePayload: PrepareModelJobPayload = {
       promptConstructionPayload: {
         conversationHistory: [],
-        resourceDocuments: [],
+        resourceDocuments: [oversizedResourceDocument],
         currentUserPrompt: "hi",
         source_prompt_resource_id: "source-prompt-resource-compress",
       },
@@ -668,7 +655,6 @@ Deno.test(
       executeModelCallAndSave: emcas,
       enqueueRenderJob: enqueue,
       countTokens,
-      downloadFromStorage,
       tokenWalletService: createMockTokenWalletService({
         getBalance: () => Promise.resolve("10000000"),
       }).instance,
@@ -698,7 +684,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -761,7 +747,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(extended))],
+              data: [buildAiProviderRow(extended)],
               error: null,
             }),
         },
@@ -827,7 +813,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -889,14 +875,14 @@ Deno.test(
 );
 
 Deno.test(
-  "prepareModelJob returns PrepareModelJobErrorReturn when gatherArtifacts cannot find a required document",
+  "prepareModelJob forwards payload resourceDocuments to ChatApiRequest.resourceDocuments",
   async () => {
     const mockSetup = createMockSupabaseClient("user-unit", {
       genericMockResults: {
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -906,15 +892,6 @@ Deno.test(
               data: [buildTokenWalletRow({})],
               error: null,
             }),
-        },
-        dialectic_project_resources: {
-          select: () => Promise.resolve({ data: [], error: null }),
-        },
-        dialectic_contributions: {
-          select: () => Promise.resolve({ data: [], error: null }),
-        },
-        dialectic_feedback: {
-          select: () => Promise.resolve({ data: [], error: null }),
         },
       },
     });
@@ -929,21 +906,28 @@ Deno.test(
       providerRow: buildDefaultAiProvidersRow(),
       sessionData: buildDialecticSessionRow(),
     };
-    const inputsRequired: InputRule[] = [
-      {
-        type: "document",
-        slug: "thesis",
-        required: true,
-        document_key: FileType.HeaderContext,
-      },
-    ];
-    const inputsRelevance: RelevanceRule[] = [];
+    const contributionRowForResourceDocument: DialecticContributionRow = buildDialecticContributionRow();
+    const { document_relationships: _ignoredRelationships, ...contributionWithoutRelationships } =
+      contributionRowForResourceDocument;
+    const payloadResourceDocument: SourceDocument = {
+      ...contributionWithoutRelationships,
+      id: "resource-doc-forwarded-1",
+      content: "payload resource content",
+      document_key: FileType.HeaderContext,
+      stage_slug: "thesis",
+      type: "document",
+    };
+    const inputsRequired: InputRule[] = [{ type: "document", slug: "thesis", required: true, document_key: FileType.HeaderContext }];
     const contractCompressionStrategy: ICompressionStrategy = async () => [];
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: buildPromptConstructionPayload(),
+      promptConstructionPayload: {
+        conversationHistory: [],
+        resourceDocuments: [payloadResourceDocument],
+        currentUserPrompt: "contract user prompt",
+        source_prompt_resource_id: "source-prompt-resource-id",
+      },
       compressionStrategy: contractCompressionStrategy,
       inputsRequired,
-      inputsRelevance,
     };
     const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
       contribution: buildDialecticContributionRow(),
@@ -959,12 +943,94 @@ Deno.test(
       enqueueRenderJob: enqueue,
     });
     const result: unknown = await prepareModelJob(deps, params, preparePayload);
-    assertEquals(isPrepareModelJobErrorReturn(result), true);
-    if (isPrepareModelJobErrorReturn(result)) {
-      assertEquals(result.error.message.length > 0, true);
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
+    assertEquals(emcas.calls.length, 1);
+    const first = emcas.calls[0];
+    assertExists(first);
+    const payloadArg: unknown = first.args[1];
+    if (!isExecuteModelCallAndSavePayload(payloadArg)) {
+      throw new Error("expected ExecuteModelCallAndSavePayload");
     }
-    assertEquals(emcas.calls.length, 0);
-    assertEquals(enqueue.calls.length, 0);
+    assertExists(payloadArg.chatApiRequest.resourceDocuments);
+    assertEquals(payloadArg.chatApiRequest.resourceDocuments?.length, 1);
+    assertEquals(payloadArg.chatApiRequest.resourceDocuments?.[0].id, "resource-doc-forwarded-1");
+  },
+);
+
+Deno.test(
+  "prepareModelJob does not query artifact DB tables during execution",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-unit", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+        dialectic_project_resources: {
+          select: () => {
+            throw new Error("artifact table query should not occur");
+          },
+        },
+        dialectic_contributions: {
+          select: () => {
+            throw new Error("artifact table query should not occur");
+          },
+        },
+        dialectic_feedback: {
+          select: () => {
+            throw new Error("artifact table query should not occur");
+          },
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId: "owner-contract",
+      providerRow: buildDefaultAiProvidersRow(),
+      sessionData: buildDialecticSessionRow(),
+    };
+    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: {
+        conversationHistory: [],
+        resourceDocuments: [],
+        currentUserPrompt: "contract user prompt",
+        source_prompt_resource_id: "source-prompt-resource-id",
+      },
+      compressionStrategy: contractCompressionStrategy,
+    };
+    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
+      contribution: buildDialecticContributionRow(),
+      needsContinuation: false,
+      stageRelationshipForStage: undefined,
+      documentKey: undefined,
+      fileType: FileType.HeaderContext,
+      storageFileType: FileType.ModelContributionRawJson,
+    }));
+    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      countTokens: () => 10,
+    });
+
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
   },
 );
 
@@ -976,7 +1042,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -1029,7 +1095,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+                data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -1096,7 +1162,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -1165,7 +1231,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -1246,7 +1312,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -1321,7 +1387,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },
@@ -1357,14 +1423,8 @@ Deno.test(
       enqueueRenderJob: enqueue,
     });
 
-    let threw: boolean = false;
-    try {
-      await prepareModelJob(deps, params, preparePayload);
-    } catch {
-      threw = true;
-    }
-
-    assertEquals(threw, true);
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
     assertEquals(emcas.calls.length, 0);
   },
 );
@@ -1377,7 +1437,7 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()))],
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
               error: null,
             }),
         },

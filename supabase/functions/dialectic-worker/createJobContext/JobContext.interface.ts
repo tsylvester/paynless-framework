@@ -1,16 +1,16 @@
 // supabase/functions/dialectic-worker/JobContext.interface.ts
 
-import { FinishReason, GetAiProviderAdapterFn, ILogger, ResourceDocument } from '../_shared/types.ts';
-import { IFileManager, ModelContributionUploadContext } from '../_shared/types/file_manager.types.ts';
-import { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
-import { DeleteFromStorageFn } from '../_shared/supabase_storage_utils.ts';
-import { IRagService } from '../_shared/services/rag_service.interface.ts';
-import { IIndexingService } from '../_shared/services/indexing_service.interface.ts';
-import { IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
-import { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
-import { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
-import { GetAiProviderConfigFn } from '../dialectic-service/dialectic.interface.ts';
-import { CountTokensFn } from '../_shared/types/tokenizer.types.ts';
+import { FinishReason, GetAiProviderAdapterFn, ILogger, ResourceDocument } from '../../_shared/types.ts';
+import { IFileManager, ModelContributionUploadContext } from '../../_shared/types/file_manager.types.ts';
+import { DownloadFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
+import { DeleteFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
+import { IRagService } from '../../_shared/services/rag_service.interface.ts';
+import { IIndexingService } from '../../_shared/services/indexing_service.interface.ts';
+import { IEmbeddingClient } from '../../_shared/services/indexing_service.interface.ts';
+import { ITokenWalletService } from '../../_shared/types/tokenWallet.types.ts';
+import { NotificationServiceType } from '../../_shared/types/notification.service.types.ts';
+import { GetAiProviderConfigFn } from '../../dialectic-service/dialectic.interface.ts';
+import { CountTokensFn } from '../../_shared/types/tokenizer.types.ts';
 import {
     GetSeedPromptForStageFn,
     PlanComplexStageFn,
@@ -24,25 +24,26 @@ import {
     DialecticRecipeStep,
     InputRule,
     SourceDocument,
-} from '../dialectic-service/dialectic.interface.ts';
-import { IPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
-import { GetExtensionFromMimeTypeFn } from '../_shared/path_utils.ts';
-import { ExtractSourceGroupFragmentFn } from '../_shared/utils/path_utils.ts';
-import { ShouldEnqueueRenderJobFn } from '../_shared/types/shouldEnqueueRenderJob.interface.ts';
-import { IDocumentRenderer } from '../_shared/services/document_renderer.interface.ts';
-import { GetGranularityPlannerFn } from '../dialectic-service/dialectic.interface.ts';
-import { Database } from '../types_db.ts';
+} from '../../dialectic-service/dialectic.interface.ts';
+import { IPromptAssembler } from '../../_shared/prompt-assembler/prompt-assembler.interface.ts';
+import { GetExtensionFromMimeTypeFn } from '../../_shared/path_utils.ts';
+import { ExtractSourceGroupFragmentFn } from '../../_shared/utils/path_utils.ts';
+import { ShouldEnqueueRenderJobFn } from '../../_shared/types/shouldEnqueueRenderJob.interface.ts';
+import { IDocumentRenderer } from '../../_shared/services/document_renderer.interface.ts';
+import { GetGranularityPlannerFn } from '../../dialectic-service/dialectic.interface.ts';
+import { Database } from '../../types_db.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { ValidatedCostRates } from '../_shared/utils/validateModelCostRates.ts';
+import { ValidatedCostRates } from '../../_shared/utils/validateModelCostRates.ts';
 import {
     DetermineContinuationParams,
     DetermineContinuationResult,
-} from '../_shared/utils/determineContinuation/determineContinuation.interface.ts';
-import { BuildUploadContextParams } from '../_shared/utils/buildUploadContext/buildUploadContext.interface.ts';
-import { DebitTokens } from '../_shared/utils/debitTokens.interface.ts';
-import { BoundExecuteModelCallAndSaveFn } from './executeModelCallAndSave/executeModelCallAndSave.interface.ts';
-import { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
-import { PrepareModelJobParams, PrepareModelJobPayload, PrepareModelJobReturn } from './prepareModelJob/prepareModelJob.interface.ts';
+} from '../../_shared/utils/determineContinuation/determineContinuation.interface.ts';
+import { BuildUploadContextParams } from '../../_shared/utils/buildUploadContext/buildUploadContext.interface.ts';
+import { DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
+import { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
+import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
+import { PrepareModelJobParams, PrepareModelJobPayload, PrepareModelJobReturn } from '../prepareModelJob/prepareModelJob.interface.ts';
+import { GatherArtifactsParams, GatherArtifactsPayload, GatherArtifactsReturn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 
 /**
  * Function type for continueJob orchestration utility.
@@ -226,8 +227,6 @@ export interface IExecuteModelCallContext {
  */
 export interface IPrepareModelJobContext {
     readonly logger: ILogger;
-    readonly pickLatest: PickLatestFn;
-    readonly downloadFromStorage: DownloadFromStorageFn;
     readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
     readonly countTokens: CountTokensFn;
     readonly tokenWalletService: ITokenWalletService;
@@ -274,6 +273,15 @@ export type BoundPrepareModelJobFn = (
 ) => Promise<PrepareModelJobReturn>;
 
 /**
+ * Pre-bound gatherArtifacts closure type.
+ * 2-arg closure constructed at composition root — deps are already bound.
+ */
+export type BoundGatherArtifactsFn = (
+    params: GatherArtifactsParams,
+    payload: GatherArtifactsPayload,
+) => Promise<GatherArtifactsReturn>;
+
+/**
  * Root context interface representing the complete dependency bundle.
  * Constructed once at application boundary and passed to processJob.
  * Extends IPlanJobContext and IRenderJobContext for plan/render fields.
@@ -305,6 +313,7 @@ export interface IJobContext extends
     readonly debitTokens: DebitTokens;
     readonly promptAssembler: IPromptAssembler;
     readonly getSeedPromptForStage: GetSeedPromptForStageFn;
+    readonly gatherArtifacts: BoundGatherArtifactsFn;
     // Top-level orchestration — pre-bound closure for job processing
     readonly prepareModelJob: BoundPrepareModelJobFn;
 }
@@ -339,6 +348,7 @@ export interface JobContextParams {
     readonly documentRenderer: IDocumentRenderer;
     readonly continueJob: ContinueJobFn;
     readonly retryJob: RetryJobFn;
+    readonly gatherArtifacts: BoundGatherArtifactsFn;
     readonly prepareModelJob: BoundPrepareModelJobFn;
     readonly debitTokens: DebitTokens;
     readonly pickLatest: PickLatestFn;

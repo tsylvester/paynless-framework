@@ -1,32 +1,33 @@
 // supabase/functions/dialectic-worker/JobContext.mock.ts
 
 import { JobContextParams } from './JobContext.interface.ts';
-import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
-import { MockRagService } from '../_shared/services/rag_service.mock.ts';
-import { MockIndexingService } from '../_shared/services/indexing_service.mock.ts';
-import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
-import { createDocumentRendererMock } from '../_shared/services/document_renderer.mock.ts';
-import { MockPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
-import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-import { MockLogger } from '../_shared/logger.mock.ts';
-import { createMockDownloadFromStorage } from '../_shared/supabase_storage_utils.mock.ts';
+import { MockFileManagerService } from '../../_shared/services/file_manager.mock.ts';
+import { MockRagService } from '../../_shared/services/rag_service.mock.ts';
+import { MockIndexingService } from '../../_shared/services/indexing_service.mock.ts';
+import { createMockTokenWalletService } from '../../_shared/services/tokenWalletService.mock.ts';
+import { createDocumentRendererMock } from '../../_shared/services/document_renderer.mock.ts';
+import { MockPromptAssembler } from '../../_shared/prompt-assembler/prompt-assembler.mock.ts';
+import { mockNotificationService } from '../../_shared/utils/notification.service.mock.ts';
+import { MockLogger } from '../../_shared/logger.mock.ts';
+import { createMockDownloadFromStorage } from '../../_shared/supabase_storage_utils.mock.ts';
 import { IJobContext } from './JobContext.interface.ts';
 import { createJobContext } from './createJobContext.ts';
-import { createMockFindSourceDocuments } from './findSourceDocuments.mock.ts';
-import { extractSourceGroupFragment } from '../_shared/utils/path_utils.ts';
-import { pickLatest } from '../_shared/utils/pickLatest.ts';
-import { applyInputsRequiredScope } from '../_shared/utils/applyInputsRequiredScope.ts';
-import { validateWalletBalance } from '../_shared/utils/validateWalletBalance.ts';
-import { validateModelCostRates } from '../_shared/utils/validateModelCostRates.ts';
-import { resolveFinishReason } from '../_shared/utils/resolveFinishReason.ts';
-import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';
-import { determineContinuation } from '../_shared/utils/determineContinuation/determineContinuation.ts';
-import { buildUploadContext } from '../_shared/utils/buildUploadContext/buildUploadContext.ts';
-import type { AdapterStreamChunk, ChatApiRequest } from '../_shared/types.ts';
+import { createMockFindSourceDocuments } from '../findSourceDocuments.mock.ts';
+import { extractSourceGroupFragment } from '../../_shared/utils/path_utils.ts';
+import { pickLatest } from '../../_shared/utils/pickLatest.ts';
+import { applyInputsRequiredScope } from '../../_shared/utils/applyInputsRequiredScope.ts';
+import { validateWalletBalance } from '../../_shared/utils/validateWalletBalance.ts';
+import { validateModelCostRates } from '../../_shared/utils/validateModelCostRates.ts';
+import { resolveFinishReason } from '../../_shared/utils/resolveFinishReason.ts';
+import { isIntermediateChunk } from '../../_shared/utils/isIntermediateChunk.ts';
+import { determineContinuation } from '../../_shared/utils/determineContinuation/determineContinuation.ts';
+import { buildUploadContext } from '../../_shared/utils/buildUploadContext/buildUploadContext.ts';
+import type { AdapterStreamChunk, ChatApiRequest } from '../../_shared/types.ts';
 import type { BoundPrepareModelJobFn } from './JobContext.interface.ts';
-import type { DebitTokens } from '../_shared/utils/debitTokens.interface.ts';
-import type { BoundExecuteModelCallAndSaveFn } from './executeModelCallAndSave/executeModelCallAndSave.interface.ts';
-import type { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
+import type { DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
+import type { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
+import type { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
+import type { BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 
 type JobContextParamsOverrides = { [K in keyof JobContextParams]?: JobContextParams[K] };
 
@@ -60,6 +61,12 @@ export function createMockBoundEnqueueRenderJob(): BoundEnqueueRenderJobFn {
     });
 }
 
+export function createMockBoundGatherArtifacts(): BoundGatherArtifactsFn {
+    return async () => ({
+        artifacts: [],
+    });
+}
+
 /**
  * Helper: Creates mock JobContextParams with all required fields
  * Uses existing mock services from the codebase
@@ -82,7 +89,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         error: new Error('mock debitTokens not implemented'),
         retriable: false,
     });
-
+    const boundGatherArtifacts: BoundGatherArtifactsFn = createMockBoundGatherArtifacts();
     const baseParams: JobContextParams = {
         logger: logger,
         fileManager: fileManager,
@@ -147,6 +154,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         isIntermediateChunk: isIntermediateChunk,
         determineContinuation: determineContinuation,
         buildUploadContext: buildUploadContext,
+        gatherArtifacts: boundGatherArtifacts,
     };
 
     if (!overrides) {

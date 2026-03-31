@@ -14,9 +14,9 @@ import {
     isIPlanJobContext,
     isIRenderJobContext,
     isIJobContext,
-} from './JobContext.type_guards.ts';
-import { createMockRootContext } from '../JobContext.mock.ts';
-import { createPlanJobContext, createRenderJobContext } from '../createJobContext.ts';
+} from './JobContext.guard.ts';
+import { createMockRootContext } from './JobContext.mock.ts';
+import { createPlanJobContext, createRenderJobContext } from './createJobContext.ts';
 
 describe('JobContexts Type Guards', () => {
     describe('isILoggerContext', () => {
@@ -242,25 +242,6 @@ describe('JobContexts Type Guards', () => {
             };
 
             assertEquals(isIPrepareModelJobContext(context), true);
-        });
-
-        it('returns false for object missing downloadFromStorage', () => {
-            const rootContext = createMockRootContext();
-            const context = {
-                logger: rootContext.logger,
-                pickLatest: rootContext.pickLatest,
-                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
-                countTokens: rootContext.countTokens,
-                tokenWalletService: rootContext.tokenWalletService,
-                validateWalletBalance: rootContext.validateWalletBalance,
-                validateModelCostRates: rootContext.validateModelCostRates,
-                ragService: rootContext.ragService,
-                embeddingClient: rootContext.embeddingClient,
-                executeModelCallAndSave: async () => ({}),
-                enqueueRenderJob: async () => ({}),
-            };
-
-            assertEquals(isIPrepareModelJobContext(context), false);
         });
 
         it('returns false for object missing ragService', () => {

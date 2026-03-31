@@ -1,22 +1,21 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database, Tables } from '../types_db.ts';
 import {
-  DialecticJobPayload,
   DialecticRecipeStep,
+  DialecticJobRow,
   DialecticSessionRow,
   FailedAttemptError,
   ModelProcessingResult,
-  Job,
   PromptConstructionPayload,
-  SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
-import { IJobContext } from './JobContext.interface.ts';
+import { IJobContext } from './createJobContext/JobContext.interface.ts';
 import type { PrepareModelJobParams, PrepareModelJobPayload } from './prepareModelJob/prepareModelJob.interface.ts';
 import { PrepareModelJobExecutionError } from './prepareModelJob/prepareModelJob.interface.ts';
 import {
   isPrepareModelJobErrorReturn,
   isPrepareModelJobSuccessReturn,
 } from './prepareModelJob/prepareModelJob.interface.guard.ts';
+import { isGatherArtifactsErrorReturn } from './gatherArtifacts/gatherArtifacts.guard.ts';
 import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";
 import { ContextWindowError } from '../_shared/utils/errors.ts';
@@ -26,15 +25,20 @@ import { isDialecticRecipeTemplateStep, isDialecticStageRecipeStep } from '../_s
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
+import { ResourceDocuments } from '../_shared/types.ts';
+import { isDialecticExecuteJobPayload } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
 
 export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,
-    job: Job & { payload: DialecticJobPayload },
+    job: DialecticJobRow,
     projectOwnerUserId: string,
     ctx: IJobContext,
     authToken: string,
 ) {
     const { id: jobId, attempt_count: currentAttempt, max_retries } = job;
+    if(!isRecord(job.payload) || !isDialecticExecuteJobPayload(job.payload)) {
+        throw new Error(`Job ${job.id} does not have a valid 'execute' payload.`);
+    }
     const {
         stageSlug,
         projectId,
@@ -112,7 +116,6 @@ export async function processSimpleJob(
         });
 
         const conversationHistory: Messages[] = [];
-        const resourceDocuments: SourceDocument[] = [];
 
         // Fetch domain-specific overlays for this stage's system prompt and selected domain
         const systemPromptId = system_prompts.id;
@@ -298,6 +301,15 @@ export async function processSimpleJob(
             routedUserPrompt = assembled.promptContent;
         }
 
+        const gatherResult = await ctx.gatherArtifacts(
+            { dbClient, projectId, sessionId, iterationNumber: sessionData.iteration_count },
+            { inputsRequired: resolvedRecipeStep.inputs_required },
+        );
+        if (isGatherArtifactsErrorReturn(gatherResult)) {
+            throw gatherResult.error;
+        }
+        const resourceDocuments: ResourceDocuments = gatherResult.artifacts;
+
         const promptConstructionPayload: PromptConstructionPayload = {
             conversationHistory,
             resourceDocuments,
@@ -387,11 +399,14 @@ export async function processSimpleJob(
                 }, projectOwnerUserId);
 
                 // User-facing historical notification
+                if(typeof job.payload.stageSlug !== 'string') {
+                    throw new Error('stageSlug is required in the payload.');
+                }
                 await ctx.notificationService.sendContributionFailedNotification({
                     type: 'contribution_generation_failed',
-                    sessionId: job.payload.sessionId ?? sessionId,
-                    stageSlug: job.payload.stageSlug ?? 'unknown',
-                    projectId: job.payload.projectId ?? '',
+                    sessionId: job.payload.sessionId,
+                    stageSlug: job.payload.stageSlug,
+                    projectId: job.payload.projectId,
                     error: {
                         code: 'CONTEXT_WINDOW_ERROR',
                         message: `Context window limit exceeded, message too large to send to the model and it cannot be compressed further: ${error.message}`,
@@ -438,11 +453,20 @@ export async function processSimpleJob(
                 }, projectOwnerUserId);
 
                 // User-facing historical notification
+                if(!isRecord(job.payload) || typeof job.payload.stageSlug !== 'string') {
+                    throw new Error('stageSlug is required in the payload.');
+                }
+                if(!isRecord(job.payload) || typeof job.payload.sessionId !== 'string') {
+                    throw new Error('sessionId is required in the payload.');
+                }
+                if(!isRecord(job.payload) || typeof job.payload.projectId !== 'string') {
+                    throw new Error('projectId is required in the payload.');
+                }
                 await ctx.notificationService.sendContributionFailedNotification({
                     type: 'contribution_generation_failed',
-                    sessionId: job.payload.sessionId ?? 'unknown',
-                    stageSlug: job.payload.stageSlug ?? 'unknown',
-                    projectId: job.payload.projectId ?? '',
+                    sessionId: job.payload.sessionId,
+                    stageSlug: job.payload.stageSlug,
+                    projectId: job.payload.projectId,
                     error: { code, message: userMessage },
                     job_id: jobId,
                 }, projectOwnerUserId);

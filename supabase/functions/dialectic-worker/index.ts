@@ -41,8 +41,8 @@ import { processRenderJob } from './processRenderJob.ts';
 import { isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
 import { renderDocument } from '../_shared/services/document_renderer.ts';
 import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
-import { IJobContext } from './JobContext.interface.ts';
-import { createJobContext } from './createJobContext.ts';
+import { IJobContext } from './createJobContext/JobContext.interface.ts';
+import { createJobContext } from './createJobContext/createJobContext.ts';
 import { findSourceDocuments } from './findSourceDocuments.ts';
 import { pauseJobsForNsf } from './pauseJobsForNsf.ts';
 import { assembleChunks } from '../_shared/utils/assembleChunks/assembleChunks.ts';
@@ -55,6 +55,8 @@ import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';
 import { determineContinuation } from '../_shared/utils/determineContinuation/determineContinuation.ts';
 import { buildUploadContext } from '../_shared/utils/buildUploadContext/buildUploadContext.ts';
 import { debitTokens } from '../_shared/utils/debitTokens.ts';
+import { BoundGatherArtifactsFn } from './gatherArtifacts/gatherArtifacts.interface.ts';
+import { gatherArtifacts } from './gatherArtifacts/gatherArtifacts.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -99,7 +101,8 @@ export async function createDialecticWorkerDeps(
   const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService });
   const promptAssembler = new PromptAssembler(adminClient, fileManager);
   const documentRenderer = { renderDocument };
-
+  const boundGatherArtifacts: BoundGatherArtifactsFn = (params, payload) =>
+    gatherArtifacts({ logger, pickLatest, downloadFromStorage }, params, payload);
   const boundEmcas: BoundExecuteModelCallAndSaveFn = (params, payload) =>
     executeModelCallAndSave(
       {
@@ -193,6 +196,7 @@ export async function createDialecticWorkerDeps(
     isIntermediateChunk,
     determineContinuation,
     buildUploadContext,
+    gatherArtifacts: boundGatherArtifacts,
   });
 }
 

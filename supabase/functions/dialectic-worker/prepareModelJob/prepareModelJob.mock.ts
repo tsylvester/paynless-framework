@@ -209,15 +209,10 @@ export function buildExtendedModelFixture(): AiModelExtendedConfig {
   };
 }
 
-export function modelConfigToJson(cfg: AiModelExtendedConfig): Json {
-  const serialized: unknown = JSON.parse(JSON.stringify(cfg));
-  if (!isJson(serialized)) {
-    throw new Error("Fixture model config must serialize to Json");
+export function buildAiProviderRow(config: AiModelExtendedConfig): Tables<"ai_providers"> {
+  if (!isJson(config)) {
+    throw new Error("Contract test config must serialize to Json");
   }
-  return serialized;
-}
-
-export function buildAiProviderRow(config: Json | null): Tables<"ai_providers"> {
   return {
     id: "model-contract",
     name: "Contract AI",
@@ -235,7 +230,7 @@ export function buildAiProviderRow(config: Json | null): Tables<"ai_providers"> 
 }
 
 export function buildDefaultAiProvidersRow(): Tables<"ai_providers"> {
-  return buildAiProviderRow(modelConfigToJson(buildExtendedModelFixture()));
+  return buildAiProviderRow(buildExtendedModelFixture());
 }
 
 export function buildDialecticContributionRow(): DialecticContributionRow {

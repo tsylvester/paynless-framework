@@ -46,6 +46,7 @@ import type {
 	ILogger,
 	Messages,
 	ServiceError,
+	ResourceDocuments,
 } from "../_shared/types.ts";
 import type {
 	DeconstructedPathInfo,
@@ -56,7 +57,7 @@ import type {
 	IJobContext,
 	IPlanJobContext,
 	IRenderJobContext,
-} from "../dialectic-worker/JobContext.interface.ts";
+} from "../dialectic-worker/createJobContext/JobContext.interface.ts";
 import type { Database, Json, Tables } from "../types_db.ts";
 
 export type DialecticStageRecipeEdge =
@@ -1503,7 +1504,7 @@ export interface PauseJobsForNsfDeps {
 export interface PromptConstructionPayload {
 	systemInstruction?: SystemInstruction;
 	conversationHistory: Messages[];
-	resourceDocuments: SourceDocument[];
+	resourceDocuments: ResourceDocuments;
 	currentUserPrompt: Prompt;
 	source_prompt_resource_id: string;
 	sourceContributionId?: string | null;

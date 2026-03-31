@@ -21,7 +21,7 @@ import type {
   IsIntermediateChunkFn,
   ResolveFinishReasonFn,
   RetryJobFn,
-} from '../JobContext.interface.ts';
+} from '../createJobContext/JobContext.interface.ts';
 
 export interface ExecuteModelCallAndSaveDeps {
   logger: ILogger;

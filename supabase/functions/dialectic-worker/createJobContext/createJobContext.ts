@@ -8,9 +8,8 @@ import {
     IPlanJobContext,
     IRenderJobContext,
 } from './JobContext.interface.ts';
-import { BoundExecuteModelCallAndSaveFn } from './executeModelCallAndSave/executeModelCallAndSave.interface.ts';
-import { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
-
+import { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
+import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 /**
  * Factory function to construct IJobContext at application boundary.
  * All fields are required and must be explicitly provided.
@@ -46,6 +45,7 @@ export function createJobContext(params: JobContextParams): IJobContext {
 
         promptAssembler: params.promptAssembler,
         getSeedPromptForStage: params.getSeedPromptForStage,
+        gatherArtifacts: params.gatherArtifacts,
 
         continueJob: params.continueJob,
         retryJob: params.retryJob,
@@ -113,8 +113,6 @@ export function createPrepareModelJobContext(
 ): IPrepareModelJobContext {
     return {
         logger: root.logger,
-        pickLatest: root.pickLatest,
-        downloadFromStorage: root.downloadFromStorage,
         applyInputsRequiredScope: root.applyInputsRequiredScope,
         countTokens: root.countTokens,
         tokenWalletService: root.tokenWalletService,

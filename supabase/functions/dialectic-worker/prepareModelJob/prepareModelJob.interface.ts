@@ -20,7 +20,7 @@ import type {
   ApplyInputsRequiredScopeFn,
   ValidateWalletBalanceFn,
   ValidateModelCostRatesFn,
-} from '../JobContext.interface.ts';
+} from '../createJobContext/JobContext.interface.ts';
 import type { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
 import type { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 

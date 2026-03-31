@@ -7,11 +7,11 @@ import {
   DialecticPlanJobPayload,
   IJobProcessors,
 } from '../dialectic-service/dialectic.interface.ts';
-import { IJobContext, IPlanJobContext, IRenderJobContext } from './JobContext.interface.ts';
+import { IJobContext, IPlanJobContext, IRenderJobContext } from './createJobContext/JobContext.interface.ts';
 import {
   createPlanJobContext,
   createRenderJobContext,
-} from './createJobContext.ts';
+} from './createJobContext/createJobContext.ts';
 
 // Narrow by row job_type only; router dispatches strictly by job.job_type
 function jobIsExecuteJob(

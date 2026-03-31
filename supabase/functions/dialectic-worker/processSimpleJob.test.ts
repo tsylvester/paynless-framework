@@ -4,9 +4,7 @@ import {
   assert,
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { spy, stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-import { Database, Tables, Json } from '../types_db.ts';
-import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
+import { Database } from '../types_db.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { 
   isDialecticExecuteJobPayload, 
@@ -17,14 +15,10 @@ import {
 import { processSimpleJob } from './processSimpleJob.ts';
 import { 
     DialecticJobRow, 
-    DialecticContributionRow, 
     DialecticJobPayload,
     DialecticExecuteJobPayload,
     DialecticRecipeTemplateStep,
-    DialecticStageRecipeStep,
     OutputRule,
-    InputRule,
-    RelevanceRule,
 } from '../dialectic-service/dialectic.interface.ts';
 import type {
     PrepareModelJobParams,
@@ -33,470 +27,28 @@ import type {
 } from './prepareModelJob/prepareModelJob.interface.ts';
 import {
     isPrepareModelJobErrorReturn,
-    isPrepareModelJobParams,
-    isPrepareModelJobPayload,
 } from './prepareModelJob/prepareModelJob.interface.guard.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { resetMockNotificationService, mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
-import { MockPromptAssembler, MOCK_ASSEMBLED_PROMPT } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
+import { MOCK_ASSEMBLED_PROMPT } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
 import { FileType, ModelContributionUploadContext } from '../_shared/types/file_manager.types.ts';
-import { createJobContext } from './createJobContext.ts';
-import { IJobContext, JobContextParams } from './JobContext.interface.ts';
-import { createMockJobContextParams } from './JobContext.mock.ts';
 import { AssembledPrompt, AssemblePromptOptions } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
-import { Messages } from '../_shared/types.ts';
-import { IPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
-import { IFileManager } from '../_shared/types/file_manager.types.ts';
-// Helper: wrap a PromptAssembler to forbid direct calls to legacy methods
-function wrapAssemblerForbidLegacy<T extends object>(assembler: T): T {
-  const forbidden = new Set(['gatherContext', 'render', 'gatherInputsForStage', 'gatherContinuationInputs']);
-  return new Proxy(assembler, {
-    get(target, prop, receiver) {
-      if (typeof prop === 'string' && forbidden.has(prop)) {
-        throw new Error(`Forbidden direct call to promptAssembler.${prop}`);
-      }
-      return Reflect.get(target, prop, receiver);
-    },
-  });
-}
-
-const mockPayload: Json = {
-  projectId: 'project-abc',
-  sessionId: 'session-456',
-  stageSlug: 'test-stage',
-  model_id: 'model-def',
-  iterationNumber: 1,
-  continueUntilComplete: false,
-  walletId: 'wallet-ghi',
-  user_jwt: 'jwt.token.here',
-  // Provide a resolvable recipe step by default so assembler is reached
-  planner_metadata: { recipe_step_id: 'step-1', recipe_template_id: 'template-123' },
-};
-
-if (!isDialecticJobPayload(mockPayload)) {
-  throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload.");
-}
-
-const defaultStepSlug = 'test-stage';
-
-// Define a type for our mock job for clarity
-const mockJob: DialecticJobRow = {
-  id: 'job-123',
-  session_id: 'session-456',
-  user_id: 'user-789',
-  stage_slug: 'test-stage',
-  iteration_number: 1,
-  payload: mockPayload,
-  status: 'pending',
-  attempt_count: 0,
-  max_retries: 3,
-  created_at: new Date().toISOString(),
-  parent_job_id: null,
-  results: null,
-  completed_at: null,
-  error_details: null,
-  started_at: null,
-  target_contribution_id: null,
-  prerequisite_job_id: null,
-  is_test_job: false,
-  job_type: 'PLAN',
-  idempotency_key: "idempotency-key-1",
-};
-
-const mockSessionData: Tables<'dialectic_sessions'> = {
-  id: 'session-456',
-  project_id: 'project-abc',
-  session_description: 'A mock session',
-  user_input_reference_url: null,
-  iteration_count: 1,
-  selected_model_ids: ['model-def'],
-  status: 'in-progress',
-  associated_chat_id: 'chat-789',
-  current_stage_id: 'stage-1',
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  viewing_stage_id: null,
-  idempotency_key: null,
-};
-
-const mockProviderData: Tables<'ai_providers'> = {
-    id: 'model-def',
-    provider: 'mock-provider',
-    name: 'Mock AI',
-    api_identifier: 'mock-ai-v1',
-    config: {},
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    description: null,
-    is_active: true,
-    is_default_embedding: false,
-    is_default_generation: false,
-    is_enabled: true,
-};
-
-const mockContribution: DialecticContributionRow = {
-    id: 'contrib-123',
-    session_id: 'session-456',
-    stage: 'test-stage',
-    iteration_number: 1,
-    model_id: 'model-def',
-    edit_version: 1,
-    is_latest_edit: true,
-    citations: null,
-    contribution_type: 'model_contribution_main',
-    created_at: new Date().toISOString(),
-    error: null,
-    file_name: 'test.txt',
-    mime_type: 'text/plain',
-    model_name: 'Mock AI',
-    original_model_contribution_id: null,
-    processing_time_ms: 100,
-    prompt_template_id_used: null,
-    raw_response_storage_path: null,
-    seed_prompt_url: null,
-    size_bytes: 100,
-    storage_bucket: 'test-bucket',
-    storage_path: 'test/path',
-    target_contribution_id: null,
-    tokens_used_input: 10,
-    tokens_used_output: 20,
-    updated_at: new Date().toISOString(),
-    user_id: 'user-789',
-    document_relationships: null,
-    is_header: false,
-    source_prompt_resource_id: null,
-};
-
-function createPrepareModelJobSuccessReturn(): PrepareModelJobSuccessReturn {
-    return {
-        contribution: mockContribution,
-        needsContinuation: false,
-        renderJobId: null,
-    };
-}
-
-function assertPrepareModelJobTwoArgCall(
-    callArgs: unknown[],
-): { params: PrepareModelJobParams; payload: PrepareModelJobPayload } {
-    if (callArgs.length !== 2) {
-        throw new Error(`prepareModelJob must receive exactly 2 arguments, got ${callArgs.length}`);
-    }
-    const rawParams: unknown = callArgs[0];
-    const rawPayload: unknown = callArgs[1];
-    if (!isPrepareModelJobParams(rawParams)) {
-        throw new Error('prepareModelJob first argument is not PrepareModelJobParams');
-    }
-    if (!isPrepareModelJobPayload(rawPayload)) {
-        throw new Error('prepareModelJob second argument is not PrepareModelJobPayload');
-    }
-    const params: PrepareModelJobParams = rawParams;
-    const payload: PrepareModelJobPayload = rawPayload;
-    return { params, payload };
-}
-
-const setupMockClient = (configOverrides: Record<string, any> = {}) => {
-    const mockProject: Tables<'dialectic_projects'> & { dialectic_domains: Pick<Tables<'dialectic_domains'>, 'id' | 'name' | 'description'> } = {
-        id: 'project-abc',
-        user_id: 'user-789',
-        project_name: 'Test Project',
-        initial_user_prompt: 'Test prompt',
-        selected_domain_id: 'domain-123',
-        status: 'active',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        initial_prompt_resource_id: null,
-        process_template_id: 'template-123',
-        repo_url: null,
-        selected_domain_overlay_id: null,
-        user_domain_overlay_values: null,
-        dialectic_domains: {
-            id: 'domain-123',
-            name: 'Test Domain',
-            description: 'A domain for testing',
-        },
-        idempotency_key: "idempotency-key-1",
-    };
-
-    const mockStage: Tables<'dialectic_stages'> & { system_prompts: { id: string; prompt_text: string } | null } = {
-        id: 'stage-1',
-        slug: 'test-stage',
-        display_name: 'Test Stage',
-        created_at: new Date().toISOString(),
-        default_system_prompt_id: 'prompt-123',
-        description: null,
-        expected_output_template_ids: [],
-        system_prompts: {
-            id: 'prompt-123',
-            prompt_text: 'This is the base system prompt for the test stage.',
-        },
-        active_recipe_instance_id: null,
-        recipe_template_id: 'template-123',
-        minimum_balance: 0,
-    };
-
-    const templateInputsRequired: InputRule[] = [
-        {
-            type: 'document',
-            slug: defaultStepSlug,
-            document_key: FileType.business_case,
-            required: true,
-        },
-        {
-            type: 'document',
-            slug: defaultStepSlug,
-            document_key: FileType.feature_spec,
-            required: true,
-        },
-        {
-            type: 'header_context',
-            slug: defaultStepSlug,
-            document_key: FileType.HeaderContext,
-            required: true,
-        },
-    ];
-
-    const templateInputsRelevance: RelevanceRule[] = [
-        { document_key: FileType.business_case, slug: defaultStepSlug, relevance: 1, type: 'document' },
-        { document_key: FileType.feature_spec, slug: defaultStepSlug, relevance: 0.85, type: 'document' },
-        { document_key: FileType.HeaderContext, slug: defaultStepSlug, relevance: 0.75 },
-    ];
-
-    const templateOutputsRequired: OutputRule = {
-        system_materials: {
-            stage_rationale: 'Align business case with feature spec for this iteration.',
-            agent_notes_to_self: 'Summarize the dialectic findings across artifacts.',
-            input_artifacts_summary: 'Business case + feature spec + header context.',
-            quality_standards: ['Tie evidence directly to documents', 'Preserve prior commitments'],
-            validation_checkpoint: ['All referenced artifacts exist', 'Instructions follow dependency order'],
-            document_order: ['business_case'],
-            current_document: 'business_case',
-        },
-        header_context_artifact: {
-            type: 'header_context',
-            document_key: 'header_context',
-            artifact_class: 'header_context',
-            file_type: 'json',
-        },
-        context_for_documents: [
-            {
-                document_key: FileType.business_case,
-                content_to_include: {
-                    focus: 'doc-centric deliverable summary',
-                    reasoning_chain: true,
-                },
-            },
-        ],
-        documents: [
-            {
-                artifact_class: 'rendered_document',
-                file_type: 'markdown',
-                document_key: FileType.business_case,
-                template_filename: 'business_case.md',
-                content_to_include: {
-                    enforce_style: 'doc-centric',
-                },
-            },
-        ],
-    };
-
-    const stageInputsRequired: InputRule[] = [
-        {
-            type: 'document',
-            slug: defaultStepSlug,
-            document_key: FileType.business_case,
-            required: true,
-        },
-        {
-            type: 'document',
-            slug: defaultStepSlug,
-            document_key: FileType.feature_spec,
-            required: true,
-        },
-        {
-            type: 'header_context',
-            slug: defaultStepSlug,
-            document_key: FileType.HeaderContext,
-            required: true,
-        },
-    ];
-
-    const stageInputsRelevance: RelevanceRule[] = [
-        { document_key: FileType.business_case, slug: defaultStepSlug, relevance: 1 },
-        { document_key: FileType.feature_spec, slug: defaultStepSlug, relevance: 0.85 },
-        { document_key: FileType.HeaderContext, slug: defaultStepSlug, relevance: 0.75 },
-    ];
-
-    const stageOutputsRequired: OutputRule = {
-        system_materials: {
-            stage_rationale: 'Align business case with feature spec for this iteration.',
-            agent_notes_to_self: 'Summarize the dialectic findings across artifacts.',
-            input_artifacts_summary: 'Business case + feature spec + header context.',
-            validation_checkpoint: ['All referenced artifacts exist', 'Instructions follow dependency order'],
-            document_order: ['business_case'],
-            current_document: 'business_case',
-        },
-        header_context_artifact: {
-            type: 'header_context',
-            document_key: 'header_context',
-            artifact_class: 'header_context',
-            file_type: 'json',
-        },
-        documents: [
-            {
-                artifact_class: 'rendered_document',
-                file_type: 'markdown',
-                document_key: FileType.business_case,
-                template_filename: 'business_case.md',
-            },
-        ],
-    };
-    
-    return createMockSupabaseClient('user-789', {
-        genericMockResults: {
-            dialectic_projects: {
-                select: () => Promise.resolve({ data: [mockProject], error: null }),
-            },
-            dialectic_stages: {
-                select: () => Promise.resolve({ data: [mockStage], error: null }),
-            },
-            dialectic_sessions: {
-                select: () => Promise.resolve({ data: [mockSessionData], error: null }),
-            },
-            ai_providers: {
-                select: () => Promise.resolve({ data: [mockProviderData], error: null }),
-            },
-            dialectic_contributions: {
-                select: () => Promise.resolve({ data: [mockContribution], error: null }),
-            },
-            // Default overlays present so happy-path flows proceed
-            domain_specific_prompt_overlays: {
-                select: () => Promise.resolve({
-                    data: [
-                        {
-                            overlay_values: {
-                                role: 'senior product strategist',
-                                stage_instructions: 'baseline',
-                                style_guide_markdown: '# Guide',
-                                expected_output_artifacts_json: '{}',
-                            },
-                        },
-                    ],
-                    error: null,
-                }),
-            },
-            // Provide default template step rows for recipe resolution by ID or by (template_id, step_slug)
-            dialectic_recipe_template_steps: {
-                select: (state: any) => {
-                    const defaultStep: DialecticRecipeTemplateStep = {
-                        id: 'step-1',
-                        template_id: 'template-123',
-                        step_number: 1,
-                        step_key: 'seed',
-                        step_slug: 'seed',
-                        step_name: 'Doc-centric execution step',
-                        step_description: 'Generate the main business case document.',
-                        job_type: 'EXECUTE',
-                        prompt_type: 'Turn',
-                        prompt_template_id: 'prompt-123',
-                        output_type: FileType.business_case,
-                        granularity_strategy: 'per_source_document',
-                        inputs_required: templateInputsRequired,
-                        inputs_relevance: templateInputsRelevance,
-                        outputs_required: templateOutputsRequired,
-                        parallel_group: null,
-                        branch_key: null,
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString(),
-                    };
-                    // Match by id
-                    const hasIdEq = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'id' && f.value === 'step-1');
-                    if (hasIdEq) {
-                        return Promise.resolve({ data: [defaultStep], error: null });
-                    }
-                    // Match by template_id and step_slug
-                    const hasTemplate = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'template_id' && f.value === 'template-123');
-                    const hasSlug = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'step_slug' && typeof f.value === 'string');
-                    if (hasTemplate && hasSlug) {
-                        return Promise.resolve({ data: [defaultStep], error: null });
-                    }
-                    return Promise.resolve({ data: [], error: null });
-                },
-            },
-            dialectic_stage_recipe_steps: {
-                select: (state: any) => {
-                    const defaultStageStep: DialecticStageRecipeStep = {
-                        id: 'stage-step-1',
-                        instance_id: 'instance-1',
-                        template_step_id: 'step-1',
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString(),
-                        step_key: 'seed',
-                        step_slug: 'seed',
-                        step_name: 'Doc-centric execution step',
-                        step_description: 'Generate the main business case document.',
-                        job_type: 'EXECUTE',
-                        prompt_type: 'Turn',
-                        output_type: FileType.business_case,
-                        granularity_strategy: 'per_source_document',
-                        inputs_required: stageInputsRequired,
-                        inputs_relevance: stageInputsRelevance,
-                        outputs_required: stageOutputsRequired,
-                        config_override: { temperature: 0.2 },
-                        object_filter: { branch_key: 'business_case' },
-                        output_overrides: { document_key: FileType.business_case },
-                        is_skipped: false,
-                        parallel_group: null,
-                        branch_key: null,
-                        prompt_template_id: 'prompt-123',
-                        execution_order: 1,
-                    };
-
-                    const filters = Array.isArray(state?.filters) ? state.filters : [];
-                    const matchesId = filters.some((f: any) => f.type === 'eq' && f.column === 'id' && f.value === defaultStageStep.id);
-                    if (matchesId) {
-                        return Promise.resolve({ data: [defaultStageStep], error: null });
-                    }
-
-                    const matchesInstance = filters.some((f: any) => f.type === 'eq' && f.column === 'instance_id' && f.value === defaultStageStep.instance_id);
-                    const matchesSlug = filters.some((f: any) => f.type === 'eq' && f.column === 'step_slug' && typeof f.value === 'string');
-                    if (matchesInstance && matchesSlug) {
-                        return Promise.resolve({ data: [defaultStageStep], error: null });
-                    }
-
-                    return Promise.resolve({ data: [], error: null });
-                },
-            },
-            ...configOverrides,
-        },
-    });
-};
-
-const getMockDeps = (overrideParams?: Partial<JobContextParams>): { promptAssembler: MockPromptAssembler, fileManager: MockFileManagerService, rootCtx: IJobContext } => {
-    const baseParams: JobContextParams = createMockJobContextParams({
-        prepareModelJob: async () => createPrepareModelJobSuccessReturn(),
-    });
-    const finalParams: JobContextParams = { ...baseParams, ...overrideParams };
-
-    const rootCtx = createJobContext(finalParams);
-
-    const promptAssemblerCandidate: IPromptAssembler = finalParams.promptAssembler;
-    const fileManagerCandidate: IFileManager = finalParams.fileManager;
-
-    if (!(promptAssemblerCandidate instanceof MockPromptAssembler)) {
-        throw new Error(
-            'processSimpleJob tests require promptAssembler to be MockPromptAssembler (subclass or proxy of it).',
-        );
-    }
-    if (!(fileManagerCandidate instanceof MockFileManagerService)) {
-        throw new Error('processSimpleJob tests require fileManager to be MockFileManagerService.');
-    }
-
-    const promptAssembler: MockPromptAssembler = promptAssemblerCandidate;
-    const fileManager: MockFileManagerService = fileManagerCandidate;
-
-    return { promptAssembler, fileManager, rootCtx };
-};
+import type {
+  GatherArtifactsErrorReturn,
+  GatherArtifactsSuccessReturn,
+} from './gatherArtifacts/gatherArtifacts.interface.ts';
+import {
+  mockPayload,
+  mockJob,
+  mockProviderData,
+  defaultStepSlug,
+  createPrepareModelJobSuccessReturn,
+  assertPrepareModelJobTwoArgCall,
+  setupMockClient,
+  getMockDeps,
+  buildProcessSimpleJobExecutePayload,
+} from './processSimpleJob.mock.ts';
 
 Deno.test('processSimpleJob - Happy Path', async (t) => {
     const { client: dbClient, clearAllStubs } = setupMockClient();
@@ -505,6 +57,9 @@ Deno.test('processSimpleJob - Happy Path', async (t) => {
     const executeSpy = spy(rootCtx, 'prepareModelJob');
 
     await t.step('should call the executor function with correct parameters', async () => {
+        if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+            throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+        }
         await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', rootCtx, 'auth-token');
 
         assertEquals(promptAssembler.assemble.calls.length, 1, 'Expected promptAssembler.assemble to be called once');
@@ -544,6 +99,9 @@ Deno.test('processSimpleJob - emits execute_started at EXECUTE job start', async
 
   const executeJob: typeof mockJob = { ...mockJob, job_type: 'EXECUTE' };
 
+  if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+    throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+  }
   await processSimpleJob(
     dbClient as unknown as SupabaseClient<Database>,
     { ...executeJob, payload: mockPayload },
@@ -569,30 +127,6 @@ Deno.test('processSimpleJob - emits execute_started at EXECUTE job start', async
   clearAllStubs?.();
 });
 
-Deno.test('processSimpleJob - does not call legacy promptAssembler methods directly', async () => {
-    const { client: dbClient, clearAllStubs } = setupMockClient();
-    const mockParams = createMockJobContextParams();
-    const wrappedAssembler = wrapAssemblerForbidLegacy(mockParams.promptAssembler);
-    const { rootCtx } = getMockDeps({ promptAssembler: wrappedAssembler });
-
-    let threw = false;
-    try {
-        await processSimpleJob(
-            dbClient as unknown as SupabaseClient<Database>,
-            { ...mockJob, payload: mockPayload },
-            'user-789',
-            rootCtx,
-            'auth-token',
-        );
-    } catch (_e) {
-        threw = true;
-    }
-    // Intended green behavior: should not attempt to call forbidden legacy methods
-    assertEquals(threw, false, 'processSimpleJob must not invoke legacy assembler methods directly');
-
-    clearAllStubs?.();
-});
-
 Deno.test('processSimpleJob - Failure with Retries Remaining', async (t) => {
     const { client: dbClient, clearAllStubs } = setupMockClient();
     const { rootCtx } = getMockDeps();
@@ -604,6 +138,9 @@ Deno.test('processSimpleJob - Failure with Retries Remaining', async (t) => {
     const retryJobSpy = spy(rootCtx, 'retryJob');
 
     await t.step('should call retryJob when the executor fails', async () => {
+        if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+            throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+        }
         await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', rootCtx, 'auth-token');
 
         assertEquals(retryJobSpy.calls.length, 1, 'Expected retryJob to be called exactly once');
@@ -625,6 +162,9 @@ Deno.test('processSimpleJob - Failure with No Retries Remaining', async (t) => {
     const jobWithNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
 
     await t.step('should mark job as failed after exhausting all retries', async () => {
+        if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+            throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+        }
         await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...jobWithNoRetries, payload: mockPayload }, 'user-789', rootCtx, 'auth-token');
 
         assertEquals(retryJobSpy.calls.length, 0, 'Expected retryJob NOT to be called when retries are exhausted');
@@ -657,6 +197,9 @@ Deno.test('processSimpleJob - emits job_failed document-centric notification on 
 
   let threw = false;
   try {
+    if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+    }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
       { ...jobWithNoRetries, payload: mockPayload },
@@ -698,6 +241,9 @@ Deno.test('processSimpleJob - emits execute_started and execute_completed when E
 
   const executeJob: typeof mockJob = { ...mockJob, job_type: 'EXECUTE' };
 
+  if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+    throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+  }
   await processSimpleJob(
     dbClient as unknown as SupabaseClient<Database>,
     { ...executeJob, payload: mockPayload },
@@ -742,6 +288,9 @@ Deno.test('processSimpleJob - emits internal and user-facing failure notificatio
     const jobWithNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
 
     await t.step('should send both internal and user-facing failure notifications', async () => {
+        if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+            throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+        }
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
             { ...jobWithNoRetries, payload: mockPayload },
@@ -777,6 +326,9 @@ Deno.test('processSimpleJob - ContextWindowError Handling', async (t) => {
     const retryJobSpy = spy(rootCtx, 'retryJob');
 
     await t.step('should fail the job immediately without retrying', async () => {
+        if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+            throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+        }
         await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', rootCtx, 'auth-token');
 
         assertEquals(retryJobSpy.calls.length, 0, 'Expected retryJob NOT to be called for a ContextWindowError');
@@ -800,6 +352,9 @@ Deno.test('processSimpleJob - renders prompt template and omits systemInstructio
 
     const executeSpy = spy(rootCtx, 'prepareModelJob');
 
+    if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+    }
     await processSimpleJob(
         dbClient as unknown as SupabaseClient<Database>,
         { ...mockJob, payload: mockPayload },
@@ -844,11 +399,10 @@ Deno.test('processSimpleJob - should assemble with sourceContributionId for a co
     });
     const { rootCtx, promptAssembler } = getMockDeps();
 
-    const continuationPayload: DialecticJobPayload = {
-        ...mockPayload,
+    const continuationPayload: DialecticExecuteJobPayload = buildProcessSimpleJobExecutePayload({
         target_contribution_id: continuationChunkId,
         stageSlug: stageSlug,
-    };
+    });
 
     if (!isJson(continuationPayload)) {
         throw new Error("Test setup failed: continuationPayload is not a valid Json");
@@ -889,6 +443,9 @@ Deno.test('processSimpleJob - should dispatch a correctly formed PromptConstruct
     const executeSpy = spy(rootCtx, 'prepareModelJob');
 
     // Act
+    if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+    }
     await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', rootCtx, 'auth-token');
 
     // Assert
@@ -962,6 +519,9 @@ Deno.test('processSimpleJob - uses file-backed initial prompt when column empty'
   
     const executeSpy = spy(rootCtx, 'prepareModelJob');
   
+    if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+    }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
       { ...mockJob, payload: mockPayload },
@@ -996,6 +556,9 @@ Deno.test('processSimpleJob - fails when stage overlays are missing (no render, 
   // Act
   let threw = false;
   try {
+    if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+    }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
       { ...mockJob, payload: mockPayload },
@@ -1040,10 +603,9 @@ Deno.test('processSimpleJob - forwards sourceContributionId for continuation upl
   const { rootCtx } = getMockDeps();
 
   const continuationContributionId = 'root-contrib-123';
-  const continuationPayload: DialecticJobPayload = {
-    ...mockPayload,
+  const continuationPayload: DialecticExecuteJobPayload = buildProcessSimpleJobExecutePayload({
     target_contribution_id: continuationContributionId,
-  };
+  });
 
   if (!isJson(continuationPayload)) {
     throw new Error('Test setup failed: continuationPayload is not valid Json.');
@@ -1090,23 +652,9 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
   const { rootCtx, fileManager } = getMockDeps();
 
   const continuationContributionId = 'root-contrib-456';
-  const continuationPayload: DialecticExecuteJobPayload = {
-    idempotencyKey: "idempotency-key-1",
-    projectId: 'project-abc',
-    sessionId: 'session-456',
-    stageSlug: 'test-stage',
-    model_id: 'model-def',
-    iterationNumber: 1,
-    continueUntilComplete: false,
-    walletId: 'wallet-ghi',
-    user_jwt: 'jwt.token.here',
-    planner_metadata: { recipe_step_id: 'step-1', recipe_template_id: 'template-123' },
+  const continuationPayload: DialecticExecuteJobPayload = buildProcessSimpleJobExecutePayload({
     prompt_template_id: 'prompt-123',
     output_type: FileType.business_case,
-    canonicalPathParams: {
-      contributionType: 'thesis',
-      stageSlug: 'test-stage',
-    },
     inputs: {
       header_context: 'resource-1',
     },
@@ -1117,7 +665,7 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
     isIntermediate: false,
     target_contribution_id: continuationContributionId,
     continuation_count: 1,
-  };
+  });
 
   if (!isJson(continuationPayload)) {
     throw new Error('Test setup failed: continuationPayload is not valid Json.');
@@ -1260,6 +808,9 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
 
   let threw = false;
   try {
+    if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+    }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
       { ...jobNoRetries, payload: mockPayload },
@@ -1311,10 +862,9 @@ Deno.test('processSimpleJob - preserves payload.user_jwt when transforming plan 
 
   const executeSpy = spy(rootCtx, 'prepareModelJob');
 
-  const planPayloadWithJwt = {
-    ...mockPayload,
+  const planPayloadWithJwt: DialecticExecuteJobPayload = buildProcessSimpleJobExecutePayload({
     user_jwt: 'jwt.token.here',
-  };
+  });
   if (!isJson(planPayloadWithJwt) || !isDialecticJobPayload(planPayloadWithJwt)) {
     throw new Error('Test setup failed: planPayloadWithJwt invalid');
   }
@@ -1350,15 +900,9 @@ Deno.test('processSimpleJob - missing user_jwt fails early and does not call exe
   const { rootCtx } = getMockDeps();
   const executeSpy = spy(rootCtx, 'prepareModelJob');
 
-  const planPayloadNoJwt = {
-    projectId: 'project-abc',
-    sessionId: 'session-456',
-    stageSlug: 'test-stage',
-    model_id: 'model-def',
-    iterationNumber: 1,
-    continueUntilComplete: false,
-    walletId: 'wallet-ghi',
-  } as DialecticJobPayload;
+  const planPayloadNoJwt: DialecticExecuteJobPayload = buildProcessSimpleJobExecutePayload({
+    user_jwt: '',
+  });
   if (!isJson(planPayloadNoJwt) || !isDialecticJobPayload(planPayloadNoJwt)) {
     throw new Error('Test setup failed: planPayloadNoJwt invalid');
   }
@@ -1397,6 +941,9 @@ Deno.test('processSimpleJob - Wallet missing is immediate failure (no retry)', a
   // Act
   let threw = false;
   try {
+    if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+    }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
       { ...mockJob, payload: mockPayload },
@@ -1459,6 +1006,9 @@ Deno.test('processSimpleJob - Preflight dependency missing is immediate failure 
   // Act
   let threw = false;
   try {
+    if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+    }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
       { ...mockJob, payload: mockPayload },
@@ -1571,6 +1121,9 @@ Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_r
   const executeSpy = spy(rootCtx, 'prepareModelJob');
 
   // Act
+  if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+    throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+  }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
       { ...mockJob, payload: mockPayload },
@@ -1631,6 +1184,9 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
 
         const executeSpy = spy(rootCtx, 'prepareModelJob');
 
+        if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+            throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+        }
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
             { ...mockJob, payload: mockPayload },
@@ -1660,6 +1216,9 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
 
         const executeSpy = spy(rootCtx, 'prepareModelJob');
 
+        if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+            throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+        }
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
             { ...mockJob, payload: mockPayload },
@@ -1690,6 +1249,9 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
 
         const executeSpy = spy(rootCtx, 'prepareModelJob');
 
+        if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+            throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+        }
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
             { ...mockJob, payload: mockPayload },
@@ -1723,6 +1285,9 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
 
         const executeSpy1 = spy(ctx1, 'prepareModelJob');
 
+        if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+            throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+        }
         await processSimpleJob(
             dbClient1 as unknown as SupabaseClient<Database>,
             { ...mockJob, payload: mockPayload },
@@ -1784,6 +1349,9 @@ Deno.test('processSimpleJob - INSUFFICIENT_FUNDS from prepareModelJob PrepareMod
     const retryJobSpy = spy(rootCtx, 'retryJob');
     let threw = false;
     try {
+        if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+            throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+        }
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
             { ...mockJob, payload: mockPayload },
@@ -1809,5 +1377,138 @@ Deno.test('processSimpleJob - INSUFFICIENT_FUNDS from prepareModelJob PrepareMod
     assertExists(failedUpdate);
     assertEquals(threw, true);
     prepareStub.restore();
+    clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - gatherArtifacts is called after promptAssembler.assemble resolves', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient();
+    const { rootCtx, promptAssembler } = getMockDeps();
+    const callOrder: string[] = [];
+
+    promptAssembler.assemble = spy(
+        async (_options: AssemblePromptOptions): Promise<AssembledPrompt> => {
+            callOrder.push('assemble');
+            return MOCK_ASSEMBLED_PROMPT;
+        },
+    );
+    const gatherStub = stub(rootCtx, 'gatherArtifacts', async () => {
+        callOrder.push('gatherArtifacts');
+        const result: GatherArtifactsSuccessReturn = { artifacts: [] };
+        return result;
+    });
+    const prepareSpy = spy(rootCtx, 'prepareModelJob');
+
+    if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+    }
+    await processSimpleJob(
+        dbClient as unknown as SupabaseClient<Database>,
+        { ...mockJob, payload: mockPayload },
+        'user-789',
+        rootCtx,
+        'auth-token',
+    );
+
+    assertEquals(gatherStub.calls.length, 1, 'Expected gatherArtifacts to be called once');
+    assertEquals(prepareSpy.calls.length, 1, 'Expected prepareModelJob to be called once');
+    assertEquals(callOrder.length >= 2, true, 'Expected assemble and gatherArtifacts call ordering to be captured');
+    assertEquals(callOrder[0], 'assemble');
+    assertEquals(callOrder[1], 'gatherArtifacts');
+
+    gatherStub.restore();
+    clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - gatherArtifacts success flows artifacts into prepareModelJob promptConstructionPayload.resourceDocuments', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient();
+    const { rootCtx } = getMockDeps();
+    const gatheredArtifacts: GatherArtifactsSuccessReturn = {
+        artifacts: [
+            {
+                id: 'artifact-1',
+                content: 'artifact content',
+                document_key: FileType.business_case,
+                stage_slug: 'seed',
+                type: 'document',
+            },
+        ],
+    };
+
+    const gatherStub = stub(rootCtx, 'gatherArtifacts', async () => {
+        return gatheredArtifacts;
+    });
+    const prepareSpy = spy(rootCtx, 'prepareModelJob');
+
+    if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+    }
+    await processSimpleJob(
+        dbClient as unknown as SupabaseClient<Database>,
+        { ...mockJob, payload: mockPayload },
+        'user-789',
+        rootCtx,
+        'auth-token',
+    );
+
+    assertEquals(gatherStub.calls.length, 1, 'Expected gatherArtifacts to be called once');
+    assertEquals(prepareSpy.calls.length, 1, 'Expected prepareModelJob to be called once');
+    const { payload: preparePayload } = assertPrepareModelJobTwoArgCall(prepareSpy.calls[0].args);
+    assertEquals(
+        preparePayload.promptConstructionPayload.resourceDocuments,
+        gatheredArtifacts.artifacts,
+        'Expected gathered artifacts to be forwarded to prepareModelJob prompt payload',
+    );
+
+    gatherStub.restore();
+    clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - gatherArtifacts required-document error skips prepareModelJob and enters retry path', async () => {
+    resetMockNotificationService();
+    const { client: dbClient, clearAllStubs } = setupMockClient();
+    const { rootCtx } = getMockDeps();
+    const gatherErrorResult: GatherArtifactsErrorReturn = {
+        error: new Error(
+            "Required rendered document for input rule type 'document' with stage 'seed' and document_key 'business_case' was not found in dialectic_project_resources.",
+        ),
+        retriable: false,
+    };
+    const gatherStub = stub(rootCtx, 'gatherArtifacts', async () => {
+        return gatherErrorResult;
+    });
+    const prepareSpy = spy(rootCtx, 'prepareModelJob');
+    const retrySpy = spy(rootCtx, 'retryJob');
+
+    let threw = false;
+    try {
+        if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
+            throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
+        }
+        await processSimpleJob(
+            dbClient as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: mockPayload },
+            'user-789',
+            rootCtx,
+            'auth-token',
+        );
+    } catch (_e) {
+        threw = true;
+    }
+
+    assertEquals(gatherStub.calls.length, 1, 'Expected gatherArtifacts to be called once');
+    assertEquals(
+        prepareSpy.calls.length,
+        0,
+        'prepareModelJob must not be called when gatherArtifacts returns an error',
+    );
+    assertEquals(
+        retrySpy.calls.length,
+        1,
+        'gatherArtifacts required-document errors should enter existing retry classification flow',
+    );
+    assertEquals(threw, false);
+
+    gatherStub.restore();
+    retrySpy.restore();
     clearAllStubs?.();
 });
