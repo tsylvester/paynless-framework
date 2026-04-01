@@ -392,7 +392,19 @@
 
   * `[ ]`   Each requirement maps to code paths
 
-### 10. External Boundary
+### 10. Simulation
+
+* `[ ]`   `[function].mock.ts`
+  * `[ ]`   Provide controllable implementations of:
+    * All external interactions
+
+  * `[ ]`   Must conform to:
+    * interface
+    * interaction.spec
+
+  * `[ ]`   No new behavior introduced beyond spec
+
+### 11. External Boundary
 
 * `[ ]`   `[function].provides.ts`
   * `[ ]`   Declare:
@@ -405,18 +417,6 @@
 
   * `[ ]`   Enforce:
     * No external access bypasses this file
-
-### 11. Simulation (NOT specification)
-
-* `[ ]`   `[function].mock.ts`
-  * `[ ]`   Provide controllable implementations of:
-    * All external interactions
-
-  * `[ ]`   Must conform to:
-    * interface
-    * interaction.spec
-
-  * `[ ]`   No new behavior introduced beyond spec
 
 ### 12. Edge Validation
 

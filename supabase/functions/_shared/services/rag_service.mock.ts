@@ -1,6 +1,7 @@
 // supabase/functions/_shared/services/rag_service.mock.ts
 import type { IRagService, IRagContextResult, IRagSourceDocument } from './rag_service.interface.ts';
 import type { AiModelExtendedConfig } from '../types.ts';
+import type { RelevanceRule } from '../../dialectic-service/dialectic.interface.ts';
 import { RagServiceError } from '../utils/errors.ts';
 
 export interface MockRagServiceConfig {
@@ -29,6 +30,8 @@ export class MockRagService implements IRagService {
         _sourceDocuments: IRagSourceDocument[],
         _modelConfig: AiModelExtendedConfig,
         _sessionId: string,
+        _stageSlug: string,
+        _inputsRelevance: RelevanceRule[],
     ): Promise<IRagContextResult> {
         if (this.config.shouldThrowError) {
             return {

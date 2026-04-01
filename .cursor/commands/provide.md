@@ -1,0 +1,1 @@
+Write the provider file. It must export every symbol from the folder that a consumer will need - interfaces, guards, functions, mocks. 

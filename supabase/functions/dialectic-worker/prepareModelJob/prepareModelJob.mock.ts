@@ -17,8 +17,6 @@ import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
 import { createMockTokenWalletService } from "../../_shared/services/tokenWalletService.mock.ts";
 import type { IEmbeddingClient } from "../../_shared/services/indexing_service.interface.ts";
 import type {
-  CountTokensDeps,
-  CountableChatPayload,
   CountTokensFn,
 } from "../../_shared/types/tokenizer.types.ts";
 import type { Json, Tables } from "../../types_db.ts";
@@ -44,6 +42,9 @@ import type {
   PrepareModelJobSuccessReturn,
 } from "./prepareModelJob.interface.ts";
 import type { ITokenWalletService } from "../../_shared/types/tokenWallet.types.ts";
+import { EmbeddingClient } from "../../_shared/services/indexing_service.ts";
+import { mockOpenAiAdapter } from "../../_shared/ai_service/openai_adapter.mock.ts";
+import { createMockCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
 
 export type PrepareModelJobDepsOverrides = {
   executeModelCallAndSave: BoundExecuteModelCallAndSaveFn;
@@ -74,18 +75,6 @@ export type CreatePrepareModelJobMockOptions = {
   needsContinuation?: boolean;
   /** Default success only: `renderJobId` (defaults to `null`). */
   renderJobId?: string | null;
-};
-
-const defaultCountTokens: CountTokensFn = (
-  _deps: CountTokensDeps,
-  payload: CountableChatPayload,
-  _modelConfig: AiModelExtendedConfig,
-): number => {
-  const fromMessage: string = typeof payload.message === "string" ? payload.message : "";
-  if (fromMessage.length > 30000) {
-    return 200000;
-  }
-  return 100;
 };
 
 function defaultMockContribution(): DialecticContributionRow {
@@ -306,15 +295,10 @@ export function buildPrepareModelJobDeps(
   const tokenWalletService: ITokenWalletService = overrides.tokenWalletService !== undefined
     ? overrides.tokenWalletService
     : createMockTokenWalletService().instance;
-  const embeddingClient: IEmbeddingClient = {
-    getEmbedding: async () => ({
-      embedding: [],
-      usage: { prompt_tokens: 0, total_tokens: 0 },
-    }),
-  };
+  const embeddingClient: IEmbeddingClient = new EmbeddingClient(mockOpenAiAdapter);
   const countTokens: CountTokensFn = overrides.countTokens !== undefined
     ? overrides.countTokens
-    : defaultCountTokens;
+    : createMockCountTokens();
   return {
     logger,
     pickLatest,

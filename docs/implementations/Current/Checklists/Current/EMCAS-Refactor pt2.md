@@ -279,14 +279,14 @@ Of the three fetches against the same artifact data, two fetch the same document
 
 #### 4. Contract Definition
 
-*   `[✅] ` `gatherArtifacts.interface.test.ts`
-    *   `[✅] ` Valid: `inputsRequired` undefined → `isGatherArtifactsSuccessReturn(result)` true; `result.artifacts` is `[]`
-    *   `[✅] ` Valid: `inputsRequired` empty array → `isGatherArtifactsSuccessReturn(result)` true; `result.artifacts` is `[]`
-    *   `[✅] ` Valid: `document` rule with DB result and storage content → `isGatherArtifactsSuccessReturn(result)` true; `result.artifacts[0]` has `{ id, content, document_key, stage_slug, type: 'document' }`
-    *   `[✅] ` Valid: optional rule (`required === false`) with no DB result → `isGatherArtifactsSuccessReturn(result)` true; `result.artifacts` is `[]`
-    *   `[✅] ` Invalid: required rule with no DB result → `isGatherArtifactsErrorReturn(result)` true; `result.retriable` is `false`
-    *   `[✅] ` Invalid: required rule with storage download failure → `isGatherArtifactsErrorReturn(result)` true
-    *   `[✅] ` Valid: two rules resolving to same artifact `id` → `isGatherArtifactsSuccessReturn(result)` true; `result.artifacts` has one entry
+*   `[ ]` `gatherArtifacts.interface.test.ts` — raw structural assertions only; NO type guard imports; proves the contract shape that guards will later enforce
+    *   `[ ]` Valid: `inputsRequired` undefined → result has `artifacts` field (array, length 0); no `error` field
+    *   `[ ]` Valid: `inputsRequired` empty array → result has `artifacts` field (array, length 0); no `error` field
+    *   `[ ]` Valid: `document` rule with DB result and storage content → result has `artifacts` field; `result.artifacts[0]` has `{ id, content, document_key, stage_slug, type: 'document' }`; no `error` field
+    *   `[ ]` Valid: optional rule (`required === false`) with no DB result → result has `artifacts` field (array, length 0); no `error` field
+    *   `[ ]` Invalid: required rule with no DB result → result has `error` field; `result.retriable` is `false`; no `artifacts` field
+    *   `[ ]` Invalid: required rule with storage download failure → result has `error` field; no `artifacts` field
+    *   `[ ]` Valid: two rules resolving to same artifact `id` → result has `artifacts` field (array, length 1); no `error` field
 
 #### 5. Interaction Semantics
 
@@ -658,12 +658,660 @@ Of the three fetches against the same artifact data, two fetch the same document
 
 These are the largest internal extractions. They're lower priority because they don't gate the timeout fix, but they complete the decomposition of `prepareModelJob` into focused modules.
 
-*   `[ ]` **3.1 Extract `calculateAffordability`** — non-oversized affordability checks (current lines ~503-571)
-*   `[ ]` **3.2 Extract `calculateAffordabilityPreflight`** — compression affordability preflight with iterative solver (current lines ~596-720)
-*   `[ ]` **3.3 Extract `compressPrompt`** — the RAG compression loop with live balance tracking (current lines ~722-961)
-*   `[ ]` **3.4** ~~Extract `gatherArtifacts`~~ — completed in Phase 2.1; no action needed here
-*   `[ ]` **3.5 Integration test: all tests pass**
-*   `[ ]` **3.6 Commit: `refactor(BE): extract affordability and compression from prepareModelJob`**
+*   `[✅] ` **3.1 Extract `compressPrompt`** — RAG compression loop with live wallet balance tracking and post-compression affordability verification (current lines ~362–370, ~439–665 of `prepareModelJob.ts`)
+*   `[ ]` **3.2 Extract `calculateAffordability`** — unified affordability gate: non-oversized path (lines ~259–304), oversized preflight with iterative solver (lines ~327–437), delegates to `compressPrompt` on oversized path
+*   `[ ]` **3.3 Update `createJobContext`** — bind `compressPrompt` and `calculateAffordability`; add `calculateAffordability` to `IPrepareModelJobContext`
+*   `[ ]` **3.4 Update `prepareModelJob`** — replace inline affordability/compression zones with single `deps.calculateAffordability` call; remove redundant deps
+*   `[ ]` **3.5 Update `index.ts`** — wire new functions into `createPrepareModelJobContext`
+*   `[ ]` **3.6 Integration test: all tests pass**
+*   `[ ]` **3.7 Commit: `refactor(BE): extract affordability and compression from prepareModelJob`**
+
+
+*   `[✅] ` [BE] `dialectic-worker/compressPrompt` **Extract `compressPrompt` as a standalone module: RAG compression loop with live wallet balance tracking and post-compression affordability verification**
+
+#### 1. Intent & Position
+
+*   `[✅] `   `objective`
+    *   `[✅] `   Define the *problem being solved*: the oversized-prompt block (~lines 439–665 of `prepareModelJob.ts`, plus the document-identity guard at lines 362–370) is a ~230-line inline async block. It captures `currentBalanceTokens`, `walletBalance`, `finalTargetThreshold`, `ragService`, `embeddingClient`, `tokenWalletService`, `countTokens`, `compressionStrategy`, `resourceDocuments`, `workingHistory`, `currentUserPrompt`, `chatApiRequest`, `extendedModelConfig`, `inputRate`, and `outputRate` from the enclosing scope. It cannot be unit-tested in isolation.
+    *   `[✅] `   Separate:
+        *   Functional goals: (a) validate document identity on every resource document; (b) validate `provider_max_input_tokens` and `context_window_tokens` are defined; (c) iteratively call `ragService.getContextForModel` on each candidate until `currentTokenCount <= finalTargetThreshold`, debiting the wallet per RAG call and tracking `currentBalanceTokens` in real time; (d) enforce message-role alternation after each step; (e) after the loop, verify the compressed prompt still fits the model window; (f) compute `getMaxOutputTokens` from `currentBalanceTokens` (the real post-compression balance), run post-compression window checks and NSF check against `walletBalance`; (g) set `max_tokens_to_generate` on the final `chatApiRequest`; (h) return updated `ChatApiRequest`, `resolvedInputTokenCount`, and `resourceDocuments`
+        *   Non-functional constraints: already-indexed candidates (present in `dialectic_memory`) are skipped; wallet debits use idempotency keys `rag:{jobId}:{victimId}`; post-loop `ContextWindowError` if still oversized; post-compression NSF if estimated total exceeds `walletBalance`
+    *   `[✅] `   Each goal is atomic and testable
+
+*   `[✅] `   `role`
+    *   `[✅] `   Role: prompt compression executor with live wallet management — owns the RAG loop, per-candidate wallet debits, real-time balance tracking, post-compression affordability verification, and `max_tokens_to_generate` computation
+    *   `[✅] `   Why appropriate: compression costs tokens; only the compressor knows the real post-compression balance because it tracks each debit as it happens; the post-compression affordability check uses the real balance, not the preflight estimate, so it must live here
+    *   `[✅] `   Must NOT: run pre-compression affordability or preflight checks (those belong in `calculateAffordability`), query artifact tables, perform the model call, or save contributions
+
+*   `[✅] `   `module`
+    *   `[✅] `   Bounded context: RAG-based prompt compression and post-compression budget verification for dialectic jobs
+    *   `[✅] `   Inside boundary: document-identity validation, model config field validation (`provider_max_input_tokens`, `context_window_tokens`), `computeAllowedInput` closure, candidate queue iteration, `dialectic_memory` indexed-ID batch lookup, `ragService.getContextForModel`, wallet debit via `tokenWalletService.recordTransaction`, `currentBalanceTokens` tracking, history alternation enforcement, token recount, post-loop window validation, post-compression `getMaxOutputTokens` / window checks / NSF check, `max_tokens_to_generate` assignment
+    *   `[✅] `   Outside boundary: pre-compression affordability preflight (iterative solver, rationality checks), candidate sourcing strategy (`compressionStrategy` is injected), model invocation, contribution saving
+
+#### 2. Dependencies & Injection
+
+*   `[✅] `   `deps`
+    *   `[✅] `   `ILogger` — `_shared/types.ts` — cross-cutting — logging (replaces `console.log` from source)
+    *   `[✅] `   `IRagService` — `_shared/services/rag_service.interface.ts` — infrastructure — `getContextForModel`
+    *   `[✅] `   `IEmbeddingClient` — `_shared/services/indexing_service.interface.ts` — infrastructure — passed to `compressionStrategy`
+    *   `[✅] `   `ITokenWalletService` — `_shared/types/tokenWallet.types.ts` — infrastructure — `recordTransaction` for per-candidate debit
+    *   `[✅] `   `CountTokensFn` — `_shared/types/tokenizer.types.ts` — utility — recount after each compression step and final recount
+    *   `[✅] `   Confirm: no reverse dependencies; no lateral layer violations
+
+*   `[✅] `   `context_slice`
+    *   `[✅] `   `CompressPromptDeps { logger: ILogger; ragService: IRagService; embeddingClient: IEmbeddingClient; tokenWalletService: ITokenWalletService; countTokens: CountTokensFn }` — all fields sourced from root context and passed by `calculateAffordability` when it binds `compressPrompt`; no new deps required on the root context
+
+#### 3. Contract Definition
+
+*   `[✅] `   `compressPrompt.interface.test.ts` — raw structural assertions only; NO type guard imports; proves the contract shape that guards will later enforce
+    *   `[✅] `   Valid: single candidate, indexed → skipped; loop exits; result has `resolvedInputTokenCount` (number, equals initial); `chatApiRequest` present; no `error` field
+    *   `[✅] `   Valid: single candidate, not indexed, compression reduces tokens below threshold → result has `chatApiRequest.resourceDocuments` with compressed content; `chatApiRequest.max_tokens_to_generate` is a number > 0
+    *   `[✅] `   Valid: no candidates → loop does not execute; result has `chatApiRequest` unchanged from input with `max_tokens_to_generate` set from initial balance
+    *   `[✅] `   Invalid: resource document missing `document_key` / `type` / `stage_slug` → result has `error` field; `result.error.message` contains "document identity"; `result.retriable` is `false`; no `chatApiRequest` field
+    *   `[✅] `   Invalid: `provider_max_input_tokens` undefined → result has `error` field; `result.retriable` is `false`
+    *   `[✅] `   Invalid: `context_window_tokens` undefined → result has `error` field; `result.retriable` is `false`
+    *   `[✅] `   Invalid: `ragResult.error` is set → result has `error` field; error propagated; `result.retriable` is `false`
+    *   `[✅] `   Invalid: `ragResult.context` is empty/null → result has `error` field; `result.error.message` contains "RAG context is empty"; `result.retriable` is `false`
+    *   `[✅] `   Invalid: after exhausting candidates, `currentTokenCount > finalTargetThreshold` → result has `error` field; `result.error` is `ContextWindowError`; `result.retriable` is `false`
+    *   `[✅] `   Invalid: `recordTransaction` throws → result has `error` field; `result.error.message` contains "Insufficient funds for RAG operation"; `result.retriable` is `false`
+    *   `[✅] `   Invalid: post-compression `allowedInputPost <= 0` → result has `error` field; `result.error` is `ContextWindowError`; `result.retriable` is `false`
+    *   `[✅] `   Invalid: post-compression `finalTokenCount > allowedInputPost` → result has `error` field; `result.error` is `ContextWindowError`; `result.retriable` is `false`
+    *   `[✅] `   Invalid: post-compression `estimatedTotalCost > walletBalance` → result has `error` field; `result.error.message` contains "Insufficient funds"; `result.retriable` is `false`
+
+#### 4. Structural Boundary
+
+*   `[✅] `   `compressPrompt.interface.ts`
+    *   `[✅] `   `CompressPromptDeps`: `{ logger: ILogger; ragService: IRagService; embeddingClient: IEmbeddingClient; tokenWalletService: ITokenWalletService; countTokens: CountTokensFn }`
+    *   `[✅] `   `CompressPromptParams`: `{ dbClient: SupabaseClient<Database>; jobId: string; projectOwnerUserId: string; sessionId: string; stageSlug: string; walletId: string; extendedModelConfig: AiModelExtendedConfig; inputsRelevance: RelevanceRule[]; inputRate: number; outputRate: number; isContinuationFlowInitial: boolean; finalTargetThreshold: number; balanceAfterCompression: number; walletBalance: number }` — `plannedMaxOutPostPrecheck` removed (dead: never destructured or referenced in implementation; post-compression output budget is recomputed from real `currentBalanceTokens`)
+    *   `[✅] `   `CompressPromptPayload`: `{ compressionStrategy: ICompressionStrategy; resourceDocuments: ResourceDocuments; conversationHistory: Messages[]; currentUserPrompt: string; chatApiRequest: ChatApiRequest; tokenizerDeps: CountTokensDeps }`
+    *   `[✅] `   `CompressPromptSuccessReturn`: `{ chatApiRequest: ChatApiRequest; resolvedInputTokenCount: number; resourceDocuments: ResourceDocuments }` — `chatApiRequest.max_tokens_to_generate` is set on the returned request
+    *   `[✅] `   `CompressPromptErrorReturn`: `{ error: Error; retriable: boolean }`
+    *   `[✅] `   `CompressPromptReturn`: discriminated union — `CompressPromptSuccessReturn | CompressPromptErrorReturn`
+    *   `[✅] `   `CompressPromptFn`: `(deps: CompressPromptDeps, params: CompressPromptParams, payload: CompressPromptPayload) => Promise<CompressPromptReturn>` — unbound signature; used by the implementation
+    *   `[✅] `   `BoundCompressPromptFn`: `(params: CompressPromptParams, payload: CompressPromptPayload) => Promise<CompressPromptReturn>` — pre-bound signature; deps already applied by the context slicer; this is the type `calculateAffordability` receives as a dep
+    *   `[✅] `   `finalTargetThreshold`, `balanceAfterCompression`, `walletBalance` are plain `number` fields — computed by `calculateAffordability` preflight and passed as ordinary params
+
+#### 5. Interaction Semantics
+
+*   `[✅] `   `compressPrompt.interaction.spec`
+    *   `[✅] `   Called by `calculateAffordability` internally when `isOversized === true`; never called directly by `prepareModelJob`
+    *   `[✅] `   Pre-loop: validate document identity (`document_key`, `type`, `stage_slug`) on each resource document; validate `provider_max_input_tokens` and `context_window_tokens` are defined
+    *   `[✅] `   `payload.compressionStrategy` called to produce the candidate queue; results consumed destructively (candidates shifted off)
+    *   `[✅] `   One batch DB query against `dialectic_memory` for `source_contribution_id IN (candidateIds)` before the loop; results cached as `indexedIds: Set<string>`
+    *   `[✅] `   Per iteration: skip if `indexedIds.has(victim.id)`; call `ragService.getContextForModel`; track `currentBalanceTokens` by debiting observed compression cost; debit wallet with key `rag:{jobId}:{victimId}`; update document or history content; re-enforce alternation; recount tokens
+    *   `[✅] `   Loop exits when `currentTokenCount <= finalTargetThreshold` or candidate queue empty
+    *   `[✅] `   After loop: validate `currentTokenCount` against `min(maxTokens, computeAllowedInput(currentTokenCount))`; reassemble final `chatApiRequest`; recount tokens for `resolvedInputTokenCount`
+    *   `[✅] `   Post-compression affordability: compute `plannedMaxOutputTokensPost` via `getMaxOutputTokens(currentBalanceTokens, ...)` (real balance after all debits); validate remaining window; validate `estimatedTotalCostPost <= walletBalance`; set `chatApiRequest.max_tokens_to_generate = plannedMaxOutputTokensPost`
+    *   `[✅] `   Failure modes: document identity missing → error return; `provider_max_input_tokens` undefined → error return; `context_window_tokens` undefined → error return; `ragResult.error` → error return; empty `ragResult.context` → error return; `recordTransaction` throws → error return with "Insufficient funds for RAG operation"; post-loop oversized → `ContextWindowError` return; post-compression window exhausted → `ContextWindowError` return; post-compression NSF → error return
+
+#### 6. Enforcement
+
+*   `[✅] `   `compressPrompt.guard.test.ts`
+    *   `[✅] `   Verify each guard against contract cases; no false positives; no false negatives
+
+*   `[✅] `   `compressPrompt.guard.ts`
+    *   `[✅] `   `isCompressPromptDeps`, `isCompressPromptParams`, `isCompressPromptPayload`
+    *   `[✅] `   `isCompressPromptSuccessReturn`, `isCompressPromptErrorReturn`
+    *   `[✅] `   `isBoundCompressPromptFn`: validates value is a function (used by `calculateAffordability` guard to verify its dep)
+    *   `[✅] `   Guards accept all valid contract cases; reject all invalid cases
+    *   `[✅] `   `isCompressPromptParams` validates `walletBalance` as `number`; does NOT check for `plannedMaxOutPostPrecheck` (removed)
+
+#### 7. Behavioral Verification
+
+*   `[✅] `   `compressPrompt.test.ts`
+    *   `[✅] `   Indexed candidate skipped: `ragService.getContextForModel` not called for indexed IDs
+    *   `[✅] `   Single compression step: `resourceDocuments[0].content` replaced with `ragResult.context`; `resolvedInputTokenCount` reflects new count
+    *   `[✅] `   Wallet debit called with idempotency key `rag:{jobId}:{candidateId}` and type `DEBIT_USAGE`
+    *   `[✅] `   `currentBalanceTokens` decremented by `tokensUsed * inputRate` per debit
+    *   `[✅] `   History alternation enforcement: consecutive same-role messages receive separator inserted between them
+    *   `[✅] `   Loop exits early when `currentTokenCount <= finalTargetThreshold` before exhausting candidates
+    *   `[✅] `   Post-loop still oversized: `isCompressPromptErrorReturn(result)` true; `result.error` is `ContextWindowError`; `result.retriable` is `false`
+    *   `[✅] `   `ragResult.error` set: `isCompressPromptErrorReturn(result)` true; error propagated; `result.retriable` is `false`
+    *   `[✅] `   `recordTransaction` throws: `isCompressPromptErrorReturn(result)` true; `result.error.message` contains "Insufficient funds for RAG operation"; `result.retriable` is `false`
+    *   `[✅] `   `isContinuationFlowInitial === true`: initial user prompt NOT prepended to `loopAssembledMessages`
+    *   `[✅] `   Document identity missing: `isCompressPromptErrorReturn(result)` true; `result.error.message` contains "document identity"
+    *   `[✅] `   `provider_max_input_tokens` undefined: `isCompressPromptErrorReturn(result)` true
+    *   `[✅] `   `context_window_tokens` undefined: `isCompressPromptErrorReturn(result)` true
+    *   `[✅] `   Post-compression `allowedInputPost <= 0`: `isCompressPromptErrorReturn(result)` true; `result.error` is `ContextWindowError`
+    *   `[✅] `   Post-compression `finalTokenCount > allowedInputPost`: `isCompressPromptErrorReturn(result)` true; `result.error` is `ContextWindowError`
+    *   `[✅] `   Post-compression NSF (`estimatedTotalCostPost > walletBalance`): `isCompressPromptErrorReturn(result)` true; `result.error.message` contains "Insufficient funds"
+    *   `[✅] `   Success result has `chatApiRequest.max_tokens_to_generate` set to `plannedMaxOutputTokensPost`
+
+#### 8. Construction
+
+*   `[✅] `   `construction`
+    *   `[✅] `   Plain async function; no factory; called with explicit deps, params, payload at each call site
+    *   `[✅] `   No partially constructed instances possible
+
+#### 9. Implementation
+
+*   `[✅] `   `compressPrompt.ts`
+    *   `[✅] `   Extract lines 362–370 (document identity guard) and 439–665 (compression loop through post-compression affordability) from `prepareModelJob.ts`; convert all closure-captured variables to explicit params matching `CompressPromptDeps`, `CompressPromptParams`, `CompressPromptPayload`
+    *   `[✅] `   Convert all `throw` statements from source to `return { error: <typed Error>, retriable: false }` — the only behavioral change from the inline implementation
+    *   `[✅] `   `computeAllowedInput` becomes an internal closure inside `compressPrompt` capturing `currentBalanceTokens` (local `let` initialized from `params.balanceAfterCompression`)
+    *   `[✅] `   `currentBalanceTokens` initialized to `params.balanceAfterCompression` (the projected post-preflight balance); decremented in real time as each RAG debit occurs
+    *   `[✅] `   Post-loop: `getMaxOutputTokens(currentBalanceTokens, ...)` uses the real post-compression balance, not the preflight estimate
+    *   `[✅] `   Replace `console.log` (candidate count) with `deps.logger.info`
+    *   `[✅] `   Remove `plannedMaxOutPostPrecheck` from params destructuring (dead)
+
+#### 10. External Boundary
+
+*   `[✅] `   `compressPrompt.provides.ts`
+    *   `[✅] `   Exports: `compressPrompt`, `CompressPromptDeps`, `CompressPromptParams`, `CompressPromptPayload`, `CompressPromptFn`, `BoundCompressPromptFn`, `CompressPromptSuccessReturn`, `CompressPromptErrorReturn`, `CompressPromptReturn`, `isCompressPromptSuccessReturn`, `isCompressPromptErrorReturn`, `isBoundCompressPromptFn`
+    *   `[✅] `   Also re-exports mock builders and override types from `compressPrompt.mock.ts` for consumer test use: `buildContract*`, `buildMalformed*`, `*Overrides` types
+    *   `[✅] `   No external access bypasses this file
+
+#### 11. Simulation
+
+*   `[✅] `   `compressPrompt.mock.ts`
+    *   `[✅] `   Configurable: returns caller-supplied `CompressPromptSuccessReturn` or `CompressPromptErrorReturn`
+    *   `[✅] `   `buildContractBoundCompressPromptFn`: returns a `BoundCompressPromptFn` that delegates to `compressPrompt` with default deps — used by `calculateAffordability` tests to inject a mock compressor
+    *   `[✅] `   All `buildContractCompressPromptParams` defaults include `walletBalance`; do NOT include `plannedMaxOutPostPrecheck`
+    *   `[✅] `   Conforms to `CompressPromptFn` / `BoundCompressPromptFn` signature and interaction spec; no new behavior beyond spec
+
+#### 12. Edge Validation
+
+*   `[✅] `   `compressPrompt.integration.test.ts`
+    *   `[✅] `   Boundary: External API call - use the mock adapter. 
+    *   `[✅] `   Boundary: Use real functions for the full compression loop, including the real `Supabase` client. 
+    *   `[✅] `   Tools: `_shared/_integration.test.utils.ts`
+    *   `[✅] `   Validate: full compression loop with `ragService`, `tokenWalletService`, `embeddingClient` → `CompressPromptSuccessReturn` with expected token count, content replacement, and `max_tokens_to_generate` set
+    *   `[✅] `   Validate: indexed-ID batch query prevents redundant RAG calls
+    *   `[✅] `   Validate: post-compression balance failure path → `isCompressPromptErrorReturn(result)` true
+
+#### 13. Directionality
+
+*   `[✅] `   `directionality`
+    *   `[✅] `   Layer: dialectic-worker domain service
+    *   `[✅] `   Deps inward: `_shared/types.ts`, `_shared/types/tokenizer.types.ts`, `_shared/services/rag_service.interface.ts`, `_shared/services/indexing_service.interface.ts`, `_shared/types/tokenWallet.types.ts`, `_shared/utils/affordability_utils.ts` (`getMaxOutputTokens` — used for post-compression budget computation), `_shared/utils/errors.ts`
+    *   `[✅] `   Provides outward: `calculateAffordability`
+    *   `[✅] `   No cycles
+
+#### 14. Completion Criteria
+
+*   `[✅] `   `requirements`
+    *   `[✅] `   `compressPrompt` independently exported and testable in isolation
+    *   `[✅] `   All compression and post-compression affordability contract cases covered by passing tests
+    *   `[✅] `   `plannedMaxOutPostPrecheck` removed from `CompressPromptParams`, interface, guard, and mock
+    *   `[✅] `   `console.log` replaced with `deps.logger.info`
+    *   `[✅] `   `prepareModelJob.ts` NOT yet modified in this node — extraction only
+
+--- 
+
+*   `[ ]` [BE] `dialectic-worker/calculateAffordability` **Extract `calculateAffordability` as a standalone module: token affordability gate and compression orchestration for all path sizes**
+
+#### 1. Intent & Position
+
+*   `[ ]`   `objective`
+    *   `[ ]`   Define the *problem being solved*: `prepareModelJob.ts` contains two inline affordability blocks (~lines 259–304 for the non-oversized path, ~lines 327–437 for the oversized preflight) that share input data but diverge on whether compression is needed. Neither can be unit-tested in isolation. Extracting a single `calculateAffordability` function that internally decides which path applies removes ~180 lines of inline preflight complexity, enforces the size decision in one place, and delegates the compression loop (lines 439–665) to `compressPrompt`.
+    *   `[ ]`   Separate:
+        *   Functional goals:
+            *   Count the assembled prompt tokens; determine `isOversized`
+            *   If not oversized: run affordability math (`getMaxOutputTokens`, window checks, NSF); return `{ wasCompressed: false; maxOutputTokens: number }`
+            *   If oversized: validate service availability; estimate total operation cost including embeddings; check rationality threshold (80%); run the iterative solver (`getAllowedInputFor`, `solveTargetForBalance`) to derive `finalTargetThreshold`, `balanceAfterCompression`; validate `balanceAfterCompression > 0` and solver feasibility; estimate total post-compression cost and check rationality; call `deps.compressPrompt` with derived targets; pass through its result as `{ wasCompressed: true; chatApiRequest; resolvedInputTokenCount; resourceDocuments }`
+            *   On any infeasibility: return `{ error: Error; retriable: false }`
+        *   Non-functional constraints: `getAllowedInputFor` and `solveTargetForBalance` remain as private closures inside `calculateAffordability`; external services (`ragService`, `tokenWalletService`, `embeddingClient`) are accessed only through `compressPrompt` dep; post-compression affordability (budget from real balance after debits) is inside `compressPrompt`, not here — this function only runs the preflight estimates
+    *   `[ ]`   Each goal is atomic and testable
+
+*   `[ ]`   `role`
+    *   `[ ]`   Role: affordability gate and compression orchestrator — the single function that determines whether the prompt fits, funds the operation, and either returns the budget or compresses the prompt to fit
+    *   `[ ]`   Why appropriate: the non-oversized and oversized paths share all inputs and are mutually exclusive; keeping the size decision internal is SRP-compliant and prevents the caller from needing to know which path applies
+    *   `[ ]`   Must NOT: query the DB directly, fetch wallet balance, call RAG service directly, perform the model call, or save contributions
+
+*   `[ ]`   `module`
+    *   `[ ]`   Bounded context: token affordability and compression orchestration
+    *   `[ ]`   Inside boundary: token counting, `isOversized` determination, iterative solver, affordability checks, `compressPrompt` invocation, result branching
+    *   `[ ]`   Outside boundary: wallet balance fetching, cost rate validation, RAG loop implementation (delegated to `compressPrompt`), model call
+
+#### 2. Dependencies & Injection
+
+*   `[ ]`   `deps`
+    *   `[ ]`   `ILogger` — `_shared/types.ts` — cross-cutting — logging
+    *   `[ ]`   `CountTokensFn` — `_shared/types/tokenizer.types.ts` — utility — count assembled prompt tokens
+    *   `[ ]`   `BoundCompressPromptFn` — `compressPrompt/compressPrompt.provides.ts` — domain service — invoked on the oversized path only
+    *   `[ ]`   Confirm: no DB or direct external service calls; all external I/O via `compressPrompt` dep
+
+*   `[ ]`   `context_slice`
+    *   `[ ]`   `CalculateAffordabilityDeps { logger: ILogger; countTokens: CountTokensFn; compressPrompt: BoundCompressPromptFn }`
+
+#### 3. Contract Definition
+
+*   `[ ]`   `calculateAffordability.interface.test.ts` — raw structural assertions only; NO type guard imports; proves the contract shape that guards will later enforce
+    *   `[ ]`   Valid non-oversized: adequate balance → `result.wasCompressed === false`; `typeof result.maxOutputTokens === 'number'`; `result.maxOutputTokens >= 0`; no `error` field
+    *   `[ ]`   Valid oversized: compress succeeds → `result.wasCompressed === true`; `result.chatApiRequest` present; `typeof result.resolvedInputTokenCount === 'number'`; `result.resolvedInputTokenCount >= 0`; no `error` field
+    *   `[ ]`   Invalid: NSF on non-oversized → result has `error` field; `result.error.message` contains "Insufficient funds"; `result.retriable === false`; no `wasCompressed` field
+    *   `[ ]`   Invalid: context window exhausted → result has `error` field; `result.error` is `ContextWindowError`; `result.retriable === false`; no `wasCompressed` field
+    *   `[ ]`   Invalid: oversized — `currentUserBalance < totalEstimatedInputCostWithEmbeddings` → result has `error` field; `result.error.message` contains "Insufficient funds for the entire operation"; `result.retriable === false`
+    *   `[ ]`   Invalid: oversized — estimated cost exceeds 80% rationality threshold → result has `error` field; `result.retriable === false`
+    *   `[ ]`   Invalid: oversized — `balanceAfterCompression <= 0` → result has `error` field; `result.error.message` contains "Insufficient funds: compression requires"; `result.retriable === false`
+    *   `[ ]`   Invalid: oversized — infeasible solver target (`finalTargetThreshold < 0`) → result has `error` field; `result.error` is `ContextWindowError`; `result.retriable === false`
+    *   `[ ]`   Invalid: oversized — total estimated cost (compression + final I/O) exceeds balance → result has `error` field; `result.retriable === false`
+    *   `[ ]`   Invalid: oversized — total estimated cost exceeds 80% rationality threshold → result has `error` field; `result.retriable === false`
+    *   `[ ]`   Invalid: `compressPrompt` returns error → result has `error` field; error propagated; no `wasCompressed` field
+
+#### 4. Structural Boundary
+
+*   `[ ]`   `calculateAffordability.interface.ts`
+    *   `[ ]`   `CalculateAffordabilityDeps`: `{ logger: ILogger; countTokens: CountTokensFn; compressPrompt: BoundCompressPromptFn }`
+    *   `[ ]`   `CalculateAffordabilityParams`: `{ dbClient: SupabaseClient<Database>; jobId: string; projectOwnerUserId: string; sessionId: string; stageSlug: string; walletId: string; walletBalance: number; extendedModelConfig: AiModelExtendedConfig; inputRate: number; outputRate: number; isContinuationFlowInitial: boolean; inputsRelevance?: RelevanceRule[] }`
+    *   `[ ]`   `CalculateAffordabilityPayload`: `{ compressionStrategy: ICompressionStrategy; resourceDocuments: ResourceDocuments; conversationHistory: Messages[]; currentUserPrompt: string; systemInstruction: string; chatApiRequest: ChatApiRequest }`
+    *   `[ ]`   `CalculateAffordabilityDirectReturn`: `{ wasCompressed: false; maxOutputTokens: number }`
+    *   `[ ]`   `CalculateAffordabilityCompressedReturn`: `{ wasCompressed: true; chatApiRequest: ChatApiRequest; resolvedInputTokenCount: number; resourceDocuments: ResourceDocuments }`
+    *   `[ ]`   `CalculateAffordabilityErrorReturn`: `{ error: Error; retriable: boolean }`
+    *   `[ ]`   `CalculateAffordabilityReturn`: `(CalculateAffordabilityDirectReturn | CalculateAffordabilityCompressedReturn) | CalculateAffordabilityErrorReturn`
+    *   `[ ]`   `CalculateAffordabilityFn`: `(deps: CalculateAffordabilityDeps, params: CalculateAffordabilityParams, payload: CalculateAffordabilityPayload) => Promise<CalculateAffordabilityReturn>` — unbound signature; used by the implementation
+    *   `[ ]`   `BoundCalculateAffordabilityFn`: `(params: CalculateAffordabilityParams, payload: CalculateAffordabilityPayload) => Promise<CalculateAffordabilityReturn>` — pre-bound signature; deps already applied by the context slicer; this is the type `prepareModelJob` receives as a dep on `IPrepareModelJobContext`
+    *   `[ ]`   No `any` types; each type minimal and composable
+
+#### 5. Interaction Semantics
+
+*   `[ ]`   `calculateAffordability.interaction.spec`
+    *   `[ ]`   Called by `prepareModelJob` after `applyInputsRequiredScope`, before `ChatApiRequest` assembly
+    *   `[ ]`   Inputs arrive pre-validated: `walletBalance` already parsed by `validateWalletBalance`; rates already extracted by `validateModelCostRates`
+    *   `[ ]`   On `isCalculateAffordabilityDirectReturn(result)`: caller uses `result.maxOutputTokens` to set `chatApiRequest.max_tokens_to_generate`
+    *   `[ ]`   On `isCalculateAffordabilityCompressedReturn(result)`: caller uses `result.chatApiRequest` directly (already assembled with compressed content and `max_tokens_to_generate` set)
+    *   `[ ]`   On `isCalculateAffordabilityErrorReturn(result)`: caller returns `{ error: result.error, retriable: result.retriable }` as `PrepareModelJobErrorReturn`
+    *   `[ ]`   `compressPrompt` invoked internally when `isOversized`; never called by `prepareModelJob`
+
+#### 6. Enforcement
+
+*   `[ ]`   `calculateAffordability.guard.test.ts`
+    *   `[ ]`   Verify each guard against contract cases; no false positives; no false negatives
+
+*   `[ ]`   `calculateAffordability.guard.ts`
+    *   `[ ]`   `isCalculateAffordabilityDeps`, `isCalculateAffordabilityParams`, `isCalculateAffordabilityPayload`
+    *   `[ ]`   `isCalculateAffordabilityDirectReturn`, `isCalculateAffordabilityCompressedReturn`, `isCalculateAffordabilityErrorReturn`
+    *   `[ ]`   `isBoundCalculateAffordabilityFn`: validates value is a function (used by `prepareModelJob` guard to verify its dep)
+    *   `[ ]`   Guards accept all valid contract cases; reject all invalid cases
+
+#### 7. Behavioral Verification
+
+*   `[ ]`   `calculateAffordability.test.ts`
+    *   `[ ]`   Non-oversized adequate balance: `isCalculateAffordabilityDirectReturn(result)` true; `result.maxOutputTokens` matches `getMaxOutputTokens` return
+    *   `[ ]`   Non-oversized NSF: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+    *   `[ ]`   Non-oversized `allowedInput <= 0`: `isCalculateAffordabilityErrorReturn(result)` true; `result.error` is `ContextWindowError`
+    *   `[ ]`   Oversized: `deps.compressPrompt` called with derived `finalTargetThreshold`, `balanceAfterCompression`, `walletBalance`; success → `isCalculateAffordabilityCompressedReturn(result)` true
+    *   `[ ]`   Oversized: `deps.compressPrompt` returns `CompressPromptErrorReturn` → `isCalculateAffordabilityErrorReturn(result)` true; error propagated
+    *   `[ ]`   Oversized NSF for total operation (including embeddings): `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+    *   `[ ]`   Oversized rationality threshold (80%): `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+    *   `[ ]`   Oversized `balanceAfterCompression <= 0`: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+    *   `[ ]`   Infeasible solver target: `isCalculateAffordabilityErrorReturn(result)` true; `result.error` is `ContextWindowError`
+    *   `[ ]`   Total estimated cost (compression + final I/O) exceeds balance: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+    *   `[ ]`   Total estimated cost exceeds rationality threshold: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+
+#### 8. Construction
+
+*   `[ ]`   `construction`
+    *   `[ ]`   Plain async function; no factory; called with explicit deps, params, payload at each call site
+    *   `[ ]`   No partially constructed instances possible
+
+#### 9. Implementation
+
+*   `[ ]`   `calculateAffordability.ts`
+    *   `[ ]`   Extract lines ~259–304 (non-oversized affordability) and ~327–437 (oversized preflight) from `prepareModelJob.ts`; convert all closure-captured variables to explicit params matching `CalculateAffordabilityDeps`, `CalculateAffordabilityParams`, `CalculateAffordabilityPayload`
+    *   `[ ]`   Lines ~439–665 (compression loop + post-compression affordability) are NOT extracted here — they are extracted into `compressPrompt` which this function calls via `deps.compressPrompt`
+    *   `[ ]`   `getAllowedInputFor` and `solveTargetForBalance` remain as private closures inside `calculateAffordability`
+    *   `[ ]`   Non-oversized path: convert all `throw` statements to `return { error: <typed Error>, retriable: false }`
+    *   `[ ]`   Oversized path: run preflight checks and iterative solver (lines 327–437); call `await deps.compressPrompt(compressParams, compressPayload)` with derived `finalTargetThreshold`, `balanceAfterCompression`, `walletBalance`; on `isCompressPromptErrorReturn(result)` return `{ error: result.error, retriable: result.retriable }`; on success return `{ wasCompressed: true, ...result }` — `compressPrompt` handles post-compression affordability and sets `max_tokens_to_generate`
+    *   `[ ]`   `tokenizerDeps` constructed internally from `deps.countTokens`
+    *   `[ ]`   Convert all `throw` statements from preflight (lines 327–437) to error returns
+
+#### 10. External Boundary
+
+*   `[ ]`   `calculateAffordability.provides.ts`
+    *   `[ ]`   Exports: `calculateAffordability`, `CalculateAffordabilityDeps`, `CalculateAffordabilityParams`, `CalculateAffordabilityPayload`, `CalculateAffordabilityFn`, `BoundCalculateAffordabilityFn`, `CalculateAffordabilityDirectReturn`, `CalculateAffordabilityCompressedReturn`, `CalculateAffordabilityErrorReturn`, `CalculateAffordabilityReturn`, `isCalculateAffordabilityDirectReturn`, `isCalculateAffordabilityCompressedReturn`, `isCalculateAffordabilityErrorReturn`, `isBoundCalculateAffordabilityFn`
+    *   `[ ]`   Also re-exports mock builders and override types from `calculateAffordability.mock.ts` for consumer test use
+    *   `[ ]`   No external access bypasses this file
+
+#### 11. Simulation
+
+*   `[ ]`   `calculateAffordability.mock.ts`
+    *   `[ ]`   Configurable: returns caller-supplied `CalculateAffordabilityDirectReturn`, `CalculateAffordabilityCompressedReturn`, or `CalculateAffordabilityErrorReturn`
+    *   `[ ]`   Conforms to `CalculateAffordabilityFn` signature and interaction spec; no new behavior beyond spec
+
+#### 12. Edge Validation
+
+*   `[ ]`   `calculateAffordability.integration.test.ts`
+    *   `[ ]`   Validate: non-oversized with realistic `AiModelExtendedConfig` and cost rates → `isCalculateAffordabilityDirectReturn(result)` true
+    *   `[ ]`   Validate: oversized with mocked `compressPrompt` → `isCalculateAffordabilityCompressedReturn(result)` true; solver values internally consistent
+    *   `[ ]`   Validate: NSF scenario → `isCalculateAffordabilityErrorReturn(result)` true
+
+#### 13. Directionality
+
+*   `[ ]`   `directionality`
+    *   `[ ]`   Layer: dialectic-worker domain service
+    *   `[ ]`   Deps inward: `_shared/types.ts`, `_shared/types/tokenizer.types.ts`, `_shared/utils/affordability_utils.ts`, `_shared/utils/errors.ts`, `compressPrompt/compressPrompt.provides.ts`
+    *   `[ ]`   Provides outward: `prepareModelJob`
+    *   `[ ]`   No cycles
+
+#### 14. Completion Criteria
+
+*   `[ ]`   `requirements`
+    *   `[ ]`   `calculateAffordability` independently exported and testable in isolation
+    *   `[ ]`   All affordability and compression contract cases covered by passing tests
+    *   `[ ]`   `prepareModelJob.ts` NOT yet modified in this node — extraction only
+
+---
+
+*   `[ ]` [BE] `dialectic-worker/createJobContext/createJobContext.ts` **Bind `calculateAffordability` and `compressPrompt` as pre-bound closures in `createPrepareModelJobContext`; extend `IPrepareModelJobContext` with `calculateAffordability`**
+
+#### 1. Intent & Position
+
+*   `[ ]`   `objective`
+    *   `[ ]`   Problem: `prepareModelJob` will call `calculateAffordability` via `deps`. That function must be injectable for `prepareModelJob.test.ts` to mock it. `IPrepareModelJobContext` is the slice passed to `prepareModelJob` as `PrepareModelJobDeps`. Neither `IPrepareModelJobContext` nor `createPrepareModelJobContext` currently carries the new bound closure. `compressPrompt` must also be bound so it can be passed as a dep when binding `calculateAffordability`.
+    *   `[ ]`   Functional goals:
+        *   Add `BoundCalculateAffordabilityFn` type alias to `JobContext.interface.ts`
+        *   Add `calculateAffordability` field to `IPrepareModelJobContext` — `compressPrompt` is NOT on the context slice; it is bound first as an intermediate closure and injected into `calculateAffordability`'s deps
+        *   `createPrepareModelJobContext` accepts two new explicit params (`compressPromptFn`, `calculateAffordabilityFn`) alongside `boundEmcas` and `boundRender`, and partially applies each with its deps from `root`
+    *   `[ ]`   Non-functional: `IJobContext` is NOT changed — the raw function references live only as params to `createPrepareModelJobContext`, not on the root context
+
+*   `[ ]`   `role`
+    *   `[ ]`   Role: composition root — single place where concrete implementations are bound to the context slice
+    *   `[ ]`   Why appropriate: all pre-bound closures for `prepareModelJob` are wired here; consistent with the existing `boundEmcas`/`boundRender` pattern; `compressPrompt` is bound first (using root services) so it can be passed as a dep to `calculateAffordability`
+    *   `[ ]`   Must NOT: contain business logic; must only bind and pass through
+
+*   `[ ]`   `module`
+    *   `[ ]`   Bounded context: dependency injection / context construction
+    *   `[ ]`   Inside: `createJobContext`, `createPrepareModelJobContext`, `createPlanJobContext`, `createRenderJobContext`
+    *   `[ ]`   Outside: all job processing logic
+
+#### 2. Dependencies & Injection
+
+*   `[ ]`   `deps`
+    *   `[ ]`   `CalculateAffordabilityFn` — `calculateAffordability/calculateAffordability.provides.ts` — imported; partially applied at construction time
+    *   `[ ]`   `CompressPromptFn` — `compressPrompt/compressPrompt.provides.ts` — imported; bound first with root services; result passed as dep when binding `calculateAffordability`
+    *   `[ ]`   All existing deps unchanged
+
+*   `[ ]`   `context_slice`
+    *   `[ ]`   `IPrepareModelJobContext` gains: `calculateAffordability: BoundCalculateAffordabilityFn`
+    *   `[ ]`   `compressPrompt` does NOT appear on `IPrepareModelJobContext` — it is an intermediate closure used only during `calculateAffordability` binding
+    *   `[ ]`   `IJobContext` is unchanged
+
+#### 3. Contract Definition
+
+*   `[ ]`   `createJobContext.test.ts` (existing)
+    *   `[ ]`   Valid: constructed `IPrepareModelJobContext` has `calculateAffordability` as a function
+    *   `[ ]`   Valid: calling `ctx.calculateAffordability(params, payload)` delegates to the bound `CalculateAffordabilityFn` with correct deps (logger, countTokens, pre-bound compressPrompt)
+    *   `[ ]`   Valid: the internally-bound `compressPrompt` closure receives correct `CompressPromptDeps` from root
+
+#### 4. Structural Boundary
+
+*   `[ ]`   `JobContext.interface.ts`
+    *   `[ ]`   Add `BoundCalculateAffordabilityFn = (params: CalculateAffordabilityParams, payload: CalculateAffordabilityPayload) => Promise<CalculateAffordabilityReturn>`
+    *   `[ ]`   Add `calculateAffordability: BoundCalculateAffordabilityFn` field to `IPrepareModelJobContext`
+    *   `[ ]`   No `BoundCompressPromptFn` or `BoundCalculateAffordabilityPreflightFn` on the context — `compressPrompt` is bound internally, not exposed
+    *   `[ ]`   No changes to `IJobContext`
+
+#### 5. Interaction Semantics
+
+*   `[ ]`   `createJobContext.interaction.spec`
+    *   `[ ]`   `createPrepareModelJobContext` signature extends from 3 params to 5: `(root, boundEmcas, boundRender, compressPromptFn, calculateAffordabilityFn)`
+    *   `[ ]`   `compressPrompt` bound first with full `CompressPromptDeps` from root: `{ logger, ragService, embeddingClient, tokenWalletService, countTokens }`
+    *   `[ ]`   `calculateAffordability` then bound using root logger, root `countTokens`, and the pre-bound `compressPrompt` closure: `(params, payload) => calculateAffordabilityFn({ logger: root.logger, countTokens: root.countTokens, compressPrompt: boundCompressPrompt }, params, payload)`
+    *   `[ ]`   All call sites of `createPrepareModelJobContext` must be updated — at minimum `dialectic-worker/index.ts`
+
+#### 6. Enforcement
+
+*   `[ ]`   `JobContext.guard.ts` updated: `isPrepareModelJobContext` checks for `calculateAffordability` as a function field
+*   `[ ]`   Guard tests updated accordingly
+
+#### 7. Behavioral Verification
+
+*   `[ ]`   `createJobContext.test.ts`
+    *   `[ ]`   `calculateAffordability` field present and callable on returned `IPrepareModelJobContext`
+    *   `[ ]`   Calling it delegates to `calculateAffordabilityFn` with `{ logger, countTokens, compressPrompt: boundCompressPrompt }` as deps
+    *   `[ ]`   All existing tests pass unchanged
+
+#### 8. Construction
+
+*   `[ ]`   `createJobContext.ts` is both construction and implementation — no separate factory
+
+#### 9. Implementation
+
+*   `[ ]`   `createJobContext.ts`
+    *   `[ ]`   Update `createPrepareModelJobContext` signature to accept two new function params: `compressPromptFn`, `calculateAffordabilityFn`
+    *   `[ ]`   Bind `boundCompressPrompt` first: `(params, payload) => compressPromptFn({ logger: root.logger, ragService: root.ragService, embeddingClient: root.embeddingClient, tokenWalletService: root.tokenWalletService, countTokens: root.countTokens }, params, payload)`
+    *   `[ ]`   Bind `calculateAffordability`: `(params, payload) => calculateAffordabilityFn({ logger: root.logger, countTokens: root.countTokens, compressPrompt: boundCompressPrompt }, params, payload)`
+    *   `[ ]`   Add only `calculateAffordability` to the returned `IPrepareModelJobContext` object
+
+#### 10. External Boundary
+
+*   `[ ]`   `JobContext.interface.ts` is the external boundary — `BoundCalculateAffordabilityFn` exported from it
+
+#### 11. Simulation
+
+*   `[ ]`   `JobContext.mock.ts` updated to include `calculateAffordability` as a bound function field on the mock `IPrepareModelJobContext`
+
+#### 12. Edge Validation
+
+*   `[ ]`   `createJobContext.integration.test.ts`
+    *   `[ ]`   Constructed `IPrepareModelJobContext` passes TypeScript structural check against updated interface
+
+#### 13. Directionality
+
+*   `[ ]`   `directionality`
+    *   `[ ]`   Layer: composition root
+    *   `[ ]`   Now depends on `calculateAffordability` and `compressPrompt` modules; no reverse dependency
+    *   `[ ]`   No cycles
+
+#### 14. Completion Criteria
+
+*   `[ ]`   `requirements`
+    *   `[ ]`   `IPrepareModelJobContext` carries `calculateAffordability: BoundCalculateAffordabilityFn`
+    *   `[ ]`   `createPrepareModelJobContext` binds `compressPrompt` first, then uses it as a dep when binding `calculateAffordability`
+    *   `[ ]`   All existing `createJobContext` tests pass with updated fixtures
+    *   `[ ]`   All existing `prepareModelJob` tests still pass — source not yet modified in this node
+
+---
+
+*   `[ ]` [BE] `dialectic-worker/prepareModelJob/prepareModelJob.ts` **Remove inline affordability and compression zones; call extracted `calculateAffordability` via deps; update `PrepareModelJobDeps`, guards, tests, and mocks**
+
+#### 1. Intent & Position
+
+*   `[ ]`   `objective`
+    *   `[ ]`   Problem: `prepareModelJob.ts` (currently 791 lines) still contains the full inline implementations of the affordability and RAG compression zones (~430 lines). With `calculateAffordability` extracted and bound on `IPrepareModelJobContext`, `prepareModelJob` can be reduced to an orchestrator that delegates the entire affordability + compression decision via a single call.
+    *   `[ ]`   Functional goals:
+        *   Add `calculateAffordability: BoundCalculateAffordabilityFn` to `PrepareModelJobDeps`
+        *   Remove dead fields `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient` from `PrepareModelJobDeps` — all made redundant by the extraction
+        *   Replace the inline ~430-line affordability + compression block (lines ~239–665) with a single `await deps.calculateAffordability(params, payload)` call; branch on `wasCompressed`
+        *   Target: `prepareModelJob.ts` under 350 lines
+    *   `[ ]`   Non-functional: all existing behavioral tests for `prepareModelJob` continue to pass using the new mock; no externally visible behavior change
+
+*   `[ ]`   `role`
+    *   `[ ]`   Role: preparation orchestrator (Zones A–D) — validates, gathers, scopes, sizes, delegates affordability and compression, assembles `ChatApiRequest`
+    *   `[ ]`   Why appropriate: owns the orchestration sequence; each zone is now a focused module
+    *   `[ ]`   Must NOT: contain inline affordability logic, inline compression loops, or any RAG/wallet/embedding calls
+
+*   `[ ]`   `module`
+    *   `[ ]`   Bounded context: model call preparation orchestration
+    *   `[ ]`   Inside: payload validation, provider config extraction, resource document scoping, delegation to `calculateAffordability`, branch on `wasCompressed`, `ChatApiRequest` assembly, delegation to `executeModelCallAndSave` and `enqueueRenderJob`
+    *   `[ ]`   Outside: token counting, affordability math, compression loop, model call, contribution save, render job creation
+
+#### 2. Dependencies & Injection
+
+*   `[ ]`   `deps`
+    *   `[ ]`   Add `calculateAffordability: BoundCalculateAffordabilityFn` to `PrepareModelJobDeps`
+    *   `[ ]`   Remove `pickLatest: PickLatestFn`, `downloadFromStorage: DownloadFromStorageFn`, `countTokens: CountTokensFn`, `ragService: IRagService`, `embeddingClient: IEmbeddingClient` from `PrepareModelJobDeps`
+    *   `[ ]`   All other existing deps unchanged
+
+*   `[ ]`   `context_slice`
+    *   `[ ]`   `PrepareModelJobDeps` now structurally satisfies `IPrepareModelJobContext`; the Phase 2 type mismatch is resolved
+
+#### 3. Contract Definition
+
+*   `[ ]`   `prepareModelJob.interface.test.ts` — raw structural assertions only; NO type guard imports; proves the contract shape that guards will later enforce
+    *   `[ ]`   Existing contract tests unchanged — `PrepareModelJobReturn` shape does not change
+    *   `[ ]`   Add: `PrepareModelJobDeps` structural contract — object with `calculateAffordability` as a function field (`typeof deps.calculateAffordability === 'function'`)
+    *   `[ ]`   Add: `PrepareModelJobDeps` structural contract — object does NOT require `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, or `embeddingClient` as fields
+
+#### 4. Structural Boundary
+
+*   `[ ]`   `prepareModelJob.interface.ts`
+    *   `[ ]`   Add `calculateAffordability: BoundCalculateAffordabilityFn` to `PrepareModelJobDeps`
+    *   `[ ]`   Remove `pickLatest: PickLatestFn`, `downloadFromStorage: DownloadFromStorageFn`, `countTokens: CountTokensFn`, `ragService: IRagService`, `embeddingClient: IEmbeddingClient` from `PrepareModelJobDeps`
+    *   `[ ]`   All other types unchanged
+
+#### 5. Interaction Semantics
+
+*   `[ ]`   `prepareModelJob.interaction.spec`
+    *   `[ ]`   Single call: `const affordResult = await deps.calculateAffordability(params, payload)`; guard on `isCalculateAffordabilityErrorReturn(affordResult)` → return `PrepareModelJobErrorReturn`
+    *   `[ ]`   On `isCalculateAffordabilityDirectReturn(affordResult)`: `wasCompressed === false`; use `affordResult.maxOutputTokens` to set `chatApiRequest.max_tokens_to_generate` on the pre-assembled request
+    *   `[ ]`   On `isCalculateAffordabilityCompressedReturn(affordResult)`: `wasCompressed === true`; use `affordResult.chatApiRequest` directly (already assembled); use `affordResult.resolvedInputTokenCount` and `affordResult.resourceDocuments` for downstream fields
+
+#### 6. Enforcement
+
+*   `[ ]`   `prepareModelJob.interface.guard.ts`
+    *   `[ ]`   Update `isPrepareModelJobDeps` to check for `calculateAffordability` as a function
+    *   `[ ]`   Remove checks for `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient`
+
+#### 7. Behavioral Verification
+
+*   `[ ]`   `prepareModelJob.test.ts`
+    *   `[ ]`   Replace fixtures that exercised inline affordability/compression logic with a mock using `calculateAffordability.mock.ts`
+    *   `[ ]`   Affordability and compression edge-case tests (NSF, context window, rationality, RAG loop) migrate to `calculateAffordability` and `compressPrompt` test files; `prepareModelJob.test.ts` retains orchestration-level assertions: mock was called with correct args; `wasCompressed: false` result flows into `chatApiRequest.max_tokens_to_generate`; `wasCompressed: true` result passes `chatApiRequest` through unmodified; error result propagates
+    *   `[ ]`   Existing end-to-end paths (non-oversized and oversized) remain, using mock that returns valid `CalculateAffordabilityDirectReturn` or `CalculateAffordabilityCompressedReturn`
+
+#### 8. Construction
+
+*   `[ ]`   No change to `prepareModelJob` construction
+
+#### 9. Implementation
+
+*   `[ ]`   `prepareModelJob.ts`
+    *   `[ ]`   Remove lines ~239–665 (all inline affordability + compression); replace with `const affordResult = await deps.calculateAffordability(params, payload)`; guard on `isCalculateAffordabilityErrorReturn(affordResult)` returning `PrepareModelJobErrorReturn`; branch on `wasCompressed` for downstream assembly
+    *   `[ ]`   Target: file under 350 lines
+
+#### 10. External Boundary
+
+*   `[ ]`   `prepareModelJob.provides.ts`
+    *   `[ ]`   No change to exported symbols
+
+#### 11. Simulation
+
+*   `[ ]`   `prepareModelJob.mock.ts`
+    *   `[ ]`   Add `calculateAffordability` field
+    *   `[ ]`   Remove `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient` fields
+
+#### 12. Edge Validation
+
+*   `[ ]`   `prepareModelJob.integration.test.ts`
+    *   `[ ]`   Validate: full `prepareModelJob` call with mocked `calculateAffordability` returning `CalculateAffordabilityDirectReturn` → `PrepareModelJobSuccessReturn` correct
+    *   `[ ]`   Validate: mocked `calculateAffordability` returning `CalculateAffordabilityCompressedReturn` → `chatApiRequest` passed through unchanged
+
+#### 13. Directionality
+
+*   `[ ]`   `directionality`
+    *   `[ ]`   Layer: dialectic-worker preparation orchestrator
+    *   `[ ]`   Now depends on `calculateAffordability` via bound deps (all RAG/compression services accessed through it); no reverse dependency
+    *   `[ ]`   No cycles
+
+#### 14. Completion Criteria
+
+*   `[ ]`   `requirements`
+    *   `[ ]`   `prepareModelJob.ts` under 350 lines
+    *   `[ ]`   No inline affordability or compression logic remains
+    *   `[ ]`   All existing `prepareModelJob` tests pass with updated test fixtures using extracted-module mocks
+    *   `[ ]`   `PrepareModelJobDeps` structurally satisfies `IPrepareModelJobContext`
+
+---
+
+*   `[ ]` [BE] `dialectic-worker/index.ts` **Wire `calculateAffordability` and `compressPrompt` into `createPrepareModelJobContext`; update worker job-processing tests**
+
+#### 1. Intent & Position
+
+*   `[ ]`   `objective`
+    *   `[ ]`   Problem: `createPrepareModelJobContext` now accepts two additional function parameters. `index.ts` is the call site that constructs and passes them. Without this update the worker fails to compile.
+    *   `[ ]`   Functional goals: import `calculateAffordability` from `calculateAffordability/calculateAffordability.provides.ts` and `compressPrompt` from `compressPrompt/compressPrompt.provides.ts`; pass both as explicit arguments to `createPrepareModelJobContext`; update any worker-level test infrastructure that builds mock contexts to include `calculateAffordability`
+    *   `[ ]`   Non-functional: no behavior change to job routing, dispatch, or error handling
+
+*   `[ ]`   `role`
+    *   `[ ]`   Role: application wiring boundary — imports and connects all concrete implementations; the only file allowed to name both the concrete function modules and the context slicer
+    *   `[ ]`   Why appropriate: `index.ts` owns the composition root for the dialectic worker
+    *   `[ ]`   Must NOT: contain business logic; must only import, partially apply, and wire
+
+*   `[ ]`   `module`
+    *   `[ ]`   Bounded context: worker entry point + composition
+    *   `[ ]`   Inside: HTTP handler, job routing dispatch, context construction via `createJobContext` / `createPrepareModelJobContext`
+    *   `[ ]`   Outside: all job processing logic
+
+#### 2. Dependencies & Injection
+
+*   `[ ]`   `deps`
+    *   `[ ]`   `calculateAffordability` imported from `calculateAffordability/calculateAffordability.provides.ts`
+    *   `[ ]`   `compressPrompt` imported from `compressPrompt/compressPrompt.provides.ts`
+    *   `[ ]`   All existing imports and deps unchanged
+
+*   `[ ]`   `context_slice`
+    *   `[ ]`   No change to `IJobContext` construction; only the `createPrepareModelJobContext` call site changes
+
+#### 3. Contract Definition
+
+*   `[ ]`   `processJob.test.ts` (worker-level job dispatch tests)
+    *   `[ ]`   Add: mock `IPrepareModelJobContext` includes `calculateAffordability` stub function wherever worker-level context is constructed
+    *   `[ ]`   All existing dispatch and routing tests pass unchanged
+
+#### 4. Structural Boundary
+
+*   `[ ]`   No new types in `index.ts` — all types come from imported modules
+
+#### 5. Interaction Semantics
+
+*   `[ ]`   `index.interaction.spec`
+    *   `[ ]`   `createPrepareModelJobContext(root, boundEmcas, boundRender, compressPrompt, calculateAffordability)` — call updated with two additional concrete functions; order matches binding sequence (compressPrompt first)
+    *   `[ ]`   No change to job routing logic or HTTP handler
+
+#### 6. Enforcement
+
+*   `[ ]`   No new guards required in `index.ts`
+
+#### 7. Behavioral Verification
+
+*   `[ ]`   `processJob.test.ts`
+    *   `[ ]`   Update mock context construction to include `calculateAffordability` stub field wherever `IPrepareModelJobContext` is mocked
+    *   `[ ]`   All existing routing and dispatch tests pass unchanged
+
+#### 8. Construction
+
+*   `[ ]`   No change to construction patterns in `index.ts`
+
+#### 9. Implementation
+
+*   `[ ]`   `index.ts`
+    *   `[ ]`   Add two import statements: `calculateAffordability` and `compressPrompt` from their `provides.ts` files
+    *   `[ ]`   Update `createPrepareModelJobContext(...)` call to pass `compressPrompt`, `calculateAffordability` as the two new arguments
+
+#### 10. External Boundary
+
+*   `[ ]`   No `provides.ts` for `index.ts` — it is the application entry point
+
+#### 11. Simulation
+
+*   `[ ]`   No `index.mock.ts` required
+
+#### 12. Edge Validation
+
+*   `[ ]`   No separate integration test for `index.ts` wiring — covered by `processJob.test.ts` and `prepareModelJob.integration.test.ts` from the prior node
+
+#### 13. Directionality
+
+*   `[ ]`   `directionality`
+    *   `[ ]`   Layer: application entry / composition root
+    *   `[ ]`   Now imports from `calculateAffordability` and `compressPrompt` modules — all inward-facing; no reverse dependency
+    *   `[ ]`   No cycles
+
+#### 14. Completion Criteria
+
+*   `[ ]`   `requirements`
+    *   `[ ]`   Worker compiles and routes jobs correctly with updated `createPrepareModelJobContext` call
+    *   `[ ]`   All worker-level tests pass with updated mock contexts
+    *   `[ ]`   Integration proof: all ~700 existing tests pass (Phase 3.5)
+
+#### 15. Versioning
+
+*   `[ ]`   **Commit** `refactor(BE): extract affordability and compression from prepareModelJob`
+    *   `[ ]`   Structural: `calculateAffordability` and `compressPrompt` extracted to standalone modules under `dialectic-worker/`; all inline affordability and RAG compression logic removed from `prepareModelJob.ts`; file reduced to under 350 lines
+    *   `[ ]`   Behavioral: affordability checking and RAG compression behavior fully preserved; all ~700 existing tests pass
+    *   `[ ]`   Contract: `PrepareModelJobDeps` gains `calculateAffordability: BoundCalculateAffordabilityFn`; removes five fields (`pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient`); `IPrepareModelJobContext` gains `calculateAffordability`; `createPrepareModelJobContext` signature extended by two params (`compressPromptFn`, `calculateAffordabilityFn`)
 
 ### Phase 4: Final validation
 

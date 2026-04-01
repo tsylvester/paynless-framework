@@ -22,40 +22,18 @@ import { isTokenUsage } from "../utils/type_guards.ts";
 import { Tables } from "../../types_db.ts";
 import { isJson } from "../utils/type_guards.ts"; 
 import { ILogger } from "../types.ts";
+import { MOCK_PROVIDER } from "./ai_provider.mock.ts";
+import { isAiModelExtendedConfig } from "../utils/type_guards.ts";
 /**
  * This test file uses the generic `testAdapterContract` to ensure the
  * DummyAdapter conforms to the standard adapter interface. It also includes
  * a specific test to verify the dummy's unique tokenization behavior.
  */
 
-const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
-    api_identifier: "dummy-model-v1",
-    input_token_cost_rate: 0,
-    output_token_cost_rate: 0,
-    tokenization_strategy: { 
-        type: 'tiktoken', 
-        tiktoken_encoding_name: 'cl100k_base' 
-    },
-};
-
-if(!isJson(MOCK_MODEL_CONFIG)) {
-    throw new Error('MOCK_MODEL_CONFIG is not a valid JSON object');
+if(!isJson(MOCK_PROVIDER.config) || !isAiModelExtendedConfig(MOCK_PROVIDER.config)) {
+  throw new Error('MOCK_PROVIDER.config is not a valid JSON object');
 }
-
-export const MOCK_PROVIDER: Tables<'ai_providers'> = {
-    id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-    provider: "dummy",
-    api_identifier: "dummy-model-v1",
-    name: "Dummy Model",
-    description: "A dummy AI model for testing purposes.",
-    is_active: true,
-    is_default_embedding: false,
-    is_default_generation: false,
-    is_enabled: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    config: MOCK_MODEL_CONFIG,
-};
+  const MOCK_MODEL_CONFIG: AiModelExtendedConfig = MOCK_PROVIDER.config;
 
 // For the contract test, the mock API should replicate the dummy's simple logic
 // without instantiating the real adapter to avoid infinite recursion with the stub.
@@ -427,7 +405,9 @@ Deno.test("DummyAdapter getEmbedding returns 3072-d vectors", async () => {
     getEmbedding: (text: string): Promise<EmbeddingResponse> => adapter.getEmbedding(text),
     async sendMessage() { throw new Error("not used in this test"); },
     async *sendMessageStream(_request: ChatApiRequest, _modelIdentifier: string): AsyncGenerator<AdapterStreamChunk> {
-      throw new Error("not used in this test");
+      yield { type: "text_delta", text: "not used in this test" };
+      yield { type: "usage", tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } };
+      yield { type: "done", finish_reason: "stop" };
     },
     async listModels() { return []; },
   };
