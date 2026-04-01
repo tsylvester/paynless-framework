@@ -842,154 +842,154 @@ These are the largest internal extractions. They're lower priority because they 
 
 #### 1. Intent & Position
 
-*   `[ ]`   `objective`
-    *   `[ ]`   Define the *problem being solved*: `prepareModelJob.ts` contains two inline affordability blocks (~lines 259–304 for the non-oversized path, ~lines 327–437 for the oversized preflight) that share input data but diverge on whether compression is needed. Neither can be unit-tested in isolation. Extracting a single `calculateAffordability` function that internally decides which path applies removes ~180 lines of inline preflight complexity, enforces the size decision in one place, and delegates the compression loop (lines 439–665) to `compressPrompt`.
-    *   `[ ]`   Separate:
+*   `[✅] `   `objective`
+    *   `[✅] `   Define the *problem being solved*: `prepareModelJob.ts` contains two inline affordability blocks (~lines 259–304 for the non-oversized path, ~lines 327–437 for the oversized preflight) that share input data but diverge on whether compression is needed. Neither can be unit-tested in isolation. Extracting a single `calculateAffordability` function that internally decides which path applies removes ~180 lines of inline preflight complexity, enforces the size decision in one place, and delegates the compression loop (lines 439–665) to `compressPrompt`.
+    *   `[✅] `   Separate:
         *   Functional goals:
             *   Count the assembled prompt tokens; determine `isOversized`
             *   If not oversized: run affordability math (`getMaxOutputTokens`, window checks, NSF); return `{ wasCompressed: false; maxOutputTokens: number }`
             *   If oversized: validate service availability; estimate total operation cost including embeddings; check rationality threshold (80%); run the iterative solver (`getAllowedInputFor`, `solveTargetForBalance`) to derive `finalTargetThreshold`, `balanceAfterCompression`; validate `balanceAfterCompression > 0` and solver feasibility; estimate total post-compression cost and check rationality; call `deps.compressPrompt` with derived targets; pass through its result as `{ wasCompressed: true; chatApiRequest; resolvedInputTokenCount; resourceDocuments }`
             *   On any infeasibility: return `{ error: Error; retriable: false }`
         *   Non-functional constraints: `getAllowedInputFor` and `solveTargetForBalance` remain as private closures inside `calculateAffordability`; external services (`ragService`, `tokenWalletService`, `embeddingClient`) are accessed only through `compressPrompt` dep; post-compression affordability (budget from real balance after debits) is inside `compressPrompt`, not here — this function only runs the preflight estimates
-    *   `[ ]`   Each goal is atomic and testable
+    *   `[✅] `   Each goal is atomic and testable
 
-*   `[ ]`   `role`
-    *   `[ ]`   Role: affordability gate and compression orchestrator — the single function that determines whether the prompt fits, funds the operation, and either returns the budget or compresses the prompt to fit
-    *   `[ ]`   Why appropriate: the non-oversized and oversized paths share all inputs and are mutually exclusive; keeping the size decision internal is SRP-compliant and prevents the caller from needing to know which path applies
-    *   `[ ]`   Must NOT: query the DB directly, fetch wallet balance, call RAG service directly, perform the model call, or save contributions
+*   `[✅] `   `role`
+    *   `[✅] `   Role: affordability gate and compression orchestrator — the single function that determines whether the prompt fits, funds the operation, and either returns the budget or compresses the prompt to fit
+    *   `[✅] `   Why appropriate: the non-oversized and oversized paths share all inputs and are mutually exclusive; keeping the size decision internal is SRP-compliant and prevents the caller from needing to know which path applies
+    *   `[✅] `   Must NOT: query the DB directly, fetch wallet balance, call RAG service directly, perform the model call, or save contributions
 
-*   `[ ]`   `module`
-    *   `[ ]`   Bounded context: token affordability and compression orchestration
-    *   `[ ]`   Inside boundary: token counting, `isOversized` determination, iterative solver, affordability checks, `compressPrompt` invocation, result branching
-    *   `[ ]`   Outside boundary: wallet balance fetching, cost rate validation, RAG loop implementation (delegated to `compressPrompt`), model call
+*   `[✅] `   `module`
+    *   `[✅] `   Bounded context: token affordability and compression orchestration
+    *   `[✅] `   Inside boundary: token counting, `isOversized` determination, iterative solver, affordability checks, `compressPrompt` invocation, result branching
+    *   `[✅] `   Outside boundary: wallet balance fetching, cost rate validation, RAG loop implementation (delegated to `compressPrompt`), model call
 
 #### 2. Dependencies & Injection
 
-*   `[ ]`   `deps`
-    *   `[ ]`   `ILogger` — `_shared/types.ts` — cross-cutting — logging
-    *   `[ ]`   `CountTokensFn` — `_shared/types/tokenizer.types.ts` — utility — count assembled prompt tokens
-    *   `[ ]`   `BoundCompressPromptFn` — `compressPrompt/compressPrompt.provides.ts` — domain service — invoked on the oversized path only
-    *   `[ ]`   Confirm: no DB or direct external service calls; all external I/O via `compressPrompt` dep
+*   `[✅] `   `deps`
+    *   `[✅] `   `ILogger` — `_shared/types.ts` — cross-cutting — logging
+    *   `[✅] `   `CountTokensFn` — `_shared/types/tokenizer.types.ts` — utility — count assembled prompt tokens
+    *   `[✅] `   `BoundCompressPromptFn` — `compressPrompt/compressPrompt.provides.ts` — domain service — invoked on the oversized path only
+    *   `[✅] `   Confirm: no DB or direct external service calls; all external I/O via `compressPrompt` dep
 
-*   `[ ]`   `context_slice`
-    *   `[ ]`   `CalculateAffordabilityDeps { logger: ILogger; countTokens: CountTokensFn; compressPrompt: BoundCompressPromptFn }`
+*   `[✅] `   `context_slice`
+    *   `[✅] `   `CalculateAffordabilityDeps { logger: ILogger; countTokens: CountTokensFn; compressPrompt: BoundCompressPromptFn }`
 
 #### 3. Contract Definition
 
-*   `[ ]`   `calculateAffordability.interface.test.ts` — raw structural assertions only; NO type guard imports; proves the contract shape that guards will later enforce
-    *   `[ ]`   Valid non-oversized: adequate balance → `result.wasCompressed === false`; `typeof result.maxOutputTokens === 'number'`; `result.maxOutputTokens >= 0`; no `error` field
-    *   `[ ]`   Valid oversized: compress succeeds → `result.wasCompressed === true`; `result.chatApiRequest` present; `typeof result.resolvedInputTokenCount === 'number'`; `result.resolvedInputTokenCount >= 0`; no `error` field
-    *   `[ ]`   Invalid: NSF on non-oversized → result has `error` field; `result.error.message` contains "Insufficient funds"; `result.retriable === false`; no `wasCompressed` field
-    *   `[ ]`   Invalid: context window exhausted → result has `error` field; `result.error` is `ContextWindowError`; `result.retriable === false`; no `wasCompressed` field
-    *   `[ ]`   Invalid: oversized — `currentUserBalance < totalEstimatedInputCostWithEmbeddings` → result has `error` field; `result.error.message` contains "Insufficient funds for the entire operation"; `result.retriable === false`
-    *   `[ ]`   Invalid: oversized — estimated cost exceeds 80% rationality threshold → result has `error` field; `result.retriable === false`
-    *   `[ ]`   Invalid: oversized — `balanceAfterCompression <= 0` → result has `error` field; `result.error.message` contains "Insufficient funds: compression requires"; `result.retriable === false`
-    *   `[ ]`   Invalid: oversized — infeasible solver target (`finalTargetThreshold < 0`) → result has `error` field; `result.error` is `ContextWindowError`; `result.retriable === false`
-    *   `[ ]`   Invalid: oversized — total estimated cost (compression + final I/O) exceeds balance → result has `error` field; `result.retriable === false`
-    *   `[ ]`   Invalid: oversized — total estimated cost exceeds 80% rationality threshold → result has `error` field; `result.retriable === false`
-    *   `[ ]`   Invalid: `compressPrompt` returns error → result has `error` field; error propagated; no `wasCompressed` field
+*   `[✅] `   `calculateAffordability.interface.test.ts` — raw structural assertions only; NO type guard imports; proves the contract shape that guards will later enforce
+    *   `[✅] `   Valid non-oversized: adequate balance → `result.wasCompressed === false`; `typeof result.maxOutputTokens === 'number'`; `result.maxOutputTokens >= 0`; no `error` field
+    *   `[✅] `   Valid oversized: compress succeeds → `result.wasCompressed === true`; `result.chatApiRequest` present; `typeof result.resolvedInputTokenCount === 'number'`; `result.resolvedInputTokenCount >= 0`; no `error` field
+    *   `[✅] `   Invalid: NSF on non-oversized → result has `error` field; `result.error.message` contains "Insufficient funds"; `result.retriable === false`; no `wasCompressed` field
+    *   `[✅] `   Invalid: context window exhausted → result has `error` field; `result.error` is `ContextWindowError`; `result.retriable === false`; no `wasCompressed` field
+    *   `[✅] `   Invalid: oversized — `currentUserBalance < totalEstimatedInputCostWithEmbeddings` → result has `error` field; `result.error.message` contains "Insufficient funds for the entire operation"; `result.retriable === false`
+    *   `[✅] `   Invalid: oversized — estimated cost exceeds 80% rationality threshold → result has `error` field; `result.retriable === false`
+    *   `[✅] `   Invalid: oversized — `balanceAfterCompression <= 0` → result has `error` field; `result.error.message` contains "Insufficient funds: compression requires"; `result.retriable === false`
+    *   `[✅] `   Invalid: oversized — infeasible solver target (`finalTargetThreshold < 0`) → result has `error` field; `result.error` is `ContextWindowError`; `result.retriable === false`
+    *   `[✅] `   Invalid: oversized — total estimated cost (compression + final I/O) exceeds balance → result has `error` field; `result.retriable === false`
+    *   `[✅] `   Invalid: oversized — total estimated cost exceeds 80% rationality threshold → result has `error` field; `result.retriable === false`
+    *   `[✅] `   Invalid: `compressPrompt` returns error → result has `error` field; error propagated; no `wasCompressed` field
 
 #### 4. Structural Boundary
 
-*   `[ ]`   `calculateAffordability.interface.ts`
-    *   `[ ]`   `CalculateAffordabilityDeps`: `{ logger: ILogger; countTokens: CountTokensFn; compressPrompt: BoundCompressPromptFn }`
-    *   `[ ]`   `CalculateAffordabilityParams`: `{ dbClient: SupabaseClient<Database>; jobId: string; projectOwnerUserId: string; sessionId: string; stageSlug: string; walletId: string; walletBalance: number; extendedModelConfig: AiModelExtendedConfig; inputRate: number; outputRate: number; isContinuationFlowInitial: boolean; inputsRelevance?: RelevanceRule[] }`
-    *   `[ ]`   `CalculateAffordabilityPayload`: `{ compressionStrategy: ICompressionStrategy; resourceDocuments: ResourceDocuments; conversationHistory: Messages[]; currentUserPrompt: string; systemInstruction: string; chatApiRequest: ChatApiRequest }`
-    *   `[ ]`   `CalculateAffordabilityDirectReturn`: `{ wasCompressed: false; maxOutputTokens: number }`
-    *   `[ ]`   `CalculateAffordabilityCompressedReturn`: `{ wasCompressed: true; chatApiRequest: ChatApiRequest; resolvedInputTokenCount: number; resourceDocuments: ResourceDocuments }`
-    *   `[ ]`   `CalculateAffordabilityErrorReturn`: `{ error: Error; retriable: boolean }`
-    *   `[ ]`   `CalculateAffordabilityReturn`: `(CalculateAffordabilityDirectReturn | CalculateAffordabilityCompressedReturn) | CalculateAffordabilityErrorReturn`
-    *   `[ ]`   `CalculateAffordabilityFn`: `(deps: CalculateAffordabilityDeps, params: CalculateAffordabilityParams, payload: CalculateAffordabilityPayload) => Promise<CalculateAffordabilityReturn>` — unbound signature; used by the implementation
-    *   `[ ]`   `BoundCalculateAffordabilityFn`: `(params: CalculateAffordabilityParams, payload: CalculateAffordabilityPayload) => Promise<CalculateAffordabilityReturn>` — pre-bound signature; deps already applied by the context slicer; this is the type `prepareModelJob` receives as a dep on `IPrepareModelJobContext`
-    *   `[ ]`   No `any` types; each type minimal and composable
+*   `[✅] `   `calculateAffordability.interface.ts`
+    *   `[✅] `   `CalculateAffordabilityDeps`: `{ logger: ILogger; countTokens: CountTokensFn; compressPrompt: BoundCompressPromptFn }`
+    *   `[✅] `   `CalculateAffordabilityParams`: `{ dbClient: SupabaseClient<Database>; jobId: string; projectOwnerUserId: string; sessionId: string; stageSlug: string; walletId: string; walletBalance: number; extendedModelConfig: AiModelExtendedConfig; inputRate: number; outputRate: number; isContinuationFlowInitial: boolean; inputsRelevance?: RelevanceRule[] }`
+    *   `[✅] `   `CalculateAffordabilityPayload`: `{ compressionStrategy: ICompressionStrategy; resourceDocuments: ResourceDocuments; conversationHistory: Messages[]; currentUserPrompt: string; systemInstruction: string; chatApiRequest: ChatApiRequest }`
+    *   `[✅] `   `CalculateAffordabilityDirectReturn`: `{ wasCompressed: false; maxOutputTokens: number }`
+    *   `[✅] `   `CalculateAffordabilityCompressedReturn`: `{ wasCompressed: true; chatApiRequest: ChatApiRequest; resolvedInputTokenCount: number; resourceDocuments: ResourceDocuments }`
+    *   `[✅] `   `CalculateAffordabilityErrorReturn`: `{ error: Error; retriable: boolean }`
+    *   `[✅] `   `CalculateAffordabilityReturn`: `(CalculateAffordabilityDirectReturn | CalculateAffordabilityCompressedReturn) | CalculateAffordabilityErrorReturn`
+    *   `[✅] `   `CalculateAffordabilityFn`: `(deps: CalculateAffordabilityDeps, params: CalculateAffordabilityParams, payload: CalculateAffordabilityPayload) => Promise<CalculateAffordabilityReturn>` — unbound signature; used by the implementation
+    *   `[✅] `   `BoundCalculateAffordabilityFn`: `(params: CalculateAffordabilityParams, payload: CalculateAffordabilityPayload) => Promise<CalculateAffordabilityReturn>` — pre-bound signature; deps already applied by the context slicer; this is the type `prepareModelJob` receives as a dep on `IPrepareModelJobContext`
+    *   `[✅] `   No `any` types; each type minimal and composable
 
 #### 5. Interaction Semantics
 
-*   `[ ]`   `calculateAffordability.interaction.spec`
-    *   `[ ]`   Called by `prepareModelJob` after `applyInputsRequiredScope`, before `ChatApiRequest` assembly
-    *   `[ ]`   Inputs arrive pre-validated: `walletBalance` already parsed by `validateWalletBalance`; rates already extracted by `validateModelCostRates`
-    *   `[ ]`   On `isCalculateAffordabilityDirectReturn(result)`: caller uses `result.maxOutputTokens` to set `chatApiRequest.max_tokens_to_generate`
-    *   `[ ]`   On `isCalculateAffordabilityCompressedReturn(result)`: caller uses `result.chatApiRequest` directly (already assembled with compressed content and `max_tokens_to_generate` set)
-    *   `[ ]`   On `isCalculateAffordabilityErrorReturn(result)`: caller returns `{ error: result.error, retriable: result.retriable }` as `PrepareModelJobErrorReturn`
-    *   `[ ]`   `compressPrompt` invoked internally when `isOversized`; never called by `prepareModelJob`
+*   `[✅] `   `calculateAffordability.interaction.spec`
+    *   `[✅] `   Called by `prepareModelJob` after `applyInputsRequiredScope`, before `ChatApiRequest` assembly
+    *   `[✅] `   Inputs arrive pre-validated: `walletBalance` already parsed by `validateWalletBalance`; rates already extracted by `validateModelCostRates`
+    *   `[✅] `   On `isCalculateAffordabilityDirectReturn(result)`: caller uses `result.maxOutputTokens` to set `chatApiRequest.max_tokens_to_generate`
+    *   `[✅] `   On `isCalculateAffordabilityCompressedReturn(result)`: caller uses `result.chatApiRequest` directly (already assembled with compressed content and `max_tokens_to_generate` set)
+    *   `[✅] `   On `isCalculateAffordabilityErrorReturn(result)`: caller returns `{ error: result.error, retriable: result.retriable }` as `PrepareModelJobErrorReturn`
+    *   `[✅] `   `compressPrompt` invoked internally when `isOversized`; never called by `prepareModelJob`
 
 #### 6. Enforcement
 
-*   `[ ]`   `calculateAffordability.guard.test.ts`
-    *   `[ ]`   Verify each guard against contract cases; no false positives; no false negatives
+*   `[✅] `   `calculateAffordability.guard.test.ts`
+    *   `[✅] `   Verify each guard against contract cases; no false positives; no false negatives
 
-*   `[ ]`   `calculateAffordability.guard.ts`
-    *   `[ ]`   `isCalculateAffordabilityDeps`, `isCalculateAffordabilityParams`, `isCalculateAffordabilityPayload`
-    *   `[ ]`   `isCalculateAffordabilityDirectReturn`, `isCalculateAffordabilityCompressedReturn`, `isCalculateAffordabilityErrorReturn`
-    *   `[ ]`   `isBoundCalculateAffordabilityFn`: validates value is a function (used by `prepareModelJob` guard to verify its dep)
-    *   `[ ]`   Guards accept all valid contract cases; reject all invalid cases
+*   `[✅] `   `calculateAffordability.guard.ts`
+    *   `[✅] `   `isCalculateAffordabilityDeps`, `isCalculateAffordabilityParams`, `isCalculateAffordabilityPayload`
+    *   `[✅] `   `isCalculateAffordabilityDirectReturn`, `isCalculateAffordabilityCompressedReturn`, `isCalculateAffordabilityErrorReturn`
+    *   `[✅] `   `isBoundCalculateAffordabilityFn`: validates value is a function (used by `prepareModelJob` guard to verify its dep)
+    *   `[✅] `   Guards accept all valid contract cases; reject all invalid cases
 
 #### 7. Behavioral Verification
 
-*   `[ ]`   `calculateAffordability.test.ts`
-    *   `[ ]`   Non-oversized adequate balance: `isCalculateAffordabilityDirectReturn(result)` true; `result.maxOutputTokens` matches `getMaxOutputTokens` return
-    *   `[ ]`   Non-oversized NSF: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
-    *   `[ ]`   Non-oversized `allowedInput <= 0`: `isCalculateAffordabilityErrorReturn(result)` true; `result.error` is `ContextWindowError`
-    *   `[ ]`   Oversized: `deps.compressPrompt` called with derived `finalTargetThreshold`, `balanceAfterCompression`, `walletBalance`; success → `isCalculateAffordabilityCompressedReturn(result)` true
-    *   `[ ]`   Oversized: `deps.compressPrompt` returns `CompressPromptErrorReturn` → `isCalculateAffordabilityErrorReturn(result)` true; error propagated
-    *   `[ ]`   Oversized NSF for total operation (including embeddings): `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
-    *   `[ ]`   Oversized rationality threshold (80%): `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
-    *   `[ ]`   Oversized `balanceAfterCompression <= 0`: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
-    *   `[ ]`   Infeasible solver target: `isCalculateAffordabilityErrorReturn(result)` true; `result.error` is `ContextWindowError`
-    *   `[ ]`   Total estimated cost (compression + final I/O) exceeds balance: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
-    *   `[ ]`   Total estimated cost exceeds rationality threshold: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+*   `[✅] `   `calculateAffordability.test.ts`
+    *   `[✅] `   Non-oversized adequate balance: `isCalculateAffordabilityDirectReturn(result)` true; `result.maxOutputTokens` matches `getMaxOutputTokens` return
+    *   `[✅] `   Non-oversized NSF: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+    *   `[✅] `   Non-oversized `allowedInput <= 0`: `isCalculateAffordabilityErrorReturn(result)` true; `result.error` is `ContextWindowError`
+    *   `[✅] `   Oversized: `deps.compressPrompt` called with derived `finalTargetThreshold`, `balanceAfterCompression`, `walletBalance`; success → `isCalculateAffordabilityCompressedReturn(result)` true
+    *   `[✅] `   Oversized: `deps.compressPrompt` returns `CompressPromptErrorReturn` → `isCalculateAffordabilityErrorReturn(result)` true; error propagated
+    *   `[✅] `   Oversized NSF for total operation (including embeddings): `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+    *   `[✅] `   Oversized rationality threshold (80%): `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+    *   `[✅] `   Oversized `balanceAfterCompression <= 0`: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+    *   `[✅] `   Infeasible solver target: `isCalculateAffordabilityErrorReturn(result)` true; `result.error` is `ContextWindowError`
+    *   `[✅] `   Total estimated cost (compression + final I/O) exceeds balance: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
+    *   `[✅] `   Total estimated cost exceeds rationality threshold: `isCalculateAffordabilityErrorReturn(result)` true; `result.retriable` is `false`
 
 #### 8. Construction
 
-*   `[ ]`   `construction`
-    *   `[ ]`   Plain async function; no factory; called with explicit deps, params, payload at each call site
-    *   `[ ]`   No partially constructed instances possible
+*   `[✅] `   `construction`
+    *   `[✅] `   Plain async function; no factory; called with explicit deps, params, payload at each call site
+    *   `[✅] `   No partially constructed instances possible
 
 #### 9. Implementation
 
-*   `[ ]`   `calculateAffordability.ts`
-    *   `[ ]`   Extract lines ~259–304 (non-oversized affordability) and ~327–437 (oversized preflight) from `prepareModelJob.ts`; convert all closure-captured variables to explicit params matching `CalculateAffordabilityDeps`, `CalculateAffordabilityParams`, `CalculateAffordabilityPayload`
-    *   `[ ]`   Lines ~439–665 (compression loop + post-compression affordability) are NOT extracted here — they are extracted into `compressPrompt` which this function calls via `deps.compressPrompt`
-    *   `[ ]`   `getAllowedInputFor` and `solveTargetForBalance` remain as private closures inside `calculateAffordability`
-    *   `[ ]`   Non-oversized path: convert all `throw` statements to `return { error: <typed Error>, retriable: false }`
-    *   `[ ]`   Oversized path: run preflight checks and iterative solver (lines 327–437); call `await deps.compressPrompt(compressParams, compressPayload)` with derived `finalTargetThreshold`, `balanceAfterCompression`, `walletBalance`; on `isCompressPromptErrorReturn(result)` return `{ error: result.error, retriable: result.retriable }`; on success return `{ wasCompressed: true, ...result }` — `compressPrompt` handles post-compression affordability and sets `max_tokens_to_generate`
-    *   `[ ]`   `tokenizerDeps` constructed internally from `deps.countTokens`
-    *   `[ ]`   Convert all `throw` statements from preflight (lines 327–437) to error returns
+*   `[✅] `   `calculateAffordability.ts`
+    *   `[✅] `   Extract lines ~259–304 (non-oversized affordability) and ~327–437 (oversized preflight) from `prepareModelJob.ts`; convert all closure-captured variables to explicit params matching `CalculateAffordabilityDeps`, `CalculateAffordabilityParams`, `CalculateAffordabilityPayload`
+    *   `[✅] `   Lines ~439–665 (compression loop + post-compression affordability) are NOT extracted here — they are extracted into `compressPrompt` which this function calls via `deps.compressPrompt`
+    *   `[✅] `   `getAllowedInputFor` and `solveTargetForBalance` remain as private closures inside `calculateAffordability`
+    *   `[✅] `   Non-oversized path: convert all `throw` statements to `return { error: <typed Error>, retriable: false }`
+    *   `[✅] `   Oversized path: run preflight checks and iterative solver (lines 327–437); call `await deps.compressPrompt(compressParams, compressPayload)` with derived `finalTargetThreshold`, `balanceAfterCompression`, `walletBalance`; on `isCompressPromptErrorReturn(result)` return `{ error: result.error, retriable: result.retriable }`; on success return `{ wasCompressed: true, ...result }` — `compressPrompt` handles post-compression affordability and sets `max_tokens_to_generate`
+    *   `[✅] `   `tokenizerDeps` constructed internally from `deps.countTokens`
+    *   `[✅] `   Convert all `throw` statements from preflight (lines 327–437) to error returns
 
 #### 10. External Boundary
 
-*   `[ ]`   `calculateAffordability.provides.ts`
-    *   `[ ]`   Exports: `calculateAffordability`, `CalculateAffordabilityDeps`, `CalculateAffordabilityParams`, `CalculateAffordabilityPayload`, `CalculateAffordabilityFn`, `BoundCalculateAffordabilityFn`, `CalculateAffordabilityDirectReturn`, `CalculateAffordabilityCompressedReturn`, `CalculateAffordabilityErrorReturn`, `CalculateAffordabilityReturn`, `isCalculateAffordabilityDirectReturn`, `isCalculateAffordabilityCompressedReturn`, `isCalculateAffordabilityErrorReturn`, `isBoundCalculateAffordabilityFn`
-    *   `[ ]`   Also re-exports mock builders and override types from `calculateAffordability.mock.ts` for consumer test use
-    *   `[ ]`   No external access bypasses this file
+*   `[✅] `   `calculateAffordability.provides.ts`
+    *   `[✅] `   Exports: `calculateAffordability`, `CalculateAffordabilityDeps`, `CalculateAffordabilityParams`, `CalculateAffordabilityPayload`, `CalculateAffordabilityFn`, `BoundCalculateAffordabilityFn`, `CalculateAffordabilityDirectReturn`, `CalculateAffordabilityCompressedReturn`, `CalculateAffordabilityErrorReturn`, `CalculateAffordabilityReturn`, `isCalculateAffordabilityDirectReturn`, `isCalculateAffordabilityCompressedReturn`, `isCalculateAffordabilityErrorReturn`, `isBoundCalculateAffordabilityFn`
+    *   `[✅] `   Also re-exports mock builders and override types from `calculateAffordability.mock.ts` for consumer test use
+    *   `[✅] `   No external access bypasses this file
 
 #### 11. Simulation
 
-*   `[ ]`   `calculateAffordability.mock.ts`
-    *   `[ ]`   Configurable: returns caller-supplied `CalculateAffordabilityDirectReturn`, `CalculateAffordabilityCompressedReturn`, or `CalculateAffordabilityErrorReturn`
-    *   `[ ]`   Conforms to `CalculateAffordabilityFn` signature and interaction spec; no new behavior beyond spec
+*   `[✅] `   `calculateAffordability.mock.ts`
+    *   `[✅] `   Configurable: returns caller-supplied `CalculateAffordabilityDirectReturn`, `CalculateAffordabilityCompressedReturn`, or `CalculateAffordabilityErrorReturn`
+    *   `[✅] `   Conforms to `CalculateAffordabilityFn` signature and interaction spec; no new behavior beyond spec
 
 #### 12. Edge Validation
 
-*   `[ ]`   `calculateAffordability.integration.test.ts`
-    *   `[ ]`   Validate: non-oversized with realistic `AiModelExtendedConfig` and cost rates → `isCalculateAffordabilityDirectReturn(result)` true
-    *   `[ ]`   Validate: oversized with mocked `compressPrompt` → `isCalculateAffordabilityCompressedReturn(result)` true; solver values internally consistent
-    *   `[ ]`   Validate: NSF scenario → `isCalculateAffordabilityErrorReturn(result)` true
+*   `[✅] `   `calculateAffordability.integration.test.ts`
+    *   `[✅] `   Validate: non-oversized with a real `AiModelExtendedConfig` and cost rates → `isCalculateAffordabilityDirectReturn(result)` true
+    *   `[✅] `   Validate: oversized with `compressPrompt` → `isCalculateAffordabilityCompressedReturn(result)` true; solver values internally consistent
+    *   `[✅] `   Validate: NSF scenario → `isCalculateAffordabilityErrorReturn(result)` true
 
 #### 13. Directionality
 
-*   `[ ]`   `directionality`
-    *   `[ ]`   Layer: dialectic-worker domain service
-    *   `[ ]`   Deps inward: `_shared/types.ts`, `_shared/types/tokenizer.types.ts`, `_shared/utils/affordability_utils.ts`, `_shared/utils/errors.ts`, `compressPrompt/compressPrompt.provides.ts`
-    *   `[ ]`   Provides outward: `prepareModelJob`
-    *   `[ ]`   No cycles
+*   `[✅] `   `directionality`
+    *   `[✅] `   Layer: dialectic-worker domain service
+    *   `[✅] `   Deps inward: `_shared/types.ts`, `_shared/types/tokenizer.types.ts`, `_shared/utils/affordability_utils.ts`, `_shared/utils/errors.ts`, `compressPrompt/compressPrompt.provides.ts`
+    *   `[✅] `   Provides outward: `prepareModelJob`
+    *   `[✅] `   No cycles
 
 #### 14. Completion Criteria
 
-*   `[ ]`   `requirements`
-    *   `[ ]`   `calculateAffordability` independently exported and testable in isolation
-    *   `[ ]`   All affordability and compression contract cases covered by passing tests
-    *   `[ ]`   `prepareModelJob.ts` NOT yet modified in this node — extraction only
+*   `[✅] `   `requirements`
+    *   `[✅] `   `calculateAffordability` independently exported and testable in isolation
+    *   `[✅] `   All affordability and compression contract cases covered by passing tests
+    *   `[✅] `   `prepareModelJob.ts` NOT yet modified in this node — extraction only
 
 ---
 

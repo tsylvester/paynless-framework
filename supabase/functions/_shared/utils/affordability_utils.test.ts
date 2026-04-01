@@ -312,4 +312,42 @@ Deno.test('getMaxOutputTokens', async (t) => {
     // Provider cap 50 should dominate
     assertEquals(result, 50);
   });
+
+  await t.step(
+    'should throw error when output_token_cost_rate is NaN (non-finite must be invalid)',
+    () => {
+      beforeEachStep();
+      const invalidModelConfig: AiModelExtendedConfig = {
+        ...modelConfig,
+        output_token_cost_rate: Number.NaN,
+      };
+      assertThrows(
+        () => {
+          getMaxOutputTokens(1000, 100, invalidModelConfig, mockLogger);
+        },
+        Error,
+        'Cannot calculate max output tokens: Invalid output token cost rate.',
+      );
+      assertEquals(mockLoggerErrorCalls.length, 1);
+    },
+  );
+
+  await t.step(
+    'should throw error when input_token_cost_rate is NaN (non-finite must be invalid)',
+    () => {
+      beforeEachStep();
+      const invalidModelConfig: AiModelExtendedConfig = {
+        ...modelConfig,
+        input_token_cost_rate: Number.NaN,
+      };
+      assertThrows(
+        () => {
+          getMaxOutputTokens(1000, 100, invalidModelConfig, mockLogger);
+        },
+        Error,
+        'Cannot calculate max output tokens: Invalid input token cost rate.',
+      );
+      assertEquals(mockLoggerErrorCalls.length, 1);
+    },
+  );
 });
