@@ -68,6 +68,7 @@ Deno.test("Non-oversized adequate balance: direct return; maxOutputTokens matche
   assertEquals(isCalculateAffordabilityDirectReturn(result), true);
   if (isCalculateAffordabilityDirectReturn(result)) {
     assertEquals(result.maxOutputTokens, expectedMax);
+    assertEquals(result.resolvedInputTokenCount, initialTokenCount);
   }
   assertEquals(calls.length, 0);
 });

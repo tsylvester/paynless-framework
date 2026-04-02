@@ -14,7 +14,7 @@ import { PrepareModelJobExecutionError } from './prepareModelJob/prepareModelJob
 import {
   isPrepareModelJobErrorReturn,
   isPrepareModelJobSuccessReturn,
-} from './prepareModelJob/prepareModelJob.interface.guard.ts';
+} from './prepareModelJob/prepareModelJob.guard.ts';
 import { isGatherArtifactsErrorReturn } from './gatherArtifacts/gatherArtifacts.guard.ts';
 import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";

@@ -10,8 +10,13 @@ import { MockPromptAssembler } from '../../_shared/prompt-assembler/prompt-assem
 import { mockNotificationService } from '../../_shared/utils/notification.service.mock.ts';
 import { MockLogger } from '../../_shared/logger.mock.ts';
 import { createMockDownloadFromStorage } from '../../_shared/supabase_storage_utils.mock.ts';
-import { IJobContext } from './JobContext.interface.ts';
-import { createJobContext } from './createJobContext.ts';
+import { mockSendMessageStream } from '../../_shared/ai_service/ai_provider.mock.ts';
+import {
+    IJobContext,
+    IPlanJobContext,
+    IPrepareModelJobContext,
+    IRenderJobContext,
+} from './JobContext.interface.ts';
 import { createMockFindSourceDocuments } from '../findSourceDocuments.mock.ts';
 import { extractSourceGroupFragment } from '../../_shared/utils/path_utils.ts';
 import { pickLatest } from '../../_shared/utils/pickLatest.ts';
@@ -22,30 +27,39 @@ import { resolveFinishReason } from '../../_shared/utils/resolveFinishReason.ts'
 import { isIntermediateChunk } from '../../_shared/utils/isIntermediateChunk.ts';
 import { determineContinuation } from '../../_shared/utils/determineContinuation/determineContinuation.ts';
 import { buildUploadContext } from '../../_shared/utils/buildUploadContext/buildUploadContext.ts';
-import type { AdapterStreamChunk, ChatApiRequest } from '../../_shared/types.ts';
 import type { BoundPrepareModelJobFn } from './JobContext.interface.ts';
 import type { DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 import type { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
 import type { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 import type { BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import type { Database } from '../../types_db.ts';
+import type {
+    CompressPromptDeps,
+    CompressPromptFn,
+    CompressPromptParams,
+    CompressPromptPayload,
+    CompressPromptSuccessReturn,
+} from '../compressPrompt/compressPrompt.interface.ts';
+import {
+    buildCompressPromptParams,
+    buildCompressPromptPayload,
+} from '../compressPrompt/compressPrompt.mock.ts';
+import type {
+    CalculateAffordabilityDeps,
+    CalculateAffordabilityFn,
+    CalculateAffordabilityParams,
+    CalculateAffordabilityPayload,
+} from '../calculateAffordability/calculateAffordability.interface.ts';
+import {
+    buildCalculateAffordabilityDirectReturn,
+    buildMockBoundCalculateAffordabilityFn,
+    buildMockCalculateAffordabilityFn,
+} from '../calculateAffordability/calculateAffordability.mock.ts';
 
 type JobContextParamsOverrides = { [K in keyof JobContextParams]?: JobContextParams[K] };
 
-async function* mockSendMessageStream(
-    _request: ChatApiRequest,
-    _modelIdentifier: string,
-): AsyncGenerator<AdapterStreamChunk> {
-    yield { type: 'text_delta', text: 'mock' };
-    yield {
-        type: 'usage',
-        tokenUsage: {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0,
-        },
-    };
-    yield { type: 'done', finish_reason: 'stop' };
-}
+
 
 export function createMockBoundExecuteModelCallAndSave(): BoundExecuteModelCallAndSaveFn {
     return async () => ({
@@ -65,6 +79,73 @@ export function createMockBoundGatherArtifacts(): BoundGatherArtifactsFn {
     return async () => ({
         artifacts: [],
     });
+}
+
+/**
+ * Unbound `compressPrompt` that records every `CompressPromptDeps` passed by the slicer binding.
+ */
+export function createRecordingCompressPromptFnForPrepareContextContract(): {
+    compressPromptFn: CompressPromptFn;
+    recordedCompressDeps: CompressPromptDeps[];
+} {
+    const recordedCompressDeps: CompressPromptDeps[] = [];
+    const compressPromptFn: CompressPromptFn = async (
+        deps: CompressPromptDeps,
+        _params: CompressPromptParams,
+        payload: CompressPromptPayload,
+    ): Promise<CompressPromptSuccessReturn> => {
+        recordedCompressDeps.push(deps);
+        const out: CompressPromptSuccessReturn = {
+            chatApiRequest: payload.chatApiRequest,
+            resolvedInputTokenCount: 0,
+            resourceDocuments: payload.resourceDocuments,
+        };
+        return out;
+    };
+    return { compressPromptFn, recordedCompressDeps };
+}
+
+/**
+ * Unbound `calculateAffordability` that records every `CalculateAffordabilityDeps` passed by the slicer binding.
+ */
+export function createRecordingCalculateAffordabilityFnForPrepareContextContract(): {
+    calculateAffordabilityFn: CalculateAffordabilityFn;
+    recordedAffordabilityDeps: CalculateAffordabilityDeps[];
+} {
+    const recordedAffordabilityDeps: CalculateAffordabilityDeps[] = [];
+    const calculateAffordabilityFn: CalculateAffordabilityFn = buildMockCalculateAffordabilityFn({
+        resolve: async (
+            deps: CalculateAffordabilityDeps,
+            _params: CalculateAffordabilityParams,
+            _payload: CalculateAffordabilityPayload,
+        ) => {
+            recordedAffordabilityDeps.push(deps);
+            return buildCalculateAffordabilityDirectReturn(0);
+        },
+    });
+    return { calculateAffordabilityFn, recordedAffordabilityDeps };
+}
+
+/**
+ * Unbound `calculateAffordability` that invokes `deps.compressPrompt` once (contract: bound compress receives root-shaped deps).
+ */
+export function createContractCalculateAffordabilityFnThatCallsCompressPrompt(
+    dbClient: SupabaseClient<Database>,
+): { calculateAffordabilityFn: CalculateAffordabilityFn } {
+    const calculateAffordabilityFn: CalculateAffordabilityFn = buildMockCalculateAffordabilityFn({
+        resolve: async (
+            deps: CalculateAffordabilityDeps,
+            _params: CalculateAffordabilityParams,
+            _payload: CalculateAffordabilityPayload,
+        ) => {
+            await deps.compressPrompt(
+                buildCompressPromptParams(dbClient),
+                buildCompressPromptPayload(),
+            );
+            return buildCalculateAffordabilityDirectReturn(0);
+        },
+    });
+    return { calculateAffordabilityFn };
 }
 
 /**
@@ -168,9 +249,92 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
 }
 
 /**
- * Helper: Creates mock IJobContext with the same production utility bindings as
- * `createMockJobContextParams` (including the eight EMCAS pure utilities from `_shared/utils/`).
+ * `IJobContext` built only from `JobContextParams` mapping — does not call `createJobContext`.
+ * For guard tests, interface tests, and any caller that must not depend on the composition root.
  */
-export function createMockRootContext(overrides?: JobContextParamsOverrides): IJobContext {
-    return createJobContext(createMockJobContextParams(overrides));
+export function buildGuardTestIJobContext(): IJobContext {
+    const params: JobContextParams = createMockJobContextParams();
+    return {
+        logger: params.logger,
+        fileManager: params.fileManager,
+        downloadFromStorage: params.downloadFromStorage,
+        deleteFromStorage: params.deleteFromStorage,
+        getAiProviderAdapter: params.getAiProviderAdapter,
+        getAiProviderConfig: params.getAiProviderConfig,
+        ragService: params.ragService,
+        indexingService: params.indexingService,
+        embeddingClient: params.embeddingClient,
+        countTokens: params.countTokens,
+        tokenWalletService: params.tokenWalletService,
+        notificationService: params.notificationService,
+        promptAssembler: params.promptAssembler,
+        getSeedPromptForStage: params.getSeedPromptForStage,
+        gatherArtifacts: params.gatherArtifacts,
+        continueJob: params.continueJob,
+        retryJob: params.retryJob,
+        pickLatest: params.pickLatest,
+        applyInputsRequiredScope: params.applyInputsRequiredScope,
+        validateWalletBalance: params.validateWalletBalance,
+        validateModelCostRates: params.validateModelCostRates,
+        resolveFinishReason: params.resolveFinishReason,
+        isIntermediateChunk: params.isIntermediateChunk,
+        determineContinuation: params.determineContinuation,
+        buildUploadContext: params.buildUploadContext,
+        getGranularityPlanner: params.getGranularityPlanner,
+        planComplexStage: params.planComplexStage,
+        findSourceDocuments: params.findSourceDocuments,
+        documentRenderer: params.documentRenderer,
+        prepareModelJob: params.prepareModelJob,
+        debitTokens: params.debitTokens,
+    };
+}
+
+/**
+ * `IPlanJobContext` slice from a guard-test root (no slicer import).
+ */
+export function buildGuardTestIPlanJobContext(root?: IJobContext): IPlanJobContext {
+    const r: IJobContext = root !== undefined ? root : buildGuardTestIJobContext();
+    return {
+        logger: r.logger,
+        notificationService: r.notificationService,
+        getGranularityPlanner: r.getGranularityPlanner,
+        planComplexStage: r.planComplexStage,
+        findSourceDocuments: r.findSourceDocuments,
+    };
+}
+
+/**
+ * `IRenderJobContext` slice from a guard-test root (no slicer import).
+ */
+export function buildGuardTestIRenderJobContext(root?: IJobContext): IRenderJobContext {
+    const r: IJobContext = root !== undefined ? root : buildGuardTestIJobContext();
+    return {
+        logger: r.logger,
+        fileManager: r.fileManager,
+        downloadFromStorage: r.downloadFromStorage,
+        deleteFromStorage: r.deleteFromStorage,
+        notificationService: r.notificationService,
+        documentRenderer: r.documentRenderer,
+    };
+}
+
+/**
+ * Typed object satisfying `IPrepareModelJobContext` for interface / guard contract tests (no slicer).
+ * Optional `root` pins raw-field equality when assertions compare against `buildGuardTestIJobContext()`.
+ */
+export function buildContractIPrepareModelJobContext(root?: IJobContext): IPrepareModelJobContext {
+    const r: IJobContext = root !== undefined ? root : buildGuardTestIJobContext();
+    return {
+        logger: r.logger,
+        applyInputsRequiredScope: r.applyInputsRequiredScope,
+        countTokens: r.countTokens,
+        tokenWalletService: r.tokenWalletService,
+        validateWalletBalance: r.validateWalletBalance,
+        validateModelCostRates: r.validateModelCostRates,
+        ragService: r.ragService,
+        embeddingClient: r.embeddingClient,
+        executeModelCallAndSave: createMockBoundExecuteModelCallAndSave(),
+        enqueueRenderJob: createMockBoundEnqueueRenderJob(),
+        calculateAffordability: buildMockBoundCalculateAffordabilityFn(),
+    };
 }

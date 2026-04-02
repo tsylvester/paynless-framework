@@ -13,7 +13,7 @@ import {
     IPlanJobContext,
     IRenderJobContext,
     IJobContext,
-} from '../JobContext.interface.ts';
+} from './JobContext.interface.ts';
 
 export function isILoggerContext(value: unknown): value is ILoggerContext {
     if (!isRecord(value)) {
@@ -122,7 +122,8 @@ export function isIPrepareModelJobContext(value: unknown): value is IPrepareMode
         'ragService' in value && typeof value.ragService === 'object' && value.ragService !== null &&
         'embeddingClient' in value && typeof value.embeddingClient === 'object' && value.embeddingClient !== null &&
         'executeModelCallAndSave' in value && typeof value.executeModelCallAndSave === 'function' &&
-        'enqueueRenderJob' in value && typeof value.enqueueRenderJob === 'function'
+        'enqueueRenderJob' in value && typeof value.enqueueRenderJob === 'function' &&
+        'calculateAffordability' in value && typeof value.calculateAffordability === 'function'
     );
 }
 

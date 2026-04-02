@@ -659,12 +659,12 @@ Of the three fetches against the same artifact data, two fetch the same document
 These are the largest internal extractions. They're lower priority because they don't gate the timeout fix, but they complete the decomposition of `prepareModelJob` into focused modules.
 
 *   `[✅] ` **3.1 Extract `compressPrompt`** — RAG compression loop with live wallet balance tracking and post-compression affordability verification (current lines ~362–370, ~439–665 of `prepareModelJob.ts`)
-*   `[ ]` **3.2 Extract `calculateAffordability`** — unified affordability gate: non-oversized path (lines ~259–304), oversized preflight with iterative solver (lines ~327–437), delegates to `compressPrompt` on oversized path
-*   `[ ]` **3.3 Update `createJobContext`** — bind `compressPrompt` and `calculateAffordability`; add `calculateAffordability` to `IPrepareModelJobContext`
-*   `[ ]` **3.4 Update `prepareModelJob`** — replace inline affordability/compression zones with single `deps.calculateAffordability` call; remove redundant deps
-*   `[ ]` **3.5 Update `index.ts`** — wire new functions into `createPrepareModelJobContext`
-*   `[ ]` **3.6 Integration test: all tests pass**
-*   `[ ]` **3.7 Commit: `refactor(BE): extract affordability and compression from prepareModelJob`**
+*   `[✅] ` **3.2 Extract `calculateAffordability`** — unified affordability gate: non-oversized path (lines ~259–304), oversized preflight with iterative solver (lines ~327–437), delegates to `compressPrompt` on oversized path
+*   `[✅] ` **3.3 Update `createJobContext`** — bind `compressPrompt` and `calculateAffordability`; add `calculateAffordability` to `IPrepareModelJobContext`
+*   `[✅] ` **3.4 Update `prepareModelJob`** — replace inline affordability/compression zones with single `deps.calculateAffordability` call; remove redundant deps
+*   `[✅] ` **3.5 Update `index.ts`** — wire new functions into `createPrepareModelJobContext`
+*   `[✅] ` **3.6 Integration test: all tests pass**
+*   `[✅] ` **3.7 Commit: `refactor(BE): extract affordability and compression from prepareModelJob`**
 
 
 *   `[✅] ` [BE] `dialectic-worker/compressPrompt` **Extract `compressPrompt` as a standalone module: RAG compression loop with live wallet balance tracking and post-compression affordability verification**
@@ -838,7 +838,7 @@ These are the largest internal extractions. They're lower priority because they 
 
 --- 
 
-*   `[ ]` [BE] `dialectic-worker/calculateAffordability` **Extract `calculateAffordability` as a standalone module: token affordability gate and compression orchestration for all path sizes**
+*   `[✅] ` [BE] `dialectic-worker/calculateAffordability` **Extract `calculateAffordability` as a standalone module: token affordability gate and compression orchestration for all path sizes**
 
 #### 1. Intent & Position
 
@@ -993,325 +993,330 @@ These are the largest internal extractions. They're lower priority because they 
 
 ---
 
-*   `[ ]` [BE] `dialectic-worker/createJobContext/createJobContext.ts` **Bind `calculateAffordability` and `compressPrompt` as pre-bound closures in `createPrepareModelJobContext`; extend `IPrepareModelJobContext` with `calculateAffordability`**
+*   `[✅] ` [BE] `dialectic-worker/createJobContext/createJobContext.ts` **Bind `calculateAffordability` and `compressPrompt` as pre-bound closures in `createPrepareModelJobContext`; extend `IPrepareModelJobContext` with `calculateAffordability`**
 
 #### 1. Intent & Position
 
-*   `[ ]`   `objective`
-    *   `[ ]`   Problem: `prepareModelJob` will call `calculateAffordability` via `deps`. That function must be injectable for `prepareModelJob.test.ts` to mock it. `IPrepareModelJobContext` is the slice passed to `prepareModelJob` as `PrepareModelJobDeps`. Neither `IPrepareModelJobContext` nor `createPrepareModelJobContext` currently carries the new bound closure. `compressPrompt` must also be bound so it can be passed as a dep when binding `calculateAffordability`.
-    *   `[ ]`   Functional goals:
+*   `[✅] `   `objective`
+    *   `[✅] `   Problem: `prepareModelJob` will call `calculateAffordability` via `deps`. That function must be injectable for `prepareModelJob.test.ts` to mock it. `IPrepareModelJobContext` is the slice passed to `prepareModelJob` as `PrepareModelJobDeps`. Neither `IPrepareModelJobContext` nor `createPrepareModelJobContext` currently carries the new bound closure. `compressPrompt` must also be bound so it can be passed as a dep when binding `calculateAffordability`.
+    *   `[✅] `   Functional goals:
         *   Add `BoundCalculateAffordabilityFn` type alias to `JobContext.interface.ts`
         *   Add `calculateAffordability` field to `IPrepareModelJobContext` — `compressPrompt` is NOT on the context slice; it is bound first as an intermediate closure and injected into `calculateAffordability`'s deps
         *   `createPrepareModelJobContext` accepts two new explicit params (`compressPromptFn`, `calculateAffordabilityFn`) alongside `boundEmcas` and `boundRender`, and partially applies each with its deps from `root`
-    *   `[ ]`   Non-functional: `IJobContext` is NOT changed — the raw function references live only as params to `createPrepareModelJobContext`, not on the root context
+    *   `[✅] `   Non-functional: `IJobContext` is NOT changed — the raw function references live only as params to `createPrepareModelJobContext`, not on the root context
 
-*   `[ ]`   `role`
-    *   `[ ]`   Role: composition root — single place where concrete implementations are bound to the context slice
-    *   `[ ]`   Why appropriate: all pre-bound closures for `prepareModelJob` are wired here; consistent with the existing `boundEmcas`/`boundRender` pattern; `compressPrompt` is bound first (using root services) so it can be passed as a dep to `calculateAffordability`
-    *   `[ ]`   Must NOT: contain business logic; must only bind and pass through
+*   `[✅] `   `role`
+    *   `[✅] `   Role: composition root — single place where concrete implementations are bound to the context slice
+    *   `[✅] `   Why appropriate: all pre-bound closures for `prepareModelJob` are wired here; consistent with the existing `boundEmcas`/`boundRender` pattern; `compressPrompt` is bound first (using root services) so it can be passed as a dep to `calculateAffordability`
+    *   `[✅] `   Must NOT: contain business logic; must only bind and pass through
 
-*   `[ ]`   `module`
-    *   `[ ]`   Bounded context: dependency injection / context construction
-    *   `[ ]`   Inside: `createJobContext`, `createPrepareModelJobContext`, `createPlanJobContext`, `createRenderJobContext`
-    *   `[ ]`   Outside: all job processing logic
+*   `[✅] `   `module`
+    *   `[✅] `   Bounded context: dependency injection / context construction
+    *   `[✅] `   Inside: `createJobContext`, `createPrepareModelJobContext`, `createPlanJobContext`, `createRenderJobContext`
+    *   `[✅] `   Outside: all job processing logic
 
 #### 2. Dependencies & Injection
 
-*   `[ ]`   `deps`
-    *   `[ ]`   `CalculateAffordabilityFn` — `calculateAffordability/calculateAffordability.provides.ts` — imported; partially applied at construction time
-    *   `[ ]`   `CompressPromptFn` — `compressPrompt/compressPrompt.provides.ts` — imported; bound first with root services; result passed as dep when binding `calculateAffordability`
-    *   `[ ]`   All existing deps unchanged
+*   `[✅] `   `deps`
+    *   `[✅] `   `CalculateAffordabilityFn` — `calculateAffordability/calculateAffordability.provides.ts` — imported; partially applied at construction time
+    *   `[✅] `   `CompressPromptFn` — `compressPrompt/compressPrompt.provides.ts` — imported; bound first with root services; result passed as dep when binding `calculateAffordability`
+    *   `[✅] `   All existing deps unchanged
 
-*   `[ ]`   `context_slice`
-    *   `[ ]`   `IPrepareModelJobContext` gains: `calculateAffordability: BoundCalculateAffordabilityFn`
-    *   `[ ]`   `compressPrompt` does NOT appear on `IPrepareModelJobContext` — it is an intermediate closure used only during `calculateAffordability` binding
-    *   `[ ]`   `IJobContext` is unchanged
+*   `[✅] `   `context_slice`
+    *   `[✅] `   `IPrepareModelJobContext` gains: `calculateAffordability: BoundCalculateAffordabilityFn`
+    *   `[✅] `   `compressPrompt` does NOT appear on `IPrepareModelJobContext` — it is an intermediate closure used only during `calculateAffordability` binding
+    *   `[✅] `   `IJobContext` is unchanged
 
 #### 3. Contract Definition
 
-*   `[ ]`   `createJobContext.test.ts` (existing)
-    *   `[ ]`   Valid: constructed `IPrepareModelJobContext` has `calculateAffordability` as a function
-    *   `[ ]`   Valid: calling `ctx.calculateAffordability(params, payload)` delegates to the bound `CalculateAffordabilityFn` with correct deps (logger, countTokens, pre-bound compressPrompt)
-    *   `[ ]`   Valid: the internally-bound `compressPrompt` closure receives correct `CompressPromptDeps` from root
+*   `[✅] `   `createJobContext.interface.test.ts`
+    *   `[✅] `   Valid: constructed `IPrepareModelJobContext` has `calculateAffordability` as a function
+    *   `[✅] `   Valid: calling `ctx.calculateAffordability(params, payload)` delegates to the bound `CalculateAffordabilityFn` with correct deps (logger, countTokens, pre-bound compressPrompt)
+    *   `[✅] `   Valid: the internally-bound `compressPrompt` closure receives correct `CompressPromptDeps` from root
 
 #### 4. Structural Boundary
 
-*   `[ ]`   `JobContext.interface.ts`
-    *   `[ ]`   Add `BoundCalculateAffordabilityFn = (params: CalculateAffordabilityParams, payload: CalculateAffordabilityPayload) => Promise<CalculateAffordabilityReturn>`
-    *   `[ ]`   Add `calculateAffordability: BoundCalculateAffordabilityFn` field to `IPrepareModelJobContext`
-    *   `[ ]`   No `BoundCompressPromptFn` or `BoundCalculateAffordabilityPreflightFn` on the context — `compressPrompt` is bound internally, not exposed
-    *   `[ ]`   No changes to `IJobContext`
+*   `[✅] `   `JobContext.interface.ts`
+    *   `[✅] `   Add `BoundCalculateAffordabilityFn = (params: CalculateAffordabilityParams, payload: CalculateAffordabilityPayload) => Promise<CalculateAffordabilityReturn>`
+    *   `[✅] `   Add `calculateAffordability: BoundCalculateAffordabilityFn` field to `IPrepareModelJobContext`
+    *   `[✅] `   No `BoundCompressPromptFn` or `BoundCalculateAffordabilityPreflightFn` on the context — `compressPrompt` is bound internally, not exposed
+    *   `[✅] `   No changes to `IJobContext`
 
 #### 5. Interaction Semantics
 
-*   `[ ]`   `createJobContext.interaction.spec`
-    *   `[ ]`   `createPrepareModelJobContext` signature extends from 3 params to 5: `(root, boundEmcas, boundRender, compressPromptFn, calculateAffordabilityFn)`
-    *   `[ ]`   `compressPrompt` bound first with full `CompressPromptDeps` from root: `{ logger, ragService, embeddingClient, tokenWalletService, countTokens }`
-    *   `[ ]`   `calculateAffordability` then bound using root logger, root `countTokens`, and the pre-bound `compressPrompt` closure: `(params, payload) => calculateAffordabilityFn({ logger: root.logger, countTokens: root.countTokens, compressPrompt: boundCompressPrompt }, params, payload)`
-    *   `[ ]`   All call sites of `createPrepareModelJobContext` must be updated — at minimum `dialectic-worker/index.ts`
+*   `[✅] `   `createJobContext.interaction.spec`
+    *   `[✅] `   `createPrepareModelJobContext` signature extends from 3 params to 5: `(root, boundEmcas, boundRender, compressPromptFn, calculateAffordabilityFn)`
+    *   `[✅] `   `compressPrompt` bound first with full `CompressPromptDeps` from root: `{ logger, ragService, embeddingClient, tokenWalletService, countTokens }`
+    *   `[✅] `   `calculateAffordability` then bound using root logger, root `countTokens`, and the pre-bound `compressPrompt` closure: `(params, payload) => calculateAffordabilityFn({ logger: root.logger, countTokens: root.countTokens, compressPrompt: boundCompressPrompt }, params, payload)`
+    *   `[✅] `   All call sites of `createPrepareModelJobContext` must be updated — at minimum `dialectic-worker/index.ts`
 
 #### 6. Enforcement
 
-*   `[ ]`   `JobContext.guard.ts` updated: `isPrepareModelJobContext` checks for `calculateAffordability` as a function field
-*   `[ ]`   Guard tests updated accordingly
+*   `[✅] `   `JobContext.guard.test.ts` updated: `isPrepareModelJobContext` checks for `calculateAffordability` as a function field
+*   `[✅] `   `JobContext.guard.ts` updated: `isPrepareModelJobContext` checks for `calculateAffordability` as a function field
 
 #### 7. Behavioral Verification
 
-*   `[ ]`   `createJobContext.test.ts`
-    *   `[ ]`   `calculateAffordability` field present and callable on returned `IPrepareModelJobContext`
-    *   `[ ]`   Calling it delegates to `calculateAffordabilityFn` with `{ logger, countTokens, compressPrompt: boundCompressPrompt }` as deps
-    *   `[ ]`   All existing tests pass unchanged
+*   `[✅] `   `createJobContext.test.ts`
+    *   `[✅] `   `calculateAffordability` field present and callable on returned `IPrepareModelJobContext`
+    *   `[✅] `   Calling it delegates to `calculateAffordabilityFn` with `{ logger, countTokens, compressPrompt: boundCompressPrompt }` as deps
+    *   `[✅] `   All existing tests pass unchanged
 
 #### 8. Construction
 
-*   `[ ]`   `createJobContext.ts` is both construction and implementation — no separate factory
+*   `[✅] `   `createJobContext.ts` is both construction and implementation — no separate factory
 
 #### 9. Implementation
 
-*   `[ ]`   `createJobContext.ts`
-    *   `[ ]`   Update `createPrepareModelJobContext` signature to accept two new function params: `compressPromptFn`, `calculateAffordabilityFn`
-    *   `[ ]`   Bind `boundCompressPrompt` first: `(params, payload) => compressPromptFn({ logger: root.logger, ragService: root.ragService, embeddingClient: root.embeddingClient, tokenWalletService: root.tokenWalletService, countTokens: root.countTokens }, params, payload)`
-    *   `[ ]`   Bind `calculateAffordability`: `(params, payload) => calculateAffordabilityFn({ logger: root.logger, countTokens: root.countTokens, compressPrompt: boundCompressPrompt }, params, payload)`
-    *   `[ ]`   Add only `calculateAffordability` to the returned `IPrepareModelJobContext` object
+*   `[✅] `   `createJobContext.ts`
+    *   `[✅] `   Update `createPrepareModelJobContext` signature to accept two new function params: `compressPromptFn`, `calculateAffordabilityFn`
+    *   `[✅] `   Bind `boundCompressPrompt` first: `(params, payload) => compressPromptFn({ logger: root.logger, ragService: root.ragService, embeddingClient: root.embeddingClient, tokenWalletService: root.tokenWalletService, countTokens: root.countTokens }, params, payload)`
+    *   `[✅] `   Bind `calculateAffordability`: `(params, payload) => calculateAffordabilityFn({ logger: root.logger, countTokens: root.countTokens, compressPrompt: boundCompressPrompt }, params, payload)`
+    *   `[✅] `   Add only `calculateAffordability` to the returned `IPrepareModelJobContext` object
 
 #### 10. External Boundary
 
-*   `[ ]`   `JobContext.interface.ts` is the external boundary — `BoundCalculateAffordabilityFn` exported from it
+*   `[✅] `   `JobContext.interface.ts` is the external boundary — `BoundCalculateAffordabilityFn` exported from it
 
 #### 11. Simulation
 
-*   `[ ]`   `JobContext.mock.ts` updated to include `calculateAffordability` as a bound function field on the mock `IPrepareModelJobContext`
+*   `[✅] `   `JobContext.mock.ts` updated to include `calculateAffordability` as a bound function field on the mock `IPrepareModelJobContext`
 
 #### 12. Edge Validation
 
-*   `[ ]`   `createJobContext.integration.test.ts`
-    *   `[ ]`   Constructed `IPrepareModelJobContext` passes TypeScript structural check against updated interface
+*   `[✅] `   `createJobContext.integration.test.ts`
+    *   `[✅] `   Constructed `IPrepareModelJobContext` passes TypeScript structural check against updated interface
 
 #### 13. Directionality
 
-*   `[ ]`   `directionality`
-    *   `[ ]`   Layer: composition root
-    *   `[ ]`   Now depends on `calculateAffordability` and `compressPrompt` modules; no reverse dependency
-    *   `[ ]`   No cycles
+*   `[✅] `   `directionality`
+    *   `[✅] `   Layer: composition root
+    *   `[✅] `   Now depends on `calculateAffordability` and `compressPrompt` modules; no reverse dependency
+    *   `[✅] `   No cycles
 
 #### 14. Completion Criteria
 
-*   `[ ]`   `requirements`
-    *   `[ ]`   `IPrepareModelJobContext` carries `calculateAffordability: BoundCalculateAffordabilityFn`
-    *   `[ ]`   `createPrepareModelJobContext` binds `compressPrompt` first, then uses it as a dep when binding `calculateAffordability`
-    *   `[ ]`   All existing `createJobContext` tests pass with updated fixtures
-    *   `[ ]`   All existing `prepareModelJob` tests still pass — source not yet modified in this node
+*   `[✅] `   `requirements`
+    *   `[✅] `   `IPrepareModelJobContext` carries `calculateAffordability: BoundCalculateAffordabilityFn`
+    *   `[✅] `   `createPrepareModelJobContext` binds `compressPrompt` first, then uses it as a dep when binding `calculateAffordability`
+    *   `[✅] `   All existing `createJobContext` tests pass with updated fixtures
+    *   `[✅] `   All existing `prepareModelJob` tests still pass — source not yet modified in this node
 
 ---
 
-*   `[ ]` [BE] `dialectic-worker/prepareModelJob/prepareModelJob.ts` **Remove inline affordability and compression zones; call extracted `calculateAffordability` via deps; update `PrepareModelJobDeps`, guards, tests, and mocks**
+*   `[✅] ` [BE] `dialectic-worker/prepareModelJob/prepareModelJob.ts` **Remove inline affordability and compression zones; call extracted `calculateAffordability` via deps; update `PrepareModelJobDeps`, guards, tests, and mocks**
 
 #### 1. Intent & Position
 
-*   `[ ]`   `objective`
-    *   `[ ]`   Problem: `prepareModelJob.ts` (currently 791 lines) still contains the full inline implementations of the affordability and RAG compression zones (~430 lines). With `calculateAffordability` extracted and bound on `IPrepareModelJobContext`, `prepareModelJob` can be reduced to an orchestrator that delegates the entire affordability + compression decision via a single call.
-    *   `[ ]`   Functional goals:
+*   `[✅] `   `objective`
+    *   `[✅] `   Problem: `prepareModelJob.ts` (currently 791 lines) still contains the full inline implementations of the affordability and RAG compression zones (~430 lines). With `calculateAffordability` extracted and bound on `IPrepareModelJobContext`, `prepareModelJob` can be reduced to an orchestrator that delegates the entire affordability + compression decision via a single call.
+    *   `[✅] `   Functional goals:
         *   Add `calculateAffordability: BoundCalculateAffordabilityFn` to `PrepareModelJobDeps`
         *   Remove dead fields `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient` from `PrepareModelJobDeps` — all made redundant by the extraction
         *   Replace the inline ~430-line affordability + compression block (lines ~239–665) with a single `await deps.calculateAffordability(params, payload)` call; branch on `wasCompressed`
         *   Target: `prepareModelJob.ts` under 350 lines
-    *   `[ ]`   Non-functional: all existing behavioral tests for `prepareModelJob` continue to pass using the new mock; no externally visible behavior change
+    *   `[✅] `   Non-functional: all existing behavioral tests for `prepareModelJob` continue to pass using the new mock; no externally visible behavior change
 
-*   `[ ]`   `role`
-    *   `[ ]`   Role: preparation orchestrator (Zones A–D) — validates, gathers, scopes, sizes, delegates affordability and compression, assembles `ChatApiRequest`
-    *   `[ ]`   Why appropriate: owns the orchestration sequence; each zone is now a focused module
-    *   `[ ]`   Must NOT: contain inline affordability logic, inline compression loops, or any RAG/wallet/embedding calls
+*   `[✅] `   `role`
+    *   `[✅] `   Role: preparation orchestrator (Zones A–D) — validates, gathers, scopes, sizes, delegates affordability and compression, assembles `ChatApiRequest`
+    *   `[✅] `   Why appropriate: owns the orchestration sequence; each zone is now a focused module
+    *   `[✅] `   Must NOT: contain inline affordability logic, inline compression loops, or any RAG/wallet/embedding calls
 
-*   `[ ]`   `module`
-    *   `[ ]`   Bounded context: model call preparation orchestration
-    *   `[ ]`   Inside: payload validation, provider config extraction, resource document scoping, delegation to `calculateAffordability`, branch on `wasCompressed`, `ChatApiRequest` assembly, delegation to `executeModelCallAndSave` and `enqueueRenderJob`
-    *   `[ ]`   Outside: token counting, affordability math, compression loop, model call, contribution save, render job creation
+*   `[✅] `   `module`
+    *   `[✅] `   Bounded context: model call preparation orchestration
+    *   `[✅] `   Inside: payload validation, provider config extraction, resource document scoping, delegation to `calculateAffordability`, branch on `wasCompressed`, `ChatApiRequest` assembly, delegation to `executeModelCallAndSave` and `enqueueRenderJob`
+    *   `[✅] `   Outside: token counting, affordability math, compression loop, model call, contribution save, render job creation
 
 #### 2. Dependencies & Injection
 
-*   `[ ]`   `deps`
-    *   `[ ]`   Add `calculateAffordability: BoundCalculateAffordabilityFn` to `PrepareModelJobDeps`
-    *   `[ ]`   Remove `pickLatest: PickLatestFn`, `downloadFromStorage: DownloadFromStorageFn`, `countTokens: CountTokensFn`, `ragService: IRagService`, `embeddingClient: IEmbeddingClient` from `PrepareModelJobDeps`
-    *   `[ ]`   All other existing deps unchanged
+*   `[✅] `   `deps`
+    *   `[✅] `   Add `calculateAffordability: BoundCalculateAffordabilityFn` to `PrepareModelJobDeps`
+    *   `[✅] `   Remove `pickLatest: PickLatestFn`, `downloadFromStorage: DownloadFromStorageFn`, `countTokens: CountTokensFn`, `ragService: IRagService`, `embeddingClient: IEmbeddingClient` from `PrepareModelJobDeps`
+    *   `[✅] `   All other existing deps unchanged
 
-*   `[ ]`   `context_slice`
-    *   `[ ]`   `PrepareModelJobDeps` now structurally satisfies `IPrepareModelJobContext`; the Phase 2 type mismatch is resolved
+*   `[✅] `   `context_slice`
+    *   `[✅] `   `PrepareModelJobDeps` now structurally satisfies `IPrepareModelJobContext`; the Phase 2 type mismatch is resolved
 
 #### 3. Contract Definition
 
-*   `[ ]`   `prepareModelJob.interface.test.ts` — raw structural assertions only; NO type guard imports; proves the contract shape that guards will later enforce
-    *   `[ ]`   Existing contract tests unchanged — `PrepareModelJobReturn` shape does not change
-    *   `[ ]`   Add: `PrepareModelJobDeps` structural contract — object with `calculateAffordability` as a function field (`typeof deps.calculateAffordability === 'function'`)
-    *   `[ ]`   Add: `PrepareModelJobDeps` structural contract — object does NOT require `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, or `embeddingClient` as fields
+*   `[✅] `   `prepareModelJob.interface.test.ts` — raw structural assertions only; NO type guard imports; proves the contract shape that guards will later enforce
+    *   `[✅] `   Existing contract tests unchanged — `PrepareModelJobReturn` shape does not change
+    *   `[✅] `   Add: `PrepareModelJobDeps` structural contract — object with `calculateAffordability` as a function field (`typeof deps.calculateAffordability === 'function'`)
+    *   `[✅] `   Add: `PrepareModelJobDeps` structural contract — object does NOT require `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, or `embeddingClient` as fields
 
 #### 4. Structural Boundary
 
-*   `[ ]`   `prepareModelJob.interface.ts`
-    *   `[ ]`   Add `calculateAffordability: BoundCalculateAffordabilityFn` to `PrepareModelJobDeps`
-    *   `[ ]`   Remove `pickLatest: PickLatestFn`, `downloadFromStorage: DownloadFromStorageFn`, `countTokens: CountTokensFn`, `ragService: IRagService`, `embeddingClient: IEmbeddingClient` from `PrepareModelJobDeps`
-    *   `[ ]`   All other types unchanged
+*   `[✅] `   `prepareModelJob.interface.ts`
+    *   `[✅] `   Add `calculateAffordability: BoundCalculateAffordabilityFn` to `PrepareModelJobDeps`
+    *   `[✅] `   Remove `pickLatest: PickLatestFn`, `downloadFromStorage: DownloadFromStorageFn`, `countTokens: CountTokensFn`, `ragService: IRagService`, `embeddingClient: IEmbeddingClient` from `PrepareModelJobDeps`
+    *   `[✅] `   All other types unchanged
 
 #### 5. Interaction Semantics
 
-*   `[ ]`   `prepareModelJob.interaction.spec`
-    *   `[ ]`   Single call: `const affordResult = await deps.calculateAffordability(params, payload)`; guard on `isCalculateAffordabilityErrorReturn(affordResult)` → return `PrepareModelJobErrorReturn`
-    *   `[ ]`   On `isCalculateAffordabilityDirectReturn(affordResult)`: `wasCompressed === false`; use `affordResult.maxOutputTokens` to set `chatApiRequest.max_tokens_to_generate` on the pre-assembled request
-    *   `[ ]`   On `isCalculateAffordabilityCompressedReturn(affordResult)`: `wasCompressed === true`; use `affordResult.chatApiRequest` directly (already assembled); use `affordResult.resolvedInputTokenCount` and `affordResult.resourceDocuments` for downstream fields
+*   `[✅] `   `prepareModelJob.interaction.spec`
+    *   `[✅] `   Single call: `const affordResult = await deps.calculateAffordability(params, payload)`; guard on `isCalculateAffordabilityErrorReturn(affordResult)` → return `PrepareModelJobErrorReturn`
+    *   `[✅] `   On `isCalculateAffordabilityDirectReturn(affordResult)`: `wasCompressed === false`; use `affordResult.maxOutputTokens` to set `chatApiRequest.max_tokens_to_generate` on the pre-assembled request
+    *   `[✅] `   On `isCalculateAffordabilityCompressedReturn(affordResult)`: `wasCompressed === true`; use `affordResult.chatApiRequest` directly (already assembled); use `affordResult.resolvedInputTokenCount` and `affordResult.resourceDocuments` for downstream fields
 
 #### 6. Enforcement
 
-*   `[ ]`   `prepareModelJob.interface.guard.ts`
-    *   `[ ]`   Update `isPrepareModelJobDeps` to check for `calculateAffordability` as a function
-    *   `[ ]`   Remove checks for `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient`
+*   `[✅] `   `prepareModelJob.guard.test.ts`
+    *   `[✅]     Ensure a type guard exists for each element of the prepareModelJob interface with positive and negative checks
+    *   `[✅] `   Update `isPrepareModelJobDeps` to check for `calculateAffordability` as a function
+    *   `[✅] `   Remove checks for `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient`
+
+*   `[✅] `   `prepareModelJob.guard.ts`
+    *   `[✅] `   Update `isPrepareModelJobDeps` to check for `calculateAffordability` as a function
+    *   `[✅] `   Remove checks for `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient`
 
 #### 7. Behavioral Verification
 
-*   `[ ]`   `prepareModelJob.test.ts`
-    *   `[ ]`   Replace fixtures that exercised inline affordability/compression logic with a mock using `calculateAffordability.mock.ts`
-    *   `[ ]`   Affordability and compression edge-case tests (NSF, context window, rationality, RAG loop) migrate to `calculateAffordability` and `compressPrompt` test files; `prepareModelJob.test.ts` retains orchestration-level assertions: mock was called with correct args; `wasCompressed: false` result flows into `chatApiRequest.max_tokens_to_generate`; `wasCompressed: true` result passes `chatApiRequest` through unmodified; error result propagates
-    *   `[ ]`   Existing end-to-end paths (non-oversized and oversized) remain, using mock that returns valid `CalculateAffordabilityDirectReturn` or `CalculateAffordabilityCompressedReturn`
+*   `[✅] `   `prepareModelJob.test.ts`
+    *   `[✅] `   Replace fixtures that exercised inline affordability/compression logic with a mock using `calculateAffordability.mock.ts`
+    *   `[✅] `   Affordability and compression edge-case tests (NSF, context window, rationality, RAG loop) migrate to `calculateAffordability` and `compressPrompt` test files; `prepareModelJob.test.ts` retains orchestration-level assertions: mock was called with correct args; `wasCompressed: false` result flows into `chatApiRequest.max_tokens_to_generate`; `wasCompressed: true` result passes `chatApiRequest` through unmodified; error result propagates
+    *   `[✅] `   Existing end-to-end paths (non-oversized and oversized) remain, using mock that returns valid `CalculateAffordabilityDirectReturn` or `CalculateAffordabilityCompressedReturn`
 
 #### 8. Construction
 
-*   `[ ]`   No change to `prepareModelJob` construction
+*   `[✅] `   No change to `prepareModelJob` construction
 
 #### 9. Implementation
 
-*   `[ ]`   `prepareModelJob.ts`
-    *   `[ ]`   Remove lines ~239–665 (all inline affordability + compression); replace with `const affordResult = await deps.calculateAffordability(params, payload)`; guard on `isCalculateAffordabilityErrorReturn(affordResult)` returning `PrepareModelJobErrorReturn`; branch on `wasCompressed` for downstream assembly
-    *   `[ ]`   Target: file under 350 lines
+*   `[✅] `   `prepareModelJob.ts`
+    *   `[✅] `   Remove lines ~239–665 (all inline affordability + compression); replace with `const affordResult = await deps.calculateAffordability(params, payload)`; guard on `isCalculateAffordabilityErrorReturn(affordResult)` returning `PrepareModelJobErrorReturn`; branch on `wasCompressed` for downstream assembly
+    *   `[✅] `   Target: file under 350 lines
 
 #### 10. External Boundary
 
-*   `[ ]`   `prepareModelJob.provides.ts`
-    *   `[ ]`   No change to exported symbols
+*   `[✅] `   `prepareModelJob.provides.ts`
+    *   `[✅] `   No change to exported symbols
 
 #### 11. Simulation
 
-*   `[ ]`   `prepareModelJob.mock.ts`
-    *   `[ ]`   Add `calculateAffordability` field
-    *   `[ ]`   Remove `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient` fields
+*   `[✅] `   `prepareModelJob.mock.ts`
+    *   `[✅] `   Add `calculateAffordability` field
+    *   `[✅] `   Remove `pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient` fields
 
 #### 12. Edge Validation
 
-*   `[ ]`   `prepareModelJob.integration.test.ts`
-    *   `[ ]`   Validate: full `prepareModelJob` call with mocked `calculateAffordability` returning `CalculateAffordabilityDirectReturn` → `PrepareModelJobSuccessReturn` correct
-    *   `[ ]`   Validate: mocked `calculateAffordability` returning `CalculateAffordabilityCompressedReturn` → `chatApiRequest` passed through unchanged
+*   `[✅] `   `prepareModelJob.integration.test.ts`
+    *   `[✅] `   Validate: full `prepareModelJob` call with `calculateAffordability` returning `CalculateAffordabilityDirectReturn` → `PrepareModelJobSuccessReturn` correct
+    *   `[✅] `   Validate: `calculateAffordability` returning `CalculateAffordabilityCompressedReturn` → `chatApiRequest` passed through unchanged
 
 #### 13. Directionality
 
-*   `[ ]`   `directionality`
-    *   `[ ]`   Layer: dialectic-worker preparation orchestrator
-    *   `[ ]`   Now depends on `calculateAffordability` via bound deps (all RAG/compression services accessed through it); no reverse dependency
-    *   `[ ]`   No cycles
+*   `[✅] `   `directionality`
+    *   `[✅] `   Layer: dialectic-worker preparation orchestrator
+    *   `[✅] `   Now depends on `calculateAffordability` via bound deps (all RAG/compression services accessed through it); no reverse dependency
+    *   `[✅] `   No cycles
 
 #### 14. Completion Criteria
 
-*   `[ ]`   `requirements`
-    *   `[ ]`   `prepareModelJob.ts` under 350 lines
-    *   `[ ]`   No inline affordability or compression logic remains
-    *   `[ ]`   All existing `prepareModelJob` tests pass with updated test fixtures using extracted-module mocks
-    *   `[ ]`   `PrepareModelJobDeps` structurally satisfies `IPrepareModelJobContext`
+*   `[✅] `   `requirements`
+    *   `[✅] `   `prepareModelJob.ts` under 350 lines
+    *   `[✅] `   No inline affordability or compression logic remains
+    *   `[✅] `   All existing `prepareModelJob` tests pass with updated test fixtures using extracted-module mocks
+    *   `[✅] `   `PrepareModelJobDeps` structurally satisfies `IPrepareModelJobContext`
 
 ---
 
-*   `[ ]` [BE] `dialectic-worker/index.ts` **Wire `calculateAffordability` and `compressPrompt` into `createPrepareModelJobContext`; update worker job-processing tests**
+*   `[✅] ` [BE] `dialectic-worker/index.ts` **Wire `calculateAffordability` and `compressPrompt` into `createPrepareModelJobContext`; update worker job-processing tests**
 
 #### 1. Intent & Position
 
-*   `[ ]`   `objective`
-    *   `[ ]`   Problem: `createPrepareModelJobContext` now accepts two additional function parameters. `index.ts` is the call site that constructs and passes them. Without this update the worker fails to compile.
-    *   `[ ]`   Functional goals: import `calculateAffordability` from `calculateAffordability/calculateAffordability.provides.ts` and `compressPrompt` from `compressPrompt/compressPrompt.provides.ts`; pass both as explicit arguments to `createPrepareModelJobContext`; update any worker-level test infrastructure that builds mock contexts to include `calculateAffordability`
-    *   `[ ]`   Non-functional: no behavior change to job routing, dispatch, or error handling
+*   `[✅] `   `objective`
+    *   `[✅] `   Problem: `createPrepareModelJobContext` now accepts two additional function parameters. `index.ts` is the call site that constructs and passes them. Without this update the worker fails to compile.
+    *   `[✅] `   Functional goals: import `calculateAffordability` from `calculateAffordability/calculateAffordability.provides.ts` and `compressPrompt` from `compressPrompt/compressPrompt.provides.ts`; pass both as explicit arguments to `createPrepareModelJobContext`; update any worker-level test infrastructure that builds mock contexts to include `calculateAffordability`
+    *   `[✅] `   Non-functional: no behavior change to job routing, dispatch, or error handling
 
-*   `[ ]`   `role`
-    *   `[ ]`   Role: application wiring boundary — imports and connects all concrete implementations; the only file allowed to name both the concrete function modules and the context slicer
-    *   `[ ]`   Why appropriate: `index.ts` owns the composition root for the dialectic worker
-    *   `[ ]`   Must NOT: contain business logic; must only import, partially apply, and wire
+*   `[✅] `   `role`
+    *   `[✅] `   Role: application wiring boundary — imports and connects all concrete implementations; the only file allowed to name both the concrete function modules and the context slicer
+    *   `[✅] `   Why appropriate: `index.ts` owns the composition root for the dialectic worker
+    *   `[✅] `   Must NOT: contain business logic; must only import, partially apply, and wire
 
-*   `[ ]`   `module`
-    *   `[ ]`   Bounded context: worker entry point + composition
-    *   `[ ]`   Inside: HTTP handler, job routing dispatch, context construction via `createJobContext` / `createPrepareModelJobContext`
-    *   `[ ]`   Outside: all job processing logic
+*   `[✅] `   `module`
+    *   `[✅] `   Bounded context: worker entry point + composition
+    *   `[✅] `   Inside: HTTP handler, job routing dispatch, context construction via `createJobContext` / `createPrepareModelJobContext`
+    *   `[✅] `   Outside: all job processing logic
 
 #### 2. Dependencies & Injection
 
-*   `[ ]`   `deps`
-    *   `[ ]`   `calculateAffordability` imported from `calculateAffordability/calculateAffordability.provides.ts`
-    *   `[ ]`   `compressPrompt` imported from `compressPrompt/compressPrompt.provides.ts`
-    *   `[ ]`   All existing imports and deps unchanged
+*   `[✅] `   `deps`
+    *   `[✅] `   `calculateAffordability` imported from `calculateAffordability/calculateAffordability.provides.ts`
+    *   `[✅] `   `compressPrompt` imported from `compressPrompt/compressPrompt.provides.ts`
+    *   `[✅] `   All existing imports and deps unchanged
 
-*   `[ ]`   `context_slice`
-    *   `[ ]`   No change to `IJobContext` construction; only the `createPrepareModelJobContext` call site changes
+*   `[✅] `   `context_slice`
+    *   `[✅] `   No change to `IJobContext` construction; only the `createPrepareModelJobContext` call site changes
 
 #### 3. Contract Definition
 
-*   `[ ]`   `processJob.test.ts` (worker-level job dispatch tests)
-    *   `[ ]`   Add: mock `IPrepareModelJobContext` includes `calculateAffordability` stub function wherever worker-level context is constructed
-    *   `[ ]`   All existing dispatch and routing tests pass unchanged
+*   `[✅] `   `processJob.test.ts` (worker-level job dispatch tests)
+    *   `[✅] `   Add: mock `IPrepareModelJobContext` includes `calculateAffordability` stub function wherever worker-level context is constructed
+    *   `[✅] `   All existing dispatch and routing tests pass unchanged
 
 #### 4. Structural Boundary
 
-*   `[ ]`   No new types in `index.ts` — all types come from imported modules
+*   `[✅] `   No new types in `index.ts` — all types come from imported modules
 
 #### 5. Interaction Semantics
 
-*   `[ ]`   `index.interaction.spec`
-    *   `[ ]`   `createPrepareModelJobContext(root, boundEmcas, boundRender, compressPrompt, calculateAffordability)` — call updated with two additional concrete functions; order matches binding sequence (compressPrompt first)
-    *   `[ ]`   No change to job routing logic or HTTP handler
+*   `[✅] `   `index.interaction.spec`
+    *   `[✅] `   `createPrepareModelJobContext(root, boundEmcas, boundRender, compressPrompt, calculateAffordability)` — call updated with two additional concrete functions; order matches binding sequence (compressPrompt first)
+    *   `[✅] `   No change to job routing logic or HTTP handler
 
 #### 6. Enforcement
 
-*   `[ ]`   No new guards required in `index.ts`
+*   `[✅] `   No new guards required in `index.ts`
 
 #### 7. Behavioral Verification
 
-*   `[ ]`   `processJob.test.ts`
-    *   `[ ]`   Update mock context construction to include `calculateAffordability` stub field wherever `IPrepareModelJobContext` is mocked
-    *   `[ ]`   All existing routing and dispatch tests pass unchanged
+*   `[✅] `   `processJob.test.ts`
+    *   `[✅] `   Update mock context construction to include `calculateAffordability` stub field wherever `IPrepareModelJobContext` is mocked
+    *   `[✅] `   All existing routing and dispatch tests pass unchanged
 
 #### 8. Construction
 
-*   `[ ]`   No change to construction patterns in `index.ts`
+*   `[✅] `   No change to construction patterns in `index.ts`
 
 #### 9. Implementation
 
-*   `[ ]`   `index.ts`
-    *   `[ ]`   Add two import statements: `calculateAffordability` and `compressPrompt` from their `provides.ts` files
-    *   `[ ]`   Update `createPrepareModelJobContext(...)` call to pass `compressPrompt`, `calculateAffordability` as the two new arguments
+*   `[✅] `   `index.ts`
+    *   `[✅] `   Add two import statements: `calculateAffordability` and `compressPrompt` from their `provides.ts` files
+    *   `[✅] `   Update `createPrepareModelJobContext(...)` call to pass `compressPrompt`, `calculateAffordability` as the two new arguments
 
 #### 10. External Boundary
 
-*   `[ ]`   No `provides.ts` for `index.ts` — it is the application entry point
+*   `[✅] `   No `provides.ts` for `index.ts` — it is the application entry point
 
 #### 11. Simulation
 
-*   `[ ]`   No `index.mock.ts` required
+*   `[✅] `   No `index.mock.ts` required
 
 #### 12. Edge Validation
 
-*   `[ ]`   No separate integration test for `index.ts` wiring — covered by `processJob.test.ts` and `prepareModelJob.integration.test.ts` from the prior node
+*   `[✅] `   No separate integration test for `index.ts` wiring — covered by `processJob.test.ts` and `prepareModelJob.integration.test.ts` from the prior node
 
 #### 13. Directionality
 
-*   `[ ]`   `directionality`
-    *   `[ ]`   Layer: application entry / composition root
-    *   `[ ]`   Now imports from `calculateAffordability` and `compressPrompt` modules — all inward-facing; no reverse dependency
-    *   `[ ]`   No cycles
+*   `[✅] `   `directionality`
+    *   `[✅] `   Layer: application entry / composition root
+    *   `[✅] `   Now imports from `calculateAffordability` and `compressPrompt` modules — all inward-facing; no reverse dependency
+    *   `[✅] `   No cycles
 
 #### 14. Completion Criteria
 
-*   `[ ]`   `requirements`
-    *   `[ ]`   Worker compiles and routes jobs correctly with updated `createPrepareModelJobContext` call
-    *   `[ ]`   All worker-level tests pass with updated mock contexts
-    *   `[ ]`   Integration proof: all ~700 existing tests pass (Phase 3.5)
+*   `[✅] `   `requirements`
+    *   `[✅] `   Worker compiles and routes jobs correctly with updated `createPrepareModelJobContext` call
+    *   `[✅] `   All worker-level tests pass with updated mock contexts
+    *   `[✅] `   Integration proof: all ~700 existing tests pass (Phase 3.5)
 
 #### 15. Versioning
 
-*   `[ ]`   **Commit** `refactor(BE): extract affordability and compression from prepareModelJob`
-    *   `[ ]`   Structural: `calculateAffordability` and `compressPrompt` extracted to standalone modules under `dialectic-worker/`; all inline affordability and RAG compression logic removed from `prepareModelJob.ts`; file reduced to under 350 lines
-    *   `[ ]`   Behavioral: affordability checking and RAG compression behavior fully preserved; all ~700 existing tests pass
-    *   `[ ]`   Contract: `PrepareModelJobDeps` gains `calculateAffordability: BoundCalculateAffordabilityFn`; removes five fields (`pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient`); `IPrepareModelJobContext` gains `calculateAffordability`; `createPrepareModelJobContext` signature extended by two params (`compressPromptFn`, `calculateAffordabilityFn`)
+*   `[✅] `   **Commit** `refactor(BE): extract affordability and compression from prepareModelJob`
+    *   `[✅] `   Structural: `calculateAffordability` and `compressPrompt` extracted to standalone modules under `dialectic-worker/`; all inline affordability and RAG compression logic removed from `prepareModelJob.ts`; file reduced to under 350 lines
+    *   `[✅] `   Behavioral: affordability checking and RAG compression behavior fully preserved; all ~700 existing tests pass
+    *   `[✅] `   Contract: `PrepareModelJobDeps` gains `calculateAffordability: BoundCalculateAffordabilityFn`; removes five fields (`pickLatest`, `downloadFromStorage`, `countTokens`, `ragService`, `embeddingClient`); `IPrepareModelJobContext` gains `calculateAffordability`; `createPrepareModelJobContext` signature extended by two params (`compressPromptFn`, `calculateAffordabilityFn`)
 
 ### Phase 4: Final validation
 

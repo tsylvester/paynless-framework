@@ -147,3 +147,19 @@ export const MOCK_PROVIDER: Tables<'ai_providers'> = {
       ...overrides,
     };
   }
+
+  export async function* mockSendMessageStream(
+    _request: ChatApiRequest,
+    _modelIdentifier: string,
+): AsyncGenerator<AdapterStreamChunk> {
+    yield { type: 'text_delta', text: 'mock' };
+    yield {
+        type: 'usage',
+        tokenUsage: {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        },
+    };
+    yield { type: 'done', finish_reason: 'stop' };
+}

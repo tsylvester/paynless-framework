@@ -14,9 +14,9 @@ import {
     createJobContext, 
     createPlanJobContext, 
     createRenderJobContext 
-} from './createJobContext.ts';
-import { IJobContext } from './JobContext.interface.ts';
-import { createMockJobContextParams } from './JobContext.mock.ts';
+} from './createJobContext/createJobContext.ts';
+import { IJobContext } from './createJobContext/JobContext.interface.ts';
+import { createMockJobContextParams } from './createJobContext/JobContext.mock.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 

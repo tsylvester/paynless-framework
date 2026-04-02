@@ -30,6 +30,8 @@ import { BoundExecuteModelCallAndSaveFn } from './executeModelCallAndSave/execut
 import { enqueueRenderJob } from './enqueueRenderJob/enqueueRenderJob.ts';
 import { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
 import { prepareModelJob } from './prepareModelJob/prepareModelJob.ts';
+import { calculateAffordability, type BoundCalculateAffordabilityFn } from './calculateAffordability/calculateAffordability.provides.ts';
+import { compressPrompt, type BoundCompressPromptFn } from './compressPrompt/compressPrompt.provides.ts';
 import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
 import { RagService } from '../_shared/services/rag_service.ts';
 import { IndexingService, LangchainTextSplitter, EmbeddingClient } from '../_shared/services/indexing_service.ts';
@@ -168,25 +170,26 @@ export async function createDialecticWorkerDeps(
     documentRenderer,
     continueJob,
     retryJob,
-    prepareModelJob: (params, payload) =>
-      prepareModelJob(
+    prepareModelJob: (params, payload) => {
+      const boundCompressPrompt: BoundCompressPromptFn = (cpParams, cpPayload) =>
+        compressPrompt({ logger, ragService, embeddingClient, tokenWalletService, countTokens }, cpParams, cpPayload);
+      const boundCalculateAffordability: BoundCalculateAffordabilityFn = (caParams, caPayload) =>
+        calculateAffordability({ logger, countTokens, compressPrompt: boundCompressPrompt }, caParams, caPayload);
+      return prepareModelJob(
         {
           logger,
-          pickLatest,
-          downloadFromStorage,
           applyInputsRequiredScope,
-          countTokens,
           tokenWalletService,
           validateWalletBalance,
           validateModelCostRates,
-          ragService,
-          embeddingClient,
+          calculateAffordability: boundCalculateAffordability,
           executeModelCallAndSave: boundEmcas,
           enqueueRenderJob: boundRender,
         },
         params,
         payload,
-      ),
+      );
+    },
     debitTokens,
     pickLatest,
     applyInputsRequiredScope,

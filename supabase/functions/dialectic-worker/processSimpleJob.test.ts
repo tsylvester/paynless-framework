@@ -27,7 +27,7 @@ import type {
 } from './prepareModelJob/prepareModelJob.interface.ts';
 import {
     isPrepareModelJobErrorReturn,
-} from './prepareModelJob/prepareModelJob.interface.guard.ts';
+} from './prepareModelJob/prepareModelJob.guard.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { resetMockNotificationService, mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';

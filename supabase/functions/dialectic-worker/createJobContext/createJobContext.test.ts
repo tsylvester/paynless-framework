@@ -17,10 +17,12 @@ import {
   isIRenderJobContext,
 } from './JobContext.guard.ts';
 import {
+  buildGuardTestIJobContext,
   createMockJobContextParams,
-  createMockRootContext,
   createMockBoundExecuteModelCallAndSave,
   createMockBoundEnqueueRenderJob,
+  createRecordingCompressPromptFnForPrepareContextContract,
+  createRecordingCalculateAffordabilityFnForPrepareContextContract,
 } from './JobContext.mock.ts';
 import type { BoundPrepareModelJobFn, IPrepareModelJobContext } from './JobContext.interface.ts';
 import { createMockSupabaseClient } from '../../_shared/supabase.mock.ts';
@@ -34,6 +36,16 @@ import type {
 } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
+import {
+  buildCalculateAffordabilityParams,
+  buildCalculateAffordabilityPayload,
+  buildMockBoundCalculateAffordabilityFn,
+} from '../calculateAffordability/calculateAffordability.mock.ts';
+import {
+  buildCompressPromptParams,
+  buildCompressPromptPayload,
+  DbClient,
+} from '../compressPrompt/compressPrompt.mock.ts';
 describe('createJobContext Factory and Slicers', () => {
   describe('createJobContext', () => {
     it('updates createMockJobContextParams call sites to use prepareModelJob override', () => {
@@ -120,21 +132,21 @@ describe('createJobContext Factory and Slicers', () => {
 
   describe('createExecuteModelCallContext', () => {
     it('extracts only the 12 IExecuteModelCallContext fields from root IJobContext', () => {
-      const root = createMockRootContext();
+      const root = buildGuardTestIJobContext();
       const result = createExecuteModelCallContext(root);
 
       assertEquals(isIExecuteModelCallContext(result), true);
     });
 
     it('result passes isIExecuteModelCallContext guard', () => {
-      const root = createMockRootContext();
+      const root = buildGuardTestIJobContext();
       const result = createExecuteModelCallContext(root);
 
       assertEquals(isIExecuteModelCallContext(result), true);
     });
 
     it('result includes logger, fileManager, getAiProviderAdapter, tokenWalletService, notificationService, continueJob, retryJob, resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext, debitTokens', () => {
-      const root = createMockRootContext();
+      const root = buildGuardTestIJobContext();
       const result = createExecuteModelCallContext(root);
 
       assertEquals(result.logger, root.logger);
@@ -152,7 +164,7 @@ describe('createJobContext Factory and Slicers', () => {
     });
 
     it('result does NOT include ragService, countTokens, pickLatest, applyInputsRequiredScope, validateWalletBalance, validateModelCostRates, downloadFromStorage, embeddingClient, prepareModelJob', () => {
-      const root = createMockRootContext();
+      const root = buildGuardTestIJobContext();
       const result = createExecuteModelCallContext(root);
 
       assertEquals('ragService' in result, false);
@@ -168,40 +180,52 @@ describe('createJobContext Factory and Slicers', () => {
   });
 
   describe('createPrepareModelJobContext', () => {
-    it('extracts 8 raw fields from root IJobContext and receives 2 pre-bound closures as arguments', () => {
-      const root = createMockRootContext();
+    it('extracts 8 raw fields from root IJobContext and receives 2 pre-bound closures plus compress and calculateAffordability factories as arguments', () => {
+      const root = buildGuardTestIJobContext();
       const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
       const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
+      const { compressPromptFn } = createRecordingCompressPromptFnForPrepareContextContract();
+      const { calculateAffordabilityFn } = createRecordingCalculateAffordabilityFnForPrepareContextContract();
       const result = createPrepareModelJobContext(
         root,
         boundExecuteModelCallAndSave,
         boundEnqueueRenderJob,
+        compressPromptFn,
+        calculateAffordabilityFn,
       );
 
       assertEquals(isIPrepareModelJobContext(result), true);
     });
 
     it('result passes isIPrepareModelJobContext guard', () => {
-      const root = createMockRootContext();
+      const root = buildGuardTestIJobContext();
       const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
       const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
+      const { compressPromptFn } = createRecordingCompressPromptFnForPrepareContextContract();
+      const { calculateAffordabilityFn } = createRecordingCalculateAffordabilityFnForPrepareContextContract();
       const result = createPrepareModelJobContext(
         root,
         boundExecuteModelCallAndSave,
         boundEnqueueRenderJob,
+        compressPromptFn,
+        calculateAffordabilityFn,
       );
 
       assertEquals(isIPrepareModelJobContext(result), true);
     });
 
-    it('result includes logger, applyInputsRequiredScope, countTokens, tokenWalletService, validateWalletBalance, validateModelCostRates, ragService, embeddingClient, executeModelCallAndSave, enqueueRenderJob', () => {
-      const root = createMockRootContext();
+    it('result includes logger, applyInputsRequiredScope, countTokens, tokenWalletService, validateWalletBalance, validateModelCostRates, ragService, embeddingClient, executeModelCallAndSave, enqueueRenderJob, calculateAffordability', () => {
+      const root = buildGuardTestIJobContext();
       const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
       const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
+      const { compressPromptFn } = createRecordingCompressPromptFnForPrepareContextContract();
+      const { calculateAffordabilityFn } = createRecordingCalculateAffordabilityFnForPrepareContextContract();
       const result = createPrepareModelJobContext(
         root,
         boundExecuteModelCallAndSave,
         boundEnqueueRenderJob,
+        compressPromptFn,
+        calculateAffordabilityFn,
       );
 
       assertEquals(result.logger, root.logger);
@@ -214,16 +238,21 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals(result.embeddingClient, root.embeddingClient);
       assertEquals(result.executeModelCallAndSave, boundExecuteModelCallAndSave);
       assertEquals(result.enqueueRenderJob, boundEnqueueRenderJob);
+      assertEquals(typeof result.calculateAffordability, 'function');
     });
 
     it('result does NOT include pickLatest, downloadFromStorage, fileManager, continueJob, retryJob, getAiProviderAdapter, resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext, debitTokens, notificationService, prepareModelJob', () => {
-      const root = createMockRootContext();
+      const root = buildGuardTestIJobContext();
       const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
       const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
+      const { compressPromptFn } = createRecordingCompressPromptFnForPrepareContextContract();
+      const { calculateAffordabilityFn } = createRecordingCalculateAffordabilityFnForPrepareContextContract();
       const result = createPrepareModelJobContext(
         root,
         boundExecuteModelCallAndSave,
         boundEnqueueRenderJob,
+        compressPromptFn,
+        calculateAffordabilityFn,
       );
 
       assertEquals('pickLatest' in result, false);
@@ -242,7 +271,7 @@ describe('createJobContext Factory and Slicers', () => {
     });
 
     it('TypeScript assignment fails if pickLatest or downloadFromStorage are supplied to IPrepareModelJobContext', () => {
-      const root = createMockRootContext();
+      const root = buildGuardTestIJobContext();
       const validPrepareContext: IPrepareModelJobContext = {
         logger: root.logger,
         applyInputsRequiredScope: root.applyInputsRequiredScope,
@@ -254,6 +283,7 @@ describe('createJobContext Factory and Slicers', () => {
         embeddingClient: root.embeddingClient,
         executeModelCallAndSave: async () => ({ error: new Error('mock'), retriable: false }),
         enqueueRenderJob: async () => ({ error: new Error('mock'), retriable: false }),
+        calculateAffordability: buildMockBoundCalculateAffordabilityFn(),
       };
 
       assertEquals(typeof validPrepareContext.logger, 'object');
@@ -272,11 +302,61 @@ describe('createJobContext Factory and Slicers', () => {
 
       assertEquals(typeof invalidWithDownloadFromStorage, 'object');
     });
+
+    it('returned IPrepareModelJobContext has calculateAffordability present and callable', () => {
+      const root = buildGuardTestIJobContext();
+      const { compressPromptFn } = createRecordingCompressPromptFnForPrepareContextContract();
+      const { calculateAffordabilityFn } = createRecordingCalculateAffordabilityFnForPrepareContextContract();
+      const result = createPrepareModelJobContext(
+        root,
+        createMockBoundExecuteModelCallAndSave(),
+        createMockBoundEnqueueRenderJob(),
+        compressPromptFn,
+        calculateAffordabilityFn,
+      );
+
+      assertEquals(typeof result.calculateAffordability, 'function');
+    });
+
+    it('calculateAffordability delegates to calculateAffordabilityFn with logger, countTokens, and compressPrompt bound from root and compressPromptFn', async () => {
+      const root = buildGuardTestIJobContext();
+      const { compressPromptFn, recordedCompressDeps } =
+        createRecordingCompressPromptFnForPrepareContextContract();
+      const { calculateAffordabilityFn, recordedAffordabilityDeps } =
+        createRecordingCalculateAffordabilityFnForPrepareContextContract();
+      const result = createPrepareModelJobContext(
+        root,
+        createMockBoundExecuteModelCallAndSave(),
+        createMockBoundEnqueueRenderJob(),
+        compressPromptFn,
+        calculateAffordabilityFn,
+      );
+      const { client } = createMockSupabaseClient();
+      const dbClient: SupabaseClient<Database> = DbClient(client);
+      const params = buildCalculateAffordabilityParams(dbClient);
+      const payload = buildCalculateAffordabilityPayload();
+
+      await result.calculateAffordability(params, payload);
+
+      assertEquals(recordedAffordabilityDeps.length, 1);
+      assertEquals(recordedAffordabilityDeps[0].logger, root.logger);
+      assertEquals(recordedAffordabilityDeps[0].countTokens, root.countTokens);
+      await recordedAffordabilityDeps[0].compressPrompt(
+        buildCompressPromptParams(dbClient),
+        buildCompressPromptPayload(),
+      );
+      assertEquals(recordedCompressDeps.length, 1);
+      assertEquals(recordedCompressDeps[0].logger, root.logger);
+      assertEquals(recordedCompressDeps[0].ragService, root.ragService);
+      assertEquals(recordedCompressDeps[0].embeddingClient, root.embeddingClient);
+      assertEquals(recordedCompressDeps[0].tokenWalletService, root.tokenWalletService);
+      assertEquals(recordedCompressDeps[0].countTokens, root.countTokens);
+    });
   });
 
   describe('createPlanJobContext', () => {
     it('still works unchanged and passes isIPlanJobContext', () => {
-      const root = createMockRootContext();
+      const root = buildGuardTestIJobContext();
       const result = createPlanJobContext(root);
 
       assertEquals(isIPlanJobContext(result), true);
@@ -285,7 +365,7 @@ describe('createJobContext Factory and Slicers', () => {
 
   describe('createRenderJobContext', () => {
     it('still works unchanged and passes isIRenderJobContext', () => {
-      const root = createMockRootContext();
+      const root = buildGuardTestIJobContext();
       const result = createRenderJobContext(root);
 
       assertEquals(isIRenderJobContext(result), true);

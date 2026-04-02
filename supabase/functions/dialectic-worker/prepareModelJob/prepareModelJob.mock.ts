@@ -11,15 +11,12 @@ import { applyInputsRequiredScope } from "../../_shared/utils/applyInputsRequire
 import { pickLatest } from "../../_shared/utils/pickLatest.ts";
 import { validateWalletBalance } from "../../_shared/utils/validateWalletBalance.ts";
 import { validateModelCostRates } from "../../_shared/utils/validateModelCostRates.ts";
-import type { DownloadFromStorageFn } from "../../_shared/supabase_storage_utils.ts";
 import { createMockDownloadFromStorage } from "../../_shared/supabase_storage_utils.mock.ts";
 import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
-import { createMockTokenWalletService } from "../../_shared/services/tokenWalletService.mock.ts";
-import type { IEmbeddingClient } from "../../_shared/services/indexing_service.interface.ts";
-import type {
-  CountTokensFn,
-} from "../../_shared/types/tokenizer.types.ts";
-import type { Json, Tables } from "../../types_db.ts";
+import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { Database, Json, Tables } from "../../types_db.ts";
+import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import type {
   DialecticContributionRow,
   DialecticExecuteJobPayload,
@@ -27,6 +24,8 @@ import type {
   DialecticSessionRow,
   PromptConstructionPayload,
 } from "../../dialectic-service/dialectic.interface.ts";
+import type { BoundCalculateAffordabilityFn } from "../calculateAffordability/calculateAffordability.interface.ts";
+import { buildMockBoundCalculateAffordabilityFn } from "../calculateAffordability/calculateAffordability.mock.ts";
 import type {
   BoundExecuteModelCallAndSaveFn,
 } from "../executeModelCallAndSave/executeModelCallAndSave.interface.ts";
@@ -42,16 +41,13 @@ import type {
   PrepareModelJobSuccessReturn,
 } from "./prepareModelJob.interface.ts";
 import type { ITokenWalletService } from "../../_shared/types/tokenWallet.types.ts";
-import { EmbeddingClient } from "../../_shared/services/indexing_service.ts";
-import { mockOpenAiAdapter } from "../../_shared/ai_service/openai_adapter.mock.ts";
-import { createMockCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
+import { createMockTokenWalletService } from "../../_shared/services/tokenWalletService.mock.ts";
 
 export type PrepareModelJobDepsOverrides = {
   executeModelCallAndSave: BoundExecuteModelCallAndSaveFn;
   enqueueRenderJob: BoundEnqueueRenderJobFn;
-  countTokens?: CountTokensFn;
   tokenWalletService?: ITokenWalletService;
-  downloadFromStorage?: DownloadFromStorageFn;
+  calculateAffordability?: BoundCalculateAffordabilityFn;
 };
 
 export type PrepareModelJobMockCall = {
@@ -266,6 +262,50 @@ export function buildPromptConstructionPayload(): PromptConstructionPayload {
   };
 }
 
+/** Used by interface contract tests for `PrepareModelJobPayload.compressionStrategy`. */
+export const contractCompressionStrategy: ICompressionStrategy = async () => [];
+
+/** Narrow `ai_providers` row shape used by `prepareModelJob.interface.test.ts` for params contract. */
+export function buildInterfaceContractAiProvidersRow(): Tables<"ai_providers"> {
+  return {
+    id: "model-contract",
+    provider: "contract-provider",
+    name: "Contract AI",
+    api_identifier: "contract-api-v1",
+    config: {
+      tokenization_strategy: { type: "rough_char_count" },
+      context_window_tokens: 10000,
+      input_token_cost_rate: 0.001,
+      output_token_cost_rate: 0.002,
+      provider_max_input_tokens: 100,
+      provider_max_output_tokens: 50,
+      api_identifier: "contract-api-v1",
+    },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    description: null,
+    is_active: true,
+    is_default_embedding: false,
+    is_default_generation: false,
+    is_enabled: true,
+  };
+}
+
+export function buildBoundExecuteModelCallAndSaveStub(): BoundExecuteModelCallAndSaveFn {
+  return async () => ({
+    contribution: buildDialecticContributionRow(),
+    needsContinuation: false,
+    stageRelationshipForStage: undefined,
+    documentKey: undefined,
+    fileType: FileType.HeaderContext,
+    storageFileType: FileType.ModelContributionRawJson,
+  });
+}
+
+export function buildBoundEnqueueRenderJobStub(): BoundEnqueueRenderJobFn {
+  return async () => ({ renderJobId: null });
+}
+
 export function buildTokenWalletRow(
   overrides: Partial<Tables<"token_wallets">>,
 ): Tables<"token_wallets"> {
@@ -285,34 +325,103 @@ export function buildPrepareModelJobDeps(
   overrides: PrepareModelJobDepsOverrides,
 ): PrepareModelJobDeps {
   const logger: ILogger = new MockLogger();
-  const mockDownloadFn: DownloadFromStorageFn = overrides.downloadFromStorage !== undefined
-    ? overrides.downloadFromStorage
-    : createMockDownloadFromStorage({
-      mode: "success",
-      data: new ArrayBuffer(0),
-    });
-  const ragService = new MockRagService();
   const tokenWalletService: ITokenWalletService = overrides.tokenWalletService !== undefined
     ? overrides.tokenWalletService
     : createMockTokenWalletService().instance;
-  const embeddingClient: IEmbeddingClient = new EmbeddingClient(mockOpenAiAdapter);
-  const countTokens: CountTokensFn = overrides.countTokens !== undefined
-    ? overrides.countTokens
-    : createMockCountTokens();
+  const calculateAffordability: BoundCalculateAffordabilityFn = overrides.calculateAffordability !== undefined
+    ? overrides.calculateAffordability
+    : buildMockBoundCalculateAffordabilityFn();
   return {
     logger,
-    pickLatest,
-    downloadFromStorage: mockDownloadFn,
     applyInputsRequiredScope,
-    countTokens,
     tokenWalletService,
     validateWalletBalance,
     validateModelCostRates,
-    ragService,
-    embeddingClient,
+    calculateAffordability,
     executeModelCallAndSave: overrides.executeModelCallAndSave,
     enqueueRenderJob: overrides.enqueueRenderJob,
   };
+}
+
+/** Deps shape for interface contract tests (bound affordability; no storage/RAG token fields). */
+export function buildPrepareModelJobDepsStructuralContract() {
+  const logger: ILogger = new MockLogger();
+  const tokenWalletService: ITokenWalletService = createMockTokenWalletService().instance;
+  const executeModelCallAndSave: BoundExecuteModelCallAndSaveFn = async () => ({
+    contribution: buildDialecticContributionRow(),
+    needsContinuation: false,
+    stageRelationshipForStage: undefined,
+    documentKey: undefined,
+    fileType: FileType.HeaderContext,
+    storageFileType: FileType.ModelContributionRawJson,
+  });
+  const enqueueRenderJob: BoundEnqueueRenderJobFn = async () => ({ renderJobId: null });
+  const calculateAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn();
+
+  return {
+    logger,
+    applyInputsRequiredScope,
+    tokenWalletService,
+    validateWalletBalance,
+    validateModelCostRates,
+    executeModelCallAndSave,
+    enqueueRenderJob,
+    calculateAffordability,
+  };
+}
+
+export function buildPrepareModelJobParamsForGuard(): PrepareModelJobParams {
+  const mockSetup = createMockSupabaseClient(undefined, {});
+  const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+  const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+  const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+  return {
+    dbClient,
+    authToken: "token-guard-contract",
+    job,
+    projectOwnerUserId: "owner-guard-contract",
+    providerRow: buildInterfaceContractAiProvidersRow(),
+    sessionData: buildDialecticSessionRow(),
+  };
+}
+
+export function buildPrepareModelJobPayloadForGuard(): PrepareModelJobPayload {
+  return {
+    promptConstructionPayload: buildPromptConstructionPayload(),
+    compressionStrategy: contractCompressionStrategy,
+  };
+}
+
+export function buildPrepareModelJobDepsMissingCalculateAffordability(): object {
+  return {
+    logger: new MockLogger(),
+    applyInputsRequiredScope,
+    tokenWalletService: createMockTokenWalletService().instance,
+    validateWalletBalance,
+    validateModelCostRates,
+    executeModelCallAndSave: buildBoundExecuteModelCallAndSaveStub(),
+    enqueueRenderJob: buildBoundEnqueueRenderJobStub(),
+  };
+}
+
+export function buildPrepareModelJobDepsWithInvalidCalculateAffordability(): object {
+  const base = buildPrepareModelJobDepsStructuralContract();
+  return {
+    logger: base.logger,
+    applyInputsRequiredScope: base.applyInputsRequiredScope,
+    tokenWalletService: base.tokenWalletService,
+    validateWalletBalance: base.validateWalletBalance,
+    validateModelCostRates: base.validateModelCostRates,
+    executeModelCallAndSave: base.executeModelCallAndSave,
+    enqueueRenderJob: base.enqueueRenderJob,
+    calculateAffordability: "not-a-function",
+  };
+}
+
+export function buildPrepareModelJobDepsMissingEnqueueRenderJob(): object {
+  const base = buildPrepareModelJobDepsStructuralContract();
+  const { enqueueRenderJob: _omit, ...rest } = base;
+  return rest;
 }
 
 export function malformedPayloadMissingStageSlug(): DialecticExecuteJobPayload {

@@ -6,11 +6,7 @@ import {
   createPlanJobContext,
   createRenderJobContext,
 } from './createJobContext.ts';
-import {
-  createMockJobContextParams,
-  createMockBoundExecuteModelCallAndSave,
-  createMockBoundEnqueueRenderJob,
-} from './JobContext.mock.ts';
+import { createMockJobContextParams } from './JobContext.mock.ts';
 import type {
   IExecuteModelCallContext,
   IJobContext,
@@ -18,6 +14,10 @@ import type {
   IPrepareModelJobContext,
   IRenderJobContext,
 } from './JobContext.interface.ts';
+import { compressPrompt } from '../compressPrompt/compressPrompt.ts';
+import { calculateAffordability } from '../calculateAffordability/calculateAffordability.ts';
+import { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
+import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 
 Deno.test('Integration: constructed context passes structural check against IJobContext and slicers build expected objects', () => {
   const params = createMockJobContextParams();
@@ -95,13 +95,21 @@ Deno.test('Integration: constructed context passes structural check against IJob
 Deno.test('Integration: createPrepareModelJobContext result passes structural check against updated IPrepareModelJobContext', () => {
   const params = createMockJobContextParams();
   const rootContext: IJobContext = createJobContext(params);
-  const boundExecuteModelCallAndSave = createMockBoundExecuteModelCallAndSave();
-  const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
+  const boundEdgeEmcas: BoundExecuteModelCallAndSaveFn = async () => ({
+    error: new Error('integration boundary stub emcas'),
+    retriable: false,
+  });
+  const boundEdgeRender: BoundEnqueueRenderJobFn = async () => ({
+    error: new Error('integration boundary stub render'),
+    retriable: false,
+  });
 
   const prepareContext: IPrepareModelJobContext = createPrepareModelJobContext(
     rootContext,
-    boundExecuteModelCallAndSave,
-    boundEnqueueRenderJob,
+    boundEdgeEmcas,
+    boundEdgeRender,
+    compressPrompt,
+    calculateAffordability,
   );
 
   assertEquals(prepareContext.logger, rootContext.logger);
@@ -112,8 +120,9 @@ Deno.test('Integration: createPrepareModelJobContext result passes structural ch
   assertEquals(prepareContext.validateModelCostRates, rootContext.validateModelCostRates);
   assertEquals(prepareContext.ragService, rootContext.ragService);
   assertEquals(prepareContext.embeddingClient, rootContext.embeddingClient);
-  assertEquals(prepareContext.executeModelCallAndSave, boundExecuteModelCallAndSave);
-  assertEquals(prepareContext.enqueueRenderJob, boundEnqueueRenderJob);
+  assertEquals(prepareContext.executeModelCallAndSave, boundEdgeEmcas);
+  assertEquals(prepareContext.enqueueRenderJob, boundEdgeRender);
+  assertEquals(typeof prepareContext.calculateAffordability, 'function');
   assertEquals('pickLatest' in prepareContext, false);
   assertEquals('downloadFromStorage' in prepareContext, false);
   assertEquals('fileManager' in prepareContext, false);

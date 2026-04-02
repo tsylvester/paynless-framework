@@ -133,6 +133,7 @@ export async function calculateAffordability(
     const out: CalculateAffordabilityReturn = {
       wasCompressed: false,
       maxOutputTokens: plannedMaxOutputTokens,
+      resolvedInputTokenCount: initialTokenCount,
     };
     return out;
   }

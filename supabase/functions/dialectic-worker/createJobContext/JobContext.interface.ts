@@ -42,6 +42,7 @@ import { BuildUploadContextParams } from '../../_shared/utils/buildUploadContext
 import { DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 import { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
 import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
+import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
 import { PrepareModelJobParams, PrepareModelJobPayload, PrepareModelJobReturn } from '../prepareModelJob/prepareModelJob.interface.ts';
 import { GatherArtifactsParams, GatherArtifactsPayload, GatherArtifactsReturn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 
@@ -221,8 +222,8 @@ export interface IExecuteModelCallContext {
 
 /**
  * Context slice for prepareModelJob (Zones A-D).
- * 12 fields, no base context extensions — cherry-picks only what Zones A-D actually call
- * plus 2 pre-bound orchestrator closures.
+ * 11 fields, no base context extensions — cherry-picks only what Zones A-D actually call
+ * plus 3 pre-bound orchestrator closures (`compressPrompt` is bound only inside the slicer, not on this slice).
  * Constructed by createPrepareModelJobContext slicer from IJobContext raw fields + pre-bound closures.
  */
 export interface IPrepareModelJobContext {
@@ -236,6 +237,7 @@ export interface IPrepareModelJobContext {
     readonly embeddingClient: IEmbeddingClient;
     readonly executeModelCallAndSave: BoundExecuteModelCallAndSaveFn;
     readonly enqueueRenderJob: BoundEnqueueRenderJobFn;
+    readonly calculateAffordability: BoundCalculateAffordabilityFn;
 }
 
 /**

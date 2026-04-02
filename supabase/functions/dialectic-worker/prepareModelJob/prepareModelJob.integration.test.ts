@@ -1,238 +1,330 @@
+// supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.integration.test.ts
+
 import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
-import { logger } from "../../_shared/logger.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
-import { createMockDownloadFromStorage } from "../../_shared/supabase_storage_utils.mock.ts";
-import { pickLatest } from "../../_shared/utils/pickLatest.ts";
 import { FileType } from "../../_shared/types/file_manager.types.ts";
+import type { ChatApiRequest } from "../../_shared/types.ts";
 import type {
   DialecticExecuteJobPayload,
   DialecticJobRow,
-  DialecticSessionRow,
-  InputRule,
-  RelevanceRule,
-  SourceDocument,
 } from "../../dialectic-service/dialectic.interface.ts";
-import type { CountTokensDeps, CountableChatPayload, CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
-import type { AiModelExtendedConfig, ChatApiRequest } from "../../_shared/types.ts";
-import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
+import type { BoundCalculateAffordabilityFn } from "../calculateAffordability/calculateAffordability.interface.ts";
+import {
+  buildCalculateAffordabilityCompressedReturn,
+  buildCalculateAffordabilityDirectReturn,
+  buildCalculateAffordabilityErrorReturn,
+  buildMockBoundCalculateAffordabilityFn,
+} from "../calculateAffordability/calculateAffordability.mock.ts";
+import { buildChatApiRequest, buildResourceDocument } from "../compressPrompt/compressPrompt.mock.ts";
 import type { BoundExecuteModelCallAndSaveFn } from "../executeModelCallAndSave/executeModelCallAndSave.interface.ts";
 import { isExecuteModelCallAndSavePayload } from "../executeModelCallAndSave/executeModelCallAndSave.interface.guard.ts";
 import type { BoundEnqueueRenderJobFn } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
-import { gatherArtifacts, isGatherArtifactsSuccessReturn } from "../gatherArtifacts/gatherArtifacts.provides.ts";
-import {
-  buildDialecticProjectResourceRow,
-  buildDocumentRule,
-  buildGatherArtifactsParams,
-  buildGatherArtifactsPayload,
-  buildSelectHandler,
-} from "../gatherArtifacts/gatherArtifacts.provides.ts";
 import { prepareModelJob } from "./prepareModelJob.ts";
 import type {
-  PrepareModelJobDeps,
   PrepareModelJobParams,
   PrepareModelJobPayload,
 } from "./prepareModelJob.interface.ts";
-import { isPrepareModelJobSuccessReturn } from "./prepareModelJob.interface.guard.ts";
+import { isPrepareModelJobSuccessReturn, isPrepareModelJobErrorReturn } from "./prepareModelJob.guard.ts";
 import {
   buildAiProviderRow,
+  buildDefaultAiProvidersRow,
   buildDialecticContributionRow,
   buildDialecticJobRow,
   buildDialecticSessionRow,
   buildExecuteJobPayload,
+  buildExtendedModelFixture,
   buildPrepareModelJobDeps,
+  buildPromptConstructionPayload,
+  buildTokenWalletRow,
 } from "./prepareModelJob.mock.ts";
 
-function toArrayBuffer(content: string): ArrayBuffer {
-  const encoded: Uint8Array = new TextEncoder().encode(content);
-  const buffer: ArrayBuffer = new ArrayBuffer(encoded.byteLength);
-  new Uint8Array(buffer).set(encoded);
-  return buffer;
+function buildParams(dbClient: SupabaseClient<Database>): PrepareModelJobParams {
+  const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+  const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+  return {
+    dbClient,
+    authToken: "jwt.integration",
+    job,
+    projectOwnerUserId: "owner-int",
+    providerRow: buildDefaultAiProvidersRow(),
+    sessionData: buildDialecticSessionRow(),
+  };
 }
 
+function buildPayload(): PrepareModelJobPayload {
+  return {
+    promptConstructionPayload: buildPromptConstructionPayload(),
+    compressionStrategy: async () => [],
+  };
+}
+
+function buildEmcasSuccessSpy(): Spy<BoundExecuteModelCallAndSaveFn> {
+  return spy(async () => ({
+    contribution: buildDialecticContributionRow(),
+    needsContinuation: false,
+    stageRelationshipForStage: undefined,
+    documentKey: undefined,
+    fileType: FileType.HeaderContext,
+    storageFileType: FileType.ModelContributionRawJson,
+  }));
+}
+
+function buildEnqueueSuccessSpy(): Spy<BoundEnqueueRenderJobFn> {
+  return spy(async () => ({ renderJobId: "render-int-1" }));
+}
+
+// Path 1: Direct return → EMCAS → enqueueRenderJob → success
 Deno.test(
-  "integration: gatherArtifacts pre-populates resourceDocuments and prepareModelJob flows them through scope, tokening, compression, and ChatApiRequest",
+  "integration: calculateAffordability direct return flows through EMCAS and enqueueRenderJob to success",
   async () => {
     const mockSetup = createMockSupabaseClient("user-int", {
       genericMockResults: {
-        dialectic_project_resources: {
-          select: buildSelectHandler([
-            buildDialecticProjectResourceRow({
-              id: "int-doc-1",
-              stage_slug: "thesis",
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              error: null,
             }),
-          ]),
         },
-        dialectic_memory: {
-          select: () => Promise.resolve({ data: [], error: null }),
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
         },
       },
     });
-    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const emcas = buildEmcasSuccessSpy();
+    const enqueue = buildEnqueueSuccessSpy();
+    const directReturn = buildCalculateAffordabilityDirectReturn(200, 75);
+    const calculateAffordability: BoundCalculateAffordabilityFn =
+      buildMockBoundCalculateAffordabilityFn(directReturn);
 
-    const gatherResult = await gatherArtifacts(
-      {
-        logger,
-        pickLatest,
-        downloadFromStorage: createMockDownloadFromStorage({
-          mode: "success",
-          data: toArrayBuffer("document-content-from-storage"),
-        }),
-      },
-      buildGatherArtifactsParams(dbClient),
-      buildGatherArtifactsPayload([buildDocumentRule()]),
-    );
-
-    assertEquals(isGatherArtifactsSuccessReturn(gatherResult), true);
-    if (!isGatherArtifactsSuccessReturn(gatherResult)) {
-      throw new Error("expected gatherArtifacts success");
-    }
-    assertEquals(gatherResult.artifacts.length, 1);
-    assertEquals(gatherResult.artifacts[0].id, "int-doc-1");
-    assertEquals(gatherResult.artifacts[0].type, "document");
-    assertEquals(gatherResult.artifacts[0].document_key, FileType.business_case);
-    assertEquals(gatherResult.artifacts[0].stage_slug, "thesis");
-
-    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
-    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
-    const sessionData: DialecticSessionRow = buildDialecticSessionRow();
-    const providerRow = buildAiProviderRow({
-      api_identifier: "contract-api-v1",
-      input_token_cost_rate: 0.0001,
-      output_token_cost_rate: 0.0001,
-      tokenization_strategy: {
-        type: "tiktoken",
-        tiktoken_encoding_name: "cl100k_base",
-      },
-      hard_cap_output_tokens: 100,
-      provider_max_output_tokens: 100,
-      context_window_tokens: 30,
-      provider_max_input_tokens: 400,
+    const deps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability,
     });
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.integration",
-      job,
-      projectOwnerUserId: "owner-int",
-      providerRow,
-      sessionData,
-    };
 
-    let applyScopeCallCount = 0;
-    const applyInputsRequiredScope: PrepareModelJobDeps["applyInputsRequiredScope"] = (docs, rules) => {
-      applyScopeCallCount += 1;
-      return docs.filter((doc) =>
-        Array.isArray(rules) &&
-        rules.some((rule) =>
-          rule.type === doc.type &&
-          rule.slug === doc.stage_slug &&
-          rule.document_key === doc.document_key
-        )
-      );
-    };
+    const result = await prepareModelJob(deps, buildParams(dbClient), buildPayload());
 
-    let countTokensCallCount = 0;
-    const countTokens: CountTokensFn = (
-      _deps: CountTokensDeps,
-      payload: CountableChatPayload,
-      _modelConfig: AiModelExtendedConfig,
-    ): number => {
-      countTokensCallCount += 1;
-      const docs = payload.resourceDocuments ?? [];
-      if (docs.length === 0) return 5;
-      const content = docs[0].content;
-      if (content === "Mocked RAG context") return 10;
-      return 120;
-    };
-
-    let compressionCallCount = 0;
-    const compressionStrategy: ICompressionStrategy = async (_deps, _params, payload) => {
-      compressionCallCount += 1;
-      return [
-        {
-          id: payload.documents[0].id,
-          content: payload.documents[0].content,
-          sourceType: "document",
-          originalIndex: 0,
-          valueScore: 1,
-          effectiveScore: 1,
-        },
-      ];
-    };
-
-    let emcasPayloadCaptured: unknown = undefined;
-    const executeModelCallAndSave: Spy<BoundExecuteModelCallAndSaveFn> = spy(async (_p, payload) => {
-      emcasPayloadCaptured = payload;
-      return {
-        contribution: buildDialecticContributionRow(),
-        needsContinuation: false,
-        stageRelationshipForStage: undefined,
-        documentKey: undefined,
-        fileType: FileType.HeaderContext,
-        storageFileType: FileType.ModelContributionRawJson,
-      };
-    });
-    const enqueueRenderJob: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
-
-    const baseDeps = buildPrepareModelJobDeps({
-      executeModelCallAndSave,
-      enqueueRenderJob,
-      countTokens,
-    });
-    const deps: PrepareModelJobDeps = {
-      ...baseDeps,
-      applyInputsRequiredScope,
-    };
-
-    const inputsRequired: InputRule[] = [
-      { type: "document", slug: "thesis", required: true, document_key: FileType.business_case },
-    ];
-    const inputsRelevance: RelevanceRule[] = [
-      { document_key: FileType.business_case, relevance: 0.8 },
-    ];
-    const sourceDocumentsFromArtifacts: SourceDocument[] = gatherResult.artifacts.map((artifact) => {
-      const baseContribution = buildDialecticContributionRow();
-      const { document_relationships: _ignoredRelationships, ...contributionWithoutRelationships } = baseContribution;
-      return {
-        ...contributionWithoutRelationships,
-        id: artifact.id,
-        content: artifact.content,
-        document_key: artifact.document_key,
-        stage_slug: artifact.stage_slug,
-        type: artifact.type,
-      };
-    });
-    const payload: PrepareModelJobPayload = {
-      promptConstructionPayload: {
-        conversationHistory: [],
-        resourceDocuments: sourceDocumentsFromArtifacts,
-        currentUserPrompt: "integration prompt",
-        source_prompt_resource_id: "source-prompt-resource-int",
-      },
-      compressionStrategy,
-      inputsRequired,
-      inputsRelevance,
-    };
-
-    const result = await prepareModelJob(deps, params, payload);
     assertEquals(isPrepareModelJobSuccessReturn(result), true);
-    assertEquals(applyScopeCallCount, 1);
-    assertEquals(compressionCallCount > 0, true);
-    assertEquals(countTokensCallCount > 1, true);
-    assertEquals(executeModelCallAndSave.calls.length, 1);
-    assertEquals(enqueueRenderJob.calls.length, 1);
+    if (!isPrepareModelJobSuccessReturn(result)) throw new Error("expected success");
+    assertExists(result.contribution);
+    assertEquals(result.renderJobId, "render-int-1");
 
-    assertEquals(isExecuteModelCallAndSavePayload(emcasPayloadCaptured), true);
-    if (!isExecuteModelCallAndSavePayload(emcasPayloadCaptured)) {
-      throw new Error("expected ExecuteModelCallAndSavePayload");
-    }
-    const chatApiRequest: ChatApiRequest = emcasPayloadCaptured.chatApiRequest;
-    assertExists(chatApiRequest.resourceDocuments);
-    assertEquals(chatApiRequest.resourceDocuments?.length, 1);
-    assertEquals(chatApiRequest.resourceDocuments?.[0].id, "int-doc-1");
-    assertEquals(chatApiRequest.resourceDocuments?.[0].content, "Mocked RAG context");
+    assertEquals(emcas.calls.length, 1);
+    const emcasPayload: unknown = emcas.calls[0].args[1];
+    assertEquals(isExecuteModelCallAndSavePayload(emcasPayload), true);
+    if (!isExecuteModelCallAndSavePayload(emcasPayload)) throw new Error("expected EMCAS payload");
+    assertEquals(emcasPayload.preflightInputTokens, 75);
+    assertEquals(emcasPayload.chatApiRequest.max_tokens_to_generate, 200);
+
+    assertEquals(enqueue.calls.length, 1);
   },
 );
 
+// Path 2: Compressed return → chatApiRequest passed through unchanged
+Deno.test(
+  "integration: calculateAffordability compressed return passes chatApiRequest through to EMCAS unchanged",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-int", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const emcas = buildEmcasSuccessSpy();
+    const enqueue = buildEnqueueSuccessSpy();
+
+    const compressedDocs = [buildResourceDocument()];
+    const compressedChat: ChatApiRequest = buildChatApiRequest(compressedDocs, "compressed prompt");
+    compressedChat.max_tokens_to_generate = 999;
+    const compressedReturn = buildCalculateAffordabilityCompressedReturn({
+      resolvedInputTokenCount: 42,
+      chatApiRequest: compressedChat,
+      resourceDocuments: compressedDocs,
+    });
+    const calculateAffordability: BoundCalculateAffordabilityFn =
+      buildMockBoundCalculateAffordabilityFn(compressedReturn);
+
+    const deps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability,
+    });
+
+    const result = await prepareModelJob(deps, buildParams(dbClient), buildPayload());
+
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
+    assertEquals(emcas.calls.length, 1);
+
+    const emcasPayload: unknown = emcas.calls[0].args[1];
+    assertEquals(isExecuteModelCallAndSavePayload(emcasPayload), true);
+    if (!isExecuteModelCallAndSavePayload(emcasPayload)) throw new Error("expected EMCAS payload");
+    assertEquals(emcasPayload.preflightInputTokens, 42);
+    assertEquals(emcasPayload.chatApiRequest, compressedChat);
+    assertEquals(emcasPayload.chatApiRequest.max_tokens_to_generate, 999);
+
+    assertEquals(enqueue.calls.length, 1);
+  },
+);
+
+// Path 3: calculateAffordability error → early return, no EMCAS call
+Deno.test(
+  "integration: calculateAffordability error return propagates without calling EMCAS or enqueueRenderJob",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-int", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const emcas = buildEmcasSuccessSpy();
+    const enqueue = buildEnqueueSuccessSpy();
+
+    const affordError = buildCalculateAffordabilityErrorReturn(
+      new Error("Insufficient funds: integration test"),
+      false,
+    );
+    const calculateAffordability: BoundCalculateAffordabilityFn =
+      buildMockBoundCalculateAffordabilityFn(affordError);
+
+    const deps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability,
+    });
+
+    const result = await prepareModelJob(deps, buildParams(dbClient), buildPayload());
+
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (!isPrepareModelJobErrorReturn(result)) throw new Error("expected error");
+    assertEquals(result.error.message, "Insufficient funds: integration test");
+    assertEquals(result.retriable, false);
+
+    assertEquals(emcas.calls.length, 0);
+    assertEquals(enqueue.calls.length, 0);
+  },
+);
+
+// Path 4: calculateAffordability succeeds, EMCAS returns error → error propagated, no enqueueRenderJob
+Deno.test(
+  "integration: EMCAS error propagates without calling enqueueRenderJob",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-int", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const emcasError: BoundExecuteModelCallAndSaveFn = spy(async () => ({
+      error: new Error("EMCAS failure: integration test"),
+      retriable: true,
+    }));
+    const enqueue = buildEnqueueSuccessSpy();
+
+    const deps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcasError,
+      enqueueRenderJob: enqueue,
+    });
+
+    const result = await prepareModelJob(deps, buildParams(dbClient), buildPayload());
+
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (!isPrepareModelJobErrorReturn(result)) throw new Error("expected error");
+    assertEquals(result.error.message, "EMCAS failure: integration test");
+    assertEquals(result.retriable, true);
+
+    assertEquals(enqueue.calls.length, 0);
+  },
+);
+
+// Path 5: EMCAS succeeds, enqueueRenderJob returns error → error propagated
+Deno.test(
+  "integration: enqueueRenderJob error propagates after successful EMCAS",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-int", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const emcas = buildEmcasSuccessSpy();
+    const enqueueError: BoundEnqueueRenderJobFn = spy(async () => ({
+      error: new Error("enqueue failure: integration test"),
+      retriable: false,
+    }));
+
+    const deps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueueError,
+    });
+
+    const result = await prepareModelJob(deps, buildParams(dbClient), buildPayload());
+
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (!isPrepareModelJobErrorReturn(result)) throw new Error("expected error");
+    assertEquals(result.error.message, "enqueue failure: integration test");
+    assertEquals(result.retriable, false);
+
+    assertEquals(emcas.calls.length, 1);
+  },
+);

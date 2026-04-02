@@ -1,5 +1,4 @@
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database } from '../../types_db.ts';
+
 import { isRecord } from '../../_shared/utils/type-guards/type_guards.common.ts';
 import {
   isDialecticContribution,
@@ -15,13 +14,6 @@ import type {
   PrepareModelJobPayload,
   PrepareModelJobSuccessReturn,
 } from './prepareModelJob.interface.ts';
-
-function isSupabaseClientShape(value: unknown): value is SupabaseClient<Database> {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return typeof value.from === 'function';
-}
 
 function isPromptConstructionPayloadShape(value: unknown): boolean {
   if (!isRecord(value)) {
@@ -39,58 +31,17 @@ function isPromptConstructionPayloadShape(value: unknown): boolean {
   return true;
 }
 
-function isLoggerShape(value: unknown): value is PrepareModelJobDeps['logger'] {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return (
-    typeof value.debug === 'function' &&
-    typeof value.info === 'function' &&
-    typeof value.warn === 'function' &&
-    typeof value.error === 'function'
-  );
-}
-
-function isTokenWalletServiceShape(
-  value: unknown,
-): value is PrepareModelJobDeps['tokenWalletService'] {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return typeof value.getBalance === 'function';
-}
-
-function isRagServiceShape(value: unknown): value is PrepareModelJobDeps['ragService'] {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return typeof value.getContextForModel === 'function';
-}
-
-function isEmbeddingClientShape(
-  value: unknown,
-): value is PrepareModelJobDeps['embeddingClient'] {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return typeof value.getEmbedding === 'function';
-}
-
 export function isPrepareModelJobDeps(value: unknown): value is PrepareModelJobDeps {
   if (!isRecord(value)) {
     return false;
   }
   const keys: (keyof PrepareModelJobDeps)[] = [
     'logger',
-    'pickLatest',
-    'downloadFromStorage',
     'applyInputsRequiredScope',
-    'countTokens',
     'tokenWalletService',
     'validateWalletBalance',
     'validateModelCostRates',
-    'ragService',
-    'embeddingClient',
+    'calculateAffordability',
     'executeModelCallAndSave',
     'enqueueRenderJob',
   ];
@@ -99,22 +50,19 @@ export function isPrepareModelJobDeps(value: unknown): value is PrepareModelJobD
       return false;
     }
   }
-  if (!isLoggerShape(value.logger)) {
+  if (value.logger === null || value.logger === undefined) {
     return false;
   }
-  if (typeof value.pickLatest !== 'function') {
-    return false;
-  }
-  if (typeof value.downloadFromStorage !== 'function') {
+  if (typeof value.logger !== 'object') {
     return false;
   }
   if (typeof value.applyInputsRequiredScope !== 'function') {
     return false;
   }
-  if (typeof value.countTokens !== 'function') {
+  if (value.tokenWalletService === null || value.tokenWalletService === undefined) {
     return false;
   }
-  if (!isTokenWalletServiceShape(value.tokenWalletService)) {
+  if (typeof value.tokenWalletService !== 'object') {
     return false;
   }
   if (typeof value.validateWalletBalance !== 'function') {
@@ -123,10 +71,7 @@ export function isPrepareModelJobDeps(value: unknown): value is PrepareModelJobD
   if (typeof value.validateModelCostRates !== 'function') {
     return false;
   }
-  if (!isRagServiceShape(value.ragService)) {
-    return false;
-  }
-  if (!isEmbeddingClientShape(value.embeddingClient)) {
+  if (typeof value.calculateAffordability !== 'function') {
     return false;
   }
   if (typeof value.executeModelCallAndSave !== 'function') {
@@ -174,7 +119,10 @@ export function isPrepareModelJobParams(value: unknown): value is PrepareModelJo
       return false;
     }
   }
-  if (!isSupabaseClientShape(value.dbClient)) {
+  if (value.dbClient === null || value.dbClient === undefined) {
+    return false;
+  }
+  if (typeof value.dbClient !== 'object') {
     return false;
   }
   if (typeof value.authToken !== 'string' || value.authToken === '') {

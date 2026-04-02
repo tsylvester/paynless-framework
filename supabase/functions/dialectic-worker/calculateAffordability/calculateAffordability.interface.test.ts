@@ -19,6 +19,8 @@ Deno.test("calculateAffordability contract: valid non-oversized adequate balance
   assertEquals(result.wasCompressed, false);
   assertEquals(typeof result.maxOutputTokens, "number");
   assertEquals(result.maxOutputTokens >= 0, true);
+  assertEquals(typeof result.resolvedInputTokenCount, "number");
+  assertEquals(result.resolvedInputTokenCount >= 0, true);
   assertEquals("error" in result, false);
 });
 

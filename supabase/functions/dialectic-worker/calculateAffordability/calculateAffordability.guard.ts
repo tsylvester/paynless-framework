@@ -109,10 +109,13 @@ export function isCalculateAffordabilityDirectReturn(
   if (!("maxOutputTokens" in value) || typeof value.maxOutputTokens !== "number") {
     return false;
   }
+  if (!("resolvedInputTokenCount" in value) || typeof value.resolvedInputTokenCount !== "number") {
+    return false;
+  }
   if ("error" in value || "retriable" in value) {
     return false;
   }
-  if ("chatApiRequest" in value || "resolvedInputTokenCount" in value) {
+  if ("chatApiRequest" in value) {
     return false;
   }
   return true;

@@ -10,6 +10,10 @@ import {
 } from './JobContext.interface.ts';
 import { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
 import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
+import { CompressPromptFn } from '../compressPrompt/compressPrompt.interface.ts';
+import { BoundCompressPromptFn } from '../compressPrompt/compressPrompt.interface.ts';
+import { CalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
+import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
 /**
  * Factory function to construct IJobContext at application boundary.
  * All fields are required and must be explicitly provided.
@@ -99,18 +103,47 @@ export function createExecuteModelCallContext(root: IJobContext): IExecuteModelC
 
 /**
  * Context slicer: Extracts IPrepareModelJobContext subset from root IJobContext.
- * Picks 10 raw fields from IJobContext and receives 2 pre-bound closures.
+ * Picks 8 raw fields from IJobContext and receives 2 pre-bound orchestrator closures
+ * plus compressPrompt and calculateAffordability factories (bound here with root deps).
  *
  * @param root - Complete IJobContext from application boundary
  * @param boundEmcas - Pre-bound executeModelCallAndSave closure
  * @param boundRender - Pre-bound enqueueRenderJob closure
+ * @param compressPromptFn - Unbound compressPrompt implementation
+ * @param calculateAffordabilityFn - Unbound calculateAffordability implementation
  * @returns IPrepareModelJobContext with only fields needed for prepareModelJob
  */
 export function createPrepareModelJobContext(
     root: IJobContext,
     boundEmcas: BoundExecuteModelCallAndSaveFn,
     boundRender: BoundEnqueueRenderJobFn,
+    compressPromptFn: CompressPromptFn,
+    calculateAffordabilityFn: CalculateAffordabilityFn,
 ): IPrepareModelJobContext {
+    const boundCompressPrompt: BoundCompressPromptFn = (params, payload) =>
+        compressPromptFn(
+            {
+                logger: root.logger,
+                ragService: root.ragService,
+                embeddingClient: root.embeddingClient,
+                tokenWalletService: root.tokenWalletService,
+                countTokens: root.countTokens,
+            },
+            params,
+            payload,
+        );
+
+    const calculateAffordability: BoundCalculateAffordabilityFn = (params, payload) =>
+        calculateAffordabilityFn(
+            {
+                logger: root.logger,
+                countTokens: root.countTokens,
+                compressPrompt: boundCompressPrompt,
+            },
+            params,
+            payload,
+        );
+
     return {
         logger: root.logger,
         applyInputsRequiredScope: root.applyInputsRequiredScope,
@@ -122,6 +155,7 @@ export function createPrepareModelJobContext(
         embeddingClient: root.embeddingClient,
         executeModelCallAndSave: boundEmcas,
         enqueueRenderJob: boundRender,
+        calculateAffordability,
     };
 }
 

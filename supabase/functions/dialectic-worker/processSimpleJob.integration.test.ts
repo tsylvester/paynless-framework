@@ -4,7 +4,18 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database, Tables } from "../types_db.ts";
 import { FileType } from "../_shared/types/file_manager.types.ts";
 import type { AiModelExtendedConfig, ChatApiRequest, OutboundDocument, ResourceDocument } from "../_shared/types.ts";
-import type { CountTokensDeps, CountableChatPayload, CountTokensFn } from "../_shared/types/tokenizer.types.ts";
+import { MockLogger } from "../_shared/logger.mock.ts";
+import { MockRagService } from "../_shared/services/rag_service.mock.ts";
+import { TokenWalletService } from "../_shared/services/tokenWalletService.ts";
+import { countTokens } from "../_shared/utils/tokenizer_utils.ts";
+import { calculateAffordability } from "./calculateAffordability/calculateAffordability.provides.ts";
+import type { BoundCalculateAffordabilityFn } from "./calculateAffordability/calculateAffordability.interface.ts";
+import { compressPrompt } from "./compressPrompt/compressPrompt.provides.ts";
+import type { BoundCompressPromptFn } from "./compressPrompt/compressPrompt.interface.ts";
+import { applyInputsRequiredScope } from "../_shared/utils/applyInputsRequiredScope.ts";
+import { validateWalletBalance } from "../_shared/utils/validateWalletBalance.ts";
+import { validateModelCostRates } from "../_shared/utils/validateModelCostRates.ts";
+import type { PrepareModelJobDeps } from "./prepareModelJob/prepareModelJob.interface.ts";
 import {
   isExecuteModelCallAndSaveParams,
   isExecuteModelCallAndSavePayload,
@@ -28,11 +39,11 @@ import type { BoundGatherArtifactsFn } from "./gatherArtifacts/gatherArtifacts.i
 import type { BoundPrepareModelJobFn } from "./createJobContext/JobContext.interface.ts";
 import { prepareModelJob } from "./prepareModelJob/prepareModelJob.ts";
 import type { PrepareModelJobPayload } from "./prepareModelJob/prepareModelJob.interface.ts";
-import { isPrepareModelJobPayload } from "./prepareModelJob/prepareModelJob.interface.guard.ts";
+import { isPrepareModelJobPayload } from "./prepareModelJob/prepareModelJob.guard.ts";
 import {
   buildAiProviderRow,
   buildExtendedModelFixture,
-  buildPrepareModelJobDeps,
+  buildTokenWalletRow,
 } from "./prepareModelJob/prepareModelJob.mock.ts";
 import { processSimpleJob } from "./processSimpleJob.ts";
 import {
@@ -40,8 +51,15 @@ import {
   mockJob,
   mockPayload,
   setupMockClient,
+  stageInputsRequired,
+  stageInputsRelevance,
+  stageOutputsRequired,
 } from "./processSimpleJob.mock.ts";
-import type { DialecticJobRow } from "../dialectic-service/dialectic.interface.ts";
+import type {
+  DialecticJobRow,
+  DialecticStageRecipeStep,
+} from "../dialectic-service/dialectic.interface.ts";
+import { isRecord } from "../_shared/utils/type_guards.ts";
 
 function toArrayBuffer(content: string): ArrayBuffer {
   const encoded: Uint8Array = new TextEncoder().encode(content);
@@ -53,9 +71,75 @@ function toArrayBuffer(content: string): ArrayBuffer {
 Deno.test(
   "integration: processSimpleJob uses factories-only overrides on setupMockClient; gather once; prepare forwards resourceDocuments to EMCAS; no artifact table queries during prepare",
   async () => {
-    const downloadBuffer: ArrayBuffer = toArrayBuffer("document-content-from-storage");
+    const storageDownloadBody: string =
+      "document-content-from-storage" +
+      "0".repeat(10_000);
+    const downloadBuffer: ArrayBuffer = toArrayBuffer(storageDownloadBody);
+
+    const plannerMeta = mockPayload.planner_metadata;
+    if (
+      plannerMeta === null ||
+      plannerMeta === undefined ||
+      typeof plannerMeta.recipe_step_id !== "string" ||
+      plannerMeta.recipe_step_id.length === 0
+    ) {
+      throw new Error("integration test requires mockPayload.planner_metadata.recipe_step_id");
+    }
+    const integrationRecipeStepId: string = plannerMeta.recipe_step_id;
+
+    const dialecticStageRecipeStepRow: DialecticStageRecipeStep = {
+      id: integrationRecipeStepId,
+      instance_id: "instance-1",
+      template_step_id: "step-1",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      step_key: defaultStepSlug,
+      step_slug: defaultStepSlug,
+      step_name: "Doc-centric execution step",
+      step_description: "Generate the main business case document.",
+      job_type: "EXECUTE",
+      prompt_type: "Turn",
+      output_type: FileType.business_case,
+      granularity_strategy: "per_source_document",
+      inputs_required: stageInputsRequired,
+      inputs_relevance: stageInputsRelevance,
+      outputs_required: stageOutputsRequired,
+      config_override: { temperature: 0.2 },
+      object_filter: { branch_key: "business_case" },
+      output_overrides: { document_key: FileType.business_case },
+      is_skipped: false,
+      parallel_group: null,
+      branch_key: null,
+      prompt_template_id: "prompt-123",
+      execution_order: 1,
+    };
+
+    const compressionContextWindowTokens: number = 200;
 
     const mockSetup = setupMockClient({
+      dialectic_stage_recipe_steps: {
+        select: (state: unknown) => {
+          if (!isRecord(state)) {
+            return Promise.resolve({ data: [], error: null });
+          }
+          const filtersUnknown: unknown = state["filters"];
+          const filters: unknown[] = Array.isArray(filtersUnknown) ? filtersUnknown : [];
+          const matchesIntegrationId: boolean = filters.some((f) => {
+            if (!isRecord(f)) {
+              return false;
+            }
+            return (
+              f["type"] === "eq" &&
+              f["column"] === "id" &&
+              f["value"] === integrationRecipeStepId
+            );
+          });
+          if (matchesIntegrationId) {
+            return Promise.resolve({ data: [dialecticStageRecipeStepRow], error: null });
+          }
+          return Promise.resolve({ data: [], error: null });
+        },
+      },
       dialectic_project_resources: {
         select: buildSelectHandler([
           buildDialecticProjectResourceRow({
@@ -96,7 +180,7 @@ Deno.test(
         select: () => {
           const extendedFixture: AiModelExtendedConfig = {
             ...buildExtendedModelFixture(),
-            context_window_tokens: 30,
+            context_window_tokens: compressionContextWindowTokens,
             provider_max_input_tokens: 400,
             hard_cap_output_tokens: 100,
           };
@@ -106,6 +190,17 @@ Deno.test(
           };
           return Promise.resolve({ data: [providerRow], error: null });
         },
+      },
+      token_wallets: {
+        select: () =>
+          Promise.resolve({
+            data: [
+              buildTokenWalletRow({
+                wallet_id: mockPayload.walletId,
+              }),
+            ],
+            error: null,
+          }),
       },
     });
 
@@ -144,23 +239,30 @@ Deno.test(
     });
     const enqueueRenderJob: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
 
-    const countTokens: CountTokensFn = (
-      _deps: CountTokensDeps,
-      payload: CountableChatPayload,
-      _modelConfig: AiModelExtendedConfig,
-    ): number => {
-      const docs: NonNullable<CountableChatPayload["resourceDocuments"]> = payload.resourceDocuments ?? [];
-      if (docs.length === 0) return 5;
-      const firstContent: string = typeof docs[0].content === "string" ? docs[0].content : "";
-      if (firstContent === "Mocked RAG context") return 10;
-      return 120;
+    const logger = new MockLogger();
+    const ragService = new MockRagService();
+    const embeddingClient = {
+      getEmbedding: async (_text: string) => ({
+        embedding: [],
+        usage: { prompt_tokens: 0, total_tokens: 0 },
+      }),
     };
-
-    const prepareDeps = buildPrepareModelJobDeps({
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const tokenWalletService = new TokenWalletService(dbClient, dbClient);
+    const boundCompressPrompt: BoundCompressPromptFn = (cpParams, cpPayload) =>
+      compressPrompt({ logger, ragService, embeddingClient, tokenWalletService, countTokens }, cpParams, cpPayload);
+    const boundCalculateAffordability: BoundCalculateAffordabilityFn = (caParams, caPayload) =>
+      calculateAffordability({ logger, countTokens, compressPrompt: boundCompressPrompt }, caParams, caPayload);
+    const prepareDeps: PrepareModelJobDeps = {
+      logger,
+      applyInputsRequiredScope,
+      tokenWalletService,
+      validateWalletBalance,
+      validateModelCostRates,
+      calculateAffordability: boundCalculateAffordability,
       executeModelCallAndSave,
       enqueueRenderJob,
-      countTokens,
-    });
+    };
 
     let preparePayloadCaptured: unknown = undefined;
     let artifactTableQueryDuringPrepare: number = 0;

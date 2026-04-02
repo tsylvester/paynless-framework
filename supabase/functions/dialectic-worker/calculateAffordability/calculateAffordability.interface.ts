@@ -47,6 +47,7 @@ export interface CalculateAffordabilityPayload {
 export interface CalculateAffordabilityDirectReturn {
   wasCompressed: false;
   maxOutputTokens: number;
+  resolvedInputTokenCount: number;
 }
 
 export interface CalculateAffordabilityCompressedReturn {

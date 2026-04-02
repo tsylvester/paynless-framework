@@ -133,6 +133,21 @@ Deno.test("isCalculateAffordabilityDirectReturn accepts valid direct return and 
     false,
   );
   assertEquals(
+    isCalculateAffordabilityDirectReturn({
+      wasCompressed: false,
+      maxOutputTokens: 10,
+      resolvedInputTokenCount: "not-a-number",
+    }),
+    false,
+  );
+  assertEquals(
+    isCalculateAffordabilityDirectReturn({
+      wasCompressed: false,
+      maxOutputTokens: 10,
+    }),
+    false,
+  );
+  assertEquals(
     isCalculateAffordabilityDirectReturn(
       buildCalculateAffordabilityCompressedReturn(),
     ),

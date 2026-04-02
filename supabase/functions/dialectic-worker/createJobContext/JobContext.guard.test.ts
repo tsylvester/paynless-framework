@@ -15,8 +15,12 @@ import {
     isIRenderJobContext,
     isIJobContext,
 } from './JobContext.guard.ts';
-import { createMockRootContext } from './JobContext.mock.ts';
-import { createPlanJobContext, createRenderJobContext } from './createJobContext.ts';
+import {
+    buildGuardTestIJobContext,
+    buildGuardTestIPlanJobContext,
+    buildGuardTestIRenderJobContext,
+} from './JobContext.mock.ts';
+import { buildMockBoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.mock.ts';
 
 describe('JobContexts Type Guards', () => {
     describe('isILoggerContext', () => {
@@ -123,7 +127,7 @@ describe('JobContexts Type Guards', () => {
 
     describe('isIExecuteModelCallContext', () => {
         it('returns true for valid object with all 12 IExecuteModelCallContext fields', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const context = {
                 logger: rootContext.logger,
                 fileManager: rootContext.fileManager,
@@ -143,7 +147,7 @@ describe('JobContexts Type Guards', () => {
         });
 
         it('returns false for object missing fileManager', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const context = {
                 logger: rootContext.logger,
                 getAiProviderAdapter: rootContext.getAiProviderAdapter,
@@ -162,7 +166,7 @@ describe('JobContexts Type Guards', () => {
         });
 
         it('returns false for object missing debitTokens', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const context = {
                 logger: rootContext.logger,
                 fileManager: rootContext.fileManager,
@@ -181,7 +185,7 @@ describe('JobContexts Type Guards', () => {
         });
 
         it('returns false for object missing getAiProviderAdapter', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const context = {
                 logger: rootContext.logger,
                 fileManager: rootContext.fileManager,
@@ -200,7 +204,7 @@ describe('JobContexts Type Guards', () => {
         });
 
         it('returns false for object with Zone A-D fields but missing IExecuteModelCallContext fields', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             // Zone A-D fields: ragService, pickLatest, downloadFromStorage, applyInputsRequiredScope,
             // countTokens, tokenWalletService, validateWalletBalance, validateModelCostRates, embeddingClient
             // Missing EMCAS fields: fileManager, getAiProviderAdapter, continueJob, retryJob,
@@ -225,7 +229,7 @@ describe('JobContexts Type Guards', () => {
 
     describe('isIPrepareModelJobContext', () => {
         it('returns true for valid object with all 12 IPrepareModelJobContext fields', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const context = {
                 logger: rootContext.logger,
                 pickLatest: rootContext.pickLatest,
@@ -239,13 +243,14 @@ describe('JobContexts Type Guards', () => {
                 embeddingClient: rootContext.embeddingClient,
                 executeModelCallAndSave: async () => ({}),
                 enqueueRenderJob: async () => ({}),
+                calculateAffordability: buildMockBoundCalculateAffordabilityFn(),
             };
 
             assertEquals(isIPrepareModelJobContext(context), true);
         });
 
         it('returns false for object missing ragService', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const context = {
                 logger: rootContext.logger,
                 pickLatest: rootContext.pickLatest,
@@ -264,7 +269,7 @@ describe('JobContexts Type Guards', () => {
         });
 
         it('returns false for object missing executeModelCallAndSave (pre-bound)', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const context = {
                 logger: rootContext.logger,
                 pickLatest: rootContext.pickLatest,
@@ -283,7 +288,7 @@ describe('JobContexts Type Guards', () => {
         });
 
         it('returns false for object missing enqueueRenderJob (pre-bound)', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const context = {
                 logger: rootContext.logger,
                 pickLatest: rootContext.pickLatest,
@@ -302,7 +307,7 @@ describe('JobContexts Type Guards', () => {
         });
 
         it('returns false for object with Zone E-G fields but missing IPrepareModelJobContext fields', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             // Zone E-G fields: fileManager, getAiProviderAdapter, continueJob, retryJob,
             // resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext, debitTokens
             // Missing PMJ fields: pickLatest, downloadFromStorage, applyInputsRequiredScope,
@@ -325,18 +330,59 @@ describe('JobContexts Type Guards', () => {
 
             assertEquals(isIPrepareModelJobContext(context), false);
         });
+
+        it('returns false for object missing calculateAffordability', () => {
+            const rootContext = buildGuardTestIJobContext();
+            const context = {
+                logger: rootContext.logger,
+                pickLatest: rootContext.pickLatest,
+                downloadFromStorage: rootContext.downloadFromStorage,
+                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
+                countTokens: rootContext.countTokens,
+                tokenWalletService: rootContext.tokenWalletService,
+                validateWalletBalance: rootContext.validateWalletBalance,
+                validateModelCostRates: rootContext.validateModelCostRates,
+                ragService: rootContext.ragService,
+                embeddingClient: rootContext.embeddingClient,
+                executeModelCallAndSave: async () => ({}),
+                enqueueRenderJob: async () => ({}),
+            };
+
+            assertEquals(isIPrepareModelJobContext(context), false);
+        });
+
+        it('returns false when calculateAffordability is present but not a function', () => {
+            const rootContext = buildGuardTestIJobContext();
+            const context = {
+                logger: rootContext.logger,
+                pickLatest: rootContext.pickLatest,
+                downloadFromStorage: rootContext.downloadFromStorage,
+                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
+                countTokens: rootContext.countTokens,
+                tokenWalletService: rootContext.tokenWalletService,
+                validateWalletBalance: rootContext.validateWalletBalance,
+                validateModelCostRates: rootContext.validateModelCostRates,
+                ragService: rootContext.ragService,
+                embeddingClient: rootContext.embeddingClient,
+                executeModelCallAndSave: async () => ({}),
+                enqueueRenderJob: async () => ({}),
+                calculateAffordability: 'not-a-function',
+            };
+
+            assertEquals(isIPrepareModelJobContext(context), false);
+        });
     });
 
     describe('isIPlanJobContext', () => {
         it('returns true for valid plan context', () => {
-            const rootContext = createMockRootContext();
-            const context = createPlanJobContext(rootContext);
+            const rootContext = buildGuardTestIJobContext();
+            const context = buildGuardTestIPlanJobContext(rootContext);
 
             assertEquals(isIPlanJobContext(context), true);
         });
 
         it('returns false for partial plan context', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const context = {
                 logger: rootContext.logger,
             };
@@ -347,14 +393,14 @@ describe('JobContexts Type Guards', () => {
 
     describe('isIRenderJobContext', () => {
         it('returns true for valid render context', () => {
-            const rootContext = createMockRootContext();
-            const context = createRenderJobContext(rootContext);
+            const rootContext = buildGuardTestIJobContext();
+            const context = buildGuardTestIRenderJobContext(rootContext);
 
             assertEquals(isIRenderJobContext(context), true);
         });
 
         it('returns false for partial render context', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const context = {
                 logger: rootContext.logger,
                 fileManager: rootContext.fileManager,
@@ -369,13 +415,13 @@ describe('JobContexts Type Guards', () => {
 
     describe('isIJobContext', () => {
         it('returns true for valid root context with new context structure', () => {
-            const context = createMockRootContext();
+            const context = buildGuardTestIJobContext();
 
             assertEquals(isIJobContext(context), true);
         });
 
         it('returns false for root context missing model context fields', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             // Remove model context fields — callUnifiedAIModel no longer exists on IJobContext
             const { getAiProviderAdapter, getAiProviderConfig, ...contextMissingModelContext } = rootContext;
 
@@ -383,21 +429,21 @@ describe('JobContexts Type Guards', () => {
         });
 
         it('returns false when prepareModelJob is missing', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const { prepareModelJob, ...contextMissingPrepareModelJob } = rootContext;
 
             assertEquals(isIJobContext(contextMissingPrepareModelJob), false);
         });
 
         it('returns false when getSeedPromptForStage is missing', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const { getSeedPromptForStage, ...contextMissingSeed } = rootContext;
 
             assertEquals(isIJobContext(contextMissingSeed), false);
         });
 
         it('returns false for root context missing debitTokens', () => {
-            const rootContext = createMockRootContext();
+            const rootContext = buildGuardTestIJobContext();
             const { debitTokens, ...contextMissingDebitTokens } = rootContext;
 
             assertEquals(isIJobContext(contextMissingDebitTokens), false);

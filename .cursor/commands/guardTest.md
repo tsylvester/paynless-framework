@@ -8,6 +8,10 @@ YOU MUST IMPORT THE GUARDS FROM THE GUARD FILE. Do not complain that the guard f
 
 THIS IS A TDD RED TEST YOU WILL HAVE LINTER ERRORS YOU JUST DO EXACTLY WHAT YOU"RE TOLD! 
 
+Type guards take unproven, unvalidated data and prove that they conform to the requirements of the type that is guarded.
+
+Type guards DO NOT rely on implementation details of the function that consumes the types. 
+
 For any factories or other helpers, place them in the mock file. 
 
 DO NOT DUPLICATE FUNCTIONALITY! CONSUME WHAT EXISTS BEFORE BUILDING SOMETHING NEW! 

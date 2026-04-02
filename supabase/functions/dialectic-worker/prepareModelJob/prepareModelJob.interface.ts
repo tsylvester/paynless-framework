@@ -1,11 +1,7 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database, Tables } from '../../types_db.ts';
 import type { ILogger } from '../../_shared/types.ts';
-import type { DownloadFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
-import type { CountTokensFn } from '../../_shared/types/tokenizer.types.ts';
 import type { ITokenWalletService } from '../../_shared/types/tokenWallet.types.ts';
-import type { IRagService } from '../../_shared/services/rag_service.interface.ts';
-import type { IEmbeddingClient } from '../../_shared/services/indexing_service.interface.ts';
 import type { ICompressionStrategy } from '../../_shared/utils/vector_utils.interface.ts';
 import type {
   DialecticContributionRow,
@@ -16,25 +12,21 @@ import type {
   RelevanceRule,
 } from '../../dialectic-service/dialectic.interface.ts';
 import type {
-  PickLatestFn,
   ApplyInputsRequiredScopeFn,
   ValidateWalletBalanceFn,
   ValidateModelCostRatesFn,
 } from '../createJobContext/JobContext.interface.ts';
+import type { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
 import type { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
 import type { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 
 export interface PrepareModelJobDeps {
   logger: ILogger;
-  pickLatest: PickLatestFn;
-  downloadFromStorage: DownloadFromStorageFn;
   applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
-  countTokens: CountTokensFn;
   tokenWalletService: ITokenWalletService;
   validateWalletBalance: ValidateWalletBalanceFn;
   validateModelCostRates: ValidateModelCostRatesFn;
-  ragService: IRagService;
-  embeddingClient: IEmbeddingClient;
+  calculateAffordability: BoundCalculateAffordabilityFn;
   executeModelCallAndSave: BoundExecuteModelCallAndSaveFn;
   enqueueRenderJob: BoundEnqueueRenderJobFn;
 }

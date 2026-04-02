@@ -23,7 +23,7 @@ import type {
 import {
   isPrepareModelJobParams,
   isPrepareModelJobPayload,
-} from './prepareModelJob/prepareModelJob.interface.guard.ts';
+} from './prepareModelJob/prepareModelJob.guard.ts';
 import { MockPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { createJobContext } from './createJobContext/createJobContext.ts';
@@ -35,23 +35,23 @@ import { IFileManager } from '../_shared/types/file_manager.types.ts';
 export const defaultStepSlug = 'thesis';
 
 const processSimpleJobExecutePayloadDefault: DialecticExecuteJobPayload = {
-  projectId: 'project-abc',
-  sessionId: 'session-456',
+  projectId: 'p00ject0-0abc-4000-a000-000000000001',
+  sessionId: '5e551010-0456-4000-a000-000000000002',
   stageSlug: defaultStepSlug,
-  model_id: 'model-def',
+  model_id: 'm0de10de-f000-4000-a000-000000000003',
   iterationNumber: 1,
   continueUntilComplete: false,
-  walletId: 'wallet-ghi',
+  walletId: 'a111e700-0000-4000-a000-000000000004',
   user_jwt: 'jwt.token.here',
-  planner_metadata: { recipe_step_id: 'step-1', recipe_template_id: 'template-123' },
-  prompt_template_id: 'template-123',
+  planner_metadata: { recipe_step_id: '57ep0000-0001-4000-a000-000000000005', recipe_template_id: '7e8p1a7e-0123-4000-a000-000000000006' },
+  prompt_template_id: '7e8p1a7e-0123-4000-a000-000000000006',
   output_type: FileType.business_case,
   canonicalPathParams: {
     contributionType: 'thesis',
     stageSlug: defaultStepSlug,
   },
   inputs: {},
-  idempotencyKey: 'idempotency-key-1',
+  idempotencyKey: '1de8p07e-0001-4000-a000-000000000007',
 };
 
 export function buildProcessSimpleJobExecutePayload(
@@ -181,9 +181,9 @@ export const stageOutputsRequired: OutputRule = {
 };
 
 export const mockJob: DialecticJobRow = {
-  id: 'job-123',
-  session_id: 'session-456',
-  user_id: 'user-789',
+  id: '00000b00-0123-4000-a000-000000000008',
+  session_id: '5e551010-0456-4000-a000-000000000002',
+  user_id: '00u5e000-0789-4000-a000-000000000009',
   stage_slug: defaultStepSlug,
   iteration_number: 1,
   payload: mockPayload,
@@ -200,19 +200,19 @@ export const mockJob: DialecticJobRow = {
   prerequisite_job_id: null,
   is_test_job: false,
   job_type: 'PLAN',
-  idempotency_key: 'idempotency-key-1',
+  idempotency_key: '1de8p07e-0001-4000-a000-000000000007',
 };
 
 export const mockSessionData: Tables<'dialectic_sessions'> = {
-  id: 'session-456',
-  project_id: 'project-abc',
+  id: '5e551010-0456-4000-a000-000000000002',
+  project_id: 'p00ject0-0abc-4000-a000-000000000001',
   session_description: 'A mock session',
   user_input_reference_url: null,
   iteration_count: 1,
-  selected_model_ids: ['model-def'],
+  selected_model_ids: ['m0de10de-f000-4000-a000-000000000003'],
   status: 'in-progress',
-  associated_chat_id: 'chat-789',
-  current_stage_id: 'stage-1',
+  associated_chat_id: '00c0a700-0789-4000-a000-00000000000a',
+  current_stage_id: '005a6e00-0001-4000-a000-00000000000b',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   viewing_stage_id: null,
@@ -220,7 +220,7 @@ export const mockSessionData: Tables<'dialectic_sessions'> = {
 };
 
 export const mockProviderData: Tables<'ai_providers'> = {
-  id: 'model-def',
+  id: 'm0de10de-f000-4000-a000-000000000003',
   provider: 'mock-provider',
   name: 'Mock AI',
   api_identifier: 'mock-ai-v1',
@@ -235,11 +235,11 @@ export const mockProviderData: Tables<'ai_providers'> = {
 };
 
 export const mockContribution: DialecticContributionRow = {
-  id: 'contrib-123',
-  session_id: 'session-456',
+  id: 'c0007b00-0123-4000-a000-00000000000c',
+  session_id: '5e551010-0456-4000-a000-000000000002',
   stage: defaultStepSlug,
   iteration_number: 1,
-  model_id: 'model-def',
+  model_id: 'm0de10de-f000-4000-a000-000000000003',
   edit_version: 1,
   is_latest_edit: true,
   citations: null,
@@ -261,7 +261,7 @@ export const mockContribution: DialecticContributionRow = {
   tokens_used_input: 10,
   tokens_used_output: 20,
   updated_at: new Date().toISOString(),
-  user_id: 'user-789',
+  user_id: '00u5e000-0789-4000-a000-000000000009',
   document_relationships: null,
   is_header: false,
   source_prompt_resource_id: null,
@@ -296,41 +296,41 @@ export function assertPrepareModelJobTwoArgCall(
 
 export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
   const mockProject: Tables<'dialectic_projects'> & { dialectic_domains: Pick<Tables<'dialectic_domains'>, 'id' | 'name' | 'description'> } = {
-    id: 'project-abc',
-    user_id: 'user-789',
+    id: 'p00ject0-0abc-4000-a000-000000000001',
+    user_id: '00u5e000-0789-4000-a000-000000000009',
     project_name: 'Test Project',
     initial_user_prompt: 'Test prompt',
-    selected_domain_id: 'domain-123',
+    selected_domain_id: '00d08a10-0123-4000-a000-00000000000d',
     status: 'active',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     initial_prompt_resource_id: null,
-    process_template_id: 'template-123',
+    process_template_id: '7e8p1a7e-0123-4000-a000-000000000006',
     repo_url: null,
     selected_domain_overlay_id: null,
     user_domain_overlay_values: null,
     dialectic_domains: {
-      id: 'domain-123',
+      id: '00d08a10-0123-4000-a000-00000000000d',
       name: 'Test Domain',
       description: 'A domain for testing',
     },
-    idempotency_key: 'idempotency-key-1',
+    idempotency_key: '1de8p07e-0001-4000-a000-000000000007',
   };
 
   const mockStage: Tables<'dialectic_stages'> & { system_prompts: { id: string; prompt_text: string } | null } = {
-    id: 'stage-1',
+    id: '005a6e00-0001-4000-a000-00000000000b',
     slug: defaultStepSlug,
     display_name: 'Test Stage',
     created_at: new Date().toISOString(),
-    default_system_prompt_id: 'prompt-123',
+    default_system_prompt_id: '0008p700-0123-4000-a000-00000000000e',
     description: null,
     expected_output_template_ids: [],
     system_prompts: {
-      id: 'prompt-123',
+      id: '0008p700-0123-4000-a000-00000000000e',
       prompt_text: 'This is the base system prompt for the test stage.',
     },
     active_recipe_instance_id: null,
-    recipe_template_id: 'template-123',
+    recipe_template_id: '7e8p1a7e-0123-4000-a000-000000000006',
     minimum_balance: 0,
   };
 

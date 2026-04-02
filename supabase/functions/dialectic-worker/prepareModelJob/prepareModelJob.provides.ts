@@ -17,7 +17,7 @@ export {
   isPrepareModelJobParams,
   isPrepareModelJobPayload,
   isPrepareModelJobSuccessReturn,
-} from "./prepareModelJob.interface.guard.ts";
+} from "./prepareModelJob.guard.ts";
 export type {
   CreatePrepareModelJobMockOptions,
   PrepareModelJobMockCall,

@@ -174,7 +174,7 @@ export function buildMockBoundCalculateAffordabilityFn(
       _params: CalculateAffordabilityParams,
       _payload: CalculateAffordabilityPayload,
     ): Promise<CalculateAffordabilityReturn> => {
-      return buildCalculateAffordabilityDirectReturn(0);
+      return buildCalculateAffordabilityDirectReturn(100, 50);
     };
   }
   if (isMockBoundCalculateAffordabilityFnOptions(optionsOrFixed)) {
@@ -189,7 +189,7 @@ export function buildMockBoundCalculateAffordabilityFn(
       if (options.result !== undefined) {
         return options.result;
       }
-      return buildCalculateAffordabilityDirectReturn(0);
+      return buildCalculateAffordabilityDirectReturn(100, 50);
     };
   }
   const fixedReturn: CalculateAffordabilityReturn = optionsOrFixed;
@@ -268,10 +268,12 @@ export function buildMockCalculateAffordabilityFn(
 
 export function buildCalculateAffordabilityDirectReturn(
   maxOutputTokens: number,
+  resolvedInputTokenCount: number = 0,
 ): CalculateAffordabilityDirectReturn {
   const out: CalculateAffordabilityDirectReturn = {
     wasCompressed: false,
     maxOutputTokens,
+    resolvedInputTokenCount,
   };
   return out;
 }
