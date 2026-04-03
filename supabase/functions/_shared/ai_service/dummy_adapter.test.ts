@@ -7,6 +7,7 @@ import {
 import { testAdapterContract, type MockApi } from "./adapter_test_contract.ts";
 import type { 
   AdapterResponsePayload, 
+  AdapterStreamChunk,
   AiModelExtendedConfig, 
   ChatApiRequest, 
   ProviderModelInfo, 
@@ -21,40 +22,18 @@ import { isTokenUsage } from "../utils/type_guards.ts";
 import { Tables } from "../../types_db.ts";
 import { isJson } from "../utils/type_guards.ts"; 
 import { ILogger } from "../types.ts";
+import { MOCK_PROVIDER } from "./ai_provider.mock.ts";
+import { isAiModelExtendedConfig } from "../utils/type_guards.ts";
 /**
  * This test file uses the generic `testAdapterContract` to ensure the
  * DummyAdapter conforms to the standard adapter interface. It also includes
  * a specific test to verify the dummy's unique tokenization behavior.
  */
 
-const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
-    api_identifier: "dummy-model-v1",
-    input_token_cost_rate: 0,
-    output_token_cost_rate: 0,
-    tokenization_strategy: { 
-        type: 'tiktoken', 
-        tiktoken_encoding_name: 'cl100k_base' 
-    },
-};
-
-if(!isJson(MOCK_MODEL_CONFIG)) {
-    throw new Error('MOCK_MODEL_CONFIG is not a valid JSON object');
+if(!isJson(MOCK_PROVIDER.config) || !isAiModelExtendedConfig(MOCK_PROVIDER.config)) {
+  throw new Error('MOCK_PROVIDER.config is not a valid JSON object');
 }
-
-export const MOCK_PROVIDER: Tables<'ai_providers'> = {
-    id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-    provider: "dummy",
-    api_identifier: "dummy-model-v1",
-    name: "Dummy Model",
-    description: "A dummy AI model for testing purposes.",
-    is_active: true,
-    is_default_embedding: false,
-    is_default_generation: false,
-    is_enabled: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    config: MOCK_MODEL_CONFIG,
-};
+  const MOCK_MODEL_CONFIG: AiModelExtendedConfig = MOCK_PROVIDER.config;
 
 // For the contract test, the mock API should replicate the dummy's simple logic
 // without instantiating the real adapter to avoid infinite recursion with the stub.
@@ -425,6 +404,11 @@ Deno.test("DummyAdapter getEmbedding returns 3072-d vectors", async () => {
   const adapterInstance: AiProviderAdapterInstance = {
     getEmbedding: (text: string): Promise<EmbeddingResponse> => adapter.getEmbedding(text),
     async sendMessage() { throw new Error("not used in this test"); },
+    async *sendMessageStream(_request: ChatApiRequest, _modelIdentifier: string): AsyncGenerator<AdapterStreamChunk> {
+      yield { type: "text_delta", text: "not used in this test" };
+      yield { type: "usage", tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } };
+      yield { type: "done", finish_reason: "stop" };
+    },
     async listModels() { return []; },
   };
 
@@ -542,4 +526,116 @@ Deno.test("[DummyAdapter] uses rational self-default window when constructed as 
   // These fields should be populated by the adapter's self-defaults when missing on input
   assert(typeof cfg.provider_max_input_tokens === "number" && cfg.provider_max_input_tokens >= 200_000, "provider_max_input_tokens should default to >= 200k");
   assert(typeof cfg.context_window_tokens === "number" && cfg.context_window_tokens >= 200_000, "context_window_tokens should default to >= 200k");
+});
+
+async function collectAdapterStreamChunks(
+  stream: AsyncGenerator<AdapterStreamChunk>,
+): Promise<AdapterStreamChunk[]> {
+  const chunks: AdapterStreamChunk[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  return chunks;
+}
+
+Deno.test("[DummyAdapter] sendMessageStream yields text_delta, usage, and done with finish_reason stop for normal echo", async () => {
+  const adapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", new MockLogger());
+  const request: ChatApiRequest = {
+    message: "Hello, stream.",
+    providerId: "dummy-provider",
+    promptId: "__none__",
+  };
+  const modelIdentifier: string = MOCK_MODEL_CONFIG.api_identifier;
+  const expectedContent: string = `Echo from ${modelIdentifier}: ${request.message}`;
+
+  const tokenizerDeps: CountTokensDeps = {
+    getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? "").map((_, i) => i) }),
+    countTokensAnthropic: (text: string) => (text ?? "").length,
+    logger: { warn: () => {}, error: () => {} },
+  };
+  const expectedPromptTokens: number = countTokens(
+    tokenizerDeps,
+    { message: request.message, messages: [] },
+    MOCK_MODEL_CONFIG,
+  );
+  const expectedCompletionTokens: number = countTokens(
+    tokenizerDeps,
+    { messages: [{ role: "assistant", content: expectedContent }] },
+    MOCK_MODEL_CONFIG,
+  );
+
+  const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
+    adapter.sendMessageStream(request, modelIdentifier),
+  );
+
+  assertEquals(chunks.length, 3, "Expected text_delta, usage, and done chunks.");
+  const textChunk: AdapterStreamChunk | undefined = chunks[0];
+  assertEquals(textChunk?.type, "text_delta");
+  if (textChunk?.type === "text_delta") {
+    assertEquals(textChunk.text, expectedContent);
+  }
+  const usageChunk: AdapterStreamChunk | undefined = chunks[1];
+  assertEquals(usageChunk?.type, "usage");
+  if (usageChunk?.type === "usage") {
+    assertEquals(usageChunk.tokenUsage.prompt_tokens, expectedPromptTokens);
+    assertEquals(usageChunk.tokenUsage.completion_tokens, expectedCompletionTokens);
+    assertEquals(usageChunk.tokenUsage.total_tokens, expectedPromptTokens + expectedCompletionTokens);
+  }
+  const doneChunk: AdapterStreamChunk | undefined = chunks[2];
+  assertEquals(doneChunk?.type, "done");
+  if (doneChunk?.type === "done") {
+    assertEquals(doneChunk.finish_reason, "stop");
+  }
+});
+
+Deno.test("[DummyAdapter] sendMessageStream yields done with finish_reason max_tokens when message contains SIMULATE_MAX_TOKENS", async () => {
+  const adapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", new MockLogger());
+  const request: ChatApiRequest = {
+    message: "Hello SIMULATE_MAX_TOKENS",
+    providerId: "dummy-provider",
+    promptId: "__none__",
+  };
+  const modelIdentifier: string = MOCK_MODEL_CONFIG.api_identifier;
+  const cleanMessage: string = request.message.replace(/SIMULATE_MAX_TOKENS|SIMULATE_LARGE_OUTPUT_KB=\d+/g, "").trim();
+  const expectedContent: string = `Partial echo due to max_tokens from ${modelIdentifier}: ${cleanMessage}`;
+
+  const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
+    adapter.sendMessageStream(request, modelIdentifier),
+  );
+
+  assertEquals(chunks.length, 3);
+  const textChunk: AdapterStreamChunk | undefined = chunks[0];
+  assertEquals(textChunk?.type, "text_delta");
+  if (textChunk?.type === "text_delta") {
+    assertEquals(textChunk.text, expectedContent);
+  }
+  const doneChunk: AdapterStreamChunk | undefined = chunks[2];
+  assertEquals(doneChunk?.type, "done");
+  if (doneChunk?.type === "done") {
+    assertEquals(doneChunk.finish_reason, "max_tokens");
+  }
+});
+
+Deno.test("[DummyAdapter] sendMessageStream throws when message contains SIMULATE_ERROR", async () => {
+  const adapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", new MockLogger());
+  const request: ChatApiRequest = {
+    message: "SIMULATE_ERROR",
+    providerId: "dummy-provider",
+    promptId: "__none__",
+  };
+  const modelIdentifier: string = MOCK_MODEL_CONFIG.api_identifier;
+
+  let caught: Error | null = null;
+  try {
+    await collectAdapterStreamChunks(adapter.sendMessageStream(request, modelIdentifier));
+  } catch (error) {
+    if (error instanceof Error) {
+      caught = error;
+    } else {
+      throw error;
+    }
+  }
+
+  assertExists(caught);
+  assertEquals(caught.message, "Simulated adapter error for testing retry logic.");
 });

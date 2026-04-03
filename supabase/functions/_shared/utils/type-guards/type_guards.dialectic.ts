@@ -5,8 +5,7 @@ import {
     DialecticContributionRow,
     DialecticJobPayload,
     DialecticJobRow,
-    JobResultsWithModelProcessing,
-    ModelProcessingResult,
+    DialecticSessionRow,
     DialecticPlanJobPayload,
     DialecticSkeletonJobPayload,
     DialecticExecuteJobPayload,
@@ -1143,6 +1142,62 @@ export function isDialecticJobRow(record: unknown): record is DialecticJobRow {
       }
     }
   
+    return true;
+}
+
+function isSelectedModelIdsColumn(value: unknown): value is string[] | null {
+    if (value === null) {
+        return true;
+    }
+    if (!Array.isArray(value)) {
+        return false;
+    }
+    return value.every((item) => typeof item === "string");
+}
+
+export function isDialecticSessionRow(record: unknown): record is DialecticSessionRow {
+    if (!isRecord(record)) {
+        return false;
+    }
+    if (typeof record.id !== "string" || record.id === "") {
+        return false;
+    }
+    if (typeof record.project_id !== "string" || record.project_id === "") {
+        return false;
+    }
+    if (typeof record.created_at !== "string" || record.created_at === "") {
+        return false;
+    }
+    if (typeof record.updated_at !== "string" || record.updated_at === "") {
+        return false;
+    }
+    if (typeof record.current_stage_id !== "string" || record.current_stage_id === "") {
+        return false;
+    }
+    if (typeof record.iteration_count !== "number" || !Number.isInteger(record.iteration_count)) {
+        return false;
+    }
+    if (typeof record.status !== "string" || record.status === "") {
+        return false;
+    }
+    if (!isSelectedModelIdsColumn(record.selected_model_ids)) {
+        return false;
+    }
+    if (record.session_description !== null && typeof record.session_description !== "string") {
+        return false;
+    }
+    if (record.user_input_reference_url !== null && typeof record.user_input_reference_url !== "string") {
+        return false;
+    }
+    if (record.associated_chat_id !== null && typeof record.associated_chat_id !== "string") {
+        return false;
+    }
+    if (record.viewing_stage_id !== null && typeof record.viewing_stage_id !== "string") {
+        return false;
+    }
+    if (record.idempotency_key !== null && typeof record.idempotency_key !== "string") {
+        return false;
+    }
     return true;
 }
 

@@ -1,7 +1,7 @@
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../types_db.ts';
 import { isRecord, isDialecticRenderJobPayload } from '../_shared/utils/type_guards.ts';
-import { IRenderJobContext } from './JobContext.interface.ts';
+import { IRenderJobContext } from './createJobContext/JobContext.interface.ts';
 import { RenderDocumentParams, DocumentRendererDeps } from '../_shared/services/document_renderer.interface.ts';
 import { isFileType } from '../_shared/utils/type_guards.ts';
 import { isString, isNumber } from "node:util";

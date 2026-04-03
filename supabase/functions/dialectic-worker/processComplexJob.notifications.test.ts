@@ -17,9 +17,9 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
 import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
-import { IPlanJobContext } from './JobContext.interface.ts';
-import { createPlanJobContext, createJobContext } from './createJobContext.ts';
-import { createMockJobContextParams } from './JobContext.mock.ts';
+import { IPlanJobContext } from './createJobContext/JobContext.interface.ts';
+import { createPlanJobContext, createJobContext } from './createJobContext/createJobContext.ts';
+import { createMockJobContextParams } from './createJobContext/JobContext.mock.ts';
 
 const mockTemplateRecipeSteps: DialecticRecipeTemplateStep[] = [
     {

@@ -31,9 +31,9 @@ import {
     isDialecticStageRecipeStep,
 } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 import { IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
-import { IPlanJobContext } from './JobContext.interface.ts';
-import { createPlanJobContext, createJobContext } from './createJobContext.ts';
-import { createMockJobContextParams } from './JobContext.mock.ts';
+import { IPlanJobContext } from './createJobContext/JobContext.interface.ts';
+import { createPlanJobContext, createJobContext } from './createJobContext/createJobContext.ts';
+import { createMockJobContextParams } from './createJobContext/JobContext.mock.ts';
 
 const mockTemplateRecipeSteps: DialecticRecipeTemplateStep[] = [
     {

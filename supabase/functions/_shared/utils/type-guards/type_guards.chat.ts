@@ -96,7 +96,7 @@ export function isChatMessageRow(record: unknown): record is Tables<'chat_messag
 
     const checks: { key: keyof Tables<'chat_messages'>, type: string, nullable?: boolean }[] = [
         { key: 'id', type: 'string' },
-        { key: 'chat_id', type: 'string' },
+        { key: 'chat_id', type: 'string', nullable: true },
         { key: 'user_id', type: 'string', nullable: true },
         { key: 'role', type: 'string' },
         { key: 'content', type: 'string', nullable: true },
@@ -159,6 +159,7 @@ export function isFinishReason(value: unknown): value is FinishReason {
         'max_tokens',
         'content_truncated',
         'next_document',
+        'tool_use',
     ]);
     return allowed.has(value);
 }
