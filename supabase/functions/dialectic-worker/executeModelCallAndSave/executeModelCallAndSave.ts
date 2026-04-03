@@ -59,7 +59,7 @@ import {
   isContextForDocumentArray,
 } from '../../_shared/utils/type-guards/type_guards.dialectic.ts';
 
-const SOFT_TIMEOUT_MS: number = 350_000;
+const SOFT_TIMEOUT_MS: number = 230_000;
 
 function apiKeyForProvider(apiIdentifier: string): string {
   const id: string = apiIdentifier.toLowerCase();
