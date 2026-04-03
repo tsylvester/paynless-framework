@@ -1,6 +1,6 @@
 // supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.test.ts
 
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { AiModelExtendedConfig } from "../../_shared/types.ts";
 import type {
   CountableChatPayload,
@@ -401,6 +401,64 @@ Deno.test("Oversized total estimated cost exceeds balance: error return; retriab
   assertEquals(calls.length, 0);
 });
 
+Deno.test(
+  "Non-oversized: maxOutputTokens is SSOT cap 400",
+  async () => {
+    const logger: MockLogger = new MockLogger();
+    const initialTokenCount: number = 100;
+    const walletBalance: number = 1000;
+    const extendedModelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 2,
+      context_window_tokens: 10000,
+      provider_max_input_tokens: 128000,
+    });
+    const { client } = createMockSupabaseClient();
+    const { compressPrompt, calls } = createCompressPromptMock({});
+    const deps = buildCalculateAffordabilityDeps({
+      logger,
+      countTokens: createMockCountTokens({
+        countTokens: (
+          _deps: CountTokensDeps,
+          _payload: CountableChatPayload,
+          _modelConfig: AiModelExtendedConfig,
+        ): number => initialTokenCount,
+      }),
+      compressPrompt,
+    });
+    const params = buildCalculateAffordabilityParams(DbClient(client), {
+      walletBalance,
+      extendedModelConfig,
+      inputRate: 1,
+      outputRate: 2,
+    });
+    const payload = buildCalculateAffordabilityPayload({
+      resourceDocuments: [],
+      conversationHistory: [{ role: "user", content: "hello" }],
+      currentUserPrompt: "current",
+      systemInstruction: "SYS",
+      chatApiRequest: buildChatApiRequest([], "current", {
+        systemInstruction: "SYS",
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    });
+    const result = await calculateAffordability(deps, params, payload);
+    const expectedMax: number = getMaxOutputTokens(
+      walletBalance,
+      initialTokenCount,
+      extendedModelConfig,
+      logger,
+    );
+    assertEquals(isCalculateAffordabilityDirectReturn(result), true);
+    if (isCalculateAffordabilityDirectReturn(result)) {
+      assertEquals(result.maxOutputTokens, 400);
+      assertEquals(result.maxOutputTokens, expectedMax);
+      assertEquals(result.resolvedInputTokenCount, initialTokenCount);
+    }
+    assertEquals(calls.length, 0);
+  },
+);
+
 Deno.test("Oversized total estimated cost exceeds 80% rationality threshold: error return; retriable false", async () => {
   const logger: MockLogger = new MockLogger();
   const { client } = createMockSupabaseClient();
@@ -436,3 +494,272 @@ Deno.test("Oversized total estimated cost exceeds 80% rationality threshold: err
   }
   assertEquals(calls.length, 0);
 });
+
+Deno.test(
+  "non-oversized NSF when estimated cost exceeds wallet (inputRate 1, outputRate 10, balance 5, count 10)",
+  async () => {
+    const logger: MockLogger = new MockLogger();
+    const initialTokenCount: number = 10;
+    const walletBalance: number = 5;
+    const extendedModelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 10,
+    });
+    const { client } = createMockSupabaseClient();
+    const { compressPrompt, calls } = createCompressPromptMock({});
+    const deps = buildCalculateAffordabilityDeps({
+      logger,
+      countTokens: createMockCountTokens({
+        countTokens: (
+          _deps: CountTokensDeps,
+          _payload: CountableChatPayload,
+          _modelConfig: AiModelExtendedConfig,
+        ): number => initialTokenCount,
+      }),
+      compressPrompt,
+    });
+    const params = buildCalculateAffordabilityParams(DbClient(client), {
+      walletBalance,
+      extendedModelConfig,
+      inputRate: 1,
+      outputRate: 10,
+    });
+    const payload = buildCalculateAffordabilityPayload({
+      resourceDocuments: [],
+      conversationHistory: [],
+      currentUserPrompt: "hello",
+      systemInstruction: "",
+      chatApiRequest: buildChatApiRequest([], "hello", {
+        systemInstruction: "",
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    });
+    const result = await calculateAffordability(deps, params, payload);
+    assertEquals(isCalculateAffordabilityErrorReturn(result), true);
+    if (isCalculateAffordabilityErrorReturn(result)) {
+      assertStringIncludes(result.error.message, "Insufficient funds");
+      assertEquals(result.retriable, false);
+    }
+    assertEquals(calls.length, 0);
+  },
+);
+
+Deno.test(
+  "oversized estimated cost exceeds 80% rationality; compressPrompt not called",
+  async () => {
+    const logger: MockLogger = new MockLogger();
+    const initialTokenCount: number = 500;
+    const walletBalance: number = 1000;
+    const extendedModelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+      context_window_tokens: 100,
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+      provider_max_output_tokens: 50,
+      provider_max_input_tokens: 200,
+    });
+    const { client } = createMockSupabaseClient();
+    const { compressPrompt, calls } = createCompressPromptMock({});
+    const deps = buildCalculateAffordabilityDeps({
+      logger,
+      countTokens: createMockCountTokens({
+        countTokens: (
+          _deps: CountTokensDeps,
+          _payload: CountableChatPayload,
+          _modelConfig: AiModelExtendedConfig,
+        ): number => initialTokenCount,
+      }),
+      compressPrompt,
+    });
+    const resourceDocuments = [buildResourceDocument()];
+    const params = buildCalculateAffordabilityParams(DbClient(client), {
+      walletBalance,
+      extendedModelConfig,
+      inputRate: 1,
+      outputRate: 1,
+      inputsRelevance: [{ document_key: FileType.HeaderContext, relevance: 1 }],
+    });
+    const payload = buildCalculateAffordabilityPayload({
+      resourceDocuments,
+      conversationHistory: [],
+      currentUserPrompt: "",
+      systemInstruction: "",
+      chatApiRequest: buildChatApiRequest(resourceDocuments, "", {
+        systemInstruction: "",
+        messages: [],
+      }),
+    });
+    const result = await calculateAffordability(deps, params, payload);
+    assertEquals(isCalculateAffordabilityErrorReturn(result), true);
+    if (isCalculateAffordabilityErrorReturn(result)) {
+      assertStringIncludes(result.error.message, "exceeds 80% of the user's balance");
+      assertEquals(result.retriable, false);
+    }
+    assertEquals(calls.length, 0);
+  },
+);
+
+Deno.test(
+  "oversized absolute NSF (including embeddings); compressPrompt not called",
+  async () => {
+    const logger: MockLogger = new MockLogger();
+    const initialTokenCount: number = 251;
+    const walletBalance: number = 250;
+    const extendedModelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+      context_window_tokens: 100,
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+      provider_max_output_tokens: 50,
+      provider_max_input_tokens: 200,
+    });
+    const { client } = createMockSupabaseClient();
+    const { compressPrompt, calls } = createCompressPromptMock({});
+    const deps = buildCalculateAffordabilityDeps({
+      logger,
+      countTokens: createMockCountTokens({
+        countTokens: (
+          _deps: CountTokensDeps,
+          _payload: CountableChatPayload,
+          _modelConfig: AiModelExtendedConfig,
+        ): number => initialTokenCount,
+      }),
+      compressPrompt,
+    });
+    const resourceDocuments = [buildResourceDocument()];
+    const params = buildCalculateAffordabilityParams(DbClient(client), {
+      walletBalance,
+      extendedModelConfig,
+      inputRate: 1,
+      outputRate: 1,
+      inputsRelevance: [{ document_key: FileType.HeaderContext, relevance: 1 }],
+    });
+    const payload = buildCalculateAffordabilityPayload({
+      resourceDocuments,
+      conversationHistory: [],
+      currentUserPrompt: "",
+      systemInstruction: "",
+      chatApiRequest: buildChatApiRequest(resourceDocuments, "", {
+        systemInstruction: "",
+        messages: [],
+      }),
+    });
+    const result = await calculateAffordability(deps, params, payload);
+    assertEquals(isCalculateAffordabilityErrorReturn(result), true);
+    if (isCalculateAffordabilityErrorReturn(result)) {
+      assertStringIncludes(result.error.message, "Insufficient funds for the entire operation");
+      assertEquals(result.retriable, false);
+    }
+    assertEquals(calls.length, 0);
+  },
+);
+
+Deno.test(
+  "final ChatApiRequest.max_tokens_to_generate equals SSOT(final input)",
+  async () => {
+    const logger: MockLogger = new MockLogger();
+    const initialTokenCount: number = 50;
+    const walletBalance: number = 1000;
+    const extendedModelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+      context_window_tokens: 1000,
+      provider_max_input_tokens: 10000,
+      provider_max_output_tokens: 500,
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 2,
+    });
+    const { client } = createMockSupabaseClient();
+    const { compressPrompt, calls } = createCompressPromptMock({});
+    const deps = buildCalculateAffordabilityDeps({
+      logger,
+      countTokens: createMockCountTokens({
+        countTokens: (
+          _deps: CountTokensDeps,
+          _payload: CountableChatPayload,
+          _modelConfig: AiModelExtendedConfig,
+        ): number => initialTokenCount,
+      }),
+      compressPrompt,
+    });
+    const params = buildCalculateAffordabilityParams(DbClient(client), {
+      walletBalance,
+      extendedModelConfig,
+      inputRate: 1,
+      outputRate: 2,
+    });
+    const payload = buildCalculateAffordabilityPayload({
+      resourceDocuments: [],
+      conversationHistory: [{ role: "user", content: "hello" }],
+      currentUserPrompt: "CURR",
+      systemInstruction: "SYS",
+      chatApiRequest: buildChatApiRequest([], "CURR", {
+        systemInstruction: "SYS",
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    });
+    const result = await calculateAffordability(deps, params, payload);
+    const expectedMax: number = getMaxOutputTokens(
+      walletBalance,
+      initialTokenCount,
+      extendedModelConfig,
+      logger,
+    );
+    assertEquals(isCalculateAffordabilityDirectReturn(result), true);
+    if (isCalculateAffordabilityDirectReturn(result)) {
+      assertEquals(result.maxOutputTokens, 400);
+      assertEquals(result.maxOutputTokens, expectedMax);
+      assertEquals(result.resolvedInputTokenCount, initialTokenCount);
+    }
+    assertEquals(calls.length, 0);
+  },
+);
+
+Deno.test(
+  "preflight rejects when total planned spend (compression + embeddings + final) exceeds 80% budget",
+  async () => {
+    const logger: MockLogger = new MockLogger();
+    const initialTokenCount: number = 300;
+    const walletBalance: number = 450;
+    const extendedModelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+      context_window_tokens: 200,
+      provider_max_input_tokens: 10000,
+      provider_max_output_tokens: 1000,
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+    });
+    const { client } = createMockSupabaseClient();
+    const { compressPrompt, calls } = createCompressPromptMock({});
+    const deps = buildCalculateAffordabilityDeps({
+      logger,
+      countTokens: createMockCountTokens({
+        countTokens: (
+          _deps: CountTokensDeps,
+          _payload: CountableChatPayload,
+          _modelConfig: AiModelExtendedConfig,
+        ): number => initialTokenCount,
+      }),
+      compressPrompt,
+    });
+    const params = buildCalculateAffordabilityParams(DbClient(client), {
+      walletBalance,
+      extendedModelConfig,
+      inputRate: 1,
+      outputRate: 1,
+      inputsRelevance: [{ document_key: FileType.HeaderContext, relevance: 1 }],
+    });
+    const payload = buildCalculateAffordabilityPayload({
+      resourceDocuments: [],
+      conversationHistory: [{ role: "user", content: "hello" }],
+      currentUserPrompt: "current",
+      systemInstruction: "SYS",
+      chatApiRequest: buildChatApiRequest([], "current", {
+        systemInstruction: "SYS",
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    });
+    const result = await calculateAffordability(deps, params, payload);
+    assertEquals(isCalculateAffordabilityErrorReturn(result), true);
+    if (isCalculateAffordabilityErrorReturn(result)) {
+      assertStringIncludes(result.error.message, "80%");
+      assertEquals(result.retriable, false);
+    }
+    assertEquals(calls.length, 0);
+  },
+);

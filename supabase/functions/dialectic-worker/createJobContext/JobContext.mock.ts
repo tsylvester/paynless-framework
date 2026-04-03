@@ -1,4 +1,4 @@
-// supabase/functions/dialectic-worker/JobContext.mock.ts
+// supabase/functions/dialectic-worker/createJobContext/JobContext.mock.ts
 
 import { JobContextParams } from './JobContext.interface.ts';
 import { MockFileManagerService } from '../../_shared/services/file_manager.mock.ts';
@@ -56,6 +56,7 @@ import {
     buildMockBoundCalculateAffordabilityFn,
     buildMockCalculateAffordabilityFn,
 } from '../calculateAffordability/calculateAffordability.mock.ts';
+import { createJobContext } from './createJobContext.ts';
 
 type JobContextParamsOverrides = { [K in keyof JobContextParams]?: JobContextParams[K] };
 
@@ -337,4 +338,12 @@ export function buildContractIPrepareModelJobContext(root?: IJobContext): IPrepa
         enqueueRenderJob: createMockBoundEnqueueRenderJob(),
         calculateAffordability: buildMockBoundCalculateAffordabilityFn(),
     };
+}
+
+/**
+ * Helper: Creates mock IJobContext with the same production utility bindings as
+ * `createMockJobContextParams` (including the eight EMCAS pure utilities from `_shared/utils/`).
+ */
+export function createMockRootContext(overrides?: JobContextParamsOverrides): IJobContext {
+    return createJobContext(createMockJobContextParams(overrides));
 }

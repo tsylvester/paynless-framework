@@ -28,7 +28,7 @@ import { RagServiceError } from '../utils/errors.ts';
 import { PostgrestError } from 'npm:@supabase/postgrest-js@1.15.5';
 import { EmbeddingClient } from './indexing_service.ts';
 import { DummyAdapter } from '../ai_service/dummy_adapter.ts';
-import { MOCK_PROVIDER } from '../ai_service/dummy_adapter.test.ts';
+import { MOCK_PROVIDER } from '../ai_service/ai_provider.mock.ts';
 import { createMockTokenWalletService } from '../services/tokenWalletService.mock.ts';
 import { FileType } from '../types/file_manager.types.ts';
 

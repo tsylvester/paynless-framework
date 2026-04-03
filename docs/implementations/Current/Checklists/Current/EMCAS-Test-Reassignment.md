@@ -148,7 +148,7 @@ dialectic-worker edge function
 
 Before splitting EMCAS, define the contracts that the extracted modules will implement and extract pure utilities that are used across zones.
 
-*   `[ ] ` **0.1 Define interface for `executeModelCallAndSave` (the new, focused module)**
+*   `[✅]  ` **0.1 Define interface for `executeModelCallAndSave` (the new, focused module)**
     *   Input contract: `ChatApiRequest`, adapter instance, provider details, job metadata, save context
     *   Output contract: `UnifiedAIResponse` + saved contribution + continuation decision
     *   Streaming contract: `sendMessageStream()` on the adapter interface (yields chunks)
@@ -332,38 +332,38 @@ Each file gets a detailed subsection recording every `it()` block, the behavior 
 > **New Owner:** SPLIT across owners
 > **Action:** 16 tests move now (12 EMCAS slim, 3 prepareModelJob, 1 enqueueRenderJob); 13 tests defer; 1 split/simplify
 
-*   `[ ] ` | # | Test Name (line) | Behavior Asserted | Zone | Mock Surface | Cross-Zone? | Owner | Action |
-*   `[ ] ` |---|------------------|-------------------|------|-------------|-------------|-------|--------|
+*   `[✅]  ` | # | Test Name (line) | Behavior Asserted | Zone | Mock Surface | Cross-Zone? | Owner | Action |
+*   `[✅]  ` |---|------------------|-------------------|------|-------------|-------------|-------|--------|
 *   `[✅]  ` | 1 | Happy Path (300) | fileManager.upload called, job update called | G | DB (ai_providers), fileManager, callUnifiedAIModel | Yes (A→G) | EMCAS slim | **MOVE NOW** |
 *   `[✅]  ` | 2 | promptId '__none__' (345) | ChatApiRequest.promptId = '__none__' | A→E | DB (ai_providers), callUnifiedAIModel spy | Yes (A→E) | prepareModelJob | **MOVE NOW** |
 *   `[✅]  ` | 3 | Intermediate Flag (383) | uploadContext.isIntermediate = true | G | DB (ai_providers), fileManager | Yes (A→G) | EMCAS slim | **MOVE NOW** |
 *   `[✅]  ` | 4 | Final Artifact Flag (428, 2 steps) | uploadContext.isIntermediate = false/default | G | DB (ai_providers), fileManager | Yes (A→G) | EMCAS slim | **MOVE NOW** |
 *   `[✅]  ` | 5 | Throws on AI Error (503) | retryJob called on model error | F | DB (ai_providers), callUnifiedAIModel stub (error), retryJob spy | Yes (A→F) | EMCAS slim | **MOVE NOW** |
 *   `[✅]  ` | 6 | Database Error on Update (544) | Critical error logged on DB update failure | G | DB (jobs update throws), callUnifiedAIModel stub, logger | Yes (A→G) | EMCAS slim | **MOVE NOW** |
-*   `[ ] ` | 7 | Throws ContextWindowError (603) | ContextWindowError thrown when oversized + compression fails | C/D | DB (ai_providers, resources), ragService, downloadFromStorage, countTokens (real) | Yes (A→D) | prepareModelJob | **DEFER** — Phase 3 extracts affordability + compression |
+*   `[✅]  ` | 7 | Throws ContextWindowError (603) | ContextWindowError thrown when oversized + compression fails | C/D | DB (ai_providers, resources), ragService, downloadFromStorage, countTokens (real) | Yes (A→D) | prepareModelJob | **DEFER** — Phase 3 extracts affordability + compression |
 *   `[✅]  ` | 8 | source_group validation planner-aware (711) | doc_relationships.source_group=null allowed for per_model | A/G/H | DB (ai_providers, stages, instances, steps), fileManager, callUnifiedAIModel stub | Yes (A→H) | EMCAS slim | **MOVE NOW** — assert on save; planner validation is passthrough |
 *   `[✅]  ` | 9 | Doc Relationships - pass to fileManager (860) | doc_relationships forwarded to uploadContext | G | DB (ai_providers), fileManager | Yes (A→G) | EMCAS slim | **MOVE NOW** |
 *   `[✅]  ` | 10 | Doc Relationships - default to null (912) | doc_relationships defaults to null | G | DB (ai_providers), fileManager | Yes (A→G) | EMCAS slim | **MOVE NOW** |
 *   `[✅]  ` | 11 | accept PCP call model with ChatApiRequest (955) | ChatApiRequest built from PromptConstructionPayload | A→E | DB (ai_providers), callUnifiedAIModel spy | Yes (A→E) | prepareModelJob | **MOVE NOW** — Zone A request construction |
-*   `[ ] ` | 12 | rendered template as first user message (994) | ChatApiRequest.message = rendered template | A/E | DB (ai_providers), callUnifiedAIModel spy | Yes (A→E) | prepareModelJob | **MOVE NOW** — Zone A request construction |
+*   `[✅]  ` | 12 | rendered template as first user message (994) | ChatApiRequest.message = rendered template | A/E | DB (ai_providers), callUnifiedAIModel spy | Yes (A→E) | prepareModelJob | **MOVE NOW** — Zone A request construction |
 *   `[✅]  ` | 13 | emits execute_chunk_completed (stop) (1021) | notification event type=execute_chunk_completed | F/G | DB (ai_providers), callUnifiedAIModel stub, notificationService | Yes (A→G) | EMCAS slim | **MOVE NOW** |
 *   `[✅]  ` | 14 | emits document_chunk_completed (continuation) (1082) | notification event for continuation chunk | F | DB (ai_providers), callUnifiedAIModel stub (length), notificationService | Yes (A→G) | EMCAS slim | **MOVE NOW** |
-*   `[ ] ` | 15 | max_tokens_to_generate SSOT (1150) | ChatApiRequest.max_tokens_to_generate = SSOT-computed cap | C | DB (ai_providers), tokenWalletService, countTokens stub, callUnifiedAIModel spy | Yes (A→E) | prepareModelJob | **DEFER** — Phase 3 extracts calculateAffordability |
-*   `[ ] ` | 16 | resourceDocuments increase counts forwarded (1206) | resourceDocuments in countTokens payload + ChatApiRequest | B/C/E | DB (ai_providers, resources), downloadFromStorage, countTokens stub, callUnifiedAIModel spy | Yes (B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
-*   `[ ] ` | 17 | builds full ChatApiRequest with resourceDocs walletId (1344) | ChatApiRequest includes resourceDocs + walletId | B/E | DB (ai_providers, resources), downloadFromStorage, callUnifiedAIModel spy | Yes (B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
-*   `[ ] ` | 18 | identity: sized payload = sent request (1429) | countTokens payload == ChatApiRequest on 4 fields | C/E | DB (ai_providers), countTokens stub captures payload, callUnifiedAIModel spy | Yes (C→E) | prepareModelJob | **DEFER** — Phase 3 extracts affordability |
-*   `[ ] ` | 19 | identity after compression (1474) | post-compression countTokens payload == ChatApiRequest | D/E | DB (ai_providers, resources), ragService, tokenWalletService, downloadFromStorage, countTokens stub (stateful), callUnifiedAIModel spy | Yes (B→E) | prepareModelJob | **DEFER** — Phase 3 extracts compression |
+*   `[✅]  ` | 15 | max_tokens_to_generate SSOT (1150) | ChatApiRequest.max_tokens_to_generate = SSOT-computed cap | C | DB (ai_providers), tokenWalletService, countTokens stub, callUnifiedAIModel spy | Yes (A→E) | prepareModelJob | **DEFER** — Phase 3 extracts calculateAffordability |
+*   `[✅]  ` | 16 | resourceDocuments increase counts forwarded (1206) | resourceDocuments in countTokens payload + ChatApiRequest | B/C/E | DB (ai_providers, resources), downloadFromStorage, countTokens stub, callUnifiedAIModel spy | Yes (B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
+*   `[✅]  ` | 17 | builds full ChatApiRequest with resourceDocs walletId (1344) | ChatApiRequest includes resourceDocs + walletId | B/E | DB (ai_providers, resources), downloadFromStorage, callUnifiedAIModel spy | Yes (B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
+*   `[✅]  ` | 18 | identity: sized payload = sent request (1429) | countTokens payload == ChatApiRequest on 4 fields | C/E | DB (ai_providers), countTokens stub captures payload, callUnifiedAIModel spy | Yes (C→E) | prepareModelJob | **DEFER** — Phase 3 extracts affordability |
+*   `[✅]  ` | 19 | identity after compression (1474) | post-compression countTokens payload == ChatApiRequest | D/E | DB (ai_providers, resources), ragService, tokenWalletService, downloadFromStorage, countTokens stub (stateful), callUnifiedAIModel spy | Yes (B→E) | prepareModelJob | **DEFER** — Phase 3 extracts compression |
 *   `[✅]  ` | 20 | source_prompt_resource_id to fileManager (1589) | uploadContext.source_prompt_resource_id forwarded | G | DB (ai_providers), fileManager | Yes (A→G) | EMCAS slim | **MOVE NOW** |
 *   `[✅]  ` | 21 | updates source_contribution_id (1626) | DB update on prompt resource after save | G | DB (ai_providers, resources update), fileManager | Yes (A→G) | EMCAS slim | **MOVE NOW** |
 *   `[✅]  ` | 22 | sanitizeJsonContent repairs incomplete JSON (1726) | artifact saved, no retry, no continue | F | DB (ai_providers), callUnifiedAIModel stub (broken JSON), fileManager, continueJob spy, retryJob spy | Yes (A→G) | EMCAS slim | **MOVE NOW** |
-*   `[ ] ` | 23 | gathers artifacts across contributions/resources/feedback (1766) | ChatApiRequest.resourceDocuments ordering and content | B | DB (ai_providers, contributions, resources, feedback), downloadFromStorage (sequential), callUnifiedAIModel spy | Yes (B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
-*   `[ ] ` | 24 | scoped selection matching inputsRequired (1924) | ChatApiRequest.resourceDocuments inclusion/exclusion by inputsRequired | B | DB (ai_providers, contributions, resources, feedback), callUnifiedAIModel spy | Yes (B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
+*   `[✅]  ` | 23 | gathers artifacts across contributions/resources/feedback (1766) | ChatApiRequest.resourceDocuments ordering and content | B | DB (ai_providers, contributions, resources, feedback), downloadFromStorage (sequential), callUnifiedAIModel spy | Yes (B→E) | prepareModelJob | **ADD ASSERTION TO INTEGRATION TEST** — Phase 2 removes gatherArtifacts |
+*   `[✅]  ` | 24 | scoped selection matching inputsRequired (1924) | ChatApiRequest.resourceDocuments inclusion/exclusion by inputsRequired | B | DB (ai_providers, contributions, resources, feedback), callUnifiedAIModel spy | Yes (B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
 *   `[✅]  ` | 25 | schedules RENDER job (2061) | insert into dialectic_generation_jobs with RENDER job_type | H | DB (ai_providers, stages, instances, steps, jobs insert), fileManager, shouldEnqueueRenderJob stub, callUnifiedAIModel stub | Yes (A→H) | enqueueRenderJob | **MOVE NOW** |
-*   `[ ] ` | 26 | throws when required inputsRequired document missing (2229) | Error thrown with message identifying missing doc | B | DB (ai_providers, feedback empty) | Yes (A→B) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
-*   `[ ] ` | 27 | error message identifies document_key and stage (2261) | Error message includes document_key and stage | B | DB (ai_providers, feedback empty) | Yes (A→B) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
-*   `[ ] ` | 28 | optional inputsRequired missing no throw (2298) | No error for optional missing document | B | DB (ai_providers, feedback empty), callUnifiedAIModel stub | Yes (A→B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
-*   `[ ] ` | 29 | adapter receives resourceDocuments with identity fields (2338) | ChatApiRequest.resourceDocuments have id, content, document_key, stage_slug, type | B/E | DB (ai_providers, resources), downloadFromStorage | Yes (B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
-*   `[ ] ` | 30 | adapter resourceDocuments no undefined fields (2412) | No undefined on document_key, stage_slug, type | B/E | DB (ai_providers, resources), downloadFromStorage | Yes (B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
+*   `[✅]  ` | 26 | throws when required inputsRequired document missing (2229) | Error thrown with message identifying missing doc | B | DB (ai_providers, feedback empty) | Yes (A→B) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
+*   `[✅]  ` | 27 | error message identifies document_key and stage (2261) | Error message includes document_key and stage | B | DB (ai_providers, feedback empty) | Yes (A→B) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
+*   `[✅]  ` | 28 | optional inputsRequired missing no throw (2298) | No error for optional missing document | B | DB (ai_providers, feedback empty), callUnifiedAIModel stub | Yes (A→B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
+*   `[✅]  ` | 29 | adapter receives resourceDocuments with identity fields (2338) | ChatApiRequest.resourceDocuments have id, content, document_key, stage_slug, type | B/E | DB (ai_providers, resources), downloadFromStorage | Yes (B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
+*   `[✅]  ` | 30 | adapter resourceDocuments no undefined fields (2412) | No undefined on document_key, stage_slug, type | B/E | DB (ai_providers, resources), downloadFromStorage | Yes (B→E) | prepareModelJob | **DEFER** — Phase 2 removes gatherArtifacts |
 
 **Summary for main file:**
 - **MOVE NOW to EMCAS slim:** 13 tests (#1, #3, #4, #5, #6, #8, #9, #10, #13, #14, #20, #21, #22)
@@ -381,18 +381,18 @@ Each file gets a detailed subsection recording every `it()` block, the behavior 
 > **Action:** **DEFER** — Phase 2 (2.2) removes gatherArtifacts from prepareModelJob; Phase 3 (3.4) may extract as shared utility or eliminate entirely
 > **Revisit:** After Phase 2
 
-*   `[ ] ` | # | Test Name (line) | Behavior Asserted | Zone | Action |
-*   `[ ] ` |---|------------------|-------------------|------|--------|
-*   `[ ] ` | 1 | queries resources first, finds rendered doc, does not query contributions (143) | Resource-first query strategy | B | **DEFER** |
-*   `[ ] ` | 2 | prefers resources over contributions when both exist (245) | Resource precedence | B | **DEFER** |
-*   `[ ] ` | 3 | throws error when required rendered doc not found in resources (356) | Required doc validation | B | **DEFER** |
-*   `[ ] ` | 4 | finds required seed_prompt in dialectic_project_resources (444) | Resource query for seed_prompt | B | **DEFER** |
-*   `[ ] ` | 5 | continues to query contributions for intermediate artifacts (556) | Contribution fallback for non-doc inputs | B | **DEFER** |
-*   `[ ] ` | 6 | queries dialectic_contributions by session_id only, never project_id (672) | Query filter correctness | B | **DEFER** |
-*   `[ ] ` | 7 | finds required project_resource initial_user_prompt (782) | Resource query for initial_user_prompt | B | **DEFER** |
-*   `[ ] ` | 8 | skips optional document input when not found (894) | Optional doc tolerance | B | **DEFER** |
-*   `[ ] ` | 9 | required input with failed storage download throws (969) | Download failure for required input | B | **DEFER** |
-*   `[ ] ` | 10 | optional input with failed storage download skips (1056) | Download failure tolerance for optional | B | **DEFER** |
+*   `[✅]  ` | # | Test Name (line) | Behavior Asserted | Zone | Action |
+*   `[✅]  ` |---|------------------|-------------------|------|--------|
+*   `[✅]  ` | 1 | queries resources first, finds rendered doc, does not query contributions (143) | Resource-first query strategy | B | **DEFER** |
+*   `[✅]  ` | 2 | prefers resources over contributions when both exist (245) | Resource precedence | B | **DEFER** |
+*   `[✅]  ` | 3 | throws error when required rendered doc not found in resources (356) | Required doc validation | B | **DEFER** |
+*   `[✅]  ` | 4 | finds required seed_prompt in dialectic_project_resources (444) | Resource query for seed_prompt | B | **DEFER** |
+*   `[✅]  ` | 5 | continues to query contributions for intermediate artifacts (556) | Contribution fallback for non-doc inputs | B | **DEFER** |
+*   `[✅]  ` | 6 | queries dialectic_contributions by session_id only, never project_id (672) | Query filter correctness | B | **DEFER** |
+*   `[✅]  ` | 7 | finds required project_resource initial_user_prompt (782) | Resource query for initial_user_prompt | B | **DEFER** |
+*   `[✅]  ` | 8 | skips optional document input when not found (894) | Optional doc tolerance | B | **DEFER** |
+*   `[✅]  ` | 9 | required input with failed storage download throws (969) | Download failure for required input | B | **DEFER** |
+*   `[✅]  ` | 10 | optional input with failed storage download skips (1056) | Download failure tolerance for optional | B | **DEFER** |
 
 ---
 
@@ -404,19 +404,19 @@ Each file gets a detailed subsection recording every `it()` block, the behavior 
 > **Action:** **DEFER** — Phase 3 (3.1) extracts calculateAffordability as its own module
 > **Revisit:** After Phase 3
 
-*   `[ ] ` | # | Test Name (line) | Behavior Asserted | Zone | Action |
-*   `[ ] ` |---|------------------|-------------------|------|--------|
-*   `[ ] ` | 1 | compression path throws when wallet service missing (35) | Missing walletService validation | C/D | **DEFER** |
-*   `[ ] ` | 2 | throws if walletId is missing (preflight, non-oversized) (88) | Missing walletId validation | C | **DEFER** |
-*   `[ ] ` | 3 | preflight fails when tokenWalletService missing (136) | Missing tokenWalletService validation | C | **DEFER** |
-*   `[ ] ` | 4 | preflight fails when model cost rates are invalid (180) | Invalid cost rates validation | C | **DEFER** |
-*   `[ ] ` | 5 | preflight fails for NSF when total cost exceeds balance (233) | NSF guard | C | **DEFER** |
-*   `[ ] ` | 6 | orchestrate RAG and debit tokens for un-indexed history (286) | RAG debit orchestration | C/D | **DEFER** |
-*   `[ ] ` | 7 | does not debit when compression tokensUsedForIndexing is zero (391) | Zero-indexing debit skip | C/D | **DEFER** |
-*   `[ ] ` | 8 | throws if estimated cost exceeds 80% rationality threshold (459) | Rationality threshold guard | C | **DEFER** |
-*   `[ ] ` | 9 | throws if estimated cost exceeds absolute balance (537) | Absolute balance guard | C | **DEFER** |
-*   `[ ] ` | 10 | performs affordable compression, checking balance once (607) | Compression affordability path | C/D | **DEFER** |
-*   `[ ] ` | 11 | uses source documents for token estimation before prompt assembly (687) | Token estimation with source docs | C | **DEFER** |
+*   `[✅]  ` | # | Test Name (line) | Behavior Asserted | Zone | Action |
+*   `[✅]  ` |---|------------------|-------------------|------|--------|
+*   `[✅]  ` | 1 | compression path throws when wallet service missing (35) | Missing walletService validation | C/D | **DEFER** |
+*   `[✅]  ` | 2 | throws if walletId is missing (preflight, non-oversized) (88) | Missing walletId validation | C | **DEFER** |
+*   `[✅]  ` | 3 | preflight fails when tokenWalletService missing (136) | Missing tokenWalletService validation | C | **DEFER** |
+*   `[✅]  ` | 4 | preflight fails when model cost rates are invalid (180) | Invalid cost rates validation | C | **DEFER** |
+*   `[✅]  ` | 5 | preflight fails for NSF when total cost exceeds balance (233) | NSF guard | C | **DEFER** |
+*   `[✅]  ` | 6 | orchestrate RAG and debit tokens for un-indexed history (286) | RAG debit orchestration | C/D | **DEFER** |
+*   `[✅]  ` | 7 | does not debit when compression tokensUsedForIndexing is zero (391) | Zero-indexing debit skip | C/D | **DEFER** |
+*   `[✅]  ` | 8 | throws if estimated cost exceeds 80% rationality threshold (459) | Rationality threshold guard | C | **DEFER** |
+*   `[✅]  ` | 9 | throws if estimated cost exceeds absolute balance (537) | Absolute balance guard | C | **DEFER** |
+*   `[✅]  ` | 10 | performs affordable compression, checking balance once (607) | Compression affordability path | C/D | **DEFER** |
+*   `[✅]  ` | 11 | uses source documents for token estimation before prompt assembly (687) | Token estimation with source docs | C | **DEFER** |
 
 ---
 
@@ -428,25 +428,25 @@ Each file gets a detailed subsection recording every `it()` block, the behavior 
 > **Action:** **DEFER** — Phase 3 (3.2/3.3) extracts compression as its own module
 > **Revisit:** After Phase 3
 
-*   `[ ] ` | # | Test Name (line) | Behavior Asserted | Zone | Action |
-*   `[ ] ` |---|------------------|-------------------|------|--------|
-*   `[ ] ` | 1 | resource documents for sizing but not in ChatApiRequest.messages (41) | Sizing vs request separation | C/D | **DEFER** |
-*   `[ ] ` | 2 | should only pass un-indexed documents to RAG service (260) | RAG input filtering | D | **DEFER** |
-*   `[ ] ` | 3 | iteratively compress lowest-value candidate until fits (349) | Iterative compression loop | D | **DEFER** |
-*   `[ ] ` | 4 | throws ContextWindowError if compression fails (553) | Compression failure error | D | **DEFER** |
-*   `[ ] ` | 5 | does not call provider if final input exceeds headroom (638) | Post-compression headroom guard | D | **DEFER** |
-*   `[ ] ` | 6 | proceeds when final input equals allowed headroom (723) | Boundary success case | D | **DEFER** |
-*   `[ ] ` | 7 | fails when final input exceeds headroom by 1 token (786) | Boundary failure case | D | **DEFER** |
-*   `[ ] ` | 8 | enforces strict user-assistant alternation after compression (847) | Alternation enforcement | D | **DEFER** |
-*   `[ ] ` | 9 | preserves continuation anchors after compression (944) | Continuation anchor preservation | D | **DEFER** |
-*   `[ ] ` | 10 | RAG debits use stable idempotency keys (1056) | Idempotency key generation | D | **DEFER** |
-*   `[ ] ` | 11 | recomputes SSOT output after RAG debit reduces balance (1146) | Post-debit SSOT recomputation | C/D | **DEFER** |
-*   `[ ] ` | 12 | final ChatApiRequest.max_tokens = SSOT(final input) (1207) | SSOT cap after compression | C/D | **DEFER** |
-*   `[ ] ` | 13 | threads SSOT cap unchanged to callUnifiedAIModel (1257) | SSOT passthrough | C/D/E | **DEFER** |
-*   `[ ] ` | 14 | uses SSOT-based output headroom for allowed input (1312) | SSOT headroom computation | C/D | **DEFER** |
-*   `[ ] ` | 15 | error specificity: missing wallet throws specific message (1384) | Wallet validation error message | C | **DEFER** |
-*   `[ ] ` | 16 | error specificity: missing countTokens throws (1427) | Missing dependency validation | C | **DEFER** |
-*   `[ ] ` | 17 | preflight rejects when planned spend exceeds 80% budget (1473) | Compression preflight guard | C/D | **DEFER** |
+*   `[✅]  ` | # | Test Name (line) | Behavior Asserted | Zone | Action |
+*   `[✅]  ` |---|------------------|-------------------|------|--------|
+*   `[✅]  ` | 1 | resource documents for sizing but not in ChatApiRequest.messages (41) | Sizing vs request separation | C/D | **DEFER** |
+*   `[✅]  ` | 2 | should only pass un-indexed documents to RAG service (260) | RAG input filtering | D | **DEFER** |
+*   `[✅]  ` | 3 | iteratively compress lowest-value candidate until fits (349) | Iterative compression loop | D | **DEFER** |
+*   `[✅]  ` | 4 | throws ContextWindowError if compression fails (553) | Compression failure error | D | **DEFER** |
+*   `[✅]  ` | 5 | does not call provider if final input exceeds headroom (638) | Post-compression headroom guard | D | **DEFER** |
+*   `[✅]  ` | 6 | proceeds when final input equals allowed headroom (723) | Boundary success case | D | **DEFER** |
+*   `[✅]  ` | 7 | fails when final input exceeds headroom by 1 token (786) | Boundary failure case | D | **DEFER** |
+*   `[✅]  ` | 8 | enforces strict user-assistant alternation after compression (847) | Alternation enforcement | D | **DEFER** |
+*   `[✅]  ` | 9 | preserves continuation anchors after compression (944) | Continuation anchor preservation | D | **DEFER** |
+*   `[✅]  ` | 10 | RAG debits use stable idempotency keys (1056) | Idempotency key generation | D | **DEFER** |
+*   `[✅]  ` | 11 | recomputes SSOT output after RAG debit reduces balance (1146) | Post-debit SSOT recomputation | C/D | **DEFER** |
+*   `[✅]  ` | 12 | final ChatApiRequest.max_tokens = SSOT(final input) (1207) | SSOT cap after compression | C/D | **DEFER** |
+*   `[✅]  ` | 13 | threads SSOT cap unchanged to callUnifiedAIModel (1257) | SSOT passthrough | C/D/E | **DEFER** |
+*   `[✅]  ` | 14 | uses SSOT-based output headroom for allowed input (1312) | SSOT headroom computation | C/D | **DEFER** |
+*   `[✅]  ` | 15 | error specificity: missing wallet throws specific message (1384) | Wallet validation error message | C | **DEFER** |
+*   `[✅]  ` | 16 | error specificity: missing countTokens throws (1427) | Missing dependency validation | C | **DEFER** |
+*   `[✅]  ` | 17 | preflight rejects when planned spend exceeds 80% budget (1473) | Compression preflight guard | C/D | **DEFER** |
 
 ---
 
@@ -458,16 +458,16 @@ Each file gets a detailed subsection recording every `it()` block, the behavior 
 > **Action:** **DEFER** — Phase 3 (3.3) extracts compression as its own module
 > **Revisit:** After Phase 3
 
-*   `[ ] ` | # | Test Name (line) | Behavior Asserted | Zone | Action |
-*   `[ ] ` |---|------------------|-------------------|------|--------|
-*   `[ ] ` | 1 | passes inputsRelevance to rag_service and compressionStrategy (41) | inputsRelevance forwarding | D | **DEFER** |
-*   `[ ] ` | 2 | passes empty inputsRelevance as [] (157) | Empty inputsRelevance handling | D | **DEFER** |
-*   `[ ] ` | 3 | compression ordering and identity: removes lowest blended-score first (270) | Compression order by blended score | D | **DEFER** |
-*   `[ ] ` | 4 | inputsRelevance effects: higher relevance ranks later (451) | Relevance weighting with stage-specific rules | D | **DEFER** |
-*   `[ ] ` | 5 | empty inputsRelevance: similarity-only behavior is deterministic (574) | Deterministic behavior without relevance | D | **DEFER** |
-*   `[ ] ` | 6 | passes identity-rich candidates into compression (686) | Identity propagation to compression | D | **DEFER** |
-*   `[ ] ` | 7 | throws when identity-less documents would be passed to compression (794) | Identity validation for compression | D | **DEFER** |
-*   `[ ] ` | 8 | ties without inputsRelevance: non-decreasing effectiveScore order (844) | Score ordering for ties | D | **DEFER** |
+*   `[✅]  ` | # | Test Name (line) | Behavior Asserted | Zone | Action |
+*   `[✅]  ` |---|------------------|-------------------|------|--------|
+*   `[✅]  ` | 1 | passes inputsRelevance to rag_service and compressionStrategy (41) | inputsRelevance forwarding | D | **DEFER** |
+*   `[✅]  ` | 2 | passes empty inputsRelevance as [] (157) | Empty inputsRelevance handling | D | **DEFER** |
+*   `[✅]  ` | 3 | compression ordering and identity: removes lowest blended-score first (270) | Compression order by blended score | D | **DEFER** |
+*   `[✅]  ` | 4 | inputsRelevance effects: higher relevance ranks later (451) | Relevance weighting with stage-specific rules | D | **DEFER** |
+*   `[✅]  ` | 5 | empty inputsRelevance: similarity-only behavior is deterministic (574) | Deterministic behavior without relevance | D | **DEFER** |
+*   `[✅]  ` | 6 | passes identity-rich candidates into compression (686) | Identity propagation to compression | D | **ADD ASSERTION TO INTEGRATION TEST** |
+*   `[✅]  ` | 7 | throws when identity-less documents would be passed to compression (794) | Identity validation for compression | D | **DEFER** |
+*   `[✅]  ` | 8 | ties without inputsRelevance: non-decreasing effectiveScore order (844) | Score ordering for ties | D | **DEFER** |
 
 ---
 
@@ -815,7 +815,8 @@ Only Zone A tests not affected by Phase 2/3. These test request construction and
 
 *   `[ ]` prepareModelJob → executeModelCallAndSave (Zones A-D → E-G seam)
 *   `[ ]` executeModelCallAndSave → enqueueRenderJob (E-G → H seam via return data)
-*   `[ ]` prepareModelJob → executeModelCallAndSave → enqueueRenderJob (full chain)
+*   `[ ]` prepareModelJob → executeModelCallAndSave → enqueueRenderJob (back half)
+*   `[✅] ` processSimpleJob → gatherArtifacts → processSimpleJob → prepareModelJob → calculateAffordability → compressPrompt → prepareModelJob → executeModelCallAndSave (from job to model call)
 
 ### Shared Fixture Dependency
 
@@ -898,43 +899,43 @@ Per rules §8 (Testing Standards) and §14 (Trusted Factories), all mock factori
 
 With EMCAS split into `prepareModelJob` + `executeModelCallAndSave`, the boundary contract between them is explicit. This phase pushes artifact resolution upstream so it happens once.
 
-*   `[ ]` **2.1 Expand `promptConstructionPayload` to carry resolved artifacts**
+*   `[✅] ` **2.1 Expand `promptConstructionPayload` to carry resolved artifacts**
     Currently carries `conversationHistory`, `resourceDocuments`, `currentUserPrompt`, `source_prompt_resource_id`. Expand to include all artifacts that EMCAS's `gatherArtifacts` currently re-fetches.
 
-*   `[ ]` **2.2 Remove `gatherArtifacts` from `prepareModelJob`**
+*   `[✅] ` **2.2 Remove `gatherArtifacts` from `prepareModelJob`**
     `processSimpleJob` already has the resolved artifacts from `promptAssembler`. Pass them through instead of re-fetching.
 
-*   `[ ]` **2.3 Deduplicate between `processSimpleJob` and `promptAssembler`**
+*   `[✅] ` **2.3 Deduplicate between `processSimpleJob` and `promptAssembler`**
     `processSimpleJob` fetches session/provider/project/stage, then `promptAssembler.assemble()` fetches overlapping data internally via `gatherContext`/`gatherInputsForStage`. Establish a single fetch point. This may require changes to the `PromptAssembler` interface to accept pre-fetched data.
 
-*   `[ ]` **2.4 Integration test: all tests pass with single-fetch path**
+*   `[✅] ` **2.4 Integration test: all tests pass with single-fetch path**
 
-*   `[ ]` **2.5 Commit: `refactor(BE): eliminate triple-fetch in dialectic job pipeline`**
+*   `[✅] ` **2.5 Commit: `refactor(BE): eliminate triple-fetch in dialectic job pipeline`**
 
 ### Phase 3: Extract affordability and compression (completes the decomposition)
 
 These are the largest internal extractions. They're lower priority because they don't gate the timeout fix, but they complete the decomposition of `prepareModelJob` into focused modules.
 
-*   `[ ]` **3.1 Extract `calculateAffordability`** — non-oversized affordability checks (current lines ~503-571)
-*   `[ ]` **3.2 Extract `calculateAffordabilityPreflight`** — compression affordability preflight with iterative solver (current lines ~596-720)
-*   `[ ]` **3.3 Extract `compressPrompt`** — the RAG compression loop with live balance tracking (current lines ~722-961)
-*   `[ ]` **3.4 Extract `gatherArtifacts`** as a shared utility (if still needed after Phase 2; may be eliminated entirely)
-*   `[ ]` **3.5 Integration test: all tests pass**
-*   `[ ]` **3.6 Commit: `refactor(BE): extract affordability and compression from prepareModelJob`**
+*   `[✅] ` **3.1 Extract `calculateAffordability`** — non-oversized affordability checks (current lines ~503-571)
+*   `[✅] ` **3.2 Extract `calculateAffordabilityPreflight`** — compression affordability preflight with iterative solver (current lines ~596-720)
+*   `[✅] ` **3.3 Extract `compressPrompt`** — the RAG compression loop with live balance tracking (current lines ~722-961)
+*   `[✅] ` **3.4 Extract `gatherArtifacts`** as a shared utility (if still needed after Phase 2; may be eliminated entirely)
+*   `[✅] ` **3.5 Integration test: all tests pass**
+*   `[✅] ` **3.6 Commit: `refactor(BE): extract affordability and compression from prepareModelJob`**
 
 ### Phase 4: Final validation
 
-*   `[ ]` **4.1 Run complete test suite** — all ~700 existing tests pass with zero modifications
-*   `[ ]` **4.2 Verify module sizes:**
+*   `[✅] ` **4.1 Run complete test suite** — all ~700 existing tests pass with zero modifications
+*   `[✅] ` **4.2 Verify module sizes:**
     *   `executeModelCallAndSave` (model call + save): under 400 lines
     *   `prepareModelJob` (orchestrator): under 600 lines (after Phase 3 extractions)
     *   Each extracted utility: under 200 lines
-*   `[ ]` **4.3 Verify production behavior:**
+*   `[✅] ` **4.3 Verify production behavior:**
     *   Google: no regression
     *   OpenAI: completes reliably
     *   Anthropic: completes (directly or via continuation)
     *   Browser chat SSE: no regression (chat function unchanged)
-*   `[ ]` **4.4 Final commit: `refactor(BE): complete EMCAS decomposition`**
+*   `[✅] ` **4.4 Final commit: `refactor(BE): complete EMCAS decomposition`**
 
 ## Key Files
 

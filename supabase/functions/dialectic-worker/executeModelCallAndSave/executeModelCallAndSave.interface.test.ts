@@ -15,8 +15,8 @@ import type {
   DialecticJobRow,
   DialecticSessionRow,
 } from "../../dialectic-service/dialectic.interface.ts";
-import { createMockRootContext } from "../JobContext.mock.ts";
-import type { IJobContext } from "../JobContext.interface.ts";
+import { buildGuardTestIJobContext } from "../createJobContext/JobContext.mock.ts";
+import type { IJobContext } from "../createJobContext/JobContext.interface.ts";
 import type {
   ExecuteModelCallAndSaveDeps,
   ExecuteModelCallAndSaveErrorReturn,
@@ -189,7 +189,7 @@ function buildChatApiRequest(): ChatApiRequest {
 Deno.test(
   "Contract: ExecuteModelCallAndSaveDeps accepts a valid deps object with all required fields",
   () => {
-    const root: IJobContext = createMockRootContext();
+    const root: IJobContext = buildGuardTestIJobContext();
     const deps: ExecuteModelCallAndSaveDeps = sliceExecuteModelCallAndSaveDeps(root);
 
     assertEquals(typeof deps.logger.info, "function");
@@ -294,7 +294,7 @@ Deno.test(
 Deno.test(
   "Contract: ExecuteModelCallAndSaveDeps.debitTokens is the shared debitTokens implementation",
   () => {
-    const root: IJobContext = createMockRootContext();
+    const root: IJobContext = buildGuardTestIJobContext();
     const deps: ExecuteModelCallAndSaveDeps = sliceExecuteModelCallAndSaveDeps(root);
     assertEquals(deps.debitTokens, debitTokens);
   },

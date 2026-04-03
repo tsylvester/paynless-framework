@@ -120,7 +120,7 @@ Deno.test('processSimpleJob - emits execute_started at EXECUTE job start', async
   assertEquals(payloadArg.job_id, executeJob.id);
   assertEquals(payloadArg.step_key, 'seed');
   assertEquals(payloadArg.document_key, 'business_case');
-  assertEquals(payloadArg.modelId, 'model-def');
+  assertEquals(payloadArg.modelId, 'a0000003-0000-4000-a000-000000000003');
   assertEquals(payloadArg.iterationNumber, 1);
   assertEquals(targetUserId, 'user-789');
 
@@ -265,11 +265,11 @@ Deno.test('processSimpleJob - emits execute_started and execute_completed when E
   assertEquals(started.type, 'execute_started');
   assertEquals(started.sessionId, executeJob.session_id);
   assertEquals(started.step_key, 'seed');
-  assertEquals(started.modelId, 'model-def');
+  assertEquals(started.modelId, 'a0000003-0000-4000-a000-000000000003');
   assertEquals(completed.type, 'execute_completed');
   assertEquals(completed.sessionId, executeJob.session_id);
   assertEquals(completed.step_key, 'seed');
-  assertEquals(completed.modelId, 'model-def');
+  assertEquals(completed.modelId, 'a0000003-0000-4000-a000-000000000003');
   assertEquals(completedCall.args[1], 'user-789');
 
   executorStub.restore();

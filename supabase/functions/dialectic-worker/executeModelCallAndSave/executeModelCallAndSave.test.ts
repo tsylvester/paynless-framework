@@ -40,7 +40,7 @@ import { resolveFinishReason } from '../../_shared/utils/resolveFinishReason.ts'
 import { determineContinuation } from '../../_shared/utils/determineContinuation/determineContinuation.ts';
 import type { DetermineContinuationParams } from '../../_shared/utils/determineContinuation/determineContinuation.interface.ts';
 import { isModelContributionContext } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
-import type { RetryJobFn } from '../JobContext.interface.ts';
+import type { RetryJobFn } from '../createJobContext/JobContext.interface.ts';
 import { 
   createMockAiProviderAdapterInstance, 
   createMockExecuteModelCallAndSaveDeps, 

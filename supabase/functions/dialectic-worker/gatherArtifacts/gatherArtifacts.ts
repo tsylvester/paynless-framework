@@ -176,12 +176,26 @@ export const gatherArtifacts: GatherArtifactsFn = async (
 
         const filtered: DialecticFeedbackRow[] = data.filter(
           (row: DialecticFeedbackRow) => {
+            if (row.stage_slug !== rStage) return false;
+            // Feedback files are named {modelSlug}_{attemptCount}_{documentKey}_feedback.md
+            // Deconstruct the underlying document name to extract the documentKey
+            const feedbackSuffix = "_feedback.md";
+            if (row.file_name.endsWith(feedbackSuffix)) {
+              const baseName = row.file_name.slice(0, -feedbackSuffix.length) + ".md";
+              const parsed = deconstructStoragePath({
+                storageDir: row.storage_path,
+                fileName: baseName,
+                dbOriginalFileName: baseName,
+              });
+              return parsed.documentKey === rKey;
+            }
+            // Fallback: try direct deconstruction
             const parsed = deconstructStoragePath({
               storageDir: row.storage_path,
               fileName: row.file_name,
               dbOriginalFileName: row.file_name,
             });
-            return row.stage_slug === rStage && parsed.documentKey === rKey;
+            return parsed.documentKey === rKey;
           },
         );
 

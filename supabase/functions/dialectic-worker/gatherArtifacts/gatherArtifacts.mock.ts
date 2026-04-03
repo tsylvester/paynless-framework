@@ -4,6 +4,7 @@ import { MockLogger } from "../../_shared/logger.mock.ts";
 import type { ResourceDocuments } from "../../_shared/types.ts";
 import { createMockDownloadFromStorage } from "../../_shared/supabase_storage_utils.mock.ts";
 import { FileType } from "../../_shared/types/file_manager.types.ts";
+import { constructStoragePath } from "../../_shared/utils/path_constructor.ts";
 import type {
   DialecticContributionRow,
   DialecticFeedbackRow,
@@ -101,7 +102,7 @@ export function buildFeedbackRule(
   return {
     type: "feedback",
     slug: "thesis",
-    document_key: FileType.UserFeedback,
+    document_key: FileType.business_case,
     required: true,
     ...overrides,
   };
@@ -172,6 +173,27 @@ export function buildDialecticFeedbackRow(
   overrides?: Partial<DialecticFeedbackRow>,
 ): DialecticFeedbackRow {
   const now = new Date().toISOString();
+  // Build the original document path first (feedback is always alongside a document)
+  const docPath = constructStoragePath({
+    projectId: "project-abc",
+    fileType: FileType.RenderedDocument,
+    sessionId: "session-456",
+    iteration: 1,
+    stageSlug: "thesis",
+    modelSlug: "model-collect",
+    attemptCount: 1,
+    documentKey: "business_case",
+  });
+  // Build the feedback path from the original document
+  const feedbackPath = constructStoragePath({
+    projectId: "project-abc",
+    fileType: FileType.UserFeedback,
+    sessionId: "session-456",
+    iteration: 1,
+    stageSlug: "thesis",
+    originalStoragePath: docPath.storagePath,
+    originalBaseName: docPath.fileName.replace(".md", ""),
+  });
   return {
     id: "feedback-1",
     project_id: "project-abc",
@@ -180,8 +202,8 @@ export function buildDialecticFeedbackRow(
     stage_slug: "thesis",
     feedback_type: "user_feedback",
     storage_bucket: "dialectic-contributions",
-    storage_path: "project-abc/session_session-456/iteration_1/thesis",
-    file_name: "user_feedback_thesis.md",
+    storage_path: feedbackPath.storagePath,
+    file_name: feedbackPath.fileName,
     mime_type: "text/markdown",
     size_bytes: 80,
     user_id: "user-1",

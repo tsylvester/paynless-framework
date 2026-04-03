@@ -1,4 +1,4 @@
-Read this terminal output, read the test file, and read the source file. 
+Read @.cursor/rules/rules.md, then read this terminal output, read the test file, and read the source file. 
 
 Analyze the exact root cause of the test failure. 
 

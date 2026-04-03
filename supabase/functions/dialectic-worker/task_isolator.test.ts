@@ -23,7 +23,7 @@ import {
     InputRule,
     DocumentRelationships,
 } from '../dialectic-service/dialectic.interface.ts';
-import type { IPlanJobContext } from './JobContext.interface.ts';
+import type { IPlanJobContext } from './createJobContext/JobContext.interface.ts';
 import { ILogger } from '../_shared/types.ts';
 import { planComplexStage } from './task_isolator.ts';
 import { findSourceDocuments } from './findSourceDocuments.ts';

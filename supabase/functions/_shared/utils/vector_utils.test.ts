@@ -19,6 +19,7 @@ import { type Database } from "../../types_db.ts";
 import { createMockSupabaseClient } from "../supabase.mock.ts";
 import { IDialecticJobDeps, RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
 import { FileType } from "../types/file_manager.types.ts";
+import { isRecord } from "./type_guards.ts";
 
 
 Deno.test("cosineSimilarity: calculates similarity for basic vectors", () => {
@@ -615,3 +616,125 @@ Deno.test("getSortedCompressionCandidates - matrix priority protects high-priori
   // On similarity ties, the earliest candidate should be the lower-priority document
   assertEquals(docOrder[0], 'doc-low', "Lower-priority doc should be the earliest candidate when similarity ties");
 });
+
+Deno.test(
+  "getSortedCompressionCandidates - inputsRelevance: general rule sorts before stage-specific high weight; missing identity skips matrix",
+  async () => {
+    const { client: dbClient } = createMockSupabaseClient("user-123", {
+      genericMockResults: {
+        dialectic_memory: {
+          select: { data: [], error: null },
+        },
+      },
+    });
+
+    const documents: ResourceDocuments = [
+      {
+        id: "A",
+        content: "x",
+        document_key: FileType.success_metrics,
+        type: "document",
+        stage_slug: "s1",
+      },
+      {
+        id: "B",
+        content: "x",
+        document_key: FileType.business_case,
+        type: "document",
+        stage_slug: "s2",
+      },
+      {
+        id: "C",
+        content: "x",
+        document_key: "",
+        type: "",
+        stage_slug: "s",
+      },
+    ];
+
+    const inputsRelevance: RelevanceRule[] = [
+      { document_key: FileType.business_case, type: "document", relevance: 0.3 },
+      { document_key: FileType.success_metrics, type: "document", relevance: 1, slug: "s1" },
+    ];
+
+    const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
+    const result = await compressionStrategy(
+      {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        embeddingClient: deps.embeddingClient,
+        logger: deps.logger,
+      },
+      { inputsRelevance },
+      { documents, history: [], currentUserPrompt: "prompt" },
+    );
+
+    const indexB: number = result.findIndex((c) => c.id === "B");
+    const indexA: number = result.findIndex((c) => c.id === "A");
+    assert(indexB !== -1, "doc B should be present");
+    assert(indexA !== -1, "doc A should be present");
+    assert(
+      indexB < indexA,
+      "doc B (general rule) should sort before doc A (stage-specific high weight): lower effectiveScore compresses first",
+    );
+  },
+);
+
+Deno.test(
+  "getSortedCompressionCandidates - ties without inputsRelevance: candidates are in non-decreasing effectiveScore order",
+  async () => {
+    const { client: dbClient } = createMockSupabaseClient("user-123", {
+      genericMockResults: {
+        dialectic_memory: {
+          select: { data: [], error: null },
+        },
+      },
+    });
+
+    const documents: ResourceDocuments = [
+      {
+        id: "A",
+        content: "high relevance",
+        document_key: FileType.business_case,
+        type: "document",
+        stage_slug: "s",
+      },
+      {
+        id: "B",
+        content: "high relevance",
+        document_key: FileType.success_metrics,
+        type: "document",
+        stage_slug: "s",
+      },
+    ];
+
+    const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
+    const result = await compressionStrategy(
+      {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        embeddingClient: deps.embeddingClient,
+        logger: deps.logger,
+      },
+      {},
+      { documents, history: [], currentUserPrompt: "prompt" },
+    );
+
+    assert(result.length >= 1, "Expected candidates from strategy");
+    for (let i: number = 1; i < result.length; i++) {
+      const prevRaw: unknown = result[i - 1];
+      const currRaw: unknown = result[i];
+      const prev: number | undefined =
+        isRecord(prevRaw) && typeof prevRaw["effectiveScore"] === "number"
+          ? prevRaw["effectiveScore"]
+          : undefined;
+      const curr: number | undefined =
+        isRecord(currRaw) && typeof currRaw["effectiveScore"] === "number"
+          ? currRaw["effectiveScore"]
+          : undefined;
+      assert(
+        typeof prev === "number" && typeof curr === "number",
+        "Candidates must carry effectiveScore as number",
+      );
+      assert(prev <= curr, "Candidates must be in non-decreasing effectiveScore order");
+    }
+  },
+);

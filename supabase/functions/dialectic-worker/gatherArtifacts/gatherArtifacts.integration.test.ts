@@ -93,7 +93,7 @@ Deno.test("integration: feedback rule returns expected artifact shape", async ()
   if (isGatherArtifactsSuccessReturn(result)) {
     assertEquals(result.artifacts[0].id, "int-feedback-1");
     assertEquals(result.artifacts[0].type, "feedback");
-    assertEquals(result.artifacts[0].document_key, FileType.UserFeedback);
+    assertEquals(result.artifacts[0].document_key, FileType.business_case);
     assertEquals(result.artifacts[0].stage_slug, "thesis");
     assertEquals(result.artifacts[0].content, "feedback-content");
   }

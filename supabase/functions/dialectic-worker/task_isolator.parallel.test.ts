@@ -26,11 +26,11 @@ import {
     DialecticStageRecipeStep,
 } from '../dialectic-service/dialectic.interface.ts';
 import { ILogger } from '../_shared/types.ts';
-import { IPlanJobContext } from './JobContext.interface.ts';
+import { IPlanJobContext } from './createJobContext/JobContext.interface.ts';
 import { planComplexStage } from './task_isolator.ts';
 import { findSourceDocuments } from './findSourceDocuments.ts';
-import { createPlanJobContext } from './createJobContext.ts';
-import { createMockRootContext } from './JobContext.mock.ts';
+import { createPlanJobContext } from './createJobContext/createJobContext.ts';
+import { createMockRootContext } from './createJobContext/JobContext.mock.ts';
 import {
     isDialecticPlanJobPayload,
     isDialecticExecuteJobPayload,

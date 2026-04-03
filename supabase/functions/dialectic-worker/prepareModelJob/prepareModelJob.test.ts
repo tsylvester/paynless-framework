@@ -1,4 +1,5 @@
 import {
+  assert,
   assertEquals,
   assertExists,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
@@ -11,26 +12,45 @@ import type {
   ResourceDocument,
   ResourceDocuments,
 } from "../../_shared/types.ts";
+import type { CountableChatPayload } from "../../_shared/types/tokenizer.types.ts";
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
-import type { BoundCalculateAffordabilityFn } from "../calculateAffordability/calculateAffordability.interface.ts";
+import { calculateAffordability } from "../calculateAffordability/calculateAffordability.ts";
+import type {
+  BoundCalculateAffordabilityFn,
+  CalculateAffordabilityDeps,
+} from "../calculateAffordability/calculateAffordability.interface.ts";
 import {
   buildCalculateAffordabilityCompressedReturn,
   buildCalculateAffordabilityDirectReturn,
   buildCalculateAffordabilityErrorReturn,
+  buildCalculateAffordabilityDeps,
   buildMockBoundCalculateAffordabilityFn,
 } from "../calculateAffordability/calculateAffordability.mock.ts";
-import { buildChatApiRequest } from "../compressPrompt/compressPrompt.mock.ts";
+import { compressPrompt } from "../compressPrompt/compressPrompt.ts";
+import type { BoundCompressPromptFn, CompressPromptDeps } from "../compressPrompt/compressPrompt.interface.ts";
+import { buildChatApiRequest, createCompressPromptMock } from "../compressPrompt/compressPrompt.mock.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import {
   DialecticStageSlug,
   FileType,
 } from "../../_shared/types/file_manager.types.ts";
-import { isChatApiRequest } from "../../_shared/utils/type-guards/type_guards.chat.ts";
+import { isChatApiRequest, isResourceDocument } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import {
+  ContextWindowError,
   RenderJobEnqueueError,
   RenderJobValidationError,
 } from "../../_shared/utils/errors.ts";
-import type { Database } from "../../types_db.ts";
+import { getMockAiProviderAdapter, buildExtendedModelConfig } from "../../_shared/ai_service/ai_provider.mock.ts";
+import { MockLogger } from "../../_shared/logger.mock.ts";
+import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
+import { EmbeddingClient } from "../../_shared/services/indexing_service.ts";
+import { createMockTokenWalletService } from "../../_shared/services/tokenWalletService.mock.ts";
+import type { ITokenWalletService } from "../../_shared/types/tokenWallet.types.ts";
+import { isJson } from "../../_shared/utils/type_guards.ts";
+import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
+import { createMockCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
+import { getSortedCompressionCandidates } from "../../_shared/utils/vector_utils.ts";
+import type { Database, Tables } from "../../types_db.ts";
 import type {
   DialecticContributionRow,
   DialecticExecuteJobPayload,
@@ -1382,5 +1402,989 @@ Deno.test(
       assertEquals(result.error, affordError);
       assertEquals(result.retriable, true);
     }
+  },
+);
+
+Deno.test("prepareModelJob returns ContextWindowError when prompt exceeds token limit and compression cannot fit",
+  async (t) => {await t.step("oversized resource document: RAG replacement still exceeds context_window_tokens",
+      async () => {
+        const logger: MockLogger = new MockLogger();
+        const tokenWalletInstance: ITokenWalletService = createMockTokenWalletService().instance;
+        const mockRagService: MockRagService = new MockRagService();
+        mockRagService.setConfig({
+          mockContextResult:
+            "This is the compressed but still oversized content that will not fit.",
+        });
+        const { instance: mockAdapter } = getMockAiProviderAdapter(
+          logger,
+          buildExtendedModelConfig({
+            tokenization_strategy: { type: "rough_char_count" },
+            context_window_tokens: 10,
+            input_token_cost_rate: 0.001,
+            output_token_cost_rate: 0.002,
+            provider_max_input_tokens: 100,
+          }),
+        );
+        const adapterWithEmbedding = {
+          ...mockAdapter,
+          getEmbedding: async (_text: string) => ({
+            embedding: Array(1536).fill(0.01),
+            usage: { prompt_tokens: 1, total_tokens: 1 },
+          }),
+        };
+        const embeddingClient: EmbeddingClient = new EmbeddingClient(adapterWithEmbedding);
+
+        const compressPromptDeps: CompressPromptDeps = {
+          logger,
+          ragService: mockRagService,
+          embeddingClient,
+          tokenWalletService: tokenWalletInstance,
+          countTokens,
+        };
+        const boundCompressPrompt: BoundCompressPromptFn = async (params, payload) =>
+          compressPrompt(compressPromptDeps, params, payload);
+
+        const calculateAffordabilityDeps: CalculateAffordabilityDeps = {
+          logger,
+          countTokens,
+          compressPrompt: boundCompressPrompt,
+        };
+        const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (p, pl) =>
+          calculateAffordability(calculateAffordabilityDeps, p, pl);
+
+        const limitedConfig: AiModelExtendedConfig = {
+          ...buildExtendedModelFixture(),
+          tokenization_strategy: { type: "rough_char_count" },
+          context_window_tokens: 10,
+          input_token_cost_rate: 0.001,
+          output_token_cost_rate: 0.002,
+          provider_max_input_tokens: 100,
+        };
+        if (!isJson(limitedConfig)) {
+          throw new Error("Test setup failed: mock config is not valid Json.");
+        }
+        const limitedProviderRow: Tables<"ai_providers"> = buildAiProviderRow(limitedConfig);
+
+        const mockSetup = createMockSupabaseClient("user-context-window", {
+          genericMockResults: {
+            ai_providers: {
+              select: () =>
+                Promise.resolve({
+                  data: [limitedProviderRow],
+                  error: null,
+                }),
+            },
+            token_wallets: {
+              select: () =>
+                Promise.resolve({
+                  data: [buildTokenWalletRow({})],
+                  error: null,
+                }),
+            },
+          },
+        });
+        const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+
+        const oversizeContent: string = "A".repeat(2000);
+        const resourceDoc: ResourceDocument = {
+          id: "doc-oversize",
+          content: oversizeContent,
+          document_key: FileType.RenderedDocument,
+          stage_slug: "thesis",
+          type: "document",
+        };
+        const promptPayload: PromptConstructionPayload = {
+          conversationHistory: [],
+          resourceDocuments: [resourceDoc],
+          currentUserPrompt: "This is a test prompt.",
+          source_prompt_resource_id: "source-prompt-resource-contract",
+        };
+        const inputsRequired: InputRule[] = [
+          {
+            type: "document",
+            document_key: FileType.RenderedDocument,
+            required: true,
+            slug: "thesis",
+          },
+        ];
+        const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+        const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+        const params: PrepareModelJobParams = {
+          dbClient,
+          authToken: "jwt.contract",
+          job,
+          projectOwnerUserId: "owner-contract",
+          providerRow: limitedProviderRow,
+          sessionData: buildDialecticSessionRow(),
+        };
+        const preparePayload: PrepareModelJobPayload = {
+          promptConstructionPayload: promptPayload,
+          compressionStrategy: getSortedCompressionCandidates,
+          inputsRequired,
+          inputsRelevance: [],
+        };
+        const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
+          contribution: buildDialecticContributionRow(),
+          needsContinuation: false,
+          stageRelationshipForStage: undefined,
+          documentKey: undefined,
+          fileType: FileType.HeaderContext,
+          storageFileType: FileType.ModelContributionRawJson,
+        }));
+        const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
+        const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+          executeModelCallAndSave: emcas,
+          enqueueRenderJob: enqueue,
+          calculateAffordability: boundCalculateAffordability,
+          tokenWalletService: tokenWalletInstance,
+        });
+
+        const result: unknown = await prepareModelJob(deps, params, preparePayload);
+
+        assertEquals(isPrepareModelJobErrorReturn(result), true);
+        if (!isPrepareModelJobErrorReturn(result)) {
+          throw new Error("expected PrepareModelJobErrorReturn");
+        }
+        assertEquals(result.error instanceof ContextWindowError, true);
+        assertEquals(result.retriable, false);
+        assertEquals(emcas.calls.length, 0);
+        assertEquals(enqueue.calls.length, 0);
+      },
+    );
+  },
+);
+
+Deno.test(
+  "prepareModelJob - resourceDocuments increase counts and are forwarded unchanged (distinct from messages)",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-resource-docs-forward", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+
+    const gatheredDoc: ResourceDocument = {
+      id: "doc-r1",
+      content: "Rendered document content",
+      document_key: FileType.RenderedDocument,
+      stage_slug: "thesis",
+      type: "document",
+    };
+
+    const sizingCapturedPayloads: CountableChatPayload[] = [];
+
+    const affordLogger: MockLogger = new MockLogger();
+    const { compressPrompt } = createCompressPromptMock({});
+    const calculateAffordabilityDeps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
+      logger: affordLogger,
+      countTokens: createMockCountTokens({
+        countTokens: (
+          _deps,
+          payload: CountableChatPayload,
+          _modelConfig: AiModelExtendedConfig,
+        ): number => {
+          if (!isRecord(payload)) {
+            throw new Error("countTokens test: payload must be a record");
+          }
+          const sysRaw: unknown = payload["systemInstruction"];
+          const msgRaw: unknown = payload["message"];
+          if (typeof sysRaw !== "string" || typeof msgRaw !== "string") {
+            throw new Error("countTokens test: systemInstruction and message must be strings");
+          }
+          const msgsUnknown: unknown = payload["messages"];
+          if (!Array.isArray(msgsUnknown)) {
+            throw new Error("countTokens test: messages must be an array");
+          }
+          const msgs: Messages[] = [];
+          for (const m of msgsUnknown) {
+            if (!isRecord(m)) {
+              throw new Error("countTokens test: each message must be a record");
+            }
+            const roleVal: unknown = m["role"];
+            const contentVal: unknown = m["content"];
+            if (typeof contentVal !== "string") {
+              throw new Error("countTokens test: invalid message shape");
+            }
+            if (roleVal === "user" || roleVal === "assistant" || roleVal === "system") {
+              msgs.push({ role: roleVal, content: contentVal });
+            } else {
+              throw new Error("countTokens test: invalid message shape");
+            }
+          }
+          const docsUnknown: unknown = payload["resourceDocuments"];
+          if (!Array.isArray(docsUnknown)) {
+            throw new Error("countTokens test: resourceDocuments must be an array");
+          }
+          const docs: ResourceDocument[] = [];
+          for (const d of docsUnknown) {
+            if (!isResourceDocument(d)) {
+              throw new Error("countTokens test: invalid resource document");
+            }
+            docs.push(d);
+          }
+          const captured: CountableChatPayload = {
+            systemInstruction: sysRaw,
+            message: msgRaw,
+            messages: msgs,
+            resourceDocuments: docs,
+          };
+          sizingCapturedPayloads.push(captured);
+          if (captured.messages === undefined || captured.resourceDocuments === undefined) {
+            throw new Error("countTokens test: captured payload must include messages and resourceDocuments");
+          }
+          return captured.messages.length + captured.resourceDocuments.length;
+        },
+      }),
+      compressPrompt,
+    });
+    const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (p, pl) =>
+      calculateAffordability(calculateAffordabilityDeps, p, pl);
+
+    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId: "owner-contract",
+      providerRow: buildDefaultAiProvidersRow(),
+      sessionData: buildDialecticSessionRow(),
+    };
+    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const promptConstructionPayload: PromptConstructionPayload = {
+      systemInstruction: "SYS",
+      conversationHistory: [{ role: "user", content: "HIST" }],
+      resourceDocuments: [gatheredDoc],
+      currentUserPrompt: "CURR",
+      source_prompt_resource_id: "source-prompt-resource-contract",
+    };
+    const inputsRequired: InputRule[] = [
+      { type: "document", document_key: FileType.RenderedDocument, required: true, slug: "thesis" },
+    ];
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload,
+      compressionStrategy: contractCompressionStrategy,
+      inputsRequired,
+    };
+    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
+      contribution: buildDialecticContributionRow(),
+      needsContinuation: false,
+      stageRelationshipForStage: undefined,
+      documentKey: undefined,
+      fileType: FileType.HeaderContext,
+      storageFileType: FileType.ModelContributionRawJson,
+    }));
+    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability: boundCalculateAffordability,
+    });
+
+    await prepareModelJob(deps, params, preparePayload);
+
+    assertEquals(sizingCapturedPayloads.length, 1);
+    const sizingRecordCandidate = sizingCapturedPayloads[0];
+    assertExists(sizingRecordCandidate);
+    const sizingRecord: CountableChatPayload = sizingRecordCandidate;
+    assertExists(sizingRecord.resourceDocuments);
+    assertEquals(sizingRecord.resourceDocuments.length, 1);
+
+    assertEquals(emcas.calls.length, 1);
+    const firstCall = emcas.calls[0];
+    assertExists(firstCall);
+    const emcasPayloadUnknown: unknown = firstCall.args[1];
+    if (!isExecuteModelCallAndSavePayload(emcasPayloadUnknown)) {
+      throw new Error("expected ExecuteModelCallAndSavePayload");
+    }
+    const sent: ChatApiRequest = emcasPayloadUnknown.chatApiRequest;
+    if (!isChatApiRequest(sent)) {
+      throw new Error("Adapter should receive a ChatApiRequest");
+    }
+    if (!Array.isArray(sent.resourceDocuments) || sent.resourceDocuments.length === 0) {
+      throw new Error("Resource documents must be an array");
+    }
+    if (!isResourceDocument(sent.resourceDocuments[0])) {
+      throw new Error("Resource document must be a valid ResourceDocument");
+    }
+    assert(
+      Array.isArray(sent.resourceDocuments) && sent.resourceDocuments.length === 1,
+      "resourceDocuments must be forwarded to adapter",
+    );
+    assertEquals(sent.resourceDocuments[0].content, "Rendered document content");
+    assertEquals(sent.resourceDocuments[0].id, "doc-r1");
+    assertEquals(sent.resourceDocuments[0].document_key, FileType.RenderedDocument);
+    assertEquals(sent.resourceDocuments[0].stage_slug, "thesis");
+    assertEquals(sent.resourceDocuments[0].type, "document");
+    assertExists(sent.messages);
+    assert(
+      !sent.messages.some((m) => m.content === gatheredDoc.content),
+      "Resource document body must not be duplicated in ChatApiRequest.messages",
+    );
+    const sentFour: CountableChatPayload = {
+      systemInstruction: sent.systemInstruction,
+      message: sent.message,
+      messages: sent.messages,
+      resourceDocuments: sent.resourceDocuments,
+    };
+    assertEquals(
+      sentFour,
+      sizingRecord,
+      "Sized payload must equal sent request on the four fields",
+    );
+  },
+);
+
+Deno.test(
+  "prepareModelJob - builds full ChatApiRequest including resourceDocuments and walletId",
+  async () => {
+    const mockSetup = createMockSupabaseClient("prepare-full-chatapi-wallet", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+
+    const affordLogger: MockLogger = new MockLogger();
+    const { compressPrompt } = createCompressPromptMock({});
+    const calculateAffordabilityDeps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
+      logger: affordLogger,
+      countTokens: createMockCountTokens({
+        countTokens: () => 10,
+      }),
+      compressPrompt,
+    });
+    const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (p, pl) =>
+      calculateAffordability(calculateAffordabilityDeps, p, pl);
+
+    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId: "owner-contract",
+      providerRow: buildDefaultAiProvidersRow(),
+      sessionData: buildDialecticSessionRow(),
+    };
+    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+
+    const resourceDoc: ResourceDocument = {
+      id: "doc-xyz",
+      content: "Full ChatApiRequest doc content",
+      document_key: FileType.RenderedDocument,
+      stage_slug: "thesis",
+      type: "document",
+    };
+    const promptConstructionPayload: PromptConstructionPayload = {
+      systemInstruction: "System goes here",
+      conversationHistory: [{ role: "assistant", content: "Hi" }],
+      resourceDocuments: [resourceDoc],
+      currentUserPrompt: "User says hello",
+      source_prompt_resource_id: "source-prompt-resource-contract",
+    };
+    const inputsRequired: InputRule[] = [
+      { type: "document", document_key: FileType.RenderedDocument, required: true, slug: "thesis" },
+    ];
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload,
+      compressionStrategy: contractCompressionStrategy,
+      inputsRequired,
+    };
+    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
+      contribution: buildDialecticContributionRow(),
+      needsContinuation: false,
+      stageRelationshipForStage: undefined,
+      documentKey: undefined,
+      fileType: FileType.HeaderContext,
+      storageFileType: FileType.ModelContributionRawJson,
+    }));
+    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability: boundCalculateAffordability,
+    });
+
+    await prepareModelJob(deps, params, preparePayload);
+
+    assertEquals(emcas.calls.length, 1);
+    const firstCall = emcas.calls[0];
+    assertExists(firstCall);
+    const emcasPayloadUnknown: unknown = firstCall.args[1];
+    if (!isExecuteModelCallAndSavePayload(emcasPayloadUnknown)) {
+      throw new Error("expected ExecuteModelCallAndSavePayload");
+    }
+    const sent: ChatApiRequest = emcasPayloadUnknown.chatApiRequest;
+    if (!isChatApiRequest(sent)) {
+      throw new Error("Adapter should receive a ChatApiRequest");
+    }
+    if (!Array.isArray(sent.resourceDocuments) || sent.resourceDocuments.length === 0) {
+      throw new Error("Resource documents must be an array");
+    }
+    if (!isResourceDocument(sent.resourceDocuments[0])) {
+      throw new Error("Resource document must be a valid ResourceDocument");
+    }
+    assert(isChatApiRequest(sent), "Adapter should receive a ChatApiRequest");
+
+    assertEquals(sent.walletId, executePayload.walletId);
+    assertEquals(sent.systemInstruction, "System goes here");
+    assertEquals(sent.message, "User says hello");
+    assertExists(sent.messages);
+    assertExists(sent.resourceDocuments);
+    assertEquals(sent.resourceDocuments.length, 1);
+    assertEquals(sent.resourceDocuments[0].content, "Full ChatApiRequest doc content");
+    assertEquals(sent.resourceDocuments[0].id, "doc-xyz");
+    assertEquals(sent.resourceDocuments[0].document_key, FileType.RenderedDocument);
+    assertEquals(sent.resourceDocuments[0].stage_slug, "thesis");
+    assertEquals(sent.resourceDocuments[0].type, "document");
+  },
+);
+
+Deno.test(
+  "prepareModelJob - identity: sized payload equals sent request (non-oversized)",
+  async () => {
+    const mockSetup = createMockSupabaseClient("prepare-identity-non-oversized", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+
+    const sizedPayloads: CountableChatPayload[] = [];
+    const affordLogger: MockLogger = new MockLogger();
+    const { compressPrompt } = createCompressPromptMock({});
+    const calculateAffordabilityDeps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
+      logger: affordLogger,
+      countTokens: createMockCountTokens({
+        countTokens: (_deps, payloadArg: CountableChatPayload, _modelConfig: AiModelExtendedConfig): number => {
+          sizedPayloads.push(payloadArg);
+          return 5;
+        },
+      }),
+      compressPrompt,
+    });
+    const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (p, pl) =>
+      calculateAffordability(calculateAffordabilityDeps, p, pl);
+
+    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId: "owner-contract",
+      providerRow: buildDefaultAiProvidersRow(),
+      sessionData: buildDialecticSessionRow(),
+    };
+    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+
+    const promptConstructionPayload: PromptConstructionPayload = {
+      systemInstruction: "SYS: identity",
+      conversationHistory: [{ role: "assistant", content: "Hi (history)" }],
+      resourceDocuments: [],
+      currentUserPrompt: "User prompt for identity",
+      source_prompt_resource_id: "source-prompt-resource-contract",
+    };
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload,
+      compressionStrategy: contractCompressionStrategy,
+    };
+    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
+      contribution: buildDialecticContributionRow(),
+      needsContinuation: false,
+      stageRelationshipForStage: undefined,
+      documentKey: undefined,
+      fileType: FileType.HeaderContext,
+      storageFileType: FileType.ModelContributionRawJson,
+    }));
+    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability: boundCalculateAffordability,
+    });
+
+    await prepareModelJob(deps, params, preparePayload);
+
+    assertEquals(emcas.calls.length, 1);
+    const firstCall = emcas.calls[0];
+    assertExists(firstCall);
+    const emcasPayloadUnknown: unknown = firstCall.args[1];
+    if (!isExecuteModelCallAndSavePayload(emcasPayloadUnknown)) {
+      throw new Error("expected ExecuteModelCallAndSavePayload");
+    }
+    const sent: ChatApiRequest = emcasPayloadUnknown.chatApiRequest;
+    assert(isChatApiRequest(sent), "Adapter should receive a ChatApiRequest");
+
+    assertEquals(sizedPayloads.length, 1);
+    const sizedFirstCandidate = sizedPayloads[0];
+    assertExists(sizedFirstCandidate);
+    const sizedFirst: CountableChatPayload = sizedFirstCandidate;
+
+    const expectedFour: CountableChatPayload = {
+      systemInstruction: sizedFirst.systemInstruction,
+      message: sizedFirst.message,
+      messages: sizedFirst.messages,
+      resourceDocuments: sizedFirst.resourceDocuments,
+    };
+
+    const sentFour: CountableChatPayload = {
+      systemInstruction: sent.systemInstruction,
+      message: sent.message,
+      messages: sent.messages,
+      resourceDocuments: sent.resourceDocuments,
+    };
+
+    assertEquals(sentFour, expectedFour, "Sized payload must equal sent request on the four fields");
+  },
+);
+
+Deno.test(
+  "prepareModelJob - scoped selection includes only artifacts matching inputsRequired",
+  async () => {
+    const mockSetup = createMockSupabaseClient("prepare-scoped-inputs-required", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+
+    const affordLogger: MockLogger = new MockLogger();
+    const { compressPrompt } = createCompressPromptMock({});
+    const calculateAffordabilityDeps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
+      logger: affordLogger,
+      countTokens: createMockCountTokens({
+        countTokens: () => 10,
+      }),
+      compressPrompt,
+    });
+    const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (p, pl) =>
+      calculateAffordability(calculateAffordabilityDeps, p, pl);
+
+    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId: "owner-contract",
+      providerRow: buildDefaultAiProvidersRow(),
+      sessionData: buildDialecticSessionRow(),
+    };
+    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+
+    // Legacy monolith test gathered from DB and applied resource-over-contribution precedence for the
+    // same document_key. prepareModelJob receives pre-resolved resourceDocuments; duplicate contribution
+    // for the same slot is omitted upstream. Non-matching artifacts remain in the payload to exercise
+    // applyInputsRequiredScope exclusion.
+    const docResource: ResourceDocument = {
+      id: "r-match",
+      content: "R",
+      document_key: FileType.business_case,
+      stage_slug: "thesis",
+      type: "document",
+    };
+    const docFeedback: ResourceDocument = {
+      id: "f-match",
+      content: "F",
+      document_key: FileType.UserFeedback,
+      stage_slug: "thesis",
+      type: "feedback",
+    };
+    const docNonMatching: ResourceDocument = {
+      id: "c-skip",
+      content: "SKIP",
+      document_key: FileType.risk_register,
+      stage_slug: "other-stage",
+      type: "document",
+    };
+
+    const promptConstructionPayload: PromptConstructionPayload = {
+      systemInstruction: "SYS",
+      conversationHistory: [],
+      resourceDocuments: [docResource, docFeedback, docNonMatching],
+      currentUserPrompt: "CURR",
+      source_prompt_resource_id: "source-prompt-resource-contract",
+    };
+    const inputsRequired: InputRule[] = [
+      { type: "document", document_key: FileType.business_case, required: true, slug: "thesis" },
+      { type: "feedback", document_key: FileType.UserFeedback, required: false, slug: "thesis" },
+    ];
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload,
+      compressionStrategy: contractCompressionStrategy,
+      inputsRequired,
+      inputsRelevance: [],
+    };
+    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
+      contribution: buildDialecticContributionRow(),
+      needsContinuation: false,
+      stageRelationshipForStage: undefined,
+      documentKey: undefined,
+      fileType: FileType.HeaderContext,
+      storageFileType: FileType.ModelContributionRawJson,
+    }));
+    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability: boundCalculateAffordability,
+    });
+
+    await prepareModelJob(deps, params, preparePayload);
+
+    assertEquals(emcas.calls.length, 1);
+    const firstCall = emcas.calls[0];
+    assertExists(firstCall);
+    const emcasPayloadUnknown: unknown = firstCall.args[1];
+    if (!isExecuteModelCallAndSavePayload(emcasPayloadUnknown)) {
+      throw new Error("expected ExecuteModelCallAndSavePayload");
+    }
+    const sent: ChatApiRequest = emcasPayloadUnknown.chatApiRequest;
+    assert(isChatApiRequest(sent), "Adapter should receive a ChatApiRequest");
+
+    const ids: string[] = Array.isArray(sent.resourceDocuments)
+      ? sent.resourceDocuments.map((d) =>
+        isRecord(d) && typeof d["id"] === "string" ? d["id"] : ""
+      )
+      : [];
+
+    assert(ids.includes("r-match"), "Expected r-match (from resources) to be included");
+    assert(ids.includes("f-match"), "Expected f-match to be included");
+    assert(
+      !ids.includes("c-match"),
+      "c-match (from contributions) should NOT be included when r-match (from resources) exists",
+    );
+    assert(
+      !ids.includes("c-skip") && !ids.includes("r-skip"),
+      "Non-matching artifacts must be excluded",
+    );
+  },
+);
+
+Deno.test(
+  "prepareModelJob returns PrepareModelJobErrorReturn when deps.tokenWalletService is missing (migrated from executeModelCallAndSave.tokens: compression path)",
+  async () => {
+    const mockSetup = createMockSupabaseClient("tokens-migration-compression", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [
+                buildAiProviderRow({
+                  ...buildExtendedModelFixture(),
+                  context_window_tokens: 50,
+                }),
+              ],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId: "owner-contract",
+      providerRow: buildAiProviderRow({
+        ...buildExtendedModelFixture(),
+        context_window_tokens: 50,
+      }),
+      sessionData: buildDialecticSessionRow(),
+    };
+    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: buildPromptConstructionPayload(),
+      compressionStrategy: contractCompressionStrategy,
+    };
+    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn();
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
+    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
+      contribution: buildDialecticContributionRow(),
+      needsContinuation: false,
+      stageRelationshipForStage: undefined,
+      documentKey: undefined,
+      fileType: FileType.HeaderContext,
+      storageFileType: FileType.ModelContributionRawJson,
+    }));
+    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
+    const baseDeps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability: affordabilitySpy,
+    });
+    const depsMissingWallet: PrepareModelJobDeps = { ...baseDeps };
+    delete (depsMissingWallet as unknown as Record<string, unknown>)["tokenWalletService"];
+    const result: unknown = await prepareModelJob(
+      depsMissingWallet,
+      params,
+      preparePayload,
+    );
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (isPrepareModelJobErrorReturn(result)) {
+      assert(
+        result.error.message.includes("Token wallet service is required for affordability preflight"),
+        `Unexpected error: ${result.error.message}`,
+      );
+    }
+    assertEquals(affordabilitySpy.calls.length, 0);
+    assertEquals(emcas.calls.length, 0);
+    assertEquals(enqueue.calls.length, 0);
+  },
+);
+
+Deno.test(
+  "prepareModelJob returns PrepareModelJobErrorReturn when job payload is missing walletId (migrated from executeModelCallAndSave.tokens: preflight non-oversized)",
+  async () => {
+    const mockSetup = createMockSupabaseClient("tokens-migration-walletid", {});
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const badPayload: DialecticExecuteJobPayload = malformedPayloadMissingWalletId();
+    const job: DialecticJobRow = buildDialecticJobRow(badPayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId: "owner-contract",
+      providerRow: buildDefaultAiProvidersRow(),
+      sessionData: buildDialecticSessionRow(),
+    };
+    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: buildPromptConstructionPayload(),
+      compressionStrategy: contractCompressionStrategy,
+    };
+    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn();
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
+    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
+      contribution: buildDialecticContributionRow(),
+      needsContinuation: false,
+      stageRelationshipForStage: undefined,
+      documentKey: undefined,
+      fileType: FileType.HeaderContext,
+      storageFileType: FileType.ModelContributionRawJson,
+    }));
+    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability: affordabilitySpy,
+    });
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (isPrepareModelJobErrorReturn(result)) {
+      assert(
+        result.error.message.toLowerCase().includes("wallet"),
+        `Unexpected error: ${result.error.message}`,
+      );
+    }
+    assertEquals(affordabilitySpy.calls.length, 0);
+    assertEquals(emcas.calls.length, 0);
+    assertEquals(enqueue.calls.length, 0);
+  },
+);
+
+Deno.test(
+  "prepareModelJob returns PrepareModelJobErrorReturn when deps.tokenWalletService is missing (migrated from executeModelCallAndSave.tokens: non-oversized preflight)",
+  async () => {
+    const mockSetup = createMockSupabaseClient("tokens-migration-no-wallet-non-oversized", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId: "owner-contract",
+      providerRow: buildDefaultAiProvidersRow(),
+      sessionData: buildDialecticSessionRow(),
+    };
+    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: buildPromptConstructionPayload(),
+      compressionStrategy: contractCompressionStrategy,
+    };
+    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn();
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
+    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
+      contribution: buildDialecticContributionRow(),
+      needsContinuation: false,
+      stageRelationshipForStage: undefined,
+      documentKey: undefined,
+      fileType: FileType.HeaderContext,
+      storageFileType: FileType.ModelContributionRawJson,
+    }));
+    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
+    const baseDeps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability: affordabilitySpy,
+    });
+    const depsMissingWallet: PrepareModelJobDeps = { ...baseDeps };
+    delete (depsMissingWallet as unknown as Record<string, unknown>)["tokenWalletService"];
+    const result: unknown = await prepareModelJob(
+      depsMissingWallet as unknown as PrepareModelJobDeps,
+      params,
+      preparePayload,
+    );
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    assertEquals(affordabilitySpy.calls.length, 0);
+    assertEquals(emcas.calls.length, 0);
+    assertEquals(enqueue.calls.length, 0);
+  },
+);
+
+Deno.test(
+  "prepareModelJob returns PrepareModelJobErrorReturn when model cost rates are invalid (migrated from executeModelCallAndSave.tokens: preflight non-oversized)",
+  async () => {
+    const mockSetup = createMockSupabaseClient("tokens-migration-invalid-rates", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [
+                buildAiProviderRow({
+                  ...buildExtendedModelFixture(),
+                  output_token_cost_rate: 0,
+                }),
+              ],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId: "owner-contract",
+      providerRow: buildAiProviderRow({
+        ...buildExtendedModelFixture(),
+        output_token_cost_rate: 0,
+      }),
+      sessionData: buildDialecticSessionRow(),
+    };
+    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: buildPromptConstructionPayload(),
+      compressionStrategy: contractCompressionStrategy,
+    };
+    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn();
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
+    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
+      contribution: buildDialecticContributionRow(),
+      needsContinuation: false,
+      stageRelationshipForStage: undefined,
+      documentKey: undefined,
+      fileType: FileType.HeaderContext,
+      storageFileType: FileType.ModelContributionRawJson,
+    }));
+    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability: affordabilitySpy,
+    });
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (isPrepareModelJobErrorReturn(result)) {
+      assert(
+        result.error.message.includes("Model configuration is missing valid token cost rates."),
+        `Unexpected error: ${result.error.message}`,
+      );
+    }
+    assertEquals(affordabilitySpy.calls.length, 0);
+    assertEquals(emcas.calls.length, 0);
+    assertEquals(enqueue.calls.length, 0);
   },
 );

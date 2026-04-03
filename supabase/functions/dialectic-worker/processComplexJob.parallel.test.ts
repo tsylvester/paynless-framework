@@ -29,9 +29,9 @@ import { mockNotificationService } from '../_shared/utils/notification.service.m
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { isModelContributionFileType } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { DialecticStageRecipeStep, IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
-import { IPlanJobContext } from './JobContext.interface.ts';
-import { createPlanJobContext, createJobContext } from './createJobContext.ts';
-import { createMockJobContextParams } from './JobContext.mock.ts';
+import { IPlanJobContext } from './createJobContext/JobContext.interface.ts';
+import { createPlanJobContext, createJobContext } from './createJobContext/createJobContext.ts';
+import { createMockJobContextParams } from './createJobContext/JobContext.mock.ts';
 
 const mockClonedRecipeSteps: DialecticStageRecipeStep[] = [
     {

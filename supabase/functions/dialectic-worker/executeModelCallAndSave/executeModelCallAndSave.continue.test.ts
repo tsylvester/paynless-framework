@@ -42,7 +42,7 @@ import {
   mockNotificationService,
   resetMockNotificationService,
 } from '../../_shared/utils/notification.service.mock.ts';
-import type { RetryJobFn } from '../JobContext.interface.ts';
+import type { RetryJobFn } from '../createJobContext/JobContext.interface.ts';
 import {
   createMockAiProviderAdapterInstance,
   createMockDialecticContributionRow,

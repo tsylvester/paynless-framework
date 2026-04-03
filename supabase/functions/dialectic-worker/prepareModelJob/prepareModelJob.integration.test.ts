@@ -1,24 +1,41 @@
 // supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.integration.test.ts
 
-import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
-import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
+import type {
+  AiModelExtendedConfig,
+  ChatApiRequest,
+  ResourceDocument,
+} from "../../_shared/types.ts";
+import type { CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import { FileType } from "../../_shared/types/file_manager.types.ts";
-import type { ChatApiRequest } from "../../_shared/types.ts";
+import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
+import { createMockTokenWalletService } from "../../_shared/services/tokenWalletService.mock.ts";
+import { isChatApiRequest, isRecord } from "../../_shared/utils/type_guards.ts";
+import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
 import type {
   DialecticExecuteJobPayload,
   DialecticJobRow,
+  PromptConstructionPayload,
+  RelevanceRule,
 } from "../../dialectic-service/dialectic.interface.ts";
+import { calculateAffordability } from "../calculateAffordability/calculateAffordability.ts";
 import type { BoundCalculateAffordabilityFn } from "../calculateAffordability/calculateAffordability.interface.ts";
 import {
   buildCalculateAffordabilityCompressedReturn,
+  buildCalculateAffordabilityDeps,
   buildCalculateAffordabilityDirectReturn,
   buildCalculateAffordabilityErrorReturn,
   buildMockBoundCalculateAffordabilityFn,
 } from "../calculateAffordability/calculateAffordability.mock.ts";
-import { buildChatApiRequest, buildResourceDocument } from "../compressPrompt/compressPrompt.mock.ts";
+import {
+  buildBoundCompressPromptFn,
+  buildChatApiRequest,
+  buildResourceDocument,
+} from "../compressPrompt/compressPrompt.mock.ts";
+import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import type { BoundExecuteModelCallAndSaveFn } from "../executeModelCallAndSave/executeModelCallAndSave.interface.ts";
 import { isExecuteModelCallAndSavePayload } from "../executeModelCallAndSave/executeModelCallAndSave.interface.guard.ts";
 import type { BoundEnqueueRenderJobFn } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
@@ -326,5 +343,189 @@ Deno.test(
     assertEquals(result.retriable, false);
 
     assertEquals(emcas.calls.length, 1);
+  },
+);
+
+/** Port of `executeModelCallAndSave.test.ts` "identity after compression" (#19): post-compression countTokens payload matches EMCAS `chatApiRequest` four fields. */
+Deno.test(
+  "integration: identity after compression — final sized payload equals EMCAS chatApiRequest",
+  async () => {
+    const limitedExtended: AiModelExtendedConfig = {
+      ...buildExtendedModelFixture(),
+      tokenization_strategy: { type: "rough_char_count" },
+      context_window_tokens: 50,
+      provider_max_input_tokens: 10000,
+      input_token_cost_rate: 0.001,
+      output_token_cost_rate: 0.002,
+    };
+
+    const mockSetup = createMockSupabaseClient("user-int", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildAiProviderRow(limitedExtended)],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow({})],
+              error: null,
+            }),
+        },
+        dialectic_memory: {
+          select: () =>
+            Promise.resolve({
+              data: [],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+
+    const mockRag: MockRagService = new MockRagService();
+    mockRag.setConfig({ mockContextResult: "compressed summary" });
+
+    const resourceDoc: ResourceDocument = {
+      id: "doc-for-compress",
+      content: "Business case document content for compression test",
+      document_key: FileType.business_case,
+      stage_slug: "thesis",
+      type: "document",
+    };
+
+    const promptConstructionPayload: PromptConstructionPayload = {
+      systemInstruction: "SYS: compression",
+      conversationHistory: [
+        { role: "assistant", content: "History A" },
+        { role: "assistant", content: "History B" },
+        { role: "user", content: "Please continue." },
+      ],
+      resourceDocuments: [resourceDoc],
+      currentUserPrompt: "User for compression identity",
+      source_prompt_resource_id: "source-prompt-resource-contract",
+    };
+
+    const inputsRelevance: RelevanceRule[] = [
+      {
+        document_key: FileType.business_case,
+        relevance: 0.5,
+        type: "document",
+        slug: "thesis",
+      },
+    ];
+
+    const compressionStrategy: ICompressionStrategy = async (_deps, _params, payload) => {
+      return payload.documents.map((d, i) => ({
+        id: d.id,
+        content: d.content,
+        sourceType: "document",
+        originalIndex: i,
+        valueScore: 0.5,
+        effectiveScore: 0.5,
+      }));
+    };
+
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload,
+      compressionStrategy,
+      inputsRelevance,
+      inputsRequired: [
+        {
+          type: "document",
+          document_key: FileType.business_case,
+          required: true,
+          slug: "thesis",
+        },
+      ],
+    };
+
+    const sizedPayloads: unknown[] = [];
+    let callIdx: number = 0;
+    const countTokens: CountTokensFn = (
+      _depsArg,
+      payloadArg,
+      _cfg,
+    ) => {
+      sizedPayloads.push(payloadArg);
+      callIdx += 1;
+      return callIdx === 1 ? 100 : 40;
+    };
+
+    const tokenWalletService = createMockTokenWalletService({
+      getBalance: () => Promise.resolve("1000000"),
+    }).instance;
+
+    const compressPromptBound = buildBoundCompressPromptFn({
+      ragService: mockRag,
+      countTokens,
+      tokenWalletService,
+    });
+
+    const affordDeps = buildCalculateAffordabilityDeps({
+      countTokens,
+      compressPrompt: compressPromptBound,
+    });
+
+    const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (params, payload) => {
+      return calculateAffordability(affordDeps, params, payload);
+    };
+
+    const emcas = buildEmcasSuccessSpy();
+    const enqueue = buildEnqueueSuccessSpy();
+
+    const deps = buildPrepareModelJobDeps({
+      executeModelCallAndSave: emcas,
+      enqueueRenderJob: enqueue,
+      calculateAffordability: boundCalculateAffordability,
+      tokenWalletService,
+    });
+
+    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
+    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.integration",
+      job,
+      projectOwnerUserId: "owner-int",
+      providerRow: buildAiProviderRow(limitedExtended),
+      sessionData: buildDialecticSessionRow(),
+    };
+
+    const result = await prepareModelJob(deps, params, preparePayload);
+
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
+    assertEquals(emcas.calls.length, 1);
+
+    const emcasPayload: unknown = emcas.calls[0].args[1];
+    assertEquals(isExecuteModelCallAndSavePayload(emcasPayload), true);
+    if (!isExecuteModelCallAndSavePayload(emcasPayload)) throw new Error("expected EMCAS payload");
+    const sent: ChatApiRequest = emcasPayload.chatApiRequest;
+    assert(isChatApiRequest(sent), "EMCAS should receive a ChatApiRequest");
+
+    assert(sizedPayloads.length >= 2, "countTokens should have been called at least twice");
+    const sizedLast: unknown = sizedPayloads[sizedPayloads.length - 1];
+    assert(isRecord(sizedLast), "Sized payload should be an object");
+
+    const expectedFour = {
+      systemInstruction: sizedLast["systemInstruction"],
+      message: sizedLast["message"],
+      messages: sizedLast["messages"],
+      resourceDocuments: sizedLast["resourceDocuments"],
+    };
+
+    assertEquals(
+      {
+        systemInstruction: sent.systemInstruction,
+        message: sent.message,
+        messages: sent.messages,
+        resourceDocuments: sent.resourceDocuments,
+      },
+      expectedFour,
+      "Final sized payload must equal sent request on the four fields",
+    );
   },
 );

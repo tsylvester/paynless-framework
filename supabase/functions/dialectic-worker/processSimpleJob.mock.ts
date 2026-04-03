@@ -34,24 +34,43 @@ import { IFileManager } from '../_shared/types/file_manager.types.ts';
 
 export const defaultStepSlug = 'thesis';
 
+// Deterministic valid-hex UUIDs for processSimpleJob mock fixtures.
+// Each encodes the entity name using only hex-safe letters (a-f) and digits.
+const UUID_PROJECT     = 'a0000001-0000-4000-a000-000000000001'; // project
+const UUID_SESSION     = 'a0000002-0000-4000-a000-000000000002'; // session
+const UUID_MODEL       = 'a0000003-0000-4000-a000-000000000003'; // model
+const UUID_WALLET      = 'a0000004-0000-4000-a000-000000000004'; // wallet
+const UUID_USER        = 'a0000005-0000-4000-a000-000000000005'; // user
+const UUID_JOB         = 'a0000006-0000-4000-a000-000000000006'; // job
+const UUID_CONTRIB     = 'a0000007-0000-4000-a000-000000000007'; // contribution
+const UUID_DOMAIN      = 'a0000008-0000-4000-a000-000000000008'; // domain
+const UUID_STAGE       = 'a0000009-0000-4000-a000-000000000009'; // stage
+const UUID_PROMPT      = 'a000000a-0000-4000-a000-00000000000a'; // prompt
+const UUID_TEMPLATE    = 'a000000b-0000-4000-a000-00000000000b'; // template
+const UUID_STEP        = 'a000000c-0000-4000-a000-00000000000c'; // step
+const UUID_INSTANCE    = 'a000000d-0000-4000-a000-00000000000d'; // instance
+const UUID_STAGE_STEP  = 'a000000e-0000-4000-a000-00000000000e'; // stage-step
+const UUID_CHAT        = 'a000000f-0000-4000-a000-00000000000f'; // chat
+const UUID_IDEMPOTENCY = 'a0000010-0000-4000-a000-000000000010'; // idempotency
+
 const processSimpleJobExecutePayloadDefault: DialecticExecuteJobPayload = {
-  projectId: 'p00ject0-0abc-4000-a000-000000000001',
-  sessionId: '5e551010-0456-4000-a000-000000000002',
+  projectId: UUID_PROJECT,
+  sessionId: UUID_SESSION,
   stageSlug: defaultStepSlug,
-  model_id: 'm0de10de-f000-4000-a000-000000000003',
+  model_id: UUID_MODEL,
   iterationNumber: 1,
   continueUntilComplete: false,
-  walletId: 'a111e700-0000-4000-a000-000000000004',
+  walletId: UUID_WALLET,
   user_jwt: 'jwt.token.here',
-  planner_metadata: { recipe_step_id: '57ep0000-0001-4000-a000-000000000005', recipe_template_id: '7e8p1a7e-0123-4000-a000-000000000006' },
-  prompt_template_id: '7e8p1a7e-0123-4000-a000-000000000006',
+  planner_metadata: { recipe_step_id: UUID_STEP, recipe_template_id: UUID_TEMPLATE },
+  prompt_template_id: UUID_TEMPLATE,
   output_type: FileType.business_case,
   canonicalPathParams: {
     contributionType: 'thesis',
     stageSlug: defaultStepSlug,
   },
   inputs: {},
-  idempotencyKey: '1de8p07e-0001-4000-a000-000000000007',
+  idempotencyKey: UUID_IDEMPOTENCY,
 };
 
 export function buildProcessSimpleJobExecutePayload(
@@ -181,9 +200,9 @@ export const stageOutputsRequired: OutputRule = {
 };
 
 export const mockJob: DialecticJobRow = {
-  id: '00000b00-0123-4000-a000-000000000008',
-  session_id: '5e551010-0456-4000-a000-000000000002',
-  user_id: '00u5e000-0789-4000-a000-000000000009',
+  id: UUID_JOB,
+  session_id: UUID_SESSION,
+  user_id: UUID_USER,
   stage_slug: defaultStepSlug,
   iteration_number: 1,
   payload: mockPayload,
@@ -200,19 +219,19 @@ export const mockJob: DialecticJobRow = {
   prerequisite_job_id: null,
   is_test_job: false,
   job_type: 'PLAN',
-  idempotency_key: '1de8p07e-0001-4000-a000-000000000007',
+  idempotency_key: UUID_IDEMPOTENCY,
 };
 
 export const mockSessionData: Tables<'dialectic_sessions'> = {
-  id: '5e551010-0456-4000-a000-000000000002',
-  project_id: 'p00ject0-0abc-4000-a000-000000000001',
+  id: UUID_SESSION,
+  project_id: UUID_PROJECT,
   session_description: 'A mock session',
   user_input_reference_url: null,
   iteration_count: 1,
-  selected_model_ids: ['m0de10de-f000-4000-a000-000000000003'],
+  selected_model_ids: [UUID_MODEL],
   status: 'in-progress',
-  associated_chat_id: '00c0a700-0789-4000-a000-00000000000a',
-  current_stage_id: '005a6e00-0001-4000-a000-00000000000b',
+  associated_chat_id: UUID_CHAT,
+  current_stage_id: UUID_STAGE,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   viewing_stage_id: null,
@@ -220,7 +239,7 @@ export const mockSessionData: Tables<'dialectic_sessions'> = {
 };
 
 export const mockProviderData: Tables<'ai_providers'> = {
-  id: 'm0de10de-f000-4000-a000-000000000003',
+  id: UUID_MODEL,
   provider: 'mock-provider',
   name: 'Mock AI',
   api_identifier: 'mock-ai-v1',
@@ -235,11 +254,11 @@ export const mockProviderData: Tables<'ai_providers'> = {
 };
 
 export const mockContribution: DialecticContributionRow = {
-  id: 'c0007b00-0123-4000-a000-00000000000c',
-  session_id: '5e551010-0456-4000-a000-000000000002',
+  id: UUID_CONTRIB,
+  session_id: UUID_SESSION,
   stage: defaultStepSlug,
   iteration_number: 1,
-  model_id: 'm0de10de-f000-4000-a000-000000000003',
+  model_id: UUID_MODEL,
   edit_version: 1,
   is_latest_edit: true,
   citations: null,
@@ -261,7 +280,7 @@ export const mockContribution: DialecticContributionRow = {
   tokens_used_input: 10,
   tokens_used_output: 20,
   updated_at: new Date().toISOString(),
-  user_id: '00u5e000-0789-4000-a000-000000000009',
+  user_id: UUID_USER,
   document_relationships: null,
   is_header: false,
   source_prompt_resource_id: null,
@@ -296,45 +315,45 @@ export function assertPrepareModelJobTwoArgCall(
 
 export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
   const mockProject: Tables<'dialectic_projects'> & { dialectic_domains: Pick<Tables<'dialectic_domains'>, 'id' | 'name' | 'description'> } = {
-    id: 'p00ject0-0abc-4000-a000-000000000001',
-    user_id: '00u5e000-0789-4000-a000-000000000009',
+    id: UUID_PROJECT,
+    user_id: UUID_USER,
     project_name: 'Test Project',
     initial_user_prompt: 'Test prompt',
-    selected_domain_id: '00d08a10-0123-4000-a000-00000000000d',
+    selected_domain_id: UUID_DOMAIN,
     status: 'active',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     initial_prompt_resource_id: null,
-    process_template_id: '7e8p1a7e-0123-4000-a000-000000000006',
+    process_template_id: UUID_TEMPLATE,
     repo_url: null,
     selected_domain_overlay_id: null,
     user_domain_overlay_values: null,
     dialectic_domains: {
-      id: '00d08a10-0123-4000-a000-00000000000d',
+      id: UUID_DOMAIN,
       name: 'Test Domain',
       description: 'A domain for testing',
     },
-    idempotency_key: '1de8p07e-0001-4000-a000-000000000007',
+    idempotency_key: UUID_IDEMPOTENCY,
   };
 
   const mockStage: Tables<'dialectic_stages'> & { system_prompts: { id: string; prompt_text: string } | null } = {
-    id: '005a6e00-0001-4000-a000-00000000000b',
+    id: UUID_STAGE,
     slug: defaultStepSlug,
     display_name: 'Test Stage',
     created_at: new Date().toISOString(),
-    default_system_prompt_id: '0008p700-0123-4000-a000-00000000000e',
+    default_system_prompt_id: UUID_PROMPT,
     description: null,
     expected_output_template_ids: [],
     system_prompts: {
-      id: '0008p700-0123-4000-a000-00000000000e',
+      id: UUID_PROMPT,
       prompt_text: 'This is the base system prompt for the test stage.',
     },
     active_recipe_instance_id: null,
-    recipe_template_id: '7e8p1a7e-0123-4000-a000-000000000006',
+    recipe_template_id: UUID_TEMPLATE,
     minimum_balance: 0,
   };
 
-  return createMockSupabaseClient('user-789', {
+  return createMockSupabaseClient(UUID_USER, {
     genericMockResults: {
       dialectic_projects: {
         select: () => Promise.resolve({ data: [mockProject], error: null }),
@@ -369,8 +388,8 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
       dialectic_recipe_template_steps: {
         select: (state: any) => {
           const defaultStep: DialecticRecipeTemplateStep = {
-            id: 'step-1',
-            template_id: 'template-123',
+            id: UUID_STEP,
+            template_id: UUID_TEMPLATE,
             step_number: 1,
             step_key: 'seed',
             step_slug: 'seed',
@@ -378,7 +397,7 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
             step_description: 'Generate the main business case document.',
             job_type: 'EXECUTE',
             prompt_type: 'Turn',
-            prompt_template_id: 'prompt-123',
+            prompt_template_id: UUID_PROMPT,
             output_type: FileType.business_case,
             granularity_strategy: 'per_source_document',
             inputs_required: templateInputsRequired,
@@ -389,9 +408,9 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           };
-          const hasIdEq = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'id' && f.value === 'step-1');
+          const hasIdEq = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'id' && f.value === UUID_STEP);
           if (hasIdEq) return Promise.resolve({ data: [defaultStep], error: null });
-          const hasTemplate = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'template_id' && f.value === 'template-123');
+          const hasTemplate = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'template_id' && f.value === UUID_TEMPLATE);
           const hasSlug = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'step_slug' && typeof f.value === 'string');
           if (hasTemplate && hasSlug) return Promise.resolve({ data: [defaultStep], error: null });
           return Promise.resolve({ data: [], error: null });
@@ -400,9 +419,9 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
       dialectic_stage_recipe_steps: {
         select: (state: any) => {
           const defaultStageStep: DialecticStageRecipeStep = {
-            id: 'stage-step-1',
-            instance_id: 'instance-1',
-            template_step_id: 'step-1',
+            id: UUID_STAGE_STEP,
+            instance_id: UUID_INSTANCE,
+            template_step_id: UUID_STEP,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             step_key: 'seed',
@@ -422,7 +441,7 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
             is_skipped: false,
             parallel_group: null,
             branch_key: null,
-            prompt_template_id: 'prompt-123',
+            prompt_template_id: UUID_PROMPT,
             execution_order: 1,
           };
 
