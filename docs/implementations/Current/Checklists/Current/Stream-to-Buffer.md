@@ -173,3 +173,4 @@
     * `[✅]` `openai_adapter.ts` — `sendMessage` uses `create({ stream: true, stream_options: { include_usage: true } })` with buffer collection
     * `[✅]` `openai_adapter.test.ts` — SDK mocks updated to return streaming responses
     * `[✅]` `adapter_test_contract.ts` — verified passing for all three adapters
+
