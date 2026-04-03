@@ -26,12 +26,20 @@ export function getMaxOutputTokens(
     context_window_tokens,
   } = modelConfig;
 
-  if (typeof input_token_cost_rate !== 'number' || input_token_cost_rate < 0) {
+  if (
+    typeof input_token_cost_rate !== 'number' ||
+    !Number.isFinite(input_token_cost_rate) ||
+    input_token_cost_rate < 0
+  ) {
     logger.error('Invalid or missing input_token_cost_rate in modelConfig', { modelConfig });
     throw new Error('Cannot calculate max output tokens: Invalid input token cost rate.');
   }
-  if (typeof output_token_cost_rate !== 'number' || output_token_cost_rate <= 0) {
-    // Output cost rate must be positive, otherwise division by zero or infinite tokens.
+  if (
+    typeof output_token_cost_rate !== 'number' ||
+    !Number.isFinite(output_token_cost_rate) ||
+    output_token_cost_rate <= 0
+  ) {
+    // Output cost rate must be positive and finite, otherwise division by zero or non-finite tokens.
     logger.error('Invalid or missing output_token_cost_rate in modelConfig', { modelConfig });
     throw new Error('Cannot calculate max output tokens: Invalid output token cost rate.');
   }

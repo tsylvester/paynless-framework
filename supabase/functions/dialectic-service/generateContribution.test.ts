@@ -162,7 +162,6 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
             mockPayload,
             { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
             {
-                callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
                 downloadFromStorage: downloadFromStorage100,
                 getExtensionFromMimeType: () => 'txt',
                 logger: logger,
@@ -275,7 +274,6 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
             mockPayload,
             { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
             {
-                callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
                 downloadFromStorage: downloadFromStorage100,
                 getExtensionFromMimeType: () => 'txt',
                 logger: logger,
@@ -358,7 +356,6 @@ Deno.test("generateContributions - Failure Path: Fails if stage recipe lookup fa
         mockPayload,
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content', error: null }),
             downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => '.txt',
             logger,
@@ -433,7 +430,6 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
     });
 
     const mockDeps: GenerateContributionsDeps = {
-      callUnifiedAIModel: () => Promise.resolve({ content: 'test-content', error: null }),
       downloadFromStorage: downloadFromStorage100,
       getExtensionFromMimeType: () => '.txt',
       logger,
@@ -483,7 +479,6 @@ Deno.test("generateContributions - Validation: Fails if stageSlug is missing", a
         mockPayload,
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
             downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => 'txt',
             logger: logger,
@@ -521,7 +516,6 @@ Deno.test("generateContributions - Validation: Fails if sessionId is missing", a
         mockPayload,
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
             downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => 'txt',
             logger: logger,
@@ -559,7 +553,6 @@ Deno.test("generateContributions - Validation: Fails if userId is missing", asyn
         // userId is intentionally passed as an empty string
         { id: '', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
             downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => 'txt',
             logger: logger,
@@ -613,7 +606,6 @@ Deno.test("generateContributions - Validation: Fails if selectedModelIds is empt
         mockPayload,
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
             downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => 'txt',
             logger: logger,
@@ -677,7 +669,6 @@ Deno.test("generateContributions - Validation: Fails if walletId is missing (man
         mockPayload,
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
             downloadFromStorage: downloadFromStorage8,
             getExtensionFromMimeType: () => 'txt',
             logger,
@@ -751,7 +742,6 @@ Deno.test("generateContributions - Fails when authToken is missing and does not 
         mockPayload,
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
             downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
@@ -821,7 +811,6 @@ Deno.test("generateContributions - should reject job creation when authToken is 
         mockPayload,
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
             downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
@@ -891,7 +880,6 @@ Deno.test("generateContributions - should reject job creation when authToken is 
         mockPayload,
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
             downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
@@ -993,7 +981,6 @@ Deno.test("generateContributions - plan jobs carry payload.user_jwt equal to pro
         mockPayload,
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
             downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
@@ -1087,7 +1074,6 @@ Deno.test("generateContributions - plan jobs include model_slug from ai_provider
         mockPayload,
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
             downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
@@ -1182,7 +1168,6 @@ Deno.test("should create jobs with a top-level 'is_test_job' flag when specified
             mockPayload,
             { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
             {
-                callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
                 downloadFromStorage: downloadFromStorage100,
                 getExtensionFromMimeType: () => 'txt',
                 logger: logger,
@@ -1336,7 +1321,6 @@ Deno.test("generateContributions successfully enqueues jobs given a valid and co
     });
 
     const mockDeps: GenerateContributionsDeps = {
-      callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
       downloadFromStorage: downloadFromStorage100,
       getExtensionFromMimeType: () => 'txt',
       logger: logger,
@@ -1380,7 +1364,6 @@ Deno.test("generateContributions - Validation: Rejects when idempotencyKey is mi
         mockPayload,
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
             downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => 'txt',
             logger: logger,
@@ -1418,7 +1401,6 @@ Deno.test("generateContributions - Validation: Rejects when idempotencyKey is em
         mockPayload,
         { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content' }),
             downloadFromStorage: downloadFromStorage100,
             getExtensionFromMimeType: () => 'txt',
             logger: logger,
@@ -1508,7 +1490,6 @@ Deno.test("generateContributions - Derives per-job idempotency key and includes 
         mockPayload,
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
             downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
@@ -1606,7 +1587,6 @@ Deno.test("generateContributions - On unique constraint violation on idempotency
         mockPayload,
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
             downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,
@@ -1683,7 +1663,6 @@ Deno.test("generateContributions - Normal successful job creation with unique id
         mockPayload,
         { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
         {
-            callUnifiedAIModel: () => Promise.resolve({ content: 'ok' }),
             downloadFromStorage: downloadFromStorage1,
             getExtensionFromMimeType: () => 'txt',
             logger,

@@ -56,7 +56,7 @@ export const ChatApiRequestSchema = z.object({
     content: z.string()
   })).optional(),
   resourceDocuments: z.array(z.object({
-    id: z.string().optional(),
+    id: z.string(),
     content: z.string(),
   })).optional(),
   organizationId: z.string().uuid({ message: "If provided, organizationId must be a valid UUID." }).optional(),

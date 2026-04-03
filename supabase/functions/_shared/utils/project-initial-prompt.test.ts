@@ -49,6 +49,7 @@ Deno.test('getInitialPromptContent - should return direct initial_user_prompt if
     repo_url: null,
     selected_domain_overlay_id: null,
     user_domain_overlay_values: null,
+    idempotency_key: null,
   };
   const result = await getInitialPromptContent(mockDbClient as unknown as SupabaseClient<Database>, project, mockLogger, downloadFromStorage);
   expect(result).toEqual({ content: 'This is a direct prompt.' });
@@ -70,6 +71,7 @@ Deno.test('getInitialPromptContent - should return content from resource if init
     repo_url: null,
     selected_domain_overlay_id: null,
     user_domain_overlay_values: null,
+    idempotency_key: null,
   };
 
   const mockResource = { storage_bucket: 'bucket', storage_path: 'path/to', file_name: 'resource.txt' };
@@ -114,6 +116,7 @@ Deno.test('getInitialPromptContent - should return error if resource fetch fails
     repo_url: null,
     selected_domain_overlay_id: null,
     user_domain_overlay_values: null,
+    idempotency_key: null,
   };
   const dbError = { message: 'Resource not found', details: '', hint: '', code: 'PGRST116' };
 
@@ -147,6 +150,7 @@ Deno.test('getInitialPromptContent - should return fallback content if no direct
     repo_url: null,
     selected_domain_overlay_id: null,
     user_domain_overlay_values: null,
+    idempotency_key: null,
   };
   const result = await getInitialPromptContent(mockDbClient as unknown as SupabaseClient<Database>, project, mockLogger, downloadFromStorage);
   expect(result).toEqual({ error: 'No prompt provided.' });

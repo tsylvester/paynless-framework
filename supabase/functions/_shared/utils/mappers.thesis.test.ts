@@ -55,6 +55,7 @@ describe('mapToStageWithRecipeSteps', () => {
                   step_description: 'Generate HeaderContext JSON that orchestrates downstream Thesis documents.',
               }, ],
           }, ],
+          minimum_balance: 0,
       };
 
       const actual = mapToStageWithRecipeSteps(mockDbResponse);
@@ -108,6 +109,7 @@ describe('mapToStageWithRecipeSteps', () => {
                     step_description: 'Create the business case document using the shared HeaderContext.',
                 }, ],
             }, ],
+            minimum_balance: 0,
         };
 
         const actual = mapToStageWithRecipeSteps(mockDbResponse);
@@ -161,6 +163,7 @@ describe('mapToStageWithRecipeSteps', () => {
                     step_description: 'Produce the feature specification document using the shared HeaderContext.',
                 }, ],
             }, ],
+            minimum_balance: 0,
         };
 
         const actual = mapToStageWithRecipeSteps(mockDbResponse);
@@ -214,6 +217,7 @@ describe('mapToStageWithRecipeSteps', () => {
                     step_description: 'Produce the technical approach overview using the shared HeaderContext.',
                 }, ],
             }, ],
+            minimum_balance: 0,
         };
 
         const actual = mapToStageWithRecipeSteps(mockDbResponse);
@@ -267,6 +271,7 @@ describe('mapToStageWithRecipeSteps', () => {
                     step_description: 'Produce the success metrics document using the shared HeaderContext.',
                 }, ],
             }, ],
+            minimum_balance: 0,
         };
 
         const actual = mapToStageWithRecipeSteps(mockDbResponse);

@@ -102,13 +102,13 @@ import { computeExpectedCounts } from './computeExpectedCounts.ts';
 import { buildDocumentDescriptors } from './buildDocumentDescriptors.ts';
 import { buildJobProgressDtos } from './buildJobProgressDtos.ts';
 import { getStageDocumentFeedback } from './getStageDocumentFeedback.ts';
-import { callUnifiedAIModel } from './callModel.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
 import type { DialecticServiceResponse, DialecticFeedbackRow, SaveContributionEditFn, SaveContributionEditContext, GetStageDocumentFeedbackDeps, GetAllStageProgressDeps } from './dialectic.interface.ts';
 import type { Database } from '../types_db.ts';
+import { assembleChunks } from "../_shared/utils/assembleChunks/assembleChunks.ts";
 
 console.log("dialectic-service function started");
 
@@ -235,6 +235,7 @@ export async function handleRequest(
   const FileManagerDependencies = {
     constructStoragePath: constructStoragePath,
     logger: logger,
+    assembleChunks,
   };
 
   const getUserFnForRequest: GetUserFn = async (): Promise<GetUserFnResult> => {
@@ -449,7 +450,6 @@ export async function handleRequest(
 
           logger.info("[generateContributions handler] Creating dependencies.");
           const deps: GenerateContributionsDeps = {
-            callUnifiedAIModel: callUnifiedAIModel,
             downloadFromStorage: (_supabase: SupabaseClient, bucket: string, path: string) => downloadFromStorage(adminClient as SupabaseClient<Database>, bucket, path),
             getExtensionFromMimeType: getExtensionFromMimeType,
             logger: logger,

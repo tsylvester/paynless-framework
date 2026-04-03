@@ -14,7 +14,7 @@ const mockRecipeStep: DialecticStageRecipeStep = {
     granularity_strategy: 'all_to_one',
     inputs_required: [],
     inputs_relevance: [],
-    outputs_required: [],
+    outputs_required: { documents: [{ artifact_class: 'rendered_document', file_type: 'markdown', document_key: FileType.business_case, template_filename: 'business_case.md' }] },
     step_slug: 'test-step',
     step_name: 'Test Step',
     execution_order: 1,
@@ -50,7 +50,8 @@ Deno.test('Type Guard: isProjectContext', async (t) => {
             status: '',
             updated_at: '',
             user_domain_overlay_values: null,
-            user_id: ''
+            user_id: '',
+            idempotency_key: null,
         };
         assert(isProjectContext(context));
     });
@@ -94,6 +95,7 @@ Deno.test('Type Guard: isStageContext', async (t) => {
             active_recipe_instance_id: null,
             expected_output_template_ids: [],
             recipe_template_id: null,
+            minimum_balance: 0,
         };
         assert(isStageContext(context));
     });

@@ -7,8 +7,10 @@ import type {
     ChatMessage,
     ChatHandlerDeps,
     ILogger,
-    AiProviderAdapter
+    AiProviderAdapter,
+    AdapterStreamChunk,
 } from "../_shared/types.ts";
+import { calculateActualChatCost } from "../_shared/utils/cost_utils.ts";
 import {
   // Shared instances & state
   supabaseAdminClient,
@@ -23,6 +25,7 @@ import {
   type ProcessedResourceInfo // Added ProcessedResourceInfo here
 } from "../_shared/_integration.test.utils.ts";
 import { createChatServiceHandler, defaultDeps } from "./index.ts";
+import { getAiProviderAdapter, testProviderMap } from "../_shared/ai_service/factory.ts";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "../_shared/_integration.test.utils.ts";
 import type { Database, Json } from "../types_db.ts";
 import { createMockSupabaseClient, type MockQueryBuilderState, type MockResolveQueryResult } from "../_shared/supabase.mock.ts";
@@ -32,6 +35,18 @@ import type { TokenWalletServiceMethodImplementations } from '../_shared/service
 import { ChatTestConstants } from './_chat.test.utils.ts';
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { isTokenUsage } from "../_shared/utils/type_guards.ts";
+import type { FactoryDependencies } from "../_shared/types.ts";
+
+function createNoopStream() {
+  return async function* (
+    _request: ChatApiRequest,
+    _modelIdentifier: string,
+  ): AsyncGenerator<AdapterStreamChunk> {
+    const textDeltaChunk: AdapterStreamChunk = { type: 'text_delta', text: '' };
+    yield textDeltaChunk;
+    return;
+  };
+}
 
 // Helper function to get provider data from processedResources
 async function getProviderForTest(
@@ -69,7 +84,14 @@ async function getProviderForTest(
 
 // Build a production-style request handler for tests
 function createRequestHandlerForTests(depsOverride?: Partial<ChatHandlerDeps>) {
-  const deps: ChatHandlerDeps = { ...defaultDeps, ...depsOverride };
+  const deps: ChatHandlerDeps = {
+    ...defaultDeps,
+    getAiProviderAdapter: (dependencies: FactoryDependencies) => getAiProviderAdapter({
+      ...dependencies,
+      providerMap: testProviderMap,
+    }),
+    ...depsOverride,
+  };
   const adminClient = currentTestDeps.supabaseClient as SupabaseClient<Database>;
   const getSupabaseClient = (token: string | null) => currentTestDeps.createSupabaseClient(
     SUPABASE_URL!,
@@ -135,6 +157,7 @@ export async function runHappyPathTests(
             },
             finish_reason: 'max_tokens'
           }),
+          sendMessageStream: createNoopStream(),
           listModels: async () => []
         })
       };
@@ -169,10 +192,8 @@ export async function runHappyPathTests(
       assertEquals(responseJson.userMessage?.chat_id, responseJson.chatId);
       assertEquals(responseJson.assistantMessage.chat_id, responseJson.chatId);
 
-      const expectedCost = assistantMessageTokenUsage.total_tokens > 0
-        ? assistantMessageTokenUsage.total_tokens
-        : assistantMessageTokenUsage.prompt_tokens + assistantMessageTokenUsage.completion_tokens;
-      const expectedBalance = initialBalance - Math.ceil(expectedCost);
+      const expectedCost = calculateActualChatCost(assistantMessageTokenUsage, providerConfig);
+      const expectedBalance = initialBalance - expectedCost;
 
       const { data: wallet, error: walletError } = await supabaseAdminClient
         .from('token_wallets')
@@ -232,10 +253,8 @@ export async function runHappyPathTests(
       const usageCostlyRaw = responseJsonCostly.assistantMessage.token_usage;
       if (!isTokenUsage(usageCostlyRaw)) throw new Error("Invalid token_usage in costly model response");
       const usageCostly: TokenUsage = usageCostlyRaw;
-      const expectedCostCostly = usageCostly.total_tokens > 0
-        ? usageCostly.total_tokens
-        : usageCostly.prompt_tokens + usageCostly.completion_tokens;
-      const expectedBalance = initialBalance - Math.ceil(expectedCostCostly);
+      const expectedCostCostly = calculateActualChatCost(usageCostly, providerConfig);
+      const expectedBalance = initialBalance - expectedCostCostly;
 
       const { data: wallet, error: walletError } = await supabaseAdminClient
           .from('token_wallets')
@@ -281,11 +300,7 @@ export async function runHappyPathTests(
       const firstUsageRaw = firstResponseJson.assistantMessage.token_usage;
       if (!isTokenUsage(firstUsageRaw)) throw new Error("Invalid token_usage in first response");
       const firstUsage: TokenUsage = firstUsageRaw;
-      const firstMessageCost = Math.ceil(
-        firstUsage.total_tokens > 0
-          ? firstUsage.total_tokens
-          : (firstUsage.prompt_tokens + firstUsage.completion_tokens)
-      );
+      const firstMessageCost = calculateActualChatCost(firstUsage, providerConfig);
       const balanceAfterFirstMessage = initialBalance - firstMessageCost;
 
       // --- 2. Rewind operation ---
@@ -305,75 +320,8 @@ export async function runHappyPathTests(
         body: JSON.stringify(rewindRequestBody),
       });
 
-      // Use mocked handler for rewind so RPC is available
-      const { deps: rewindDeps, mockSupabaseClientSetup: rewindMockClient } = createTestDeps(
-        {
-          genericMockResults: {
-            'ai_providers': {
-              select: { data: [{ id: providerInfo.id, name: "Dummy Test Provider", api_identifier: providerInfo.api_identifier, provider: 'dummy', is_active: true, default_model_id: "some-model", config: providerConfig }], error: null, status: 200, count: 1 }
-            },
-            'chats': {
-              insert: { data: [{ id: firstResponseJson.chatId, user_id: testUserId, system_prompt_id: null, title: "rewind" }], error: null, status: 201, count: 1 },
-              select: { data: [{ id: firstResponseJson.chatId, user_id: testUserId, system_prompt_id: null, title: "rewind" }], error: null, status: 200, count: 1 }
-            },
-            'chat_messages': {
-              select: async (state) => {
-                const idFilter = state.filters.find(f => f.type === 'eq' && f.column === 'id');
-                const chatIdFilter = state.filters.find(f => f.type === 'eq' && f.column === 'chat_id');
-                const isActiveFilter = state.filters.find(f => f.type === 'eq' && f.column === 'is_active_in_thread');
-                const now = new Date();
-                const earlier = new Date(now.getTime() - 1000).toISOString();
-                const nowIso = now.toISOString();
-                // Query for rewind point created_at
-                if (idFilter && idFilter.value === firstResponseJson.assistantMessage.id) {
-                  return Promise.resolve({ data: [{ created_at: earlier }], error: null, count: 1, status: 200, statusText: 'OK' });
-                }
-                // History up to rewind point
-                if (chatIdFilter && chatIdFilter.value === firstResponseJson.chatId && isActiveFilter && isActiveFilter.value === true) {
-                  return Promise.resolve({ data: [
-                    { id: firstResponseJson.userMessage.id, chat_id: firstResponseJson.chatId, user_id: testUserId, role: 'user', content: firstResponseJson.userMessage.content, is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, error_type: null, response_to_message_id: null, created_at: earlier, updated_at: earlier },
-                    { id: firstResponseJson.assistantMessage.id, chat_id: firstResponseJson.chatId, user_id: null, role: 'assistant', content: firstResponseJson.assistantMessage.content, is_active_in_thread: true, ai_provider_id: providerInfo.id, system_prompt_id: null, token_usage: firstResponseJson.assistantMessage.token_usage, error_type: null, response_to_message_id: firstResponseJson.userMessage.id, created_at: nowIso, updated_at: nowIso },
-                  ], error: null, count: 2, status: 200, statusText: 'OK' });
-                }
-                return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
-              },
-              insert: (state) => {
-                const inserted = Array.isArray(state.insertData) ? state.insertData[0] : state.insertData;
-                if (inserted && (inserted).role === 'user') {
-                  return Promise.resolve({ data: [{ ...ChatTestConstants.mockUserDbRow, id: crypto.randomUUID(), chat_id: firstResponseJson.chatId, content: inserted.content }], error: null, status: 201, count: 1 });
-                }
-                if (inserted && (inserted).role === 'assistant') {
-                  return Promise.resolve({ data: [{ ...ChatTestConstants.mockAssistantDbRow, id: crypto.randomUUID(), chat_id: firstResponseJson.chatId, content: inserted.content, token_usage: inserted.token_usage }], error: null, status: 201, count: 1 });
-                }
-                return Promise.resolve({ data: null, error: new Error('Unexpected insert'), status: 500, count: 0 });
-              }
-            }
-          },
-          rpcResults: {
-            'perform_chat_rewind': async () => ({
-              data: {
-                id: crypto.randomUUID(),
-                chat_id: firstResponseJson.chatId,
-                user_id: null,
-                role: 'assistant',
-                content: 'Rewind assistant response',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                is_active_in_thread: true,
-                token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
-                ai_provider_id: providerInfo.id,
-                system_prompt_id: null,
-                error_type: null,
-                response_to_message_id: firstResponseJson.userMessage.id,
-              },
-              error: null
-            })
-          }
-        }
-      );
-      const rewindAdminClient = rewindMockClient.client as unknown as SupabaseClient<Database>;
-      const getRewindUserClient = (_token: string | null) => rewindMockClient.client as unknown as SupabaseClient<Database>;
-      const rewindHandler = createChatServiceHandler(rewindDeps, getRewindUserClient, rewindAdminClient);
+      // Keep this as a true integration boundary: same handler path as first turn.
+      const rewindHandler = createRequestHandlerForTests();
       const rewindResponse = await rewindHandler(rewindRequest);
       const rewindResponseText = await rewindResponse.text();
       assertEquals(rewindResponse.status, 200, `Rewind response failed: ${rewindResponseText}`);
@@ -382,7 +330,7 @@ export async function runHappyPathTests(
       const rewindUsageRaw = rewindJson.assistantMessage.token_usage;
       if (!isTokenUsage(rewindUsageRaw)) throw new Error("Invalid token_usage in rewind response");
       const rewindUsage: TokenUsage = rewindUsageRaw;
-      const rewindMessageCost = Math.ceil(rewindUsage.total_tokens > 0 ? rewindUsage.total_tokens : (rewindUsage.prompt_tokens + rewindUsage.completion_tokens));
+      const rewindMessageCost = calculateActualChatCost(rewindUsage, providerConfig);
       
       // The final balance should be the balance after the first message, minus the cost of the rewind.
       // The cost of the first message is NOT refunded.
@@ -459,10 +407,9 @@ export async function runHappyPathTests(
       // Finally, verify the wallet debit
       const sysUsageRaw = responseJson.assistantMessage.token_usage;
       if (!isTokenUsage(sysUsageRaw)) throw new Error("Invalid token_usage in system prompt response");
-      const expectedCostSys = sysUsageRaw.total_tokens > 0
-        ? sysUsageRaw.total_tokens
-        : sysUsageRaw.prompt_tokens + sysUsageRaw.completion_tokens;
-      const expectedBalance = initialBalance - Math.ceil(expectedCostSys);
+      const sysUsage: TokenUsage = sysUsageRaw;
+      const expectedCostSys = calculateActualChatCost(sysUsage, providerConfig);
+      const expectedBalance = initialBalance - expectedCostSys;
       
       const { data: wallet, error: walletError } = await supabaseAdminClient
         .from('token_wallets')
@@ -516,6 +463,7 @@ export async function runHappyPathTests(
             },
             finish_reason: 'max_tokens',
           }),
+          sendMessageStream: createNoopStream(),
           listModels: async () => [],
         }),
       };

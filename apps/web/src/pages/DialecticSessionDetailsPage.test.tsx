@@ -539,4 +539,137 @@ describe('DialecticSessionDetailsPage', () => {
     expect(sidebar).toContainElement(screen.getByTestId('mock-generate-contribution-button'));
     expect(sidebar).toContainElement(screen.getByTestId('mock-stage-tab-card'));
   });
+
+  describe('sessionContextReady gating', () => {
+    it('should render skeleton and NOT render StageTabCard when activeContextSessionId does not match urlSessionId', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues({
+        activeContextProjectId: mockProjectId,
+        activeContextSessionId: mockOtherSessionId,
+        activeSessionDetail: mockOtherSession,
+        currentProjectDetail: mockProject,
+        isLoadingActiveSessionDetail: false,
+        isLoadingProjectDetail: false,
+        activeSessionDetailError: null,
+        projectDetailError: null,
+      });
+
+      renderWithRouter({});
+
+      await waitFor(() => {
+        expect(screen.getByText(/Loading session details.../i)).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('mock-stage-tab-card')).not.toBeInTheDocument();
+    });
+
+    it('should render skeleton and NOT render StageTabCard when activeContextProjectId does not match urlProjectId', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues({
+        activeContextProjectId: 'different-project-id',
+        activeContextSessionId: mockSessionId,
+        activeSessionDetail: mockSession,
+        currentProjectDetail: mockProject,
+        isLoadingActiveSessionDetail: false,
+        isLoadingProjectDetail: false,
+        activeSessionDetailError: null,
+        projectDetailError: null,
+      });
+
+      renderWithRouter({});
+
+      await waitFor(() => {
+        expect(screen.getByText(/Loading session details.../i)).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('mock-stage-tab-card')).not.toBeInTheDocument();
+    });
+
+    it('should render skeleton when activeSessionDetail is null but activeContextSessionId matches URL', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues({
+        activeContextProjectId: mockProjectId,
+        activeContextSessionId: mockSessionId,
+        activeSessionDetail: null,
+        currentProjectDetail: mockProject,
+        isLoadingActiveSessionDetail: false,
+        isLoadingProjectDetail: false,
+        activeSessionDetailError: null,
+        projectDetailError: null,
+      });
+
+      renderWithRouter({});
+
+      await waitFor(() => {
+        expect(screen.getByText(/Loading session details.../i)).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('mock-stage-tab-card')).not.toBeInTheDocument();
+    });
+
+    it('should render skeleton when activeSessionDetail.id does not match urlSessionId', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues({
+        activeContextProjectId: mockProjectId,
+        activeContextSessionId: mockSessionId,
+        activeSessionDetail: mockOtherSession,
+        currentProjectDetail: mockProject,
+        isLoadingActiveSessionDetail: false,
+        isLoadingProjectDetail: false,
+        activeSessionDetailError: null,
+        projectDetailError: null,
+      });
+
+      renderWithRouter({});
+
+      await waitFor(() => {
+        expect(screen.getByText(/Loading session details.../i)).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('mock-stage-tab-card')).not.toBeInTheDocument();
+    });
+
+    it('should render session chrome when all context conditions align and not loading', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      setDialecticStateValues({
+        activeContextProjectId: mockProjectId,
+        activeContextSessionId: mockSessionId,
+        activeSessionDetail: mockSession,
+        currentProjectDetail: mockProject,
+        currentProcessTemplate: mockProcessTemplate,
+        viewingStageSlug: mockStages[0].slug,
+        isLoadingActiveSessionDetail: false,
+        isLoadingProjectDetail: false,
+        activeSessionDetailError: null,
+        projectDetailError: null,
+      });
+
+      renderWithRouter({});
+
+      await waitFor(() => {
+        expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
+      });
+      expect(screen.getByTestId('mock-stage-tab-card')).toBeInTheDocument();
+      expect(screen.getByTestId('mock-generate-contribution-button')).toBeInTheDocument();
+    });
+
+    it('should preserve existing error-state rendering when projectError is present', async () => {
+      mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+      const mockError: ApiError = { message: 'Project fetch failed', code: 'PROJECT_ERROR' };
+      setDialecticStateValues({
+        activeContextProjectId: mockProjectId,
+        activeContextSessionId: mockSessionId,
+        activeSessionDetail: null,
+        currentProjectDetail: null,
+        isLoadingActiveSessionDetail: false,
+        isLoadingProjectDetail: false,
+        activeSessionDetailError: null,
+        projectDetailError: mockError,
+      });
+
+      renderWithRouter({});
+
+      await waitFor(() => {
+        expect(screen.getByText('Error Loading Session')).toBeInTheDocument();
+        expect(screen.getByText('Project fetch failed')).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('mock-stage-tab-card')).not.toBeInTheDocument();
+    });
+  });
 }); 

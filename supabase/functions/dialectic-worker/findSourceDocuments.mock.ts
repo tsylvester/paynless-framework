@@ -1,4 +1,4 @@
-import { FindSourceDocumentsFn } from './JobContext.interface.ts';
+import { FindSourceDocumentsFn } from './createJobContext/JobContext.interface.ts';
 import { SourceDocument } from '../dialectic-service/dialectic.interface.ts';
 
 export type MockFindSourceDocumentsConfig =

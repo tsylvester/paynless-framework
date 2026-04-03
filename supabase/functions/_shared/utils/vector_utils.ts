@@ -1,37 +1,11 @@
 // supabase/functions/_shared/utils/vector_utils.ts
 
-import { type SourceDocument, type RelevanceRule } from '../../dialectic-service/dialectic.interface.ts';
-import { type ILogger, type Messages } from '../types.ts';
-import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { Database } from '../../types_db.ts';
-import { IEmbeddingClient } from '../services/indexing_service.interface.ts';
-
-// --- START: Self-Contained Interfaces for Compression ---
-
-/**
- * Defines the specific dependencies required by the compression scoring logic.
- * This avoids a circular dependency on ExecuteModelCallAndSaveParams.
- */
-export interface CompressionDeps {
-    embeddingClient?: IEmbeddingClient;
-    logger?: ILogger;
-}
-
-/**
- * Defines the function signature for a compression strategy.
- */
-export interface ICompressionStrategy {
-    (
-        dbClient: SupabaseClient<Database>,
-        deps: CompressionDeps,
-        documents: SourceDocument[],
-        history: Messages[],
-        currentUserPrompt: string,
-        inputsRelevance?: RelevanceRule[],
-    ): Promise<CompressionCandidate[]>;
-}
-
-// --- END: Self-Contained Interfaces for Compression ---
+import {
+    CompressionStrategyDeps,
+    CompressionStrategyParams,
+    CompressionStrategyPayload,
+} from './vector_utils.interface.ts';
+import { type Messages, type ResourceDocument, type ResourceDocuments } from '../types.ts';
 
 /**
  * Calculates the dot product of two vectors.
@@ -100,8 +74,8 @@ export type CompressionCandidate = {
  * A lower score is worse (less relevant).
  */
 export async function scoreResourceDocuments(
-    deps: CompressionDeps,
-    documents: SourceDocument[],
+    deps: CompressionStrategyDeps,
+    documents: ResourceDocuments,
     currentUserPrompt: string,
 ): Promise<CompressionCandidate[]> {
     if (!deps.embeddingClient) {
@@ -115,8 +89,6 @@ export async function scoreResourceDocuments(
 
     for (let i = 0; i < documents.length; i++) {
         const doc = documents[i];
-        if (!doc.id || !doc.content) continue;
-
         const docEmbeddingResponse = await deps.embeddingClient.getEmbedding(doc.content);
         const relevance = cosineSimilarity(promptEmbeddingResponse.embedding, docEmbeddingResponse.embedding);
         
@@ -188,13 +160,16 @@ export function scoreHistory(
  * Creates a unified list of all compression candidates (documents and history)
  */
 export async function getSortedCompressionCandidates(
-    dbClient: SupabaseClient<Database>,
-    deps: CompressionDeps,
-    documents: SourceDocument[],
-    history: Messages[],
-    currentUserPrompt: string,
-    inputsRelevance?: RelevanceRule[],
+    deps: CompressionStrategyDeps,
+    params: CompressionStrategyParams,
+    payload: CompressionStrategyPayload,
 ): Promise<CompressionCandidate[]> {
+    const dbClient: CompressionStrategyDeps['dbClient'] = deps.dbClient;
+    const inputsRelevance: CompressionStrategyParams['inputsRelevance'] = params.inputsRelevance;
+    const documents: CompressionStrategyPayload['documents'] = payload.documents;
+    const history: CompressionStrategyPayload['history'] = payload.history;
+    const currentUserPrompt: CompressionStrategyPayload['currentUserPrompt'] = payload.currentUserPrompt;
+
     const documentCandidates = await scoreResourceDocuments(deps, documents, currentUserPrompt);
     const historyCandidates = scoreHistory(history);
 
@@ -215,7 +190,7 @@ export async function getSortedCompressionCandidates(
     }
 
     // Helper to compute an effective score for a document candidate using matrix weighting
-    function getEffectiveScoreForDocumentCandidate(candidate: CompressionCandidate, correspondingDoc: SourceDocument): number {
+    function getEffectiveScoreForDocumentCandidate(candidate: CompressionCandidate, correspondingDoc: ResourceDocument): number {
         const baseSimilarity = candidate.valueScore; // cosine similarity already computed
 
         // Identity: require document_key and type; stage_slug is only used if a rule provides it.

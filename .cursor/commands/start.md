@@ -1,0 +1,1 @@
+Read @.cursor/rules/rules.md then read this node and the files it references. Analyze the files against the node description to identify all errors, omissions, and discrepencies. Explain how to transform the files to comply with the description, then propose an implementation that complies with your rules. Halt. Do not edit any files. 

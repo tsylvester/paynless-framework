@@ -155,7 +155,7 @@ export async function setupSecondUserContextUtil(): Promise<SecondUserFullContex
   assertExists(signInData.session, 'Second user session data missing after sign in.');
   client.auth.setSession(signInData.session);
 
-  const service = new TokenWalletService(client);
+  const service = new TokenWalletService(client, adminClient);
   return { user, client, service };
 }
 
@@ -296,7 +296,7 @@ export async function setupPrimaryTestUserAndClient(): Promise<PrimaryTestUserCo
   }
   assertExists(userProfile, 'Primary test user profile should exist.');
 
-  const serviceInstance = new TokenWalletService(serviceClient);
+  const serviceInstance = new TokenWalletService(serviceClient, adminClient);
 
   return {
     userId: primaryUserId,

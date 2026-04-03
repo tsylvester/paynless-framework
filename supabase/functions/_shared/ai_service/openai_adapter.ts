@@ -1,8 +1,9 @@
 import OpenAI from 'npm:openai';
-import type { ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
-import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, EmbeddingResponse } from '../types.ts';
+import type { ChatCompletionChunk, ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
+import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, AdapterStreamChunk, FinishReason, ILogger, AiModelExtendedConfig, EmbeddingResponse } from '../types.ts';
 import type { Tables } from '../../types_db.ts';
 import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
+import { isResourceDocument } from '../utils/type-guards/type_guards.chat.ts';
 
 
 /**
@@ -30,38 +31,46 @@ export class OpenAiAdapter {
     this.logger.info(`[OpenAiAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
   }
 
-  async sendMessage(
+  /**
+   * Shared payload for `sendMessage` and `sendMessageStream` (validation + streaming chat.completions params).
+   */
+  private _prepareOpenAiStreamingRequest(
     request: ChatApiRequest,
     modelIdentifier: string,
-  ): Promise<AdapterResponsePayload> {
-    this.logger.debug('[OpenAiAdapter] sendMessage called', { modelIdentifier });
+  ): {
+    modelApiName: string;
+    payload: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming;
+  } {
     const modelApiName = modelIdentifier.replace(/^openai-/i, '');
-    
-    // Ensure the adapter is configured for the requested model
+
     const configApiName = this.modelConfig.api_identifier.replace(/^openai-/i, '');
     if (modelApiName !== configApiName) {
-        throw new Error(`[OpenAiAdapter] Model mismatch: requested '${modelApiName}' but adapter is configured for '${configApiName}'.`);
+      throw new Error(`[OpenAiAdapter] Model mismatch: requested '${modelApiName}' but adapter is configured for '${configApiName}'.`);
     }
 
-    // Placeholder for token validation logic, as per the plan
-    // This should use a token counting utility and check against this.modelConfig
     const maxInputTokens = this.modelConfig.provider_max_input_tokens || this.modelConfig.context_window_tokens;
     if (maxInputTokens) {
-        // const tokenCount = countTokens(request.messages, this.modelConfig); // PSEUDO-CODE
-        // if (tokenCount > maxInputTokens) {
-        //     throw new Error(`[OpenAiAdapter] Input token count (${tokenCount}) exceeds model limit of ${maxInputTokens}.`);
-        // }
+      // const tokenCount = countTokens(request.messages, this.modelConfig); // PSEUDO-CODE
     }
 
-    const openaiMessages: ChatCompletionMessageParam[] = (request.messages ?? []).map(msg => ({
+    const openaiMessages: ChatCompletionMessageParam[] = (request.messages ?? []).map((msg): ChatCompletionMessageParam => ({
       role: msg.role,
       content: msg.content,
     })).filter(msg => msg.content);
 
     if (request.resourceDocuments && request.resourceDocuments.length > 0) {
-      const docParts: string[] = request.resourceDocuments.map((doc) =>
-        `[Document: ${doc.document_key ?? ''} from ${doc.stage_slug ?? ''}]\n${doc.content}`
-      );
+      const docParts: string[] = request.resourceDocuments.map((doc) => {
+        if (isResourceDocument(doc)) {
+          if (doc.document_key.length === 0) {
+            throw new Error('[OpenAiAdapter] ResourceDocument has empty document_key');
+          }
+          if (doc.stage_slug.length === 0) {
+            throw new Error('[OpenAiAdapter] ResourceDocument has empty stage_slug');
+          }
+          return `[Document: ${doc.document_key} from ${doc.stage_slug}]\n${doc.content}`;
+        }
+        return `[Document: ${doc.id}]\n${doc.content}`;
+      });
       openaiMessages.push({ role: 'user', content: docParts.join('\n\n') });
     }
 
@@ -69,20 +78,20 @@ export class OpenAiAdapter {
       openaiMessages.push({ role: 'user', content: request.message });
     }
 
-    const payload: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
+    const payload: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
       model: modelApiName,
       messages: openaiMessages,
+      stream: true,
+      stream_options: { include_usage: true },
     };
 
-    // Guardrail: Respect client-provided cap; otherwise cap by the tighter of model caps
-    const isOSeries = modelApiName.startsWith('gpt-4o') || modelApiName.startsWith('o');
+    const usesLegacyMaxTokens = modelApiName.startsWith('gpt-3.5-turbo') || modelApiName.startsWith('gpt-4-turbo') || modelApiName === 'gpt-4';
     const applyCap = (cap: number) => {
       if (!(cap > 0)) return;
-      if (isOSeries) {
-        // Prefer new param for o-series
-        payload.max_completion_tokens = cap;
-      } else {
+      if (usesLegacyMaxTokens) {
         payload.max_tokens = cap;
+      } else {
+        payload.max_completion_tokens = cap;
       }
     };
 
@@ -100,53 +109,83 @@ export class OpenAiAdapter {
       }
     }
 
+    return { modelApiName, payload };
+  }
+
+  private _mapOpenAiFinishReason(
+    finishReason: ChatCompletionChunk.Choice['finish_reason'] | undefined,
+    modelApiName: string,
+  ): FinishReason {
+    switch (finishReason) {
+      case 'stop':
+        return 'stop';
+      case 'length':
+        return 'length';
+      case 'tool_calls':
+        return 'tool_calls';
+      case 'content_filter':
+        return 'content_filter';
+      case 'function_call':
+        return 'function_call';
+      default:
+        if (finishReason) {
+          this.logger.warn(`OpenAI returned an unknown finish reason: ${finishReason}`, { modelApiName, finishReason });
+        }
+        return 'unknown';
+    }
+  }
+
+  async sendMessage(
+    request: ChatApiRequest,
+    modelIdentifier: string,
+  ): Promise<AdapterResponsePayload> {
+    this.logger.debug('[OpenAiAdapter] sendMessage called', { modelIdentifier });
+    const { modelApiName, payload } = this._prepareOpenAiStreamingRequest(request, modelIdentifier);
+
     this.logger.info(`Sending request to OpenAI model: ${modelApiName}`);
-    
+
     try {
-      const completion = await this.client.chat.completions.create(payload);
-      
-      const choice = completion.choices?.[0];
-      const aiContent = choice?.message?.content?.trim() || null;
-      
+      const stream = await this.client.chat.completions.create(payload);
+
+      let assembled: string = '';
+      let finishReasonFromStream: ChatCompletionChunk.Choice['finish_reason'] | undefined = undefined;
+      let tokenUsageFromStream: ChatCompletionChunk['usage'] = undefined;
+
+      for await (const chunk of stream) {
+        const choice = chunk.choices?.[0];
+        if (choice !== undefined) {
+          const deltaContent: string | null | undefined = choice.delta?.content;
+          if (typeof deltaContent === 'string') {
+            assembled += deltaContent;
+          }
+          if (choice.finish_reason != null) {
+            finishReasonFromStream = choice.finish_reason;
+          }
+        }
+        if (chunk.usage != null) {
+          tokenUsageFromStream = chunk.usage;
+        }
+      }
+
+      const aiContent: string | null = assembled.trim() || null;
+
       if (!aiContent) {
-        this.logger.error("OpenAI response missing message content:", { response: completion, modelApiName });
+        this.logger.error('OpenAI streamed response has no message content.', { modelApiName });
         throw new Error('OpenAI response content is empty or missing.');
       }
 
-      const finishReason = choice?.finish_reason;
-      let finish_reason: AdapterResponsePayload['finish_reason'];
+      const finish_reason: FinishReason = this._mapOpenAiFinishReason(
+        finishReasonFromStream,
+        modelApiName,
+      );
 
-      switch (finishReason) {
-        case 'stop':
-          finish_reason = 'stop';
-          break;
-        case 'length':
-          finish_reason = 'length';
-          break;
-        case 'tool_calls':
-          finish_reason = 'tool_calls';
-          break;
-        case 'content_filter':
-          finish_reason = 'content_filter';
-          break;
-        case 'function_call':
-          finish_reason = 'function_call';
-          break;
-        default:
-          finish_reason = 'unknown';
-          if (finishReason) {
-              this.logger.warn(`OpenAI returned an unknown finish reason: ${finishReason}`, { modelApiName, finishReason });
-          }
-          break;
-      }
-      
-      const tokenUsage = completion.usage;
+      const tokenUsage = tokenUsageFromStream;
 
       if (!tokenUsage) {
         this.logger.error('[OpenAiAdapter] OpenAI response did not include usage data.', { modelApiName });
         throw new Error('OpenAI response did not include usage data.');
       }
-      if(!isJson(tokenUsage)) {
+      if (!isJson(tokenUsage)) {
         this.logger.error('[OpenAiAdapter] OpenAI usage data is not a valid JSON object.', { modelApiName, tokenUsage });
         throw new Error('OpenAI usage data is not a valid JSON object.');
       }
@@ -158,9 +197,93 @@ export class OpenAiAdapter {
         token_usage: tokenUsage,
         finish_reason: finish_reason,
       };
-      
+
       this.logger.debug('[OpenAiAdapter] sendMessage successful', { modelApiName });
       return assistantResponse;
+    } catch (error) {
+      if (error instanceof OpenAI.APIError) {
+        this.logger.error(`OpenAI API error (${error.status}): ${error.message}`, { modelApiName, status: error.status });
+        throw new Error(`OpenAI API request failed: ${error.status} ${error.name}`);
+      }
+      if (error instanceof Error) {
+        this.logger.error(`Error sending message to OpenAI: ${error.message}`, { modelApiName, error });
+      } else {
+        this.logger.error(`Error sending message to OpenAI: ${error}`, { modelApiName, error });
+      }
+      throw error;
+    }
+  }
+
+  async *sendMessageStream(
+    request: ChatApiRequest,
+    modelIdentifier: string,
+  ): AsyncGenerator<AdapterStreamChunk> {
+    this.logger.debug('[OpenAiAdapter] sendMessageStream called', { modelIdentifier });
+    const { modelApiName, payload } = this._prepareOpenAiStreamingRequest(request, modelIdentifier);
+
+    this.logger.info(`Sending streaming request to OpenAI model: ${modelApiName}`);
+
+    try {
+      const stream = await this.client.chat.completions.create(payload);
+
+      let assembled: string = '';
+      let finishReasonFromStream: ChatCompletionChunk.Choice['finish_reason'] | undefined = undefined;
+      let tokenUsageFromStream: ChatCompletionChunk['usage'] = undefined;
+
+      for await (const chunk of stream) {
+        const choice = chunk.choices?.[0];
+        if (choice !== undefined) {
+          const deltaContent: string | null | undefined = choice.delta?.content;
+          if (typeof deltaContent === 'string') {
+            assembled += deltaContent;
+            yield { type: 'text_delta', text: deltaContent };
+          }
+          if (choice.finish_reason != null) {
+            finishReasonFromStream = choice.finish_reason;
+          }
+        }
+        if (chunk.usage != null) {
+          tokenUsageFromStream = chunk.usage;
+        }
+      }
+
+      const aiContent: string | null = assembled.trim() || null;
+
+      if (!aiContent) {
+        this.logger.error('OpenAI streamed response has no message content.', { modelApiName });
+        throw new Error('OpenAI response content is empty or missing.');
+      }
+
+      const tokenUsage = tokenUsageFromStream;
+
+      if (!tokenUsage) {
+        this.logger.error('[OpenAiAdapter] OpenAI response did not include usage data.', { modelApiName });
+        throw new Error('OpenAI response did not include usage data.');
+      }
+      if (!isJson(tokenUsage)) {
+        this.logger.error('[OpenAiAdapter] OpenAI usage data is not a valid JSON object.', { modelApiName, tokenUsage });
+        throw new Error('OpenAI usage data is not a valid JSON object.');
+      }
+
+      const promptTokens: number = tokenUsage.prompt_tokens;
+      const completionTokens: number = tokenUsage.completion_tokens;
+      const totalTokens: number = tokenUsage.total_tokens;
+
+      yield {
+        type: 'usage',
+        tokenUsage: {
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: totalTokens,
+        },
+      };
+
+      const mappedFinish: FinishReason = this._mapOpenAiFinishReason(
+        finishReasonFromStream,
+        modelApiName,
+      );
+
+      yield { type: 'done', finish_reason: mappedFinish };
     } catch (error) {
       if (error instanceof OpenAI.APIError) {
         this.logger.error(`OpenAI API error (${error.status}): ${error.message}`, { modelApiName, status: error.status });

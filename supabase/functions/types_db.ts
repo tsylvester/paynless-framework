@@ -1414,6 +1414,50 @@ export type Database = {
           },
         ]
       }
+      dialectic_sync_maps: {
+        Row: {
+          audience: string | null
+          created_at: string
+          document_key: string
+          friendly_name: string
+          id: string
+          layer: string
+          sort_order: number
+          stage_group: string
+          template_id: string
+        }
+        Insert: {
+          audience?: string | null
+          created_at?: string
+          document_key: string
+          friendly_name: string
+          id?: string
+          layer: string
+          sort_order?: number
+          stage_group: string
+          template_id: string
+        }
+        Update: {
+          audience?: string | null
+          created_at?: string
+          document_key?: string
+          friendly_name?: string
+          id?: string
+          layer?: string
+          sort_order?: number
+          stage_group?: string
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_sync_maps_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_recipe_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dialectic_trigger_logs: {
         Row: {
           created_at: string | null
@@ -1625,6 +1669,41 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      newsletter_events: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: string
+          processed_at: string | null
+          ref: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: string
+          processed_at?: string | null
+          ref?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: string
+          processed_at?: string | null
+          ref?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "newsletter_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -2092,6 +2171,10 @@ export type Database = {
           last_selected_org_id: string | null
           profile_privacy_setting: string
           role: Database["public"]["Enums"]["user_role"]
+          signup_ref: string | null
+          subscribed_at: string | null
+          synced_to_kit_at: string | null
+          unsubscribed_at: string | null
           updated_at: string
         }
         Insert: {
@@ -2105,6 +2188,10 @@ export type Database = {
           last_selected_org_id?: string | null
           profile_privacy_setting?: string
           role?: Database["public"]["Enums"]["user_role"]
+          signup_ref?: string | null
+          subscribed_at?: string | null
+          synced_to_kit_at?: string | null
+          unsubscribed_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -2118,6 +2205,10 @@ export type Database = {
           last_selected_org_id?: string | null
           profile_privacy_setting?: string
           role?: Database["public"]["Enums"]["user_role"]
+          signup_ref?: string | null
+          subscribed_at?: string | null
+          synced_to_kit_at?: string | null
+          unsubscribed_at?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -2327,34 +2418,20 @@ export type Database = {
         Returns: number
       }
       perform_chat_rewind: {
-        Args:
-          | {
-              p_chat_id: string
-              p_rewind_from_message_id: string
-              p_user_id: string
-              p_new_user_message_content: string
-              p_new_user_message_ai_provider_id: string
-              p_new_assistant_message_content: string
-              p_new_assistant_message_ai_provider_id: string
-              p_new_user_message_system_prompt_id?: string
-              p_new_assistant_message_token_usage?: Json
-              p_new_assistant_message_system_prompt_id?: string
-              p_new_assistant_message_error_type?: string
-            }
-          | {
-              p_chat_id: string
-              p_rewind_from_message_id: string
-              p_user_id: string
-              p_new_user_message_id: string
-              p_new_user_message_content: string
-              p_new_user_message_ai_provider_id: string
-              p_new_user_message_system_prompt_id: string
-              p_new_assistant_message_id: string
-              p_new_assistant_message_content: string
-              p_new_assistant_message_token_usage: Json
-              p_new_assistant_message_ai_provider_id: string
-              p_new_assistant_message_system_prompt_id: string
-            }
+        Args: {
+          p_chat_id: string
+          p_rewind_from_message_id: string
+          p_user_id: string
+          p_new_user_message_id: string
+          p_new_user_message_content: string
+          p_new_user_message_ai_provider_id: string
+          p_new_assistant_message_id: string
+          p_new_assistant_message_content: string
+          p_new_assistant_message_token_usage: Json
+          p_new_assistant_message_ai_provider_id: string
+          p_new_user_message_system_prompt_id?: string
+          p_new_assistant_message_system_prompt_id?: string
+        }
         Returns: {
           id: string
           chat_id: string

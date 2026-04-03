@@ -11,17 +11,10 @@ import { createMockSupabaseClient } from '../supabase.mock.ts';
 import { mockOpenAiAdapter, mockGetEmbeddingSpy } from '../ai_service/openai_adapter.mock.ts';
 import { type Database } from '../../../functions/types_db.ts';
 import { DummyAdapter } from "../ai_service/dummy_adapter.ts";
-import { MOCK_PROVIDER } from "../ai_service/dummy_adapter.test.ts";
+import { MOCK_PROVIDER } from "../ai_service/ai_provider.mock.ts";
 import { assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { createMockTokenWalletService } from "../services/tokenWalletService.mock.ts";
-
-// Mocks
-class MockLogger implements ILogger {
-  info = () => {};
-  warn = () => {};
-  error = () => {};
-  debug = () => {};
-}
+import { MockLogger } from '../logger.mock.ts';
 
 class MockTextSplitter implements ITextSplitter {
   splitText(text: string): Promise<string[]> {

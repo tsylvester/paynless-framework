@@ -23,6 +23,7 @@ const SYNTHESIS_STAGE_MOCK: DatabaseRecipeSteps = {
     id: 'mock-stage-synthesis',
     recipe_template_id: 'mock-template-synthesis-v1',
     slug: 'synthesis',
+    minimum_balance: 0,
     dialectic_stage_recipe_instances: [{
         cloned_at: null,
         created_at: '2025-11-05T11:59:00.000Z',

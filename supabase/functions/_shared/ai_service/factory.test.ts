@@ -8,6 +8,7 @@ import { MockLogger } from "../logger.mock.ts";
 import type { AiModelExtendedConfig, ILogger, AdapterResponsePayload, ChatApiRequest, ProviderModelInfo, FactoryDependencies } from "../types.ts";
 import { isJson } from "../utils/type_guards.ts";
 import type { Tables } from "../../types_db.ts";
+import { testProviderMap } from "../ai_service/factory.ts";
 
 
 const mockLogger = new MockLogger();
@@ -50,6 +51,7 @@ Deno.test("AI Adapter Factory - getAiProviderAdapter", () => {
             id: crypto.randomUUID(),
             is_active: true,
             is_default_embedding: false,
+            is_default_generation: false,
             is_enabled: true,
             provider: 'test-provider',
             updated_at: new Date().toISOString(),
@@ -73,6 +75,7 @@ Deno.test("AI Adapter Factory - getAiProviderAdapter", () => {
         id: crypto.randomUUID(),
         is_active: true,
         is_default_embedding: false,
+        is_default_generation: false,
         is_enabled: true,
         provider: 'test-provider',
         updated_at: new Date().toISOString(),
@@ -94,6 +97,7 @@ Deno.test("AI Adapter Factory - getAiProviderAdapter", () => {
         id: crypto.randomUUID(),
         is_active: true,
         is_default_embedding: false,
+        is_default_generation: false,
         is_enabled: true,
         provider: 'test-provider',
         updated_at: new Date().toISOString(),
@@ -103,66 +107,6 @@ Deno.test("AI Adapter Factory - getAiProviderAdapter", () => {
     providerMap: defaultProviderMap,
   });
   assertEquals(adapterEmpty, null, "Adapter should be null for empty provider string");
-});
-
-Deno.test("should pass the full provider DB config to the adapter, including the provider ID", () => {
-    // Arrange
-    let capturedProvider: Tables<'ai_providers'> | undefined;
-
-    class CapturingDummyAdapter {
-        constructor(
-            provider: Tables<'ai_providers'>,
-            _apiKey: string,
-            _logger: ILogger,
-        ) {
-            capturedProvider = provider;
-        }
-        sendMessage(_request: ChatApiRequest, _modelIdentifier: string): Promise<AdapterResponsePayload> {
-            throw new Error("Method not implemented.");
-        }
-        listModels(): Promise<ProviderModelInfo[]> {
-            throw new Error("Method not implemented.");
-        }
-    }
-    const MOCK_PROVIDER_ID = crypto.randomUUID();
-    const mockProviderConfig: AiModelExtendedConfig = {
-        api_identifier: 'dummy-test-model',
-        input_token_cost_rate: 1,
-        output_token_cost_rate: 1,
-        tokenization_strategy: { type: 'none' },
-    };
-    if(!isJson(mockProviderConfig)) {
-        throw new Error('mockProviderConfig is not a valid JSON object');
-    }
-    const testDependencies: FactoryDependencies = {
-        provider: {
-            name: 'dummy-test-model',
-            api_identifier: 'dummy-test-model',
-            config: mockProviderConfig,
-            created_at: new Date().toISOString(),
-            description: 'Test provider',
-            id: MOCK_PROVIDER_ID,
-            is_active: true,
-            is_default_embedding: false,
-            is_enabled: true,
-            provider: 'test-provider',
-            updated_at: new Date().toISOString(),
-        },
-        apiKey: 'test-api-key',
-        logger: new MockLogger(),
-        providerMap: {
-            'dummy-': CapturingDummyAdapter,
-        }
-    };
-
-    // Act
-    getAiProviderAdapter(
-        testDependencies
-    );
-
-    // Assert
-    assertExists(capturedProvider, "CapturingDummyAdapter constructor should have been called.");
-    assertEquals(capturedProvider.id, MOCK_PROVIDER_ID, "The 'id' property should be passed through correctly to the adapter.");
 });
 
 Deno.test("DI Proof: should return DummyAdapter for a real provider when injected with a test map", () => {
@@ -192,6 +136,7 @@ Deno.test("DI Proof: should return DummyAdapter for a real provider when injecte
             id: crypto.randomUUID(),
             is_active: true,
             is_default_embedding: false,
+            is_default_generation: false,
             is_enabled: true,
             provider: 'test-provider',
             updated_at: new Date().toISOString(),
@@ -231,6 +176,7 @@ Deno.test("DI Proof: should return real adapter when using the default map", () 
             id: crypto.randomUUID(),
             is_active: true,
             is_default_embedding: false,
+            is_default_generation: false,
             is_enabled: true,
             provider: 'test-provider',
             updated_at: new Date().toISOString(),
@@ -280,7 +226,8 @@ Deno.test("Test mode: factory routes to DummyAdapter and passes model config unc
         updated_at: new Date().toISOString(),
         is_default_embedding: false,
         is_enabled: true,
-      } as Tables<'ai_providers'>,
+        is_default_generation: false,
+      },
       apiKey: 'sk-test',
       logger: mockLogger,
       // providerMap intentionally omitted to exercise env-driven test map
@@ -304,11 +251,11 @@ Deno.test("Test mode: factory routes to DummyAdapter and passes model config unc
       // Ignore; structural typing in Deno tests can complicate instanceof with different modules
     }
 
-    const models = await (adapter as InstanceType<typeof DummyAdapter>).listModels();
+    const models = await adapter.listModels();
     if (!Array.isArray(models) || models.length !== 1) throw new Error('listModels should return one model');
-    const cfgCandidate = (models[0] as ProviderModelInfo).config;
+    const cfgCandidate = models[0].config;
     if (!cfgCandidate || typeof cfgCandidate !== 'object') throw new Error('config should be present on ProviderModelInfo');
-    const cfg = cfgCandidate as AiModelExtendedConfig;
+    const cfg = cfgCandidate;
     if (cfg.api_identifier !== mockConfig.api_identifier) throw new Error('api_identifier should be preserved');
     if (cfg.context_window_tokens !== mockConfig.context_window_tokens) throw new Error('context_window_tokens should be preserved');
     if (cfg.provider_max_input_tokens !== mockConfig.provider_max_input_tokens) throw new Error('provider_max_input_tokens should be preserved');

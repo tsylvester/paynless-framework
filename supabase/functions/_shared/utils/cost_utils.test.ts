@@ -1,8 +1,7 @@
 import {
   assertEquals,
-  assertExists,
-  assertStringIncludes,
-} from "https://deno.land/std@0.208.0/assert/mod.ts"; // Using a pinned version for stability
+  assertThrows,
+} from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { calculateActualChatCost } from "./cost_utils.ts";
 import type {
   AiModelExtendedConfig,
@@ -11,41 +10,16 @@ import type {
   TiktokenEncoding,
   LogMetadata
 } from "../types.ts";
-// Import the default rate constants for use in test assertions
-import { DEFAULT_INPUT_TOKEN_COST_RATE, DEFAULT_OUTPUT_TOKEN_COST_RATE } from '../config/token_cost_defaults.ts';
-import { assertSpyCall, assertSpyCalls, stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 
-// Mock Logger for Deno
-let mockLoggerWarnCalls: { message: string | Error; details?: unknown }[] = [];
-const mockLogger: ILogger = {
-  debug: (message: string | Error, details?: LogMetadata) => {
-    /* console.debug(message, details); */
-  },
-  info: (message: string | Error, details?: LogMetadata) => {
-    /* console.info(message, details); */
-  },
-  warn: (message: string | Error, details?: LogMetadata) => {
-    mockLoggerWarnCalls.push({ message, details });
-    /* console.warn(message, details); */
-  },
-  error: (message: string | Error, details?: LogMetadata) => {
-    mockLoggerWarnCalls.push({ message, details }); // Also track errors for tests if needed, or have separate array
-    /* console.error(message, details); */
-  },
-};
+import { MockLogger } from "../logger.mock.ts";
 
+const mockLogger = new MockLogger();
 const defaultEncoding: TiktokenEncoding = "cl100k_base";
-
-// Helper function to reset mocks before each test step
-const beforeEachStep = () => {
-  mockLoggerWarnCalls = [];
-};
 
 Deno.test("calculateActualChatCost", async (t) => {
   await t.step(
     "should calculate cost correctly with valid inputs and integer rates",
     () => {
-      beforeEachStep();
       const tokenUsage: TokenUsage = {
         prompt_tokens: 100,
         completion_tokens: 200,
@@ -61,14 +35,12 @@ Deno.test("calculateActualChatCost", async (t) => {
         },
       };
       assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 300);
-      assertEquals(mockLoggerWarnCalls.length, 0);
     }
   );
 
   await t.step(
     "should calculate cost correctly with fractional rates and apply Math.ceil",
     () => {
-      beforeEachStep();
       const tokenUsage: TokenUsage = {
         prompt_tokens: 10,
         completion_tokens: 10,
@@ -84,14 +56,12 @@ Deno.test("calculateActualChatCost", async (t) => {
         },
       };
       assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 20);
-      assertEquals(mockLoggerWarnCalls.length, 0);
     }
   );
 
   await t.step(
     "should calculate cost and round up with Math.ceil for fractional results",
     () => {
-      beforeEachStep();
       const tokenUsage: TokenUsage = {
         prompt_tokens: 7,
         completion_tokens: 3,
@@ -106,14 +76,12 @@ Deno.test("calculateActualChatCost", async (t) => {
           tiktoken_encoding_name: defaultEncoding,
         },
       };
-      assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 10);
-      assertEquals(mockLoggerWarnCalls.length, 0);
+      assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 4);
     }
   );
 
   // --- Edge Cases for tokenUsage ---
-  await t.step("should return 0 if tokenUsage is null", () => {
-    beforeEachStep();
+  await t.step("should throw if tokenUsage is null", () => {
     const modelConfig: AiModelExtendedConfig = {
       api_identifier: 'test-api-id-null-usage',
       input_token_cost_rate: 1,
@@ -123,16 +91,14 @@ Deno.test("calculateActualChatCost", async (t) => {
         tiktoken_encoding_name: defaultEncoding,
       },
     };
-    assertEquals(calculateActualChatCost(null, modelConfig, mockLogger), 0);
-    assertEquals(mockLoggerWarnCalls.length, 1);
-    assertStringIncludes(
-      mockLoggerWarnCalls[0].message as string, // Cast because we expect a string here
-      "TokenUsage object is missing or invalid"
+    assertThrows(
+      () => calculateActualChatCost(null, modelConfig, mockLogger),
+      Error,
+      "TokenUsage object is missing or invalid",
     );
   });
 
-  await t.step("should return 0 if tokenUsage is undefined", () => {
-    beforeEachStep();
+  await t.step("should throw if tokenUsage is undefined", () => {
     const modelConfig: AiModelExtendedConfig = {
       api_identifier: 'test-api-id-undefined-usage',
       input_token_cost_rate: 1,
@@ -142,16 +108,14 @@ Deno.test("calculateActualChatCost", async (t) => {
         tiktoken_encoding_name: defaultEncoding,
       },
     };
-    assertEquals(calculateActualChatCost(undefined, modelConfig, mockLogger), 0);
-    assertEquals(mockLoggerWarnCalls.length, 1);
-    assertStringIncludes(
-      mockLoggerWarnCalls[0].message as string, // Cast because we expect a string here
-      "TokenUsage object is missing or invalid"
+    assertThrows(
+      () => calculateActualChatCost(undefined, modelConfig, mockLogger),
+      Error,
+      "TokenUsage object is missing or invalid",
     );
   });
 
-  await t.step("should default prompt_tokens to 0 if missing", () => {
-    beforeEachStep();
+  await t.step("should throw if prompt_tokens is missing", () => {
     const tokenUsage: Partial<TokenUsage> & {
       completion_tokens: number;
       total_tokens: number;
@@ -165,15 +129,14 @@ Deno.test("calculateActualChatCost", async (t) => {
         tiktoken_encoding_name: defaultEncoding,
       },
     };
-    assertEquals(
-      calculateActualChatCost(tokenUsage as TokenUsage, modelConfig, mockLogger),
-      100
+    assertThrows(
+      () => calculateActualChatCost(tokenUsage as TokenUsage, modelConfig, mockLogger),
+      Error,
+      "Invalid prompt_tokens",
     );
-    assertEquals(mockLoggerWarnCalls.length, 0);
   });
 
-  await t.step("should default completion_tokens to 0 if missing", () => {
-    beforeEachStep();
+  await t.step("should throw if completion_tokens is missing", () => {
     const tokenUsage: Partial<TokenUsage> & {
       prompt_tokens: number;
       total_tokens: number;
@@ -187,17 +150,16 @@ Deno.test("calculateActualChatCost", async (t) => {
         tiktoken_encoding_name: defaultEncoding,
       },
     };
-    assertEquals(
-      calculateActualChatCost(tokenUsage as TokenUsage, modelConfig, mockLogger),
-      100
+    assertThrows(
+      () => calculateActualChatCost(tokenUsage as TokenUsage, modelConfig, mockLogger),
+      Error,
+      "Invalid completion_tokens",
     );
-    assertEquals(mockLoggerWarnCalls.length, 0);
   });
 
   await t.step(
     "should handle zero prompt/completion tokens but non-zero total_tokens, logging warning",
     () => {
-      beforeEachStep();
       const tokenUsage: TokenUsage = {
         prompt_tokens: 0,
         completion_tokens: 0,
@@ -212,102 +174,88 @@ Deno.test("calculateActualChatCost", async (t) => {
           tiktoken_encoding_name: defaultEncoding,
         },
       };
-      assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 100);
-      assertEquals(mockLoggerWarnCalls.length, 1);
-      assertStringIncludes(
-        mockLoggerWarnCalls[0].message as string,
-        "prompt_tokens and completion_tokens are zero, but total_tokens is present"
-      );
+      assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 0);
     }
   );
 
   // --- Edge Cases for modelConfig ---
-  await t.step("should return 0 if modelConfig is null", () => {
-    beforeEachStep();
+  await t.step("should throw if modelConfig is null", () => {
     const tokenUsage: TokenUsage = {
       prompt_tokens: 10,
       completion_tokens: 10,
       total_tokens: 20,
     };
-    assertEquals(calculateActualChatCost(tokenUsage, null, mockLogger), 0);
-    assertEquals(mockLoggerWarnCalls.length, 1);
-    assertStringIncludes(
-      mockLoggerWarnCalls[0].message as string, // Cast because we expect a string here
-      "ModelConfig object is missing or invalid"
+    assertThrows(
+      () => calculateActualChatCost(tokenUsage, null, mockLogger),
+      Error,
+      "ModelConfig object is missing or invalid",
     );
   });
 
-  await t.step("should return 0 if modelConfig is undefined", () => {
-    beforeEachStep();
+  await t.step("should throw if modelConfig is undefined", () => {
     const tokenUsage: TokenUsage = {
       prompt_tokens: 10,
       completion_tokens: 10,
       total_tokens: 20,
     };
-    assertEquals(calculateActualChatCost(tokenUsage, undefined, mockLogger), 0);
-    assertEquals(mockLoggerWarnCalls.length, 1);
-    assertStringIncludes(
-      mockLoggerWarnCalls[0].message as string, // Cast because we expect a string here
-      "ModelConfig object is missing or invalid"
+    assertThrows(
+      () => calculateActualChatCost(tokenUsage, undefined, mockLogger),
+      Error,
+      "ModelConfig object is missing or invalid",
     );
   });
 
   await t.step(
-    "should default input_token_cost_rate to DEFAULT_INPUT_TOKEN_COST_RATE and log warning if missing",
+    "should throw if input_token_cost_rate is missing",
     () => {
-      beforeEachStep();
       const tokenUsage: TokenUsage = {
         prompt_tokens: 100,
         completion_tokens: 100,
         total_tokens: 200,
       };
-      const modelConfig = { // Using 'any' to simulate a missing property
+      const modelConfig = {
         api_identifier: 'test-api-id-missing-input-rate',
         output_token_cost_rate: 1,
         tokenization_strategy: {
           type: "tiktoken",
           tiktoken_encoding_name: defaultEncoding,
         },
-      } as any;
-      assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 200);
-      assertEquals(mockLoggerWarnCalls.length, 1);
-      assertStringIncludes(
-        mockLoggerWarnCalls[0].message as string, // Cast because we expect a string here
-        "Invalid or missing input_token_cost_rate"
+      } as unknown as AiModelExtendedConfig;
+      assertThrows(
+        () => calculateActualChatCost(tokenUsage, modelConfig, mockLogger),
+        Error,
+        "Invalid input_token_cost_rate",
       );
     }
   );
 
   await t.step(
-    "should default output_token_cost_rate to DEFAULT_OUTPUT_TOKEN_COST_RATE and log warning if missing",
+    "should throw if output_token_cost_rate is missing",
     () => {
-      beforeEachStep();
       const tokenUsage: TokenUsage = {
         prompt_tokens: 100,
         completion_tokens: 100,
         total_tokens: 200,
       };
-      const modelConfig = { // Using 'any' to simulate a missing property
+      const modelConfig = {
         api_identifier: 'test-api-id-missing-output-rate',
         input_token_cost_rate: 1,
         tokenization_strategy: {
           type: "tiktoken",
           tiktoken_encoding_name: defaultEncoding,
         },
-      } as any;
-      assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 200);
-      assertEquals(mockLoggerWarnCalls.length, 1);
-      assertStringIncludes(
-        mockLoggerWarnCalls[0].message as string, // Cast because we expect a string here
-        "Invalid or missing output_token_cost_rate"
+      } as unknown as AiModelExtendedConfig;
+      assertThrows(
+        () => calculateActualChatCost(tokenUsage, modelConfig, mockLogger),
+        Error,
+        "Invalid output_token_cost_rate",
       );
     }
   );
 
   await t.step(
-    "should default input_token_cost_rate to DEFAULT_INPUT_TOKEN_COST_RATE and log warning if negative",
+    "should throw if input_token_cost_rate is negative",
     () => {
-      beforeEachStep();
       const tokenUsage: TokenUsage = {
         prompt_tokens: 100,
         completion_tokens: 100,
@@ -322,19 +270,17 @@ Deno.test("calculateActualChatCost", async (t) => {
           tiktoken_encoding_name: defaultEncoding,
         },
       };
-      assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 200);
-      assertEquals(mockLoggerWarnCalls.length, 1);
-      assertStringIncludes(
-        mockLoggerWarnCalls[0].message as string, // Cast because we expect a string here
-        "Invalid or missing input_token_cost_rate"
+      assertThrows(
+        () => calculateActualChatCost(tokenUsage, modelConfig, mockLogger),
+        Error,
+        "Invalid input_token_cost_rate",
       );
     }
   );
 
   await t.step(
-    "should default output_token_cost_rate to DEFAULT_OUTPUT_TOKEN_COST_RATE and log warning if NaN",
+    "should throw if output_token_cost_rate is NaN",
     () => {
-      beforeEachStep();
       const tokenUsage: TokenUsage = {
         prompt_tokens: 100,
         completion_tokens: 100,
@@ -349,17 +295,15 @@ Deno.test("calculateActualChatCost", async (t) => {
           tiktoken_encoding_name: defaultEncoding,
         },
       };
-      assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 200);
-      assertEquals(mockLoggerWarnCalls.length, 1);
-      assertStringIncludes(
-        mockLoggerWarnCalls[0].message as string, // Cast because we expect a string here
-        "Invalid or missing output_token_cost_rate"
+      assertThrows(
+        () => calculateActualChatCost(tokenUsage, modelConfig, mockLogger),
+        Error,
+        "Invalid output_token_cost_rate",
       );
     }
   );
 
   await t.step("should return 0 if calculated cost is 0", () => {
-    beforeEachStep();
     const tokenUsage: TokenUsage = {
       prompt_tokens: 0,
       completion_tokens: 0,
@@ -375,20 +319,18 @@ Deno.test("calculateActualChatCost", async (t) => {
       },
     };
     assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 0);
-    assertEquals(mockLoggerWarnCalls.length, 0);
   });
 
   await t.step(
-    "should return correct cost and NOT log negative cost warning if negative rates are defaulted",
+    "should throw if both rates are negative",
     () => {
-      beforeEachStep();
       const tokenUsage: TokenUsage = {
         prompt_tokens: 10,
         completion_tokens: 10,
         total_tokens: 20,
       };
       const modelConfig: AiModelExtendedConfig = {
-        api_identifier: 'test-api-id-negative-rates-defaulted',
+        api_identifier: 'test-api-id-negative-rates',
         input_token_cost_rate: -5,
         output_token_cost_rate: -10,
         tokenization_strategy: {
@@ -396,32 +338,16 @@ Deno.test("calculateActualChatCost", async (t) => {
           tiktoken_encoding_name: defaultEncoding,
         },
       };
-      // Cost should be based on default rates, not negative ones
-      const expectedCost = 20;
-      assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), 20);
-
-      // Check that warnings for invalid rates were logged
-      assertEquals(mockLoggerWarnCalls.length, 2);
-      assertStringIncludes(
-        mockLoggerWarnCalls[0].message as string,
-        "Invalid or missing input_token_cost_rate"
+      assertThrows(
+        () => calculateActualChatCost(tokenUsage, modelConfig, mockLogger),
+        Error,
+        "Invalid input_token_cost_rate",
       );
-      assertStringIncludes(
-        mockLoggerWarnCalls[1].message as string,
-        "Invalid or missing output_token_cost_rate"
-      );
-
-      // Crucially, ensure no "calculated cost is negative" warning
-      const hasNegativeCostWarning = mockLoggerWarnCalls.some((call) =>
-        (call.message as string).includes("Calculated cost is negative")
-      );
-      assertEquals(hasNegativeCostWarning, false);
     }
   );
 
 
   await t.step("should run without a logger provided and not throw errors", () => {
-    beforeEachStep();
     const tokenUsage: TokenUsage = {
       prompt_tokens: 10,
       completion_tokens: 10,
@@ -437,13 +363,11 @@ Deno.test("calculateActualChatCost", async (t) => {
       },
     };
     assertEquals(calculateActualChatCost(tokenUsage, modelConfig), 20);
-    assertEquals(mockLoggerWarnCalls.length, 0);
   });
 
   await t.step(
-    "should use imported default rates when model-specific rates are null",
+    "should throw if rates are null",
     () => {
-      beforeEachStep();
       const tokenUsage: TokenUsage = {
         prompt_tokens: 100,
         completion_tokens: 100,
@@ -457,17 +381,18 @@ Deno.test("calculateActualChatCost", async (t) => {
           type: "tiktoken",
           tiktoken_encoding_name: defaultEncoding,
         },
-      } as unknown as AiModelExtendedConfig; // Force type for test case
-      const expectedCost = 200;
-      assertEquals(calculateActualChatCost(tokenUsage, modelConfig, mockLogger), expectedCost);
-      assertEquals(mockLoggerWarnCalls.length, 2); // Both rates are invalid
+      } as unknown as AiModelExtendedConfig;
+      assertThrows(
+        () => calculateActualChatCost(tokenUsage, modelConfig, mockLogger),
+        Error,
+        "Invalid input_token_cost_rate",
+      );
     }
   );
 
   await t.step(
-    "should not throw if no logger is provided AND a warning would have been issued",
+    "should throw even if no logger is provided when rates are invalid",
     () => {
-      beforeEachStep();
       const tokenUsage: TokenUsage = {
         prompt_tokens: 10,
         completion_tokens: 10,
@@ -482,133 +407,169 @@ Deno.test("calculateActualChatCost", async (t) => {
           tiktoken_encoding_name: defaultEncoding,
         },
       };
-      assertEquals(calculateActualChatCost(tokenUsage, modelConfig, undefined), 20);
-      assertEquals(mockLoggerWarnCalls.length, 0);
+      assertThrows(
+        () => calculateActualChatCost(tokenUsage, modelConfig, undefined),
+        Error,
+        "Invalid input_token_cost_rate",
+      );
     }
   );
 
   // Main test cases for calculateActualChatCost, ensuring it is robust and correct
   Deno.test("calculateActualChatCost - Happy Path", () => {
-    const tokenUsage = { prompt_tokens: 100, completion_tokens: 200, total_tokens: 300 };
-    const modelConfig = {
+    const tokenUsage: TokenUsage = { prompt_tokens: 100, completion_tokens: 200, total_tokens: 300 };
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: 'test-happy-path',
       input_token_cost_rate: 1,
       output_token_cost_rate: 1,
-    } as AiModelExtendedConfig;
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: defaultEncoding },
+    };
     assertEquals(calculateActualChatCost(tokenUsage, modelConfig), 300);
   });
 
-  Deno.test("calculateActualChatCost - Missing Cost Rates (Applies Defaults)", () => {
-    const tokenUsage = { prompt_tokens: 100, completion_tokens: 0, total_tokens: 100 };
+  Deno.test("calculateActualChatCost - Missing Cost Rates throws", () => {
+    const tokenUsage: TokenUsage = { prompt_tokens: 100, completion_tokens: 0, total_tokens: 100 };
     const modelConfig = {
       // Missing cost rates
-    } as AiModelExtendedConfig;
-    const expectedCost =
-      100 * DEFAULT_INPUT_TOKEN_COST_RATE + 0 * DEFAULT_OUTPUT_TOKEN_COST_RATE;
-    assertEquals(calculateActualChatCost(tokenUsage, modelConfig), Math.ceil(expectedCost));
+    } as unknown as AiModelExtendedConfig;
+    assertThrows(
+      () => calculateActualChatCost(tokenUsage, modelConfig),
+      Error,
+      "Invalid input_token_cost_rate",
+    );
   });
 
   Deno.test("calculateActualChatCost - Zero Tokens", () => {
-    const tokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-    const modelConfig = {
+    const tokenUsage: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: 'test-zero-tokens',
       input_token_cost_rate: 1,
       output_token_cost_rate: 1,
-    } as AiModelExtendedConfig;
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: defaultEncoding },
+    };
     assertEquals(calculateActualChatCost(tokenUsage, modelConfig), 0);
   });
 
-  Deno.test("calculateActualChatCost - Partial TokenUsage (completion_tokens missing)", () => {
-    const tokenUsage = { prompt_tokens: 100, total_tokens: 100 }; // completion_tokens is missing
-    const modelConfig = {
+  Deno.test("calculateActualChatCost - Partial TokenUsage (completion_tokens missing) throws", () => {
+    const tokenUsage = { prompt_tokens: 100, total_tokens: 100 } as unknown as TokenUsage;
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: 'test-partial-usage',
       input_token_cost_rate: 1,
       output_token_cost_rate: 5,
-    } as AiModelExtendedConfig;
-    assertEquals(calculateActualChatCost(tokenUsage as TokenUsage, modelConfig), 100);
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: defaultEncoding },
+    };
+    assertThrows(
+      () => calculateActualChatCost(tokenUsage, modelConfig),
+      Error,
+      "Invalid completion_tokens",
+    );
   });
 
-  Deno.test("calculateActualChatCost - Rates as Strings", () => {
-    const tokenUsage = { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 };
+  Deno.test("calculateActualChatCost - Rates as Strings throws", () => {
+    const tokenUsage: TokenUsage = { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 };
     const modelConfig = {
+      api_identifier: 'test-string-rates',
       input_token_cost_rate: "1",
       output_token_cost_rate: "2",
     } as unknown as AiModelExtendedConfig;
-    assertEquals(calculateActualChatCost(tokenUsage, modelConfig), 30);
+    assertThrows(
+      () => calculateActualChatCost(tokenUsage, modelConfig),
+      Error,
+      "Invalid input_token_cost_rate",
+    );
   });
 
-  Deno.test("calculateActualChatCost - Invalid String Rates", () => {
-    const tokenUsage = { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 };
+  Deno.test("calculateActualChatCost - Invalid String Rates throws", () => {
+    const tokenUsage: TokenUsage = { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 };
     const modelConfig = {
+      api_identifier: 'test-invalid-string-rates',
       input_token_cost_rate: "invalid",
       output_token_cost_rate: "invalid",
     } as unknown as AiModelExtendedConfig;
-    const expectedCost =
-      10 * DEFAULT_INPUT_TOKEN_COST_RATE +
-      20 * DEFAULT_OUTPUT_TOKEN_COST_RATE;
-    assertEquals(calculateActualChatCost(tokenUsage, modelConfig), 30);
+    assertThrows(
+      () => calculateActualChatCost(tokenUsage, modelConfig),
+      Error,
+      "Invalid input_token_cost_rate",
+    );
   });
 
   Deno.test("calculateActualChatCost - No Logger Provided", () => {
-    const tokenUsage = { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 };
-    const modelConfig = {
+    const tokenUsage: TokenUsage = { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 };
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: 'test-no-logger',
       input_token_cost_rate: 2,
       output_token_cost_rate: 2,
-    } as AiModelExtendedConfig;
-    assertEquals(calculateActualChatCost(tokenUsage, modelConfig), 150);
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: defaultEncoding },
+    };
+    assertEquals(calculateActualChatCost(tokenUsage, modelConfig), 300);
   });
 
-  Deno.test("calculateActualChatCost - Zero cost for free model", () => {
-    const tokenUsage = {
+  Deno.test("calculateActualChatCost - Zero cost rates throws", () => {
+    const tokenUsage: TokenUsage = {
       prompt_tokens: 123,
       completion_tokens: 456,
       total_tokens: 579,
     };
-    const modelConfig = {
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: 'test-zero-rates',
       input_token_cost_rate: 0,
       output_token_cost_rate: 0,
-    } as AiModelExtendedConfig;
-    assertEquals(calculateActualChatCost(tokenUsage, modelConfig), 0);
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: defaultEncoding },
+    };
+    assertThrows(
+      () => calculateActualChatCost(tokenUsage, modelConfig),
+      Error,
+      "Invalid input_token_cost_rate",
+    );
   });
 
-  Deno.test("calculateActualChatCost - Negative cost rates", () => {
-    const tokenUsage = {
+  Deno.test("calculateActualChatCost - Negative cost rates throws", () => {
+    const tokenUsage: TokenUsage = {
       prompt_tokens: 100,
       completion_tokens: 100,
       total_tokens: 200,
     };
-    const modelConfig = {
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: 'test-negative-rates-2',
       input_token_cost_rate: -1,
       output_token_cost_rate: -2,
-    } as AiModelExtendedConfig;
-    const expectedCost =
-      100 * DEFAULT_INPUT_TOKEN_COST_RATE +
-      100 * DEFAULT_OUTPUT_TOKEN_COST_RATE;
-    assertEquals(calculateActualChatCost(tokenUsage, modelConfig), Math.ceil(expectedCost));
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: defaultEncoding },
+    };
+    assertThrows(
+      () => calculateActualChatCost(tokenUsage, modelConfig),
+      Error,
+      "Invalid input_token_cost_rate",
+    );
   });
 
   Deno.test("calculateActualChatCost - Extremely Large Token Counts", () => {
-    const tokenUsage = {
+    const tokenUsage: TokenUsage = {
       prompt_tokens: 1_000_000_000,
       completion_tokens: 2_000_000_000,
       total_tokens: 3_000_000_000,
     };
-    const modelConfig = {
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: 'test-large-tokens',
       input_token_cost_rate: 1,
       output_token_cost_rate: 1,
-    } as AiModelExtendedConfig;
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: defaultEncoding },
+    };
     assertEquals(calculateActualChatCost(tokenUsage, modelConfig), 3_000_000_000);
   });
 
-  Deno.test("calculateActualChatCost - Service Default Rates (effectively DEFAULT_..._RATES)", () => {
-    const tokenUsage = {
+  Deno.test("calculateActualChatCost - Missing rates throws (no service defaults)", () => {
+    const tokenUsage: TokenUsage = {
       prompt_tokens: 100,
       completion_tokens: 200,
       total_tokens: 300,
     };
     const modelConfig = {
-      // Rates are missing, should use service defaults
-    } as AiModelExtendedConfig;
-    const expectedCost =
-      100 * DEFAULT_INPUT_TOKEN_COST_RATE +
-      200 * DEFAULT_OUTPUT_TOKEN_COST_RATE;
-    assertEquals(calculateActualChatCost(tokenUsage, modelConfig), Math.ceil(expectedCost));
+      api_identifier: 'test-missing-rates-no-defaults',
+    } as unknown as AiModelExtendedConfig;
+    assertThrows(
+      () => calculateActualChatCost(tokenUsage, modelConfig),
+      Error,
+      "Invalid input_token_cost_rate",
+    );
   });
 }); 

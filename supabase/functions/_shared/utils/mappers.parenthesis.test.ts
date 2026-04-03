@@ -17,6 +17,7 @@ describe('mapToStageWithRecipeSteps for parenthesis stage', () => {
             id: 'stage-parenthesis',
             recipe_template_id: 'template-parenthesis',
             slug: 'parenthesis',
+            minimum_balance: 0,
             dialectic_stage_recipe_instances: [{
                 cloned_at: null,
                 created_at: '2025-11-05T11:59:00.000Z',
@@ -68,6 +69,7 @@ describe('mapToStageWithRecipeSteps for parenthesis stage', () => {
             id: 'stage-parenthesis',
             recipe_template_id: 'template-parenthesis',
             slug: 'parenthesis',
+            minimum_balance: 0,
             dialectic_stage_recipe_instances: [{
                 cloned_at: null,
                 created_at: '2025-11-05T11:59:00.000Z',
@@ -119,6 +121,7 @@ describe('mapToStageWithRecipeSteps for parenthesis stage', () => {
             id: 'stage-parenthesis',
             recipe_template_id: 'template-parenthesis',
             slug: 'parenthesis',
+            minimum_balance: 0,
             dialectic_stage_recipe_instances: [{
                 cloned_at: null,
                 created_at: '2025-11-05T11:59:00.000Z',
@@ -170,6 +173,7 @@ describe('mapToStageWithRecipeSteps for parenthesis stage', () => {
             id: 'stage-parenthesis',
             recipe_template_id: 'template-parenthesis',
             slug: 'parenthesis',
+            minimum_balance: 0,
             dialectic_stage_recipe_instances: [{
                 cloned_at: null,
                 created_at: '2025-11-05T11:59:00.000Z',

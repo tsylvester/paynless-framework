@@ -26,9 +26,9 @@ import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/
 import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 import { FileType, ModelContributionFileTypes } from '../_shared/types/file_manager.types.ts';
 import { IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
-import { IPlanJobContext } from './JobContext.interface.ts';
-import { createPlanJobContext, createJobContext } from './createJobContext.ts';
-import { createMockJobContextParams } from './JobContext.mock.ts';
+import { IPlanJobContext } from './createJobContext/JobContext.interface.ts';
+import { createPlanJobContext, createJobContext } from './createJobContext/createJobContext.ts';
+import { createMockJobContextParams } from './createJobContext/JobContext.mock.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { findSourceDocuments } from './findSourceDocuments.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';

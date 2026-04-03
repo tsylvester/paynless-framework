@@ -79,7 +79,12 @@ export async function updateSeedFile() {
       // We use .parse() here because if validation fails, the entire script
       // should halt to prevent writing a corrupted seed file.
       if (rawRow.config && typeof rawRow.config === 'object') {
-        AiModelExtendedConfigSchema.parse(rawRow.config);
+        try {
+          AiModelExtendedConfigSchema.parse(rawRow.config);
+        } catch (e) {
+          console.error(`\n❌ Validation failed for provider: ${apiIdentifier}`);
+          throw e;
+        }
       } else {
         // Instead of throwing, log a clear warning and skip this record.
         // This allows the seed script to complete even if some rows are corrupted,

@@ -1,14 +1,16 @@
 // supabase/functions/_shared/utils/type_guards.ts
 import type { Database, Tables } from "../../../types_db.ts";
-import { 
-    AiModelExtendedConfig, 
-    TokenUsage, 
-    ChatMessageRole, 
-    ChatInsert, 
-    ContinueReason, 
-    FinishReason, 
-    ChatApiRequest, 
-    Messages 
+import {
+    AiModelExtendedConfig,
+    TokenUsage,
+    ChatMessageRole,
+    ChatInsert,
+    ContinueReason,
+    FinishReason,
+    ChatApiRequest,
+    Messages,
+    OutboundDocument,
+    ResourceDocument,
 } from "../../types.ts";
 import { isRecord } from "./type_guards.common.ts";
 type SelectedAiProviderRow = Database['public']['Tables']['ai_providers']['Row'];
@@ -94,7 +96,7 @@ export function isChatMessageRow(record: unknown): record is Tables<'chat_messag
 
     const checks: { key: keyof Tables<'chat_messages'>, type: string, nullable?: boolean }[] = [
         { key: 'id', type: 'string' },
-        { key: 'chat_id', type: 'string' },
+        { key: 'chat_id', type: 'string', nullable: true },
         { key: 'user_id', type: 'string', nullable: true },
         { key: 'role', type: 'string' },
         { key: 'content', type: 'string', nullable: true },
@@ -157,6 +159,7 @@ export function isFinishReason(value: unknown): value is FinishReason {
         'max_tokens',
         'content_truncated',
         'next_document',
+        'tool_use',
     ]);
     return allowed.has(value);
 }
@@ -209,6 +212,22 @@ export function isSelectedAiProvider(obj: unknown): obj is SelectedAiProviderRow
   }
 
   return true;
+}
+
+export function isOutboundDocument(obj: unknown): obj is OutboundDocument {
+    if (!isRecord(obj)) return false;
+    return typeof obj.id === 'string' && typeof obj.content === 'string';
+}
+
+export function isResourceDocument(obj: unknown): obj is ResourceDocument {
+    if (!isRecord(obj)) return false;
+    return (
+        typeof obj.id === 'string' &&
+        typeof obj.content === 'string' &&
+        typeof obj.document_key === 'string' &&
+        typeof obj.stage_slug === 'string' &&
+        typeof obj.type === 'string'
+    );
 }
 
 export function isTokenUsage(obj: unknown): obj is TokenUsage {

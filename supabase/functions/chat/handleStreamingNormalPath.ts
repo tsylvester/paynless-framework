@@ -1,5 +1,4 @@
 import {
-    AdapterResponsePayload,
     ChatApiRequest,
     ChatMessageInsert,
 } from "../_shared/types.ts";
@@ -10,6 +9,7 @@ import { TokenUsageSchema } from "./zodSchema.ts";
 import { PathHandlerContext } from "./prepareChatContext.ts";
 import type { CountTokensDeps } from "../_shared/types/tokenizer.types.ts";
 import { isApiChatMessage } from "../_shared/utils/type_guards.ts";
+import { debitTokens } from "../_shared/utils/debitTokens.ts";
 
 export async function handleStreamingNormalPath(
     context: PathHandlerContext
@@ -98,8 +98,8 @@ export async function handleStreamingNormalPath(
         }
 
         const tokenizerDeps: CountTokensDeps = {
-            getEncoding: (name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
-            countTokensAnthropic: (text: string) => (text ?? '').length,
+            getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input).map((_, i) => i) }),
+            countTokensAnthropic: (text: string) => (text).length,
             logger: logger,
         };
 
@@ -246,7 +246,7 @@ export async function handleStreamingNormalPath(
                     }
 
                     // Use debitTokens to handle the transaction and save assistant message
-                    const { assistantMessage } = await deps.debitTokens(
+                    const debitTokensResult = await debitTokens(
                         { logger, tokenWalletService: tokenWalletService! },
                         {
                             wallet,
@@ -283,11 +283,22 @@ export async function handleStreamingNormalPath(
                             }
                         }
                     );
+                    if ('error' in debitTokensResult) {
+                        throw debitTokensResult.error;
+                    }
 
                     // Send completion event
                     const completionData = {
                         type: 'chat_complete',
-                        assistantMessage: assistantMessage,
+                        assistantMessage: {
+                            id: debitTokensResult.result.assistantMessage.id,
+                            chat_id: debitTokensResult.result.assistantMessage.chat_id,
+                            user_id: debitTokensResult.result.assistantMessage.user_id,
+                            role: debitTokensResult.result.assistantMessage.role,
+                            content: debitTokensResult.result.assistantMessage.content,
+                            created_at: debitTokensResult.result.assistantMessage.created_at,
+                            updated_at: debitTokensResult.result.assistantMessage.updated_at,
+                        },
                         finish_reason: adapterResponse.finish_reason,
                         timestamp: new Date().toISOString()
                     };

@@ -57,6 +57,13 @@ import {
               finish_reason: finishReason,
             };
           },
+        sendMessageStream: async function* (
+          _request: ChatApiRequest,
+          _providerApiIdentifier: string,
+        ) {
+          yield { type: "text_delta", text: "" };
+          return;
+        },
         listModels: async () => Promise.resolve([]),
     };
 

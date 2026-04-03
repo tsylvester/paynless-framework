@@ -109,6 +109,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = {
                     id: "s1",
@@ -121,7 +122,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Test session',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const stage: StageContext = {
                     id: "stage1",
@@ -136,6 +139,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
                 const iterationNumber = 1;
 
@@ -172,6 +176,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = {
                     id: "s1",
@@ -184,7 +189,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Test session',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const stage: StageContext = {
                     id: "stage1",
@@ -199,6 +206,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
                 const iterationNumber = 1;
 
@@ -313,6 +321,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = {
                     id: "s1",
@@ -325,7 +334,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Session for doc test',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const iterationNumber = 1;
                 const stage: StageContext = {
@@ -349,6 +360,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
@@ -465,6 +477,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = { 
                     id: sessionId,
@@ -477,7 +490,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Session for feedback test',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const iterationNumber = iteration;
                 const stage: StageContext = {
@@ -500,6 +515,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
                 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
@@ -674,6 +690,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = { 
                     id: sessionId,
@@ -686,7 +703,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Session for both test',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const iterationNumber = iteration;
                 const stage: StageContext = {
@@ -715,6 +734,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
@@ -808,6 +828,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = { 
                     id: sessionId,
@@ -820,7 +841,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Session for optional feedback test',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const iterationNumber = iteration;
                 const stage: StageContext = {
@@ -843,6 +866,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 let errorThrown = false;
@@ -918,6 +942,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = { 
                     id: sessionId,
@@ -930,7 +955,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Session for required feedback test',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const iterationNumber = iteration;
                 const stage: StageContext = {
@@ -953,6 +980,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 await assertRejects(
@@ -994,10 +1022,10 @@ Deno.test("gatherInputsForStage", async (t) => {
             const { mockSupabaseClient, spies } = setup(config);
             try {
                 const project: ProjectContext = { 
-                    id: "p-db-err-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                    id: "p-db-err-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
                 };
                 const session: SessionContext = { 
-                    id: "s-db-err-req", project_id: "p-db-err-req", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-db-err-req", project_id: "p-db-err-req", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
                 }; 
                 const stage: StageContext = {
                     id: "stage-db-err-req", 
@@ -1008,6 +1036,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 await assertRejects(
@@ -1046,10 +1075,10 @@ Deno.test("gatherInputsForStage", async (t) => {
             const { mockSupabaseClient, spies } = setup(config);
             try {
                 const project: ProjectContext = { 
-                    id: "p-ms-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                    id: "p-ms-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
                 };
                 const session: SessionContext = { 
-                    id: "s-ms-opt", project_id: "p-ms-opt", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-ms-opt", project_id: "p-ms-opt", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
                 }; 
                 const stage: StageContext = {
                     id: "stage-ms-opt", 
@@ -1060,6 +1089,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
@@ -1139,10 +1169,10 @@ Deno.test("gatherInputsForStage", async (t) => {
             const { mockSupabaseClient } = setup(config);
             try {
                 const project: ProjectContext = { 
-                    id: "p-cdl-err-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                    id: "p-cdl-err-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
                 };
                 const session: SessionContext = { 
-                    id: "s-cdl-err-req", project_id: "p-cdl-err-req", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-cdl-err-req", project_id: "p-cdl-err-req", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
                 }; 
                 const stage: StageContext = {
                     id: "stage-cdl-err-req", 
@@ -1153,6 +1183,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 await assertRejects(
@@ -1242,10 +1273,10 @@ Deno.test("gatherInputsForStage", async (t) => {
             const { mockSupabaseClient, spies } = setup(config);
             try {
                 const project: ProjectContext = { 
-                    id: "p-cdl-err-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                    id: "p-cdl-err-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
                 };
                 const session: SessionContext = { 
-                    id: "s-cdl-err-opt", project_id: "p-cdl-err-opt", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-cdl-err-opt", project_id: "p-cdl-err-opt", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
                 }; 
                 const stage: StageContext = {
                     id: "stage-cdl-err-opt", 
@@ -1256,6 +1287,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
@@ -1333,10 +1365,10 @@ Deno.test("gatherInputsForStage", async (t) => {
             const { mockSupabaseClient, spies } = setup(config);
             try {
                 const project: ProjectContext = { 
-                    id: "p-ms-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                    id: "p-ms-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
                 };
                 const session: SessionContext = { 
-                    id: "s-ms-req", project_id: "p-ms-req", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-ms-req", project_id: "p-ms-req", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
                 }; 
                 const stage: StageContext = {
                     id: "stage-ms-req", 
@@ -1347,6 +1379,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 await assertRejects(
@@ -1429,10 +1462,10 @@ Deno.test("gatherInputsForStage", async (t) => {
             const { mockSupabaseClient, spies } = setup(config);
             try {
                 const project: ProjectContext = { 
-                    id: "p-ms-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                    id: "p-ms-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
                 };
                 const session: SessionContext = { 
-                    id: "s-ms-opt", project_id: "p-ms-opt", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-ms-opt", project_id: "p-ms-opt", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
                 }; 
                 const stage: StageContext = {
                     id: "stage-ms-opt", 
@@ -1443,6 +1476,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
@@ -1553,6 +1587,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = {
                     id: "s-resource",
@@ -1565,7 +1600,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Session for resource test',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const iterationNumber = 1;
                 const stage: StageContext = {
@@ -1589,6 +1626,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
@@ -1764,6 +1802,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = {
                     id: "s-both",
@@ -1776,7 +1815,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Session for both test',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const iterationNumber = 1;
                 const stage: StageContext = {
@@ -1800,6 +1841,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
@@ -1875,6 +1917,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = {
                     id: "s-missing",
@@ -1887,7 +1930,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Session for missing test',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const iterationNumber = 1;
                 const stage: StageContext = {
@@ -1911,6 +1956,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
@@ -2041,6 +2087,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = {
                     id: "s-header",
@@ -2053,7 +2100,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Session for header test',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const iterationNumber = 1;
                 const stage: StageContext = {
@@ -2076,6 +2125,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
@@ -2201,6 +2251,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
+                    idempotency_key: null,
                 };
                 const session: SessionContext = {
                     id: "s-contrib",
@@ -2213,7 +2264,9 @@ Deno.test("gatherInputsForStage", async (t) => {
                     session_description: 'Session for contrib test',
                     status: 'pending_thesis',
                     associated_chat_id: null,
-                    user_input_reference_url: null
+                    user_input_reference_url: null,
+                    idempotency_key: null,
+                    viewing_stage_id: null,
                 };
                 const iterationNumber = 1;
                 const stage: StageContext = {
@@ -2237,6 +2290,7 @@ Deno.test("gatherInputsForStage", async (t) => {
                     active_recipe_instance_id: null,
                     recipe_template_id: null,
                     expected_output_template_ids: [],
+                    minimum_balance: 0,
                 };
 
                 const downloadFn = (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path);
@@ -2318,9 +2372,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (bucket: string, path: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, bucket, path), stage, project, session, iterationNumber);
                 assert(capturedFeedbackState !== null, "dialectic_feedback select should have been called");
                 const feedbackState: MockQueryBuilderState = capturedFeedbackState;
@@ -2389,9 +2446,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
                 assert(capturedFeedbackState !== null, "dialectic_feedback select should have been called");
                 const feedbackState: MockQueryBuilderState = capturedFeedbackState;
@@ -2461,9 +2521,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
                 assert(capturedIteration !== null, "dialectic_feedback select should have been called with iteration filter");
                 assertEquals(capturedIteration, iterationNumber, "feedback query must use iterationNumber directly not iterationNumber - 1");
@@ -2496,9 +2559,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, required: false, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, required: false, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, async () => ({ data: null, error: null }), stage, project, session, iterationNumber);
                 assertEquals(result.sourceDocuments.length, 0, "no feedback doc when zero rows for optional rule");
             } finally {
@@ -2571,9 +2637,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKeyA, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKeyA, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
                 assert(capturedFeedbackState !== null, "dialectic_feedback select should have been called");
                 const feedbackState: MockQueryBuilderState = capturedFeedbackState;
@@ -2647,9 +2716,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber, modelId);
                 assert(capturedFeedbackState !== null, "dialectic_feedback select should have been called");
                 const feedbackState: MockQueryBuilderState = capturedFeedbackState;
@@ -2736,9 +2808,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber, requestedModelId);
                 assertEquals(result.sourceDocuments.length, 1, "only the specified model's feedback should be returned");
                 assertEquals(result.sourceDocuments[0].content, "content for requested model only");
@@ -2823,9 +2898,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
                 assert(capturedFeedbackState !== null, "dialectic_feedback select should have been called");
                 const feedbackState: MockQueryBuilderState = capturedFeedbackState;
@@ -2894,9 +2972,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "document", slug: docStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "document", slug: docStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
                 assertEquals(result.sourceDocuments.length, 1, "one document should be returned");
                 assertEquals(result.sourceDocuments[0].metadata.documentKey, "business_case", "metadata.documentKey must equal the document_key from InputRule");
@@ -2968,9 +3049,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "feedback", slug: feedbackStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
                 assertEquals(result.sourceDocuments.length, 1, "one feedback should be returned");
                 assertEquals(result.sourceDocuments[0].metadata.documentKey, "business_case", "metadata.documentKey must equal the document_key from InputRule");
@@ -3035,9 +3119,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "header_context", slug: hcStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "header_context", slug: hcStageSlug, document_key: documentKey, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
                 assertEquals(result.sourceDocuments.length, 1, "one header_context should be returned");
                 assertEquals(result.sourceDocuments[0].metadata.documentKey, "header_context", "metadata.documentKey must equal the document_key from InputRule");
@@ -3102,9 +3189,12 @@ Deno.test("gatherInputsForStage", async (t) => {
             };
             const { mockSupabaseClient } = setup(config);
             try {
-                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null };
-                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "document", slug: docStageSlug, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [] };
+                const project: ProjectContext = { id: projectId, user_id: userId, project_name: "P", initial_user_prompt: "", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "D" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), idempotency_key: null,
+                };
+                const session: SessionContext = { id: sessionId, project_id: projectId, selected_model_ids: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: iterationNumber, session_description: "", status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null, idempotency_key: null, viewing_stage_id: null,
+                };
+                const stage: StageContext = { id: "st", slug: "curr", display_name: "Stage", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, recipe_step: createMockRecipeStep([{ type: "document", slug: docStageSlug, required: true, multiple: false }]), active_recipe_instance_id: null, recipe_template_id: null, expected_output_template_ids: [], minimum_balance: 0,
+                };
                 const result = await gatherInputsForStage(mockSupabaseClient as unknown as SupabaseClient<Database>, (b: string, p: string) => downloadFromStorage(mockSupabaseClient as unknown as SupabaseClient<Database>, b, p), stage, project, session, iterationNumber);
                 assertEquals(result.sourceDocuments.length, 1, "one document should be returned");
                 assertEquals(result.sourceDocuments[0].metadata.documentKey, undefined, "metadata.documentKey must be undefined when InputRule has no document_key");

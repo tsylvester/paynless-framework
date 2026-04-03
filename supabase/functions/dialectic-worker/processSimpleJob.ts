@@ -1,37 +1,44 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database } from '../types_db.ts';
+import type { Database, Tables } from '../types_db.ts';
 import {
-  DialecticJobPayload,
-  DialecticSession,
-  SelectedAiProvider,
-  SelectedModels,
+  DialecticRecipeStep,
+  DialecticJobRow,
+  DialecticSessionRow,
   FailedAttemptError,
   ModelProcessingResult,
-  Job,
   PromptConstructionPayload,
-  SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
-import { IJobContext } from './JobContext.interface.ts';
-import { createExecuteJobContext } from './createJobContext.ts';
+import { IJobContext } from './createJobContext/JobContext.interface.ts';
+import type { PrepareModelJobParams, PrepareModelJobPayload } from './prepareModelJob/prepareModelJob.interface.ts';
+import { PrepareModelJobExecutionError } from './prepareModelJob/prepareModelJob.interface.ts';
+import {
+  isPrepareModelJobErrorReturn,
+  isPrepareModelJobSuccessReturn,
+} from './prepareModelJob/prepareModelJob.guard.ts';
+import { isGatherArtifactsErrorReturn } from './gatherArtifacts/gatherArtifacts.guard.ts';
 import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { Messages } from '../_shared/types.ts';
 import { StageContext, type AssemblePromptOptions } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
-import { DialecticRecipeStep } from '../dialectic-service/dialectic.interface.ts';
 import { isDialecticRecipeTemplateStep, isDialecticStageRecipeStep } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
+import { ResourceDocuments } from '../_shared/types.ts';
+import { isDialecticExecuteJobPayload } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
 
 export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,
-    job: Job & { payload: DialecticJobPayload },
+    job: DialecticJobRow,
     projectOwnerUserId: string,
     ctx: IJobContext,
     authToken: string,
 ) {
     const { id: jobId, attempt_count: currentAttempt, max_retries } = job;
+    if(!isRecord(job.payload) || !isDialecticExecuteJobPayload(job.payload)) {
+        throw new Error(`Job ${job.id} does not have a valid 'execute' payload.`);
+    }
     const {
         stageSlug,
         projectId,
@@ -40,7 +47,7 @@ export async function processSimpleJob(
     } = job.payload;
     
     ctx.logger.info(`[dialectic-worker] [processSimpleJob] Starting attempt ${currentAttempt + 1}/${max_retries + 1} for job ID: ${jobId}`);
-    let providerDetails: SelectedAiProvider | undefined;
+    let providerDetails: Tables<'ai_providers'> | undefined;
 
     // Track document key and step for notifications where possible
     let notificationDocumentKey: FileType | undefined;
@@ -51,24 +58,9 @@ export async function processSimpleJob(
         if (!projectId) throw new Error('projectId is required in the payload.');
         if (!sessionId) throw new Error('sessionId is required in the payload.');
 
-        const { data: sessionData, error: sessionError } = await dbClient.from('dialectic_sessions').select('*').eq('id', sessionId).single();
-        if (sessionError || !sessionData) throw new Error(`Session ${sessionId} not found.`);
-
-        const ids = sessionData.selected_model_ids ?? [];
-        const selected_models: SelectedModels[] = ids.map((id) => ({ id, displayName: id }));
-        const sessionForExecute: DialecticSession = {
-            id: sessionData.id,
-            project_id: sessionData.project_id,
-            session_description: sessionData.session_description,
-            user_input_reference_url: sessionData.user_input_reference_url,
-            iteration_count: sessionData.iteration_count,
-            selected_models,
-            status: sessionData.status,
-            associated_chat_id: sessionData.associated_chat_id,
-            current_stage_id: sessionData.current_stage_id,
-            created_at: sessionData.created_at,
-            updated_at: sessionData.updated_at,
-        };
+        const { data: sessionQueryResult, error: sessionError } = await dbClient.from('dialectic_sessions').select('*').eq('id', sessionId).single();
+        if (sessionError || !sessionQueryResult) throw new Error(`Session ${sessionId} not found.`);
+        const sessionData: DialecticSessionRow = sessionQueryResult;
 
         const { data: providerData, error: providerError } = await dbClient.from('ai_providers').select('*').eq('id', model_id).single();
         if (providerError || !providerData || !isSelectedAiProvider(providerData)) {
@@ -124,7 +116,6 @@ export async function processSimpleJob(
         });
 
         const conversationHistory: Messages[] = [];
-        const resourceDocuments: SourceDocument[] = [];
 
         // Fetch domain-specific overlays for this stage's system prompt and selected domain
         const systemPromptId = system_prompts.id;
@@ -292,29 +283,78 @@ export async function processSimpleJob(
             assembleOptions.sourceContributionId = sourceContributionId;
         }
         const assembled = await ctx.promptAssembler.assemble(assembleOptions);
-        
+
+        // Continuation routing: when the assembler returns structured messages (continuation path),
+        // populate conversationHistory with the seed + assistant messages and extract the
+        // continuation instruction as currentUserPrompt. When messages are absent (non-continuation),
+        // existing behavior is preserved — conversationHistory stays empty, currentUserPrompt is promptContent.
+        let routedUserPrompt: string;
+        if (assembled.messages && assembled.messages.length >= 3) {
+            conversationHistory.push(assembled.messages[0]);
+            conversationHistory.push(assembled.messages[1]);
+            const thirdMessageContent = assembled.messages[2].content;
+            if (thirdMessageContent === null) {
+                throw new Error('Continuation message content is null — cannot route as currentUserPrompt');
+            }
+            routedUserPrompt = thirdMessageContent;
+        } else {
+            routedUserPrompt = assembled.promptContent;
+        }
+
+        const gatherResult = await ctx.gatherArtifacts(
+            { dbClient, projectId, sessionId, iterationNumber: sessionData.iteration_count },
+            { inputsRequired: resolvedRecipeStep.inputs_required },
+        );
+        if (isGatherArtifactsErrorReturn(gatherResult)) {
+            throw gatherResult.error;
+        }
+        const resourceDocuments: ResourceDocuments = gatherResult.artifacts;
+
         const promptConstructionPayload: PromptConstructionPayload = {
             conversationHistory,
             resourceDocuments,
-            currentUserPrompt: assembled.promptContent,
+            currentUserPrompt: routedUserPrompt,
             source_prompt_resource_id: assembled.source_prompt_resource_id,
         };
         promptConstructionPayload.sourceContributionId = sourceContributionId;
 
-        const executeCtx = createExecuteJobContext(ctx);
-        await ctx.executeModelCallAndSave({
+        if (!providerDetails) {
+            throw new Error(`Failed to fetch valid provider details for model ID ${model_id}.`);
+        }
+
+        const prepareParams: PrepareModelJobParams = {
             dbClient,
-            deps: executeCtx,
             authToken,
             job,
             projectOwnerUserId,
-            providerDetails,
-            sessionData: sessionForExecute,
+            providerRow: providerDetails,
+            sessionData,
+        };
+
+        const preparePayload: PrepareModelJobPayload = {
             promptConstructionPayload,
+            compressionStrategy: getSortedCompressionCandidates,
             inputsRelevance: stageContext.recipe_step.inputs_relevance,
             inputsRequired: stageContext.recipe_step.inputs_required,
-            compressionStrategy: getSortedCompressionCandidates,
-        });
+        };
+
+        const prepareResult: unknown = await ctx.prepareModelJob(prepareParams, preparePayload);
+
+        if (isPrepareModelJobErrorReturn(prepareResult)) {
+            const orchestratorError: Error = prepareResult.error;
+            if (orchestratorError instanceof ContextWindowError) {
+                throw orchestratorError;
+            }
+            throw new PrepareModelJobExecutionError(
+                orchestratorError.message,
+                prepareResult.retriable,
+                orchestratorError,
+            );
+        }
+
+        if (!isPrepareModelJobSuccessReturn(prepareResult)) {
+            throw new Error('prepareModelJob returned an invalid result shape');
+        }
 
         if (projectOwnerUserId) {
             await ctx.notificationService.sendJobNotificationEvent({
@@ -330,9 +370,16 @@ export async function processSimpleJob(
         }
 
     } catch (e) {
-        const error = e instanceof Error ? e : new Error(String(e));
-        
-        if (e instanceof ContextWindowError) {
+        let prepareJobRetriable: boolean | undefined = undefined;
+        let error: Error;
+        if (e instanceof PrepareModelJobExecutionError) {
+            prepareJobRetriable = e.retriable;
+            error = e.causeError;
+        } else {
+            error = e instanceof Error ? e : new Error(String(e));
+        }
+
+        if (error instanceof ContextWindowError) {
             ctx.logger.error(`[dialectic-worker] [processSimpleJob] ContextWindowError for job ${jobId}: ${error.message}`);
             await dbClient.from('dialectic_generation_jobs').update({
                 status: 'failed',
@@ -352,11 +399,14 @@ export async function processSimpleJob(
                 }, projectOwnerUserId);
 
                 // User-facing historical notification
+                if(typeof job.payload.stageSlug !== 'string') {
+                    throw new Error('stageSlug is required in the payload.');
+                }
                 await ctx.notificationService.sendContributionFailedNotification({
                     type: 'contribution_generation_failed',
-                    sessionId: job.payload.sessionId ?? sessionId,
-                    stageSlug: job.payload.stageSlug ?? 'unknown',
-                    projectId: job.payload.projectId ?? '',
+                    sessionId: job.payload.sessionId,
+                    stageSlug: job.payload.stageSlug,
+                    projectId: job.payload.projectId,
                     error: {
                         code: 'CONTEXT_WINDOW_ERROR',
                         message: `Context window limit exceeded, message too large to send to the model and it cannot be compressed further: ${error.message}`,
@@ -403,11 +453,20 @@ export async function processSimpleJob(
                 }, projectOwnerUserId);
 
                 // User-facing historical notification
+                if(!isRecord(job.payload) || typeof job.payload.stageSlug !== 'string') {
+                    throw new Error('stageSlug is required in the payload.');
+                }
+                if(!isRecord(job.payload) || typeof job.payload.sessionId !== 'string') {
+                    throw new Error('sessionId is required in the payload.');
+                }
+                if(!isRecord(job.payload) || typeof job.payload.projectId !== 'string') {
+                    throw new Error('projectId is required in the payload.');
+                }
                 await ctx.notificationService.sendContributionFailedNotification({
                     type: 'contribution_generation_failed',
-                    sessionId: job.payload.sessionId ?? 'unknown',
-                    stageSlug: job.payload.stageSlug ?? 'unknown',
-                    projectId: job.payload.projectId ?? '',
+                    sessionId: job.payload.sessionId,
+                    stageSlug: job.payload.stageSlug,
+                    projectId: job.payload.projectId,
                     error: { code, message: userMessage },
                     job_id: jobId,
                 }, projectOwnerUserId);
@@ -514,6 +573,11 @@ export async function processSimpleJob(
         // File save failures
         if (lower.includes('failed to save contribution')) {
             await emitImmediateFailure('SAVE_FAILED', message);
+            throw error;
+        }
+
+        if (prepareJobRetriable === false) {
+            await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
             throw error;
         }
 

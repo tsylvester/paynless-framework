@@ -136,6 +136,7 @@ export async function submitStageResponses(
       created_at: row.created_at,
       updated_at: row.updated_at,
       selected_models,
+      viewing_stage_id: row.viewing_stage_id,
     };
   }
 

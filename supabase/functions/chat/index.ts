@@ -14,6 +14,7 @@ import type {
     GetUserFn,
     GetUserFnResult,
     FactoryDependencies,
+    ChatApiRequest,
 } from '../_shared/types.ts';
 import { logger } from '../_shared/logger.ts';
 import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
@@ -25,7 +26,7 @@ import { prepareChatContext } from './prepareChatContext.ts';
 import { handleNormalPath } from './handleNormalPath.ts';
 import { handleRewindPath } from './handleRewindPath.ts';
 import { handleDialecticPath } from "./handleDialecticPath.ts";
-import { debitTokens } from './debitTokens.ts';
+import { debitTokens } from '../_shared/utils/debitTokens.ts';
 
 // --- Main Handler ---
 export async function handler(
@@ -71,12 +72,11 @@ export async function handler(
     const isTestMode = req.headers.get('X-Test-Mode') === 'true';
     let effectiveDeps = deps;
 
-    if (isTestMode) {
-        logger.info('[handler] Test mode detected. Overriding getAiProviderAdapter.');
+    if (isTestMode && deps.getAiProviderAdapter === defaultDeps.getAiProviderAdapter) {
+        logger.info('[handler] Test mode detected and no adapter override present. Using testProviderMap.');
         effectiveDeps = {
             ...deps,
             getAiProviderAdapter: (dependencies: FactoryDependencies) => {
-                // In test mode, we ALWAYS use the testProviderMap.
                 return getAiProviderAdapter({
                     ...dependencies,
                     providerMap: testProviderMap,
@@ -108,7 +108,7 @@ export async function handler(
                 return createErrorResponse(`Invalid request body: ${errorMessages}`, 400, req);
             }
 
-            const requestBody = parsedResult.data;
+            const requestBody: ChatApiRequest = parsedResult.data;
             logger.info('Received chat POST request (validated):', { body: requestBody });
 
             // Check if streaming is requested

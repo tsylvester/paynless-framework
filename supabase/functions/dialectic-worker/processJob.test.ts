@@ -1,5 +1,5 @@
 
-import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
@@ -11,13 +11,12 @@ import {
 import { isJson } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
 import { 
-    createExecuteJobContext, 
     createJobContext, 
     createPlanJobContext, 
     createRenderJobContext 
-} from './createJobContext.ts';
-import { IJobContext } from './JobContext.interface.ts';
-import { createMockJobContextParams } from './JobContext.mock.ts';
+} from './createJobContext/createJobContext.ts';
+import { IJobContext } from './createJobContext/JobContext.interface.ts';
+import { createMockJobContextParams } from './createJobContext/JobContext.mock.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -781,8 +780,8 @@ Deno.test('processJob - RENDER does not query dialectic_stages in router', async
     }
 });
 
-// Step 51.b.iv — Context slicing: EXECUTE jobs receive IExecuteJobContext
-Deno.test('processJob - slices to IExecuteJobContext for EXECUTE jobs', async () => {
+// EXECUTE jobs receive root IJobContext (prepareModelJob is bound at composition root)
+Deno.test('processJob - passes root IJobContext for EXECUTE jobs', async () => {
     const { processors, spies } = createMockJobProcessors();
 
     const payload: DialecticJobPayload = {
@@ -833,21 +832,20 @@ Deno.test('processJob - slices to IExecuteJobContext for EXECUTE jobs', async ()
 
         assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called');
         const call = spies.processSimpleJob.calls[0];
-        const receivedCtx = call.args[3];
-        const expectedCtx = createExecuteJobContext(mockCtx);
-        assertEquals(receivedCtx, expectedCtx, 'EXECUTE job should receive createExecuteJobContext(ctx) result');
+        const receivedCtx: IJobContext = call.args[3];
+        assertStrictEquals(receivedCtx, mockCtx, 'EXECUTE job should receive the same root IJobContext reference');
 
         if (typeof receivedCtx !== 'object' || receivedCtx === null) {
             throw new Error('Expected EXECUTE job processor to receive an object context');
         }
 
-        // Verify EXECUTE-only fields are present
-        assertEquals(Reflect.has(receivedCtx, 'ragService'), true, 'IExecuteJobContext should have ragService');
-        assertEquals(Reflect.has(receivedCtx, 'promptAssembler'), true, 'IExecuteJobContext should have promptAssembler');
-        assertEquals(typeof Reflect.get(receivedCtx, 'getSeedPromptForStage'), 'function', 'IExecuteJobContext should have getSeedPromptForStage');
+        assertEquals(Reflect.has(receivedCtx, 'prepareModelJob'), true, 'IJobContext should have prepareModelJob');
+        assertEquals(typeof Reflect.get(receivedCtx, 'prepareModelJob'), 'function', 'prepareModelJob should be a function');
+        assertEquals(Reflect.has(receivedCtx, 'ragService'), true, 'IJobContext should have ragService');
+        assertEquals(Reflect.has(receivedCtx, 'promptAssembler'), true, 'IJobContext should have promptAssembler');
+        assertEquals(typeof Reflect.get(receivedCtx, 'getSeedPromptForStage'), 'function', 'IJobContext should have getSeedPromptForStage');
 
-        // Verify PLAN-only fields are absent
-        assertEquals(Reflect.has(receivedCtx, 'planComplexStage'), false, 'IExecuteJobContext should NOT have planComplexStage');
+        assertEquals(Reflect.has(receivedCtx, 'planComplexStage'), true, 'root IJobContext includes plan utilities');
     } finally {
         spies.processSimpleJob.restore();
         spies.processComplexJob.restore();

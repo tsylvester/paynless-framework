@@ -110,6 +110,7 @@ const mockSession: DialecticSession = {
     current_stage_id: 'stage-1',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    viewing_stage_id: null,
 };
 
 const mockFeedbackRow: DialecticFeedbackRow = {

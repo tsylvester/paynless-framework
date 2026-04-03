@@ -5,6 +5,7 @@ import type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
 import type { Database } from "../types_db.ts";
 import type {
     AiProviderAdapterInstance,
+    AdapterStreamChunk,
     ChatApiRequest,
     AdapterResponsePayload,
     ChatHandlerDeps,
@@ -69,9 +70,22 @@ export const createMockAiAdapter = (sendMessageResult: AdapterResponsePayload | 
     const sendMessageSpyFn = sendMessageResult instanceof Error
         ? (_request: ChatApiRequest, _modelIdentifier: string) => Promise.reject(sendMessageResult)
         : (_request: ChatApiRequest, _modelIdentifier: string) => Promise.resolve(sendMessageResult);
+    const sendMessageStreamFn = async function* (
+        _request: ChatApiRequest,
+        _modelIdentifier: string,
+    ): AsyncGenerator<AdapterStreamChunk> {
+        if (sendMessageResult instanceof Error) {
+            throw sendMessageResult;
+        }
+        const textDeltaChunk: AdapterStreamChunk = { type: 'text_delta', text: sendMessageResult.content };
+        yield textDeltaChunk;
+        const doneChunk: AdapterStreamChunk = { type: 'done', finish_reason: sendMessageResult.finish_reason ?? null };
+        yield doneChunk;
+    };
     const actualSpy = spy(sendMessageSpyFn);
     return {
         sendMessage: actualSpy,
+        sendMessageStream: sendMessageStreamFn,
         listModels: spy(() => Promise.resolve([])),
     };
 };
@@ -218,8 +232,8 @@ export const mockSupaConfigBase: MockSupabaseDataConfig = {
                 transaction_id: 'a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6',
                 wallet_id: 'wallet-uuid',
                 transaction_type: 'DEBIT_USAGE',
-                amount: 40,
-                balance_after_txn: 960,
+                amount: 65,
+                balance_after_txn: 935,
                 recorded_by_user_id: 'user-auth-xyz',
                 idempotency_key: 'some-idempotency-key',
                 related_entity_id: 'e2a73c08-a97c-4ee0-ac8b-8c25a915ad75',
@@ -246,8 +260,8 @@ export const mockSupaConfigBase: MockSupabaseDataConfig = {
                         config: {
                             api_identifier: testApiIdentifier,
                             tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
-                            input_token_cost_rate: 0.001,
-                            output_token_cost_rate: 0.002
+                            input_token_cost_rate: 1,
+                            output_token_cost_rate: 2
                         }
                     }],
                     error: null,

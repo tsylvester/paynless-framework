@@ -95,6 +95,7 @@ describe('useDialecticStore', () => {
             created_at: '2023-01-01T00:00:00.000Z',
             updated_at: '2023-01-01T00:00:00.000Z',
             dialectic_session_models: [],
+            viewing_stage_id: null,
         };
 
         it('should start a session and refetch project details if project_id is present in response', async () => {
@@ -366,6 +367,7 @@ describe('useDialecticStore', () => {
             current_stage_id: 'stage-x',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         };
 
         const mockUpdatedSessionFromApi: DialecticSession = {
@@ -531,6 +533,7 @@ describe('useDialecticStore', () => {
                 created_at: '2023-01-01T00:00:00.000Z',
                 updated_at: '2023-01-01T00:00:00.000Z',
                 status: 'active',
+                viewing_stage_id: null,
             }, status: 200 });
         });
 
@@ -548,6 +551,7 @@ describe('useDialecticStore', () => {
                     created_at: '2023-01-01T00:00:00.000Z',
                     updated_at: '2023-01-01T00:00:00.000Z',
                     status: 'active',
+                    viewing_stage_id: null,
                 },
                 status: 200,
             });
@@ -631,6 +635,7 @@ describe('useDialecticStore', () => {
                 created_at: '2023-01-01T00:00:00.000Z',
                 updated_at: '2023-01-01T00:00:00.000Z',
                 status: 'active',
+                viewing_stage_id: null,
             }, status: 200 });
             vi.mocked(logger).error.mockClear();
         });
@@ -718,6 +723,7 @@ describe('useDialecticStore', () => {
                     created_at: '2023-01-01T00:00:00.000Z',
                     updated_at: '2023-01-01T00:00:00.000Z',
                     status: 'active',
+                    viewing_stage_id: null,
                 },
                 status: 200,
             });
@@ -782,6 +788,7 @@ describe('useDialecticStore', () => {
             dialectic_contributions: [],
             feedback: [],
             selected_models: [],
+            viewing_stage_id: null,
         };
 
         const mockStageDetails: DialecticStage = {
@@ -1073,5 +1080,191 @@ describe('useDialecticStore', () => {
 
     describe('Feedback File Content Actions', () => {
         it.todo('should have tests for feedback file content actions');
+    });
+
+    describe('setActiveDialecticContext action — session detail clearing', () => {
+        it('should clear activeSessionDetail when sessionId is null', () => {
+            const mockSessionDetail: DialecticSession = {
+                id: 'sess-existing',
+                project_id: 'proj-existing',
+                session_description: 'Existing session',
+                user_input_reference_url: null,
+                iteration_count: 1,
+                selected_models: [],
+                status: 'pending_thesis',
+                associated_chat_id: 'chat-existing',
+                current_stage_id: 'stage-existing',
+                created_at: '2023-01-01T00:00:00.000Z',
+                updated_at: '2023-01-01T00:00:00.000Z',
+                viewing_stage_id: null,
+                dialectic_session_models: [],
+            };
+            useDialecticStore.setState({ activeSessionDetail: mockSessionDetail });
+
+            const { setActiveDialecticContext } = useDialecticStore.getState();
+            setActiveDialecticContext({ projectId: 'proj-x', sessionId: null, stage: null });
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetail).toBeNull();
+        });
+
+        it('should clear activeSessionDetailError when sessionId is null', () => {
+            const mockError: ApiError = { message: 'test error', code: 'TEST_ERROR' };
+            useDialecticStore.setState({ activeSessionDetailError: mockError });
+
+            const { setActiveDialecticContext } = useDialecticStore.getState();
+            setActiveDialecticContext({ projectId: 'proj-x', sessionId: null, stage: null });
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetailError).toBeNull();
+        });
+
+        it('should NOT clear activeSessionDetail when sessionId is non-null', () => {
+            const mockSessionDetail: DialecticSession = {
+                id: 'sess-existing',
+                project_id: 'proj-existing',
+                session_description: 'Existing session',
+                user_input_reference_url: null,
+                iteration_count: 1,
+                selected_models: [],
+                status: 'pending_thesis',
+                associated_chat_id: 'chat-existing',
+                current_stage_id: 'stage-existing',
+                created_at: '2023-01-01T00:00:00.000Z',
+                updated_at: '2023-01-01T00:00:00.000Z',
+                viewing_stage_id: null,
+                dialectic_session_models: [],
+            };
+            useDialecticStore.setState({ activeSessionDetail: mockSessionDetail });
+
+            const { setActiveDialecticContext } = useDialecticStore.getState();
+            setActiveDialecticContext({ projectId: 'proj-x', sessionId: 'sess-y', stage: null });
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetail).toEqual(mockSessionDetail);
+        });
+    });
+
+    describe('startDialecticSession — context after success', () => {
+        const startPayload: StartSessionPayload = {
+            idempotencyKey: 'test-idem-key-context',
+            projectId: 'proj-ctx-123',
+            selectedModels: [{ id: 'model-abc', displayName: 'Model ABC' }],
+            sessionDescription: 'Context Test Session',
+        };
+        const mockAssembledPromptCtx: AssembledPrompt = {
+            promptContent: "This is a seed prompt for context test.",
+            source_prompt_resource_id: "resource-id-ctx",
+        };
+        const mockSessionCtx: DialecticSession = {
+            id: 'sess-ctx-new',
+            project_id: startPayload.projectId,
+            session_description: startPayload.sessionDescription || null,
+            user_input_reference_url: null,
+            iteration_count: 1,
+            selected_models: [],
+            status: 'pending_thesis',
+            associated_chat_id: 'chat-ctx',
+            current_stage_id: 'stage-ctx',
+            created_at: '2023-01-01T00:00:00.000Z',
+            updated_at: '2023-01-01T00:00:00.000Z',
+            viewing_stage_id: null,
+            dialectic_session_models: [],
+        };
+        const mockProjectCtx: DialecticProject = {
+            id: startPayload.projectId,
+            user_id: 'user-1',
+            project_name: 'Context Test Project',
+            selected_domain_id: 'domain-1',
+            dialectic_domains: null,
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            status: 'active',
+            created_at: '2023-01-01T00:00:00.000Z',
+            updated_at: '2023-01-01T00:00:00.000Z',
+            dialectic_process_templates: null,
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
+        };
+
+        it('should set activeContextSessionId to the new session ID after success', async () => {
+            const mockSuccessResponse: StartSessionSuccessResponse = {
+                ...mockSessionCtx,
+                seedPrompt: mockAssembledPromptCtx,
+            };
+            getMockDialecticClient().startSession.mockResolvedValue({ data: mockSuccessResponse, status: 201 });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProjectCtx, status: 200 });
+
+            const { startDialecticSession } = useDialecticStore.getState();
+            await startDialecticSession(startPayload);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeContextSessionId).toBe(mockSessionCtx.id);
+        });
+
+        it('should set activeContextProjectId to the returned project ID after success', async () => {
+            const mockSuccessResponse: StartSessionSuccessResponse = {
+                ...mockSessionCtx,
+                seedPrompt: mockAssembledPromptCtx,
+            };
+            getMockDialecticClient().startSession.mockResolvedValue({ data: mockSuccessResponse, status: 201 });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProjectCtx, status: 200 });
+
+            const { startDialecticSession } = useDialecticStore.getState();
+            await startDialecticSession(startPayload);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeContextProjectId).toBe(startPayload.projectId);
+        });
+    });
+
+    describe('activateProjectAndSessionContextForDeepLink — context after project fetch', () => {
+        const deepLinkProjectId = 'deep-proj-ctx-123';
+        const deepLinkSessionId = 'deep-sess-ctx-456';
+        const mockProjectDeepLink: DialecticProject = {
+            id: deepLinkProjectId,
+            user_id: 'user-1',
+            project_name: 'Deep Link Context Test Project',
+            selected_domain_id: 'domain-1',
+            dialectic_domains: null,
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            status: 'active',
+            created_at: '2023-01-01T00:00:00.000Z',
+            updated_at: '2023-01-01T00:00:00.000Z',
+            dialectic_process_templates: null,
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
+        };
+
+        it('should set activeContextSessionId to target sessionId after project fetch completes', async () => {
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProjectDeepLink, status: 200 });
+
+            // Mock fetchAndSetCurrentSessionDetails as no-op so it does not override context
+            const fetchAndSetSpy = vi.spyOn(useDialecticStore.getState(), 'fetchAndSetCurrentSessionDetails')
+                .mockImplementation(() => Promise.resolve());
+
+            useDialecticStore.setState({ activeContextProjectId: null, currentProjectDetail: null });
+
+            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
+            await activateProjectAndSessionContextForDeepLink(deepLinkProjectId, deepLinkSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeContextSessionId).toBe(deepLinkSessionId);
+
+            fetchAndSetSpy.mockRestore();
+        });
     });
 });

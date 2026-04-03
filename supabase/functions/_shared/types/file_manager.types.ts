@@ -9,13 +9,16 @@ import {
 } from '../types.ts';
 import { 
   ContributionType, 
-  StorageError 
+  StorageError,
+  ContextForDocument,
 } from '../../dialectic-service/dialectic.interface.ts';
 import { PostgrestError } from 'npm:@supabase/supabase-js@^2';
+import { AssembleChunksDeps, AssembleChunksParams, AssembleChunksPayload, AssembleChunksSuccess, AssembleChunksError } from '../utils/assembleChunks/assembleChunks.interface.ts';
 
 export interface FileManagerDependencies {
   constructStoragePath: (context: PathContext) => { storagePath: string; fileName: string; }
   logger: ILogger
+  assembleChunks: (deps: AssembleChunksDeps, params: AssembleChunksParams, payload: AssembleChunksPayload) => Promise<AssembleChunksSuccess | AssembleChunksError>
 }
 
 /**
@@ -338,7 +341,7 @@ export type FileManagerResponse =
   
 export interface IFileManager {
   uploadAndRegisterFile(context: UploadContext): Promise<FileManagerResponse>;
-  assembleAndSaveFinalDocument(rootContributionId: string): Promise<{ finalPath: string | null; error: Error | null; }>;
+  assembleAndSaveFinalDocument(rootContributionId: string, expectedSchema?: ContextForDocument): Promise<{ finalPath: string | null; error: Error | null; }>;
 } 
 
 export type DocumentRelated = DocumentKey | FileType.AssembledDocumentJson | FileType.ModelContributionRawJson | FileType.RenderedDocument

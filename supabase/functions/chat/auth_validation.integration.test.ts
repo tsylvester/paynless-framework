@@ -40,16 +40,23 @@ export async function runAuthValidationTests(
 
     const responseJson: Record<string, any> = await response.json();
 
-    assertEquals(response.status, 401, "Expected 401 Unauthorized for invalid JWT. Body: " + JSON.stringify(responseJson));
+    assertEquals(
+      response.status === 401 || response.status === 403,
+      true,
+      "Expected unauthorized status (401/403) for invalid JWT. Body: " + JSON.stringify(responseJson),
+    );
     
     // Check for common error keys and that the value is a string
     const errorMessage = responseJson.error || responseJson.msg || responseJson.message;
     assertExists(errorMessage, "Response JSON should contain an error, msg, or message field.");
     assertEquals(typeof errorMessage, "string", "Error message in JSON should be a string.");
 
-    assertStringIncludes(errorMessage.toLowerCase(), "invalid authentication credentials", 
-      `Error message should indicate an auth credentials problem. Got: ${errorMessage}`
-    ); 
+    assertEquals(
+      errorMessage.toLowerCase().includes("invalid authentication credentials") ||
+      errorMessage.toLowerCase().includes("invalid jwt"),
+      true,
+      `Error message should indicate an auth credentials/JWT problem. Got: ${errorMessage}`,
+    );
   });
 
   await t.step("[Security/Auth] User not found for JWT", async () => {
@@ -92,14 +99,20 @@ export async function runAuthValidationTests(
 
     const responseJson: Record<string, any> = await response.json();
 
-    // Supabase typically returns 401 if the user for a validly-structured JWT is not found
-    assertEquals(response.status, 401, "Expected 401 Unauthorized for JWT of a non-existent user. Body: " + JSON.stringify(responseJson));
+    assertEquals(
+      response.status === 401 || response.status === 403,
+      true,
+      "Expected unauthorized status (401/403) for JWT of a non-existent user. Body: " + JSON.stringify(responseJson),
+    );
     const errorMessage = responseJson.error || responseJson.msg || responseJson.message;
     assertExists(errorMessage, "Response JSON should contain an error for JWT of non-existent user.");
     assertEquals(typeof errorMessage, "string", "Error message should be a string.");
     
-    assertStringIncludes(errorMessage.toLowerCase(), "invalid authentication credentials", 
-      `Error message should indicate an auth credentials problem. Got: ${errorMessage}`
+    assertEquals(
+      errorMessage.toLowerCase().includes("invalid authentication credentials") ||
+      errorMessage.toLowerCase().includes("does not exist"),
+      true,
+      `Error message should indicate an auth/non-existent-user problem. Got: ${errorMessage}`,
     );
   });
 

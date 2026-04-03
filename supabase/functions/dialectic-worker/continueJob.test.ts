@@ -321,8 +321,10 @@ const baseSavedContribution: DialecticContributionRow = {
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
         assertEquals(result.enqueued, false);
+        assert(!('reason' in result));
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertExists(insertSpy);
+        assertEquals(insertSpy.callCount, 0);
     });
 
     await t.step('CONTINUE_FLAG: should not enqueue when continueUntilComplete is undefined', async () => {
@@ -403,8 +405,10 @@ const baseSavedContribution: DialecticContributionRow = {
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
         assertEquals(result.enqueued, false);
+        assertEquals(result.reason, 'continuation_limit_reached');
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertExists(insertSpy);
+        assertEquals(insertSpy.callCount, 0);
     });
 
     await t.step('CONTINUATION_COUNT: should not enqueue when continuation_count is 6 (over max)', async () => {
@@ -416,8 +420,25 @@ const baseSavedContribution: DialecticContributionRow = {
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
         assertEquals(result.enqueued, false);
+        assertEquals(result.reason, 'continuation_limit_reached');
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertExists(insertSpy);
+        assertEquals(insertSpy.callCount, 0);
+    });
+
+    await t.step('CONTINUATION_COUNT: should not include reason when continueUntilComplete is false', async () => {
+        setup();
+        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: false, continuation_count: 0 };
+        const testJob = createMockJob(payload);
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+
+        assertEquals(result.enqueued, false);
+        assert(!('reason' in result));
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        assertExists(insertSpy);
+        assertEquals(insertSpy.callCount, 0);
     });
 
     await t.step('CONTINUATION_COUNT: should handle undefined continuation_count as 0', async () => {

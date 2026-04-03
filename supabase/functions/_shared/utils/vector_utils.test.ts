@@ -6,15 +6,20 @@ import {
   assert,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { cosineSimilarity, scoreResourceDocuments, scoreHistory, getSortedCompressionCandidates } from "./vector_utils.ts";
-import type { SourceDocument, ExecuteModelCallAndSaveParams } from "../../dialectic-service/dialectic.interface.ts";
+import {
+  CompressionStrategyDeps,
+  ICompressionStrategy,
+} from "./vector_utils.interface.ts";
+import type { SourceDocument} from "../../dialectic-service/dialectic.interface.ts";
 import type { IEmbeddingClient } from "../services/indexing_service.interface.ts";
-import type { EmbeddingResponse, Messages } from '../types.ts';
+import type { EmbeddingResponse, Messages, ResourceDocument, ResourceDocuments } from '../types.ts';
 import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { type Database } from "../../types_db.ts";
 import { createMockSupabaseClient } from "../supabase.mock.ts";
 import { IDialecticJobDeps, RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
 import { FileType } from "../types/file_manager.types.ts";
+import { isRecord } from "./type_guards.ts";
 
 
 Deno.test("cosineSimilarity: calculates similarity for basic vectors", () => {
@@ -137,7 +142,6 @@ const deps: IDialecticJobDeps = { embeddingClient: mockEmbeddingClient, getSeedP
   path: '',
   fileName: '',
 }),
-executeModelCallAndSave: () => Promise.resolve(),
 documentRenderer: {
   renderDocument: () => Promise.resolve({
     content: '',
@@ -175,6 +179,7 @@ notificationService: {
   sendContributionGenerationContinuedEvent: () => Promise.resolve(),
   sendContributionFailedNotification: () => Promise.resolve(),
   sendContributionGenerationFailedEvent: () => Promise.resolve(),
+  sendContributionGenerationPausedNsfEvent: () => Promise.resolve(),
 },
 downloadFromStorage: () => Promise.resolve({
   data: new ArrayBuffer(0),
@@ -245,18 +250,24 @@ deleteFromStorage: () => Promise.resolve({
 Deno.test("scoreResourceDocuments", async (t) => {
 
     const currentUserPrompt = 'prompt';
+    const { client: dbClient } = createMockSupabaseClient('user-123', {});
+    const compressionDeps: CompressionStrategyDeps = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        embeddingClient: deps.embeddingClient,
+        logger: deps.logger,
+    };
 
     await t.step("should return an empty array if no documents are provided", async () => {
-        const result = await scoreResourceDocuments(deps, [], currentUserPrompt);
+        const result = await scoreResourceDocuments(compressionDeps, [], currentUserPrompt);
         assertEquals(result.length, 0);
     });
 
     await t.step("should score documents based on cosine similarity", async () => {
-        const documents = [
-            mockSourceDocument({ id: 'doc-high', content: 'high relevance' }),
-            mockSourceDocument({ id: 'doc-low', content: 'low relevance' }),
+        const documents: ResourceDocuments = [
+            { id: 'doc-high', content: 'high relevance', document_key: 'business_case', stage_slug: 'thesis', type: 'document' },
+            { id: 'doc-low', content: 'low relevance', document_key: 'feature_spec', stage_slug: 'thesis', type: 'document' },
         ];
-        const result = await scoreResourceDocuments(deps, documents, currentUserPrompt);
+        const result = await scoreResourceDocuments(compressionDeps, documents, currentUserPrompt);
         
         assertEquals(result.length, 2);
         const highRelevanceDoc = result.find(d => d.id === 'doc-high');
@@ -307,9 +318,9 @@ Deno.test("scoreHistory", async (t) => {
 
 Deno.test("getSortedCompressionCandidates", async (t) => {
    
-    const resourceDocuments = [
-        mockSourceDocument({ id: 'doc-high', content: 'high relevance' }), // High score
-        mockSourceDocument({ id: 'doc-low', content: 'low relevance' }),   // Low score
+    const resourceDocuments: ResourceDocuments = [
+        { id: 'doc-high', content: 'high relevance', document_key: 'business_case', stage_slug: 'thesis', type: 'document' },
+        { id: 'doc-low', content: 'low relevance', document_key: 'feature_spec', stage_slug: 'thesis', type: 'document' },
     ];
 
     const conversationHistory: Messages[] = [
@@ -335,7 +346,12 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
             }
         });
 
-        const result = await getSortedCompressionCandidates(dbClient as unknown as SupabaseClient<Database>, deps, resourceDocuments, conversationHistory, 'prompt');
+        const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
+        const result = await compressionStrategy(
+            { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+            {},
+            { documents: resourceDocuments, history: conversationHistory, currentUserPrompt: 'prompt' },
+        );
 
         // We expect 1 history candidate + 2 document candidates
         assertEquals(result.length, 3);
@@ -358,8 +374,8 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
 
     await t.step("returns indexed document candidates (no exclusion by prior indexing)", async () => {
         // Arrange: single document, history too short to contribute candidates
-        const soloDocuments = [
-            mockSourceDocument({ id: 'doc-indexed', content: 'high relevance' }),
+        const soloDocuments: ResourceDocuments = [
+            { id: 'doc-indexed', content: 'high relevance', document_key: 'business_case', stage_slug: 'thesis', type: 'document' },
         ];
         const shortHistory: Messages[] = [
             { id: 'msg-0', role: 'system', content: 'system prompt' },
@@ -379,12 +395,11 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
         });
 
         // Act
-        const result = await getSortedCompressionCandidates(
-            dbClient as unknown as SupabaseClient<Database>,
-            deps,
-            soloDocuments,
-            shortHistory,
-            'prompt'
+        const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
+        const result = await compressionStrategy(
+            { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+            {},
+            { documents: soloDocuments, history: shortHistory, currentUserPrompt: 'prompt' },
         );
 
         // Assert: the indexed document is still a candidate
@@ -406,12 +421,11 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
             }
         });
 
-        const result = await getSortedCompressionCandidates(
-            dbClient as unknown as SupabaseClient<Database>,
-            deps, 
-            resourceDocuments, 
-            conversationHistory, 
-            'prompt'
+        const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
+        const result = await compressionStrategy(
+            { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+            {},
+            { documents: resourceDocuments, history: conversationHistory, currentUserPrompt: 'prompt' },
         );
 
         // Assert: indexing info is diagnostic only; result should include all candidates
@@ -448,12 +462,11 @@ Deno.test("getSortedCompressionCandidates - role-aware anchors preserved; non-an
     { id: 'msg-11', role: 'user', content: 'Please continue.' },
   ];
 
-  const result = await getSortedCompressionCandidates(
-    dbClient as unknown as SupabaseClient<Database>,
-    deps,
-    [],
-    history,
-    'prompt'
+  const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
+  const result = await compressionStrategy(
+    { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+    {},
+    { documents: [], history, currentUserPrompt: 'prompt' }
   );
 
   const candidateIds = result.filter(c => c.sourceType === 'history').map(c => c.id);
@@ -549,9 +562,9 @@ Deno.test("getSortedCompressionCandidates - blended scoring ranks higher-matrix 
   });
 
   // Arrange: two documents with identical similarity to the prompt; relevance rules key by document_key so high-priority doc gets relevance 1, low-priority gets 0
-  const documents: SourceDocument[] = [
-    mockSourceDocument({ id: 'doc-high', content: 'high relevance', document_key: 'business_case', type: 'document' }),
-    mockSourceDocument({ id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', type: 'document' }),
+  const documents: ResourceDocuments = [
+    { id: 'doc-high', content: 'high relevance', document_key: 'business_case', stage_slug: 'thesis', type: 'document' },
+    { id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', stage_slug: 'thesis', type: 'document' },
   ];
 
   const inputsRelevance: RelevanceRule[] = [
@@ -559,13 +572,11 @@ Deno.test("getSortedCompressionCandidates - blended scoring ranks higher-matrix 
     { document_key: FileType.feature_spec, type: 'document', relevance: 0 },
   ];
 
-  const result = await getSortedCompressionCandidates(
-    dbClient as unknown as SupabaseClient<Database>,
-    deps,
-    documents,
-    [],
-    'prompt',
-    inputsRelevance
+  const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
+  const result = await compressionStrategy(
+    { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+    { inputsRelevance },
+    { documents, history: [], currentUserPrompt: 'prompt' }
   );
 
   const docOrder = result.filter(c => c.sourceType === 'document').map(c => c.id);
@@ -584,9 +595,9 @@ Deno.test("getSortedCompressionCandidates - matrix priority protects high-priori
     },
   });
 
-  const documents: SourceDocument[] = [
-    mockSourceDocument({ id: 'doc-high', content: 'high relevance', document_key: 'business_case', type: 'document' }),
-    mockSourceDocument({ id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', type: 'document' }),
+  const documents: ResourceDocuments = [
+    { id: 'doc-high', content: 'high relevance', document_key: 'business_case', stage_slug: 'thesis', type: 'document' },
+    { id: 'doc-low', content: 'high relevance', document_key: 'feature_spec', stage_slug: 'thesis', type: 'document' },
   ];
 
   const inputsRelevance: RelevanceRule[] = [
@@ -594,16 +605,136 @@ Deno.test("getSortedCompressionCandidates - matrix priority protects high-priori
     { document_key: FileType.feature_spec, type: 'document', relevance: 0 },
   ];
 
-  const result = await getSortedCompressionCandidates(
-    dbClient as unknown as SupabaseClient<Database>,
-    deps,
-    documents,
-    [],
-    'prompt',
-    inputsRelevance
+  const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
+  const result = await compressionStrategy(
+    { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+    { inputsRelevance },
+    { documents, history: [], currentUserPrompt: 'prompt' }
   );
 
   const docOrder = result.filter(c => c.sourceType === 'document').map(c => c.id);
   // On similarity ties, the earliest candidate should be the lower-priority document
   assertEquals(docOrder[0], 'doc-low', "Lower-priority doc should be the earliest candidate when similarity ties");
 });
+
+Deno.test(
+  "getSortedCompressionCandidates - inputsRelevance: general rule sorts before stage-specific high weight; missing identity skips matrix",
+  async () => {
+    const { client: dbClient } = createMockSupabaseClient("user-123", {
+      genericMockResults: {
+        dialectic_memory: {
+          select: { data: [], error: null },
+        },
+      },
+    });
+
+    const documents: ResourceDocuments = [
+      {
+        id: "A",
+        content: "x",
+        document_key: FileType.success_metrics,
+        type: "document",
+        stage_slug: "s1",
+      },
+      {
+        id: "B",
+        content: "x",
+        document_key: FileType.business_case,
+        type: "document",
+        stage_slug: "s2",
+      },
+      {
+        id: "C",
+        content: "x",
+        document_key: "",
+        type: "",
+        stage_slug: "s",
+      },
+    ];
+
+    const inputsRelevance: RelevanceRule[] = [
+      { document_key: FileType.business_case, type: "document", relevance: 0.3 },
+      { document_key: FileType.success_metrics, type: "document", relevance: 1, slug: "s1" },
+    ];
+
+    const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
+    const result = await compressionStrategy(
+      {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        embeddingClient: deps.embeddingClient,
+        logger: deps.logger,
+      },
+      { inputsRelevance },
+      { documents, history: [], currentUserPrompt: "prompt" },
+    );
+
+    const indexB: number = result.findIndex((c) => c.id === "B");
+    const indexA: number = result.findIndex((c) => c.id === "A");
+    assert(indexB !== -1, "doc B should be present");
+    assert(indexA !== -1, "doc A should be present");
+    assert(
+      indexB < indexA,
+      "doc B (general rule) should sort before doc A (stage-specific high weight): lower effectiveScore compresses first",
+    );
+  },
+);
+
+Deno.test(
+  "getSortedCompressionCandidates - ties without inputsRelevance: candidates are in non-decreasing effectiveScore order",
+  async () => {
+    const { client: dbClient } = createMockSupabaseClient("user-123", {
+      genericMockResults: {
+        dialectic_memory: {
+          select: { data: [], error: null },
+        },
+      },
+    });
+
+    const documents: ResourceDocuments = [
+      {
+        id: "A",
+        content: "high relevance",
+        document_key: FileType.business_case,
+        type: "document",
+        stage_slug: "s",
+      },
+      {
+        id: "B",
+        content: "high relevance",
+        document_key: FileType.success_metrics,
+        type: "document",
+        stage_slug: "s",
+      },
+    ];
+
+    const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
+    const result = await compressionStrategy(
+      {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        embeddingClient: deps.embeddingClient,
+        logger: deps.logger,
+      },
+      {},
+      { documents, history: [], currentUserPrompt: "prompt" },
+    );
+
+    assert(result.length >= 1, "Expected candidates from strategy");
+    for (let i: number = 1; i < result.length; i++) {
+      const prevRaw: unknown = result[i - 1];
+      const currRaw: unknown = result[i];
+      const prev: number | undefined =
+        isRecord(prevRaw) && typeof prevRaw["effectiveScore"] === "number"
+          ? prevRaw["effectiveScore"]
+          : undefined;
+      const curr: number | undefined =
+        isRecord(currRaw) && typeof currRaw["effectiveScore"] === "number"
+          ? currRaw["effectiveScore"]
+          : undefined;
+      assert(
+        typeof prev === "number" && typeof curr === "number",
+        "Candidates must carry effectiveScore as number",
+      );
+      assert(prev <= curr, "Candidates must be in non-decreasing effectiveScore order");
+    }
+  },
+);

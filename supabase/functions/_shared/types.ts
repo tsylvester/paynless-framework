@@ -5,13 +5,14 @@ import type { Database, Json } from '../types_db.ts';
 import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from './cors-headers.ts';
 import type { CountTokensDeps, CountableChatPayload } from './types/tokenizer.types.ts';
 import { createClient, SupabaseClient, User } from "npm:@supabase/supabase-js";
+import { GenerateContentResponse } from "npm:@google/generative-ai";
 import { Tables } from '../types_db.ts';
 import type { ITokenWalletService } from './types/tokenWallet.types.ts';
 import type { prepareChatContext } from '../chat/prepareChatContext.ts';
 import type { handleNormalPath } from '../chat/handleNormalPath.ts';
 import type { handleRewindPath } from '../chat/handleRewindPath.ts';
 import type { handleDialecticPath } from '../chat/handleDialecticPath.ts';
-import type { debitTokens } from '../chat/debitTokens.ts';
+import type { debitTokens } from './utils/debitTokens.ts';
 import { SystemInstruction } from '../dialectic-service/dialectic.interface.ts';
 
 export type GetAiProviderAdapterFn = (
@@ -143,17 +144,36 @@ export interface EmailMarketingService {
    * @param email - The user's email address.
    */
   removeUser?(email: string): Promise<void>;
+
+  /**
+   * (Optional) Adds a tag to a subscriber by email.
+   * Used for per-ref tagging in Kit API v4.
+   * @param email - The subscriber's email address.
+   * @param tagId - The tag ID to apply.
+   */
+  addTagToSubscriber?(email: string, tagId: string): Promise<void>;
+
+  /**
+   * (Optional) Removes a tag from a subscriber by email.
+   * Used for per-ref tagging in Kit API v4.
+   * @param email - The subscriber's email address.
+   * @param tagId - The tag ID to remove.
+   */
+  removeTagFromSubscriber?(email: string, tagId: string): Promise<void>;
 }
 
 // --- AI Adapter/API Types (Not DB Tables) ---
-
-export type ResourceDocuments = {
-  id?: string;
+export interface OutboundDocument {
+  id: string;
   content: string;
-  document_key?: string;
-  stage_slug?: string;
-  type?: string;
-}[];
+}
+export interface ResourceDocument extends OutboundDocument {
+  document_key: string;
+  stage_slug: string;
+  type: string;
+}
+
+export type ResourceDocuments = ResourceDocument[];
 
 /** Shape of a single part passed to Gemini sendMessage (text or inlineData). Used by GoogleAdapter tests. */
 export interface GeminiSendMessagePart {
@@ -166,15 +186,15 @@ export interface GoogleGetGenerativeModelStubReturn {
   startChat(_opts?: unknown): GoogleStartChatStubReturn;
 }
 
+/** Return shape of chat.sendMessageStream() for GoogleAdapter tests. */
+export interface GoogleSendMessageStreamStubReturn {
+  stream: AsyncIterable<GenerateContentResponse>;
+  response: Promise<GenerateContentResponse>;
+}
+
 /** Minimal shape returned by startChat in stubbed getGenerativeModel. */
 export interface GoogleStartChatStubReturn {
-  sendMessage(_parts: unknown): Promise<{
-    response: {
-      candidates: unknown[];
-      usageMetadata: unknown;
-      text: () => string;
-    };
-  }>;
+  sendMessageStream(_parts: unknown): Promise<GoogleSendMessageStreamStubReturn>;
 }
 
 /** Shape of generationConfig captured from startChat opts in GoogleAdapter tests. */
@@ -203,7 +223,7 @@ export interface ChatApiRequest {
     role: 'system' | 'user' | 'assistant';
     content: string;
   }[];
-  resourceDocuments?: ResourceDocuments;
+  resourceDocuments?: OutboundDocument[] | ResourceDocuments;
   organizationId?: string; // uuid, optional for org chats - ADDED
   rewindFromMessageId?: string; // uuid, optional for rewinding - ADDED
   max_tokens_to_generate?: number; // ADDED: Max tokens for the AI to generate in its response
@@ -237,6 +257,11 @@ export type AiProviderAdapter = new (
     modelIdentifier: string, // The specific API identifier for the model (e.g., 'gpt-4o')
   ): Promise<AdapterResponsePayload>;
 
+  sendMessageStream(
+    request: ChatApiRequest,
+    modelIdentifier: string,
+  ): AsyncGenerator<AdapterStreamChunk>;
+
   listModels(): Promise<ProviderModelInfo[]>;
 
   getEmbedding?(text: string): Promise<EmbeddingResponse>;
@@ -264,7 +289,23 @@ export type FinishReason = 'stop'
 | 'max_tokens' 
 | 'content_truncated' 
 | 'next_document' 
+| 'tool_use'
 | null;
+
+/**
+ * Uniform streaming chunk emitted by AI provider adapters (discriminated on `type`).
+ */
+export type AdapterStreamChunk =
+  | { type: 'text_delta'; text: string }
+  | {
+      type: 'usage';
+      tokenUsage: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+      };
+    }
+  | { type: 'done'; finish_reason: FinishReason };
 
 export enum ContinueReason {
     MaxTokens = 'max_tokens',
@@ -353,8 +394,8 @@ export interface ILogger {
   // type ChatRow = Database['public']['Tables']['chats']['Row']; // Not directly used in handlePostRequest return
   
   export interface ChatHandlerSuccessResponse {
-    userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
-    assistantMessage: ChatMessageRow;  // Always populated on success
+    userMessage?: ChatMessageInsert;       // Populated for normal new messages and new user message in rewind
+    assistantMessage: ChatMessageInsert;  // Always populated on success
     chatId?: string;                   // ID of the chat session, optional for 'headless' dialectic jobs
     finish_reason?: FinishReason;      // ADDED: The reason the AI provider finished generating tokens
     isRewind?: boolean;                 // True if this was a rewind operation

@@ -12,8 +12,6 @@ import {
     isDialecticJobRowArray,
     isFailedAttemptError,
     isFailedAttemptErrorArray,
-    isJobResultsWithModelProcessing,
-    isModelProcessingResult,
     validatePayload,
     isDialecticPlanJobPayload,
     isDialecticSkeletonJobPayload,
@@ -87,6 +85,9 @@ import {
     SourceDocument,
     HeaderContext,
     GitHubRepoSettings,
+    SyncMapEntry,
+    SyncToGitHubPayload,
+    SyncToGitHubResponse,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
@@ -1616,48 +1617,6 @@ Deno.test('Type Guard: isJobInsert', async (t) => {
     });
 });
 
-Deno.test('Type Guard: isJobResultsWithModelProcessing', async (t) => {
-    await t.step('should return true for a valid result object with a valid array', () => {
-        const results = {
-            modelProcessingResults: [
-                { modelId: 'm1', status: 'completed', attempts: 1, contributionId: 'c1' },
-                { modelId: 'm2', status: 'failed', attempts: 3, error: 'Failed' },
-            ],
-        };
-        assert(isJobResultsWithModelProcessing(results));
-    });
-
-    await t.step('should return true for a result object with an empty array', () => {
-        const results = { modelProcessingResults: [] };
-        assert(isJobResultsWithModelProcessing(results));
-    });
-
-    await t.step('should return false if modelProcessingResults is not an array', () => {
-        const results = { modelProcessingResults: { modelId: 'm1' } };
-        assert(!isJobResultsWithModelProcessing(results));
-    });
-
-    await t.step('should return false if the array contains invalid items', () => {
-        const results = {
-            modelProcessingResults: [
-                { modelId: 'm1', status: 'completed', attempts: 1 },
-                { status: 'failed', attempts: 3 }, // missing modelId
-            ],
-        };
-        assert(!isJobResultsWithModelProcessing(results));
-    });
-
-    await t.step('should return false if modelProcessingResults key is missing', () => {
-        const results = { otherKey: [] };
-        assert(!isJobResultsWithModelProcessing(results));
-    });
-
-    await t.step('should return false for non-objects', () => {
-        assert(!isJobResultsWithModelProcessing(null));
-        assert(!isJobResultsWithModelProcessing([]));
-    });
-});
-
 Deno.test('Type Guard: isStageWithRecipeSteps', async (t) => {
     const mockRecipeStep: DialecticStageRecipeStep = {
         branch_key: null,
@@ -1848,58 +1807,6 @@ Deno.test('Type Guard: isDatabaseRecipeSteps', async (t) => {
             ],
           };
         assert(!isDatabaseRecipeSteps(invalidObject));
-    });
-});
-
-Deno.test('Type Guard: isModelProcessingResult', async (t) => {
-    await t.step('should return true for a complete, successful result', () => {
-        const result = {
-            modelId: 'm1',
-            status: 'completed',
-            attempts: 1,
-            contributionId: 'c1',
-        };
-        assert(isModelProcessingResult(result));
-    });
-
-    await t.step('should return true for a failed result with an error message', () => {
-        const result = {
-            modelId: 'm2',
-            status: 'failed',
-            attempts: 3,
-            error: 'AI timed out',
-        };
-        assert(isModelProcessingResult(result));
-    });
-
-    await t.step('should return true for a result needing continuation', () => {
-        const result = {
-            modelId: 'm3',
-            status: 'needs_continuation',
-            attempts: 1,
-            contributionId: 'c2-partial',
-        };
-        assert(isModelProcessingResult(result));
-    });
-
-    await t.step('should return false if modelId is missing', () => {
-        const result = { status: 'completed', attempts: 1, contributionId: 'c1' };
-        assert(!isModelProcessingResult(result));
-    });
-
-    await t.step('should return false if status is invalid', () => {
-        const result = { modelId: 'm1', status: 'pending', attempts: 1 };
-        assert(!isModelProcessingResult(result));
-    });
-
-    await t.step('should return false if attempts is not a number', () => {
-        const result = { modelId: 'm1', status: 'completed', attempts: 'one' };
-        assert(!isModelProcessingResult(result));
-    });
-
-    await t.step('should return false for non-objects', () => {
-        assert(!isModelProcessingResult(null));
-        assert(!isModelProcessingResult('a string'));
     });
 });
 
@@ -3996,5 +3903,83 @@ Deno.test('Type Guard: isSelectAnchorResult', async (t) => {
             unknownProperty: 'value',
         };
         assert(!isSelectAnchorResult(result));
+    });
+});
+
+Deno.test('Type contract: SyncMapEntry', async (t) => {
+    const validWithAudience: SyncMapEntry = {
+        documentKey: 'business_case',
+        friendlyName: 'business_case',
+        stageGroup: 'proposal',
+        layer: 'research',
+        audience: 'leadership',
+        sortOrder: 1,
+        available: true,
+        updatedSinceLastSync: false,
+    };
+    await t.step('has required shape with all fields including audience', () => {
+        assert(typeof validWithAudience.documentKey === 'string');
+        assert(typeof validWithAudience.friendlyName === 'string');
+        assert(typeof validWithAudience.stageGroup === 'string');
+        assert(['research', 'decision', 'action'].includes(validWithAudience.layer));
+        assert(validWithAudience.audience === 'leadership');
+        assert(typeof validWithAudience.sortOrder === 'number');
+        assert(typeof validWithAudience.available === 'boolean');
+        assert(typeof validWithAudience.updatedSinceLastSync === 'boolean');
+    });
+    await t.step('allows nullable audience', () => {
+        const withNullAudience: SyncMapEntry = {
+            ...validWithAudience,
+            audience: null,
+        };
+        assert(withNullAudience.audience === null);
+        assert(typeof withNullAudience.available === 'boolean');
+        assert(typeof withNullAudience.updatedSinceLastSync === 'boolean');
+    });
+});
+
+Deno.test('Type contract: SyncToGitHubPayload', async (t) => {
+    const valid: SyncToGitHubPayload = {
+        projectId: 'proj-1',
+        selectedModelIds: ['model-a'],
+        selectedDocumentKeys: ['business_case', 'feature_spec'],
+        includeRulesFile: true,
+    };
+    await t.step('requires projectId, selectedModelIds, selectedDocumentKeys, includeRulesFile', () => {
+        assert(typeof valid.projectId === 'string');
+        assert(Array.isArray(valid.selectedModelIds));
+        assert(valid.selectedModelIds.every((id) => typeof id === 'string'));
+        assert(Array.isArray(valid.selectedDocumentKeys));
+        assert(valid.selectedDocumentKeys.every((k) => typeof k === 'string'));
+        assert(typeof valid.includeRulesFile === 'boolean');
+    });
+});
+
+Deno.test('Type contract: SyncToGitHubResponse', async (t) => {
+    await t.step('requires commitSha (nullable string), filesUpdated, syncedAt, syncedDocumentKeys, skippedDocumentKeys', () => {
+        const withNullSha: SyncToGitHubResponse = {
+            commitSha: null,
+            filesUpdated: 0,
+            syncedAt: '2025-01-01T00:00:00Z',
+            syncedDocumentKeys: [],
+            skippedDocumentKeys: ['doc-a'],
+        };
+        assert(withNullSha.commitSha === null);
+        assert(typeof withNullSha.filesUpdated === 'number');
+        assert(typeof withNullSha.syncedAt === 'string');
+        assert(Array.isArray(withNullSha.syncedDocumentKeys));
+        assert(Array.isArray(withNullSha.skippedDocumentKeys));
+    });
+    await t.step('allows commitSha as string', () => {
+        const withSha: SyncToGitHubResponse = {
+            commitSha: 'abc123',
+            filesUpdated: 2,
+            syncedAt: '2025-01-01T00:00:00Z',
+            syncedDocumentKeys: ['business_case', 'feature_spec'],
+            skippedDocumentKeys: [],
+        };
+        assert(typeof withSha.commitSha === 'string');
+        assert(withSha.syncedDocumentKeys.length === 2);
+        assert(withSha.skippedDocumentKeys.length === 0);
     });
 });

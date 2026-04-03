@@ -1,6 +1,6 @@
 import { assert, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import type { Tables, Json } from "../../../types_db.ts";
-import { 
+import {
     isSelectedAiProvider,
     isUserRole,
     isAiModelExtendedConfig,
@@ -13,13 +13,17 @@ import {
     isApiChatMessage,
     isFinishReason,
     isContinueReason,
+    isOutboundDocument,
+    isResourceDocument,
 } from './type_guards.chat.ts';
-import type { 
-    AiModelExtendedConfig, 
-    TokenUsage, 
-    ChatInsert, 
-    ChatApiRequest, 
-    FinishReason 
+import type {
+    AiModelExtendedConfig,
+    TokenUsage,
+    ChatInsert,
+    ChatApiRequest,
+    FinishReason,
+    OutboundDocument,
+    ResourceDocument,
 } from '../../types.ts';
 
 Deno.test('Type Guard: isAiModelExtendedConfig', async (t) => {
@@ -235,8 +239,8 @@ Deno.test('Type Guard: isChatMessageRow', async (t) => {
         assert(isChatMessageRow(message));
     });
 
-    await t.step('should return false if a required field is missing (e.g., chat_id)', () => {
-        const { chat_id, ...invalidMessage } = baseMessage;
+    await t.step('should return false if a required field is missing (e.g., id)', () => {
+        const { id, ...invalidMessage } = baseMessage;
         assert(!isChatMessageRow(invalidMessage));
     });
 
@@ -260,7 +264,7 @@ Deno.test('Type Guard: isChatMessageRow', async (t) => {
 Deno.test('Type Guard: isFinishReason and isContinueReason', async (t) => {
     await t.step('isFinishReason accepts full set and null; isContinueReason only accepts continuation subset', () => {
         const all: (FinishReason)[] = [
-            'stop','length','tool_calls','content_filter','function_call','error','unknown','max_tokens','content_truncated',null
+            'stop','length','tool_calls','content_filter','function_call','error','unknown','max_tokens','content_truncated','tool_use',null
         ];
         for (const r of all) {
             // unknown → FinishReason
@@ -270,7 +274,7 @@ Deno.test('Type Guard: isFinishReason and isContinueReason', async (t) => {
 
         // Continuation subset
         const contTrue: FinishReason[] = ['max_tokens','length','content_truncated','unknown'];
-        const contFalse: FinishReason[] = ['stop','tool_calls','content_filter','function_call','error', null];
+        const contFalse: FinishReason[] = ['stop','tool_calls','content_filter','function_call','error','tool_use', null];
 
         for (const r of contTrue) {
             assert(isContinueReason(r));
@@ -317,7 +321,8 @@ Deno.test('Type Guard: isSelectedAiProvider', async (t) => {
             is_active: true,
             is_enabled: true,
             updated_at: new Date().toISOString(),
-            is_default_embedding: false
+            is_default_embedding: false,
+            is_default_generation: false,
         };
         assert(isSelectedAiProvider(provider));
     });
@@ -414,6 +419,70 @@ Deno.test('Type Guard: isUserRole', async (t) => {
         assert(!isUserRole(123));
         assert(!isUserRole({ role: 'user' }));
         assert(!isUserRole(['user']));
+    });
+});
+
+Deno.test('Type Guard: isOutboundDocument', async (t) => {
+    await t.step('should return true for a valid OutboundDocument', () => {
+        const doc: OutboundDocument = { id: 'doc-1', content: 'Hello' };
+        assert(isOutboundDocument(doc));
+    });
+
+    await t.step('should return true for a ResourceDocument (superset)', () => {
+        const doc: ResourceDocument = { id: 'doc-1', content: 'Hello', document_key: 'key', stage_slug: 'thesis', type: 'rendered_document' };
+        assert(isOutboundDocument(doc));
+    });
+
+    await t.step('should return false if id is missing', () => {
+        assert(!isOutboundDocument({ content: 'Hello' }));
+    });
+
+    await t.step('should return false if content is missing', () => {
+        assert(!isOutboundDocument({ id: 'doc-1' }));
+    });
+
+    await t.step('should return false for non-object inputs', () => {
+        assert(!isOutboundDocument(null));
+        assert(!isOutboundDocument('a string'));
+        assert(!isOutboundDocument(123));
+        assert(!isOutboundDocument([]));
+    });
+});
+
+Deno.test('Type Guard: isResourceDocument', async (t) => {
+    await t.step('should return true for a valid ResourceDocument', () => {
+        const doc: ResourceDocument = { id: 'doc-1', content: 'Hello', document_key: 'business_case', stage_slug: 'thesis', type: 'rendered_document' };
+        assert(isResourceDocument(doc));
+    });
+
+    await t.step('should return false for a plain OutboundDocument (missing identity fields)', () => {
+        const doc: OutboundDocument = { id: 'doc-1', content: 'Hello' };
+        assert(!isResourceDocument(doc));
+    });
+
+    await t.step('should return false if document_key is missing', () => {
+        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', stage_slug: 'thesis', type: 'rendered_document' }));
+    });
+
+    await t.step('should return false if stage_slug is missing', () => {
+        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', document_key: 'key', type: 'rendered_document' }));
+    });
+
+    await t.step('should return false if type is missing', () => {
+        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', document_key: 'key', stage_slug: 'thesis' }));
+    });
+
+    await t.step('should return false if identity fields are non-string', () => {
+        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', document_key: 123, stage_slug: 'thesis', type: 'rendered_document' }));
+        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', document_key: 'key', stage_slug: null, type: 'rendered_document' }));
+        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', document_key: 'key', stage_slug: 'thesis', type: true }));
+    });
+
+    await t.step('should return false for non-object inputs', () => {
+        assert(!isResourceDocument(null));
+        assert(!isResourceDocument('a string'));
+        assert(!isResourceDocument(123));
+        assert(!isResourceDocument([]));
     });
 });
 

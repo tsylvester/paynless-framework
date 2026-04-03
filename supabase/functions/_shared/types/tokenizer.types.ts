@@ -1,4 +1,4 @@
-import type { Messages, ResourceDocuments, AiModelExtendedConfig } from "../types.ts";
+import type { Messages, AiModelExtendedConfig, OutboundDocument } from "../types.ts";
 
 export type CountTokensDeps = {
     getEncoding: (encodingName: string) => { encode: (input: string) => number[] };
@@ -10,7 +10,7 @@ export type CountTokensDeps = {
     systemInstruction?: string;
     message?: string;
     messages?: Messages[];
-    resourceDocuments?: ResourceDocuments;
+    resourceDocuments?: OutboundDocument[];
   };
 
   export type CountTokensFn = (

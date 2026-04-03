@@ -8,15 +8,32 @@ import {
   type MockQueryBuilderState,
 } from "../_shared/supabase.mock.ts";
 import type {
-  GitHubUser,
-  GitHubRepo,
-  GitHubBranch,
-  GitHubCreateRepoPayload,
+  CreateRepoDeps,
+  CreateRepoParams,
+  CreateRepoPayload,
   GenerateInstallationTokenDeps,
   GenerateInstallationTokenParams,
+  GetConnectionStatusResponse,
+  GetUserDeps,
+  GetUserParams,
+  GetUserPayload,
+  GitHubBranch,
+  GitHubCreateRepoPayload,
+  GitHubPushResult,
+  GitHubRepo,
+  GitHubUser,
   GithubConnectionRow,
   GithubServiceDeps,
   IGitHubAdapter,
+  ListBranchesDeps,
+  ListBranchesParams,
+  ListBranchesPayload,
+  ListReposDeps,
+  ListReposParams,
+  ListReposPayload,
+  PushFilesDeps,
+  PushFilesParams,
+  PushFilesPayload,
 } from "../_shared/types/github.types.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { User } from "npm:@supabase/gotrue-js@^2.6.3";
@@ -62,6 +79,13 @@ const MOCK_CONNECTION_ROW: GithubConnectionRow = {
   updated_at: new Date().toISOString(),
 };
 
+const SUSPENDED_MESSAGE = "GitHub App connection is suspended. Please reactivate at github.com.";
+
+const MOCK_CONNECTION_ROW_SUSPENDED: GithubConnectionRow = {
+  ...MOCK_CONNECTION_ROW,
+  suspended_at: "2024-01-01T00:00:00Z",
+};
+
 const MOCK_ENV: Record<string, string> = {
   GITHUB_APP_ID: "test-app-id",
   GITHUB_APP_PRIVATE_KEY: "test-private-key",
@@ -69,6 +93,10 @@ const MOCK_ENV: Record<string, string> = {
   SUPABASE_ANON_KEY: "test-anon-key",
   SUPABASE_SERVICE_ROLE_KEY: "test-service-role-key",
 };
+
+const EMPTY_GITHUB_REPOS: GitHubRepo[] = [];
+const EMPTY_GITHUB_BRANCHES: GitHubBranch[] = [];
+const MOCK_PUSH_RESULT: GitHubPushResult = { commitSha: "abc", filesUpdated: 0 };
 
 function createJsonRequest(action: string, payload: unknown, authToken?: string): Request {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -82,14 +110,34 @@ function createJsonRequest(action: string, payload: unknown, authToken?: string)
 
 function createMockAdapter(overrides: Partial<IGitHubAdapter>): IGitHubAdapter {
   return {
-    getUser: spy(() => Promise.resolve(MOCK_GITHUB_USER)),
-    listRepos: spy(() => Promise.resolve([])),
-    listBranches: spy((_owner: string, _repo: string) => Promise.resolve([])),
-    createRepo: spy((_payload: GitHubCreateRepoPayload) =>
-      Promise.resolve(MOCK_CREATE_REPO_RESULT)
+    getUser: spy(
+      (_deps: GetUserDeps, _params: GetUserParams, _payload: GetUserPayload) =>
+        Promise.resolve({ data: MOCK_GITHUB_USER })
     ),
-    pushFiles: spy(() =>
-      Promise.resolve({ commitSha: "abc", filesUpdated: 0 })
+    listRepos: spy(
+      (_deps: ListReposDeps, _params: ListReposParams, _payload: ListReposPayload) =>
+        Promise.resolve({ data: EMPTY_GITHUB_REPOS })
+    ),
+    listBranches: spy(
+      (
+        _deps: ListBranchesDeps,
+        _params: ListBranchesParams,
+        _payload: ListBranchesPayload
+      ) => Promise.resolve({ data: EMPTY_GITHUB_BRANCHES })
+    ),
+    createRepo: spy(
+      (
+        _deps: CreateRepoDeps,
+        _params: CreateRepoParams,
+        _payload: CreateRepoPayload
+      ) => Promise.resolve({ data: MOCK_CREATE_REPO_RESULT })
+    ),
+    pushFiles: spy(
+      (
+        _deps: PushFilesDeps,
+        _params: PushFilesParams,
+        _payload: PushFilesPayload
+      ) => Promise.resolve({ data: MOCK_PUSH_RESULT })
     ),
     ...overrides,
   };
@@ -116,8 +164,9 @@ Deno.test("github-service index", { sanitizeOps: false, sanitizeResources: false
     "storeInstallation — receives installationId, generates token, validates via getUser, upserts row, returns { connected: true, username }",
     async () => {
       await withMockEnv(MOCK_ENV, async () => {
-      const getUserSpy: Spy = spy(() =>
-        Promise.resolve(MOCK_GITHUB_USER)
+      const getUserSpy: Spy = spy(
+        (_deps: GetUserDeps, _params: GetUserParams, _payload: GetUserPayload) =>
+          Promise.resolve({ data: MOCK_GITHUB_USER })
       );
       const mockAdapter: IGitHubAdapter = createMockAdapter({ getUser: getUserSpy });
       const generateInstallationTokenSpy: Spy = spy(
@@ -222,7 +271,10 @@ Deno.test("github-service index", { sanitizeOps: false, sanitizeResources: false
         Promise.resolve("mock-token")
       );
       const mockAdapter: IGitHubAdapter = createMockAdapter({
-        getUser: spy(() => Promise.reject(new Error("Invalid token"))),
+        getUser: spy(
+          (_deps: GetUserDeps, _params: GetUserParams, _payload: GetUserPayload) =>
+            Promise.resolve({ error: { message: "Invalid token" } })
+        ),
       });
       const userConfig: MockSupabaseDataConfig = {
         mockUser: MOCK_USER,
@@ -288,11 +340,57 @@ Deno.test("github-service index", { sanitizeOps: false, sanitizeResources: false
       const req = createJsonRequest("getConnectionStatus", {}, "Bearer jwt-token");
       const res = await handleGithubServiceRequest(req, deps);
       assertEquals(res.status, 200);
-      const body = await res.json();
+      const body: GetConnectionStatusResponse = await res.json();
       assertObjectMatch(body, {
         connected: true,
         username: MOCK_GITHUB_USER.login,
         github_user_id: String(MOCK_GITHUB_USER.id),
+        suspended: false,
+      });
+      });
+    }
+  );
+
+  await t.step(
+    "getConnectionStatus — returns { connected: true, username, github_user_id, suspended: true } when suspended_at is non-null",
+    async () => {
+      await withMockEnv(MOCK_ENV, async () => {
+      const userConfig: MockSupabaseDataConfig = {
+        mockUser: MOCK_USER,
+      };
+      const adminConfig: MockSupabaseDataConfig = {
+        genericMockResults: {
+          github_connections: {
+            select: (state: MockQueryBuilderState) => {
+              const hasUserId = state.filters.some(
+                (f) => f.column === "user_id" && f.value === TEST_USER_ID
+              );
+              if (hasUserId) {
+                const rows: GithubConnectionRow[] = [MOCK_CONNECTION_ROW_SUSPENDED];
+                return Promise.resolve({
+                  data: rows,
+                  error: null,
+                  count: 1,
+                  status: 200,
+                });
+              }
+              return Promise.resolve({ data: [], error: null, count: 0, status: 200 });
+            },
+          },
+        },
+      };
+      const { client: userClient } = createMockSupabaseClient(TEST_USER_ID, userConfig);
+      const { client: adminClient } = createMockSupabaseClient(undefined, adminConfig);
+      const deps = createTestDeps(userClient as unknown as SupabaseClient, adminClient as unknown as SupabaseClient, {});
+      const req = createJsonRequest("getConnectionStatus", {}, "Bearer jwt-token");
+      const res = await handleGithubServiceRequest(req, deps);
+      assertEquals(res.status, 200);
+      const body: GetConnectionStatusResponse = await res.json();
+      assertObjectMatch(body, {
+        connected: true,
+        username: MOCK_GITHUB_USER.login,
+        github_user_id: String(MOCK_GITHUB_USER.id),
+        suspended: true,
       });
       });
     }
@@ -319,8 +417,92 @@ Deno.test("github-service index", { sanitizeOps: false, sanitizeResources: false
       const req = createJsonRequest("getConnectionStatus", {}, "Bearer jwt-token");
       const res = await handleGithubServiceRequest(req, deps);
       assertEquals(res.status, 200);
-      const body = await res.json();
+      const body: GetConnectionStatusResponse = await res.json();
       assertObjectMatch(body, { connected: false });
+      });
+    }
+  );
+
+  await t.step(
+    "getConnectionStatus — returns error when select fails",
+    async () => {
+      await withMockEnv(MOCK_ENV, async () => {
+      const userConfig: MockSupabaseDataConfig = {
+        mockUser: MOCK_USER,
+      };
+      const adminConfig: MockSupabaseDataConfig = {
+        genericMockResults: {
+          github_connections: {
+            select: () =>
+              Promise.resolve({
+                data: null,
+                error: new Error("DB select failed"),
+                count: null,
+                status: 500,
+                statusText: "Internal Server Error",
+              }),
+          },
+        },
+      };
+      const { client: userClient } = createMockSupabaseClient(TEST_USER_ID, userConfig);
+      const { client: adminClient } = createMockSupabaseClient(undefined, adminConfig);
+      const deps = createTestDeps(userClient as unknown as SupabaseClient, adminClient as unknown as SupabaseClient, {});
+      const req = createJsonRequest("getConnectionStatus", {}, "Bearer jwt-token");
+      const res = await handleGithubServiceRequest(req, deps);
+      assertEquals(res.status, 500);
+      const body: GetConnectionStatusResponse = await res.json();
+      assertObjectMatch(body, { error: "DB select failed" });
+      });
+    }
+  );
+
+  await t.step(
+    "getInstallationToken returns error with 'suspended' message when github_connections.suspended_at is non-null",
+    async () => {
+      await withMockEnv(MOCK_ENV, async () => {
+      const listReposSpy: Spy = spy(
+        (_deps: ListReposDeps, _params: ListReposParams, _payload: ListReposPayload) =>
+          Promise.resolve({ data: EMPTY_GITHUB_REPOS })
+      );
+      const mockAdapter: IGitHubAdapter = createMockAdapter({ listRepos: listReposSpy });
+      const userConfig: MockSupabaseDataConfig = {
+        mockUser: MOCK_USER,
+      };
+      const adminConfig: MockSupabaseDataConfig = {
+        genericMockResults: {
+          github_connections: {
+            select: (state: MockQueryBuilderState) => {
+              const hasUserId = state.filters.some(
+                (f) => f.column === "user_id" && f.value === TEST_USER_ID
+              );
+              if (hasUserId) {
+                const rows: GithubConnectionRow[] = [MOCK_CONNECTION_ROW_SUSPENDED];
+                return Promise.resolve({
+                  data: rows,
+                  error: null,
+                  count: 1,
+                  status: 200,
+                });
+              }
+              return Promise.resolve({ data: [], error: null, count: 0, status: 200 });
+            },
+          },
+        },
+      };
+      const { client: userClient } = createMockSupabaseClient(TEST_USER_ID, userConfig);
+      const { client: adminClient } = createMockSupabaseClient(undefined, adminConfig);
+      const deps = createTestDeps(
+        userClient as unknown as SupabaseClient,
+        adminClient as unknown as SupabaseClient,
+        { createGitHubAdapter: () => mockAdapter }
+      );
+      const req = createJsonRequest("listRepos", {}, "Bearer jwt-token");
+      const res = await handleGithubServiceRequest(req, deps);
+      assertEquals(res.status, 500);
+      const body = await res.json();
+      assertExists(body.error);
+      assertEquals(body.error, SUSPENDED_MESSAGE);
+      assertSpyCalls(listReposSpy, 0);
       });
     }
   );
@@ -367,7 +549,10 @@ Deno.test("github-service index", { sanitizeOps: false, sanitizeResources: false
           html_url: "https://github.com/octocat/repo1",
         },
       ];
-      const listReposSpy: Spy = spy(() => Promise.resolve(mockRepos));
+      const listReposSpy: Spy = spy(
+        (_deps: ListReposDeps, _params: ListReposParams, _payload: ListReposPayload) =>
+          Promise.resolve({ data: mockRepos })
+      );
       const mockAdapter: IGitHubAdapter = createMockAdapter({ listRepos: listReposSpy });
       const userConfig: MockSupabaseDataConfig = {
         mockUser: MOCK_USER,
@@ -450,6 +635,57 @@ Deno.test("github-service index", { sanitizeOps: false, sanitizeResources: false
   );
 
   await t.step(
+    "listRepos — returns error when connection is suspended (does not attempt GitHub API call)",
+    async () => {
+      await withMockEnv(MOCK_ENV, async () => {
+      const listReposSpy: Spy = spy(
+        (_deps: ListReposDeps, _params: ListReposParams, _payload: ListReposPayload) =>
+          Promise.resolve({ data: EMPTY_GITHUB_REPOS })
+      );
+      const mockAdapter: IGitHubAdapter = createMockAdapter({ listRepos: listReposSpy });
+      const userConfig: MockSupabaseDataConfig = {
+        mockUser: MOCK_USER,
+      };
+      const adminConfig: MockSupabaseDataConfig = {
+        genericMockResults: {
+          github_connections: {
+            select: (state: MockQueryBuilderState) => {
+              const hasUserId = state.filters.some(
+                (f) => f.column === "user_id" && f.value === TEST_USER_ID
+              );
+              if (hasUserId) {
+                const rows: GithubConnectionRow[] = [MOCK_CONNECTION_ROW_SUSPENDED];
+                return Promise.resolve({
+                  data: rows,
+                  error: null,
+                  count: 1,
+                  status: 200,
+                });
+              }
+              return Promise.resolve({ data: [], error: null, count: 0, status: 200 });
+            },
+          },
+        },
+      };
+      const { client: userClient } = createMockSupabaseClient(TEST_USER_ID, userConfig);
+      const { client: adminClient } = createMockSupabaseClient(undefined, adminConfig);
+      const deps = createTestDeps(
+        userClient as unknown as SupabaseClient,
+        adminClient as unknown as SupabaseClient,
+        { createGitHubAdapter: () => mockAdapter }
+      );
+      const req = createJsonRequest("listRepos", {}, "Bearer jwt-token");
+      const res = await handleGithubServiceRequest(req, deps);
+      assertEquals(res.status, 500);
+      const body = await res.json();
+      assertExists(body.error);
+      assertEquals(body.error, SUSPENDED_MESSAGE);
+      assertSpyCalls(listReposSpy, 0);
+      });
+    }
+  );
+
+  await t.step(
     "listBranches — reads installation_id, generates token, calls adapter.listBranches(owner, repo), returns branches",
     async () => {
       await withMockEnv(MOCK_ENV, async () => {
@@ -457,7 +693,11 @@ Deno.test("github-service index", { sanitizeOps: false, sanitizeResources: false
         { name: "main", commit: { sha: "abc" }, protected: false },
       ];
       const listBranchesSpy: Spy = spy(
-        (_owner: string, _repo: string) => Promise.resolve(mockBranches)
+        (
+          _deps: ListBranchesDeps,
+          _params: ListBranchesParams,
+          _payload: ListBranchesPayload
+        ) => Promise.resolve({ data: mockBranches })
       );
       const mockAdapter: IGitHubAdapter = createMockAdapter({ listBranches: listBranchesSpy });
       const userConfig: MockSupabaseDataConfig = {
@@ -511,11 +751,73 @@ Deno.test("github-service index", { sanitizeOps: false, sanitizeResources: false
   );
 
   await t.step(
+    "listBranches — returns error when connection is suspended",
+    async () => {
+      await withMockEnv(MOCK_ENV, async () => {
+      const listBranchesSpy: Spy = spy(
+        (
+          _deps: ListBranchesDeps,
+          _params: ListBranchesParams,
+          _payload: ListBranchesPayload
+        ) => Promise.resolve({ data: EMPTY_GITHUB_BRANCHES })
+      );
+      const mockAdapter: IGitHubAdapter = createMockAdapter({ listBranches: listBranchesSpy });
+      const userConfig: MockSupabaseDataConfig = {
+        mockUser: MOCK_USER,
+      };
+      const adminConfig: MockSupabaseDataConfig = {
+        genericMockResults: {
+          github_connections: {
+            select: (state: MockQueryBuilderState) => {
+              const hasUserId = state.filters.some(
+                (f) => f.column === "user_id" && f.value === TEST_USER_ID
+              );
+              if (hasUserId) {
+                const rows: GithubConnectionRow[] = [MOCK_CONNECTION_ROW_SUSPENDED];
+                return Promise.resolve({
+                  data: rows,
+                  error: null,
+                  count: 1,
+                  status: 200,
+                });
+              }
+              return Promise.resolve({ data: [], error: null, count: 0, status: 200 });
+            },
+          },
+        },
+      };
+      const { client: userClient } = createMockSupabaseClient(TEST_USER_ID, userConfig);
+      const { client: adminClient } = createMockSupabaseClient(undefined, adminConfig);
+      const deps = createTestDeps(
+        userClient as unknown as SupabaseClient,
+        adminClient as unknown as SupabaseClient,
+        { createGitHubAdapter: () => mockAdapter }
+      );
+      const req = createJsonRequest(
+        "listBranches",
+        { owner: "octocat", repo: "repo1" },
+        "Bearer jwt-token"
+      );
+      const res = await handleGithubServiceRequest(req, deps);
+      assertEquals(res.status, 500);
+      const body = await res.json();
+      assertExists(body.error);
+      assertEquals(body.error, SUSPENDED_MESSAGE);
+      assertSpyCalls(listBranchesSpy, 0);
+      });
+    }
+  );
+
+  await t.step(
     "createRepo — reads installation_id, generates token, calls adapter.createRepo(payload), returns new repo",
     async () => {
       await withMockEnv(MOCK_ENV, async () => {
       const createRepoSpy: Spy = spy(
-        (_payload: GitHubCreateRepoPayload) => Promise.resolve(MOCK_CREATE_REPO_RESULT)
+        (
+          _deps: CreateRepoDeps,
+          _params: CreateRepoParams,
+          _payload: CreateRepoPayload
+        ) => Promise.resolve({ data: MOCK_CREATE_REPO_RESULT })
       );
       const mockAdapter: IGitHubAdapter = createMockAdapter({ createRepo: createRepoSpy });
       const userConfig: MockSupabaseDataConfig = {
@@ -560,6 +862,61 @@ Deno.test("github-service index", { sanitizeOps: false, sanitizeResources: false
       const body = await res.json();
       assertObjectMatch(body, { name: "new-repo", full_name: "octocat/new-repo" });
       assertSpyCalls(createRepoSpy, 1);
+      });
+    }
+  );
+
+  await t.step(
+    "createRepo — returns error when connection is suspended",
+    async () => {
+      await withMockEnv(MOCK_ENV, async () => {
+      const createRepoSpy: Spy = spy(
+        (
+          _deps: CreateRepoDeps,
+          _params: CreateRepoParams,
+          _payload: CreateRepoPayload
+        ) => Promise.resolve({ data: MOCK_CREATE_REPO_RESULT })
+      );
+      const mockAdapter: IGitHubAdapter = createMockAdapter({ createRepo: createRepoSpy });
+      const userConfig: MockSupabaseDataConfig = {
+        mockUser: MOCK_USER,
+      };
+      const adminConfig: MockSupabaseDataConfig = {
+        genericMockResults: {
+          github_connections: {
+            select: (state: MockQueryBuilderState) => {
+              const hasUserId = state.filters.some(
+                (f) => f.column === "user_id" && f.value === TEST_USER_ID
+              );
+              if (hasUserId) {
+                const rows: GithubConnectionRow[] = [MOCK_CONNECTION_ROW_SUSPENDED];
+                return Promise.resolve({
+                  data: rows,
+                  error: null,
+                  count: 1,
+                  status: 200,
+                });
+              }
+              return Promise.resolve({ data: [], error: null, count: 0, status: 200 });
+            },
+          },
+        },
+      };
+      const { client: userClient } = createMockSupabaseClient(TEST_USER_ID, userConfig);
+      const { client: adminClient } = createMockSupabaseClient(undefined, adminConfig);
+      const deps = createTestDeps(
+        userClient as unknown as SupabaseClient,
+        adminClient as unknown as SupabaseClient,
+        { createGitHubAdapter: () => mockAdapter }
+      );
+      const payload: GitHubCreateRepoPayload = { name: "new-repo", private: false };
+      const req = createJsonRequest("createRepo", payload, "Bearer jwt-token");
+      const res = await handleGithubServiceRequest(req, deps);
+      assertEquals(res.status, 500);
+      const body = await res.json();
+      assertExists(body.error);
+      assertEquals(body.error, SUSPENDED_MESSAGE);
+      assertSpyCalls(createRepoSpy, 0);
       });
     }
   );

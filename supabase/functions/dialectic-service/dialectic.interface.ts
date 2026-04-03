@@ -40,25 +40,24 @@ import type {
 	AiModelExtendedConfig,
 	AiProviderAdapter,
 	AiProviderAdapterInstance,
-	ChatApiRequest,
 	ChatMessage,
 	FactoryDependencies,
 	FinishReason,
 	ILogger,
 	Messages,
 	ServiceError,
+	ResourceDocuments,
 } from "../_shared/types.ts";
 import type {
 	DeconstructedPathInfo,
 	DeconstructStoragePathFn,
 } from "../_shared/utils/path_deconstructor.types.ts";
-import type { ICompressionStrategy } from "../_shared/utils/vector_utils.ts";
-import type { debitTokens } from "../chat/debitTokens.ts";
+import type { debitTokens } from "../_shared/utils/debitTokens.ts";
 import type {
-	IExecuteJobContext,
+	IJobContext,
 	IPlanJobContext,
 	IRenderJobContext,
-} from "../dialectic-worker/JobContext.interface.ts";
+} from "../dialectic-worker/createJobContext/JobContext.interface.ts";
 import type { Database, Json, Tables } from "../types_db.ts";
 
 export type DialecticStageRecipeEdge =
@@ -71,7 +70,7 @@ export type ProcessSimpleJobFn = (
 	dbClient: SupabaseClient<Database>,
 	job: DialecticJobRow & { payload: DialecticExecuteJobPayload },
 	projectOwnerUserId: string,
-	deps: IExecuteJobContext,
+	deps: IJobContext,
 	authToken: string,
 ) => Promise<void>;
 
@@ -99,12 +98,6 @@ export type PlanComplexStageFn = (
 	authToken: string,
 	completedSourceDocumentIds?: Set<string>,
 ) => Promise<DialecticJobRow[]>;
-
-export type CallUnifiedAIModelFn = (
-	chatApiRequest: ChatApiRequest,
-	authToken: string,
-	dependencies?: CallModelDependencies,
-) => Promise<UnifiedAIResponse>;
 
 export type GetAiProviderConfigFn = (
 	dbClient: SupabaseClient<Database>,
@@ -266,6 +259,9 @@ export type DatabaseRecipeSteps = Tables<"dialectic_stages"> & {
 	})[];
 };
 
+export type DialecticSessionRow = Database["public"]["Tables"]["dialectic_sessions"]["Row"];
+export type SyncMapRow = Database["public"]["Tables"]["dialectic_sync_maps"]["Row"];
+export type GitHubConnectionRow = Database["public"]["Tables"]["github_connections"]["Row"];
 export type DialecticProjectRow =
 	Database["public"]["Tables"]["dialectic_projects"]["Row"];
 export type DialecticProjectInsert =
@@ -716,8 +712,22 @@ type GetStageDocumentFeedbackAction = {
 };
 
 // --- START: syncToGitHub and updateProjectGitHubSettings ---
+export interface SyncMapEntry {
+	documentKey: string;
+	friendlyName: string;
+	stageGroup: string;
+	layer: "research" | "decision" | "action";
+	audience: "leadership" | "management" | "build" | null;
+	sortOrder: number;
+	available: boolean;
+	updatedSinceLastSync: boolean;
+}
+
 export interface SyncToGitHubPayload {
 	projectId: string;
+	selectedModelIds: string[];
+	selectedDocumentKeys: string[];
+	includeRulesFile: boolean;
 }
 
 export interface GitHubRepoSettings {
@@ -730,9 +740,11 @@ export interface GitHubRepoSettings {
 }
 
 export interface SyncToGitHubResponse {
-	commitSha: string;
+	commitSha: string | null;
 	filesUpdated: number;
 	syncedAt: string;
+	syncedDocumentKeys: string[];
+	skippedDocumentKeys: string[];
 }
 
 export interface SyncToGitHubDeps {
@@ -800,6 +812,96 @@ type UpdateProjectGitHubSettingsAction = {
 	action: "updateProjectGitHubSettings";
 	payload: UpdateProjectGitHubSettingsPayload;
 };
+
+// getSyncMap: return = success payload only; Success = { data, error?: undefined }; Failure = { error, data?: undefined }; Result = Success | Failure.
+export interface GetSyncMapPayload {
+	projectId: string;
+}
+
+export interface GetSyncMapDeps {
+	supabaseClient: SupabaseClient<Database>;
+	logger: ILogger;
+}
+
+export interface GetSyncMapParams {
+	user: User;
+}
+
+export interface GetSyncMapReturn {
+	syncMap: SyncMapEntry[];
+}
+
+export interface GetSyncMapSuccess {
+	data: GetSyncMapReturn;
+	error?: undefined;
+}
+
+export interface GetSyncMapFailure {
+	error: ServiceError;
+	data?: undefined;
+}
+
+export type GetSyncMapResult = GetSyncMapSuccess | GetSyncMapFailure;
+
+export type GetSyncMapFn = (
+	deps: GetSyncMapDeps,
+	params: GetSyncMapParams,
+	payload: GetSyncMapPayload
+) => Promise<GetSyncMapResult>;
+
+export interface ModelSyncInfo {
+	modelId: string;
+	modelName: string;
+	modelSlug: string;
+	documentCount: number;
+}
+
+export interface GetAvailableModelsForSyncPayload {
+	projectId: string;
+}
+
+export interface GetAvailableModelsForSyncDeps {
+	supabaseClient: SupabaseClient<Database>;
+	storageUtils: IStorageUtils;
+	logger: ILogger;
+}
+
+export interface GetAvailableModelsForSyncParams {
+	user: User;
+}
+
+export interface GetAvailableModelsForSyncReturn {
+	models: ModelSyncInfo[];
+	recommendedModelId: string | null;
+}
+
+export interface GetAvailableModelsForSyncSuccess {
+	data: GetAvailableModelsForSyncReturn;
+	error?: undefined;
+}
+
+export interface GetAvailableModelsForSyncFailure {
+	error: ServiceError;
+	data?: undefined;
+}
+
+export type GetAvailableModelsForSyncResult = GetAvailableModelsForSyncSuccess | GetAvailableModelsForSyncFailure;
+
+export type GetAvailableModelsForSyncFn = (
+	deps: GetAvailableModelsForSyncDeps,
+	params: GetAvailableModelsForSyncParams,
+	payload: GetAvailableModelsForSyncPayload
+) => Promise<GetAvailableModelsForSyncResult>;
+
+type GetSyncMapAction = {
+	action: "getSyncMap";
+	payload: GetSyncMapPayload;
+};
+
+type GetAvailableModelsForSyncAction = {
+	action: "getAvailableModelsForSync";
+	payload: GetAvailableModelsForSyncPayload;
+};
 // --- END: syncToGitHub and updateProjectGitHubSettings ---
 
 // The main union type for all possible JSON requests to the service.
@@ -833,7 +935,9 @@ export type DialecticServiceRequest =
 	| GetStageDocumentFeedbackAction
 	| SubmitStageDocumentFeedbackAction
 	| SyncToGitHubAction
-	| UpdateProjectGitHubSettingsAction;
+	| UpdateProjectGitHubSettingsAction
+	| GetSyncMapAction
+	| GetAvailableModelsForSyncAction;
 
 // --- END: Discriminated Union ---
 
@@ -1097,17 +1201,12 @@ export interface UnifiedAIResponse {
 	finish_reason?: FinishReason;
 }
 
-export interface CallModelDependencies {
-	fetch?: typeof fetch;
-	isTest?: boolean;
-}
-
 export type DialecticStage =
 	Database["public"]["Tables"]["dialectic_stages"]["Row"];
 
 export interface ModelProcessingResult {
 	modelId: string;
-	status: "completed" | "failed" | "needs_continuation";
+	status: "completed" | "failed" | "needs_continuation" | "continuation_limit_reached";
 	attempts: number;
 	contributionId?: string;
 	error?: string;
@@ -1118,11 +1217,6 @@ export interface JobResultsWithModelProcessing {
 }
 
 export interface GenerateContributionsDeps {
-	callUnifiedAIModel?: (
-		chatApiRequest: ChatApiRequest,
-		userAuthToken: string,
-		dependencies?: CallModelDependencies,
-	) => Promise<UnifiedAIResponse>;
 	downloadFromStorage: DownloadFromStorageFn;
 	getExtensionFromMimeType: typeof getExtensionFromMimeType;
 	logger: ILogger;
@@ -1410,9 +1504,9 @@ export interface PauseJobsForNsfDeps {
 export interface PromptConstructionPayload {
 	systemInstruction?: SystemInstruction;
 	conversationHistory: Messages[];
-	resourceDocuments: SourceDocument[];
+	resourceDocuments: ResourceDocuments;
 	currentUserPrompt: Prompt;
-	source_prompt_resource_id?: string;
+	source_prompt_resource_id: string;
 	sourceContributionId?: string | null;
 }
 
@@ -1789,13 +1883,6 @@ export type SeedPromptData = {
 	path: string;
 	fileName: string;
 };
-export interface ModelProcessingResult {
-	modelId: string;
-	status: "completed" | "failed" | "needs_continuation";
-	attempts: number;
-	contributionId?: string;
-	error?: string;
-}
 
 export interface IContinueJobDeps {
 	logger: ILogger;
@@ -1804,6 +1891,7 @@ export interface IContinueJobDeps {
 export interface IContinueJobResult {
 	enqueued: boolean;
 	error?: Error;
+	reason?: string;
 }
 
 export type Job =
@@ -1837,19 +1925,6 @@ export type SourceFeedback = Omit<DialecticFeedback, "resource_description"> & {
 	attempt_count?: number; // The attempt_count of the source document itself, derived from its filename
 };
 
-export interface ExecuteModelCallAndSaveParams {
-	dbClient: SupabaseClient<Database>;
-	deps: IExecuteJobContext;
-	authToken: string;
-	job: DialecticJobRow;
-	projectOwnerUserId: string;
-	providerDetails: SelectedAiProvider;
-	promptConstructionPayload: PromptConstructionPayload;
-	sessionData: DialecticSession;
-	compressionStrategy: ICompressionStrategy;
-	inputsRelevance?: RelevanceRule[];
-	inputsRequired?: InputRule[];
-}
 export interface IDialecticJobDeps extends GenerateContributionsDeps {
 	getSeedPromptForStage: (
 		dbClient: SupabaseClient<Database>,
@@ -1876,9 +1951,6 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
 		projectOwnerUserId: string,
 	) => Promise<{ error?: Error }>;
 	notificationService: NotificationServiceType;
-	executeModelCallAndSave: (
-		params: ExecuteModelCallAndSaveParams,
-	) => Promise<void>;
 	// Properties from the former IPlanComplexJobDeps
 	planComplexStage?: PlanComplexStageFn;
 	getGranularityPlanner?: (

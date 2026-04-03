@@ -121,6 +121,7 @@ export async function handleUpdateSessionModels(
     current_stage_id: updatedSession.current_stage_id,
     created_at: updatedSession.created_at,
     updated_at: updatedSession.updated_at,
+    viewing_stage_id: null,
   };
 
   logger.info(`[handleUpdateSessionModels] Successfully updated models for session ${sessionId}.`, { data });

@@ -5,15 +5,8 @@ import { ILogger } from "../types.ts";
 import { CreateEmbeddingResponse } from "npm:openai/resources/embeddings";
 import { AdapterResponsePayload, EmbeddingResponse, ProviderModelInfo } from "../types.ts";
 import { ChatApiRequest } from "../types.ts";
-import { MOCK_PROVIDER } from "./dummy_adapter.test.ts";
-
-class MockLogger implements ILogger {
-  info = () => {};
-  warn = () => {};
-  error = () => {};
-  debug = () => {};
-}
-
+import { MOCK_PROVIDER } from "./ai_provider.mock.ts";
+import { MockLogger } from "../logger.mock.ts";
 /**
  * A mock of the OpenAiAdapter that spies on its methods and returns canned data.
  * The original methods are overridden with spies that can be asserted in tests.
