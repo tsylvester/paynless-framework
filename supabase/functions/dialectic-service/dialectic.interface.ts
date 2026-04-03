@@ -40,25 +40,24 @@ import type {
 	AiModelExtendedConfig,
 	AiProviderAdapter,
 	AiProviderAdapterInstance,
-	ChatApiRequest,
 	ChatMessage,
 	FactoryDependencies,
 	FinishReason,
 	ILogger,
 	Messages,
 	ServiceError,
+	ResourceDocuments,
 } from "../_shared/types.ts";
 import type {
 	DeconstructedPathInfo,
 	DeconstructStoragePathFn,
 } from "../_shared/utils/path_deconstructor.types.ts";
-import type { ICompressionStrategy } from "../_shared/utils/vector_utils.ts";
-import type { debitTokens } from "../chat/debitTokens.ts";
+import type { debitTokens } from "../_shared/utils/debitTokens.ts";
 import type {
-	IExecuteJobContext,
+	IJobContext,
 	IPlanJobContext,
 	IRenderJobContext,
-} from "../dialectic-worker/JobContext.interface.ts";
+} from "../dialectic-worker/createJobContext/JobContext.interface.ts";
 import type { Database, Json, Tables } from "../types_db.ts";
 
 export type DialecticStageRecipeEdge =
@@ -71,7 +70,7 @@ export type ProcessSimpleJobFn = (
 	dbClient: SupabaseClient<Database>,
 	job: DialecticJobRow & { payload: DialecticExecuteJobPayload },
 	projectOwnerUserId: string,
-	deps: IExecuteJobContext,
+	deps: IJobContext,
 	authToken: string,
 ) => Promise<void>;
 
@@ -99,12 +98,6 @@ export type PlanComplexStageFn = (
 	authToken: string,
 	completedSourceDocumentIds?: Set<string>,
 ) => Promise<DialecticJobRow[]>;
-
-export type CallUnifiedAIModelFn = (
-	chatApiRequest: ChatApiRequest,
-	authToken: string,
-	dependencies?: CallModelDependencies,
-) => Promise<UnifiedAIResponse>;
 
 export type GetAiProviderConfigFn = (
 	dbClient: SupabaseClient<Database>,
@@ -1208,11 +1201,6 @@ export interface UnifiedAIResponse {
 	finish_reason?: FinishReason;
 }
 
-export interface CallModelDependencies {
-	fetch?: typeof fetch;
-	isTest?: boolean;
-}
-
 export type DialecticStage =
 	Database["public"]["Tables"]["dialectic_stages"]["Row"];
 
@@ -1229,11 +1217,6 @@ export interface JobResultsWithModelProcessing {
 }
 
 export interface GenerateContributionsDeps {
-	callUnifiedAIModel?: (
-		chatApiRequest: ChatApiRequest,
-		userAuthToken: string,
-		dependencies?: CallModelDependencies,
-	) => Promise<UnifiedAIResponse>;
 	downloadFromStorage: DownloadFromStorageFn;
 	getExtensionFromMimeType: typeof getExtensionFromMimeType;
 	logger: ILogger;
@@ -1521,9 +1504,9 @@ export interface PauseJobsForNsfDeps {
 export interface PromptConstructionPayload {
 	systemInstruction?: SystemInstruction;
 	conversationHistory: Messages[];
-	resourceDocuments: SourceDocument[];
+	resourceDocuments: ResourceDocuments;
 	currentUserPrompt: Prompt;
-	source_prompt_resource_id?: string;
+	source_prompt_resource_id: string;
 	sourceContributionId?: string | null;
 }
 
@@ -1942,19 +1925,6 @@ export type SourceFeedback = Omit<DialecticFeedback, "resource_description"> & {
 	attempt_count?: number; // The attempt_count of the source document itself, derived from its filename
 };
 
-export interface ExecuteModelCallAndSaveParams {
-	dbClient: SupabaseClient<Database>;
-	deps: IExecuteJobContext;
-	authToken: string;
-	job: DialecticJobRow;
-	projectOwnerUserId: string;
-	providerDetails: SelectedAiProvider;
-	promptConstructionPayload: PromptConstructionPayload;
-	sessionData: DialecticSession;
-	compressionStrategy: ICompressionStrategy;
-	inputsRelevance?: RelevanceRule[];
-	inputsRequired?: InputRule[];
-}
 export interface IDialecticJobDeps extends GenerateContributionsDeps {
 	getSeedPromptForStage: (
 		dbClient: SupabaseClient<Database>,
@@ -1981,9 +1951,6 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
 		projectOwnerUserId: string,
 	) => Promise<{ error?: Error }>;
 	notificationService: NotificationServiceType;
-	executeModelCallAndSave: (
-		params: ExecuteModelCallAndSaveParams,
-	) => Promise<void>;
 	// Properties from the former IPlanComplexJobDeps
 	planComplexStage?: PlanComplexStageFn;
 	getGranularityPlanner?: (

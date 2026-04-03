@@ -9,7 +9,6 @@ export interface EmailFactoryConfig {
   provider?: string;
   kitApiKey?: string;
   kitBaseUrl?: string;
-  kitTagId?: string;
   kitCustomUserIdField?: string;
   kitCustomCreatedAtField?: string;
   // Add fields for other potential providers here
@@ -31,14 +30,12 @@ export function getEmailMarketingService(config: EmailFactoryConfig): EmailMarke
     if (
       config.kitApiKey &&
       config.kitBaseUrl &&
-      config.kitTagId && // Tag ID is required by addUserToList
       config.kitCustomUserIdField && 
       config.kitCustomCreatedAtField
     ) {
       const kitConfig: KitServiceConfig = {
         apiKey: config.kitApiKey,
         baseUrl: config.kitBaseUrl,
-        tagId: config.kitTagId,
         customUserIdField: config.kitCustomUserIdField,
         customCreatedAtField: config.kitCustomCreatedAtField,
       };

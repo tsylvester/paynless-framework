@@ -70,6 +70,10 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              profile_privacy_setting: 'private',
              is_subscribed_to_newsletter: false,
              has_seen_welcome_modal: false,
+             signup_ref: null,
+             subscribed_at: null,
+             synced_to_kit_at: null,
+             unsubscribed_at: null,
           }
     },
     { 
@@ -91,6 +95,10 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              profile_privacy_setting: 'private',
              is_subscribed_to_newsletter: false,
              has_seen_welcome_modal: false,
+             signup_ref: null,
+             subscribed_at: null,
+             synced_to_kit_at: null,
+             unsubscribed_at: null,
           }
     },
 ]

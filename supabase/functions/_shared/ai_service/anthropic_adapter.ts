@@ -1,7 +1,7 @@
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { MessageParam } from 'npm:@anthropic-ai/sdk/resources/messages';
 // Import types from the shared location
-import type { AdapterResponsePayload, ChatApiRequest, ILogger, ProviderModelInfo, AiModelExtendedConfig } from '../types.ts';
+import type { AdapterResponsePayload, AdapterStreamChunk, ChatApiRequest, ILogger, ProviderModelInfo, AiModelExtendedConfig } from '../types.ts';
 import type { Tables, Database } from '../../types_db.ts';
 import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
 import { isResourceDocument } from '../utils/type-guards/type_guards.chat.ts';
@@ -48,12 +48,19 @@ export class AnthropicAdapter {
     this.logger.info(`[AnthropicAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
   }
 
-  async sendMessage(
+  /**
+   * Shared request shaping for `sendMessage` and `sendMessageStream` (validation + Anthropic payload fields).
+   */
+  private _prepareAnthropicRequest(
     request: ChatApiRequest,
-    modelIdentifier: string
-  ): Promise<AdapterResponsePayload> {
-    this.logger.debug('[AnthropicAdapter] sendMessage called', { modelIdentifier });
-    const modelApiName = modelIdentifier.replace(/^anthropic-/i, '');
+    modelIdentifier: string,
+  ): {
+    modelApiName: string;
+    systemPrompt: string;
+    anthropicMessages: MessageParam[];
+    maxTokensForPayload: number | undefined;
+  } {
+    const modelApiName: string = modelIdentifier.replace(/^anthropic-/i, '');
 
     // Placeholder for token validation logic
     const maxInputTokens = this.modelConfig.provider_max_input_tokens || this.modelConfig.context_window_tokens;
@@ -70,7 +77,7 @@ export class AnthropicAdapter {
     if (request.message) {
         combinedMessages.push({ role: 'user', content: request.message });
     }
-    
+
     // Preliminary processing to handle system prompts and merge consecutive messages of the same role.
     const preliminaryMessages: { role: 'user' | 'assistant'; content: string }[] = [];
     for (const message of combinedMessages) {
@@ -145,29 +152,55 @@ export class AnthropicAdapter {
         throw new Error('Cannot send request to Anthropic: message history format invalid.');
     }
 
-    const maxTokensForPayload =
+    const maxTokensForPayload: number | undefined =
       (typeof request.max_tokens_to_generate === 'number')
         ? request.max_tokens_to_generate
         : (typeof this.modelConfig.hard_cap_output_tokens === 'number'
             ? this.modelConfig.hard_cap_output_tokens
             : undefined);
 
+    return {
+      modelApiName,
+      systemPrompt,
+      anthropicMessages,
+      maxTokensForPayload,
+    };
+  }
+
+  async sendMessage(
+    request: ChatApiRequest,
+    modelIdentifier: string
+  ): Promise<AdapterResponsePayload> {
+    this.logger.debug('[AnthropicAdapter] sendMessage called', { modelIdentifier });
+    const { modelApiName, systemPrompt, anthropicMessages, maxTokensForPayload } = this._prepareAnthropicRequest(request, modelIdentifier);
+
     try {
       if (!maxTokensForPayload) {
         this.logger.error('AnthropicAdapter: No max tokens for payload', { modelApiName });
         throw new Error('AnthropicAdapter: No max tokens for payload');
       }
-      const response = await this.client.messages.create({
+      const stream = this.client.messages.stream({
         model: modelApiName,
         system: systemPrompt || undefined,
         messages: anthropicMessages,
         max_tokens: maxTokensForPayload,
       });
 
-      const assistantMessageContent =
-        response.content?.[0]?.type === 'text'
-        ? response.content[0].text.trim()
-        : null;
+      let textBuffer = '';
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          textBuffer += event.delta.text;
+        }
+      }
+
+      const response = await stream.finalMessage();
+
+      const assistantMessageContent: string | null =
+        textBuffer.trim() !== ''
+          ? textBuffer.trim()
+          : (response.content?.[0]?.type === 'text'
+              ? response.content[0].text.trim()
+              : null);
 
       if (!assistantMessageContent) {
           this.logger.error("Anthropic response missing message content:", { response: response, modelApiName });
@@ -209,6 +242,78 @@ export class AnthropicAdapter {
       };
       this.logger.debug('[AnthropicAdapter] sendMessage successful', { modelApiName });
       return adapterResponse;
+    } catch (error) {
+      if (error instanceof Anthropic.APIError) {
+        this.logger.error(`Anthropic API error (${error.status}): ${error.message}`, { modelApiName, status: error.status });
+        throw new Error(`Anthropic API request failed: ${error.status} ${error.name}`);
+      }
+      if (error instanceof Error) {
+        this.logger.error(`Error sending message to Anthropic: ${error.message}`, { modelApiName, error });
+      } else {
+        this.logger.error(`Error sending message to Anthropic: ${error}`, { modelApiName, error });
+      }
+      throw error;
+    }
+  }
+
+  async *sendMessageStream(
+    request: ChatApiRequest,
+    modelIdentifier: string,
+  ): AsyncGenerator<AdapterStreamChunk> {
+    this.logger.debug('[AnthropicAdapter] sendMessageStream called', { modelIdentifier });
+    const { modelApiName, systemPrompt, anthropicMessages, maxTokensForPayload } = this._prepareAnthropicRequest(request, modelIdentifier);
+
+    try {
+      if (!maxTokensForPayload) {
+        this.logger.error('AnthropicAdapter: No max tokens for payload', { modelApiName });
+        throw new Error('AnthropicAdapter: No max tokens for payload');
+      }
+      const stream = this.client.messages.stream({
+        model: modelApiName,
+        system: systemPrompt,
+        messages: anthropicMessages,
+        max_tokens: maxTokensForPayload,
+      });
+
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          yield { type: 'text_delta', text: event.delta.text };
+        }
+      }
+
+      const response = await stream.finalMessage();
+
+      const inputTokens: number = response.usage.input_tokens;
+      const outputTokens: number = response.usage.output_tokens;
+      yield {
+        type: 'usage',
+        tokenUsage: {
+          prompt_tokens: inputTokens,
+          completion_tokens: outputTokens,
+          total_tokens: inputTokens + outputTokens,
+        },
+      };
+
+      let finish_reason: AdapterResponsePayload['finish_reason'] = 'unknown';
+      if (response.stop_reason) {
+        switch (response.stop_reason) {
+          case 'end_turn':
+          case 'stop_sequence':
+            finish_reason = 'stop';
+            break;
+          case 'max_tokens':
+            finish_reason = 'max_tokens';
+            break;
+          case 'tool_use':
+            finish_reason = 'tool_use';
+            break;
+          default:
+            finish_reason = 'unknown';
+            break;
+        }
+      }
+
+      yield { type: 'done', finish_reason };
     } catch (error) {
       if (error instanceof Anthropic.APIError) {
         this.logger.error(`Anthropic API error (${error.status}): ${error.message}`, { modelApiName, status: error.status });

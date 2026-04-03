@@ -9,7 +9,7 @@ import type {
 } from '../dialectic-service/dialectic.interface.ts';
 import { BranchKey } from '../dialectic-service/dialectic.interface.ts';
 import { resolveNextBlocker } from './resolveNextBlocker.ts';
-import type { IPlanJobContext } from './JobContext.interface.ts';
+import type { IPlanJobContext } from './createJobContext/JobContext.interface.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import {
     isDialecticPlanJobPayload,

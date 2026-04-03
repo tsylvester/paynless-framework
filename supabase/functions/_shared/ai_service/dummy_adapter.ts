@@ -1,9 +1,9 @@
-import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, Messages, EmbeddingResponse } from '../types.ts';
+import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, AdapterStreamChunk, ILogger, AiModelExtendedConfig, Messages, EmbeddingResponse, FinishReason, TokenUsage } from '../types.ts';
 import { countTokens } from '../utils/tokenizer_utils.ts';
 import type { CountTokensDeps, CountableChatPayload } from '../types/tokenizer.types.ts';
 import { ContextWindowError } from '../utils/errors.ts';
 import type { Tables } from '../../types_db.ts';
-import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
+import { isJson, isAiModelExtendedConfig, isTokenUsage } from '../utils/type_guards.ts';
 
 /**
  * Implements AiProviderAdapter for dummy/testing models.
@@ -185,6 +185,28 @@ export class DummyAdapter {
 
         // --- Default Behavior ---
         return this.createResponse(request, content, finishReason);
+    }
+
+    async *sendMessageStream(
+        request: ChatApiRequest,
+        modelIdentifier: string,
+    ): AsyncGenerator<AdapterStreamChunk> {
+        const response: AdapterResponsePayload = await this.sendMessage(request, modelIdentifier);
+        yield { type: 'text_delta', text: response.content };
+        if (!isTokenUsage(response.token_usage)) {
+            throw new Error('DummyAdapter sendMessageStream: invalid token_usage');
+        }
+        const tokenUsage: TokenUsage = response.token_usage;
+        yield {
+            type: 'usage',
+            tokenUsage: {
+                prompt_tokens: tokenUsage.prompt_tokens,
+                completion_tokens: tokenUsage.completion_tokens,
+                total_tokens: tokenUsage.total_tokens,
+            },
+        };
+        const doneReason: FinishReason = response.finish_reason === undefined ? 'stop' : response.finish_reason;
+        yield { type: 'done', finish_reason: doneReason };
     }
 
     private createResponse(

@@ -64,8 +64,8 @@ const defaultTestAiProviders: TestResourceRequirement<any>[] = [
       config: {
         api_identifier: "openai-gpt-3.5-turbo-test",
         tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
-        input_token_cost_rate: 0.001,
-        output_token_cost_rate: 0.002,
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 2,
         requires_api_key: false,
       }
     }
@@ -81,8 +81,8 @@ const defaultTestAiProviders: TestResourceRequirement<any>[] = [
       config: {
         api_identifier: "openai-gpt-4-costly-test",
         tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
-        input_token_cost_rate: 0.03,
-        output_token_cost_rate: 0.06,
+        input_token_cost_rate: 15,
+        output_token_cost_rate: 75,
         requires_api_key: false,
       }
     }
@@ -98,8 +98,8 @@ const defaultTestAiProviders: TestResourceRequirement<any>[] = [
       config: {
         api_identifier: "anthropic-claude-test",
         tokenization_strategy: { type: "anthropic_tokenizer", model: "claude-3-opus-20240229" },
-        input_token_cost_rate: 0.008,
-        output_token_cost_rate: 0.024,
+        input_token_cost_rate: 3,
+        output_token_cost_rate: 15,
         requires_api_key: false,
       }
     }
@@ -115,8 +115,8 @@ const defaultTestAiProviders: TestResourceRequirement<any>[] = [
       config: {
         api_identifier: "google-gemini-pro-test",
         tokenization_strategy: { type: "google_gemini_tokenizer" },
-        input_token_cost_rate: 0.000125,
-        output_token_cost_rate: 0.000375,
+        input_token_cost_rate: 2.5,
+        output_token_cost_rate: 10,
         requires_api_key: false,
       }
     }
@@ -132,8 +132,8 @@ const defaultTestAiProviders: TestResourceRequirement<any>[] = [
       config: {
         api_identifier: "rough-char-count-test",
         tokenization_strategy: { type: "rough_char_count", chars_per_token_ratio: 4 },
-        input_token_cost_rate: 0.0001,
-        output_token_cost_rate: 0.0001,
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 1,
         requires_api_key: false,
       }
     }
@@ -179,19 +179,46 @@ const defaultTestSystemPrompts: TestResourceRequirement<any>[] = [
 const allDefaultTestResources = [...defaultTestAiProviders, ...defaultTestSystemPrompts];
 
 async function initializeTestGroupEnvironmentRouter(
-  options: { 
+  options: {
     userProfile?: Partial<{ role: "user" | "admin"; first_name: string }>;
-    initialWalletBalance?: number; 
+    initialWalletBalance?: number;
     additionalResources?: TestResourceRequirement<any>[];
+    aiProviderApiIdentifier?: string;
+    aiProviderConfigOverride?: Partial<AiModelExtendedConfig>;
   } = {}
 ): Promise<{ primaryUserId: string; processedResources: ProcessedResourceInfo[] }> {
-  const finalConfig: TestSetupConfig = {
-    ...options,
-    resources: [...allDefaultTestResources, ...(options.additionalResources || [])]
-  };
-  if ('additionalResources' in finalConfig) {
-    delete finalConfig.additionalResources;
+  const extra: TestResourceRequirement<any>[] = [...(options.additionalResources || [])];
+
+  if (options.aiProviderApiIdentifier) {
+    const defaultConfig: AiModelExtendedConfig = {
+      api_identifier: options.aiProviderApiIdentifier,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+      hard_cap_output_tokens: 1000,
+    };
+    const providerConfig: AiModelExtendedConfig = {
+      ...defaultConfig,
+      ...(options.aiProviderConfigOverride || {}),
+    };
+    extra.push({
+      tableName: "ai_providers",
+      identifier: { api_identifier: options.aiProviderApiIdentifier },
+      desiredState: {
+        name: `Test Provider (${options.aiProviderApiIdentifier})`,
+        api_identifier: options.aiProviderApiIdentifier,
+        provider: "dummy",
+        is_active: true,
+        config: providerConfig,
+      },
+    });
   }
+
+  const finalConfig: TestSetupConfig = {
+    userProfile: options.userProfile,
+    initialWalletBalance: options.initialWalletBalance,
+    resources: [...allDefaultTestResources, ...extra],
+  };
 
   const result = await coreInitializeTestStep(finalConfig);
   return result;

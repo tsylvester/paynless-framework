@@ -17,13 +17,18 @@ import { RagService } from './rag_service.ts';
 import { IRagServiceDependencies, IRagSourceDocument } from './rag_service.interface.ts';
 import type { RelevanceRule } from '../../dialectic-service/dialectic.interface.ts';
 import { MockLogger } from '../logger.mock.ts';
-import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockSupabaseDataConfig } from '../supabase.mock.ts';
+import {
+  createMockSupabaseClient,
+  type MockQueryBuilderState,
+  type MockSupabaseClientSetup,
+  type MockSupabaseDataConfig,
+} from '../supabase.mock.ts';
 import { IEmbeddingClient, IIndexingService } from './indexing_service.interface.ts';
 import { RagServiceError } from '../utils/errors.ts';
 import { PostgrestError } from 'npm:@supabase/postgrest-js@1.15.5';
 import { EmbeddingClient } from './indexing_service.ts';
 import { DummyAdapter } from '../ai_service/dummy_adapter.ts';
-import { MOCK_PROVIDER } from '../ai_service/dummy_adapter.test.ts';
+import { MOCK_PROVIDER } from '../ai_service/ai_provider.mock.ts';
 import { createMockTokenWalletService } from '../services/tokenWalletService.mock.ts';
 import { FileType } from '../types/file_manager.types.ts';
 
@@ -387,56 +392,81 @@ describe('RagService', () => {
 });
 
 Deno.test("RagService issues RPC with 3072-d query embedding and returns non-empty context", async () => {
-  // Arrange
   const logger = new MockLogger();
   const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", logger);
   const embeddingClient = new EmbeddingClient(dummyAdapter);
-  const returnedId = crypto.randomUUID();
+  const chunkRowId = crypto.randomUUID();
   const emptyInputsRelevance: RelevanceRule[] = [];
+
+  const embeddingJson: string = JSON.stringify(Array(3072).fill(0.01));
+
+  const dialecticMemorySelect = (state: MockQueryBuilderState) => {
+    const cols: string = state.selectColumns ?? "";
+    if (cols.includes("embedding")) {
+      return Promise.resolve({
+        data: [{ id: chunkRowId, embedding: embeddingJson }],
+        error: null,
+      });
+    }
+    return Promise.resolve({
+      data: [],
+      error: null,
+    });
+  };
 
   const { client, spies } = createMockSupabaseClient(undefined, {
     rpcResults: {
-      match_dialectic_chunks: { data: [{ id: returnedId, content: "ctx", metadata: {}, similarity: 0.9, rank: 0.9 }], error: null },
+      match_dialectic_chunks: {
+        data: [{ id: chunkRowId, content: "ctx", metadata: {}, similarity: 0.9, rank: 0.9 }],
+        error: null,
+      },
     },
     genericMockResults: {
       dialectic_memory: {
-        select: { data: [{ id: returnedId, embedding: JSON.stringify(Array(3072).fill(0.01)) }], error: null },
+        select: dialecticMemorySelect,
       },
     },
   });
 
+  const indexingService: IIndexingService = {
+    indexDocument: async () => ({ success: true, tokensUsed: 10 }),
+  };
+  const indexDocumentSpy = spy(indexingService, "indexDocument");
+
   const deps: IRagServiceDependencies = {
     dbClient: client as unknown as SupabaseClient<Database>,
     logger,
-    indexingService: {
-      indexDocument: async () => ({ success: true, tokensUsed: 10 }),
-    },
+    indexingService,
     embeddingClient,
   };
 
   const service = new RagService(deps);
   const docs: IRagSourceDocument[] = [{ id: crypto.randomUUID(), content: "hello world" }];
 
-  // Act
-  const res = await service.getContextForModel(docs, {
-    api_identifier: "dummy-model-v1",
-    input_token_cost_rate: 1,
-    output_token_cost_rate: 1,
-    tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
-  }, "sess-1", "thesis", emptyInputsRelevance);
+  try {
+    const res = await service.getContextForModel(docs, {
+      api_identifier: "dummy-model-v1",
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+    }, "sess-1", "thesis", emptyInputsRelevance);
 
-  // Assert: rpc was called with a 3072-d query_embedding
-  const rpcCalls = spies.rpcSpy.calls;
-  assert(rpcCalls.length >= 1);
-  const firstRpcArgs = rpcCalls[0].args;
-  const params = firstRpcArgs[1];
-  const embStr = String(params.query_embedding ?? "");
-  const parsed = JSON.parse(embStr);
-  assert(Array.isArray(parsed) && parsed.length === 3072);
+    const rpcCalls = spies.rpcSpy.calls;
+    assert(rpcCalls.length >= 1);
+    const firstRpcArgs = rpcCalls[0].args;
+    const params = firstRpcArgs[1];
+    const embStr = String(params.query_embedding ?? "");
+    const parsed = JSON.parse(embStr);
+    assert(Array.isArray(parsed) && parsed.length === 3072);
 
-  assertEquals(res.error, undefined);
-  assert(typeof res.context === "string" && res.context.length > 0);
-  assertEquals(typeof res.tokensUsedForIndexing === "number" && (res.tokensUsedForIndexing ?? 0) > 0, true);
+    assertEquals(res.error, undefined);
+    assert(typeof res.context === "string" && res.context.length > 0);
+    assertEquals(indexDocumentSpy.calls.length, 1);
+    assertEquals(indexDocumentSpy.calls[0].args[1], docs[0].id);
+    assertEquals(res.tokensUsedForIndexing, 10);
+  } finally {
+    indexDocumentSpy.restore();
+  }
 });
 
 Deno.test("RagService guard: rejects when query embedding dim != 3072 and does not call RPC", async () => {

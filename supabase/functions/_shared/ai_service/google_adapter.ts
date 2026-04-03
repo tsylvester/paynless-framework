@@ -3,7 +3,7 @@ import {
     GoogleGenerativeAI,
     type Content,
     type ModelParams,
-    type GenerateContentResult,
+    type GenerateContentStreamResult,
     type Part,
 } from "npm:@google/generative-ai";
 import { isResourceDocument } from '../utils/type-guards/type_guards.chat.ts';
@@ -11,6 +11,8 @@ import type {
     ProviderModelInfo,
     ChatApiRequest,
     AdapterResponsePayload,
+    AdapterStreamChunk,
+    FinishReason,
     ILogger,
     AiModelExtendedConfig,
 } from '../types.ts';
@@ -44,12 +46,11 @@ export class GoogleAdapter {
         this.logger.info(`[GoogleAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
     }
 
-    async sendMessage(
+    private _prepareGoogleChatAndParts(
         request: ChatApiRequest,
-        modelIdentifier: string, // e.g., "google-gemini-1.5-pro-latest"
-    ): Promise<AdapterResponsePayload> {
-        const modelApiName = modelIdentifier.replace(/^google-/i, '');
-        this.logger.debug('[GoogleAdapter] sendMessage called', { modelApiName });
+        modelIdentifier: string,
+    ) {
+        const modelApiName: string = modelIdentifier.replace(/^google-/i, '');
 
         const modelParams: ModelParams = {
             model: modelApiName,
@@ -109,19 +110,59 @@ export class GoogleAdapter {
             finalParts = [...documentParts, ...lastMessage.parts];
         }
 
-        const result: GenerateContentResult = await chat.sendMessage(finalParts);
-        const response = result.response;
+        return { modelApiName, chat, finalParts };
+    }
+
+    async sendMessage(
+        request: ChatApiRequest,
+        modelIdentifier: string, // e.g., "google-gemini-1.5-pro-latest"
+    ): Promise<AdapterResponsePayload> {
+        const { modelApiName, chat, finalParts } = this._prepareGoogleChatAndParts(request, modelIdentifier);
+        this.logger.debug('[GoogleAdapter] sendMessage called', { modelApiName });
+
+        const streamResult: GenerateContentStreamResult = await chat.sendMessageStream(finalParts);
+        try {
+            for await (const _chunk of streamResult.stream) {
+                void _chunk;
+            }
+        } catch (e) {
+            if (e instanceof Error) {
+                throw e;
+            }
+            throw new Error(String(e));
+        }
+        const response = await streamResult.response;
         const candidate = response.candidates?.[0];
 
-        const assistantMessageContent = response.text().trim();
-
-        const tokenUsage: Json | null = response.usageMetadata
-            ? {
-                prompt_tokens: response.usageMetadata.promptTokenCount || 0,
-                completion_tokens: response.usageMetadata.candidatesTokenCount || 0,
-                total_tokens: response.usageMetadata.totalTokenCount || 0,
+        let assistantMessageContent: string;
+        try {
+            assistantMessageContent = response.text().trim();
+        } catch (e) {
+            if (e instanceof Error) {
+                throw e;
             }
-            : null;
+            throw new Error(String(e));
+        }
+        if (assistantMessageContent === '') {
+            throw new Error('Google Gemini stream completed with no assistant text.');
+        }
+
+        let tokenUsage: Json | null = null;
+        if (response.usageMetadata !== undefined && response.usageMetadata !== null) {
+            const um = response.usageMetadata;
+            const pt: unknown = um.promptTokenCount;
+            const ct: unknown = um.candidatesTokenCount;
+            const tt: unknown = um.totalTokenCount;
+            if (typeof pt !== 'number' || typeof ct !== 'number' || typeof tt !== 'number') {
+                this.logger.error('[GoogleAdapter] usageMetadata present but token counts are not all numbers.', { modelApiName });
+                throw new Error('Google Gemini response usageMetadata is incomplete.');
+            }
+            tokenUsage = {
+                prompt_tokens: pt,
+                completion_tokens: ct,
+                total_tokens: tt,
+            };
+        }
 
         let finish_reason: AdapterResponsePayload['finish_reason'] = 'unknown';
         if (candidate?.finishReason) {
@@ -153,6 +194,84 @@ export class GoogleAdapter {
         
         this.logger.debug('[GoogleAdapter] sendMessage successful', { modelApiName });
         return adapterResponse;
+    }
+
+    async *sendMessageStream(
+        request: ChatApiRequest,
+        modelIdentifier: string,
+    ): AsyncGenerator<AdapterStreamChunk> {
+        const { modelApiName, chat, finalParts } = this._prepareGoogleChatAndParts(request, modelIdentifier);
+        this.logger.debug('[GoogleAdapter] sendMessageStream called', { modelApiName });
+
+        const streamResult: GenerateContentStreamResult = await chat.sendMessageStream(finalParts);
+        try {
+            for await (const chunk of streamResult.stream) {
+                const parts = chunk.candidates?.[0]?.content?.parts;
+                if (parts === undefined) {
+                    continue;
+                }
+                for (const part of parts) {
+                    const text: string | undefined = part.text;
+                    if (typeof text === 'string' && text.length > 0) {
+                        yield { type: 'text_delta', text };
+                    }
+                }
+            }
+        } catch (e) {
+            if (e instanceof Error) {
+                throw e;
+            }
+            throw new Error(String(e));
+        }
+
+        const response = await streamResult.response;
+        const candidate = response.candidates?.[0];
+
+        if (response.usageMetadata === undefined || response.usageMetadata === null) {
+            this.logger.error('[GoogleAdapter] sendMessageStream: response did not include usageMetadata.', { modelApiName });
+            throw new Error('Google Gemini response did not include usageMetadata.');
+        }
+        const usageMeta = response.usageMetadata;
+        const ptRaw: unknown = usageMeta.promptTokenCount;
+        const ctRaw: unknown = usageMeta.candidatesTokenCount;
+        const ttRaw: unknown = usageMeta.totalTokenCount;
+        if (typeof ptRaw !== 'number' || typeof ctRaw !== 'number' || typeof ttRaw !== 'number') {
+            this.logger.error('[GoogleAdapter] sendMessageStream: usageMetadata token counts are not all numbers.', { modelApiName });
+            throw new Error('Google Gemini response usageMetadata is incomplete.');
+        }
+        const promptTokens: number = ptRaw;
+        const completionTokens: number = ctRaw;
+        const totalTokens: number = ttRaw;
+
+        yield {
+            type: 'usage',
+            tokenUsage: {
+                prompt_tokens: promptTokens,
+                completion_tokens: completionTokens,
+                total_tokens: totalTokens,
+            },
+        };
+
+        let mappedFinish: FinishReason = 'unknown';
+        if (candidate?.finishReason) {
+            switch (candidate.finishReason) {
+                case 'STOP':
+                    mappedFinish = 'stop';
+                    break;
+                case 'MAX_TOKENS':
+                    mappedFinish = 'length';
+                    break;
+                case 'SAFETY':
+                case 'RECITATION':
+                    mappedFinish = 'content_filter';
+                    break;
+                default:
+                    mappedFinish = 'unknown';
+                    break;
+            }
+        }
+
+        yield { type: 'done', finish_reason: mappedFinish };
     }
 
     // Overload for sync script to get raw data

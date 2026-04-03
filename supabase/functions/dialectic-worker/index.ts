@@ -3,7 +3,6 @@ import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../types_db.ts';
 import {
   DialecticJobPayload,
-  ExecuteModelCallAndSaveParams,
   IJobProcessors,
 } from '../dialectic-service/dialectic.interface.ts';
 import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
@@ -15,7 +14,6 @@ import { planComplexStage } from './task_isolator.ts';
 import { getSeedPromptForStage } from '../_shared/utils/dialectic_utils.ts';
 import { continueJob } from './continueJob.ts';
 import { retryJob } from './retryJob.ts';
-import { callUnifiedAIModel } from '../dialectic-service/callModel.ts';
 import {
   downloadFromStorage,
   deleteFromStorage,
@@ -27,10 +25,15 @@ import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { createSupabaseAdminClient, } from '../_shared/auth.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.ts';
-import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
+import { executeModelCallAndSave } from './executeModelCallAndSave/executeModelCallAndSave.ts';
+import { BoundExecuteModelCallAndSaveFn } from './executeModelCallAndSave/executeModelCallAndSave.interface.ts';
+import { enqueueRenderJob } from './enqueueRenderJob/enqueueRenderJob.ts';
+import { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
+import { prepareModelJob } from './prepareModelJob/prepareModelJob.ts';
+import { calculateAffordability, type BoundCalculateAffordabilityFn } from './calculateAffordability/calculateAffordability.provides.ts';
+import { compressPrompt, type BoundCompressPromptFn } from './compressPrompt/compressPrompt.provides.ts';
 import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
 import { RagService } from '../_shared/services/rag_service.ts';
-import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { IndexingService, LangchainTextSplitter, EmbeddingClient } from '../_shared/services/indexing_service.ts';
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
@@ -40,11 +43,22 @@ import { processRenderJob } from './processRenderJob.ts';
 import { isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
 import { renderDocument } from '../_shared/services/document_renderer.ts';
 import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
-import { IJobContext } from './JobContext.interface.ts';
-import { createJobContext } from './createJobContext.ts';
+import { IJobContext } from './createJobContext/JobContext.interface.ts';
+import { createJobContext } from './createJobContext/createJobContext.ts';
 import { findSourceDocuments } from './findSourceDocuments.ts';
 import { pauseJobsForNsf } from './pauseJobsForNsf.ts';
 import { assembleChunks } from '../_shared/utils/assembleChunks/assembleChunks.ts';
+import { pickLatest } from '../_shared/utils/pickLatest.ts';
+import { applyInputsRequiredScope } from '../_shared/utils/applyInputsRequiredScope.ts';
+import { validateWalletBalance } from '../_shared/utils/validateWalletBalance.ts';
+import { validateModelCostRates } from '../_shared/utils/validateModelCostRates.ts';
+import { resolveFinishReason } from '../_shared/utils/resolveFinishReason.ts';
+import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';
+import { determineContinuation } from '../_shared/utils/determineContinuation/determineContinuation.ts';
+import { buildUploadContext } from '../_shared/utils/buildUploadContext/buildUploadContext.ts';
+import { debitTokens } from '../_shared/utils/debitTokens.ts';
+import { BoundGatherArtifactsFn } from './gatherArtifacts/gatherArtifacts.interface.ts';
+import { gatherArtifacts } from './gatherArtifacts/gatherArtifacts.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -89,13 +103,40 @@ export async function createDialecticWorkerDeps(
   const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService });
   const promptAssembler = new PromptAssembler(adminClient, fileManager);
   const documentRenderer = { renderDocument };
+  const boundGatherArtifacts: BoundGatherArtifactsFn = (params, payload) =>
+    gatherArtifacts({ logger, pickLatest, downloadFromStorage }, params, payload);
+  const boundEmcas: BoundExecuteModelCallAndSaveFn = (params, payload) =>
+    executeModelCallAndSave(
+      {
+        logger,
+        fileManager,
+        getAiProviderAdapter,
+        tokenWalletService,
+        notificationService,
+        continueJob,
+        retryJob,
+        resolveFinishReason,
+        isIntermediateChunk,
+        determineContinuation,
+        buildUploadContext,
+        debitTokens,
+      },
+      params,
+      payload,
+    );
+
+  const boundRender: BoundEnqueueRenderJobFn = (params, payload) =>
+    enqueueRenderJob(
+      { dbClient: adminClient, logger, shouldEnqueueRenderJob },
+      params,
+      payload,
+    );
 
   return createJobContext({
     logger,
     fileManager,
     downloadFromStorage,
     deleteFromStorage,
-    callUnifiedAIModel,
     getAiProviderAdapter,
     getAiProviderConfig: async (dbClient: SupabaseClient<Database>, modelId: string) => {
       const { data, error } = await dbClient
@@ -129,11 +170,36 @@ export async function createDialecticWorkerDeps(
     documentRenderer,
     continueJob,
     retryJob,
-    executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) =>
-      executeModelCallAndSave({
-        ...params,
-        compressionStrategy: getSortedCompressionCandidates,
-      }),
+    prepareModelJob: (params, payload) => {
+      const boundCompressPrompt: BoundCompressPromptFn = (cpParams, cpPayload) =>
+        compressPrompt({ logger, ragService, embeddingClient, tokenWalletService, countTokens }, cpParams, cpPayload);
+      const boundCalculateAffordability: BoundCalculateAffordabilityFn = (caParams, caPayload) =>
+        calculateAffordability({ logger, countTokens, compressPrompt: boundCompressPrompt }, caParams, caPayload);
+      return prepareModelJob(
+        {
+          logger,
+          applyInputsRequiredScope,
+          tokenWalletService,
+          validateWalletBalance,
+          validateModelCostRates,
+          calculateAffordability: boundCalculateAffordability,
+          executeModelCallAndSave: boundEmcas,
+          enqueueRenderJob: boundRender,
+        },
+        params,
+        payload,
+      );
+    },
+    debitTokens,
+    pickLatest,
+    applyInputsRequiredScope,
+    validateWalletBalance,
+    validateModelCostRates,
+    resolveFinishReason,
+    isIntermediateChunk,
+    determineContinuation,
+    buildUploadContext,
+    gatherArtifacts: boundGatherArtifacts,
   });
 }
 

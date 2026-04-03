@@ -1,5 +1,4 @@
-import type { AiModelExtendedConfig, TokenUsage, ILogger } from '../types.ts'; // Import ILogger from main types
-import { DEFAULT_INPUT_TOKEN_COST_RATE, DEFAULT_OUTPUT_TOKEN_COST_RATE } from '../config/token_cost_defaults.ts';
+import type { AiModelExtendedConfig, TokenUsage, ILogger } from '../types.ts';
 
 /**
  * Calculates the actual cost of a chat interaction in wallet units.
@@ -18,18 +17,25 @@ export function calculateActualChatCost(
   logger?: ILogger // Changed to ILogger from ../types.ts
 ): number {
   if (!tokenUsage || typeof tokenUsage !== 'object') {
-    logger?.warn('[calculateActualChatCost] TokenUsage object is missing or invalid. Cost calculation cannot proceed.');
-    return 0;
+    throw new Error('[calculateActualChatCost] TokenUsage object is missing or invalid.');
   }
 
   if (!modelConfig || typeof modelConfig !== 'object') {
-    logger?.warn('[calculateActualChatCost] ModelConfig object is missing or invalid. Cost calculation cannot proceed.');
-    return 0;
+    throw new Error('[calculateActualChatCost] ModelConfig object is missing or invalid.');
   }
 
-  const promptTokens = typeof tokenUsage.prompt_tokens === 'number' ? tokenUsage.prompt_tokens : 0;
-  const completionTokens = typeof tokenUsage.completion_tokens === 'number' ? tokenUsage.completion_tokens : 0;
-  const totalTokens = typeof tokenUsage.total_tokens === 'number' ? tokenUsage.total_tokens : 0;
+  if (typeof tokenUsage.prompt_tokens !== 'number' || isNaN(tokenUsage.prompt_tokens) || tokenUsage.prompt_tokens < 0) {
+    throw new Error(`[calculateActualChatCost] Invalid prompt_tokens: ${tokenUsage.prompt_tokens}`);
+  }
+  if (typeof tokenUsage.completion_tokens !== 'number' || isNaN(tokenUsage.completion_tokens) || tokenUsage.completion_tokens < 0) {
+    throw new Error(`[calculateActualChatCost] Invalid completion_tokens: ${tokenUsage.completion_tokens}`);
+  }
+  if (typeof tokenUsage.total_tokens !== 'number' || isNaN(tokenUsage.total_tokens) || tokenUsage.total_tokens < 0) {
+    throw new Error(`[calculateActualChatCost] Invalid total_tokens: ${tokenUsage.total_tokens}`);
+  }
+  const promptTokens = tokenUsage.prompt_tokens;
+  const completionTokens = tokenUsage.completion_tokens;
+  const totalTokens = tokenUsage.total_tokens;
 
   if (promptTokens === 0 && completionTokens === 0 && totalTokens > 0) {
     logger?.warn(
@@ -39,33 +45,21 @@ export function calculateActualChatCost(
     );
   }
 
-  let inputCostRate = modelConfig.input_token_cost_rate;
-  let outputCostRate = modelConfig.output_token_cost_rate;
+  const inputCostRate = modelConfig.input_token_cost_rate;
+  const outputCostRate = modelConfig.output_token_cost_rate;
 
   if (typeof inputCostRate !== 'number' || isNaN(inputCostRate) || inputCostRate < 0) {
-    logger?.warn(
-      `[calculateActualChatCost] Invalid or missing input_token_cost_rate for model (context: ${modelConfig.tokenization_strategy?.type === 'tiktoken' ? modelConfig.tokenization_strategy.tiktoken_encoding_name : 'N/A'}). Defaulting to ${DEFAULT_INPUT_TOKEN_COST_RATE}.`,
-      { originalRate: inputCostRate }
-    );
-    inputCostRate = DEFAULT_INPUT_TOKEN_COST_RATE;
+    throw new Error(`[calculateActualChatCost] Invalid input_token_cost_rate: ${inputCostRate}`);
   }
 
   if (typeof outputCostRate !== 'number' || isNaN(outputCostRate) || outputCostRate < 0) {
-    logger?.warn(
-      `[calculateActualChatCost] Invalid or missing output_token_cost_rate for model (context: ${modelConfig.tokenization_strategy?.type === 'tiktoken' ? modelConfig.tokenization_strategy.tiktoken_encoding_name : 'N/A'}). Defaulting to ${DEFAULT_OUTPUT_TOKEN_COST_RATE}.`,
-      { originalRate: outputCostRate }
-    );
-    outputCostRate = DEFAULT_OUTPUT_TOKEN_COST_RATE;
+    throw new Error(`[calculateActualChatCost] Invalid output_token_cost_rate: ${outputCostRate}`);
   }
 
-  const calculatedCost = totalTokens > 0 ? totalTokens : promptTokens + completionTokens;
+  const calculatedCost = (promptTokens * inputCostRate) + (completionTokens * outputCostRate);
 
   if (calculatedCost < 0) {
-    logger?.warn(
-        `[calculateActualChatCost] Calculated cost is negative for model (context: ${modelConfig.tokenization_strategy?.type === 'tiktoken' ? modelConfig.tokenization_strategy.tiktoken_encoding_name : 'N/A'}). Defaulting to 0. This should not happen.`,
-        { promptTokens, completionTokens, totalTokens, calculatedCost }
-    );
-    return 0;
+    throw new Error(`[calculateActualChatCost] Calculated cost is negative: ${calculatedCost}`);
   }
   
   // Round up to the nearest whole unit for the wallet.

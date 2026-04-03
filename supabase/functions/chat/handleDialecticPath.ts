@@ -2,7 +2,7 @@ import {
     AdapterResponsePayload,
     ChatApiRequest,
     ChatHandlerSuccessResponse,
-    ChatMessageRow,
+    ChatMessageInsert,
     Messages,
 } from "../_shared/types.ts";
 import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
@@ -174,7 +174,7 @@ export async function handleDialecticPath(
         }
 
         const assistantMessageId = crypto.randomUUID();
-        const { userMessage, assistantMessage } = await debitTokens(
+        const debitTokensResult = await debitTokens(
             { logger, tokenWalletService: tokenWalletService! },
             {
                 wallet,
@@ -184,7 +184,7 @@ export async function handleDialecticPath(
                 chatId: undefined,
                 relatedEntityId: assistantMessageId,
                 databaseOperation: async () => {
-                    const userMessageInsert: ChatMessageRow = {
+                    const userMessageInsert: ChatMessageInsert = {
                         id: crypto.randomUUID(),
                         chat_id: null,
                         user_id: userId,
@@ -199,7 +199,7 @@ export async function handleDialecticPath(
                         response_to_message_id: null,
                         token_usage: null,
                     };
-                     const assistantMessageInsert: ChatMessageRow = {
+                     const assistantMessageInsert: ChatMessageInsert = {
                         id: assistantMessageId,
                         chat_id: null,
                         role: 'assistant',
@@ -218,10 +218,14 @@ export async function handleDialecticPath(
                 }
             }
         );
-        
+
+        if ('error' in debitTokensResult) {
+            throw debitTokensResult.error;
+        }
+
         return {
-            userMessage,
-            assistantMessage,
+            userMessage: debitTokensResult.result.userMessage,
+            assistantMessage: debitTokensResult.result.assistantMessage,
             chatId: undefined,
             finish_reason: adapterResponsePayload.finish_reason,
         };

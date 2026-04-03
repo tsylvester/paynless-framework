@@ -18,6 +18,7 @@ export {
     isDialecticJobPayload, 
     isDialecticJobRow, 
     isDialecticJobRowArray, 
+    isDialecticSessionRow,
     isDialecticPlanJobPayload,
     isDialecticRenderJobPayload,
     isDocumentRelationships,
