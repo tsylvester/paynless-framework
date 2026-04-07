@@ -7,7 +7,8 @@ import type { CountTokensDeps, CountableChatPayload } from './types/tokenizer.ty
 import { createClient, SupabaseClient, User } from "npm:@supabase/supabase-js";
 import { GenerateContentResponse } from "npm:@google/generative-ai";
 import { Tables } from '../types_db.ts';
-import type { ITokenWalletService } from './types/tokenWallet.types.ts';
+import { IUserTokenWalletService } from './services/tokenwallet/client/userTokenWalletService.interface.ts';
+import { IAdminTokenWalletService } from './services/tokenwallet/admin/adminTokenWalletService.interface.ts';
 import type { prepareChatContext } from '../chat/prepareChatContext.ts';
 import type { handleNormalPath } from '../chat/handleNormalPath.ts';
 import type { handleRewindPath } from '../chat/handleRewindPath.ts';
@@ -525,7 +526,8 @@ export interface ChatHandlerDeps {
   getAiProviderAdapterOverride?: (dependencies: FactoryDependencies) => AiProviderAdapterInstance | null;
   verifyApiKey: (apiKey: string, providerName: string) => Promise<boolean>;
   logger: ILogger;
-  tokenWalletService?: ITokenWalletService; 
+  userTokenWalletService?: IUserTokenWalletService;
+  adminTokenWalletService?: IAdminTokenWalletService;
   countTokens: (deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number;
   prepareChatContext: typeof prepareChatContext;
   handleNormalPath: typeof handleNormalPath;

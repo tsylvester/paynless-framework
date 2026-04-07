@@ -7,17 +7,20 @@ import {
 import {
   assertEquals,
   assertExists,
-  assertNotEquals,
-  assertStrictEquals,
-  assertThrows,
   assert,
 } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import { spy, stub, type Spy, type Stub } from 'jsr:@std/testing@0.225.1/mock';
+import { stub, type Stub } from 'jsr:@std/testing@0.225.1/mock';
 
 import { getPaymentAdapter } from './adapterFactory.ts';
-import type { ITokenWalletService } from '../types/tokenWallet.types.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import type { Database } from '../../types_db.ts';
+import { createMockSupabaseClient } from '../supabase.mock.ts';
+import type { IAdminTokenWalletService } from '../services/tokenwallet/admin/adminTokenWalletService.interface.ts';
+import {
+  asSupabaseAdminClientForTests,
+  createMockAdminTokenWalletService,
+  type MockAdminTokenWalletService,
+} from '../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 
 // Note: Since DummyStripeAdapter is an internal class in adapterFactory.ts,
 // we can't directly import and mock its constructor easily from here without refactoring adapterFactory.ts.
@@ -25,8 +28,12 @@ import type { Database } from '../../types_db.ts';
 
 describe('adapterFactory.getPaymentAdapter', () => {
   let mockAdminClient: SupabaseClient<Database>;
-  let mockTokenWalletService: ITokenWalletService;
-  let denoEnvGetStub: Stub<typeof Deno.env, [key: string, ...unknown[]], string | undefined>;
+  let mockTokenWalletService: IAdminTokenWalletService;
+  let denoEnvGetStub: Stub<
+    typeof Deno.env,
+    Parameters<typeof Deno.env.get>,
+    ReturnType<typeof Deno.env.get>
+  >;
 
   const mockTestStripeKey = 'sk_test_mock_stripe_key';
   const mockTestStripeWebhookSecret = 'whsec_test_mock_stripe_webhook_secret';
@@ -34,9 +41,11 @@ describe('adapterFactory.getPaymentAdapter', () => {
   const mockLiveStripeWebhookSecret = 'whsec_live_mock_stripe_webhook_secret';
 
   beforeEach(() => {
-    mockAdminClient = {} as SupabaseClient<Database>;
-    mockTokenWalletService = {} as ITokenWalletService;
-    // Default stub, individual tests will often re-stub or add behavior
+    const supabaseSetup = createMockSupabaseClient(undefined, {});
+    mockAdminClient = asSupabaseAdminClientForTests(supabaseSetup.client);
+    const adminTokenWalletMock: MockAdminTokenWalletService =
+      createMockAdminTokenWalletService();
+    mockTokenWalletService = adminTokenWalletMock.instance;
     denoEnvGetStub = stub(Deno.env, 'get', (key: string) => undefined);
   });
 
@@ -171,4 +180,4 @@ describe('adapterFactory.getPaymentAdapter', () => {
       });
 
   });
-}); 
+});

@@ -157,49 +157,49 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
 
   ### 1. Intent & Position
 
-  * `[ ]`   `objective`
-    * `[ ]`   Create `UserTokenWalletService(userClient: SupabaseClient<Database>)` to own all RLS-enforced, user-visible wallet operations: `getWallet`, `getWalletForContext`, `getBalance`, `checkBalance`, `getTransactionHistory`, `getWalletByIdAndUser`
-    * `[ ]`   Remove these methods from the existing `TokenWalletService`; they must not exist on the admin-scoped class
-    * `[ ]`   Instantiated only with a user Supabase client; never with service-role
+  * `[✅] `   `objective`
+    * `[✅] `   Create `UserTokenWalletService(userClient: SupabaseClient<Database>)` to own all RLS-enforced, user-visible wallet operations: `getWallet`, `getWalletForContext`, `getBalance`, `checkBalance`, `getTransactionHistory`, `getWalletByIdAndUser`
+    * `[✅] `   Remove these methods from the existing `TokenWalletService`; they must not exist on the admin-scoped class
+    * `[✅] `   Instantiated only with a user Supabase client; never with service-role
 
-  * `[ ]`   `role`
-    * `[ ]`   Infrastructure/service layer — user-scoped token wallet reads
-    * `[ ]`   Must NOT perform admin operations (createWallet, recordTransaction)
-    * `[ ]`   Must NOT bypass RLS
+  * `[✅] `   `role`
+    * `[✅] `   Infrastructure/service layer — user-scoped token wallet reads
+    * `[✅] `   Must NOT perform admin operations (createWallet, recordTransaction)
+    * `[✅] `   Must NOT bypass RLS
 
-  * `[ ]`   `module`
-    * `[ ]`   Bounded context: user-facing token wallet reads
-    * `[ ]`   Inside: all read methods, user Supabase client, RLS-enforced queries
-    * `[ ]`   Outside: wallet creation, transaction recording, admin client
+  * `[✅] `   `module`
+    * `[✅] `   Bounded context: user-facing token wallet reads
+    * `[✅] `   Inside: all read methods, user Supabase client, RLS-enforced queries
+    * `[✅] `   Outside: wallet creation, transaction recording, admin client
 
   ### 2. Dependencies & Injection
 
-  * `[ ]`   `deps`
-    * `[ ]`   `SupabaseClient<Database>` from `npm:@supabase/supabase-js` — user-context client only
-    * `[ ]`   `Database` from `../../../types_db.ts`
-    * `[ ]`   Shared domain types from `../../types/tokenWallet.types.ts`
+  * `[✅] `   `deps`
+    * `[✅] `   `SupabaseClient<Database>` from `npm:@supabase/supabase-js` — user-context client only
+    * `[✅] `   `Database` from `../../../types_db.ts`
+    * `[✅] `   Shared domain types from `../../types/tokenWallet.types.ts`
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Constructor consumes exactly: `userClient: SupabaseClient<Database>`
-    * `[ ]`   No admin client, no service-role bypass
+  * `[✅] `   `context_slice`
+    * `[✅] `   Constructor consumes exactly: `userClient: SupabaseClient<Database>`
+    * `[✅] `   No admin client, no service-role bypass
 
   ### 3. Contract Definition
 
-  * `[ ]`   `tokenwallet/client/userTokenWalletService.interface.test.ts`
-    * `[ ]`   `getWallet` with valid UUID → returns `TokenWallet` or `null`
-    * `[ ]`   `getWallet` with invalid UUID → returns `null`
-    * `[ ]`   `getWalletForContext` with `userId` → returns wallet or `null`
-    * `[ ]`   `getWalletForContext` with neither → returns `null`
-    * `[ ]`   `getBalance` with valid wallet → returns balance string
-    * `[ ]`   `getBalance` with non-existent wallet → throws
-    * `[ ]`   `checkBalance` sufficient funds → `true`; insufficient → `false`
-    * `[ ]`   `getTransactionHistory` → returns `PaginatedTransactions` with correct shape
-    * `[ ]`   `getWalletByIdAndUser` → returns wallet for owner, `null` for non-owner (RLS)
+  * `[✅] `   `tokenwallet/client/userTokenWalletService.interface.test.ts`
+    * `[✅] `   `getWallet` with valid UUID → returns `TokenWallet` or `null`
+    * `[✅] `   `getWallet` with invalid UUID → returns `null`
+    * `[✅] `   `getWalletForContext` with `userId` → returns wallet or `null`
+    * `[✅] `   `getWalletForContext` with neither → returns `null`
+    * `[✅] `   `getBalance` with valid wallet → returns balance string
+    * `[✅] `   `getBalance` with non-existent wallet → throws
+    * `[✅] `   `checkBalance` sufficient funds → `true`; insufficient → `false`
+    * `[✅] `   `getTransactionHistory` → returns `PaginatedTransactions` with correct shape
+    * `[✅] `   `getWalletByIdAndUser` → returns wallet for owner, `null` for non-owner (RLS)
 
   ### 4. Structural Boundary
 
-  * `[ ]`   `tokenwallet/client/userTokenWalletService.interface.ts`
-    * `[ ]`   `IUserTokenWalletService` with:
+  * `[✅] `   `tokenwallet/client/userTokenWalletService.interface.ts`
+    * `[✅] `   `IUserTokenWalletService` with:
       * `getWallet(walletId: string): Promise<TokenWallet | null>`
       * `getWalletForContext(userId?: string, organizationId?: string): Promise<TokenWallet | null>`
       * `getBalance(walletId: string): Promise<string>`
@@ -209,10 +209,10 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
 
   ### 5. Interaction Semantics
 
-  * `[ ]`   `interaction.spec`
-    * `[ ]`   All methods use `userClient` — RLS is the enforcement boundary
-    * `[ ]`   `checkBalance` delegates to `getBalance`; returns `boolean`, never throws on wallet-not-found (re-throws from `getBalance`)
-    * `[ ]`   `getTransactionHistory` supports pagination via `GetTransactionHistoryParams`; `fetchAll: true` bypasses pagination
+  * `[✅] `   `interaction.spec`
+    * `[✅] `   All methods use `userClient` — RLS is the enforcement boundary
+    * `[✅] `   `checkBalance` delegates to `getBalance`; returns `boolean`, never throws on wallet-not-found (re-throws from `getBalance`)
+    * `[✅] `   `getTransactionHistory` supports pagination via `GetTransactionHistoryParams`; `fetchAll: true` bypasses pagination
 
   ### 6. Enforcement
 

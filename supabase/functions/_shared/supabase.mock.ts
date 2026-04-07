@@ -58,6 +58,8 @@ export interface IMockQueryBuilder {
   ) => Promise<unknown>; 
   returns: () => IMockQueryBuilder;
   methodSpies: { [key: string]: Spy<(...args: unknown[]) => unknown> };
+  /** Test introspection: current chain state (table, operation, filters). */
+  getQueryBuilderState(): MockQueryBuilderState;
 }
 
 export interface IMockSupabaseAuth {
@@ -527,6 +529,10 @@ class MockQueryBuilder implements IMockQueryBuilder {
         const promise = this._resolveQuery(); // Returns Promise<MockResolveQueryResult>
         
         return promise.then(onfulfilled, onrejected);
+    }
+
+    getQueryBuilderState(): MockQueryBuilderState {
+        return this._state;
     }
 
     private _initializeSpies() {

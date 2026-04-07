@@ -1,15 +1,18 @@
 import { assertEquals, assertRejects, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import { createMockTokenWalletService, MockTokenWalletService } from "../services/tokenWalletService.mock.ts";
+import {
+    createMockAdminTokenWalletService,
+    MockAdminTokenWalletService,
+} from "../services/tokenwallet/admin/adminTokenWalletService.mock.ts";
 import { logger } from "../logger.ts";
 import { debitTokens } from './debitTokens.ts';
 import type { DebitTokensDeps, DebitTokensParams, DebitTokensSuccess } from './debitTokens.interface.ts';
-import { TokenWallet, ITokenWalletService } from "../types/tokenWallet.types.ts";
+import { TokenWallet } from "../types/tokenWallet.types.ts";
 import { AiModelExtendedConfig, TokenUsage } from "../types.ts";
 
 Deno.test('debitTokens: happy path - debit and db operation succeed', async () => {
     // Arrange
-    const mockTokenWalletService: MockTokenWalletService = createMockTokenWalletService();
+    const mockTokenWalletService: MockAdminTokenWalletService = createMockAdminTokenWalletService();
     const deps: DebitTokensDeps = { logger, tokenWalletService: mockTokenWalletService.instance };
     
     const wallet: TokenWallet = { walletId: 'test-wallet', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() };
@@ -74,7 +77,7 @@ Deno.test('debitTokens: happy path - debit and db operation succeed', async () =
 
 Deno.test('debitTokens: debit fails for insufficient funds', async () => {
     // Arrange
-    const mockTokenWalletService = createMockTokenWalletService({
+    const mockTokenWalletService = createMockAdminTokenWalletService({
         recordTransaction: () => Promise.reject(new Error('Insufficient funds')),
     });
     const deps: DebitTokensDeps = { logger, tokenWalletService: mockTokenWalletService.instance };
@@ -113,7 +116,7 @@ Deno.test('debitTokens: debit fails for insufficient funds', async () => {
 
 Deno.test('debitTokens: rollback - debit succeeds, db operation fails', async () => {
     // Arrange
-    const mockTokenWalletService = createMockTokenWalletService();
+    const mockTokenWalletService = createMockAdminTokenWalletService();
     const deps: DebitTokensDeps = { logger, tokenWalletService: mockTokenWalletService.instance };
 
     const wallet: TokenWallet = { walletId: 'test-wallet', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() };
@@ -157,7 +160,7 @@ Deno.test('debitTokens: rollback - debit succeeds, db operation fails', async ()
 
 Deno.test('debitTokens: zero debit amount skips transaction but runs db op', async () => {
     // Arrange
-    const mockTokenWalletService = createMockTokenWalletService();
+    const mockTokenWalletService = createMockAdminTokenWalletService();
     const deps: DebitTokensDeps = { logger, tokenWalletService: mockTokenWalletService.instance };
     
     const wallet: TokenWallet = { walletId: 'test-wallet', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() };
@@ -222,7 +225,7 @@ Deno.test('debitTokens: zero debit amount skips transaction but runs db op', asy
 
 Deno.test('debitTokens: handles message insert error from handleNormalPath', async () => {
     // Arrange
-    const mockTokenWalletService = createMockTokenWalletService();
+    const mockTokenWalletService = createMockAdminTokenWalletService();
     const deps: DebitTokensDeps = { logger, tokenWalletService: mockTokenWalletService.instance };
 
     const wallet: TokenWallet = { walletId: 'test-wallet', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() };
@@ -267,7 +270,7 @@ Deno.test('debitTokens: handles message insert error from handleNormalPath', asy
 Deno.test('debitTokens: returns 500 if recordTransaction (debit) fails', async () => {
     // Arrange
     const debitErrorMessage = "Simulated DB error during token debit";
-    const mockTokenWalletService = createMockTokenWalletService({
+    const mockTokenWalletService = createMockAdminTokenWalletService({
         recordTransaction: () => Promise.reject(new Error(debitErrorMessage)),
     });
     const deps: DebitTokensDeps = { logger, tokenWalletService: mockTokenWalletService.instance };
@@ -306,7 +309,7 @@ Deno.test('debitTokens: returns 500 if recordTransaction (debit) fails', async (
 
 Deno.test('debitTokens: handles message insert error from handleNormalPath', async () => {
     // Arrange
-    const mockTokenWalletService = createMockTokenWalletService();
+    const mockTokenWalletService = createMockAdminTokenWalletService();
     const deps: DebitTokensDeps = { logger, tokenWalletService: mockTokenWalletService.instance };
 
     const wallet: TokenWallet = { walletId: 'test-wallet', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() };

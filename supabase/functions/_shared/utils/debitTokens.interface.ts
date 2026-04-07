@@ -1,12 +1,12 @@
 import type { ILogger } from "../types.ts";
-import type { ITokenWalletService } from "../types/tokenWallet.types.ts";
+import { IAdminTokenWalletService } from "../services/tokenwallet/admin/adminTokenWalletService.interface.ts";
 import type { TokenWallet } from "../types/tokenWallet.types.ts";
 import type { AiModelExtendedConfig, TokenUsage } from "../types.ts";
 import type { ChatMessageInsert } from "../types.ts";
 
 export interface DebitTokensDeps {
     logger: ILogger;
-    tokenWalletService: ITokenWalletService;
+    tokenWalletService: IAdminTokenWalletService;
 }
 
 export interface DebitTokensParams {

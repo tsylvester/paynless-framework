@@ -1,6 +1,9 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
+import {
+  AdminTokenWalletService,
+  type IAdminTokenWalletService,
+} from '../_shared/services/tokenwallet/admin/adminTokenWalletService.provides.ts';
 import { Database } from '../types_db.ts'; // Assuming your DB types are here
 
 const SYSTEM_USER_ID = '19c35c50-eab5-49db-997f-e6fea60253eb'; // IMPORTANT: Replace with actual UUID from migrations
@@ -11,20 +14,11 @@ const TRANSACTION_TYPE_RECURRING_FREE = 'CREDIT_MONTHLY_FREE_ALLOCATION';
 export async function handleAllocatePeriodicTokens(
   req: Request,
   supabaseAdminClientInstance: SupabaseClient<Database>,
-  tokenWalletService: TokenWalletService
+  tokenWalletService: IAdminTokenWalletService
 ): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405 });
   }
-
-  // 1. Initialize Supabase Admin Client - Now passed as parameter
-  // const supabaseAdminClientInstance = createClient<Database>(
-  //   Deno.env.get('SUPABASE_URL') ?? '',
-  //   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  // );
-
-  // Pass console as a simple logger; consider a more structured logger if needed.
-  // const tokenWalletService = new TokenWalletService(supabaseAdminClientInstance); // Now passed as parameter
 
   try {
     console.log('Starting periodic token allocation for free users...');
@@ -125,7 +119,6 @@ export async function handleAllocatePeriodicTokens(
           relatedEntityId: sub.plan_id ?? undefined,
           relatedEntityType: 'subscription_plans',
           notes: String(`Monthly free token allocation. Period ending ${new Date(sub.current_period_end!).toISOString().substring(0,10)}.`),
-          // idempotencyKey: `...` // Optional: if TokenWalletService supports it directly.
         });
         
         console.log(`Successfully awarded ${tokensToAward} tokens to user ${sub.user_id}.`);
@@ -183,7 +176,9 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   );
-  const tokenWalletSvc = new TokenWalletService(supabaseAdminClient);
+  const tokenWalletSvc: IAdminTokenWalletService = new AdminTokenWalletService(
+    supabaseAdminClient,
+  );
 
   return await handleAllocatePeriodicTokens(req, supabaseAdminClient, tokenWalletSvc);
 });

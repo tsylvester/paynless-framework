@@ -1,21 +1,22 @@
 import { StripePaymentAdapter } from './stripePaymentAdapter.ts';
-import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import Stripe from 'npm:stripe';
 import {
   assert,
   assertEquals,
-  assertRejects,
 } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import {
   assertSpyCalls,
-  spy,
   stub,
+  type Stub,
 } from 'jsr:@std/testing@0.225.1/mock';
 import { createMockStripe, MockStripe } from '../../stripe.mock.ts';
 import { createMockSupabaseClient } from '../../supabase.mock.ts';
-import { createMockTokenWalletService, MockTokenWalletService } from '../../services/tokenWalletService.mock.ts';
+import {
+  asSupabaseAdminClientForTests,
+  createMockAdminTokenWalletService,
+  MockAdminTokenWalletService,
+} from '../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 import { MockSupabaseDataConfig } from '../../supabase.mock.ts';
-import { TokenWalletService } from '../../services/tokenWalletService.ts';
 
 // Helper to create a mock Stripe.CustomerSubscriptionUpdatedEvent (copied from stripe.subscriptionUpdated.test.ts)
 const createMockSubscriptionUpdatedEvent = (
@@ -63,9 +64,15 @@ const createMockSubscriptionUpdatedEvent = (
 Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
   let mockStripe: MockStripe;
   let mockSupabaseSetup: ReturnType<typeof createMockSupabaseClient>;
-  let mockTokenWalletService: MockTokenWalletService;
+  let mockAdminTokenWalletService: MockAdminTokenWalletService;
   let adapter: StripePaymentAdapter;
-  let constructEventAsyncStub: any;
+  let constructEventAsyncStub:
+    | Stub<
+      Stripe.Webhooks,
+      Parameters<Stripe.Webhooks['constructEventAsync']>,
+      Promise<Stripe.Event>
+    >
+    | undefined;
 
   const MOCK_SITE_URL = 'http://localhost:3000';
   const MOCK_WEBHOOK_SECRET = 'whsec_test_valid_secret';
@@ -81,12 +88,12 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     Deno.env.set('STRIPE_WEBHOOK_SECRET', MOCK_WEBHOOK_SECRET);
     mockStripe = createMockStripe();
     mockSupabaseSetup = createMockSupabaseClient(undefined, supabaseConfig);
-    mockTokenWalletService = createMockTokenWalletService();
+    mockAdminTokenWalletService = createMockAdminTokenWalletService();
 
     adapter = new StripePaymentAdapter(
       mockStripe.instance,
-      mockSupabaseSetup.client as unknown as SupabaseClient,
-      mockTokenWalletService as unknown as TokenWalletService,
+      asSupabaseAdminClientForTests(mockSupabaseSetup.client),
+      mockAdminTokenWalletService.instance,
       MOCK_WEBHOOK_SECRET
     );
   };
@@ -99,7 +106,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     }
     constructEventAsyncStub = undefined;
     mockStripe?.clearStubs();
-    mockTokenWalletService?.clearStubs();
+    mockAdminTokenWalletService?.clearStubs();
   };
 
   await t.step('Empty test', () => {
@@ -154,7 +161,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
         (mockStripe.stubs as any).webhooksConstructEvent = undefined;
     }
     // Ensure webhooks object exists on the mock Stripe instance
-    mockStripe.instance.webhooks = mockStripe.instance.webhooks || {} as any;
+    mockStripe.instance.webhooks = mockStripe.instance.webhooks || {} ;
     // Correctly stub constructEventAsync and store in the higher scoped variable
     constructEventAsyncStub = stub(mockStripe.instance.webhooks, "constructEventAsync", async () => mockStripeEvent as Stripe.Event);
 

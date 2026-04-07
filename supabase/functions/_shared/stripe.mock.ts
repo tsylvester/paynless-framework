@@ -1,7 +1,7 @@
 import type Stripe from 'npm:stripe';
 import { stub, type Stub } from 'jsr:@std/testing@0.225.1/mock';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
-import type { ITokenWalletService } from './types/tokenWallet.types.ts';
+import type { IAdminTokenWalletService } from './services/tokenwallet/admin/adminTokenWalletService.interface.ts';
 import type { UpdatePaymentTransactionFn } from './types.ts';
 import type { ILogger } from './types.ts';
 
@@ -59,7 +59,7 @@ export interface HandlerContext {
   stripe: Stripe;
   supabaseClient: SupabaseClient;
   logger: ILogger;
-  tokenWalletService: ITokenWalletService;
+  tokenWalletService: IAdminTokenWalletService;
   updatePaymentTransaction: UpdatePaymentTransactionFn;
   featureFlags?: Record<string, boolean>; // Optional feature flags
   functionsUrl: string; // Base URL for invoking other functions if needed
