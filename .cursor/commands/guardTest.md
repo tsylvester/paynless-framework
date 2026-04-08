@@ -12,6 +12,8 @@ Type guards take unproven, unvalidated data and prove that they conform to the r
 
 Type guards DO NOT rely on implementation details of the function that consumes the types. 
 
+YOU DO NOT WRITE GUARD TESTS FOR ANY OBJECT NOT OWNED BY THE INTERFACE WE ARE GUARDING! THOSE GUARDS ARE THE RESPONSIBILITY OF THE EXTERNAL INTERFACE! 
+
 For any factories or other helpers, place them in the mock file. 
 
 DO NOT DUPLICATE FUNCTIONALITY! CONSUME WHAT EXISTS BEFORE BUILDING SOMETHING NEW! 
