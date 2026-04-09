@@ -1,16 +1,24 @@
 import {
+  AdapterResponsePayload,
   ChatApiRequest,
   ChatMessageInsert,
+  FinishReason,
 } from "../../_shared/types.ts";
 import type { CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
+import { isChatMessageRow } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import { isApiChatMessage } from "../../_shared/utils/type_guards.ts";
 import { TokenUsageSchema } from "../zodSchema.ts";
 import type { ConstructMessageHistoryReturn } from "../constructMessageHistory/constructMessageHistory.interface.ts";
 import type {
+  SseChatCompleteEvent,
+  SseChatStartEvent,
+  SseContentChunkEvent,
   StreamChatDeps,
+  StreamChatError,
   StreamChatParams,
   StreamChatPayload,
   StreamChatReturn,
+  StreamChatSuccess,
 } from "./streamChat.interface.ts";
 
 export async function StreamChat(
@@ -23,7 +31,6 @@ export async function StreamChat(
     adminTokenWalletService,
     countTokens: countTokensFn,
     debitTokens,
-    createErrorResponse,
     findOrCreateChat,
     constructMessageHistory,
     getMaxOutputTokens,
@@ -39,7 +46,7 @@ export async function StreamChat(
     apiKey,
     providerApiIdentifier,
   } = params;
-  const { requestBody, req } = payload;
+  const { requestBody } = payload;
   const {
     message: userMessageContent,
     providerId: requestProviderId,
@@ -108,11 +115,10 @@ export async function StreamChat(
         logger.error("Error creating new chat for streaming:", {
           error: newChatError,
         });
-        return createErrorResponse(
+        const failure: StreamChatError = new Error(
           "Failed to create new chat session for streaming.",
-          500,
-          req,
         );
+        return failure;
       }
 
       currentChatId = newChatIdAfterHistoryError;
@@ -130,10 +136,8 @@ export async function StreamChat(
         `Error fetching message history for streaming chat ${currentChatId}:`,
         { error: historyFetchError },
       );
-      return createErrorResponse(
+      return new Error(
         `Failed to fetch message history: ${historyFetchError.message}`,
-        500,
-        req,
       );
     }
 
@@ -163,11 +167,10 @@ export async function StreamChat(
         logger.error(
           "Critical: modelConfig is null before token counting (streaming path).",
         );
-        return createErrorResponse(
+        const failure: StreamChatError = new Error(
           "Internal server error: Provider configuration missing for token calculation.",
-          500,
-          req,
         );
+        return failure;
       }
 
       const tokensRequiredForStreaming = await countTokensFn(tokenizerDeps, {
@@ -191,11 +194,10 @@ export async function StreamChat(
           providerMaxInput: modelConfig.provider_max_input_tokens,
           model: providerApiIdentifier,
         });
-        return createErrorResponse(
+        const failure: StreamChatError = new Error(
           `Your message is too long for streaming. Maximum: ${modelConfig.provider_max_input_tokens} tokens, actual: ${tokensRequiredForStreaming} tokens.`,
-          413,
-          req,
         );
+        return failure;
       }
 
       maxAllowedOutputTokens = getMaxOutputTokens(
@@ -212,211 +214,254 @@ export async function StreamChat(
           estimatedCost: tokensRequiredForStreaming,
           maxAllowedOutput: maxAllowedOutputTokens,
         });
-        return createErrorResponse(
+        const failure: StreamChatError = new Error(
           "Insufficient token balance for this streaming request.",
-          402,
-          req,
         );
+        return failure;
       }
     } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : String(e);
+      let errorMessage: string;
+      if (e instanceof Error) {
+        errorMessage = e.message;
+      } else {
+        errorMessage = String(e);
+      }
       logger.error("Error during token counting for streaming prompt:", {
         error: errorMessage,
         model: providerApiIdentifier,
       });
-      return createErrorResponse(
+      const failure: StreamChatError = new Error(
         `Internal server error during token calculation: ${errorMessage}`,
-        500,
-        req,
       );
+      return failure;
+    }
+
+    const userMessageInsert: ChatMessageInsert = {
+      chat_id: currentChatId,
+      user_id: userId,
+      role: "user",
+      content: userMessageContent,
+      is_active_in_thread: true,
+      ai_provider_id: requestProviderId,
+      system_prompt_id: finalSystemPromptIdForDb,
+    };
+
+    const { data: savedUserMessage, error: userInsertError } =
+      await supabaseClient
+        .from("chat_messages")
+        .insert(userMessageInsert)
+        .select()
+        .single();
+
+    if (userInsertError || !savedUserMessage) {
+      let message: string;
+      if (userInsertError) {
+        message = userInsertError.message;
+      } else {
+        message = "Failed to save user message for streaming.";
+      }
+      logger.error("Failed to save user message for streaming.", {
+        error: userInsertError,
+      });
+      const failure: StreamChatError = new Error(message);
+      return failure;
+    }
+
+    logger.info(
+      `Starting streaming AI request for provider: ${providerApiIdentifier}`,
+    );
+    if (!apiKey) {
+      const message: string =
+        `API key for ${providerApiIdentifier} was not resolved before streaming.`;
+      logger.error(message);
+      const failure: StreamChatError = new Error(message);
+      return failure;
+    }
+
+    let capFromRequest: number;
+    if (max_tokens_to_generate === undefined) {
+      capFromRequest = Infinity;
+    } else {
+      capFromRequest = max_tokens_to_generate;
+    }
+
+    const adapterChatRequest: ChatApiRequest = {
+      message: userMessageContent,
+      messages: effectiveMessages,
+      providerId: requestProviderId,
+      promptId: requestPromptId,
+      chatId: currentChatId,
+      organizationId: organizationId,
+      max_tokens_to_generate: Math.min(
+        capFromRequest,
+        maxAllowedOutputTokens,
+      ),
+      stream: true,
+    };
+
+    let adapterResponse: AdapterResponsePayload;
+    try {
+      adapterResponse = await aiProviderAdapter.sendMessage(
+        adapterChatRequest,
+        providerApiIdentifier,
+      );
+    } catch (caught) {
+      let message: string;
+      if (caught instanceof Error) {
+        message = caught.message;
+      } else {
+        message = String(caught);
+      }
+      logger.error("Error during SSE streaming:", {
+        error: message,
+      });
+      const failure: StreamChatError = new Error(message);
+      return failure;
+    }
+
+    let content: string;
+    if (
+      adapterResponse.content === undefined ||
+      adapterResponse.content === null
+    ) {
+      content = "";
+    } else {
+      content = adapterResponse.content;
+    }
+
+    const chunkSize = 10;
+    const assistantMessageId: string = crypto.randomUUID();
+
+    const parsedTokenUsage = TokenUsageSchema.nullable().safeParse(
+      adapterResponse.token_usage,
+    );
+    if (!parsedTokenUsage.success) {
+      logger.error(
+        "Streaming: Failed to parse token_usage from adapter.",
+        { error: parsedTokenUsage.error },
+      );
+      const failure: StreamChatError = new Error(
+        "Invalid token usage data from AI provider.",
+      );
+      return failure;
+    }
+
+    const debitTokensResult = await debitTokens(
+      { logger, tokenWalletService: adminTokenWalletService },
+      {
+        wallet,
+        tokenUsage: parsedTokenUsage.data,
+        modelConfig,
+        userId,
+        chatId: currentChatId,
+        relatedEntityId: assistantMessageId,
+        databaseOperation: async () => {
+          const assistantMessageInsert: ChatMessageInsert = {
+            id: assistantMessageId,
+            chat_id: currentChatId,
+            role: "assistant",
+            content: content,
+            ai_provider_id: adapterResponse.ai_provider_id,
+            system_prompt_id: finalSystemPromptIdForDb,
+            token_usage: adapterResponse.token_usage,
+            is_active_in_thread: true,
+            error_type: null,
+            response_to_message_id: savedUserMessage.id,
+          };
+
+          const { data: insertedAssistantMessage, error: assistantInsertError } =
+            await supabaseClient
+              .from("chat_messages")
+              .insert(assistantMessageInsert)
+              .select()
+              .single();
+
+          if (assistantInsertError || !insertedAssistantMessage) {
+            if (assistantInsertError) {
+              throw assistantInsertError;
+            }
+            throw new Error(
+              "Failed to insert assistant message for streaming.",
+            );
+          }
+
+          return {
+            userMessage: savedUserMessage,
+            assistantMessage: insertedAssistantMessage,
+          };
+        },
+      },
+      {},
+    );
+    if ("error" in debitTokensResult) {
+      const message: string = debitTokensResult.error.message;
+      logger.error("Streaming: debitTokens failed.", {
+        error: debitTokensResult.error,
+      });
+      const failure: StreamChatError = new Error(message);
+      return failure;
+    }
+
+    const assistantMessageForSse = debitTokensResult.result.assistantMessage;
+    if (!isChatMessageRow(assistantMessageForSse)) {
+      const failure: StreamChatError = new Error(
+        "Streaming: persisted assistant message was not a valid chat_messages row.",
+      );
+      return failure;
+    }
+
+    let streamingFinishReason: FinishReason;
+    if (adapterResponse.finish_reason === undefined) {
+      streamingFinishReason = null;
+    } else {
+      streamingFinishReason = adapterResponse.finish_reason;
     }
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        try {
-          const initData = {
-            type: "chat_start",
-            chatId: currentChatId,
+        const initData: SseChatStartEvent = {
+          type: "chat_start",
+          chatId: currentChatId,
+          timestamp: new Date().toISOString(),
+        };
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify(initData)}\n\n`),
+        );
+
+        for (let i = 0; i < content.length; i += chunkSize) {
+          const chunk: string = content.slice(i, i + chunkSize);
+
+          const streamData: SseContentChunkEvent = {
+            type: "content_chunk",
+            content: chunk,
+            assistantMessageId: assistantMessageId,
             timestamp: new Date().toISOString(),
           };
+
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(initData)}\n\n`),
+            encoder.encode(`data: ${JSON.stringify(streamData)}\n\n`),
           );
 
-          const userMessageInsert: ChatMessageInsert = {
-            chat_id: currentChatId,
-            user_id: userId,
-            role: "user",
-            content: userMessageContent,
-            is_active_in_thread: true,
-            ai_provider_id: requestProviderId,
-            system_prompt_id: finalSystemPromptIdForDb,
-          };
-
-          const { data: savedUserMessage, error: userInsertError } =
-            await supabaseClient
-              .from("chat_messages")
-              .insert(userMessageInsert)
-              .select()
-              .single();
-
-          if (userInsertError || !savedUserMessage) {
-            throw userInsertError ||
-              new Error("Failed to save user message for streaming.");
-          }
-
-          logger.info(
-            `Starting streaming AI request for provider: ${providerApiIdentifier}`,
-          );
-          if (!apiKey) {
-            throw new Error(
-              `API key for ${providerApiIdentifier} was not resolved before streaming.`,
-            );
-          }
-
-          const adapterChatRequest: ChatApiRequest = {
-            message: userMessageContent,
-            messages: effectiveMessages,
-            providerId: requestProviderId,
-            promptId: requestPromptId,
-            chatId: currentChatId,
-            organizationId: organizationId,
-            max_tokens_to_generate: Math.min(
-              max_tokens_to_generate || Infinity,
-              maxAllowedOutputTokens,
-            ),
-            stream: true,
-          };
-
-          const adapterResponse = await aiProviderAdapter.sendMessage(
-            adapterChatRequest,
-            providerApiIdentifier,
-          );
-
-          const content = adapterResponse.content || "";
-          const chunkSize = 10;
-          let assistantContent = "";
-
-          const assistantMessageId = crypto.randomUUID();
-
-          for (let i = 0; i < content.length; i += chunkSize) {
-            const chunk = content.slice(i, i + chunkSize);
-            assistantContent += chunk;
-
-            const streamData = {
-              type: "content_chunk",
-              content: chunk,
-              assistantMessageId: assistantMessageId,
-              timestamp: new Date().toISOString(),
-            };
-
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(streamData)}\n\n`),
-            );
-
-            await new Promise((resolve) => setTimeout(resolve, 50));
-          }
-
-          const parsedTokenUsage = TokenUsageSchema.nullable().safeParse(
-            adapterResponse.token_usage,
-          );
-          if (!parsedTokenUsage.success) {
-            logger.error(
-              "Streaming: Failed to parse token_usage from adapter.",
-              { error: parsedTokenUsage.error },
-            );
-            throw new Error("Invalid token usage data from AI provider.");
-          }
-
-          const debitTokensResult = await debitTokens(
-            { logger, tokenWalletService: adminTokenWalletService },
-            {
-              wallet,
-              tokenUsage: parsedTokenUsage.data,
-              modelConfig,
-              userId,
-              chatId: currentChatId,
-              relatedEntityId: assistantMessageId,
-              databaseOperation: async () => {
-                const assistantMessageInsert: ChatMessageInsert = {
-                  id: assistantMessageId,
-                  chat_id: currentChatId,
-                  role: "assistant",
-                  content: assistantContent,
-                  ai_provider_id: adapterResponse.ai_provider_id,
-                  system_prompt_id: finalSystemPromptIdForDb,
-                  token_usage: adapterResponse.token_usage,
-                  is_active_in_thread: true,
-                  error_type: null,
-                  response_to_message_id: savedUserMessage.id,
-                };
-
-                const { data: insertedAssistantMessage, error: assistantInsertError } =
-                  await supabaseClient
-                    .from("chat_messages")
-                    .insert(assistantMessageInsert)
-                    .select()
-                    .single();
-
-                if (assistantInsertError || !insertedAssistantMessage) {
-                  throw assistantInsertError ||
-                    new Error("Failed to insert assistant message for streaming.");
-                }
-
-                return {
-                  userMessage: savedUserMessage,
-                  assistantMessage: insertedAssistantMessage,
-                };
-              },
-            },
-            {},
-          );
-          if ("error" in debitTokensResult) {
-            throw debitTokensResult.error;
-          }
-
-          const completionData = {
-            type: "chat_complete",
-            assistantMessage: {
-              id: debitTokensResult.result.assistantMessage.id,
-              chat_id: debitTokensResult.result.assistantMessage.chat_id,
-              user_id: debitTokensResult.result.assistantMessage.user_id,
-              role: debitTokensResult.result.assistantMessage.role,
-              content: debitTokensResult.result.assistantMessage.content,
-              created_at: debitTokensResult.result.assistantMessage.created_at,
-              updated_at: debitTokensResult.result.assistantMessage.updated_at,
-            },
-            finish_reason: adapterResponse.finish_reason,
-            timestamp: new Date().toISOString(),
-          };
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(completionData)}\n\n`),
-          );
-
-          controller.close();
-          logger.info("SSE streaming completed successfully");
-        } catch (error) {
-          logger.error("Error during SSE streaming:", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-
-          const errorData = {
-            type: "error",
-            message: error instanceof Error
-              ? error.message
-              : "An error occurred during streaming",
-            timestamp: new Date().toISOString(),
-          };
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(errorData)}\n\n`),
-          );
-          controller.close();
+          await new Promise((resolve) => setTimeout(resolve, 50));
         }
+
+        const completionData: SseChatCompleteEvent = {
+          type: "chat_complete",
+          assistantMessage: assistantMessageForSse,
+          finish_reason: streamingFinishReason,
+          timestamp: new Date().toISOString(),
+        };
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify(completionData)}\n\n`),
+        );
+
+        controller.close();
+        logger.info("SSE streaming completed successfully");
       },
     });
 
-    return new Response(stream, {
+    const success: StreamChatSuccess = new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -427,11 +472,18 @@ export async function StreamChat(
         "Access-Control-Allow-Methods": "POST, OPTIONS",
       },
     });
+    return success;
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
+    let errorMessage: string;
+    if (err instanceof Error) {
+      errorMessage = err.message;
+    } else {
+      errorMessage = String(err);
+    }
     logger.error("Unhandled error in streaming normal path:", {
       error: errorMessage,
     });
-    return createErrorResponse(errorMessage, 500, req);
+    const failure: StreamChatError = new Error(errorMessage);
+    return failure;
   }
 }

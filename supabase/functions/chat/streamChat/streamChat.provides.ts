@@ -1,14 +1,20 @@
 export { StreamChat } from "./StreamChat.ts";
 export type {
-  StreamChatFn,
+  SseChatCompleteEvent,
+  SseChatEvent,
+  SseChatStartEvent,
+  SseContentChunkEvent,
+  SseErrorEvent,
   StreamChatDeps,
   StreamChatError,
+  StreamChatFn,
   StreamChatParams,
   StreamChatPayload,
   StreamChatReturn,
   StreamChatSuccess,
 } from "./streamChat.interface.ts";
 export {
+  isSseChatCompleteEvent,
   isStreamChatDeps,
   isStreamChatParams,
   isStreamChatPayload,
@@ -19,6 +25,10 @@ export {
   buildContractStreamChatParams,
   buildContractStreamChatPayload,
   buildContractStreamChatReq,
+  buildMockSseChatCompleteEvent,
+  buildMockSseChatStartEvent,
+  buildMockSseContentChunkEvent,
+  buildMockSseErrorEvent,
   buildStreamChatDepsInsufficientBalance,
   buildStreamChatDepsMissingAdminTokenWallet,
   buildStreamChatDepsTokenLimitExceeded,

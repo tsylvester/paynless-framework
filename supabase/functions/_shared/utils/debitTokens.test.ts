@@ -38,6 +38,12 @@ Deno.test('debitTokens: happy path - debit and db operation succeed', async () =
                 content: 'test-user-message',
                 created_at: createdAt,
                 updated_at: updatedAt,
+                ai_provider_id: 'test-ai-provider',
+                error_type: null,
+                is_active_in_thread: true,
+                response_to_message_id: null,
+                system_prompt_id: null,
+                token_usage: null,
             },
             assistantMessage: {
                 id: 'test-assistant-message',
@@ -47,6 +53,12 @@ Deno.test('debitTokens: happy path - debit and db operation succeed', async () =
                 content: 'test-assistant-message',
                 created_at: createdAt,
                 updated_at: updatedAt,
+                ai_provider_id: 'test-ai-provider',
+                error_type: null,
+                is_active_in_thread: true,
+                response_to_message_id: null,
+                system_prompt_id: null,
+                token_usage: null,
             }
         },
         transactionRecordedSuccessfully: true
@@ -93,7 +105,7 @@ Deno.test('debitTokens: debit fails for insufficient funds', async () => {
             tiktoken_encoding_name: 'cl100k_base',
         },
     };
-    const dbOperation = spy(() => Promise.resolve({ userMessage: { chat_id: 'test-chat', user_id: 'test-user', role: 'user', content: 'test-user-message', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, assistantMessage: { chat_id: 'test-chat', user_id: 'test-user', role: 'assistant', content: 'test-assistant-message', created_at: new Date().toISOString(), updated_at: new Date().toISOString() } }));
+    const dbOperation = spy(() => Promise.resolve({ userMessage: { ai_provider_id: 'test-ai-provider', chat_id: 'test-chat', user_id: 'test-user', role: 'user', content: 'test-user-message', created_at: new Date().toISOString(), error_type: null, id: 'test-user-message', is_active_in_thread: true, response_to_message_id: null, system_prompt_id: null, token_usage: null, updated_at: new Date().toISOString() }, assistantMessage: { ai_provider_id: 'test-ai-provider', chat_id: 'test-chat', user_id: 'test-user', role: 'assistant', content: 'test-assistant-message', created_at: new Date().toISOString(), error_type: null, id: 'test-assistant-message', is_active_in_thread: true, response_to_message_id: null, system_prompt_id: null, token_usage: null, updated_at: new Date().toISOString() } }));
 
     const params: DebitTokensParams = { 
         wallet, 
@@ -186,6 +198,12 @@ Deno.test('debitTokens: zero debit amount skips transaction but runs db op', asy
                 content: 'test-user-message',
                 created_at: createdAt,
                 updated_at: updatedAt,
+                ai_provider_id: 'test-ai-provider',
+                error_type: null,
+                is_active_in_thread: true,
+                response_to_message_id: null,
+                system_prompt_id: null,
+                token_usage: null,
             },
             assistantMessage: {
                 id: 'test-assistant-message',
@@ -195,6 +213,12 @@ Deno.test('debitTokens: zero debit amount skips transaction but runs db op', asy
                 content: 'test-assistant-message',
                 created_at: createdAt,
                 updated_at: updatedAt,
+                ai_provider_id: 'test-ai-provider',
+                error_type: null,
+                is_active_in_thread: true,
+                response_to_message_id: null,
+                system_prompt_id: null,
+                token_usage: null,
             }
         },
         transactionRecordedSuccessfully: true
@@ -286,7 +310,7 @@ Deno.test('debitTokens: returns 500 if recordTransaction (debit) fails', async (
             tiktoken_encoding_name: 'cl100k_base',
         },
     };
-    const dbOperation = spy(() => Promise.resolve({ userMessage: { chat_id: 'test-chat', user_id: 'test-user', role: 'user', content: 'test-user-message', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, assistantMessage: { chat_id: 'test-chat', user_id: 'test-user', role: 'assistant', content: 'test-assistant-message', created_at: new Date().toISOString(), updated_at: new Date().toISOString() } }));
+    const dbOperation = spy(() => Promise.resolve({ userMessage: { ai_provider_id: 'test-ai-provider', chat_id: 'test-chat', user_id: 'test-user', role: 'user', content: 'test-user-message', created_at: new Date().toISOString(), error_type: null, id: 'test-user-message', is_active_in_thread: true, response_to_message_id: null, system_prompt_id: null, token_usage: null, updated_at: new Date().toISOString() }, assistantMessage: { ai_provider_id: 'test-ai-provider', chat_id: 'test-chat', user_id: 'test-user', role: 'assistant', content: 'test-assistant-message', created_at: new Date().toISOString(), error_type: null, id: 'test-assistant-message', is_active_in_thread: true, response_to_message_id: null, system_prompt_id: null, token_usage: null, updated_at: new Date().toISOString() } }));
 
     const params: DebitTokensParams = {
         wallet,

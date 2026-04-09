@@ -1,11 +1,17 @@
 import { assertEquals } from "jsr:@std/assert@0.225.3";
 import { createErrorResponse } from "../../_shared/cors-headers.ts";
 import {
+  buildContractFullChatMessageRow,
   buildContractStreamChatDeps,
   buildContractStreamChatParams,
   buildContractStreamChatPayload,
 } from "./streamChat.mock.ts";
 import {
+  SseChatCompleteEvent,
+  SseChatEvent,
+  SseChatStartEvent,
+  SseContentChunkEvent,
+  SseErrorEvent,
   StreamChatFn,
   StreamChatDeps,
   StreamChatParams,
@@ -238,3 +244,101 @@ Deno.test(
     assertEquals(out instanceof Error, true);
   },
 );
+
+Deno.test(
+  "Contract: SseChatCompleteEvent accepts full ChatMessageRow as assistantMessage",
+  () => {
+    const assistantMessage = buildContractFullChatMessageRow();
+    const complete: SseChatCompleteEvent = {
+      type: "chat_complete",
+      assistantMessage,
+      finish_reason: "stop",
+      timestamp: "2024-01-01T00:00:00.000Z",
+    };
+
+    assertEquals(complete.type, "chat_complete");
+    assertEquals(complete.assistantMessage.is_active_in_thread, true);
+    assertEquals(complete.finish_reason, "stop");
+  },
+);
+
+Deno.test(
+  "Contract: SseChatCompleteEvent rejects assistantMessage missing is_active_in_thread",
+  () => {
+    const assistantMessageMissingThreadFlag = {
+      id: "11111111-1111-4111-8111-111111111111",
+      chat_id: "22222222-2222-4222-8222-222222222222",
+      user_id: null,
+      role: "assistant",
+      content: "x",
+      created_at: "2024-01-01T00:00:00.000Z",
+      updated_at: "2024-01-01T00:00:00.000Z",
+      ai_provider_id: null,
+      system_prompt_id: null,
+      token_usage: null,
+      error_type: null,
+      response_to_message_id: null,
+    };
+    const incomplete: SseChatCompleteEvent = {
+      type: "chat_complete",
+      assistantMessage: assistantMessageMissingThreadFlag,
+      finish_reason: "stop",
+      timestamp: "2024-01-01T00:00:00.000Z",
+    } as SseChatCompleteEvent;
+
+    assertEquals(incomplete.type, "chat_complete");
+  },
+);
+
+Deno.test("Contract: SseChatEvent narrows by discriminant type", () => {
+  const ts: string = "2024-01-01T00:00:00.000Z";
+  const start: SseChatStartEvent = {
+    type: "chat_start",
+    chatId: "chat-contract-narrow",
+    timestamp: ts,
+  };
+  const chunk: SseContentChunkEvent = {
+    type: "content_chunk",
+    content: "fragment",
+    assistantMessageId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    timestamp: ts,
+  };
+  const complete: SseChatCompleteEvent = {
+    type: "chat_complete",
+    assistantMessage: buildContractFullChatMessageRow(),
+    finish_reason: "stop",
+    timestamp: ts,
+  };
+  const err: SseErrorEvent = {
+    type: "error",
+    message: "contract sse error",
+    timestamp: ts,
+  };
+
+  const events: SseChatEvent[] = [start, chunk, complete, err];
+
+  let sawStartChatId: string = "";
+  let sawChunkContent: string = "";
+  let sawCompleteAssistantId: string = "";
+  let sawErrorMessage: string = "";
+
+  for (const e of events) {
+    if (e.type === "chat_start") {
+      sawStartChatId = e.chatId;
+    } else if (e.type === "content_chunk") {
+      sawChunkContent = e.content;
+    } else if (e.type === "chat_complete") {
+      sawCompleteAssistantId = e.assistantMessage.id;
+    } else if (e.type === "error") {
+      sawErrorMessage = e.message;
+    }
+  }
+
+  assertEquals(sawStartChatId, "chat-contract-narrow");
+  assertEquals(sawChunkContent, "fragment");
+  assertEquals(
+    sawCompleteAssistantId,
+    "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  );
+  assertEquals(sawErrorMessage, "contract sse error");
+});

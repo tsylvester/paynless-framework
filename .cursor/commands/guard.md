@@ -1,7 +1,7 @@
 Now write the guards to satisfy the guard tests. Follow the work plan descriptions exactly. 
 
-Guards only test the types that are owned by the function. Guards DO NOT GUARD IMPORTED TYPES! 
+Guards only test the types that are owned by the interface. Guards do not guard types imported from other interfaces! 
 
-YOU DO NOT WRITE GUARDs FOR ANY OBJECT NOT OWNED BY THE INTERFACE WE ARE GUARDING! THOSE GUARDS ARE THE RESPONSIBILITY OF THE EXTERNAL INTERFACE! 
+Guards guard every type in the interface - the function elements, plus any objects produced by the function. 
 
 Imported types are guarded BY THEIR OWN GUARDS IN THEIR HOME PACKAGE. 

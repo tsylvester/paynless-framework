@@ -22,7 +22,7 @@ import {
 import type { ChatApiRequest, ChatHandlerSuccessResponse, AiModelExtendedConfig, FactoryDependencies } from "../_shared/types.ts";
 
 // Import the test group runner
-//import { runHappyPathTests } from './happy_path.integration.test.ts';
+import { runHappyPathTests } from './happy_path.integration.test.ts';
 //import { runEdgeCaseTests } from './edge_cases.integration.test.ts';
 //import { runSpecificConfigsTests } from './specific_configs.integration.test.ts';
 //import { runAuthValidationTests } from "./auth_validation.integration.test.ts";
@@ -270,9 +270,9 @@ Deno.test({
 
     try {
       // Call the Happy Path tests
-//      await t.step("[Test Group] Happy Path Scenarios", async (innerT: Deno.TestContext) => {
-//        await runHappyPathTests(innerT, initializeTestGroupEnvironmentRouter);
-//      });
+      await t.step("[Test Group] Happy Path Scenarios", async (innerT: Deno.TestContext) => {
+        await runHappyPathTests(innerT, initializeTestGroupEnvironmentRouter);
+      });
 
       // Call the Edge Case tests
 //      await t.step("[Test Group] Edge Cases", async (innerT: Deno.TestContext) => {

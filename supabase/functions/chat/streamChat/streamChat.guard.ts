@@ -2,9 +2,12 @@ import { isIAdminTokenWalletService } from "../../_shared/services/tokenwallet/a
 import {
   isAiModelExtendedConfig,
   isChatApiRequest,
+  isChatMessageRow,
+  isFinishReason,
 } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import {
+  SseChatCompleteEvent,
   StreamChatDeps,
   StreamChatParams,
   StreamChatPayload,
@@ -175,4 +178,39 @@ export function isStreamChatPayload(
 
 export function isStreamChatReturn(value: unknown): value is StreamChatReturn {
   return value instanceof Response || value instanceof Error;
+}
+
+export function isSseChatCompleteEvent(
+  value: unknown,
+): value is SseChatCompleteEvent {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (value.type !== "chat_complete") {
+    return false;
+  }
+  const requiredKeys: (keyof SseChatCompleteEvent)[] = [
+    "type",
+    "assistantMessage",
+    "finish_reason",
+    "timestamp",
+  ];
+  for (const key of requiredKeys) {
+    if (!(key in value)) {
+      return false;
+    }
+  }
+  if (!isChatMessageRow(value.assistantMessage)) {
+    return false;
+  }
+  if (value.finish_reason === null || value.finish_reason === undefined) {
+    return false;
+  }
+  if (!isFinishReason(value.finish_reason)) {
+    return false;
+  }
+  if (typeof value.timestamp !== "string") {
+    return false;
+  }
+  return true;
 }

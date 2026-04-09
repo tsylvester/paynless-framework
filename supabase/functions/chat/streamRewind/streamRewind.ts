@@ -2,18 +2,27 @@ import { Tables } from "../../types_db.ts";
 import {
   AdapterResponsePayload,
   ChatApiRequest,
+  ChatMessageRow,
   ChatMessageRole,
+  FinishReason,
   PerformChatRewindArgs,
 } from "../../_shared/types.ts";
 import type { CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
 import { isChatMessageRow, isChatMessageRole } from "../../_shared/utils/type_guards.ts";
 import { TokenUsageSchema } from "../zodSchema.ts";
+import {
+  SseChatCompleteEvent,
+  SseChatStartEvent,
+  SseContentChunkEvent,
+  SseErrorEvent,
+} from "../streamChat/streamChat.provides.ts";
 import type {
   StreamRewindDeps,
   StreamRewindParams,
   StreamRewindPayload,
   StreamRewindReturn,
 } from "./streamRewind.interface.ts";
+import { DebitTokensReturn } from "../../_shared/utils/debitTokens.interface.ts";
 
 export async function StreamRewind(
   deps: StreamRewindDeps,
@@ -247,11 +256,7 @@ export async function StreamRewind(
   >({
     async start(controller) {
       try {
-        const initData: {
-          type: string;
-          chatId: string;
-          timestamp: string;
-        } = {
+        const initData: SseChatStartEvent = {
           type: "chat_start",
           chatId: currentChatId,
           timestamp: new Date().toISOString(),
@@ -287,12 +292,7 @@ export async function StreamRewind(
         for (let i: number = 0; i < content.length; i += chunkSize) {
           const chunk: string = content.slice(i, i + chunkSize);
 
-          const streamData: {
-            type: string;
-            content: string;
-            assistantMessageId: string;
-            timestamp: string;
-          } = {
+          const streamData: SseContentChunkEvent = {
             type: "content_chunk",
             content: chunk,
             assistantMessageId: newAssistantMessageId,
@@ -320,7 +320,7 @@ export async function StreamRewind(
           throw new Error("Invalid token usage data from AI provider.");
         }
 
-        const debitTokensResult = await debitTokens(
+        const debitTokensResult: DebitTokensReturn = await debitTokens(
           { logger, tokenWalletService: adminTokenWalletService },
           {
             wallet,
@@ -400,59 +400,19 @@ export async function StreamRewind(
           throw debitTokensResult.error;
         }
 
-        const savedAssistant = debitTokensResult.result.assistantMessage;
-        if (typeof savedAssistant.id !== "string") {
-          throw new Error("Rewind: assistant message missing id after debit.");
-        }
-        if (typeof savedAssistant.chat_id !== "string") {
-          throw new Error("Rewind: assistant message missing chat_id after debit.");
-        }
-        if (typeof savedAssistant.role !== "string") {
-          throw new Error("Rewind: assistant message missing role after debit.");
-        }
-        if (typeof savedAssistant.content !== "string") {
-          throw new Error("Rewind: assistant message missing content after debit.");
-        }
-        if (typeof savedAssistant.created_at !== "string") {
-          throw new Error(
-            "Rewind: assistant message missing created_at after debit.",
-          );
-        }
-        if (typeof savedAssistant.updated_at !== "string") {
-          throw new Error(
-            "Rewind: assistant message missing updated_at after debit.",
-          );
-        }
-        const assistantUserId: string | null = savedAssistant.user_id ===
-            undefined
-          ? null
-          : savedAssistant.user_id;
+        const savedAssistant: ChatMessageRow = debitTokensResult.result.assistantMessage;
 
-        const completionData: {
-          type: string;
-          assistantMessage: {
-            id: string;
-            chat_id: string;
-            user_id: string | null;
-            role: string;
-            content: string;
-            created_at: string;
-            updated_at: string;
-          };
-          finish_reason: typeof adapterResponsePayload.finish_reason;
-          timestamp: string;
-        } = {
+        let rewindFinishReason: FinishReason;
+        if (adapterResponsePayload.finish_reason === undefined) {
+          rewindFinishReason = null;
+        } else {
+          rewindFinishReason = adapterResponsePayload.finish_reason;
+        }
+
+        const completionData: SseChatCompleteEvent = {
           type: "chat_complete",
-          assistantMessage: {
-            id: savedAssistant.id,
-            chat_id: savedAssistant.chat_id,
-            user_id: assistantUserId,
-            role: savedAssistant.role,
-            content: savedAssistant.content,
-            created_at: savedAssistant.created_at,
-            updated_at: savedAssistant.updated_at,
-          },
-          finish_reason: adapterResponsePayload.finish_reason,
+          assistantMessage: savedAssistant,
+          finish_reason: rewindFinishReason,
           timestamp: new Date().toISOString(),
         };
         controller.enqueue(
@@ -469,11 +429,7 @@ export async function StreamRewind(
           error: errMsg,
         });
 
-        const errorData: {
-          type: string;
-          message: string;
-          timestamp: string;
-        } = {
+        const errorData: SseErrorEvent = {
           type: "error",
           message: errMsg.includes("Insufficient funds")
             ? `Insufficient token balance: ${errMsg}`

@@ -951,6 +951,8 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
     * `[✅]`   Valid: modelConfig is null → returns error `Response` with 500
     * `[✅]`   Invalid: deps missing `adminTokenWalletService` → rejected by type system
     * `[✅]`   Edge: history fetch error with existing chatId → creates new chat, proceeds with stream
+    * `[ ]`   Contract: `SseChatCompleteEvent` is assignable from a full `ChatMessageRow` as `assistantMessage` — object missing any required `ChatMessageRow` column (e.g. `is_active_in_thread`) must produce a type error
+    * `[ ]`   Contract: `SseChatEvent` is a discriminated union — narrowing on `type === "chat_complete"` yields `SseChatCompleteEvent`; narrowing on `type === "content_chunk"` yields `SseContentChunkEvent`; narrowing on `type === "chat_start"` yields `SseChatStartEvent`; narrowing on `type === "error"` yields `SseErrorEvent`
 
   ### 4. Structural Boundary
 
@@ -960,6 +962,11 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
     * `[✅]`   `StreamChatPayload` — `{ requestBody: ChatApiRequest, req: Request }` — `req` forwarded from `streamRequest` for `createErrorResponse` CORS
     * `[✅]`   `StreamChatReturn` — `StreamChatSuccess = Response | StreamChatError = Error`
     * `[✅]`   No `any`, no optional fields that should be required
+    * `[✅]`   `SseChatStartEvent` — `{ type: "chat_start"; chatId: string; timestamp: string }`
+    * `[✅]`   `SseContentChunkEvent` — `{ type: "content_chunk"; content: string; assistantMessageId: string; timestamp: string }`
+    * `[✅]`   `SseChatCompleteEvent` — `{ type: "chat_complete"; assistantMessage: ChatMessageRow; finish_reason: FinishReason; timestamp: string }` — `assistantMessage` is the **full** `ChatMessageRow` (`Tables<"chat_messages">`) so no column can be omitted
+    * `[✅]`   `SseErrorEvent` — `{ type: "error"; message: string; timestamp: string }`
+    * `[✅]`   `SseChatEvent` — `SseChatStartEvent | SseContentChunkEvent | SseChatCompleteEvent | SseErrorEvent` (discriminated on `type`)
 
   ### 5. Interaction Semantics
 
@@ -975,9 +982,11 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
 
   * `[✅]`   `StreamChat.guard.test.ts`
     * `[✅]`   `isStreamChatDeps(x)` → true for valid, false for `null`, `{}`, object missing `adminTokenWalletService`
+    * `[✅]`   `isSseChatCompleteEvent(x)` → true for object whose `assistantMessage` contains every required `ChatMessageRow` column including `is_active_in_thread`; false for partial shape missing any required column
 
   * `[✅]`   `StreamChat.guard.ts`
     * `[✅]`   `isStreamChatDeps`: checks all required dep fields are present and correctly typed
+    * `[✅]`   `isSseChatCompleteEvent(value: unknown): value is SseChatCompleteEvent` — checks `type === "chat_complete"` and that `assistantMessage` satisfies every required column of `ChatMessageRow`
 
   ### 7. Behavioral Verification
 
@@ -1004,6 +1013,11 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
     * `[✅]`   Pass `{ logger, tokenWalletService: adminTokenWalletService }` to `deps.debitTokens`
     * `[✅]`   Replace all `new Request("")` with `payload.req` in `createErrorResponse` calls
     * `[✅]`   All streaming/SSE logic remains unchanged
+    * `[✅]`   Import `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent` from `./streamChat.interface.ts`
+    * `[✅]`   Annotate `initData` as `SseChatStartEvent`
+    * `[✅]`   Annotate `streamData` as `SseContentChunkEvent`
+    * `[✅]`   Annotate `completionData` as `SseChatCompleteEvent` — assign `insertedAssistantMessage` directly as `assistantMessage` (full `ChatMessageRow` from `.select().single()`); remove all manual field-picking that produced a partial object
+    * `[✅]`   Annotate `errorData` as `SseErrorEvent`
 
   ### 10. Simulation
 
@@ -1011,11 +1025,18 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
     * `[✅]`   `createMockStreamChat(): MockStreamChat` — stub returning a mock SSE `Response`
     * `[✅]`   Conforms to function signature from interface
     * `[✅]`   Controllable: can set success or error responses
+    * `[✅]`   `buildMockSseChatStartEvent(overrides?: Partial<SseChatStartEvent>): SseChatStartEvent` — standard object with sensible default values for all fields; caller may override any field
+    * `[✅]`   `buildMockSseContentChunkEvent(overrides?: Partial<SseContentChunkEvent>): SseContentChunkEvent` — standard object with sensible default values; caller may override any field
+    * `[✅]`   `buildMockSseChatCompleteEvent(overrides?: Partial<SseChatCompleteEvent>): SseChatCompleteEvent` — standard object whose `assistantMessage` is a full `ChatMessageRow` built from all required columns with sensible defaults; caller may override any field including nested `assistantMessage` fields
+    * `[✅]`   `buildMockSseErrorEvent(overrides?: Partial<SseErrorEvent>): SseErrorEvent` — standard object with sensible default values; caller may override any field
+    * `[✅]`   All four builders use `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent` as their explicit return types — no inline shapes
 
   ### 11. External Boundary
 
   * `[✅]`   `StreamChat.provides.ts`
     * `[✅]`   Re-exports: `StreamChat`, `StreamChatDeps`, `StreamChatParams`, `StreamChatPayload`, `StreamChatReturn`, `isStreamChatDeps`, `createMockStreamChat`
+    * `[✅]`   Add to re-exports: `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent`, `SseChatEvent`, `isSseChatCompleteEvent` — canonical SSE wire types, owned here, consumed by `StreamRewind` and any future SSE producers
+    * `[✅]`   Add to re-exports: `buildMockSseChatStartEvent`, `buildMockSseContentChunkEvent`, `buildMockSseChatCompleteEvent`, `buildMockSseErrorEvent` — SSE event mock builders for use in `StreamRewind` tests and any other consumer tests that need to construct SSE event fixtures
 
   ### 12. Edge Validation
 
@@ -1083,6 +1104,7 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
     * `[✅]`   `SupabaseClient<Database>` — in params (varies per request)
     * `[✅]`   `AiProviderAdapterInstance` — in params
     * `[✅]`   No reverse dependencies
+    * `[✅]`   `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent`, `SseChatEvent` from `../streamChat/streamChat.provides.ts` — type-only imports; `StreamRewind` is a consumer of the canonical SSE wire types, not a definer
 
   * `[✅]`   `context_slice`
     * `[✅]`   `StreamRewindDeps` is the minimal interface — only capabilities this function calls
@@ -1164,6 +1186,11 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
     * `[✅]`   Replace all `new Request("")` with `payload.req` in `createErrorResponse` calls
     * `[✅]`   Pre-stream validation errors (missing chatId, modelConfig null) return error `Response` via `createErrorResponse` before stream starts
     * `[✅]`   All rewind logic (RPC call, message history, debit) remains unchanged — only the response wrapper changes
+    * `[✅]`   Import `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent` from `../streamChat/streamChat.provides.ts`
+    * `[✅]`   Annotate `initData` as `SseChatStartEvent`
+    * `[✅]`   Annotate `streamData` as `SseContentChunkEvent`
+    * `[✅]`   Annotate `completionData` as `SseChatCompleteEvent` — assign `savedAssistant` (already a full `ChatMessageRow` from the RPC) directly as `assistantMessage`; remove all manual runtime field existence checks (`typeof savedAssistant.id !== "string"`, etc.) and hand-picked field assignments — the type guarantees those fields are present
+    * `[✅]`   Annotate `errorData` as `SseErrorEvent`
 
   ### 10. Simulation
 
@@ -1596,6 +1623,239 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
 
 ---
 
+* `[ ]`   `packages/api/src/ai.api.ts` **[API] Add SSE wire event types to `@paynless/types` and enforce typed parse boundary in `processStream`**
+
+  ### 1. Intent & Position
+
+  * `[ ]`   `objective`
+    * `[ ]`   `processStream` in `ai.api.ts` calls `JSON.parse(data)` and assigns the result to `parsedData` without a declared type — the compiler cannot catch a malformed or partial `chat_complete` payload crossing the wire
+    * `[ ]`   Add `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent`, and `SseChatEvent` (discriminated union) to `packages/types/src/ai.types.ts` using `ChatMessage` as the type for `assistantMessage` — the frontend mirror of the edge function's `SseChatCompleteEvent`
+    * `[ ]`   Declare `parsedData` as `SseChatEvent` in `processStream` so the parse result is typed at the API boundary before dispatch
+
+  * `[ ]`   `role`
+    * `[ ]`   API client / transport boundary — parses raw SSE wire bytes into typed domain events before delivering them to consumers
+    * `[ ]`   Must NOT interpret or act on event content — only parse, type, and dispatch
+    * `[ ]`   Must NOT define business logic for chat completion — that belongs to the store
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: SSE transport from edge function to browser
+    * `[ ]`   Inside: byte-to-string decoding, `data:` line extraction, JSON parse, typed dispatch
+    * `[ ]`   Outside: store state updates, UI rendering, wallet refresh
+
+  ### 2. Dependencies & Injection
+
+  * `[ ]`   `deps`
+    * `[ ]`   `SseChatEvent`, `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent` from `@paynless/types` — type-only import; no runtime cost
+    * `[ ]`   `ChatMessage` from `@paynless/types` — already imported; used as `assistantMessage` field type in `SseChatCompleteEvent`
+    * `[ ]`   No new runtime deps — change is type-annotation only
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   Only `SseChatEvent` is needed at the parse site; no over-fetching
+
+  ### 3. Contract Definition
+
+  * `[ ]`   `ai.api.test.ts`
+    * `[ ]`   Add: `sendStreamingChatMessage` — happy path: server emits `chat_complete` with full `ChatMessage` assistantMessage (all columns present including `is_active_in_thread: true`) → `onComplete` callback receives typed `ChatMessage`
+    * `[ ]`   Add: `processStream` — `chat_complete` with missing `is_active_in_thread` field on `assistantMessage` → TypeScript produces a type error (compile-time contract, verified by type assertion in test)
+    * `[ ]`   Add: `processStream` dispatches `MessageEvent` whose `.data` is typed as `SseChatEvent`; narrowing on `.type === "chat_complete"` yields `SseChatCompleteEvent`
+
+  ### 4. Structural Boundary
+
+  * `[ ]`   `packages/types/src/ai.types.ts`
+    * `[ ]`   `SseChatStartEvent` — `{ type: "chat_start"; chatId: string; timestamp: string }`
+    * `[ ]`   `SseContentChunkEvent` — `{ type: "content_chunk"; content: string; assistantMessageId: string; timestamp: string }`
+    * `[ ]`   `SseChatCompleteEvent` — `{ type: "chat_complete"; assistantMessage: ChatMessage; finish_reason: string | null; timestamp: string }` — `ChatMessage` is the full DB row union, so no column can be omitted
+    * `[ ]`   `SseErrorEvent` — `{ type: "error"; message: string; timestamp: string }`
+    * `[ ]`   `SseChatEvent` — `SseChatStartEvent | SseContentChunkEvent | SseChatCompleteEvent | SseErrorEvent` (discriminated on `type`)
+
+  * `[ ]`   `ai.api.ts`
+    * `[ ]`   `parsedData` declared as `SseChatEvent` at the JSON parse site in `processStream`
+    * `[ ]`   No other signature changes
+
+  ### 7. Behavioral Verification
+
+  * `[ ]`   `ai.api.test.ts`
+    * `[ ]`   Each new test covers exactly one behavior
+    * `[ ]`   Uses real `SseChatEvent`, `SseChatCompleteEvent`, `ChatMessage` types from `@paynless/types` — no parallel inline shapes
+
+  ### 9. Implementation
+
+  * `[ ]`   `packages/types/src/ai.types.ts`
+    * `[ ]`   Add `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent`, `SseChatEvent` after the `ChatMessage` type definition — they depend on `ChatMessage`
+
+  * `[ ]`   `packages/api/src/ai.api.ts`
+    * `[ ]`   In `processStream`: change `const parsedData = JSON.parse(data)` to `const parsedData: SseChatEvent = JSON.parse(data) as SseChatEvent`
+    * `[ ]`   Import `SseChatEvent` from `@paynless/types`
+
+  ### 12. Edge Validation
+
+  * `[ ]`   `ai.api.test.ts`
+    * `[ ]`   Validate: `sendStreamingChatMessage` (subject) → `sendStreamingMessage` store action (consumer) — typed `SseChatEvent` flows from parse through dispatch without loss
+
+  ### 14. Completion Criteria
+
+  * `[ ]`   `packages/types/src/ai.types.ts` lint clean; five new types present and correctly composed
+  * `[ ]`   `packages/api/src/ai.api.ts` lint clean; `parsedData` typed as `SseChatEvent`; no `any` at parse site
+  * `[ ]`   All new tests GREEN; all existing `ai.api.test.ts` tests remain GREEN
+
+---
+
+* `[ ]`   `packages/store/src/aiStore.ts` **[STORE] Narrow SSE event data in `sendStreamingMessage` using `SseChatEvent` discriminated union**
+
+  ### 1. Intent & Position
+
+  * `[ ]`   `objective`
+    * `[ ]`   In `sendStreamingMessage`, `event.data` is read as `const data = event.data` with no declared type — `MessageEvent.data` is `any` in the DOM lib, so the compiler cannot catch access to missing fields or a partial `assistantMessage`
+    * `[ ]`   In the `chat_complete` branch, `finalAssistantMessage = data.assistantMessage` is untyped; it is spread directly into store state — a partial object missing `is_active_in_thread` passes silently, causing `selectCurrentChatMessages` to drop the message
+    * `[ ]`   Declare `data` as `SseChatEvent` (cast from `event.data`) so the `switch (data.type)` narrowing is enforced by the type system
+    * `[ ]`   Declare `finalAssistantMessage` as `ChatMessage` in the `chat_complete` branch so missing fields are a type error
+
+  * `[ ]`   `role`
+    * `[ ]`   State management / streaming consumer — receives typed SSE events from the API client, updates `messagesByChatId` optimistically during streaming and finally on completion
+    * `[ ]`   Must NOT re-parse wire bytes — that belongs to `processStream` in `ai.api.ts`
+    * `[ ]`   Must NOT redefine the SSE event types — consumes from `@paynless/types`
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: AI chat state management
+    * `[ ]`   Inside: optimistic message creation, streaming content accumulation, final message commit, wallet refresh trigger
+    * `[ ]`   Outside: SSE byte parsing, API transport, UI rendering
+
+  ### 2. Dependencies & Injection
+
+  * `[ ]`   `deps`
+    * `[ ]`   `SseChatEvent`, `SseChatCompleteEvent` from `@paynless/types` — type-only imports
+    * `[ ]`   `ChatMessage` from `@paynless/types` — already imported; used for `finalAssistantMessage` type annotation
+    * `[ ]`   No new runtime deps — change is type-annotation only
+
+  ### 3. Contract Definition
+
+  * `[ ]`   `aiStore.streaming.test.ts` (create — no existing streaming test file)
+    * `[ ]`   `sendStreamingMessage` — happy path: `chat_complete` event with full `ChatMessage` `assistantMessage` (all columns including `is_active_in_thread: true`) → message appears in `selectCurrentChatMessages` after completion
+    * `[ ]`   `sendStreamingMessage` — `chat_complete` event with partial `assistantMessage` missing `is_active_in_thread` → TypeScript type error (compile-time contract)
+    * `[ ]`   `sendStreamingMessage` — `chat_complete` with `optimisticMessageChatId !== streamedChatId` → messages moved to `newChatId` key, old key deleted, `currentChatId` updated
+    * `[ ]`   `sendStreamingMessage` — `content_chunk` events accumulate content into streaming message in state
+    * `[ ]`   Each test covers exactly one behavior; uses `SseChatEvent` fixtures from `@paynless/types`
+
+  ### 4. Structural Boundary
+
+  * `[ ]`   `aiStore.ts`
+    * `[ ]`   `data` narrowed as `SseChatEvent` (cast from `event.data`) at the top of the `message` event handler
+    * `[ ]`   `finalAssistantMessage` declared as `ChatMessage` in the `chat_complete` branch
+    * `[ ]`   No other signature changes; no new exported types
+
+  ### 7. Behavioral Verification
+
+  * `[ ]`   `aiStore.streaming.test.ts`
+    * `[ ]`   Uses real `SseChatEvent`, `SseChatCompleteEvent`, `ChatMessage` types — no inline shapes
+    * `[ ]`   Mocks API client `sendStreamingChatMessage` to emit controlled `SseChatEvent` sequences
+    * `[ ]`   Asserts store state via `selectCurrentChatMessages` and `selectCurrentChatId` after each event sequence
+
+  ### 9. Implementation
+
+  * `[ ]`   `packages/store/src/aiStore.ts`
+    * `[ ]`   Import `SseChatEvent`, `SseChatCompleteEvent` from `@paynless/types`
+    * `[ ]`   In `sendStreamingMessage` event listener: change `const data = event.data` to `const data: SseChatEvent = event.data as SseChatEvent`
+    * `[ ]`   In the `chat_complete` branch: change `const finalAssistantMessage = data.assistantMessage` to `const finalAssistantMessage: ChatMessage = (data as SseChatCompleteEvent).assistantMessage`
+
+  ### 12. Edge Validation
+
+  * `[ ]`   `aiStore.streaming.test.ts`
+    * `[ ]`   Validate: `sendStreamingChatMessage` API (producer) → `sendStreamingMessage` store action (subject) → `selectCurrentChatMessages` selector (consumer) — full `ChatMessage` row on `chat_complete` survives the `is_active_in_thread` filter and appears in the selector result
+
+  ### 14. Completion Criteria
+
+  * `[ ]`   `aiStore.ts` lint clean; `event.data` cast to `SseChatEvent`; `finalAssistantMessage` typed as `ChatMessage`; no untyped access to `data.assistantMessage`
+  * `[ ]`   `aiStore.streaming.test.ts` lint clean; all new tests GREEN
+  * `[ ]`   All existing `aiStore.*.test.ts` tests remain GREEN
+  * `[ ]`   `selectCurrentChatMessages` returns the completed assistant message after a `chat_complete` event whose `assistantMessage` contains `is_active_in_thread: true`
+
+  ### 15. Versioning
+
+  * `[ ]`   **Commit** `fix(chat): add typed SSE wire contract and fix chat_complete assistantMessage drop after stream`
+    * `[ ]`   Structural: `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent`, `SseChatEvent` added to `@paynless/types`; `parsedData` typed in `ai.api.ts`; `event.data` narrowed in `aiStore.ts`
+    * `[ ]`   Behavioral: assistant message is no longer dropped from `selectCurrentChatMessages` after stream completes — `is_active_in_thread` is present because `SseChatCompleteEvent.assistantMessage` is typed as full `ChatMessage` row
+    * `[ ]`   Contract: `SseChatCompleteEvent.assistantMessage` is `ChatMessage` — omitting any required column is a compile-time error on both the edge function side (`ChatMessageRow`) and the frontend side (`ChatMessage`)
+
+---
+
+* `[ ]`   `apps/web/src/pages/AiChat.tsx` **[UI] Fix New Chat button — navigate to `/chat` on new chat to clear stale `chatId` URL param**
+
+  ### 1. Intent & Position
+
+  * `[ ]`   `objective`
+    * `[ ]`   `handleNewChat` calls `startNewChat(contextForNewChat)` which sets `currentChatId` to a new UUID, but the browser URL still contains the old `/:chatId` param
+    * `[ ]`   The `useEffect` at line 131 fires on every render where `chatId !== currentChatId`; after `startNewChat` the new UUID satisfies that condition, so `loadChatDetails(chatId)` is called immediately and overwrites the newly created chat state with the old one
+    * `[ ]`   Fix: call `navigate('/chat')` immediately after `startNewChat(contextForNewChat)` so the URL param is cleared before the effect can re-fire with a mismatched `chatId`
+
+  * `[ ]`   `role`
+    * `[ ]`   UI page component — owns the routing decision when the user initiates a new chat
+    * `[ ]`   Must NOT change store logic or the URL-sync effect; only the navigation call site changes
+    * `[ ]`   Must NOT navigate before `startNewChat` has been called
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: AI chat page routing
+    * `[ ]`   Inside: `handleNewChat` click handler, `useNavigate` call
+    * `[ ]`   Outside: store state management, URL-sync effect logic, chat loading
+
+  ### 2. Dependencies & Injection
+
+  * `[ ]`   `deps`
+    * `[ ]`   `useNavigate` from `react-router-dom` — already available in the project; navigate function injected via hook
+    * `[ ]`   `startNewChat` from `useAiStore` — already injected; no change to the store or its interface
+    * `[ ]`   No new runtime deps; no type file changes
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   `navigate` is the only new dependency; it is a function with no required type declaration beyond `ReturnType<typeof useNavigate>`
+
+  ### 3. Contract Definition
+
+  * `[ ]`   `AiChat.test.tsx` (update existing)
+    * `[ ]`   **NEW:** clicking "New Chat" while `chatId` URL param is present → `navigate('/chat')` is called once
+    * `[ ]`   **NEW:** clicking "New Chat" → `startNewChat` is called before `navigate`
+    * `[ ]`   **EXISTING:** clicking "New Chat" when Personal context active → `startNewChat` called with `null` — must remain GREEN
+
+  ### 4. Structural Boundary
+
+  * `[ ]`   No new types or interfaces — `navigate` is `NavigateFunction` from `react-router-dom`; no type file edits required
+
+  ### 5. Interaction Semantics
+
+  * `[ ]`   `interaction.spec`
+    * `[ ]`   User clicks "New Chat" → `handleNewChat` executes: (1) `startNewChat(contextForNewChat)`, (2) `navigate('/chat')`
+    * `[ ]`   Router replaces `chat/:chatId` with `chat`; `useParams` returns `chatId: undefined`
+    * `[ ]`   URL-sync effect condition `chatId && chatId !== currentChatId` is now `false`; `loadChatDetails` is NOT called
+    * `[ ]`   The new blank chat state set by `startNewChat` persists
+
+  ### 7. Behavioral Verification
+
+  * `[ ]`   `AiChat.test.tsx` (update existing)
+    * `[ ]`   Mock `useNavigate` from `react-router-dom` at the top of the file using `vi.mock`; capture the returned `mockNavigate` spy
+    * `[ ]`   **Test:** render with `chatId` present in URL (`MemoryRouter` initial path `/chat/some-id`), click "New Chat" → assert `mockNavigate` called with `'/chat'`
+    * `[ ]`   **Test:** render, click "New Chat" → assert `startNewChat` was called before `navigate` (call order via `mockImplementation` side effect or `mock.invocationCallOrder`)
+    * `[ ]`   Each new test covers exactly one behavior
+    * `[ ]`   Uses real `AiChatPage` component; mocks limited to router and store
+
+  ### 9. Implementation
+
+  * `[ ]`   `apps/web/src/pages/AiChat.tsx`
+    * `[ ]`   Add `useNavigate` to the existing `react-router-dom` import (line 2 already imports `useParams`)
+    * `[ ]`   Add `const navigate = useNavigate()` inside `AiChatPage`, alongside the other hook calls
+    * `[ ]`   In `handleNewChat`: add `navigate('/chat')` as the last statement after `startNewChat(contextForNewChat)`
+
+  ### 12. Edge Validation
+
+  * `[ ]`   `AiChat.test.tsx`
+    * `[ ]`   Validate: after clicking "New Chat", the URL-sync effect does not call `loadChatDetails` — assert `mockLoadChatDetails` is NOT called after the click
+
+  ### 14. Completion Criteria
+
+  * `[ ]`   `AiChat.tsx` lints clean
+  * `[ ]`   All three new tests GREEN
+  * `[ ]`   All existing tests in `AiChat.test.tsx` (Tests 3.1 and 3.2) remain GREEN
+  * `[ ]`   `loadChatDetails` is not invoked after "New Chat" is clicked when a `chatId` URL param was present
+
+---
+
 ## Part 2 — Stripe Bug Fixes
 
 *Prerequisites: Part 1 must be complete. Dependency order: DB migration → invoicePaymentSucceeded → integration test.*
@@ -1753,6 +2013,21 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
     * `[ ]`   Contract: `payment_transactions.status` accepts `PROCESSING_RENEWAL` and `TOKEN_AWARD_FAILED`
 
 ---
+
+# Issues from this sprint
+
+## This error: 
+
+[Info] [me/index.ts] Handling POST for user dd0c18ed-5b9b-460b-88b8-04c7d65aa440
+
+[Error] Error updating profile: {
+  code: "42P17",
+  details: null,
+  hint: null,
+  message: 'infinite recursion detected in policy for relation "user_profiles"'
+}
+
+
 
 ## Other Backlog Items
 

@@ -15,6 +15,7 @@ import type {
   AiModelExtendedConfig,
   AiProviderAdapterInstance,
   ChatApiRequest,
+  ChatMessageRow,
   ILogger,
 } from "../../_shared/types.ts";
 import type { TokenWallet } from "../../_shared/types/tokenWallet.types.ts";
@@ -28,8 +29,12 @@ import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
 import { constructMessageHistory } from "../constructMessageHistory/constructMessageHistory.ts";
 import { findOrCreateChat } from "../findOrCreateChat.ts";
 import {
-  StreamChatFn,
+  SseChatCompleteEvent,
+  SseChatStartEvent,
+  SseContentChunkEvent,
+  SseErrorEvent,
   StreamChatDeps,
+  StreamChatFn,
   StreamChatParams,
   StreamChatPayload,
   StreamChatReturn,
@@ -392,6 +397,71 @@ export function buildStreamChatDepsTokenLimitExceeded(): StreamChatDeps {
   };
 }
 
+export function buildContractFullChatMessageRow(): ChatMessageRow {
+  const now: string = new Date().toISOString();
+  return {
+    id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    chat_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    user_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    role: "assistant",
+    content: "contract sse full chat message row",
+    created_at: now,
+    updated_at: now,
+    is_active_in_thread: true,
+    ai_provider_id: "pppppppp-pppp-4ppp-8ppp-pppppppppppp",
+    system_prompt_id: null,
+    token_usage: null,
+    error_type: null,
+    response_to_message_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  };
+}
+
+export function buildMockSseChatStartEvent(
+  overrides: Partial<SseChatStartEvent> = {},
+): SseChatStartEvent {
+  const base: SseChatStartEvent = {
+    type: "chat_start",
+    chatId: "mock-sse-chat-id",
+    timestamp: new Date().toISOString(),
+  };
+  return { ...base, ...overrides };
+}
+
+export function buildMockSseContentChunkEvent(
+  overrides: Partial<SseContentChunkEvent> = {},
+): SseContentChunkEvent {
+  const base: SseContentChunkEvent = {
+    type: "content_chunk",
+    content: "mock-sse-content-chunk",
+    assistantMessageId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    timestamp: new Date().toISOString(),
+  };
+  return { ...base, ...overrides };
+}
+
+export function buildMockSseChatCompleteEvent(
+  overrides: Partial<SseChatCompleteEvent> = {},
+): SseChatCompleteEvent {
+  const base: SseChatCompleteEvent = {
+    type: "chat_complete",
+    assistantMessage: buildContractFullChatMessageRow(),
+    finish_reason: "stop",
+    timestamp: new Date().toISOString(),
+  };
+  return { ...base, ...overrides };
+}
+
+export function buildMockSseErrorEvent(
+  overrides: Partial<SseErrorEvent> = {},
+): SseErrorEvent {
+  const base: SseErrorEvent = {
+    type: "error",
+    message: "mock-sse-error",
+    timestamp: new Date().toISOString(),
+  };
+  return { ...base, ...overrides };
+}
+
 export function createMockStreamChat(config: {
   outcome?: StreamChatReturn;
 } = {}): StreamChatFn {
@@ -406,14 +476,11 @@ export function createMockStreamChat(config: {
     const encoder: TextEncoder = new TextEncoder();
     const stream: ReadableStream<Uint8Array> = new ReadableStream({
       start(controller) {
+        const init = buildMockSseChatStartEvent({
+          chatId: "mock-chat",
+        });
         controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({
-              type: "chat_start",
-              chatId: "mock-chat",
-              timestamp: new Date().toISOString(),
-            })}\n\n`,
-          ),
+          encoder.encode(`data: ${JSON.stringify(init)}\n\n`),
         );
         controller.close();
       },

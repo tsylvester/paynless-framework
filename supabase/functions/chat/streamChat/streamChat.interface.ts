@@ -5,6 +5,8 @@ import {
   AiModelExtendedConfig,
   AiProviderAdapterInstance,
   ChatApiRequest,
+  ChatMessageRow,
+  FinishReason,
   ILogger,
 } from "../../_shared/types.ts";
 import { CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
@@ -54,3 +56,35 @@ export type StreamChatFn = (
   params: StreamChatParams,
   payload: StreamChatPayload,
 ) => Promise<StreamChatReturn>;
+
+export interface SseChatStartEvent {
+  type: "chat_start";
+  chatId: string;
+  timestamp: string;
+}
+
+export interface SseContentChunkEvent {
+  type: "content_chunk";
+  content: string;
+  assistantMessageId: string;
+  timestamp: string;
+}
+
+export interface SseChatCompleteEvent {
+  type: "chat_complete";
+  assistantMessage: ChatMessageRow;
+  finish_reason: FinishReason;
+  timestamp: string;
+}
+
+export interface SseErrorEvent {
+  type: "error";
+  message: string;
+  timestamp: string;
+}
+
+export type SseChatEvent =
+  | SseChatStartEvent
+  | SseContentChunkEvent
+  | SseChatCompleteEvent
+  | SseErrorEvent;
