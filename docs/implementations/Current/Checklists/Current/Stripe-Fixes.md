@@ -1623,7 +1623,7 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
 
 ---
 
-* `[ ]`   `packages/utils/src/sse.stream.ts` **[UTILS] Extract SSE stream processor from `AiApiClient` to `@paynless/utils`; introduce `ISseConnection`; add `sendStreamingChatMessage` to `IAiApiClient`**
+* `[✅]`   `packages/utils/src/sse.stream.ts` **[UTILS] Extract SSE stream processor from `AiApiClient` to `@paynless/utils`; introduce `ISseConnection`; add `sendStreamingChatMessage` to `IAiApiClient`**
 
   ### 1. Intent & Position
 
@@ -1774,22 +1774,22 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
 
   ### 15. Versioning
 
-  * `[ ]`   **Commit** `refactor(utils,types): extract SSE stream processor to @paynless/utils; introduce ISseConnection`
-    * `[ ]`   Structural: five new files in `packages/utils/src/` (`sse.stream.ts`, `.interface.ts`, `.guard.ts`, `.mock.ts`, `.provides.ts`) and three test files added; `createMockFetchForSseWire`, `sseWireFromDataLines`, `streamingContractSseWire`, `streamingContractFullAssistantMessage`, `contractAcceptsSseChatCompleteEvent` moved from `ai.api.mock.ts` to `sse.stream.mock.ts`; `packages/utils/src/index.ts` updated
-    * `[ ]`   Behavioral: `SseConnection extends EventTarget` is the real concrete type with a structural `close(): void` method; `isSseChatEvent` guard path and typed dispatch algorithm are correct in `processStream`
-    * `[ ]`   Contract: `ISseConnection` added to `@paynless/types/ai.types.ts`
+  * `[✅]`   **Commit** `refactor(utils,types): extract SSE stream processor to @paynless/utils; introduce ISseConnection`
+    * `[✅]`   Structural: five new files in `packages/utils/src/` (`sse.stream.ts`, `.interface.ts`, `.guard.ts`, `.mock.ts`, `.provides.ts`) and three test files added; `createMockFetchForSseWire`, `sseWireFromDataLines`, `streamingContractSseWire`, `streamingContractFullAssistantMessage`, `contractAcceptsSseChatCompleteEvent` moved from `ai.api.mock.ts` to `sse.stream.mock.ts`; `packages/utils/src/index.ts` updated
+    * `[✅]`   Behavioral: `SseConnection extends EventTarget` is the real concrete type with a structural `close(): void` method; `isSseChatEvent` guard path and typed dispatch algorithm are correct in `processStream`
+    * `[✅]`   Contract: `ISseConnection` added to `@paynless/types/ai.types.ts`
 
 ---
 
 
-* `[ ]`   `packages/api/src/ai.api.ts` **[API] Add SSE wire event types to `@paynless/types`; wire `sendStreamingChatMessage` to `createSseConnection`; add to `IAiApiClient`; update `MockedAiApiClient`**
+* `[✅]`   `packages/api/src/ai.api.ts` **[API] Add SSE wire event types to `@paynless/types`; wire `sendStreamingChatMessage` to `createSseConnection`; add to `IAiApiClient`; update `MockedAiApiClient`**
 
   ### 1. Intent & Position
 
   * `[✅]`   `objective`
-    * `[ ]`   `sendStreamingChatMessage` is absent from `IAiApiClient` and `MockedAiApiClient` — the method is invisible to every consumer that depends on the interface
-    * `[ ]`   Delete `createStreamingResponse` and `processStream` from `AiApiClient`; `sendStreamingChatMessage` delegates to `createSseConnection` from `@paynless/utils`; return type changes from `Promise<EventSource | { error: ApiError }>` to `Promise<ISseConnection | { error: ApiError }>`
-    * `[ ]`   Add `sendStreamingChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ISseConnection | { error: ApiError }>` to `IAiApiClient` in `packages/types/src/ai.types.ts`
+    * `[✅]`   `sendStreamingChatMessage` is absent from `IAiApiClient` and `MockedAiApiClient` — the method is invisible to every consumer that depends on the interface
+    * `[✅]`   Delete `createStreamingResponse` and `processStream` from `AiApiClient`; `sendStreamingChatMessage` delegates to `createSseConnection` from `@paynless/utils`; return type changes from `Promise<EventSource | { error: ApiError }>` to `Promise<ISseConnection | { error: ApiError }>`
+    * `[✅]`   Add `sendStreamingChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ISseConnection | { error: ApiError }>` to `IAiApiClient` in `packages/types/src/ai.types.ts`
 
   * `[✅]`   `role`
     * `[✅]`   API client / transport boundary — parses raw SSE wire bytes into typed domain events before delivering them to consumers
@@ -1804,10 +1804,10 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
   ### 2. Dependencies & Injection
 
   * `[✅]`   `deps`
-    * `[ ]`   `createSseConnection` from `@paynless/utils` — value import; sole stream adapter factory; produced by the upstream `sse.stream.ts` node
-    * `[ ]`   `ISseConnection` from `@paynless/types` — type-only import; produced by the upstream `sse.stream.ts` node
-    * `[ ]`   Remove `SseChatEvent` from `ai.api.ts` type imports — no longer referenced once `processStream` moves to `@paynless/utils`
-    * `[ ]`   Remove `isSseChatEvent` from `ai.api.ts` imports — no longer referenced once `processStream` moves to `@paynless/utils`
+    * `[✅]`   `createSseConnection` from `@paynless/utils` — value import; sole stream adapter factory; produced by the upstream `sse.stream.ts` node
+    * `[✅]`   `ISseConnection` from `@paynless/types` — type-only import; produced by the upstream `sse.stream.ts` node
+    * `[✅]`   Remove `SseChatEvent` from `ai.api.ts` type imports — no longer referenced once `processStream` moves to `@paynless/utils`
+    * `[✅]`   Remove `isSseChatEvent` from `ai.api.ts` imports — no longer referenced once `processStream` moves to `@paynless/utils`
 
   * `[✅]`   `context_slice`
     * `[✅]`   Only `SseChatEvent` is needed at the parse site; no over-fetching
@@ -1821,123 +1821,119 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
 
   ### 4. Structural Boundary
 
-  * `[ ]`   `packages/types/src/ai.types.ts` (addendum)
-    * `[ ]`   `sendStreamingChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ISseConnection | { error: ApiError }>` added to `IAiApiClient` — `ISseConnection` already present from upstream node
-    * `[ ]`   Add `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent`, `SseChatEvent` after the `ChatMessage` type definition — they depend on `ChatMessage`
-    * `[ ]`   Add `sendStreamingChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ISseConnection | { error: ApiError }>` to `IAiApiClient`
+  * `[✅]`   `packages/types/src/ai.types.ts`
+    * `[✅]`   `sendStreamingChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ISseConnection | { error: ApiError }>` added to `IAiApiClient` — `ISseConnection` already present from upstream node
+    * `[✅]`   Add `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent`, `SseChatEvent` after the `ChatMessage` type definition — they depend on `ChatMessage`
+    * `[✅]`   Add `sendStreamingChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ISseConnection | { error: ApiError }>` to `IAiApiClient`
 
   ### 7. Behavioral Verification
 
-  * `[ ]`   `ai.api.test.ts`
-    * `[ ]`   Each new test covers exactly one behavior
-    * `[ ]`   Uses real `SseChatEvent`, `SseChatCompleteEvent`, `ChatMessage` types from `@paynless/types` — no parallel inline shapes
-    * `[ ]`   Validate: `sendStreamingChatMessage` (subject) → `sendStreamingMessage` store action (consumer) — typed `SseChatEvent` flows from parse through dispatch without loss
-    * `[ ]`   Validate: `createSseConnection` (producer in `@paynless/utils`) → `sendStreamingChatMessage` (subject) — on HTTP success, `sendStreamingChatMessage` passes `Response` to `createSseConnection`; return value passes `isSseConnection`; verified by injecting `createMockFetchForSseWire` from `@paynless/utils`
-    * `[ ]`   All imports of `createMockFetchForSseWire`, `sseWireFromDataLines`, `streamingContractSseWire`, `streamingContractFullAssistantMessage`, `contractAcceptsSseChatCompleteEvent` updated to source from `@paynless/utils`; no inline wire fixtures
+  * `[✅]`   `ai.api.test.ts`
+    * `[✅]`   Each new test covers exactly one behavior
+    * `[✅]`   Uses real `SseChatEvent`, `SseChatCompleteEvent`, `ChatMessage` types from `@paynless/types` — no parallel inline shapes
+    * `[✅]`   Validate: `sendStreamingChatMessage` (subject) → `sendStreamingMessage` store action (consumer) — typed `SseChatEvent` flows from parse through dispatch without loss
+    * `[✅]`   Validate: `createSseConnection` (producer in `@paynless/utils`) → `sendStreamingChatMessage` (subject) — on HTTP success, `sendStreamingChatMessage` passes `Response` to `createSseConnection`; return value passes `isSseConnection`; verified by injecting `createMockFetchForSseWire` from `@paynless/utils`
+    * `[✅]`   All imports of `createMockFetchForSseWire`, `sseWireFromDataLines`, `streamingContractSseWire`, `streamingContractFullAssistantMessage`, `contractAcceptsSseChatCompleteEvent` updated to source from `@paynless/utils`; no inline wire fixtures
 
   ### 9. Implementation
 
-  * `[ ]`   `packages/api/src/ai.api.ts`
-    * `[ ]`   Add `createSseConnection` to imports from `@paynless/utils`
-    * `[ ]`   Add `ISseConnection` to type imports from `@paynless/types`; remove `SseChatEvent` from type imports; remove `isSseChatEvent` from `@paynless/utils` imports
-    * `[ ]`   `sendStreamingChatMessage` return type: `Promise<ISseConnection | { error: ApiError }>`
-    * `[ ]`   Replace `return this.createStreamingResponse(response)` with `return createSseConnection(response)`
-    * `[ ]`   Delete `private createStreamingResponse(response: Response): EventSource` method entirely
-    * `[ ]`   Delete `private async processStream(reader, decoder, eventSource)` method entirely
+  * `[✅]`   `packages/api/src/ai.api.ts`
+    * `[✅]`   Add `createSseConnection` to imports from `@paynless/utils`
+    * `[✅]`   Add `ISseConnection` to type imports from `@paynless/types`; remove `SseChatEvent` from type imports; remove `isSseChatEvent` from `@paynless/utils` imports
+    * `[✅]`   `sendStreamingChatMessage` return type: `Promise<ISseConnection | { error: ApiError }>`
+    * `[✅]`   Replace `return this.createStreamingResponse(response)` with `return createSseConnection(response)`
+    * `[✅]`   Delete `private createStreamingResponse(response: Response): EventSource` method entirely
+    * `[✅]`   Delete `private async processStream(reader, decoder, eventSource)` method entirely
 
-  * `[ ]`   `packages/api/src/mocks/ai.api.mock.ts`
-    * `[ ]`   `createMockAiApiClient`: add `sendStreamingChatMessage: vi.fn() as Mock<Parameters<IAiApiClient['sendStreamingChatMessage']>, ReturnType<IAiApiClient['sendStreamingChatMessage']>>`
-    * `[ ]`   Delete `createMockFetchForSseWire`, `sseWireFromDataLines`, `streamingContractSseWire`, `streamingContractFullAssistantMessage`, `contractAcceptsSseChatCompleteEvent` — moved to `@paynless/utils`; update all imports in `ai.api.test.ts` to source from `@paynless/utils`
-    * `[ ]`   `createStreamingTestApiClient` and `streamingTestBaseUrl` remain
-    * `[ ]`   `MockedAiApiClient` mapped type includes `sendStreamingChatMessage` automatically via `IAiApiClient` update; verify no manual override conflicts
-    * `[ ]`   `createMockAiApiClient`: add `sendStreamingChatMessage: vi.fn() as Mock<Parameters<IAiApiClient['sendStreamingChatMessage']>, ReturnType<IAiApiClient['sendStreamingChatMessage']>>`
-    * `[ ]`   `createMockFetchForSseWire`, `sseWireFromDataLines`, `streamingContractSseWire`, `streamingContractFullAssistantMessage`, `contractAcceptsSseChatCompleteEvent` definitions removed — now sourced from `@paynless/utils`
-    * `[ ]`   `createStreamingTestApiClient` and `streamingTestBaseUrl` remain — API-transport concerns
+  * `[✅]`   `packages/api/src/mocks/ai.api.mock.ts`
+    * `[✅]`   `createMockAiApiClient`: add `sendStreamingChatMessage: vi.fn() as Mock<Parameters<IAiApiClient['sendStreamingChatMessage']>, ReturnType<IAiApiClient['sendStreamingChatMessage']>>`
+    * `[✅]`   Delete `createMockFetchForSseWire`, `sseWireFromDataLines`, `streamingContractSseWire`, `streamingContractFullAssistantMessage`, `contractAcceptsSseChatCompleteEvent` — moved to `@paynless/utils`; update all imports in `ai.api.test.ts` to source from `@paynless/utils`
+    * `[✅]`   `createStreamingTestApiClient` and `streamingTestBaseUrl` remain
+    * `[✅]`   `MockedAiApiClient` mapped type includes `sendStreamingChatMessage` automatically via `IAiApiClient` update; verify no manual override conflicts
+    * `[✅]`   `createMockAiApiClient`: add `sendStreamingChatMessage: vi.fn() as Mock<Parameters<IAiApiClient['sendStreamingChatMessage']>, ReturnType<IAiApiClient['sendStreamingChatMessage']>>`
+    * `[✅]`   `createMockFetchForSseWire`, `sseWireFromDataLines`, `streamingContractSseWire`, `streamingContractFullAssistantMessage`, `contractAcceptsSseChatCompleteEvent` definitions removed — now sourced from `@paynless/utils`
+    * `[✅]`   `createStreamingTestApiClient` and `streamingTestBaseUrl` remain — API-transport concerns
 
   ### 14. Completion Criteria
 
-  * `[ ]`   `packages/types/src/ai.types.ts` lint clean; five new SSE types present and correctly composed; `IAiApiClient` includes `sendStreamingChatMessage` with correct return type
-  * `[ ]`   `packages/api/src/ai.api.ts` lint clean; no `createStreamingResponse`, no `processStream`, no `EventSource` in any type position; `sendStreamingChatMessage` return type is `Promise<ISseConnection | { error: ApiError }>`; zero TypeScript errors (TS2339, TS2345, TS2740 resolved)
-  * `[ ]`   `packages/api/src/mocks/ai.api.mock.ts` lint clean; `sendStreamingChatMessage` present in `createMockAiApiClient`; moved fixtures no longer defined here
-  * `[ ]`   All new tests GREEN; all existing `ai.api.test.ts` tests remain GREEN
+  * `[✅]`   `packages/types/src/ai.types.ts` lint clean; five new SSE types present and correctly composed; `IAiApiClient` includes `sendStreamingChatMessage` with correct return type
+  * `[✅]`   `packages/api/src/ai.api.ts` lint clean; no `createStreamingResponse`, no `processStream`, no `EventSource` in any type position; `sendStreamingChatMessage` return type is `Promise<ISseConnection | { error: ApiError }>`; zero TypeScript errors (TS2339, TS2345, TS2740 resolved)
+  * `[✅]`   `packages/api/src/mocks/ai.api.mock.ts` lint clean; `sendStreamingChatMessage` present in `createMockAiApiClient`; moved fixtures no longer defined here
+  * `[✅]`   All new tests GREEN; all existing `ai.api.test.ts` tests remain GREEN
 
 ---
 
-* `[ ]`   `packages/store/src/aiStore.ts` **[STORE] Narrow SSE event data in `sendStreamingMessage` using `SseChatEvent` discriminated union**
+* `[✅]`   `packages/store/src/aiStore.ts` **[STORE] Narrow SSE event data in `sendStreamingMessage` using `SseChatEvent` discriminated union**
 
   ### 1. Intent & Position
 
-  * `[ ]`   `objective`
-    * `[ ]`   In `sendStreamingMessage`, `event.data` is read as `const data = event.data` with no declared type — `MessageEvent.data` is `any` in the DOM lib, so the compiler cannot catch access to missing fields or a partial `assistantMessage`
-    * `[ ]`   In the `chat_complete` branch, `finalAssistantMessage = data.assistantMessage` is untyped; it is spread directly into store state — a partial object missing `is_active_in_thread` passes silently, causing `selectCurrentChatMessages` to drop the message
-    * `[ ]`   Declare `data` as `SseChatEvent` (cast from `event.data`) so the `switch (data.type)` narrowing is enforced by the type system
-    * `[ ]`   Declare `finalAssistantMessage` as `ChatMessage` in the `chat_complete` branch so missing fields are a type error
+  * `[✅]`   `objective`
+    * `[✅]`   In `sendStreamingMessage`, `event.data` is read as `const data = event.data` with no declared type — `MessageEvent.data` is `any` in the DOM lib, so the compiler cannot catch access to missing fields or a partial `assistantMessage`
+    * `[✅]`   In the `chat_complete` branch, `finalAssistantMessage = data.assistantMessage` is untyped; it is spread directly into store state — a partial object missing `is_active_in_thread` passes silently, causing `selectCurrentChatMessages` to drop the message
+    * `[✅]`   Declare `data` as `SseChatEvent` (cast from `event.data`) so the `switch (data.type)` narrowing is enforced by the type system
+    * `[✅]`   Declare `finalAssistantMessage` as `ChatMessage` in the `chat_complete` branch so missing fields are a type error
 
-  * `[ ]`   `role`
-    * `[ ]`   State management / streaming consumer — receives typed SSE events from the API client, updates `messagesByChatId` optimistically during streaming and finally on completion
-    * `[ ]`   Must NOT re-parse wire bytes — that belongs to `processStream` in `ai.api.ts`
-    * `[ ]`   Must NOT redefine the SSE event types — consumes from `@paynless/types`
+  * `[✅]`   `role`
+    * `[✅]`   State management / streaming consumer — receives typed SSE events from the API client, updates `messagesByChatId` optimistically during streaming and finally on completion
+    * `[✅]`   Must NOT re-parse wire bytes — that belongs to `processStream` in `ai.api.ts`
+    * `[✅]`   Must NOT redefine the SSE event types — consumes from `@paynless/types`
 
-  * `[ ]`   `module`
-    * `[ ]`   Bounded context: AI chat state management
-    * `[ ]`   Inside: optimistic message creation, streaming content accumulation, final message commit, wallet refresh trigger
-    * `[ ]`   Outside: SSE byte parsing, API transport, UI rendering
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: AI chat state management
+    * `[✅]`   Inside: optimistic message creation, streaming content accumulation, final message commit, wallet refresh trigger
+    * `[✅]`   Outside: SSE byte parsing, API transport, UI rendering
 
   ### 2. Dependencies & Injection
 
-  * `[ ]`   `deps`
-    * `[ ]`   `SseChatEvent`, `SseChatCompleteEvent` from `@paynless/types` — type-only imports
-    * `[ ]`   `ChatMessage` from `@paynless/types` — already imported; used for `finalAssistantMessage` type annotation
-    * `[ ]`   No new runtime deps — change is type-annotation only
+  * `[✅]`   `deps`
+    * `[✅]`   `SseChatEvent`, `SseChatCompleteEvent` from `@paynless/types` — type-only imports
+    * `[✅]`   `ChatMessage` from `@paynless/types` — already imported; used for `finalAssistantMessage` type annotation
+    * `[✅]`   No new runtime deps — change is type-annotation only
 
   ### 3. Contract Definition
 
-  * `[ ]`   `aiStore.streaming.test.ts` (create — no existing streaming test file)
-    * `[ ]`   `sendStreamingMessage` — happy path: `chat_complete` event with full `ChatMessage` `assistantMessage` (all columns including `is_active_in_thread: true`) → message appears in `selectCurrentChatMessages` after completion
-    * `[ ]`   `sendStreamingMessage` — `chat_complete` event with partial `assistantMessage` missing `is_active_in_thread` → TypeScript type error (compile-time contract)
-    * `[ ]`   `sendStreamingMessage` — `chat_complete` with `optimisticMessageChatId !== streamedChatId` → messages moved to `newChatId` key, old key deleted, `currentChatId` updated
-    * `[ ]`   `sendStreamingMessage` — `content_chunk` events accumulate content into streaming message in state
-    * `[ ]`   Each test covers exactly one behavior; uses `SseChatEvent` fixtures from `@paynless/types`
-
-  ### 4. Structural Boundary
-
-  * `[ ]`   `aiStore.ts`
-    * `[ ]`   `data` narrowed as `SseChatEvent` (cast from `event.data`) at the top of the `message` event handler
-    * `[ ]`   `finalAssistantMessage` declared as `ChatMessage` in the `chat_complete` branch
-    * `[ ]`   No other signature changes; no new exported types
+  * `[✅]`   `aiStore.streaming.test.ts` (create — no existing streaming test file)
+    * `[✅]`   `sendStreamingMessage` — happy path: `chat_complete` event with full `ChatMessage` `assistantMessage` (all columns including `is_active_in_thread: true`) → message appears in `selectCurrentChatMessages` after completion
+    * `[✅]`   `sendStreamingMessage` — `chat_complete` event with partial `assistantMessage` missing `is_active_in_thread` → TypeScript type error (compile-time contract)
+    * `[✅]`   `sendStreamingMessage` — `chat_complete` with `optimisticMessageChatId !== streamedChatId` → messages moved to `newChatId` key, old key deleted, `currentChatId` updated
+    * `[✅]`   `sendStreamingMessage` — `content_chunk` events accumulate content into streaming message in state
+    * `[✅]`   Each test covers exactly one behavior; uses `SseChatEvent` fixtures from `@paynless/types`
 
   ### 7. Behavioral Verification
 
-  * `[ ]`   `aiStore.streaming.test.ts`
-    * `[ ]`   Uses real `SseChatEvent`, `SseChatCompleteEvent`, `ChatMessage` types — no inline shapes
-    * `[ ]`   Mocks API client `sendStreamingChatMessage` to emit controlled `SseChatEvent` sequences
-    * `[ ]`   Asserts store state via `selectCurrentChatMessages` and `selectCurrentChatId` after each event sequence
+  * `[✅]`   `aiStore.streaming.test.ts`
+    * `[✅]`   Uses real `SseChatEvent`, `SseChatCompleteEvent`, `ChatMessage` types — no inline shapes
+    * `[✅]`   Mocks API client `sendStreamingChatMessage` to emit controlled `SseChatEvent` sequences
+    * `[✅]`   Asserts store state via `selectCurrentChatMessages` and `selectCurrentChatId` after each event sequence
 
   ### 9. Implementation
 
-  * `[ ]`   `packages/store/src/aiStore.ts`
-    * `[ ]`   Import `SseChatEvent`, `SseChatCompleteEvent` from `@paynless/types`
-    * `[ ]`   In `sendStreamingMessage` event listener: change `const data = event.data` to `const data: SseChatEvent = event.data as SseChatEvent`
-    * `[ ]`   In the `chat_complete` branch: change `const finalAssistantMessage = data.assistantMessage` to `const finalAssistantMessage: ChatMessage = (data as SseChatCompleteEvent).assistantMessage`
+  * `[✅]`   `packages/store/src/aiStore.ts`
+    * `[✅]`   Import `SseChatEvent`, `SseChatCompleteEvent` from `@paynless/types`
+    * `[✅]`   In `sendStreamingMessage` event listener: change `const data = event.data` to `const data: SseChatEvent = event.data` using the type guard to narrow if required 
+    * `[✅]`   In the `chat_complete` branch: change `const finalAssistantMessage = data.assistantMessage` to `const finalAssistantMessage: ChatMessage = (data).assistantMessage`
+    * `[✅]`   `data` narrowed as `SseChatEvent` (cast from `event.data`) at the top of the `message` event handler
+    * `[✅]`   `finalAssistantMessage` declared as `ChatMessage` in the `chat_complete` branch
+    * `[✅]`   No other signature changes; no new exported types
 
   ### 12. Edge Validation
 
-  * `[ ]`   `aiStore.streaming.test.ts`
-    * `[ ]`   Validate: `sendStreamingChatMessage` API (producer) → `sendStreamingMessage` store action (subject) → `selectCurrentChatMessages` selector (consumer) — full `ChatMessage` row on `chat_complete` survives the `is_active_in_thread` filter and appears in the selector result
+  * `[✅]`   `aiStore.streaming.test.ts`
+    * `[✅]`   Validate: `sendStreamingChatMessage` API (producer) → `sendStreamingMessage` store action (subject) → `selectCurrentChatMessages` selector (consumer) — full `ChatMessage` row on `chat_complete` survives the `is_active_in_thread` filter and appears in the selector result
 
   ### 14. Completion Criteria
 
-  * `[ ]`   `aiStore.ts` lint clean; `event.data` cast to `SseChatEvent`; `finalAssistantMessage` typed as `ChatMessage`; no untyped access to `data.assistantMessage`
-  * `[ ]`   `aiStore.streaming.test.ts` lint clean; all new tests GREEN
-  * `[ ]`   All existing `aiStore.*.test.ts` tests remain GREEN
-  * `[ ]`   `selectCurrentChatMessages` returns the completed assistant message after a `chat_complete` event whose `assistantMessage` contains `is_active_in_thread: true`
+  * `[✅]`   `aiStore.ts` lint clean; `event.data` cast to `SseChatEvent`; `finalAssistantMessage` typed as `ChatMessage`; no untyped access to `data.assistantMessage`
+  * `[✅]`   `aiStore.streaming.test.ts` lint clean; all new tests GREEN
+  * `[✅]`   All existing `aiStore.*.test.ts` tests remain GREEN
+  * `[✅]`   `selectCurrentChatMessages` returns the completed assistant message after a `chat_complete` event whose `assistantMessage` contains `is_active_in_thread: true`
 
   ### 15. Versioning
 
-  * `[ ]`   **Commit** `fix(chat): add typed SSE wire contract and fix chat_complete assistantMessage drop after stream`
-    * `[ ]`   Structural: `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent`, `SseChatEvent` added to `@paynless/types`; `parsedData` typed in `ai.api.ts`; `event.data` narrowed in `aiStore.ts`
-    * `[ ]`   Behavioral: assistant message is no longer dropped from `selectCurrentChatMessages` after stream completes — `is_active_in_thread` is present because `SseChatCompleteEvent.assistantMessage` is typed as full `ChatMessage` row
-    * `[ ]`   Contract: `SseChatCompleteEvent.assistantMessage` is `ChatMessage` — omitting any required column is a compile-time error on both the edge function side (`ChatMessageRow`) and the frontend side (`ChatMessage`)
+  * `[✅]`   **Commit** `fix(chat): add typed SSE wire contract and fix chat_complete assistantMessage drop after stream`
+    * `[✅]`   Structural: `SseChatStartEvent`, `SseContentChunkEvent`, `SseChatCompleteEvent`, `SseErrorEvent`, `SseChatEvent` added to `@paynless/types`; `parsedData` typed in `ai.api.ts`; `event.data` narrowed in `aiStore.ts`
+    * `[✅]`   Behavioral: assistant message is no longer dropped from `selectCurrentChatMessages` after stream completes — `is_active_in_thread` is present because `SseChatCompleteEvent.assistantMessage` is typed as full `ChatMessage` row
+    * `[✅]`   Contract: `SseChatCompleteEvent.assistantMessage` is `ChatMessage` — omitting any required column is a compile-time error on both the edge function side (`ChatMessageRow`) and the frontend side (`ChatMessage`)
 
 ---
 

@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AiApiClient } from './ai.api';
-import { ApiClient } from './apiClient';
 import {
     AiProvider,
     SystemPrompt,
@@ -19,8 +18,22 @@ import {
     ApiResponse,
     ChatRole,
 } from '@paynless/types';
+import { createSseConnection } from '@paynless/utils';
+import { createMockSseConnection } from '../../utils/src/sse.stream.mock';
+import {
+    mockChatApiRequestStreaming,
+    mockFetchOptionsStreaming,
+} from './mocks/ai.api.mock';
 
 import { mockApiClient } from './mocks/apiClient.mock';
+
+vi.mock('@paynless/utils', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@paynless/utils')>();
+    return {
+        ...actual,
+        createSseConnection: vi.fn(),
+    };
+});
 
 // Create an instance of the class we are testing
 const aiApiClient = new AiApiClient(mockApiClient);
@@ -562,6 +575,73 @@ describe('AiApiClient', () => {
             // Assert
             expect(mockApiClient.post).toHaveBeenCalledWith('tokenEstimator', roughCountRequest, { token: mockToken });
             expect(result.data?.estimatedTokens).toBe(13);
+        });
+    });
+
+    describe('sendStreamingChatMessage', () => {
+        beforeEach(() => {
+            vi.mocked(createSseConnection).mockReturnValue(createMockSseConnection());
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue(new Response('', { status: 200, statusText: 'OK' })),
+            );
+        });
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+        });
+
+        it('calls createSseConnection with the Response from fetch when the response is ok', async () => {
+            const client: AiApiClient = new AiApiClient(mockApiClient);
+            await client.sendStreamingChatMessage(mockChatApiRequestStreaming(), mockFetchOptionsStreaming());
+            expect(vi.mocked(createSseConnection)).toHaveBeenCalledTimes(1);
+            const responseArg: unknown = vi.mocked(createSseConnection).mock.calls[0][0];
+            expect(responseArg).toBeInstanceOf(Response);
+            if (responseArg instanceof Response) {
+                expect(responseArg.ok).toBe(true);
+            }
+        });
+
+        it('returns the ISseConnection instance returned by createSseConnection', async () => {
+            const stubConnection = createMockSseConnection();
+            vi.mocked(createSseConnection).mockReturnValueOnce(stubConnection);
+            const client: AiApiClient = new AiApiClient(mockApiClient);
+            const result = await client.sendStreamingChatMessage(mockChatApiRequestStreaming(), mockFetchOptionsStreaming());
+            expect('error' in result).toBe(false);
+            if ('error' in result) {
+                return;
+            }
+            expect(result).toBe(stubConnection);
+        });
+
+        it('does not call createSseConnection when request validation fails', async () => {
+            const client: AiApiClient = new AiApiClient(mockApiClient);
+            const invalidRequest: ChatApiRequest = mockChatApiRequestStreaming({ message: '' });
+            await client.sendStreamingChatMessage(invalidRequest, mockFetchOptionsStreaming());
+            expect(vi.mocked(createSseConnection)).not.toHaveBeenCalled();
+        });
+
+        it('does not call createSseConnection when fetch returns a non-ok status', async () => {
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue(new Response('err', { status: 502, statusText: 'Bad Gateway' })),
+            );
+            const client: AiApiClient = new AiApiClient(mockApiClient);
+            const result = await client.sendStreamingChatMessage(mockChatApiRequestStreaming(), mockFetchOptionsStreaming());
+            expect(vi.mocked(createSseConnection)).not.toHaveBeenCalled();
+            expect('error' in result).toBe(true);
+        });
+
+        it('returns NETWORK_ERROR and does not call createSseConnection when fetch rejects', async () => {
+            vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+            const client: AiApiClient = new AiApiClient(mockApiClient);
+            const result = await client.sendStreamingChatMessage(mockChatApiRequestStreaming(), mockFetchOptionsStreaming());
+            expect(vi.mocked(createSseConnection)).not.toHaveBeenCalled();
+            expect('error' in result).toBe(true);
+            if (!('error' in result)) {
+                return;
+            }
+            expect(result.error.code).toBe('NETWORK_ERROR');
         });
     });
 }); 

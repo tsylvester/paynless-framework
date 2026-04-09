@@ -1,7 +1,7 @@
 import type { Database } from '@paynless/db-types';
 // If FetchOptions is meant to be the standard fetch options, use RequestInit
 // import type { FetchOptions } from '@supabase/supabase-js'; // This was problematic
-import type { ApiResponse } from './api.types';
+import type { ApiError, ApiResponse, FetchOptions } from './api.types';
 import type { UserProfile } from './auth.types'; // UserProfile import is correct here
 // --- Database Table Aliases ---
 
@@ -350,7 +350,7 @@ export interface AiActions {
     onMessage?: (event: MessageEvent) => void,
     onComplete?: (assistantMessage: ChatMessage) => void,
     onError?: (error: string) => void
-  ) => Promise<EventSource | null>;
+  ) => Promise<ISseConnection | null>;
   loadChatHistory: (organizationId?: string | null) => Promise<void>;
   loadChatDetails: (chatId: Chat['id']) => Promise<void>; // Use aliased type
   startNewChat: (organizationId?: string | null) => void;
@@ -455,6 +455,7 @@ export interface IAiApiClient {
   getAiProviders(token?: string): Promise<ApiResponse<AiProvider[]>>;
   getSystemPrompts(token?: string): Promise<ApiResponse<SystemPrompt[]>>;
   sendChatMessage(data: ChatApiRequest, options?: RequestInit): Promise<ApiResponse<ChatHandlerSuccessResponse>>;
+  sendStreamingChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ISseConnection | { error: ApiError }>;
   getChatHistory(token: string, organizationId?: string | null): Promise<ApiResponse<Chat[]>>;
   getChatWithMessages(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<{ chat: Chat, messages: ChatMessage[] }>>;
   deleteChat(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<void>>;
