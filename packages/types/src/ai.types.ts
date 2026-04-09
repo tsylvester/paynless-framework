@@ -56,7 +56,47 @@ export interface ChatSessionTokenUsageDetails {
  */
 export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
   status?: 'pending' | 'sent' | 'streaming' | 'failed' | 'error';
-}; 
+};
+
+/**
+ * Server-Sent Events payloads for the chat edge function streaming response (client mirror of the wire format).
+ * Discriminated on `type`.
+ */
+export interface SseChatStartEvent {
+  type: "chat_start";
+  chatId: string;
+  timestamp: string;
+}
+
+export interface SseContentChunkEvent {
+  type: "content_chunk";
+  content: string;
+  assistantMessageId: string;
+  timestamp: string;
+}
+
+export interface SseChatCompleteEvent {
+  type: "chat_complete";
+  assistantMessage: ChatMessage;
+  finish_reason: string | null;
+  timestamp: string;
+}
+
+export interface SseErrorEvent {
+  type: "error";
+  message: string;
+  timestamp: string;
+}
+
+export type SseChatEvent =
+  | SseChatStartEvent
+  | SseContentChunkEvent
+  | SseChatCompleteEvent
+  | SseErrorEvent;
+
+export interface ISseConnection extends EventTarget {
+  close(): void;
+}
 
 // --- Application/API/Adapter/Store Specific Types ---
 

@@ -5,3 +5,4 @@ export * from './stringUtils';
 export * from './pendingAction';
 export * from './type_guards';
 export * from './dialecticUtils';
+export * from './sse.stream.provides';
