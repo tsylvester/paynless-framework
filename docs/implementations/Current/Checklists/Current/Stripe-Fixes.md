@@ -1941,77 +1941,77 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
 
   ### 1. Intent & Position
 
-  * `[ ]`   `objective`
-    * `[ ]`   `handleNewChat` calls `startNewChat(contextForNewChat)` which sets `currentChatId` to a new UUID, but the browser URL still contains the old `/:chatId` param
-    * `[ ]`   The `useEffect` at line 131 fires on every render where `chatId !== currentChatId`; after `startNewChat` the new UUID satisfies that condition, so `loadChatDetails(chatId)` is called immediately and overwrites the newly created chat state with the old one
-    * `[ ]`   Fix: call `navigate('/chat')` immediately after `startNewChat(contextForNewChat)` so the URL param is cleared before the effect can re-fire with a mismatched `chatId`
+  * `[✅`   `objective`
+    * `[✅`   `handleNewChat` calls `startNewChat(contextForNewChat)` which sets `currentChatId` to a new UUID, but the browser URL still contains the old `/:chatId` param
+    * `[✅`   The `useEffect` at line 131 fires on every render where `chatId !== currentChatId`; after `startNewChat` the new UUID satisfies that condition, so `loadChatDetails(chatId)` is called immediately and overwrites the newly created chat state with the old one
+    * `[✅`   Fix: call `navigate('/chat')` immediately after `startNewChat(contextForNewChat)` so the URL param is cleared before the effect can re-fire with a mismatched `chatId`
 
-  * `[ ]`   `role`
-    * `[ ]`   UI page component — owns the routing decision when the user initiates a new chat
-    * `[ ]`   Must NOT change store logic or the URL-sync effect; only the navigation call site changes
-    * `[ ]`   Must NOT navigate before `startNewChat` has been called
+  * `[✅`   `role`
+    * `[✅`   UI page component — owns the routing decision when the user initiates a new chat
+    * `[✅`   Must NOT change store logic or the URL-sync effect; only the navigation call site changes
+    * `[✅`   Must NOT navigate before `startNewChat` has been called
 
-  * `[ ]`   `module`
-    * `[ ]`   Bounded context: AI chat page routing
-    * `[ ]`   Inside: `handleNewChat` click handler, `useNavigate` call
-    * `[ ]`   Outside: store state management, URL-sync effect logic, chat loading
+  * `[✅`   `module`
+    * `[✅`   Bounded context: AI chat page routing
+    * `[✅`   Inside: `handleNewChat` click handler, `useNavigate` call
+    * `[✅`   Outside: store state management, URL-sync effect logic, chat loading
 
   ### 2. Dependencies & Injection
 
-  * `[ ]`   `deps`
-    * `[ ]`   `useNavigate` from `react-router-dom` — already available in the project; navigate function injected via hook
-    * `[ ]`   `startNewChat` from `useAiStore` — already injected; no change to the store or its interface
-    * `[ ]`   No new runtime deps; no type file changes
+  * `[✅`   `deps`
+    * `[✅`   `useNavigate` from `react-router-dom` — already available in the project; navigate function injected via hook
+    * `[✅`   `startNewChat` from `useAiStore` — already injected; no change to the store or its interface
+    * `[✅`   No new runtime deps; no type file changes
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   `navigate` is the only new dependency; it is a function with no required type declaration beyond `ReturnType<typeof useNavigate>`
+  * `[✅`   `context_slice`
+    * `[✅`   `navigate` is the only new dependency; it is a function with no required type declaration beyond `ReturnType<typeof useNavigate>`
 
   ### 3. Contract Definition
 
-  * `[ ]`   `AiChat.test.tsx` (update existing)
-    * `[ ]`   **NEW:** clicking "New Chat" while `chatId` URL param is present → `navigate('/chat')` is called once
-    * `[ ]`   **NEW:** clicking "New Chat" → `startNewChat` is called before `navigate`
-    * `[ ]`   **EXISTING:** clicking "New Chat" when Personal context active → `startNewChat` called with `null` — must remain GREEN
+  * `[✅`   `AiChat.test.tsx` (update existing)
+    * `[✅`   **NEW:** clicking "New Chat" while `chatId` URL param is present → `navigate('/chat')` is called once
+    * `[✅`   **NEW:** clicking "New Chat" → `startNewChat` is called before `navigate`
+    * `[✅`   **EXISTING:** clicking "New Chat" when Personal context active → `startNewChat` called with `null` — must remain GREEN
 
   ### 4. Structural Boundary
 
-  * `[ ]`   No new types or interfaces — `navigate` is `NavigateFunction` from `react-router-dom`; no type file edits required
+  * `[✅`   No new types or interfaces — `navigate` is `NavigateFunction` from `react-router-dom`; no type file edits required
 
   ### 5. Interaction Semantics
 
-  * `[ ]`   `interaction.spec`
-    * `[ ]`   User clicks "New Chat" → `handleNewChat` executes: (1) `startNewChat(contextForNewChat)`, (2) `navigate('/chat')`
-    * `[ ]`   Router replaces `chat/:chatId` with `chat`; `useParams` returns `chatId: undefined`
-    * `[ ]`   URL-sync effect condition `chatId && chatId !== currentChatId` is now `false`; `loadChatDetails` is NOT called
-    * `[ ]`   The new blank chat state set by `startNewChat` persists
+  * `[✅`   `interaction.spec`
+    * `[✅`   User clicks "New Chat" → `handleNewChat` executes: (1) `startNewChat(contextForNewChat)`, (2) `navigate('/chat')`
+    * `[✅`   Router replaces `chat/:chatId` with `chat`; `useParams` returns `chatId: undefined`
+    * `[✅`   URL-sync effect condition `chatId && chatId !== currentChatId` is now `false`; `loadChatDetails` is NOT called
+    * `[✅`   The new blank chat state set by `startNewChat` persists
 
   ### 7. Behavioral Verification
 
-  * `[ ]`   `AiChat.test.tsx` (update existing)
-    * `[ ]`   Mock `useNavigate` from `react-router-dom` at the top of the file using `vi.mock`; capture the returned `mockNavigate` spy
-    * `[ ]`   **Test:** render with `chatId` present in URL (`MemoryRouter` initial path `/chat/some-id`), click "New Chat" → assert `mockNavigate` called with `'/chat'`
-    * `[ ]`   **Test:** render, click "New Chat" → assert `startNewChat` was called before `navigate` (call order via `mockImplementation` side effect or `mock.invocationCallOrder`)
-    * `[ ]`   Each new test covers exactly one behavior
-    * `[ ]`   Uses real `AiChatPage` component; mocks limited to router and store
+  * `[✅`   `AiChat.test.tsx` (update existing)
+    * `[✅`   Mock `useNavigate` from `react-router-dom` at the top of the file using `vi.mock`; capture the returned `mockNavigate` spy
+    * `[✅`   **Test:** render with `chatId` present in URL (`MemoryRouter` initial path `/chat/some-id`), click "New Chat" → assert `mockNavigate` called with `'/chat'`
+    * `[✅`   **Test:** render, click "New Chat" → assert `startNewChat` was called before `navigate` (call order via `mockImplementation` side effect or `mock.invocationCallOrder`)
+    * `[✅`   Each new test covers exactly one behavior
+    * `[✅`   Uses real `AiChatPage` component; mocks limited to router and store
 
   ### 9. Implementation
 
-  * `[ ]`   `apps/web/src/pages/AiChat.tsx`
-    * `[ ]`   Add `useNavigate` to the existing `react-router-dom` import (line 2 already imports `useParams`)
-    * `[ ]`   Add `const navigate = useNavigate()` inside `AiChatPage`, alongside the other hook calls
-    * `[ ]`   In `handleNewChat`: add `navigate('/chat')` as the last statement after `startNewChat(contextForNewChat)`
+  * `[✅`   `apps/web/src/pages/AiChat.tsx`
+    * `[✅`   Add `useNavigate` to the existing `react-router-dom` import (line 2 already imports `useParams`)
+    * `[✅`   Add `const navigate = useNavigate()` inside `AiChatPage`, alongside the other hook calls
+    * `[✅`   In `handleNewChat`: add `navigate('/chat')` as the last statement after `startNewChat(contextForNewChat)`
 
   ### 12. Edge Validation
 
-  * `[ ]`   `AiChat.test.tsx`
-    * `[ ]`   Validate: after clicking "New Chat", the URL-sync effect does not call `loadChatDetails` — assert `mockLoadChatDetails` is NOT called after the click
+  * `[✅`   `AiChat.test.tsx`
+    * `[✅`   Validate: after clicking "New Chat", the URL-sync effect does not call `loadChatDetails` — assert `mockLoadChatDetails` is NOT called after the click
 
   ### 14. Completion Criteria
 
-  * `[ ]`   `AiChat.tsx` lints clean
-  * `[ ]`   All three new tests GREEN
-  * `[ ]`   All existing tests in `AiChat.test.tsx` (Tests 3.1 and 3.2) remain GREEN
-  * `[ ]`   `loadChatDetails` is not invoked after "New Chat" is clicked when a `chatId` URL param was present
+  * `[✅`   `AiChat.tsx` lints clean
+  * `[✅`   All three new tests GREEN
+  * `[✅`   All existing tests in `AiChat.test.tsx` (Tests 3.1 and 3.2) remain GREEN
+  * `[✅`   `loadChatDetails` is not invoked after "New Chat" is clicked when a `chatId` URL param was present
 
 ---
 
