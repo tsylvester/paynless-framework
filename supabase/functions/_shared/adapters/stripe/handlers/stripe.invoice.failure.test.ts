@@ -1,9 +1,7 @@
-import { StripePaymentAdapter } from '../stripePaymentAdapter.ts';
-import type { TokenWalletTransaction, TokenWalletTransactionType } from '../../../types/tokenWallet.types.ts';
-import { MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+
+import { MockAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import Stripe from 'npm:stripe';
-import type { PurchaseRequest, PaymentOrchestrationContext } from '../../../types/payment.types.ts';
 import {
   assert,
   assertEquals,
@@ -15,43 +13,34 @@ import {
   spy,
   stub,
   type SpyCall,
-  type Spy
 } from 'jsr:@std/testing@0.225.1/mock';
 import { createMockStripe, MockStripe, createMockInvoicePaymentSucceededEvent, createMockInvoiceLineItem } from '../../../stripe.mock.ts';
-import { createMockSupabaseClient, MockSupabaseClientSetup, MockSupabaseDataConfig, MockQueryBuilderState } from '../../../supabase.mock.ts';
-import { createMockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import {
+  createMockSupabaseClient,
+  MockSupabaseClientSetup,
+  MockSupabaseDataConfig,
+  MockQueryBuilderState,
+  type PostgresError,
+} from '../../../supabase.mock.ts';
+import { createMockAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 import { Database } from '../../../../types_db.ts';
-import { ILogger, LogMetadata } from '../../../types.ts';
 import { handleInvoicePaymentSucceeded } from './stripe.invoicePaymentSucceeded.ts';
 import { HandlerContext } from '../../../stripe.mock.ts';
-
-const FREE_TIER_ITEM_ID_INTERNAL_INVOICE_TESTS = 'SYS_FREE_TIER'; // If needed for any logic here
-
-
-
-// Mock Logger for this suite
-const createMockInvoiceLogger = (): ILogger => {
-    return {
-        debug: spy((_message: string, _metadata?: LogMetadata) => {}),
-        info: spy((_message: string, _metadata?: LogMetadata) => {}),
-        warn: spy((_message: string, _metadata?: LogMetadata) => {}),
-        error: spy((_message: string | Error, _metadata?: LogMetadata) => {}),
-    };
-};
+import { MockLogger } from '../../../logger.mock.ts';
+import { isRecord } from '../../../utils/type-guards/type_guards.common.ts';
 
 Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucceeded', async (t) => {
   let mockSupabaseClient: SupabaseClient<Database>;
   let mockSupabaseSetup: MockSupabaseClientSetup;
-  let mockTokenWalletService: MockTokenWalletService;
-  let mockInvoiceLogger: ILogger;
+  let mockTokenWalletService: MockAdminTokenWalletService;
+  let mockInvoiceLogger: MockLogger;
   let mockStripe: MockStripe;
   let handlerContext: HandlerContext;
 
   const setupInvoiceMocks = (dbConfig: MockSupabaseDataConfig = {}) => {
-    mockInvoiceLogger = createMockInvoiceLogger();
-    mockTokenWalletService = createMockTokenWalletService();
+    mockInvoiceLogger = new MockLogger();
+    mockTokenWalletService = createMockAdminTokenWalletService();
     mockStripe = createMockStripe();
-    // Pass undefined for currentTestUserId and dbConfig as the second argument
     mockSupabaseSetup = createMockSupabaseClient(undefined, dbConfig);
     mockSupabaseClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
     
@@ -60,7 +49,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
       logger: mockInvoiceLogger,
       tokenWalletService: mockTokenWalletService.instance,
       stripe: mockStripe.instance,
-      updatePaymentTransaction: spy() as any,
+      updatePaymentTransaction: spy(),
       featureFlags: {},
       functionsUrl: "http://localhost:54321/functions/v1",
       stripeWebhookSecret: "whsec_test_secret_invoice_succeeded",
@@ -95,8 +84,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
         object: 'list',
         data: [createMockInvoiceLineItem({ 
           subscription: mockSubscriptionId,
-          price: { id: mockStripePriceId }
-        } as any)],
+        })],
         has_more: false,
         url: `/v1/invoices/${mockInvoiceId}/lines`,
       }
@@ -112,14 +100,16 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
             return { data: null, error: new Error('Unexpected payment_transactions select'), count: 0, status: 500, statusText: 'Error' };
           },
           insert: async (state: MockQueryBuilderState) => { 
-            if (state.insertData && (state.insertData as any).gateway_transaction_id === mockInvoiceId) {
+            const ins = state.insertData;
+            if (ins !== null && typeof ins === 'object' && !Array.isArray(ins) && 'gateway_transaction_id' in ins && ins['gateway_transaction_id'] === mockInvoiceId) {
               return { data: [{ id: mockPaymentTxId }], error: null, count: 1, status: 201, statusText: 'Created' };
             }
             return { data: null, error: new Error('Unexpected payment_transactions insert'), count: 0, status: 500, statusText: 'Error' };
           },
           update: async (state: MockQueryBuilderState) => { 
+            const upd = state.updateData;
             if (state.filters.some((f: any) => f.column === 'id' && f.value === mockPaymentTxId) && 
-                (state.updateData as any).status === 'FAILED_SUBSCRIPTION_SYNC') {
+                upd !== null && 'status' in upd && upd['status'] === 'FAILED_SUBSCRIPTION_SYNC') {
                 return { data: [{id: mockPaymentTxId, status: 'FAILED_SUBSCRIPTION_SYNC'}], error: null, count: 1, status: 200, statusText: 'OK' };
             }
             return { data: null, error: new Error('Unexpected payment_transactions update, expected FAILED_SUBSCRIPTION_SYNC'), count: 0, status: 500, statusText: 'Error' };
@@ -168,6 +158,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
     });
 
     const recordTxSpy = mockTokenWalletService.stubs.recordTransaction;
+    const errorLogSpy = spy(mockInvoiceLogger, 'error');
 
     await assertRejects(
       () => handleInvoicePaymentSucceeded(handlerContext, mockEvent),
@@ -178,11 +169,10 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
     assertSpyCalls(mockStripe.stubs.subscriptionsRetrieve, 1); 
     assertSpyCalls(recordTxSpy, 0); 
 
-    const errorLogSpy = mockInvoiceLogger.error as Spy<any, any[], any>; 
     assert(
       errorLogSpy.calls.some((call: SpyCall) => 
         call.args[0].includes('[retrieveSubscriptionPlanDetails] Error during subscription/plan retrieval for sub_causes_retrieve_error') &&
-        (call.args[1] as LogMetadata)?.errorObj === plainErrorToReject
+        (call.args[1])?.errorObj === plainErrorToReject
       ),
       'Expected error log from retrieveSubscriptionPlanDetails not found or did not match expected error object.'
     );
@@ -203,24 +193,24 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
     setupInvoiceMocks({
       genericMockResults: {
         'payment_transactions': {
-          select: async () => ({ data: null, error: dbError as any, count: 0, status: 500, statusText: 'Error' }),
+          select: async () => ({ data: null, error: dbError, count: 0, status: 500, statusText: 'Error' }),
         },
       },
     });
 
+    const errorLogSpy = spy(mockInvoiceLogger, 'error');
     const result = await handleInvoicePaymentSucceeded(handlerContext, mockEvent);
     assert(!result.success, 'Handler should fail');
     assertEquals(result.status, undefined, 'Status should be undefined as per handler return for this error');
     assertEquals(result.error, 'Failed to check for existing transaction.', 'Error message should match handler return');
     assertEquals(result.transactionId, undefined, 'Transaction ID should be undefined as per handler return');
     
-    const errorLogSpy = mockInvoiceLogger.error as Spy<any, any[], any>;
     assert(
       errorLogSpy.calls.some((call: SpyCall) => {
-        const logMessage = call.args[0] as string;
-        const metadata = call.args[1] as LogMetadata;
+        const logMessage = call.args[0];
+        const metadata = call.args[1];
         return logMessage.includes(`[handleInvoicePaymentSucceeded] Error checking for existing transaction. Invoice ID: ${mockInvoiceId}`) &&
-               metadata && metadata.error && (metadata.error as any).message === dbError.message;
+               metadata && metadata.error && (metadata.error).message === dbError.message;
       }),
       `Expected error log for idempotency check DB error not found or message/metadata mismatch. Actual calls: ${JSON.stringify(errorLogSpy.calls)}`
     );
@@ -239,21 +229,21 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
           select: async () => ({ data: null, error: null, count: 0, status: 200, statusText: 'OK' }),
         },
         'user_subscriptions': { // User lookup fails
-          select: async () => ({ data: null, error: dbError as any, count: 0, status: 404, statusText: 'Not Found' }),
+          select: async () => ({ data: null, error: dbError, count: 0, status: 404, statusText: 'Not Found' }),
         },
       },
     });
 
+    const errorLogSpy = spy(mockInvoiceLogger, 'error');
     const result = await handleInvoicePaymentSucceeded(handlerContext, mockEvent);
     assert(!result.success, 'Handler should fail');
     assertEquals(result.status, 500, 'Status should be 500 as per current handler logic'); 
     assertEquals(result.error, 'User subscription data not found for Stripe customer ID.', "Error message mismatch for user not found");
     assertEquals(result.transactionId, undefined, "transactionId should be undefined"); // Corrected expected transactionId
 
-    const errorLogSpy = mockInvoiceLogger.error as Spy<any, any[], any>;
     assert(
       errorLogSpy.calls.some((call: SpyCall) => 
-        (call.args[0] as string).includes(`[handleInvoicePaymentSucceeded] Could not find user_id for Stripe customer ${mockStripeCustomerId} via user_subscriptions. Invoice: ${mockInvoiceId}.`)
+        (call.args[0]).includes(`[handleInvoicePaymentSucceeded] Could not find user_id for Stripe customer ${mockStripeCustomerId} via user_subscriptions. Invoice: ${mockInvoiceId}.`)
       ),
       `Expected error log for user not found not present or message mismatch. Actual calls: ${JSON.stringify(errorLogSpy.calls)}`
     );
@@ -276,19 +266,28 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
           select: async () => ({ data: [{ user_id: mockUserId }], error: null, count: 1, status: 200, statusText: 'OK' }),
         },
         'token_wallets': { // Wallet lookup fails
-          select: async () => ({ data: null, error: dbError as any, count: 0, status: 404, statusText: 'Not Found' }),
+          select: async () => ({ data: null, error: dbError, count: 0, status: 404, statusText: 'Not Found' }),
         },
       },
     });
     
+    const errorLogSpy = spy(mockInvoiceLogger, 'error');
     const result = await handleInvoicePaymentSucceeded(handlerContext, mockEvent);
     assert(!result.success, 'Handler should fail');
     assertEquals(result.status, 404, 'Status should be 404'); 
     assertEquals(result.error, 'Token wallet not found for user.', "Error message mismatch for wallet not found");
     assertEquals(result.transactionId, undefined, "transactionId should be undefined"); // Corrected expected transactionId
 
-    const errorLogSpy = mockInvoiceLogger.error as Spy<any, any[], any>;
-    assert(errorLogSpy.calls.some(call => (call.args[0] as string).includes(`Token wallet not found for user ${mockUserId}`)));
+    assert(errorLogSpy.calls.some((call) => {
+      const m = call.args[0];
+      if (typeof m === 'string') {
+        return m.includes(`Token wallet not found for user ${mockUserId}`);
+      }
+      if (m instanceof Error) {
+        return m.message.includes(`Token wallet not found for user ${mockUserId}`);
+      }
+      return false;
+    }));
     teardownInvoiceMocks();
   });
 
@@ -308,8 +307,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
           object: 'list',
           data: [createMockInvoiceLineItem({ 
             subscription: mockSubscriptionId,
-            price: { id: mockStripePriceId }
-          } as any)],
+          })],
           has_more: false,
           url: `/v1/invoices/${mockInvoiceId}/lines`,
         }
@@ -321,7 +319,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
         'payment_transactions': {
           select: async (state: MockQueryBuilderState) => { /* ... idempotency returns no existing ... */ 
             if (state.filters.some((f: any) => f.column === 'gateway_transaction_id' && f.value === mockInvoiceId) &&
-                state.filters.some((f: any) => f.column === 'status' && f.value === 'succeeded')) {
+                state.filters.some((f: any) => f.column === 'status' && f.value === 'COMPLETED')) {
               return { data: null, error: null, count: 0, status: 200, statusText: 'OK' };
             }
             return { data: null, error: new Error('Mock: Unexpected payment_transactions select query in Plan Not Found test'), count: 0, status: 500, statusText: 'Error' };
@@ -354,8 +352,12 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
           select: async (state: MockQueryBuilderState) => { // This will be called by retrieveSubscriptionPlanDetails
             if (state.filters.some((f: any) => f.column === 'stripe_price_id' && f.value === mockStripePriceId)) {
               console.log(`[Test Mock] subscription_plans.select for ${mockStripePriceId} - simulating plan not found in DB.`);
-              const pgrst116Error = { name: 'PostgrestError', message: 'Query returned no rows', code: 'PGRST116' };
-              return { data: null, error: pgrst116Error as any, count: 0, status: 406, statusText: 'Not Found' }; // Plan not found
+              const pgrst116Error: PostgresError = {
+                name: 'PostgresError',
+                message: 'Query returned no rows',
+                code: 'PGRST116',
+              };
+              return { data: null, error: pgrst116Error, count: 0, status: 406, statusText: 'Not Found' };
             }
             return { data: null, error: new Error('Mock: Unexpected subscription_plans select for plan not found test'), count: 0, status: 500, statusText: 'Error' };
           }
@@ -372,21 +374,24 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
     mockStripe.stubs.subscriptionsRetrieve = stub(handlerContext.stripe.subscriptions, "retrieve", 
       () => Promise.resolve({ 
         id: mockSubscriptionId, 
-        items: { data: [{ price: { id: mockStripePriceId } }] } 
-      } as any)
+        items: { data: [{ price: { id: mockStripePriceId } }] },
+        lastResponse: { headers: { 'request-id': 'req_mock_sub_retrieve' }, requestId: 'req_mock_sub_retrieve', statusCode: 200 }
+      } as unknown as Stripe.Response<Stripe.Subscription>)
     );
     
     const recordTxSpy = mockTokenWalletService.stubs.recordTransaction;
+    const errorLogSpy = spy(mockInvoiceLogger, 'error');
 
-    // Expect the handler to reject due to the PGRST116 error from retrieveSubscriptionPlanDetails
     const expectedErrorMessage = 'Query returned no rows';
 
-    await assertRejects(
+    const rejection: unknown = await assertRejects(
       () => handleInvoicePaymentSucceeded(handlerContext, mockEvent),
-      Error,
-      expectedErrorMessage, // Check for the specific message
-      "Handler did not reject as expected or with the correct message when subscription plan is not found."
+      "Handler did not reject when subscription plan is not found.",
     );
+    assert(isRecord(rejection), 'Expected rejection to be a PostgresError-shaped object');
+    assertEquals(rejection['name'], 'PostgresError');
+    assertEquals(rejection['message'], expectedErrorMessage);
+    assertEquals(rejection['code'], 'PGRST116');
 
     // Verify that stripe.subscriptions.retrieve was called (by retrieveSubscriptionPlanDetails)
     assertSpyCalls(mockStripe.stubs.subscriptionsRetrieve, 1);
@@ -414,19 +419,18 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
 
     assertSpyCalls(recordTxSpy, 0); // Token awarding should not happen
 
-    const errorLogSpy = mockInvoiceLogger.error as Spy<any, any[], any>;
     const pgrst116LogFound = errorLogSpy.calls.some((call: SpyCall) => {
-      const logMessage = call.args[0] as string;
-      const metadata = call.args[1] as LogMetadata;
-      const errorObj = metadata?.errorObj as any; // errorObj from retrieveSubscriptionPlanDetails's catch
-      
-      return logMessage.includes(`[retrieveSubscriptionPlanDetails] Error during subscription/plan retrieval for ${mockSubscriptionId}`) &&
-             errorObj && errorObj.name === 'PostgrestError' && errorObj.code === 'PGRST116';
+      const logMessage = call.args[0];
+      const metadata = call.args[1];
+      return typeof logMessage === 'string' &&
+        logMessage.includes(`[retrieveSubscriptionPlanDetails] Error during subscription/plan retrieval for ${mockSubscriptionId}`) &&
+        isRecord(metadata) &&
+        isRecord(metadata['errorObj']) &&
+        metadata['errorObj']['name'] === 'PostgresError' &&
+        metadata['errorObj']['code'] === 'PGRST116';
     });
     
-    assert(pgrst116LogFound, 
-      `Expected error log from retrieveSubscriptionPlanDetails for PGRST116 not found or did not match. Actual logs: ${JSON.stringify(errorLogSpy.calls.map(c => ({msg: c.args[0], meta: c.args[1]})))}`
-    );
+    assert(pgrst116LogFound, `Expected error log from retrieveSubscriptionPlanDetails for PGRST116 not found or did not match. Actual logs: ${JSON.stringify(errorLogSpy.calls.map(c => ({msg: c.args[0], meta: c.args[1]})))}`);
     
     teardownInvoiceMocks();
   });

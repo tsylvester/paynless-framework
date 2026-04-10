@@ -1937,7 +1937,7 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
 
 ---
 
-* `[ ]`   `apps/web/src/pages/AiChat.tsx` **[UI] Fix New Chat button — navigate to `/chat` on new chat to clear stale `chatId` URL param**
+* `[✅`   `apps/web/src/pages/AiChat.tsx` **[UI] Fix New Chat button — navigate to `/chat` on new chat to clear stale `chatId` URL param**
 
   ### 1. Intent & Position
 
@@ -2021,96 +2021,227 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
 
 ---
 
-* `[ ]`   `supabase/migrations/20260403000000_fix_payment_transactions_status_constraint.sql` **[DB] Widen payment_transactions.status column and add missing statuses to check constraint**
+* `[✅`   `supabase/migrations/20260403000000_fix_payment_transactions_status_constraint.sql` **[DB] Widen payment_transactions.status column and add missing statuses to check constraint**
 
   **This node is a database migration and is exempt from TDD structure.**
 
   ### Problem
-  * `[ ]`   `objective`
-    * `[ ]`   `payment_transactions.status` is `VARCHAR(20)` with `CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'REFUNDED'))`
-    * `[ ]`   Application code writes `'PROCESSING_RENEWAL'` (18 chars) and `'TOKEN_AWARD_FAILED'` (18 chars) — neither is in the constraint
-    * `[ ]`   The lowercase `'succeeded'` written by `handleInvoicePaymentSucceeded` is also absent; it will be corrected to `'COMPLETED'` in the source fix node, but the constraint must be correct first
+  * `[✅`   `objective`
+    * `[✅`   `payment_transactions.status` is `VARCHAR(20)` with `CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'REFUNDED'))`
+    * `[✅`   Application code writes `'PROCESSING_RENEWAL'` (18 chars) and `'TOKEN_AWARD_FAILED'` (18 chars) — neither is in the constraint
+    * `[✅`   The lowercase `'succeeded'` written by `handleInvoicePaymentSucceeded` is also absent; it will be corrected to `'COMPLETED'` in the source fix node, but the constraint must be correct first
 
   ### Migration Steps
-  * `[ ]`   `supabase/migrations/20260403000000_fix_payment_transactions_status_constraint.sql`
-    * `[ ]`   `ALTER TABLE public.payment_transactions ALTER COLUMN status TYPE VARCHAR(30)`
-    * `[ ]`   `DROP CONSTRAINT IF EXISTS payment_transactions_status_check`
-    * `[ ]`   `ADD CONSTRAINT payment_transactions_status_check CHECK (status IN ('PENDING', 'PROCESSING', 'PROCESSING_RENEWAL', 'COMPLETED', 'FAILED', 'REFUNDED', 'TOKEN_AWARD_FAILED'))`
+  * `[✅`   `supabase/migrations/20260403000000_fix_payment_transactions_status_constraint.sql`
+    * `[✅`   `ALTER TABLE public.payment_transactions ALTER COLUMN status TYPE VARCHAR(30)`
+    * `[✅`   `DROP CONSTRAINT IF EXISTS payment_transactions_status_check`
+    * `[✅`   `ADD CONSTRAINT payment_transactions_status_check CHECK (status IN ('PENDING', 'PROCESSING', 'PROCESSING_RENEWAL', 'COMPLETED', 'FAILED', 'REFUNDED', 'TOKEN_AWARD_FAILED'))`
 
   ### Completion Criteria
-  * `[ ]`   Migration applies cleanly against local Supabase instance
-  * `[ ]`   Insert with `status = 'PROCESSING_RENEWAL'` succeeds
-  * `[ ]`   Insert with `status = 'TOKEN_AWARD_FAILED'` succeeds
-  * `[ ]`   Insert with `status = 'INVALID_STATUS'` is rejected
+  * `[✅`   Migration applies cleanly against local Supabase instance
+  * `[✅`   Insert with `status = 'PROCESSING_RENEWAL'` succeeds
+  * `[✅`   Insert with `status = 'TOKEN_AWARD_FAILED'` succeeds
+  * `[✅`   Insert with `status = 'INVALID_STATUS'` is rejected
 
 ---
 
-* `[ ]`   `supabase/functions/_shared/adapters/stripe/handlers/stripe.invoicePaymentSucceeded.ts` **[BE] Fix billing_reason routing and status literal consistency**
+* `[✅]`   `supabase/functions/_shared/adapters/stripe/handlers/stripe.invoicePaymentSucceeded.ts` **[BE] Fix billing_reason routing and status literal consistency (handler + 3 leaf test files)**
 
   ### 1. Intent & Position
 
-  * `[ ]`   `objective`
-    * `[ ]`   **Bug A (architectural):** Handler never checks `invoice.billing_reason`. It processes every `invoice.payment_succeeded` event including `subscription_create` as a renewal. `subscription_create` invoices arrive before `checkout.session.completed` has written the subscription record, so `user_subscriptions` lookup fails with PGRST116. Additionally, calling a new subscription a renewal is semantically wrong
-    * `[ ]`   **Bug B (status):** Idempotency check at line 71 uses `eq('status', 'succeeded')` (lowercase). No record is ever written with that value, so the guard never fires
-    * `[ ]`   **Bug C (status):** Final status update at line 270 writes `status: 'succeeded'` (lowercase), violating the constraint once the migration runs
-    * `[ ]`   **Fix A:** Early return after `stripeCustomerId` extraction: if `billing_reason === 'subscription_create'`, log and return `{ success: true, message: 'subscription_create invoice skipped; handled by checkout.session.completed' }`
-    * `[ ]`   **Fix B:** Change idempotency check to `eq('status', 'COMPLETED')`
-    * `[ ]`   **Fix C:** Change final status update to `{ status: 'COMPLETED' }`
+  * `[✅]`   `objective`
+    * `[✅]`   **Bug A (architectural):** Handler never inspects `invoice.billing_reason`. It processes every `invoice.payment_succeeded` event — including `subscription_create` — as a renewal. `subscription_create` invoices arrive *before* `checkout.session.completed` has written the `user_subscriptions` row, so the handler's `user_subscriptions` lookup fails with PGRST116. Beyond the lookup failure, calling a brand-new subscription a "renewal" is semantically wrong: token award and `payment_transactions` insertion for the new subscription is owned by `handleCheckoutSessionCompleted`, not by this handler.
+    * `[✅]`   **Bug B (idempotency literal):** The idempotency `select` filter uses `.eq('status', 'succeeded')` (lowercase). No row is ever written with that value, so the guard never fires and a re-delivered webhook double-processes. After the migration, the only legal completed value is `'COMPLETED'`. The filter literal must change.
+    * `[✅]`   **Bug C (final update literal):** The final-status update writes `.update({ status: 'succeeded' })`. After the migration this violates the `payment_transactions_status_check` constraint and the update fails. The update literal must change.
+    * `[✅]`   **Bug C-bis (error message literal):** Inside the same final-update block, the `finalErrorMessage` template literal contains the substring `to 'succeeded' after`. This exact substring is asserted by tests in `stripe.invoice.failure.test.ts` and `stripe.invoice.dbErrors.test.ts`. The substring must change in lockstep with Bug C or those tests break.
+    * `[✅]`   **Fix A (early return).** Insert the following block in `stripe.invoicePaymentSucceeded.ts` *immediately after* the closing `}` of the `if (!stripeCustomerId)` null guard and *immediately before* the line beginning `const subscriptionIdFromLineItem = invoice.lines.data[0]?.subscription;`. The block must be exactly:
+      ```ts
+      if (invoice.billing_reason === 'subscription_create') {
+        context.logger.info(`[handleInvoicePaymentSucceeded] subscription_create invoice ${invoice.id} skipped; handled by checkout.session.completed`, { eventId: stripeEventId });
+        return {
+          success: true,
+          transactionId: undefined,
+          tokensAwarded: 0,
+          message: 'subscription_create invoice skipped; handled by checkout.session.completed',
+        };
+      }
+      ```
+      Position MUST be before the idempotency `select` so that zero DB queries are issued for `subscription_create` invoices.
+    * `[✅]`   **Fix B (idempotency literal).** In `stripe.invoicePaymentSucceeded.ts`, replace the single occurrence of `.eq('status', 'succeeded')` with `.eq('status', 'COMPLETED')`. There is exactly one occurrence in the source.
+    * `[✅]`   **Fix C (final update literal).** In `stripe.invoicePaymentSucceeded.ts`, replace the single occurrence of `.update({ status: 'succeeded' })` with `.update({ status: 'COMPLETED' })`. There is exactly one occurrence in the source.
+    * `[✅]`   **Fix C-bis (error message literal).** In `stripe.invoicePaymentSucceeded.ts`, inside the `finalErrorMessage` template literal, replace the substring `to 'succeeded' after` with `to 'COMPLETED' after`. There is exactly one occurrence in the source. After all four fixes, `stripe.invoicePaymentSucceeded.ts` MUST contain zero `'succeeded'` string literals (verifiable by grep).
 
-  * `[ ]`   `role`
-    * `[ ]`   Adapter/handler — processes `invoice.payment_succeeded` for renewals (`subscription_cycle`) only
-    * `[ ]`   Must NOT process `subscription_create` invoices
-    * `[ ]`   Must NOT touch the checkout session handler or any other handler file
+  * `[✅]`   `role`
+    * `[✅]`   Adapter/handler — processes `invoice.payment_succeeded` for renewal-class invoices (`subscription_cycle`, `manual`, and any other non-`subscription_create` `billing_reason`).
+    * `[✅]`   Must NOT process `subscription_create` invoices — those are owned by `handleCheckoutSessionCompleted`.
+    * `[✅]`   Must NOT touch the checkout session handler, any other handler file, or any source file outside `stripe.invoicePaymentSucceeded.ts`.
 
-  * `[ ]`   `module`
-    * `[ ]`   Inside: billing_reason guard, status literals, idempotency check
-    * `[ ]`   Outside: `handleCheckoutSessionCompleted`, DB schema, `AdminTokenWalletService` (injected via `HandlerContext`)
+  * `[✅]`   `module`
+    * `[✅]`   Inside this node: `stripe.invoicePaymentSucceeded.ts` (source), `stripe.invoice.initial.test.ts`, `stripe.invoice.failure.test.ts`, `stripe.invoice.dbErrors.test.ts`. Concerns: `billing_reason` routing guard, idempotency filter literal, final-update literal, error-message literal.
+    * `[✅]`   Outside this node: `handleCheckoutSessionCompleted`, the DB migration (already applied), `AdminTokenWalletService` (already wired via `HandlerContext`), the test barrel `stripe.invoicePaymentSucceeded.test.ts` (import-only — see §3), and `stripe.invoice.successful.test.ts` (misnamed; actually tests `StripePaymentAdapter.initiatePayment`, NOT this handler — out of scope).
 
   ### 2. Dependencies & Injection
 
-  * `[ ]`   `deps`
-    * `[ ]`   `HandlerContext.tokenWalletService` type is now `IAdminTokenWalletService` (from Part 1)
-    * `[ ]`   DB migration must be applied (constraint must allow `PROCESSING_RENEWAL`, `TOKEN_AWARD_FAILED`, `COMPLETED`)
+  * `[✅]`   `producer_prereqs` (already complete — listed for traceability so no producer-side migration is attempted)
+    * `[✅]`   Migration `20260410165500_payment_status.sql` is applied; the `payment_transactions_status_check` constraint allows `PROCESSING_RENEWAL`, `TOKEN_AWARD_FAILED`, `COMPLETED`.
+    * `[✅]`   `HandlerContext.tokenWalletService` is `IAdminTokenWalletService`. All three handler test leaves already import `createMockAdminTokenWalletService` from `services/tokenwallet/admin/adminTokenWalletService.mock.ts`. **No mock-factory migration is required by this node — do NOT change wallet imports in any test file.**
+    * `[✅]`   `createMockInvoice` in `_shared/stripe.mock.ts` defaults `billing_reason: 'manual'`. No existing leaf fixture sets `'subscription_create'`, so Fix A's early return does NOT affect any existing leaf test. No scenario retargeting or deletion is required.
+
+  * `[✅]`   `deps`
+    * `[✅]`   `Stripe.Invoice.billing_reason` (from `npm:stripe`) — read once by Fix A. No type file change.
+    * `[✅]`   `mockSupabaseSetup.client.getHistoricBuildersForTable(tableName: string): MockQueryBuilder[]` from `_shared/supabase.mock.ts`. **Always returns an array (empty when no builder was created).** Used by the new early-return test to prove zero DB calls. Assertion shape: `assertEquals(historicBuilders.length, 0)`. Do NOT assert `=== undefined`.
+    * `[✅]`   `assertSpyCalls` from `jsr:@std/testing@0.225.1/mock` — already imported in all three handler test leaves. Used by the new early-return test to prove zero Stripe SDK and zero wallet calls.
+    * `[✅]`   `createMockInvoicePaymentSucceededEvent`, `createMockInvoiceLineItem`, `HandlerContext` from `_shared/stripe.mock.ts` — already imported in all three handler test leaves.
 
   ### 3. Contract Definition
 
-  * `[ ]`   `stripe.invoicePaymentSucceeded.test.ts` (existing — add new tests at end)
-    * `[ ]`   **NEW:** `billing_reason = 'subscription_create'` → returns `{ success: true }` without any DB calls
-    * `[ ]`   **NEW:** idempotency check finds `status = 'COMPLETED'` record → early success return
-    * `[ ]`   **NEW:** full `subscription_cycle` success path → `payment_transactions` record ends with `status: 'COMPLETED'`
-    * `[ ]`   **EXISTING:** `subscription_cycle` full flow still processes correctly
+  Test scope is the three handler-test leaves listed below. **The barrel `stripe.invoicePaymentSucceeded.test.ts` MUST NOT be edited** — it currently contains only four `import './…';` lines and must remain in that state. New tests are placed in the topic-appropriate leaf, never in the barrel. **`stripe.invoice.successful.test.ts` is OUT OF SCOPE** — it tests `StripePaymentAdapter.initiatePayment` despite its misleading name, and is not touched by this node.
+
+  * `[✅]`   `stripe.invoice.initial.test.ts` — handler entry behavior, happy renewal path, idempotency.
+
+    * `[✅]`   **NEW t.step (append at the end of the existing `Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucceeded', …)` block, after the last existing `await t.step(...)` and BEFORE the closing `})` of the `Deno.test`):**
+
+      Step name: `'subscription_create routing — early return, zero DB calls, zero Stripe SDK calls, zero wallet calls'`
+
+      Setup:
+      * Call `setupInvoiceMocks({})` with an EMPTY `MockSupabaseDataConfig`. Do **not** configure `genericMockResults` for any table. The proof that no DB call occurs is the absence of historic builders, not the presence of throwers in mock returns.
+      * Replace `mockStripe.stubs.subscriptionsRetrieve` with a thrower:
+        ```ts
+        if (mockStripe.stubs.subscriptionsRetrieve && !mockStripe.stubs.subscriptionsRetrieve.restored) {
+          mockStripe.stubs.subscriptionsRetrieve.restore();
+        }
+        mockStripe.stubs.subscriptionsRetrieve = stub(
+          mockStripe.instance.subscriptions,
+          'retrieve',
+          () => { throw new Error('subscriptions.retrieve must not run during subscription_create early return'); },
+        );
+        ```
+      * Leave `mockTokenWalletService.stubs.recordTransaction` as the default spy (do not override).
+
+      Event fixture:
+      ```ts
+      const mockEvent = createMockInvoicePaymentSucceededEvent({
+        id: 'in_sub_create_routing',
+        customer: 'cus_sub_create_routing',
+        billing_reason: 'subscription_create',
+        lines: {
+          object: 'list',
+          data: [createMockInvoiceLineItem({ subscription: 'sub_sub_create_routing' })],
+          has_more: false,
+          url: '/v1/invoices/in_sub_create_routing/lines',
+        },
+      });
+      ```
+
+      Invocation:
+      ```ts
+      const result = await handleInvoicePaymentSucceeded(handlerContext, mockEvent);
+      ```
+
+      Assertions (every one is required, in this order):
+      * `assertEquals(result.success, true);`
+      * `assertEquals(result.transactionId, undefined);`
+      * `assertEquals(result.tokensAwarded, 0);`
+      * `assertEquals(result.message, 'subscription_create invoice skipped; handled by checkout.session.completed');`
+      * `assertEquals(mockSupabaseSetup.client.getHistoricBuildersForTable('payment_transactions').length, 0);`
+      * `assertEquals(mockSupabaseSetup.client.getHistoricBuildersForTable('user_subscriptions').length, 0);`
+      * `assertEquals(mockSupabaseSetup.client.getHistoricBuildersForTable('token_wallets').length, 0);`
+      * `assertEquals(mockSupabaseSetup.client.getHistoricBuildersForTable('subscription_plans').length, 0);`
+      * `assertSpyCalls(mockStripe.stubs.subscriptionsRetrieve, 0);`
+      * `assertSpyCalls(mockTokenWalletService.stubs.recordTransaction, 0);`
+
+      Teardown: call `teardownInvoiceMocks();` at the end of the step.
+
+    * `[✅]`   **Literal migration (existing steps; do NOT rename them, do NOT add duplicate steps for these — they already exist by these exact names and just need their internal literals fixed):**
+
+      * `[✅]`   `'Subscription Renewal - successfully processes, creates payment transaction, and awards tokens'` (existing step at line ~87). Within this step:
+        * In the `dbConfig.genericMockResults['payment_transactions'].update` mock, replace `updateData.status === 'succeeded'` with `updateData.status === 'COMPLETED'`.
+        * In the returned mock row of that same `update` branch, replace `status: 'succeeded'` with `status: 'COMPLETED'`.
+        * Replace any assertion of the form `assertEquals(updateData.status, 'succeeded')` with `assertEquals(updateData.status, 'COMPLETED')`.
+        * Replace any assertion of the form `assertEquals(secondEqCallArgs, ['status', 'succeeded'], …)` with `assertEquals(secondEqCallArgs, ['status', 'COMPLETED'], …)` and update the failure-message string to say `COMPLETED` instead of `succeeded`.
+        * Update inline comments such as `// Handler's idempotency check: .eq('gateway_transaction_id', invoice.id).eq('status', 'succeeded')` to read `'COMPLETED'`.
+
+      * `[✅]`   `'Idempotency - Invoice already processed (COMPLETED)'` (existing step at line ~306). Within this step:
+        * In the `dbConfig.genericMockResults['payment_transactions'].select` branch, replace the filter check `f.value === 'succeeded'` with `f.value === 'COMPLETED'`.
+        * In the returned mock row, replace `status: 'succeeded'` with `status: 'COMPLETED'`.
+        * The step name already references `(COMPLETED)`; this migration aligns its implementation with its name.
+
+      * `[✅]`   `'Idempotency - Invoice already processed (FAILED)'` (existing step at line ~412). Within this step:
+        * In the `dbConfig.genericMockResults['payment_transactions'].select` branch that emulates the handler's idempotency lookup, replace the filter check `f.value === 'succeeded'` with `f.value === 'COMPLETED'`. The "FAILED" in the step name refers to the *prior* transaction's status; the handler's idempotency-filter literal still migrates to `'COMPLETED'`.
+
+    * `[✅]`   **Literal-occurrence accounting for `stripe.invoice.initial.test.ts`:** total `'succeeded'` literal occurrences before migration: 11 (lines 129, 130, 239, 294, 334, 336, 340, 422, 439, 441, 442). After migration: 0. Verifiable by grep.
+
+  * `[✅]`   `stripe.invoice.failure.test.ts` — handler error scenarios.
+
+    * `[✅]`   No new tests added to this file.
+    * `[✅]`   **Literal migration:** Replace the single occurrence on line 324 — `state.filters.some((f: any) => f.column === 'status' && f.value === 'succeeded')` — with `f.value === 'COMPLETED'`.
+    * `[✅]`   **Literal-occurrence accounting:** total `'succeeded'` literal occurrences before migration: 1. After migration: 0. Verifiable by grep.
+
+  * `[✅]`   `stripe.invoice.dbErrors.test.ts` — handler DB error scenarios (the file that exercises Bug C and Bug C-bis directly).
+
+    * `[✅]`   No new tests added to this file.
+    * `[✅]`   **Literal migration — apply across all 18 occurrences (lines 495, 497, 581, 602, 606, 673, 675, 767, 780, 783, 786, 790, 864, 932, 933, 940, 944, 961). Categories:**
+
+      * `[✅]`   Mock `update` branch predicates of the form `(state.updateData as any).status === 'succeeded'` (lines 497, 675, 864) → replace with `=== 'COMPLETED'`.
+      * `[✅]`   Test assertions of the form `assertEquals(attemptedUpdateData.status, 'succeeded')` (line 786) → replace with `'COMPLETED'`.
+      * `[✅]`   Builder-spy filter assertions such as `lastPtxUpdateBuilder.methodSpies.update.calls.some((c: SpyCall) => (c.args[0] as any).status === 'succeeded')` (lines 602, 944) → replace with `=== 'COMPLETED'`.
+      * `[✅]`   Test assertions on the source's CRITICAL error log: every occurrence of the substring `to 'succeeded' after processing invoice` inside an `expectedErrorMessage` / `expectedPtUpdateErrorLog` / `expectedFinalErrorLogMessage` template literal (lines 581, 606, 767, 790, 933, 961) → replace `to 'succeeded' after` with `to 'COMPLETED' after`. **This migration MUST be applied in lockstep with Fix C-bis on the source; if either side is migrated alone the assertions break.**
+      * `[✅]`   Inline comments and diagnostic strings that reference `'succeeded'` (lines 495, 673, 780, 783, 932, 940) → update for consistency so a future reader is not misled.
+
+    * `[✅]`   The existing steps `'Error - Final payment_transactions Update to COMPLETED Fails'` (line 625), the parallel case at line 449, and the case at line 817 are already named for `COMPLETED`; this migration aligns their implementations with their names.
+    * `[✅]`   **Literal-occurrence accounting:** total `'succeeded'` literal occurrences before migration: 18. After migration: 0. Verifiable by grep.
+
+  * `[✅]`   `stripe.invoicePaymentSucceeded.test.ts` (barrel — IMPORT ONLY)
+    * `[✅]`   **MUST NOT be modified.** The barrel currently contains only the four `import './…';` lines and must remain in exactly that state. Do not add `Deno.test`, `t.step`, fixtures, helpers, imports, or assertions to this file. Any attempt to author tests in the barrel is a node violation — place the test in the topic-appropriate leaf instead.
+
+  * `[✅]`   `stripe.invoice.successful.test.ts` (out of scope)
+    * `[✅]`   **MUST NOT be modified.** Despite the name, this file's `Deno.test` is `'StripePaymentAdapter: initiatePayment'` — it tests purchase initiation, not the invoice payment succeeded handler. It contains zero `'succeeded'` literal occurrences relevant to this node and is not part of this node's scope.
 
   ### 4. Structural Boundary
 
-  * `[ ]`   No interface or type file changes — `billing_reason` exists on `Stripe.Invoice`; status literals are strings
+  * `[✅]`   No interface, type, or guard file changes. `billing_reason` is already declared on `Stripe.Invoice` by `npm:stripe`. `PaymentConfirmation` shape is unchanged. Status literals are plain strings constrained at the database boundary by the migration's `CHECK` constraint.
 
   ### 5. Interaction Semantics
 
-  * `[ ]`   `subscription_create` → early return, zero DB writes, zero wallet calls
-  * `[ ]`   `subscription_cycle` with existing `COMPLETED` → idempotency early return
-  * `[ ]`   `subscription_cycle` new → full flow, final status `COMPLETED`
+  * `[✅]`   `invoice.billing_reason === 'subscription_create'` → early return immediately after the `stripeCustomerId` null guard and BEFORE the idempotency `select`. Zero DB queries (`getHistoricBuildersForTable` returns empty arrays for `payment_transactions`, `user_subscriptions`, `token_wallets`, `subscription_plans`). Zero Stripe SDK calls. Zero wallet calls. Returns `{ success: true, transactionId: undefined, tokensAwarded: 0, message: 'subscription_create invoice skipped; handled by checkout.session.completed' }`.
+  * `[✅]`   `invoice.billing_reason !== 'subscription_create'` (i.e. `'subscription_cycle'`, `'manual'`, `'subscription_update'`, `'subscription_threshold'`, `'upcoming'`, or null) → full renewal flow: idempotency `select` filtered by `.eq('status', 'COMPLETED')`, then `payment_transactions` insert with `status: 'PROCESSING_RENEWAL'`, then token award via `recordTransaction`, then `payment_transactions` update with `status: 'COMPLETED'`.
+  * `[✅]`   Idempotency hit (existing `payment_transactions` row with `status = 'COMPLETED'` for this `gateway_transaction_id`) → return `{ success: true, transactionId: existingId, tokensAwarded: existingTokens, message: 'Invoice already processed.' }`. No insert, no update, no token award.
+  * `[✅]`   Token award failure → `payment_transactions.status` is updated to `'TOKEN_AWARD_FAILED'`, return `{ success: false, transactionId: newPaymentTx.id, error: '…', tokensAwarded: 0 }`.
+  * `[✅]`   Final-update failure (post-token-award) → return `{ success: true, transactionId: newPaymentTx.id, tokensAwarded, error: finalErrorMessage }` where `finalErrorMessage` contains the substring `to 'COMPLETED' after`.
 
-  ### 6–10. (Not applicable — updating existing file; no new guards, mocks, or provides)
+  ### 6–10. (Not applicable — updating existing source file. No new guards, mocks, factories, providers, or simulators are introduced. Existing wallet mock factory and existing Stripe mock factory cover all needs.)
 
   ### 11. External Boundary
 
-  * `[ ]`   `PaymentConfirmation` return type unchanged
+  * `[✅]`   `PaymentConfirmation` return type unchanged.
+  * `[✅]`   Public symbol `handleInvoicePaymentSucceeded` signature unchanged (`(context: HandlerContext, event: Stripe.InvoicePaymentSucceededEvent) => Promise<PaymentConfirmation>`).
 
   ### 12. Edge Validation
 
-  * `[ ]`   Covered by the integration test node (next)
+  * `[✅]`   Covered by the integration test node (next): `webhooks/index.subscriptionCreate.integration.test.ts`.
 
   ### 13. Directionality
 
-  * `[ ]`   Node layer: adapter/handler
-  * `[ ]`   `HandlerContext` injected at webhook boundary
+  * `[✅]`   Node layer: adapter/handler.
+  * `[✅]`   `HandlerContext` is injected at the webhook boundary by `webhooks/index.ts`. No new edges introduced.
 
   ### 14. Completion Criteria
 
-  * `[ ]`   File lints clean
-  * `[ ]`   Three new tests GREEN
-  * `[ ]`   All existing tests in `stripe.invoice.*.test.ts` and `stripe.invoicePaymentSucceeded.test.ts` GREEN
-  * `[ ]`   No other handler files touched
+  * `[✅]`   `stripe.invoicePaymentSucceeded.ts` lints clean and contains zero `'succeeded'` string literals (verified by grep).
+  * `[✅]`   `stripe.invoice.initial.test.ts` lints clean; the new `subscription_create` early-return t.step is GREEN; the existing renewal happy-path step is GREEN; both existing idempotency steps are GREEN; the file contains zero `'succeeded'` literals (verified by grep).
+  * `[✅]`   `stripe.invoice.failure.test.ts` lints clean; all existing steps are GREEN; the file contains zero `'succeeded'` literals (verified by grep).
+  * `[✅]`   `stripe.invoice.dbErrors.test.ts` lints clean; all existing steps are GREEN; the file contains zero `'succeeded'` literals (verified by grep).
+  * `[✅]`   `stripe.invoicePaymentSucceeded.test.ts` (barrel) is byte-for-byte unchanged: 5 lines, 4 `import './…';` statements + 1 leading comment.
+  * `[✅]`   `stripe.invoice.successful.test.ts` is unchanged (out of scope).
+  * `[✅]`   No source file other than `stripe.invoicePaymentSucceeded.ts` is modified. No handler file other than `stripe.invoicePaymentSucceeded.ts` is touched.
+
+  ### Edit cadence (rule §1 one-file-per-turn; TDD ordering RED → GREEN)
+
+  * `[✅]`   **Turn 1 — `stripe.invoice.initial.test.ts`.** Append the new `subscription_create` early-return t.step. Apply the literal migration to the existing renewal happy-path step and both idempotency steps. Lint. State: RED (early-return test fails because Fix A is not applied; literal-migrated steps fail because Fix B/C/C-bis are not applied).
+  * `[✅]`   **Turn 2 — `stripe.invoice.failure.test.ts`.** Apply the single-line literal migration on line 324. Lint. State: RED (literal-migrated step fails because Fix B is not applied).
+  * `[✅]`   **Turn 3 — `stripe.invoice.dbErrors.test.ts`.** Apply the literal migration across all 18 occurrences in all five categories. Lint. State: RED (literal-migrated steps fail because Fix C / Fix C-bis are not applied).
+  * `[✅]`   **Turn 4 — `stripe.invoicePaymentSucceeded.ts`.** Apply Fix A, Fix B, Fix C, Fix C-bis in that order. Lint. State: GREEN — all four files (source + 3 leaves) pass.
+  * `[✅]`   Halt after Turn 4. The integration test node (next) provides the cross-handler edge validation.
 
 ---
 

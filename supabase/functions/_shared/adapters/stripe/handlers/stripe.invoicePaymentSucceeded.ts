@@ -56,6 +56,16 @@ export async function handleInvoicePaymentSucceeded(
     return { success: false, transactionId: undefined, error: 'Stripe customer ID missing on invoice.' };
   }
 
+  if (invoice.billing_reason === 'subscription_create') {
+    context.logger.info(`[handleInvoicePaymentSucceeded] subscription_create invoice ${invoice.id} skipped; handled by checkout.session.completed`, { eventId: stripeEventId });
+    return {
+      success: true,
+      transactionId: undefined,
+      tokensAwarded: 0,
+      message: 'subscription_create invoice skipped; handled by checkout.session.completed',
+    };
+  }
+
   const subscriptionIdFromLineItem = invoice.lines.data[0]?.subscription;
   const subscriptionId = typeof subscriptionIdFromLineItem === 'string' ? subscriptionIdFromLineItem : (subscriptionIdFromLineItem?.id ?? undefined);
   let paymentIntentId: string | undefined;
@@ -68,7 +78,7 @@ export async function handleInvoicePaymentSucceeded(
     .from('payment_transactions')
     .select('id, status, tokens_to_award')
     .eq('gateway_transaction_id', invoice.id)
-    .eq('status', 'succeeded') // Check specifically for a 'succeeded' status
+    .eq('status', 'COMPLETED') // Check specifically for a COMPLETED status
     .maybeSingle();
 
   if (checkError) {
@@ -267,13 +277,13 @@ export async function handleInvoicePaymentSucceeded(
   // --- Final Update to Payment Transaction Status ---
   const { data: finalPtx, error: finalUpdateError } = await context.supabaseClient
     .from('payment_transactions')
-    .update({ status: 'succeeded' })
+    .update({ status: 'COMPLETED' })
     .eq('id', newPaymentTx.id)
     .select()
     .single();
 
   if (finalUpdateError || !finalPtx) {
-    const finalErrorMessage = `CRITICAL: Failed to update payment transaction ${newPaymentTx.id} to 'succeeded' after processing invoice ${invoice.id}.`;
+    const finalErrorMessage = `CRITICAL: Failed to update payment transaction ${newPaymentTx.id} to 'COMPLETED' after processing invoice ${invoice.id}.`;
     context.logger.error(`[handleInvoicePaymentSucceeded] ${finalErrorMessage}`, { error: finalUpdateError, eventId: stripeEventId });
     // Even if this update fails, the core logic succeeded. Return success but log the critical failure.
     // The transactionId is still the one we created.
