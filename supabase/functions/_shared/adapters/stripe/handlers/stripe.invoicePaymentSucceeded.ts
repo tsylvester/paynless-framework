@@ -23,7 +23,7 @@ async function retrieveSubscriptionPlanDetails(
       .from('subscription_plans')
       .select('tokens_to_award, plan_type, item_id_internal, stripe_price_id')
       .eq('stripe_price_id', stripePriceId)
-      .single();
+      .maybeSingle();
 
     if (planError) {
       context.logger.error(`[retrieveSubscriptionPlanDetails] Error fetching plan details for Stripe Price ID ${stripePriceId} from subscription_plans. DB Error: ${planError.message}`);
@@ -268,7 +268,7 @@ export async function handleInvoicePaymentSucceeded(
         context.logger.error(`[handleInvoicePaymentSucceeded] CRITICAL: Also failed to update payment transaction ${newPaymentTx.id} status to TOKEN_AWARD_FAILED. Manual review required.`, { updateError: updatePtxError, eventId: stripeEventId });
       }
       // Return success: false because the primary action (awarding tokens) failed.
-      return { success: false, transactionId: newPaymentTx.id, error: `Failed to award tokens: ${errorMessage}`, tokensAwarded: 0 };
+      return { success: false, transactionId: newPaymentTx.id, error: `Failed to award tokens: ${errorMessage}`, tokensAwarded: 0, status: 500 };
     }
   } else {
     context.logger.info(`[handleInvoicePaymentSucceeded] No tokens to award for invoice ${invoice.id}. Payment transaction ${newPaymentTx.id} created, but no token transaction performed.`, { eventId: stripeEventId });
