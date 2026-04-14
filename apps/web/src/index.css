@@ -214,3 +214,17 @@
 .markdown-content a:hover {
 	@apply no-underline;
 }
+
+
+/* Custom animation utilities */
+@layer utilities {
+	.animation-delay-200 {
+		animation-delay: 200ms;
+	}
+	.animation-delay-400 {
+		animation-delay: 400ms;
+	}
+	.animation-delay-2000 {
+		animation-delay: 2000ms;
+	}
+}

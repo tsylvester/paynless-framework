@@ -109,6 +109,7 @@ export const defaultSyncOpenAIDeps: SyncOpenAIDeps = {
       updated_at: new Date().toISOString(),
       is_default_embedding: false,
       is_enabled: true,
+      is_default_generation: false,
     };
     const adapter = new OpenAiAdapter(dummyProvider, apiKey, logger);
     const { models, raw } = await adapter.listModels(true);

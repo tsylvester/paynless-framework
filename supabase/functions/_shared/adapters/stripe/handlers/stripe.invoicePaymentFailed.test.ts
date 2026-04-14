@@ -16,9 +16,11 @@ import {
   stub,
   type Spy,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe, MockStripe } from '../../../stripe.mock.ts';
+import { createMockInvoiceLineItem, createMockStripe, MockStripe } from '../../../stripe.mock.ts';
 import { createMockSupabaseClient } from '../../../supabase.mock.ts';
-import { createMockTokenWalletService, MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import { createMockAdminTokenWalletService, MockAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
+import { MockLogger } from '../../../logger.mock.ts';
+
 
 // Constants for reused mock IDs
 const MOCK_STRIPE_CUSTOMER_ID = 'cus_test_invoice_customer';
@@ -69,29 +71,19 @@ const createMockInvoicePaymentFailedEvent = (
   } as Stripe.InvoicePaymentFailedEvent;
 };
 
-// Mock Logger
-const createMockLoggerInternal = (): ILogger => {
-  return {
-    debug: spy((_message: string, _metadata?: LogMetadata) => {}),
-    info: spy((_message: string, _metadata?: LogMetadata) => {}),
-    warn: spy((_message: string, _metadata?: LogMetadata) => {}),
-    error: spy((_message: string | Error, _metadata?: LogMetadata) => {}),
-  };
-};
-
 Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed', async (t) => {
   let mockSupabaseClient: SupabaseClient<Database>;
   let mockSupabaseSetup: MockSupabaseClientSetup;
-  let mockTokenWalletService: MockTokenWalletService;
-  let mockLogger: ILogger;
+  let mockTokenWalletService: MockAdminTokenWalletService;
+  let mockLogger: MockLogger;
   let mockStripe: MockStripe;
   let handlerContext: HandlerContext;
 
   const setup = (dbConfig?: MockSupabaseDataConfig, stripeMocks?: {
     subscriptionRetrieve?: Partial<Stripe.Subscription> | Error;
   }) => {
-    mockLogger = createMockLoggerInternal();
-    mockTokenWalletService = createMockTokenWalletService();
+    mockLogger = new MockLogger();
+    mockTokenWalletService = createMockAdminTokenWalletService();
     mockStripe = createMockStripe();
 
     // Configure Stripe mocks
@@ -122,16 +114,22 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     mockSupabaseSetup = createMockSupabaseClient(undefined, dbConfig || {});
     mockSupabaseClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
 
+    const infoSpy = spy(mockLogger, "info");
+    const warnSpy = spy(mockLogger, "warn");
+    const errorSpy = spy(mockLogger, "error");
+
     handlerContext = {
       supabaseClient: mockSupabaseClient,
       logger: mockLogger,
       tokenWalletService: mockTokenWalletService.instance, // Not directly used by this handler but part of context
       stripe: mockStripe.instance,
-      updatePaymentTransaction: spy() as any, // Mocked, not used by this handler directly
+      updatePaymentTransaction: spy(), // Mocked, not used by this handler directly
       featureFlags: {},
       functionsUrl: 'http://localhost:54321/functions/v1',
       stripeWebhookSecret: 'whsec_test_secret_invoice_failed', // Dummy secret
     };
+
+    return { infoSpy, warnSpy, errorSpy };
   };
 
   const teardown = () => {
@@ -148,7 +146,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     const specificWalletId = 'wallet_new_failure_1';
     const specificPtxnId = 'ptxn_new_failure_1';
 
-    setup(
+    const { infoSpy } = setup(
       { // MockSupabaseDataConfig
         genericMockResults: {
           'payment_transactions': {
@@ -158,25 +156,21 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
               }
               return { data: null, error: new Error('Mock: Unexpected select on payment_transactions'), count: 0, status: 500, statusText: 'Error' };
             },
-            upsert: async (state) => { // For inserting new FAILED payment
-              const upsertData = state.upsertData as Partial<Database['public']['Tables']['payment_transactions']['Row']>;
-              if (upsertData?.gateway_transaction_id === specificInvoiceId && upsertData?.status === 'FAILED') {
-                return { data: [{ id: specificPtxnId, ...upsertData }], error: null, count: 1, status: 201, statusText: 'Created' };
-              }
-              return { data: null, error: new Error('Mock: Payment txn upsert failed'), count: 0, status: 500, statusText: 'Error' };
-            }
+            upsert: async () => ({ // For inserting new FAILED payment
+              data: [{ id: specificPtxnId }], error: null, count: 1, status: 201, statusText: 'Created'
+            })
           },
           'user_subscriptions': {
             select: async (state) => { // For getting user_id
               if (state.filters.some(f => f.column === 'stripe_customer_id' && f.value === specificCustomerId)) {
-                return { data: [{ user_id: specificUserId, stripe_subscription_id: specificSubId }], error: null, count: 1, status: 200, statusText: 'OK' };
+                const row: Pick<Database['public']['Tables']['user_subscriptions']['Row'], 'user_id'> = { user_id: specificUserId };
+                return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
               }
               return { data: null, error: new Error('Mock: User sub not found'), count: 0, status: 404, statusText: 'Not Found' };
             },
             update: async (state) => { // For updating subscription status
-               const updateData = state.updateData as Partial<Database['public']['Tables']['user_subscriptions']['Row']>;
-              if (state.filters.some(f => f.column === 'stripe_subscription_id' && f.value === specificSubId) && updateData?.status === 'past_due') {
-                 return { data: [{ id: 'us_updated_id', stripe_subscription_id: specificSubId, status: 'past_due' }], error: null, count: 1, status: 200, statusText: 'OK' };
+              if (state.filters.some(f => f.column === 'stripe_subscription_id' && f.value === specificSubId)) {
+                return { data: [{ id: 'us_updated_id', stripe_subscription_id: specificSubId }], error: null, count: 1, status: 200, statusText: 'OK' };
               }
               return { data: null, error: new Error('Mock: User sub update failed'), count: 0, status: 500, statusText: 'Error' };
             }
@@ -184,7 +178,8 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
           'token_wallets': {
             select: async (state) => { // For getting wallet_id
               if (state.filters.some(f => f.column === 'user_id' && f.value === specificUserId)) {
-                return { data: [{ wallet_id: specificWalletId }], error: null, count: 1, status: 200, statusText: 'OK' };
+                const row: Pick<Database['public']['Tables']['token_wallets']['Row'], 'wallet_id'> = { wallet_id: specificWalletId };
+                return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
               }
               return { data: null, error: new Error('Mock: Wallet not found'), count: 0, status: 404, statusText: 'Not Found' };
             }
@@ -203,37 +198,14 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
         amount_due: 3000, 
         currency: 'eur',
         lines: {
-          data: [{
+          data: [createMockInvoiceLineItem({
             id: 'il_test_line_item',
-            object: 'line_item',
             amount: 3000,
             currency: 'eur',
             description: 'Test subscription',
-            discountable: true,
-            livemode: false,
-            metadata: {},
-            period: {
-              start: Math.floor(Date.now() / 1000),
-              end: Math.floor(Date.now() / 1000) + 86400 * 30,
-            },
-            plan: null,
-            price: null,
-            proration: false,
-            quantity: 1,
-            subscription: specificSubId,
-            subscription_item: 'si_test_item',
-            tax_amounts: [],
-            tax_rates: [],
-            type: 'subscription',
-            unit_amount_excluding_tax: null,
-            discount_amounts: [],
-            discounts: [],
             invoice: specificInvoiceId,
-            parent: null,
-            prorations: [],
-            unified_proration: false,
-            unique_id: 'il_test_unique'
-          } as any],
+            subscription: specificSubId,
+          })],
           has_more: false,
           object: 'list',
           url: '',
@@ -248,7 +220,6 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assertEquals(result.transactionId, specificPtxnId, "Result transactionId should be the new payment transaction ID");
 
     // Verify logs
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
     assertSpyCalls(infoSpy, 3); // Adjusted to 3 based on test output
     assert(String(infoSpy.calls[0].args[0]).includes(`Processing invoice ${specificInvoiceId}`), "Initial log wrong");
     // Assuming the third log is the success log, need to confirm which one is second if this passes.
@@ -269,7 +240,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     const ptxnUpsertBuilder = historicPtxnBuilders[1];
     assertExists(ptxnUpsertBuilder, "Second payment_transactions builder (for upsert) should exist");
     assertSpyCalls(ptxnUpsertBuilder.methodSpies.upsert, 1);
-    const upsertArgs = ptxnUpsertBuilder.methodSpies.upsert.calls[0].args[0] as Partial<Database['public']['Tables']['payment_transactions']['Row']>;
+    const upsertArgs = ptxnUpsertBuilder.methodSpies.upsert.calls[0].args[0];
     assertEquals(upsertArgs.gateway_transaction_id, specificInvoiceId);
     assertEquals(upsertArgs.status, 'FAILED');
     assertEquals(upsertArgs.user_id, specificUserId);
@@ -278,7 +249,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assertEquals(upsertArgs.currency_requested_fiat, 'eur');
     assertEquals(upsertArgs.tokens_to_award, 0);
     assertExists(upsertArgs.metadata_json);
-    const metadata = upsertArgs.metadata_json as Record<string, unknown>;
+    const metadata = upsertArgs.metadata_json;
     assertEquals(metadata.stripe_event_id, specificEventId);
     assertEquals(metadata.type, 'RENEWAL_FAILED');
 
@@ -296,7 +267,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     const userSubUpdateBuilder = historicUserSubBuilders[1];
     assertExists(userSubUpdateBuilder, "Second user_subscriptions builder (for update) should exist");
     assertSpyCalls(userSubUpdateBuilder.methodSpies.update, 1);
-    const subUpdateArgs = userSubUpdateBuilder.methodSpies.update.calls[0].args[0] as Partial<Database['public']['Tables']['user_subscriptions']['Row']>;
+    const subUpdateArgs = userSubUpdateBuilder.methodSpies.update.calls[0].args[0];
     assertEquals(subUpdateArgs.status, 'past_due');
 
     // Verify Supabase 'token_wallets' select
@@ -316,13 +287,19 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
   });
 
   await t.step('Idempotency: Event for already FAILED payment_transaction', async () => {
-    setup({ // MockSupabaseDataConfig
+    const { infoSpy } = setup({ // MockSupabaseDataConfig
       genericMockResults: {
         'payment_transactions': {
           select: async (state) => {
             if (state.filters.some(f => f.column === 'gateway_transaction_id' && f.value === MOCK_INVOICE_ID)) {
-              // Simulate existing payment transaction already marked FAILED
-              return { data: [{ id: MOCK_PAYMENT_TRANSACTION_ID_EXISTING, status: 'FAILED', gateway_transaction_id: MOCK_INVOICE_ID }], error: null, count: 1, status: 200, statusText: 'OK' };
+              const row: Pick<Database['public']['Tables']['payment_transactions']['Row'], 'id' | 'status' | 'user_id' | 'target_wallet_id' | 'organization_id'> = {
+                id: MOCK_PAYMENT_TRANSACTION_ID_EXISTING,
+                status: 'FAILED',
+                user_id: MOCK_USER_ID,
+                target_wallet_id: MOCK_WALLET_ID,
+                organization_id: null,
+              };
+              return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
             }
             return { data: null, error: new Error('Mock: payment_transactions select failed'), count: 0, status: 500, statusText: 'Error' };
           },
@@ -339,7 +316,6 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assert(result.success, `Expected success for idempotency, got error: ${result.error}`);
     assertEquals(result.transactionId, MOCK_PAYMENT_TRANSACTION_ID_EXISTING, "Result transactionId should be the existing payment transaction ID");
 
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
     assertSpyCalls(infoSpy, 2); // Initial processing + already marked FAILED log
     assert(String(infoSpy.calls[1].args[0]).includes(`Invoice ${MOCK_INVOICE_ID} (Payment ${MOCK_PAYMENT_TRANSACTION_ID_EXISTING}) already marked FAILED.`));
     
@@ -358,7 +334,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
   });
 
   await t.step('Error: User not found for Stripe customer ID', async () => {
-    setup({
+    const { errorSpy } = setup({
       genericMockResults: {
         'payment_transactions': { // For initial check
           select: async () => ({ data: null, error: null, count: 0, status: 200, statusText: 'OK' }),
@@ -381,7 +357,6 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assertEquals(result.error, `Essential user/wallet info missing for failed invoice ${MOCK_INVOICE_ID}.`);
     assertEquals(result.transactionId, MOCK_INVOICE_ID);
 
-    const errorSpy = mockLogger.error as Spy<any, any[], any>;
     assertSpyCalls(errorSpy, 1);
     const actualLogUserNotFound = String(errorSpy.calls[0].args[0]);
     const expectedPrefixUserNotFound = `[handleInvoicePaymentFailed] CRITICAL: Could not determine user_id and/or target_wallet_id for failed invoice ${MOCK_INVOICE_ID}. Cannot log to payment_transactions.`;
@@ -397,19 +372,22 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
 
   await t.step('Error: Wallet not found for user ID', async () => {
     const specificUserId = 'user_for_no_wallet_test';
-    setup({
+    const { errorSpy } = setup({
       genericMockResults: {
         'payment_transactions': { // For initial check
           select: async () => ({ data: null, error: null, count: 0, status: 200, statusText: 'OK' }),
         },
         'user_subscriptions': { // Simulate user found
-          select: async () => ({ data: [{ user_id: specificUserId }], error: null, count: 1, status: 200, statusText: 'OK' }),
+          select: async () => {
+            const row: Pick<Database['public']['Tables']['user_subscriptions']['Row'], 'user_id'> = { user_id: specificUserId };
+            return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
+          },
         },
         'token_wallets': { // Simulate wallet not found
           select: async (state) => {
              if (state.filters.some(f => f.column === 'user_id' && f.value === specificUserId)) {
                 // Simulate the behavior where .single() on a null data with no explicit error results in PGRST116
-                return { data: null, error: { name: 'PGRST116', message: 'Query returned no rows', code: 'PGRST116', details: '', hint:''} as any, count: 0, status: 406, statusText: 'Not Acceptable' };
+                return { data: null, error: { name: 'PGRST116', message: 'Query returned no rows', code: 'PGRST116', details: '', hint:''}, count: 0, status: 406, statusText: 'Not Acceptable' };
              }
              return { data: null, error: new Error("Mock: Wallet select failed"), count: 0, status: 500, statusText: "Error" };
           }
@@ -424,7 +402,6 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assertEquals(result.error, `Essential user/wallet info missing for failed invoice ${MOCK_INVOICE_ID}.`);
     assertEquals(result.transactionId, MOCK_INVOICE_ID);
 
-    const errorSpy = mockLogger.error as Spy<any, any[], any>;
     assertSpyCalls(errorSpy, 1);
     const actualLogWalletNotFound = String(errorSpy.calls[0].args[0]);
     const expectedPrefixWalletNotFound = `[handleInvoicePaymentFailed] CRITICAL: Could not determine user_id and/or target_wallet_id for failed invoice ${MOCK_INVOICE_ID}. Cannot log to payment_transactions.`;
@@ -439,7 +416,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
   });
   
   await t.step('Warning: Invoice has no customer ID', async () => {
-    setup(); // No specific DB mocks needed as it should exit early
+    const { warnSpy } = setup(); // No specific DB mocks needed as it should exit early
 
     const event = createMockInvoicePaymentFailedEvent({ customer: null }); // No customer
     const result = await handleInvoicePaymentFailed(handlerContext, event);
@@ -447,7 +424,6 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assert(result.success, 'Expected success (graceful skip) when no customer ID');
     assertEquals(result.transactionId, MOCK_EVENT_ID);
 
-    const warnSpy = mockLogger.warn as Spy<any, any[], any>;
     assertSpyCalls(warnSpy, 1);
     assert(String(warnSpy.calls[0].args[0]).includes(`Invoice ${MOCK_INVOICE_ID} (Event ${MOCK_EVENT_ID}) has no customer. Skipping.`));
     
@@ -460,7 +436,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
 
   await t.step('DB Error: Checking existing payment fails', async () => {
     const dbError = new Error('DB connection lost during select');
-    setup({
+    const { errorSpy } = setup({
       genericMockResults: {
         'payment_transactions': {
           select: async () => ({ data: null, error: dbError, count: 0, status: 500, statusText: 'Internal Server Error' }),
@@ -475,7 +451,6 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assertEquals(result.error, `DB error: ${dbError.message}`);
     assertEquals(result.transactionId, MOCK_INVOICE_ID); // Corrected: Should be MOCK_INVOICE_ID
 
-    const errorSpy = mockLogger.error as Spy<any, any[], any>;
     assertSpyCalls(errorSpy, 1);
     assert(String(errorSpy.calls[0].args[0]).includes(`DB error checking existing payment for invoice ${MOCK_INVOICE_ID}`));
 
@@ -487,17 +462,23 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     const specificUserId = 'user_for_upsert_fail';
     const specificWalletId = 'wallet_for_upsert_fail';
 
-    setup({
+    const { errorSpy } = setup({
       genericMockResults: {
         'payment_transactions': {
           select: async () => ({ data: null, error: null, count: 0, status: 200, statusText: 'OK' }), // No existing
           upsert: async () => ({ data: null, error: dbUpsertError, count: 0, status: 500, statusText: 'Error' })
         },
         'user_subscriptions': {
-          select: async () => ({ data: [{ user_id: specificUserId }], error: null, count: 1, status: 200, statusText: 'OK' }),
+          select: async () => {
+            const row: Pick<Database['public']['Tables']['user_subscriptions']['Row'], 'user_id'> = { user_id: specificUserId };
+            return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
+          },
         },
         'token_wallets': {
-          select: async () => ({ data: [{ wallet_id: specificWalletId }], error: null, count: 1, status: 200, statusText: 'OK' }),
+          select: async () => {
+            const row: Pick<Database['public']['Tables']['token_wallets']['Row'], 'wallet_id'> = { wallet_id: specificWalletId };
+            return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
+          },
         }
       }
     });
@@ -509,7 +490,6 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assertEquals(result.error, `DB error upserting failed payment: ${dbUpsertError.message}`);
     assertEquals(result.transactionId, MOCK_INVOICE_ID); // Corrected: Should be MOCK_INVOICE_ID
 
-    const errorSpy = mockLogger.error as Spy<any, any[], any>;
     assertSpyCalls(errorSpy, 1);
     assert(String(errorSpy.calls[0].args[0]).includes(`Failed to upsert FAILED payment_transactions record for invoice ${MOCK_INVOICE_ID}`));
     
@@ -522,22 +502,25 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     const specificPtxnId = 'ptxn_sub_update_fail_1';
     const subUpdateDbError = new Error("Failed to update subscription in DB");
 
-    setup(
+    const { warnSpy } = setup(
       {
         genericMockResults: {
           'payment_transactions': {
             select: async () => ({ data: null, error: null, count: 0, status: 200, statusText: 'OK' }),
-            upsert: async (state) => {
-              const upsertData = state.upsertData as Partial<Database['public']['Tables']['payment_transactions']['Row']>;
-              return { data: [{ id: specificPtxnId, ...upsertData }], error: null, count: 1, status: 201, statusText: 'Created' };
-            }
+            upsert: async () => ({ data: [{ id: specificPtxnId }], error: null, count: 1, status: 201, statusText: 'Created' }),
           },
           'user_subscriptions': {
-            select: async () => ({ data: [{ user_id: MOCK_USER_ID, stripe_subscription_id: specificSubId }], error: null, count: 1, status: 200, statusText: 'OK' }),
+            select: async () => {
+              const row: Pick<Database['public']['Tables']['user_subscriptions']['Row'], 'user_id'> = { user_id: MOCK_USER_ID };
+              return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
+            },
             update: async () => ({ data: null, error: subUpdateDbError, count: 0, status: 500, statusText: 'Error' }) // Simulate update failure
           },
           'token_wallets': {
-            select: async () => ({ data: [{ wallet_id: MOCK_WALLET_ID }], error: null, count: 1, status: 200, statusText: 'OK' })
+            select: async () => {
+              const row: Pick<Database['public']['Tables']['token_wallets']['Row'], 'wallet_id'> = { wallet_id: MOCK_WALLET_ID };
+              return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
+            },
           }
         }
       },
@@ -547,15 +530,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     const event = createMockInvoicePaymentFailedEvent({ 
       id: specificInvoiceId,
       lines: {
-        data: [{
-          id: 'il_test_line_item',
-          object: 'line_item',
-          amount: 2000,
-          currency: 'usd',
-          description: 'Test subscription',
-          subscription: specificSubId,
-          type: 'subscription'
-        } as any],
+        data: [createMockInvoiceLineItem({ subscription: specificSubId })],
         has_more: false,
         object: 'list',
         url: '',
@@ -566,7 +541,6 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assert(result.success, `Expected overall success even if subscription update fails, got error: ${result.error}`);
     assertEquals(result.transactionId, specificPtxnId);
 
-    const warnSpy = mockLogger.warn as Spy<any, any[], any>;
     assertSpyCalls(warnSpy, 1);
     assert(String(warnSpy.calls[0].args[0]).includes(`Failed to update user_subscription ${specificSubId} status to incomplete`));
     
@@ -581,22 +555,25 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     const specificPtxnId = 'ptxn_stripe_retrieve_fail_1';
     const stripeSubRetrieveError = new Error("Stripe API error retrieving subscription");
 
-    setup(
+    const { errorSpy, warnSpy } = setup(
       {
         genericMockResults: {
           'payment_transactions': {
             select: async () => ({ data: null, error: null, count: 0, status: 200, statusText: 'OK' }),
-            upsert: async (state) => {
-              const upsertData = state.upsertData as Partial<Database['public']['Tables']['payment_transactions']['Row']>;
-              return { data: [{ id: specificPtxnId, ...upsertData }], error: null, count: 1, status: 201, statusText: 'Created' };
-            }
+            upsert: async () => ({ data: [{ id: specificPtxnId }], error: null, count: 1, status: 201, statusText: 'Created' }),
           },
           'user_subscriptions': { // This won't be called if stripe retrieve fails before it
-            select: async () => ({ data: [{ user_id: MOCK_USER_ID, stripe_subscription_id: specificSubId }], error: null, count: 1, status: 200, statusText: 'OK' }),
-             update: async () => ({ data: [{}], error: null, count: 1, status: 200, statusText: 'OK' })
+            select: async () => {
+              const row: Pick<Database['public']['Tables']['user_subscriptions']['Row'], 'user_id'> = { user_id: MOCK_USER_ID };
+              return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
+            },
+            update: async () => ({ data: [{}], error: null, count: 1, status: 200, statusText: 'OK' })
           },
           'token_wallets': {
-            select: async () => ({ data: [{ wallet_id: MOCK_WALLET_ID }], error: null, count: 1, status: 200, statusText: 'OK' })
+            select: async () => {
+              const row: Pick<Database['public']['Tables']['token_wallets']['Row'], 'wallet_id'> = { wallet_id: MOCK_WALLET_ID };
+              return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
+            },
           }
         }
       },
@@ -606,15 +583,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     const event = createMockInvoicePaymentFailedEvent({ 
       id: specificInvoiceId,
       lines: {
-        data: [{
-          id: 'il_test_line_item',
-          object: 'line_item',
-          amount: 2000,
-          currency: 'usd',
-          description: 'Test subscription',
-          subscription: specificSubId,
-          type: 'subscription'
-        } as any],
+        data: [createMockInvoiceLineItem({ subscription: specificSubId })],
         has_more: false,
         object: 'list',
         url: '',
@@ -629,13 +598,11 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assert(result.error?.includes(`subscription status could not be verified/updated`), "result.error should explain that subscription status update failed");
     assertEquals(result.status, 500, "Status code should be 500 for this failure scenario");
 
-    const errorSpy = mockLogger.error as Spy<any, any[], any>;
     assertSpyCalls(errorSpy, 1); 
 
     const expectedErrorMessage = `Stripe API error retrieving subscription ${specificSubId} for invoice ${specificInvoiceId}: ${stripeSubRetrieveError.message}. While the payment transaction ${specificPtxnId} has been marked FAILED, the subscription status could not be verified/updated due to this internal error.`;
     assert(String(errorSpy.calls[0].args[0]).includes(expectedErrorMessage), "Error log message mismatch");
     
-    const warnSpy = mockLogger.warn as Spy<any, any[], any>;
     // Check if the initial warning from the catch block (before the error return) is still there.
     // This depends on whether the logger.warn inside the catch block of stripe.subscriptions.retrieve is still desired
     // For now, assuming it's still there. If not, this check needs to be adjusted or removed.
@@ -643,8 +610,10 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assertExists(initialWarnCall, "Initial warning about failed subscription retrieval should still be present");
     if (initialWarnCall) {
       assert(String(initialWarnCall.args[0]).includes(`Failed to retrieve Stripe subscription ${specificSubId} during failed invoice processing for ${specificInvoiceId}. Status may not be updated in user_subscriptions.`), "Initial warning message mismatch");
-      assertExists(initialWarnCall.args[1]?.error, "Initial warning should log the error object");
-      assertEquals(initialWarnCall.args[1]?.error.message, stripeSubRetrieveError.message, "Initial warning logged error message mismatch");
+      const loggedError: unknown = initialWarnCall.args[1]?.error;
+      assertExists(loggedError, "Initial warning should log the error object");
+      assert(loggedError instanceof Error, "Logged error should be an Error instance");
+      assertEquals(loggedError.message, stripeSubRetrieveError.message, "Initial warning logged error message mismatch");
     }
 
 
@@ -667,7 +636,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     const specificPtxnIdForFailedInvoice = 'ptxn_one_time_failed_invoice_1'; // ID for the new/updated FAILED ptxn record
     const originalPtxnIdFromPI = 'ptxn_original_pi_1'; // ID of the ptxn found via Payment Intent
 
-    setup(
+    const { infoSpy, errorSpy } = setup(
       { // MockSupabaseDataConfig
         genericMockResults: {
           'payment_transactions': {
@@ -679,35 +648,18 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
               }
               // 2. Check for payment_transaction by payment_intent_id
               if (state.filters.some(f => f.column === 'gateway_transaction_id' && f.value === specificPaymentIntentId)) {
-                return { 
-                  data: [{ 
-                    id: originalPtxnIdFromPI, // This is the original ptxn linked to the PI
-                    user_id: specificUserId, 
-                    target_wallet_id: specificWalletId, 
-                    organization_id: null, // Or some mock org_id if applicable
-                    status: 'PENDING' // Or whatever status it might have had
-                  }], 
-                  error: null, 
-                  count: 1, 
-                  status: 200, 
-                  statusText: 'OK' 
+                const row: Pick<Database['public']['Tables']['payment_transactions']['Row'], 'user_id' | 'target_wallet_id' | 'organization_id'> = {
+                  user_id: specificUserId,
+                  target_wallet_id: specificWalletId,
+                  organization_id: null,
                 };
+                return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
               }
               return { data: null, error: new Error('Mock: Unexpected select on payment_transactions'), count: 0, status: 500, statusText: 'Error' };
             },
-            upsert: async (state) => { // For inserting/updating the FAILED payment record (linked to invoice.id)
-              const upsertData = state.upsertData as Partial<Database['public']['Tables']['payment_transactions']['Row']>;
-              if (upsertData?.gateway_transaction_id === specificInvoiceId && upsertData?.status === 'FAILED') {
-                return { 
-                  data: [{ id: specificPtxnIdForFailedInvoice, ...upsertData }], 
-                  error: null, 
-                  count: 1, 
-                  status: 201, // Or 200 if it was an update of an existing record by invoice.id
-                  statusText: 'Created' 
-                };
-              }
-              return { data: null, error: new Error('Mock: Payment txn upsert failed for one-time'), count: 0, status: 500, statusText: 'Error' };
-            }
+            upsert: async () => ({ // For inserting/updating the FAILED payment record (linked to invoice.id)
+              data: [{ id: specificPtxnIdForFailedInvoice }], error: null, count: 1, status: 201, statusText: 'Created'
+            })
           },
           'user_subscriptions': {
             select: async (state) => { // For getting user_id via customer from subscription (should not find one for one-time)
@@ -721,7 +673,8 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
           'token_wallets': { 
             select: async (state) => {
               if (state.filters.some(f => f.column === 'user_id' && f.value === specificUserId)) {
-                return { data: [{ wallet_id: specificWalletId }], error: null, count: 1, status: 200, statusText: 'OK' };
+                const row: Pick<Database['public']['Tables']['token_wallets']['Row'], 'wallet_id'> = { wallet_id: specificWalletId };
+                return { data: [row], error: null, count: 1, status: 200, statusText: 'OK' };
               }
               return { data: null, error: new Error('Mock: Wallet select called unexpectedly or failed for one-time'), count: 0, status: 404, statusText: 'Not Found' };
             }
@@ -762,12 +715,10 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assert(result.success, `Expected success for one-time failed invoice, got error: ${result.error}`);
     assertEquals(result.transactionId, specificPtxnIdForFailedInvoice, "Result transactionId should be the new/updated FAILED payment transaction ID");
 
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
     assert(infoSpy.calls.some(call => String(call.args[0]).includes(`Processing invoice ${specificInvoiceId}`)), "Initial log missing");
     assert(infoSpy.calls.some(call => String(call.args[0]).includes(`Invoice ${specificInvoiceId} is not linked to a subscription`)), "Subscription check log missing");
     assert(infoSpy.calls.some(call => String(call.args[0]).includes(`Successfully processed failed invoice ${specificInvoiceId}`)), "Success log missing");
     
-    const errorSpy = mockLogger.error as Spy<any, any[], any>;
     assertSpyCalls(errorSpy, 0); 
 
     const historicPtxnBuilders = mockSupabaseSetup.client.getHistoricBuildersForTable('payment_transactions');
@@ -777,7 +728,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     const ptxnUpsertBuilder = historicPtxnBuilders[2]; 
     assertExists(ptxnUpsertBuilder, "Upsert payment_transactions builder should exist");
     assertSpyCalls(ptxnUpsertBuilder.methodSpies.upsert, 1);
-    const upsertArgs = ptxnUpsertBuilder.methodSpies.upsert.calls[0].args[0] as Partial<Database['public']['Tables']['payment_transactions']['Row']>;
+    const upsertArgs = ptxnUpsertBuilder.methodSpies.upsert.calls[0].args[0];
     
     assertEquals(upsertArgs.gateway_transaction_id, specificInvoiceId, "Upserted gateway_transaction_id should be invoice ID");
     assertEquals(upsertArgs.status, 'FAILED', "Upserted status should be FAILED");
@@ -786,7 +737,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     assertEquals(upsertArgs.amount_requested_fiat, 50); 
     assertEquals(upsertArgs.currency_requested_fiat, 'usd');
     assertExists(upsertArgs.metadata_json, "Metadata should exist in upsert");
-    const metadata = upsertArgs.metadata_json as Record<string, unknown>;
+    const metadata = upsertArgs.metadata_json;
     assertEquals(metadata.stripe_event_id, specificEventId, "Metadata stripe_event_id mismatch");
     assertEquals(metadata.type, 'ONE_TIME_PAYMENT_FAILED', "Metadata type should be ONE_TIME_PAYMENT_FAILED");
     assertEquals(metadata.stripe_payment_intent_id, specificPaymentIntentId, "Metadata stripe_payment_intent_id mismatch");

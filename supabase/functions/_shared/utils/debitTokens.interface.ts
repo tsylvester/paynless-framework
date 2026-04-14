@@ -1,12 +1,12 @@
 import type { ILogger } from "../types.ts";
-import type { ITokenWalletService } from "../types/tokenWallet.types.ts";
+import { IAdminTokenWalletService } from "../services/tokenwallet/admin/adminTokenWalletService.interface.ts";
 import type { TokenWallet } from "../types/tokenWallet.types.ts";
 import type { AiModelExtendedConfig, TokenUsage } from "../types.ts";
-import type { ChatMessageInsert } from "../types.ts";
+import type { ChatMessageRow } from "../types.ts";
 
 export interface DebitTokensDeps {
     logger: ILogger;
-    tokenWalletService: ITokenWalletService;
+    tokenWalletService: IAdminTokenWalletService;
 }
 
 export interface DebitTokensParams {
@@ -16,7 +16,7 @@ export interface DebitTokensParams {
     userId: string;
     chatId?: string;
     relatedEntityId: string;
-    databaseOperation: () => Promise<{ userMessage: ChatMessageInsert, assistantMessage: ChatMessageInsert }>;
+    databaseOperation: () => Promise<{ userMessage: ChatMessageRow, assistantMessage: ChatMessageRow }>;
 }
 
 export interface DebitTokensPayload {}
@@ -30,14 +30,19 @@ export type DebitTokensError = {
 
 export type DebitTokensSuccess = {
     result: {
-        userMessage: ChatMessageInsert;
-        assistantMessage: ChatMessageInsert;
+        userMessage: ChatMessageRow;
+        assistantMessage: ChatMessageRow;
     };
     transactionRecordedSuccessfully: true;
 };
 
 export type DebitTokens = (
     deps: DebitTokensDeps,
+    params: DebitTokensParams,
+    payload: DebitTokensPayload
+) => Promise<DebitTokensReturn>;
+
+export type BoundDebitTokens = (
     params: DebitTokensParams,
     payload: DebitTokensPayload
 ) => Promise<DebitTokensReturn>;

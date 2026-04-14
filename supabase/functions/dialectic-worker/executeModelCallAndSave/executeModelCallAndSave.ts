@@ -39,10 +39,9 @@ import {
 } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { extractSourceGroupFragment } from '../../_shared/utils/path_utils.ts';
 import { RenderJobValidationError } from '../../_shared/utils/errors.ts';
-import type { ChatMessageInsert } from '../../_shared/types.ts';
+import type { ChatMessageRow } from '../../_shared/types.ts';
 import type { TokenWallet } from '../../_shared/types/tokenWallet.types.ts';
 import type {
-  DebitTokensDeps,
   DebitTokensParams,
   DebitTokensPayload,
 } from '../../_shared/utils/debitTokens.interface.ts';
@@ -631,7 +630,7 @@ export async function executeModelCallAndSave(
 
   const sourcePromptResourceId: string = params.sourcePromptResourceId;
 
-  const wallet: TokenWallet | null = await deps.tokenWalletService.getWallet(walletId);
+  const wallet: TokenWallet | null = await deps.userTokenWalletService.getWallet(walletId);
   if (wallet === null) {
     const err: Error = new Error(`Wallet not found for id ${walletId}`);
     const out: ExecuteModelCallAndSaveErrorReturn = { error: err, retriable: false };
@@ -639,10 +638,6 @@ export async function executeModelCallAndSave(
   }
 
   const relatedEntityId: string = job.id;
-  const debitDeps: DebitTokensDeps = {
-    logger: deps.logger,
-    tokenWalletService: deps.tokenWalletService,
-  };
   const nowIso: string = new Date().toISOString();
   let assistantTokenUsageJson: Json | null = null;
   if (effectiveTokenUsage !== null) {
@@ -662,7 +657,7 @@ export async function executeModelCallAndSave(
     databaseOperation: async () => {
       const userMessageId: string = crypto.randomUUID();
       const assistantMessageId: string = crypto.randomUUID();
-      const userMessage: ChatMessageInsert = {
+      const userMessage: ChatMessageRow = {
         id: userMessageId,
         chat_id: null,
         user_id: projectOwnerUserId,
@@ -677,7 +672,7 @@ export async function executeModelCallAndSave(
         response_to_message_id: null,
         token_usage: null,
       };
-      const assistantMessage: ChatMessageInsert = {
+      const assistantMessage: ChatMessageRow = {
         id: assistantMessageId,
         chat_id: null,
         role: 'assistant',
@@ -696,7 +691,7 @@ export async function executeModelCallAndSave(
     },
   };
   const debitPayload: DebitTokensPayload = {};
-  const debitResult = await deps.debitTokens(debitDeps, debitParams, debitPayload);
+  const debitResult = await deps.debitTokens(debitParams, debitPayload);
   if ('error' in debitResult) {
     const out: ExecuteModelCallAndSaveErrorReturn = {
       error: debitResult.error,

@@ -1,79 +1,35 @@
 import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import { vi, describe, it, expect, beforeEach, afterEach, MockedFunction } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ChatItem } from './ChatItem';
 import { selectCurrentUserRoleInOrg } from '@paynless/store'; 
-import type { Chat, User, Organization, SystemPrompt } from '@paynless/types';
+import type { Chat, User, Organization, SystemPrompt, UserProfile } from '@paynless/types';
 
-// Mock logic and helpers will be imported inside the vi.mock factory
-// import { mockedUseAuthStoreHookLogic, resetAuthStoreMock, mockSetAuthUser } from '../../mocks/authStore.mock';
-// import { mockedUseAiStoreHookLogic, resetAiStoreMock, mockDeleteChatSpy } from '../../mocks/aiStore.mock';
-// import { 
-//   mockedUseOrganizationStoreHookLogic, 
-//   resetAllStoreMocks as resetOrgStoreMocks, 
-//   mockSetCurrentOrgId,
-//   mockSetUserOrganizations, 
-// } from '../../mocks/organizationStore.mock';
-
-
-vi.mock('@paynless/store', async (importOriginal) => {
-  const actual = await importOriginal() as typeof import('@paynless/store');
-  
-  const { mockedUseAuthStoreHookLogic } = await import('../../mocks/authStore.mock');
-  // Import the specific mock functions and state accessors we need
-  const {
-    mockedUseAiStoreHookLogic, // This is the hook selector logic
-    internalMockAiGetState, // Direct state getter from aiStore.mock.ts (needs to be exported)
-    mockLoadChatDetailsSpy, 
-    mockAvailablePrompts, // The getter function for prompts
-    mockDeleteChatSpy // Ensure deleteChat spy is available for getState
-  } = await import('../../mocks/aiStore.mock'); 
-  const { mockedUseOrganizationStoreHookLogic } = await import('../../mocks/organizationStore.mock');
-
-  // This function will be our mock for useAiStore
-  const mockUseAiStore = (selector?: (state: any) => any) => {
-    const fullMockState = internalMockAiGetState(); // Get the complete current mock state
-    if (selector) {
-      return selector(fullMockState);
-    }
-    // If no selector, return an object that mimics the store enough for ChatItem
-    // It needs `availablePrompts` directly and a `getState` method
-    return {
-      ...fullMockState, // Spread all state properties
-      availablePrompts: mockAvailablePrompts(), // Ensure this is available directly
-      getState: () => ({
-        ...fullMockState, // Spread state again for getState context
-        loadChatDetails: mockLoadChatDetailsSpy,
-        deleteChat: mockDeleteChatSpy, // Use the direct spy
-        // Add any other actions from AiActions that ChatItem might call via getState()
-      }),
-    };
-  };
-  
-  // Also attach getState to the mockUseAiStore function itself, like Zustand does
-  (mockUseAiStore as any).getState = () => {
-    const fullMockState = internalMockAiGetState();
-    return {
-        ...fullMockState,
-        loadChatDetails: mockLoadChatDetailsSpy,
-        deleteChat: mockDeleteChatSpy,
-    };
-  };
+vi.mock('@paynless/store', async () => {
+  const originalStoreModule = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+  const { useMockedAiStoreHookLogic } = await vi.importActual<typeof import('../../mocks/aiStore.mock')>(
+    '../../mocks/aiStore.mock',
+  );
+  const { mockedUseAuthStoreHookLogic } = await vi.importActual<typeof import('../../mocks/authStore.mock')>(
+    '../../mocks/authStore.mock',
+  );
+  const { mockedUseOrganizationStoreHookLogic } = await vi.importActual<
+    typeof import('../../mocks/organizationStore.mock')
+  >('../../mocks/organizationStore.mock');
 
   return {
-    ...actual, 
-    useAiStore: mockUseAiStore,
+    ...originalStoreModule,
+    useAiStore: useMockedAiStoreHookLogic,
     useAuthStore: mockedUseAuthStoreHookLogic,
     useOrganizationStore: mockedUseOrganizationStoreHookLogic,
-    selectCurrentUserRoleInOrg: vi.fn(), 
+    selectCurrentUserRoleInOrg: vi.fn(),
   };
 });
 
-// Import reset and setter functions at the top level for use in tests
 import { resetAuthStoreMock, mockSetAuthUser, mockSetAuthProfile } from '../../mocks/authStore.mock';
-import { resetAiStoreMock, mockDeleteChatSpy, mockLoadChatDetailsSpy, mockSetAvailablePrompts, mockAvailablePrompts } from '../../mocks/aiStore.mock';
+import { resetAiStoreMock, mockSetAvailablePrompts, getAiStoreState } from '../../mocks/aiStore.mock';
 import { 
-  resetAllStoreMocks as resetOrgStoreMocks, 
+  resetAllStoreMocks, 
   mockSetCurrentOrgId,
   mockSetUserOrganizations,
   mockSetCurrentOrganizationMembers,
@@ -115,20 +71,18 @@ vi.mock('@/components/ui/alert-dialog', async () => ({
   ),
 }));
 
-const localMockSelectCurrentUserRoleInOrg = selectCurrentUserRoleInOrg as MockedFunction<typeof selectCurrentUserRoleInOrg>;
-
 const currentUser: User = { id: 'user-current-123', email: 'current@example.com' };
 const otherUser: User = { id: 'user-other-456', email: 'other@example.com' };
-const org1: Organization = { id: 'org-1', name: 'Organization 1', created_at: '', allow_member_chat_creation: true, visibility: 'private', deleted_at: null };
-const org2: Organization = { id: 'org-2', name: 'Organization 2', created_at: '', allow_member_chat_creation: true, visibility: 'private', deleted_at: null };
+const org1: Organization = { id: 'org-1', name: 'Organization 1', created_at: '', allow_member_chat_creation: true, visibility: 'private', deleted_at: null, token_usage_policy: 'member_tokens' };
+const org2: Organization = { id: 'org-2', name: 'Organization 2', created_at: '', allow_member_chat_creation: true, visibility: 'private', deleted_at: null, token_usage_policy: 'member_tokens' };
 
 // --- NEW MOCK DATA FOR UI ENHANCEMENTS ---
 const samplePromptId1 = 'd6e2a447-328b-437f-a658-8f05260cc110';
 const samplePromptId2 = 'fba02898-2701-4503-b598-30a6659242bb';
 
 const mockAvailablePromptsData: SystemPrompt[] = [
-  { id: samplePromptId1, name: 'Super Story Writer', prompt_text: 'You are a super story writer.', created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', is_active: true },
-  { id: samplePromptId2, name: 'Code Helper Pro', prompt_text: 'You are a pro code helper.', created_at: '2023-01-02T00:00:00Z', updated_at: '2023-01-02T00:00:00Z', is_active: true },
+  { id: samplePromptId1, name: 'Super Story Writer', prompt_text: 'You are a super story writer.', created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', is_active: true, user_selectable: true, version: 1, description: 'A super story writer prompt', document_template_id: null },
+  { id: samplePromptId2, name: 'Code Helper Pro', prompt_text: 'You are a pro code helper.', created_at: '2023-01-02T00:00:00Z', updated_at: '2023-01-02T00:00:00Z', is_active: true, user_selectable: true, version: 1, description: 'A code helper prompt', document_template_id: null },
 ];
 
 const chatWithTimestampsAndPrompt: Chat = {
@@ -140,17 +94,6 @@ const chatWithTimestampsAndPrompt: Chat = {
   updated_at: new Date(2023, 0, 16, 11, 45, 0).toISOString(), // Jan 16, 2023 11:45:00
   system_prompt_id: samplePromptId1,
 };
-
-const orgChatByOtherUserWithPrompt: Chat = {
-  id: 'chat-org-other-prompt',
-  title: 'Org Chat by Other with Prompt',
-  organization_id: org1.id,
-  user_id: otherUser.id, // Created by otherUser
-  created_at: new Date(2023, 1, 10, 12, 0, 0).toISOString(), // Feb 10, 2023 12:00:00
-  updated_at: new Date(2023, 1, 10, 12, 15, 0).toISOString(), // Feb 10, 2023 12:15:00
-  system_prompt_id: samplePromptId2,
-};
-// --- END NEW MOCK DATA ---
 
 
 const personalChatByCurrentUser: Chat = {
@@ -203,28 +146,40 @@ const org1ChatByOtherUserAsMember: Chat = {
     system_prompt_id: null,
 };
 
-const currentUserProfileBase = { 
+const currentUserProfileBase: UserProfile = { 
   id: currentUser.id,
-  role: 'user' as 'user' | 'admin', // Explicitly cast role
+  role: 'user',
   created_at: '2023-01-01T00:00:00Z',
   updated_at: '2023-01-01T00:00:00Z',
   last_selected_org_id: null,
-  // ensure all fields from UserProfile are here, even if null
   first_name: null,
   last_name: null,
-  email: null, 
+  profile_privacy_setting: 'private',
+  chat_context: null,
+  has_seen_welcome_modal: false,
+  is_subscribed_to_newsletter: false,
+  subscribed_at: null,
+  synced_to_kit_at: null,
+  unsubscribed_at: null,
+  signup_ref: null,
 };
 
-const otherUserProfileBase = { 
+const otherUserProfileBase: UserProfile = { 
   id: otherUser.id,
-  role: 'user' as 'user' | 'admin', // Explicitly cast role
+  role: 'user',
   created_at: '2023-01-01T00:00:00Z',
   updated_at: '2023-01-01T00:00:00Z',
   last_selected_org_id: org1.id,
-  // ensure all fields from UserProfile are here, even if null
   first_name: null,
   last_name: null,
-  email: null,
+  profile_privacy_setting: 'private',
+  chat_context: null,
+  has_seen_welcome_modal: false,
+  is_subscribed_to_newsletter: false,
+  subscribed_at: null,
+  synced_to_kit_at: null,
+  unsubscribed_at: null,
+  signup_ref: null,
 };
 
 
@@ -262,24 +217,22 @@ vi.mock('date-fns', async (importOriginal) => {
 });
 
 // Import the mocked function to control its return value
-import { formatDistanceToNow as mockFormatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 
 describe('ChatItem', () => {
   beforeEach(() => {
     isAlertDialogOpen = false;
     resetAuthStoreMock();
     resetAiStoreMock();
-    resetOrgStoreMocks(); 
+    resetAllStoreMocks(); 
 
     mockSetAuthUser(currentUser);
     mockSetCurrentOrgId('some-other-org-id');
     if (mockSetUserOrganizations) mockSetUserOrganizations([org1, org2]);
     
     mockSetAvailablePrompts(mockAvailablePromptsData);
-    
-    mockLoadChatDetailsSpy.mockClear();
 
-    localMockSelectCurrentUserRoleInOrg.mockReturnValue(null);
+    vi.mocked(selectCurrentUserRoleInOrg).mockReturnValue(null);
   });
 
   afterEach(() => {
@@ -315,8 +268,8 @@ describe('ChatItem', () => {
     it('calls useAiStore.getState().loadChatDetails with chat.id when the item is clicked', () => {
       render(<ChatItem chat={personalChatByCurrentUser} isActive={false} />);
       fireEvent.click(screen.getByRole('button', { name: new RegExp(personalChatByCurrentUser.title!, 'i') }));
-      expect(mockLoadChatDetailsSpy).toHaveBeenCalledWith(personalChatByCurrentUser.id);
-      expect(mockLoadChatDetailsSpy).toHaveBeenCalledTimes(1);
+      expect(getAiStoreState().loadChatDetails).toHaveBeenCalledWith(personalChatByCurrentUser.id);
+      expect(getAiStoreState().loadChatDetails).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -325,18 +278,18 @@ describe('ChatItem', () => {
       // Ensure availablePrompts are set for these tests
       mockSetAvailablePrompts(mockAvailablePromptsData);
       // Reset the date-fns mock before each test in this block
-      (mockFormatDistanceToNow as MockedFunction<any>).mockClear();
+      vi.clearAllMocks();
     });
 
     it('displays the formatted updated_at timestamp using date-fns', () => {
       const expectedTimestamp = 'approx X days ago';
-      (mockFormatDistanceToNow as MockedFunction<any>).mockReturnValue(expectedTimestamp);
+      vi.mocked(formatDistanceToNow).mockReturnValue(expectedTimestamp);
 
       render(<ChatItem chat={chatWithTimestampsAndPrompt} isActive={false} />);
       // Check if the mocked timestamp is present. 
       // Note: The actual DOM structure might include a title attribute with the full date.
       expect(screen.getByText(expectedTimestamp)).toBeInTheDocument();
-      expect(mockFormatDistanceToNow).toHaveBeenCalledWith(new Date(chatWithTimestampsAndPrompt.updated_at), { addSuffix: true });
+      expect(formatDistanceToNow).toHaveBeenCalledWith(new Date(chatWithTimestampsAndPrompt.updated_at), { addSuffix: true });
     });
 
     it('renders system prompt name if chat.system_prompt_id exists and matches an available prompt', () => {
@@ -393,92 +346,134 @@ describe('ChatItem', () => {
       });
 
       it('displays full name if currentUser.profile has first_name and last_name', () => {
-        const profileWithFullName = { 
+        const profileWithFullName: UserProfile = { 
           ...currentUserProfileBase, 
           first_name: 'Snorblus', 
           last_name: 'Finklestein',
-          role: 'user' as 'user' | 'admin', // ensure role is correctly typed here too
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z',
+          last_selected_org_id: null,
+          role: 'user',
+          profile_privacy_setting: 'private',
+          chat_context: null,
+          has_seen_welcome_modal: false,
+          is_subscribed_to_newsletter: false,
+          subscribed_at: null,
+          synced_to_kit_at: null,
+          unsubscribed_at: null,
+          signup_ref: null,
         };
         mockSetAuthProfile(profileWithFullName); 
 
         render(<ChatItem chat={personalChatByCurrentUserWithFullProfile} isActive={false} />);
-        const creatorSpan = screen.getByText(/by: Snorblus Finklestein/);
+        const creatorSpan = screen.getByText(/Snorblus Finklestein \(You\)/);
         expect(creatorSpan).toBeInTheDocument();
         expect(creatorSpan).toHaveAttribute('title', `Snorblus Finklestein (ID: ${currentUser.id})`);
       });
 
       it('displays first name if currentUser.profile has only first_name', () => {
-        const profileWithFirstName = { 
+        const profileWithFirstName: UserProfile = { 
           ...currentUserProfileBase, 
           first_name: 'Snorblus', 
           last_name: null, 
-          role: 'user' as 'user' | 'admin', // ensure role is correctly typed here too
+          role: 'user',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z',
+          last_selected_org_id: null,
+          profile_privacy_setting: 'private',
+          chat_context: null,
+          has_seen_welcome_modal: false,
+          is_subscribed_to_newsletter: false,
+          subscribed_at: null,
+          synced_to_kit_at: null,
+          unsubscribed_at: null,
+          signup_ref: null,
         };
         mockSetAuthProfile(profileWithFirstName);
 
         render(<ChatItem chat={personalChatByCurrentUserWithFirstNameOnly} isActive={false} />);
-        const creatorSpan = screen.getByText(/by: Snorblus/);
+        const creatorSpan = screen.getByText(/Snorblus \(You\)/);
         expect(creatorSpan).toBeInTheDocument();
         expect(creatorSpan).toHaveAttribute('title', `Snorblus (ID: ${currentUser.id})`);
       });
 
       it('displays email if currentUser.profile has only email (no names)', () => {
-        const profileWithEmailOnly = { 
+        const profileWithEmailOnly: UserProfile = { 
           ...currentUserProfileBase, 
           first_name: null, 
           last_name: null,
-          email: 'snorblus.f@example.com', 
-          role: 'user' as 'user' | 'admin', // ensure role is correctly typed here too
+          role: 'user',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z',
+          last_selected_org_id: null,
+          profile_privacy_setting: 'private',
+          chat_context: null,
+          has_seen_welcome_modal: false,
+          is_subscribed_to_newsletter: false,
+          subscribed_at: null,
+          synced_to_kit_at: null,
+          unsubscribed_at: null,
+          signup_ref: null,
         };
-        const tempCurrentUserWithEmail = { ...currentUser, email: 'snorblus.f@example.com' };
+        const tempCurrentUserWithEmail: User = { ...currentUser, email: 'snorblus.f@example.com' };
         mockSetAuthUser(tempCurrentUserWithEmail); // Set user with specific email
         mockSetAuthProfile(profileWithEmailOnly); // Set profile with matching email
 
         render(<ChatItem chat={personalChatByCurrentUserWithEmailOnly} isActive={false} />);
-        const creatorSpan = screen.getByText(/by: snorblus.f@example.com/);
+        const creatorSpan = screen.getByText(/snorblus\.f@example\.com \(You\)/);
         expect(creatorSpan).toBeInTheDocument();
         expect(creatorSpan).toHaveAttribute('title', `snorblus.f@example.com (ID: ${currentUser.id})`);
       });
       
       it('displays truncated user_id if currentUser.profile has no names or email', () => {
-        const profileWithNoDetails = { 
+        const profileWithNoDetails: UserProfile = { 
           ...currentUserProfileBase, 
           first_name: null, 
           last_name: null,
-          email: null,
-          role: 'user' as 'user' | 'admin', // ensure role is correctly typed here too
+          role: 'user',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z',
+          last_selected_org_id: null,
+          profile_privacy_setting: 'private',
+          chat_context: null,
+          has_seen_welcome_modal: false,
+          is_subscribed_to_newsletter: false,
+          subscribed_at: null,
+          synced_to_kit_at: null,
+          unsubscribed_at: null,
+          signup_ref: null,
         };
-        const currentUserNoEmail = { ...currentUser, email: undefined }; 
+        const currentUserNoEmail: User = { ...currentUser, email: undefined }; 
         mockSetAuthUser(currentUserNoEmail);
         mockSetAuthProfile(profileWithNoDetails);
 
         render(<ChatItem chat={personalChatByCurrentUserWithNoDetailsInProfile} isActive={false} />);
         const expectedIdDisplay = `${currentUser.id.substring(0, 8)}...`;
-        const creatorSpan = screen.getByText(`by: ${expectedIdDisplay}`);
+        const creatorSpan = screen.getByText(`${expectedIdDisplay} (You)`);
         expect(creatorSpan).toBeInTheDocument();
-        expect(creatorSpan).toHaveAttribute('title', `User ID: ${currentUser.id}`);
+        expect(creatorSpan).toHaveAttribute('title', `${expectedIdDisplay} (ID: ${currentUser.id})`);
       });
 
       it('displays truncated user_id if currentUser.profile is null (and user.email is also null/undefined)', () => {
         // Ensure the base user object in authState.user has no email for true UUID fallback
-        const currentUserNoEmail = { ...currentUser, email: undefined };
+        const currentUserNoEmail: User = { ...currentUser, email: undefined };
         mockSetAuthUser(currentUserNoEmail);
         mockSetAuthProfile(null); // Profile is explicitly null
 
         render(<ChatItem chat={personalChatByCurrentUser} isActive={false} />); // Using a generic chat by current user
         const expectedIdDisplay = `${currentUser.id.substring(0, 8)}...`;
-        const creatorSpan = screen.getByText(`by: ${expectedIdDisplay}`);
+        const creatorSpan = screen.getByText(`${expectedIdDisplay} (You)`);
         expect(creatorSpan).toBeInTheDocument();
-        expect(creatorSpan).toHaveAttribute('title', `User ID: ${currentUser.id}`);
+        expect(creatorSpan).toHaveAttribute('title', `${expectedIdDisplay} (ID: ${currentUser.id})`);
       });
 
       it('displays user.email if currentUser.profile is null but user.email exists', () => {
-        const currentUserWithEmail = { ...currentUser, email: 'fallback@example.com' };
+        const currentUserWithEmail: User = { ...currentUser, email: 'fallback@example.com' };
         mockSetAuthUser(currentUserWithEmail); // User has an email
         mockSetAuthProfile(null); // Profile is null
 
         render(<ChatItem chat={personalChatByCurrentUser} isActive={false} />); 
-        const creatorSpan = screen.getByText(`by: fallback@example.com`);
+        const creatorSpan = screen.getByText('fallback@example.com (You)');
         expect(creatorSpan).toBeInTheDocument();
         expect(creatorSpan).toHaveAttribute('title', `fallback@example.com (ID: ${currentUser.id})`);
       });
@@ -499,16 +494,26 @@ describe('ChatItem', () => {
       beforeEach(() => {
         resetAuthStoreMock();
         mockSetAuthUser(currentUser); // Current user is NOT otherUser
-        resetOrgStoreMocks();
+        resetAllStoreMocks();
         mockSetCurrentOrgId(org1.id); // Active org is org1
       });
 
       it('displays full name if member profile has first_name and last_name', () => {
-        const memberProfileWithFullName = {
+        const memberProfileWithFullName: UserProfile = {
           ...otherUserProfileBase, // Includes id: otherUser.id, role
           first_name: 'Omega',
           last_name: 'Maximus',
-          email: 'omega@example.com' 
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z',
+          last_selected_org_id: org1.id,
+          profile_privacy_setting: 'private',
+          chat_context: null,
+          has_seen_welcome_modal: false,
+          is_subscribed_to_newsletter: false,
+          subscribed_at: null,
+          synced_to_kit_at: null,
+          unsubscribed_at: null,
+          signup_ref: null,
         };
         mockSetCurrentOrganizationMembers([{ 
             // OrganizationMember part (ensure all required fields from OrganizationMember are present)
@@ -523,17 +528,27 @@ describe('ChatItem', () => {
         }]);
         
         render(<ChatItem chat={orgChatByOther} isActive={false} />);
-        const creatorSpan = screen.getByText(/by: Omega Maximus/);
+        const creatorSpan = screen.getByText('Omega Maximus');
         expect(creatorSpan).toBeInTheDocument();
         expect(creatorSpan).toHaveAttribute('title', `Omega Maximus (ID: ${otherUser.id})`);
       });
 
-      it('displays email if member profile has only email (no names)', () => {
-        const memberProfileWithEmail = {
+      it('displays truncated user_id if member profile has no names (email not used for org member display)', () => {
+        const memberProfileWithEmail: UserProfile = {
           ...otherUserProfileBase,
           first_name: null,
           last_name: null,
-          email: 'omega@example.com'
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z',
+          last_selected_org_id: org1.id,
+          profile_privacy_setting: 'private',
+          chat_context: null,
+          has_seen_welcome_modal: false,
+          is_subscribed_to_newsletter: false,
+          subscribed_at: null,
+          synced_to_kit_at: null,
+          unsubscribed_at: null,
+          signup_ref: null,
         };
         mockSetCurrentOrganizationMembers([{ 
             id: 'mem-other-1', user_id: otherUser.id, organization_id: org1.id, role: 'member', status: 'active', created_at: new Date().toISOString(),
@@ -541,9 +556,10 @@ describe('ChatItem', () => {
         }]);
 
         render(<ChatItem chat={orgChatByOther} isActive={false} />);
-        const creatorSpan = screen.getByText(/by: omega@example.com/);
+        const expectedIdDisplay = `${otherUser.id.substring(0, 8)}...`;
+        const creatorSpan = screen.getByText(expectedIdDisplay);
         expect(creatorSpan).toBeInTheDocument();
-        expect(creatorSpan).toHaveAttribute('title', `omega@example.com (ID: ${otherUser.id})`);
+        expect(creatorSpan).toHaveAttribute('title', `User ID: ${otherUser.id}`);
       });
 
       it('displays truncated user_id if member profile has no names or email', () => {
@@ -560,7 +576,7 @@ describe('ChatItem', () => {
 
         render(<ChatItem chat={orgChatByOther} isActive={false} />);
         const expectedIdDisplay = `${otherUser.id.substring(0, 8)}...`;
-        const creatorSpan = screen.getByText(`by: ${expectedIdDisplay}`);
+        const creatorSpan = screen.getByText(expectedIdDisplay);
         expect(creatorSpan).toBeInTheDocument();
         expect(creatorSpan).toHaveAttribute('title', `User ID: ${otherUser.id}`);
       });
@@ -572,7 +588,7 @@ describe('ChatItem', () => {
         }]);
         render(<ChatItem chat={orgChatByOther} isActive={false} />);
         const expectedIdDisplay = `${otherUser.id.substring(0, 8)}...`;
-        const creatorSpan = screen.getByText(`by: ${expectedIdDisplay}`);
+        const creatorSpan = screen.getByText(expectedIdDisplay);
         expect(creatorSpan).toBeInTheDocument();
         expect(creatorSpan).toHaveAttribute('title', `User ID: ${otherUser.id}`);
       });
@@ -581,7 +597,7 @@ describe('ChatItem', () => {
         mockSetCurrentOrganizationMembers([]); // Empty members list
         render(<ChatItem chat={orgChatByOther} isActive={false} />);
         const expectedIdDisplay = `${otherUser.id.substring(0, 8)}...`;
-        const creatorSpan = screen.getByText(`by: ${expectedIdDisplay}`);
+        const creatorSpan = screen.getByText(expectedIdDisplay);
         expect(creatorSpan).toBeInTheDocument();
         expect(creatorSpan).toHaveAttribute('title', `User ID: ${otherUser.id}`);
       });
@@ -596,7 +612,7 @@ describe('ChatItem', () => {
 
         render(<ChatItem chat={orgChatByOther} isActive={false} />);
         const expectedIdDisplay = `${otherUser.id.substring(0, 8)}...`;
-        const creatorSpan = screen.getByText(`by: ${expectedIdDisplay}`);
+        const creatorSpan = screen.getByText(expectedIdDisplay);
         expect(creatorSpan).toBeInTheDocument();
         expect(creatorSpan).toHaveAttribute('title', `User ID: ${otherUser.id}`);
       });
@@ -610,7 +626,7 @@ describe('ChatItem', () => {
         
         render(<ChatItem chat={personalChatByOtherUser} isActive={false} />); 
         const expectedIdDisplay = `${otherUser.id.substring(0, 8)}...`;
-        const creatorSpan = screen.getByText(`by: ${expectedIdDisplay}`);
+        const creatorSpan = screen.getByText(expectedIdDisplay);
         expect(creatorSpan).toBeInTheDocument();
         expect(creatorSpan).toHaveAttribute('title', `User ID: ${otherUser.id}`);
       });
@@ -633,7 +649,7 @@ describe('ChatItem', () => {
     });
 
     it('Delete button IS VISIBLE for org chat if current user is the creator (even if just a member in that org)', async () => {
-      localMockSelectCurrentUserRoleInOrg.mockReturnValue('member'); 
+      vi.mocked(selectCurrentUserRoleInOrg).mockReturnValue('member');
       mockSetCurrentOrgId(org1.id);
       render(<ChatItem chat={org1ChatByCurrentUser} isActive={false} />);
       const trigger = await screen.findByTestId('alert-dialog-trigger-mock');
@@ -641,7 +657,7 @@ describe('ChatItem', () => {
     });
 
     it('Delete button IS VISIBLE for org chat if current user is admin in that org (even if not creator)', async () => {
-      localMockSelectCurrentUserRoleInOrg.mockReturnValue('admin');
+      vi.mocked(selectCurrentUserRoleInOrg).mockReturnValue('admin');
       mockSetCurrentOrgId(org1.id);
       render(<ChatItem chat={org1ChatByOtherUserAsAdmin} isActive={false} />);
       const trigger = await screen.findByTestId('alert-dialog-trigger-mock');
@@ -649,7 +665,7 @@ describe('ChatItem', () => {
     });
 
     it('Delete button IS HIDDEN for org chat if current user is NOT creator AND NOT admin in that org', () => {
-      localMockSelectCurrentUserRoleInOrg.mockReturnValue('member');
+      vi.mocked(selectCurrentUserRoleInOrg).mockReturnValue('member');
       mockSetCurrentOrgId(org1.id);
       render(<ChatItem chat={org1ChatByOtherUserAsMember} isActive={false} />);
       expect(screen.queryByTestId('alert-dialog-trigger-mock')).not.toBeInTheDocument();
@@ -657,7 +673,7 @@ describe('ChatItem', () => {
     });
 
     it('Delete button IS HIDDEN for org chat if currentOrganizationId does not match chat.organization_id (even if admin in current org)', () => {
-      localMockSelectCurrentUserRoleInOrg.mockReturnValue('admin');
+      vi.mocked(selectCurrentUserRoleInOrg).mockReturnValue('admin');
       mockSetCurrentOrgId(org2.id); 
       render(<ChatItem chat={org1ChatByOtherUserAsAdmin} isActive={false} />); 
       expect(screen.queryByTestId('alert-dialog-trigger-mock')).not.toBeInTheDocument();
@@ -671,7 +687,7 @@ describe('ChatItem', () => {
     beforeEach(() => {
       isAlertDialogOpen = false; 
       mockSetCurrentOrgId(org1.id);
-      localMockSelectCurrentUserRoleInOrg.mockReturnValue('admin'); 
+      vi.mocked(selectCurrentUserRoleInOrg).mockReturnValue('admin');
     });
 
     it('clicking delete button shows AlertDialog with title', async () => {
@@ -698,13 +714,16 @@ describe('ChatItem', () => {
 
       const confirmButton = await screen.findByTestId('alert-dialog-action-mock');
       fireEvent.click(confirmButton);
-      expect(mockDeleteChatSpy).toHaveBeenCalledWith(deletableOrgChatByAdmin.id, deletableOrgChatByAdmin.organization_id);
+      expect(getAiStoreState().deleteChat).toHaveBeenCalledWith(
+        deletableOrgChatByAdmin.id,
+        deletableOrgChatByAdmin.organization_id,
+      );
     });
     
     it('confirming delete in AlertDialog calls deleteChat with correct IDs (personal chat)', async () => {
       mockSetAuthUser(currentUser);
       mockSetCurrentOrgId(null);    
-      localMockSelectCurrentUserRoleInOrg.mockReturnValue(null); 
+      vi.mocked(selectCurrentUserRoleInOrg).mockReturnValue(null);
 
       const { rerender } = render(<ChatItem chat={personalChatByCurrentUser} isActive={false} />);
       const trigger = await screen.findByTestId('alert-dialog-trigger-mock');
@@ -714,7 +733,10 @@ describe('ChatItem', () => {
       
       const confirmButton = await screen.findByTestId('alert-dialog-action-mock');
       fireEvent.click(confirmButton);
-      expect(mockDeleteChatSpy).toHaveBeenCalledWith(personalChatByCurrentUser.id, personalChatByCurrentUser.organization_id);
+      expect(getAiStoreState().deleteChat).toHaveBeenCalledWith(
+        personalChatByCurrentUser.id,
+        personalChatByCurrentUser.organization_id,
+      );
     });
 
     it('cancelling delete in AlertDialog does not call deleteChat', async () => {
@@ -726,7 +748,7 @@ describe('ChatItem', () => {
 
       const cancelButton = await screen.findByTestId('alert-dialog-cancel-mock');
       fireEvent.click(cancelButton);
-      expect(mockDeleteChatSpy).not.toHaveBeenCalled();
+      expect(getAiStoreState().deleteChat).not.toHaveBeenCalled();
     });
   });
 }); 

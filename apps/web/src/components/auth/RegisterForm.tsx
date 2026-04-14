@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { FaGoogle } from 'react-icons/fa'
 
 export function RegisterForm() {
   const [email, setEmail] = useState('')
@@ -15,9 +16,15 @@ export function RegisterForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
 
-  const register = useAuthStore((state) => state.register)
-  const subscribeToNewsletter = useAuthStore((state) => state.subscribeToNewsletter)
-  const authError = useAuthStore((state) => state.error)
+  const { register, handleOAuthLogin, subscribeToNewsletter, isLoading, error: authError } = useAuthStore(
+    (state) => ({
+      register: state.register,
+      handleOAuthLogin: state.handleOAuthLogin,
+      subscribeToNewsletter: state.subscribeToNewsletter,
+      isLoading: state.isLoading,
+      error: state.error,
+    })
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -46,6 +53,16 @@ export function RegisterForm() {
       setIsSubmitting(false)
     }
   }
+
+  const handleGoogleRegister = async () => {
+    try {
+      await handleOAuthLogin('google');
+      // Navigation on success is handled by Supabase redirect
+    } catch (error) {
+      logger.error('[RegisterForm] Google Register action failed in component:', { errorMessage: error instanceof Error ? error.message : String(error) });
+      // The error state in the store will be set by the action, which will be displayed
+    }
+  };
 
   return (
     <div className="w-full max-w-md p-8 bg-surface rounded-lg shadow-md">
@@ -109,12 +126,33 @@ export function RegisterForm() {
 
         <Button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isLoading}
           className={`w-full flex justify-center py-2 px-4 ${
-            isSubmitting ? 'opacity-75 cursor-not-allowed' : ''
+            (isSubmitting || isLoading) ? 'opacity-75 cursor-not-allowed' : ''
           }`}
         >
-          {isSubmitting ? 'Creating account...' : 'Create account'}
+          {isSubmitting || isLoading ? 'Creating account...' : 'Create account'}
+        </Button>
+
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-surface px-2 text-textSecondary">
+              Or continue with
+            </span>
+          </div>
+        </div>
+
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={handleGoogleRegister}
+          disabled={isLoading}
+        >
+          <FaGoogle className="mr-2 h-4 w-4" />
+          Sign up with Google
         </Button>
 
         <div className="mt-4 text-center">

@@ -2,6 +2,7 @@
 
 import { describe, it } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
 import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import type { BoundDebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 import {
     isILoggerContext,
     isIFileContext,
@@ -21,6 +22,11 @@ import {
     buildGuardTestIRenderJobContext,
 } from './JobContext.mock.ts';
 import { buildMockBoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.mock.ts';
+
+const mockBoundDebitTokens: BoundDebitTokens = async () => ({
+    error: new Error('guard test stub'),
+    retriable: false,
+});
 
 describe('JobContexts Type Guards', () => {
     describe('isILoggerContext', () => {
@@ -109,8 +115,12 @@ describe('JobContexts Type Guards', () => {
 
     describe('isITokenContext', () => {
         it('returns true for valid token context', () => {
-            const mockTokenWalletService = { debit: () => {}, credit: () => {} };
-            const context = { tokenWalletService: mockTokenWalletService };
+            const mockAdminWallet = { debit: () => {}, credit: () => {} };
+            const mockUserWallet = { getBalance: () => {}, getWallet: () => {} };
+            const context = {
+                adminTokenWalletService: mockAdminWallet,
+                userTokenWalletService: mockUserWallet,
+            };
 
             assertEquals(isITokenContext(context), true);
         });
@@ -132,7 +142,7 @@ describe('JobContexts Type Guards', () => {
                 logger: rootContext.logger,
                 fileManager: rootContext.fileManager,
                 getAiProviderAdapter: rootContext.getAiProviderAdapter,
-                tokenWalletService: rootContext.tokenWalletService,
+                userTokenWalletService: rootContext.userTokenWalletService,
                 notificationService: rootContext.notificationService,
                 continueJob: rootContext.continueJob,
                 retryJob: rootContext.retryJob,
@@ -140,7 +150,7 @@ describe('JobContexts Type Guards', () => {
                 isIntermediateChunk: rootContext.isIntermediateChunk,
                 determineContinuation: rootContext.determineContinuation,
                 buildUploadContext: rootContext.buildUploadContext,
-                debitTokens: rootContext.debitTokens,
+                debitTokens: mockBoundDebitTokens,
             };
 
             assertEquals(isIExecuteModelCallContext(context), true);
@@ -151,7 +161,7 @@ describe('JobContexts Type Guards', () => {
             const context = {
                 logger: rootContext.logger,
                 getAiProviderAdapter: rootContext.getAiProviderAdapter,
-                tokenWalletService: rootContext.tokenWalletService,
+                userTokenWalletService: rootContext.userTokenWalletService,
                 notificationService: rootContext.notificationService,
                 continueJob: rootContext.continueJob,
                 retryJob: rootContext.retryJob,
@@ -159,7 +169,7 @@ describe('JobContexts Type Guards', () => {
                 isIntermediateChunk: rootContext.isIntermediateChunk,
                 determineContinuation: rootContext.determineContinuation,
                 buildUploadContext: rootContext.buildUploadContext,
-                debitTokens: rootContext.debitTokens,
+                debitTokens: mockBoundDebitTokens,
             };
 
             assertEquals(isIExecuteModelCallContext(context), false);
@@ -171,7 +181,7 @@ describe('JobContexts Type Guards', () => {
                 logger: rootContext.logger,
                 fileManager: rootContext.fileManager,
                 getAiProviderAdapter: rootContext.getAiProviderAdapter,
-                tokenWalletService: rootContext.tokenWalletService,
+                userTokenWalletService: rootContext.userTokenWalletService,
                 notificationService: rootContext.notificationService,
                 continueJob: rootContext.continueJob,
                 retryJob: rootContext.retryJob,
@@ -189,7 +199,7 @@ describe('JobContexts Type Guards', () => {
             const context = {
                 logger: rootContext.logger,
                 fileManager: rootContext.fileManager,
-                tokenWalletService: rootContext.tokenWalletService,
+                userTokenWalletService: rootContext.userTokenWalletService,
                 notificationService: rootContext.notificationService,
                 continueJob: rootContext.continueJob,
                 retryJob: rootContext.retryJob,
@@ -197,7 +207,7 @@ describe('JobContexts Type Guards', () => {
                 isIntermediateChunk: rootContext.isIntermediateChunk,
                 determineContinuation: rootContext.determineContinuation,
                 buildUploadContext: rootContext.buildUploadContext,
-                debitTokens: rootContext.debitTokens,
+                debitTokens: mockBoundDebitTokens,
             };
 
             assertEquals(isIExecuteModelCallContext(context), false);
@@ -206,7 +216,7 @@ describe('JobContexts Type Guards', () => {
         it('returns false for object with Zone A-D fields but missing IExecuteModelCallContext fields', () => {
             const rootContext = buildGuardTestIJobContext();
             // Zone A-D fields: ragService, pickLatest, downloadFromStorage, applyInputsRequiredScope,
-            // countTokens, tokenWalletService, validateWalletBalance, validateModelCostRates, embeddingClient
+            // countTokens, adminTokenWalletService, validateWalletBalance, validateModelCostRates, embeddingClient
             // Missing EMCAS fields: fileManager, getAiProviderAdapter, continueJob, retryJob,
             // resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext, debitTokens
             const context = {
@@ -216,7 +226,7 @@ describe('JobContexts Type Guards', () => {
                 downloadFromStorage: rootContext.downloadFromStorage,
                 applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
                 countTokens: rootContext.countTokens,
-                tokenWalletService: rootContext.tokenWalletService,
+                adminTokenWalletService: rootContext.adminTokenWalletService,
                 validateWalletBalance: rootContext.validateWalletBalance,
                 validateModelCostRates: rootContext.validateModelCostRates,
                 embeddingClient: rootContext.embeddingClient,
@@ -236,7 +246,7 @@ describe('JobContexts Type Guards', () => {
                 downloadFromStorage: rootContext.downloadFromStorage,
                 applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
                 countTokens: rootContext.countTokens,
-                tokenWalletService: rootContext.tokenWalletService,
+                adminTokenWalletService: rootContext.adminTokenWalletService,
                 validateWalletBalance: rootContext.validateWalletBalance,
                 validateModelCostRates: rootContext.validateModelCostRates,
                 ragService: rootContext.ragService,
@@ -257,7 +267,7 @@ describe('JobContexts Type Guards', () => {
                 downloadFromStorage: rootContext.downloadFromStorage,
                 applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
                 countTokens: rootContext.countTokens,
-                tokenWalletService: rootContext.tokenWalletService,
+                adminTokenWalletService: rootContext.adminTokenWalletService,
                 validateWalletBalance: rootContext.validateWalletBalance,
                 validateModelCostRates: rootContext.validateModelCostRates,
                 embeddingClient: rootContext.embeddingClient,
@@ -276,7 +286,7 @@ describe('JobContexts Type Guards', () => {
                 downloadFromStorage: rootContext.downloadFromStorage,
                 applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
                 countTokens: rootContext.countTokens,
-                tokenWalletService: rootContext.tokenWalletService,
+                adminTokenWalletService: rootContext.adminTokenWalletService,
                 validateWalletBalance: rootContext.validateWalletBalance,
                 validateModelCostRates: rootContext.validateModelCostRates,
                 ragService: rootContext.ragService,
@@ -295,7 +305,7 @@ describe('JobContexts Type Guards', () => {
                 downloadFromStorage: rootContext.downloadFromStorage,
                 applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
                 countTokens: rootContext.countTokens,
-                tokenWalletService: rootContext.tokenWalletService,
+                adminTokenWalletService: rootContext.adminTokenWalletService,
                 validateWalletBalance: rootContext.validateWalletBalance,
                 validateModelCostRates: rootContext.validateModelCostRates,
                 ragService: rootContext.ragService,
@@ -317,7 +327,7 @@ describe('JobContexts Type Guards', () => {
                 logger: rootContext.logger,
                 fileManager: rootContext.fileManager,
                 getAiProviderAdapter: rootContext.getAiProviderAdapter,
-                tokenWalletService: rootContext.tokenWalletService,
+                userTokenWalletService: rootContext.userTokenWalletService,
                 notificationService: rootContext.notificationService,
                 continueJob: rootContext.continueJob,
                 retryJob: rootContext.retryJob,
@@ -325,7 +335,7 @@ describe('JobContexts Type Guards', () => {
                 isIntermediateChunk: rootContext.isIntermediateChunk,
                 determineContinuation: rootContext.determineContinuation,
                 buildUploadContext: rootContext.buildUploadContext,
-                debitTokens: rootContext.debitTokens,
+                debitTokens: mockBoundDebitTokens,
             };
 
             assertEquals(isIPrepareModelJobContext(context), false);
@@ -339,7 +349,7 @@ describe('JobContexts Type Guards', () => {
                 downloadFromStorage: rootContext.downloadFromStorage,
                 applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
                 countTokens: rootContext.countTokens,
-                tokenWalletService: rootContext.tokenWalletService,
+                adminTokenWalletService: rootContext.adminTokenWalletService,
                 validateWalletBalance: rootContext.validateWalletBalance,
                 validateModelCostRates: rootContext.validateModelCostRates,
                 ragService: rootContext.ragService,
@@ -359,7 +369,7 @@ describe('JobContexts Type Guards', () => {
                 downloadFromStorage: rootContext.downloadFromStorage,
                 applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
                 countTokens: rootContext.countTokens,
-                tokenWalletService: rootContext.tokenWalletService,
+                adminTokenWalletService: rootContext.adminTokenWalletService,
                 validateWalletBalance: rootContext.validateWalletBalance,
                 validateModelCostRates: rootContext.validateModelCostRates,
                 ragService: rootContext.ragService,

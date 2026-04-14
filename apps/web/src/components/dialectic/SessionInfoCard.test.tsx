@@ -38,7 +38,7 @@ vi.mock('@paynless/store', async () => {
   return {
     useDialecticStore: dialecticMockModule.useDialecticStore,
     useOrganizationStore: organizationStoreMockModule.useOrganizationStore,
-    useAiStore: aiStoreMockModule.mockedUseAiStoreHookLogic,
+    useAiStore: aiStoreMockModule.useMockedAiStoreHookLogic,
     initialAiStateValues: typesModule.initialAiStateValues,
     useWalletStore: walletStoreMockModule.useWalletStore,
     initialWalletStateValues: actualOriginalStoreModule.initialWalletStateValues,

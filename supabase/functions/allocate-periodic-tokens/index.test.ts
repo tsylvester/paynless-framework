@@ -11,6 +11,7 @@ import {
   beforeEach,
   afterEach,
 } from "jsr:@std/testing/bdd";
+import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import {
   spy,
   stub,
@@ -19,15 +20,16 @@ import {
   resolvesNext,
   assertSpyCalls,
 } from "jsr:@std/testing/mock";
-
 // Import the handler from the module we want to test
 import { handleAllocatePeriodicTokens } from "./index.ts"; 
 
 // Mock utilities
 import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
-import { createMockTokenWalletService, type MockTokenWalletService } from "../_shared/services/tokenWalletService.mock.ts";
-import type { TokenWalletService } from "../_shared/services/tokenWalletService.ts"; // Import concrete class for casting
-import type { ITokenWalletService } from "../_shared/types/tokenWallet.types.ts"; // Import ITokenWalletService for parameter typing
+import {
+  createMockAdminTokenWalletService,
+  type MockAdminTokenWalletService,
+  type RecordTransactionParams,
+} from "../_shared/services/tokenwallet/admin/adminTokenWalletService.provides.ts";
 
 // Types
 import type { Database } from '../types_db.ts';
@@ -39,7 +41,7 @@ const SYSTEM_USER_ID = '19c35c50-eab5-49db-997f-e6fea60253eb'; // Define SYSTEM_
 
 describe("POST /allocate-periodic-tokens", () => {
   let mockSupabase: MockSupabaseClientSetup;
-  let mockTokenWallet: MockTokenWalletService;
+  let mockTokenWallet: MockAdminTokenWalletService;
   let denoEnvGetStub: Stub<typeof Deno.env, [string], string | undefined>;
 
   beforeEach(() => {
@@ -53,7 +55,7 @@ describe("POST /allocate-periodic-tokens", () => {
     // Create fresh mocks for each test
     mockSupabase = createMockSupabaseClient("allocate-periodic-tokens");
     
-    mockTokenWallet = createMockTokenWalletService({
+    mockTokenWallet = createMockAdminTokenWalletService({
       // recordTransaction: async (params) => { /* custom mock logic */ return mockTransaction; }
     });
   });
@@ -73,11 +75,11 @@ describe("POST /allocate-periodic-tokens", () => {
       method: "GET", 
     });
     
-    // Pass the mocked Supabase client and TokenWalletService instances
+    // Pass the mocked Supabase client and admin token wallet service instances
     const response = await handleAllocatePeriodicTokens(
       request, 
-      mockSupabase.client as any, // Cast to any to satisfy SupabaseClient<Database> temporarily if types mismatch
-      mockTokenWallet.instance as TokenWalletService // Cast to concrete type
+      mockSupabase.client as unknown as SupabaseClient<Database>,
+      mockTokenWallet.instance
     );
     
     assertEquals(response.status, 405);
@@ -103,8 +105,8 @@ describe("POST /allocate-periodic-tokens", () => {
     
     const response = await handleAllocatePeriodicTokens(
       request,
-      mockSupabase.client as any, 
-      mockTokenWallet.instance as TokenWalletService // Cast to concrete type
+      mockSupabase.client as unknown as SupabaseClient<Database>, 
+      mockTokenWallet.instance
     );
 
     assertEquals(response.status, 500);
@@ -155,8 +157,8 @@ describe("POST /allocate-periodic-tokens", () => {
 
     const response = await handleAllocatePeriodicTokens(
         request,
-        mockSupabase.client as any,
-        mockTokenWallet.instance as TokenWalletService // Cast to concrete type
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockTokenWallet.instance
     );
 
     assertEquals(response.status, 500);
@@ -187,8 +189,8 @@ describe("POST /allocate-periodic-tokens", () => {
 
     const response = await handleAllocatePeriodicTokens(
         request,
-        mockSupabase.client as any,
-        mockTokenWallet.instance as TokenWalletService // Cast to concrete type
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockTokenWallet.instance
     );
 
     assertEquals(response.status, 200);
@@ -266,19 +268,19 @@ describe("POST /allocate-periodic-tokens", () => {
     
     // Define the mock implementation with correct signature
     const actualMockRecordTransactionImpl = async (
-      _params: Parameters<ITokenWalletService['recordTransaction']>[0]
+      _params: RecordTransactionParams
     ): Promise<TokenWalletTransaction> => {
       return mockTransactionResult;
     };
     
-    mockTokenWallet = createMockTokenWalletService({
+    mockTokenWallet = createMockAdminTokenWalletService({
         recordTransaction: actualMockRecordTransactionImpl // Pass the raw implementation directly
     });
 
     const response = await handleAllocatePeriodicTokens(
         request,
-        mockSupabase.client as any,
-        mockTokenWallet.instance as TokenWalletService
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockTokenWallet.instance
     );
 
     assertEquals(response.status, 200);
@@ -298,7 +300,7 @@ describe("POST /allocate-periodic-tokens", () => {
     // Ensure user_subscriptions select spy is asserted correctly if needed, getHistoricBuildersForTable might be better here too
     const historicUserSubBuildersForSelect = mockSupabase.client.getHistoricBuildersForTable('user_subscriptions');
     assertExists(historicUserSubBuildersForSelect, "Historic builders for user_subscriptions should exist.");
-    const userSubSelectBuilder = historicUserSubBuildersForSelect.find(b => (b as any)._state.operation === 'select');
+    const userSubSelectBuilder = historicUserSubBuildersForSelect.find(b => b.getQueryBuilderState().operation === 'select');
     assertExists(userSubSelectBuilder, "Select query builder for user_subscriptions should exist in history.");
     assertExists(userSubSelectBuilder.methodSpies.select, "Select spy for user_subscriptions should exist on historic builder.");
     assertSpyCalls(userSubSelectBuilder.methodSpies.select, 1);
@@ -313,7 +315,7 @@ describe("POST /allocate-periodic-tokens", () => {
     assertEquals(walletQbSpies.eq.calls[0].args[0], 'user_id');
     assertEquals(walletQbSpies.eq.calls[0].args[1], mockUserId);
 
-    // Check TokenWalletService.recordTransaction call
+    // Check admin token wallet recordTransaction call
     const serviceInternalRecordTransactionStub = mockTokenWallet.stubs.recordTransaction;
     assertSpyCalls(serviceInternalRecordTransactionStub, 1); 
     
@@ -338,7 +340,7 @@ describe("POST /allocate-periodic-tokens", () => {
     const updateCallArgs = userSubUpdateQbSpies.update.calls[0].args[0];
     assertExists(updateCallArgs, "Arguments for user_subscriptions.update should exist");
 
-    const updateData = updateCallArgs as { current_period_start?: string, current_period_end?: string, updated_at?: string };
+    const updateData = updateCallArgs;
     assertEquals(updateData.current_period_start, oldPeriodEnd.toISOString(), "New period start should be old period end");
     assertExists(updateData.current_period_end, "New period end should be defined");
     const newPeriodEnd = new Date(updateData.current_period_end!);
@@ -380,7 +382,7 @@ describe("POST /allocate-periodic-tokens", () => {
     const mockTransactionResults: TokenWalletTransaction[] = users.map(u => ({ transactionId: `txn-${u.userId}`, walletId: u.walletId, type: "CREDIT_MONTHLY_FREE_ALLOCATION", amount: String(tokensToAward), balanceAfterTxn: String(tokensToAward), recordedByUserId: "19c35c50-eab5-49db-997f-e6fea60253eb", timestamp: new Date(), relatedEntityId: mockPlanId, relatedEntityType: 'subscription_plan', idempotencyKey: "idempotency-key-mock" }));
 
     let recordTransactionCallCount = 0;
-    const actualMockRecordTransactionImpl = async (_params: Parameters<ITokenWalletService['recordTransaction']>[0]): Promise<TokenWalletTransaction> => {
+    const actualMockRecordTransactionImpl = async (_params: RecordTransactionParams): Promise<TokenWalletTransaction> => {
       const result = mockTransactionResults[recordTransactionCallCount];
       recordTransactionCallCount++;
       return result;
@@ -406,9 +408,9 @@ describe("POST /allocate-periodic-tokens", () => {
       }
     });
 
-    mockTokenWallet = createMockTokenWalletService({ recordTransaction: actualMockRecordTransactionImpl });
+    mockTokenWallet = createMockAdminTokenWalletService({ recordTransaction: actualMockRecordTransactionImpl });
 
-    const response = await handleAllocatePeriodicTokens(request, mockSupabase.client as any, mockTokenWallet.instance as TokenWalletService);
+    const response = await handleAllocatePeriodicTokens(request, mockSupabase.client as unknown as SupabaseClient<Database>, mockTokenWallet.instance);
 
     assertEquals(response.status, 200);
     const body = await response.json();
@@ -424,7 +426,7 @@ describe("POST /allocate-periodic-tokens", () => {
     const historicUserSubBuilders = mockSupabase.client.getHistoricBuildersForTable('user_subscriptions');
     assertExists(historicUserSubBuilders, "Historic builders for user_subscriptions should exist.");
 
-    const userSubSelectBuilder = historicUserSubBuilders.find(b => (b as any)._state.operation === 'select');
+    const userSubSelectBuilder = historicUserSubBuilders.find(b => b.getQueryBuilderState().operation === 'select');
     assertExists(userSubSelectBuilder, "Select query builder for user_subscriptions should exist in history.");
     assertExists(userSubSelectBuilder.methodSpies.select, "Select spy for user_subscriptions should exist on historic builder.");
     assertSpyCalls(userSubSelectBuilder.methodSpies.select, 1);
@@ -439,14 +441,14 @@ describe("POST /allocate-periodic-tokens", () => {
       const user = users[i];
       const call = recordTransactionStub.calls[i];
       assertExists(call, `Call ${i} to recordTransaction should exist`);
-      const args = call.args[0] as Parameters<ITokenWalletService['recordTransaction']>[0];
+      const args = call.args[0];
       assertEquals(args.walletId, user.walletId);
       assertEquals(args.amount, String(tokensToAward));
       assertEquals(args.type, "CREDIT_MONTHLY_FREE_ALLOCATION");
       assertEquals(args.relatedEntityId, mockPlanId);
     }
 
-    const userSubUpdateBuilders = historicUserSubBuilders.filter(b => (b as any)._state.operation === 'update');
+    const userSubUpdateBuilders = historicUserSubBuilders.filter(b => b.getQueryBuilderState().operation === 'update');
     assertEquals(userSubUpdateBuilders.length, users.length, "Should be one update QueryBuilder instance per user");
     for (let i = 0; i < users.length; i++) {
       const user = users[i];
@@ -455,7 +457,7 @@ describe("POST /allocate-periodic-tokens", () => {
       const updateSpy = qb.methodSpies.update;
       assertExists(updateSpy, `Update spy for user_subscriptions user ${user.userId} should exist`);
       assertSpyCalls(updateSpy, 1);
-      const updateArgs = updateSpy.calls[0].args[0] as { current_period_start?: string, current_period_end?: string, updated_at?: string };
+      const updateArgs = updateSpy.calls[0].args[0];
       assertEquals(updateArgs.current_period_start, user.current_period_end_iso);
       assertExists(updateArgs.current_period_end);
       const newPeriodEnd = new Date(updateArgs.current_period_end!);
@@ -523,7 +525,7 @@ describe("POST /allocate-periodic-tokens", () => {
     }));    
 
     const actualMockRecordTransactionImpl = async (
-        _params: Parameters<ITokenWalletService['recordTransaction']>[0]
+        _params: RecordTransactionParams
     ): Promise<TokenWalletTransaction> => {
         const result = mockTransactionResults[recordTransactionCallCount];
         recordTransactionCallCount++;
@@ -553,11 +555,11 @@ describe("POST /allocate-periodic-tokens", () => {
       }
     });
 
-    mockTokenWallet = createMockTokenWalletService({ recordTransaction: actualMockRecordTransactionImpl });
+    mockTokenWallet = createMockAdminTokenWalletService({ recordTransaction: actualMockRecordTransactionImpl });
 
     const consoleErrorSpy = spy(console, "error");
 
-    const response = await handleAllocatePeriodicTokens(request, mockSupabase.client as any, mockTokenWallet.instance as TokenWalletService);
+    const response = await handleAllocatePeriodicTokens(request, mockSupabase.client as unknown as SupabaseClient<Database>, mockTokenWallet.instance);
     consoleErrorSpy.restore();
 
     assertEquals(response.status, 200);
@@ -595,12 +597,12 @@ describe("POST /allocate-periodic-tokens", () => {
       const user = successfulUsers[i];
       const call = recordTransactionStub.calls[i];
       assertExists(call, `Call ${i} to recordTransaction should exist`);
-      const args = call.args[0] as Parameters<ITokenWalletService['recordTransaction']>[0];
+      const args = call.args[0];
       assertEquals(args.walletId, user.walletId!);
       assertEquals(args.amount, String(tokensToAward));
     }
 
-    const userSubUpdateBuilders = historicUserSubBuilders.filter(b => (b as any)._state.operation === 'update');
+    const userSubUpdateBuilders = historicUserSubBuilders.filter(b => b.getQueryBuilderState().operation === 'update');
     assertEquals(userSubUpdateBuilders.length, successfulUsers.length, "Should be one update QueryBuilder instance per successful user");
     for (let i = 0; i < successfulUsers.length; i++) {
       const user = successfulUsers[i];
@@ -609,7 +611,7 @@ describe("POST /allocate-periodic-tokens", () => {
       const updateSpy = qb.methodSpies.update;
       assertExists(updateSpy, `Update spy for user_subscriptions user ${user.userId} should exist`);
       assertSpyCalls(updateSpy, 1);
-      const updateArgs = updateSpy.calls[0].args[0] as { current_period_start?: string, current_period_end?: string, updated_at?: string };
+      const updateArgs = updateSpy.calls[0].args[0];
       assertEquals(updateArgs.current_period_start, user.current_period_end_iso);
       const eqSpy = qb.methodSpies.eq;
       assertExists(eqSpy, `Eq spy for user_subscriptions update user ${user.userId} should exist`);
@@ -619,7 +621,7 @@ describe("POST /allocate-periodic-tokens", () => {
     }
   });
 
-  it("should handle failure in TokenWalletService.recordTransaction and continue with others", async () => {
+  it("should handle failure in recordTransaction and continue with others", async () => {
     const request = new Request(`${mockSupabaseUrl}/functions/v1/allocate-periodic-tokens`, {
       method: "POST",
       headers: { 'Content-Type': 'application/json' },
@@ -675,7 +677,7 @@ describe("POST /allocate-periodic-tokens", () => {
     });
 
     const actualMockRecordTransactionImpl = async (
-        params: Parameters<ITokenWalletService['recordTransaction']>[0]
+        params: RecordTransactionParams
     ): Promise<TokenWalletTransaction> => {
       const userForCall = usersSetup[recordTransactionCallCount]; // relies on order
       recordTransactionCallCount++;
@@ -712,10 +714,10 @@ describe("POST /allocate-periodic-tokens", () => {
       }
     });
 
-    mockTokenWallet = createMockTokenWalletService({ recordTransaction: actualMockRecordTransactionImpl });
+    mockTokenWallet = createMockAdminTokenWalletService({ recordTransaction: actualMockRecordTransactionImpl });
     const consoleErrorSpy = spy(console, "error");
 
-    const response = await handleAllocatePeriodicTokens(request, mockSupabase.client as any, mockTokenWallet.instance as TokenWalletService);
+    const response = await handleAllocatePeriodicTokens(request, mockSupabase.client as unknown as SupabaseClient<Database>, mockTokenWallet.instance);
     consoleErrorSpy.restore();
 
     assertEquals(response.status, 200);
@@ -741,7 +743,7 @@ describe("POST /allocate-periodic-tokens", () => {
     // Check user_subscriptions update calls (only for successful users)
     const historicUserSubBuilders = mockSupabase.client.getHistoricBuildersForTable('user_subscriptions');
     assertExists(historicUserSubBuilders);
-    const userSubUpdateBuilders = historicUserSubBuilders.filter(b => (b as any)._state.operation === 'update');
+    const userSubUpdateBuilders = historicUserSubBuilders.filter(b => b.getQueryBuilderState().operation === 'update');
     assertEquals(userSubUpdateBuilders.length, successfulUsers.length, "Should only update subscriptions for users with successful transactions");
 
     for (const successfulUser of successfulUsers) {
@@ -751,7 +753,7 @@ describe("POST /allocate-periodic-tokens", () => {
       });
       assertExists(qb, `Update QueryBuilder for successful user ${successfulUser.userId} should exist`);
       assertSpyCalls(qb.methodSpies.update, 1);
-      const updateArgs = qb.methodSpies.update.calls[0].args[0] as { current_period_start?: string, current_period_end?: string, updated_at?: string };
+      const updateArgs = qb.methodSpies.update.calls[0].args[0];
       assertEquals(updateArgs.current_period_start, successfulUser.current_period_end_iso);
     }
     
@@ -822,7 +824,7 @@ describe("POST /allocate-periodic-tokens", () => {
 
     let recordTransactionCallIdx = 0;
     const actualMockRecordTransactionImpl = async (
-        params: Parameters<ITokenWalletService['recordTransaction']>[0]
+        params: RecordTransactionParams
     ): Promise<TokenWalletTransaction> => {
         const callingUserId = mockTokenWalletsData.find(w => w.wallet_id === params.walletId)?.user_id;
         recordTransactionCallIdx++;
@@ -868,10 +870,10 @@ describe("POST /allocate-periodic-tokens", () => {
       }
     });
 
-    mockTokenWallet = createMockTokenWalletService({ recordTransaction: actualMockRecordTransactionImpl });
+    mockTokenWallet = createMockAdminTokenWalletService({ recordTransaction: actualMockRecordTransactionImpl });
     const consoleErrorSpy = spy(console, "error");
 
-    const response = await handleAllocatePeriodicTokens(request, mockSupabase.client as any, mockTokenWallet.instance as TokenWalletService);
+    const response = await handleAllocatePeriodicTokens(request, mockSupabase.client as unknown as SupabaseClient<Database>, mockTokenWallet.instance);
     consoleErrorSpy.restore();
 
     assertEquals(response.status, 200);
@@ -905,7 +907,7 @@ describe("POST /allocate-periodic-tokens", () => {
     // Check user_subscriptions update attempts (attempted for all users)
     const historicUserSubBuilders = mockSupabase.client.getHistoricBuildersForTable('user_subscriptions');
     assertExists(historicUserSubBuilders);
-    const userSubUpdateBuilders = historicUserSubBuilders.filter(b => (b as any)._state.operation === 'update');
+    const userSubUpdateBuilders = historicUserSubBuilders.filter(b => b.getQueryBuilderState().operation === 'update');
     assertEquals(userSubUpdateBuilders.length, usersSetup.length, "Should ATTEMPT to update subscriptions for all users whose transactions succeeded");
     
     assertSpyCalls(userSubscriptionUpdateSpy, usersSetup.length); // The main spy we used for update should have been called for each user

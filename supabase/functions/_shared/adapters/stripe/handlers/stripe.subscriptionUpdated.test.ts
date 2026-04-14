@@ -14,7 +14,7 @@ import {
 } from 'jsr:@std/testing@0.225.1/mock';
 import { createMockStripe, MockStripe, HandlerContext } from '../../../stripe.mock.ts';
 import { createMockSupabaseClient, MockSupabaseClientSetup, MockSupabaseDataConfig } from '../../../supabase.mock.ts';
-import { createMockTokenWalletService, MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import { createMockAdminTokenWalletService, MockAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 
 const FREE_TIER_ITEM_ID_INTERNAL = 'SYS_FREE_TIER'; // Define constant for free tier
 
@@ -76,9 +76,9 @@ const createMockLoggerInternal = (): ILogger => {
 Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpdated', async (t) => {
   let mockSupabaseClient: SupabaseClient<Database>;
   let mockSupabaseSetup: MockSupabaseClientSetup;
-  let mockTokenWalletService: MockTokenWalletService; // Though not directly used by handler, it's part of context
+  let mockTokenWalletService: MockAdminTokenWalletService;
   let mockLogger: ILogger;
-  let mockStripe: MockStripe; // Keep stripe instance for context if needed by other parts
+  let mockStripe: MockStripe;
   let handlerContext: HandlerContext;
 
   const setup = (dbQueryResults?: { 
@@ -88,8 +88,8 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     userSubscriptionsUpdateError?: Error | null;
   }) => {
     mockLogger = createMockLoggerInternal();
-    mockStripe = createMockStripe(); // Uses default stubs
-    mockTokenWalletService = createMockTokenWalletService();
+    mockStripe = createMockStripe();
+    mockTokenWalletService = createMockAdminTokenWalletService();
 
     const genericMockResults: MockSupabaseDataConfig['genericMockResults'] = {};
     

@@ -4,9 +4,10 @@ import { spy, assertSpyCalls, type Spy } from "jsr:@std/testing/mock";
 import { SupabaseClient } from "npm:@supabase/supabase-js";
 import { getCurrentSubscription, HandlerError } from "./current.ts";
 import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/supabase.mock.ts";
+import type { Database } from "../../types_db.ts";
 
 // --- Mocks & Spies ---
-let mockSupabaseClient: SupabaseClient;
+let mockSupabaseClient: ReturnType<typeof createMockSupabaseClient>["client"];
 
 // --- Mock Setup Helpers ---
 
@@ -60,14 +61,14 @@ describe("getCurrentSubscription Handler", () => {
                 }
             }
         };
-        const { client } = createMockSupabaseClient(mockSupabaseConfig);
+        const { client } = createMockSupabaseClient(undefined, mockSupabaseConfig);
         mockSupabaseClient = client;
     });
 
     it("should successfully fetch and return subscription with plan details", async () => {
         // Arrange - mock client configured in beforeEach
         // Act: Call handler directly
-        const result = await getCurrentSubscription(mockSupabaseClient, userId);
+        const result = await getCurrentSubscription(mockSupabaseClient as unknown as SupabaseClient<Database>, userId);
         
         // Assert: Check returned data directly
         assertEquals(result.id, mockSubDataWithPlan.id);
@@ -88,9 +89,9 @@ describe("getCurrentSubscription Handler", () => {
                 }
             }
         };
-        const { client } = createMockSupabaseClient(mockSupabaseConfig);
+        const { client } = createMockSupabaseClient(undefined, mockSupabaseConfig);
         // Use the client configured for this test
-        const result = await getCurrentSubscription(client, userId);
+        const result = await getCurrentSubscription(client as unknown as SupabaseClient<Database>, userId);
 
         // Assert: Check returned data directly
         assertEquals(result.id, mockSubDataWithoutPlan.id);
@@ -110,11 +111,11 @@ describe("getCurrentSubscription Handler", () => {
                 }
             }
         };
-        const { client } = createMockSupabaseClient(mockSupabaseConfig);
+        const { client } = createMockSupabaseClient(undefined, mockSupabaseConfig);
 
         // Act & Assert: Use assertRejects
         await assertRejects(
-            async () => await getCurrentSubscription(client, userId),
+            async () => await getCurrentSubscription(client as unknown as SupabaseClient<Database>, userId),
             HandlerError, // Expect HandlerError
             "Failed to retrieve subscription data" // Expected message
             // We could also check e.status === 500 and e.cause === dbError inside assertRejects if needed
@@ -131,11 +132,11 @@ describe("getCurrentSubscription Handler", () => {
                 }
             }
         };
-        const { client } = createMockSupabaseClient(mockSupabaseConfig);
+        const { client } = createMockSupabaseClient(undefined, mockSupabaseConfig);
         
         // Act & Assert: Use assertRejects
         await assertRejects(
-            async () => await getCurrentSubscription(client, userId),
+            async () => await getCurrentSubscription(client as unknown as SupabaseClient<Database>, userId),
             HandlerError,
             "Subscription not found" // Expected message
             // We could also check e.status === 404 inside assertRejects

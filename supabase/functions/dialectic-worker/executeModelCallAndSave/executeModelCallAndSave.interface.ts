@@ -6,7 +6,7 @@ import type {
   ILogger,
 } from '../../_shared/types.ts';
 import type { IFileManager } from '../../_shared/types/file_manager.types.ts';
-import type { ITokenWalletService } from '../../_shared/types/tokenWallet.types.ts';
+import type { IUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts';
 import type { NotificationServiceType } from '../../_shared/types/notification.service.types.ts';
 import type { DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 import type {
@@ -22,12 +22,13 @@ import type {
   ResolveFinishReasonFn,
   RetryJobFn,
 } from '../createJobContext/JobContext.interface.ts';
+import { BoundDebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 
 export interface ExecuteModelCallAndSaveDeps {
   logger: ILogger;
   fileManager: IFileManager;
   getAiProviderAdapter: GetAiProviderAdapterFn;
-  tokenWalletService: ITokenWalletService;
+  userTokenWalletService: IUserTokenWalletService;
   notificationService: NotificationServiceType;
   continueJob: ContinueJobFn;
   retryJob: RetryJobFn;
@@ -35,7 +36,7 @@ export interface ExecuteModelCallAndSaveDeps {
   isIntermediateChunk: IsIntermediateChunkFn;
   determineContinuation: DetermineContinuationFn;
   buildUploadContext: BuildUploadContextFn;
-  debitTokens: DebitTokens;
+  debitTokens: BoundDebitTokens;
 }
 
 export interface ExecuteModelCallAndSaveParams {

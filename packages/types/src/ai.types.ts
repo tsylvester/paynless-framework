@@ -1,7 +1,7 @@
 import type { Database } from '@paynless/db-types';
 // If FetchOptions is meant to be the standard fetch options, use RequestInit
 // import type { FetchOptions } from '@supabase/supabase-js'; // This was problematic
-import type { ApiResponse } from './api.types';
+import type { ApiError, ApiResponse, FetchOptions } from './api.types';
 import type { UserProfile } from './auth.types'; // UserProfile import is correct here
 // --- Database Table Aliases ---
 
@@ -56,7 +56,47 @@ export interface ChatSessionTokenUsageDetails {
  */
 export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
   status?: 'pending' | 'sent' | 'streaming' | 'failed' | 'error';
-}; 
+};
+
+/**
+ * Server-Sent Events payloads for the chat edge function streaming response (client mirror of the wire format).
+ * Discriminated on `type`.
+ */
+export interface SseChatStartEvent {
+  type: "chat_start";
+  chatId: string;
+  timestamp: string;
+}
+
+export interface SseContentChunkEvent {
+  type: "content_chunk";
+  content: string;
+  assistantMessageId: string;
+  timestamp: string;
+}
+
+export interface SseChatCompleteEvent {
+  type: "chat_complete";
+  assistantMessage: ChatMessage;
+  finish_reason: string | null;
+  timestamp: string;
+}
+
+export interface SseErrorEvent {
+  type: "error";
+  message: string;
+  timestamp: string;
+}
+
+export type SseChatEvent =
+  | SseChatStartEvent
+  | SseContentChunkEvent
+  | SseChatCompleteEvent
+  | SseErrorEvent;
+
+export interface ISseConnection extends EventTarget {
+  close(): void;
+}
 
 // --- Application/API/Adapter/Store Specific Types ---
 
@@ -310,7 +350,7 @@ export interface AiActions {
     onMessage?: (event: MessageEvent) => void,
     onComplete?: (assistantMessage: ChatMessage) => void,
     onError?: (error: string) => void
-  ) => Promise<EventSource | null>;
+  ) => Promise<ISseConnection | null>;
   loadChatHistory: (organizationId?: string | null) => Promise<void>;
   loadChatDetails: (chatId: Chat['id']) => Promise<void>; // Use aliased type
   startNewChat: (organizationId?: string | null) => void;
@@ -415,6 +455,7 @@ export interface IAiApiClient {
   getAiProviders(token?: string): Promise<ApiResponse<AiProvider[]>>;
   getSystemPrompts(token?: string): Promise<ApiResponse<SystemPrompt[]>>;
   sendChatMessage(data: ChatApiRequest, options?: RequestInit): Promise<ApiResponse<ChatHandlerSuccessResponse>>;
+  sendStreamingChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ISseConnection | { error: ApiError }>;
   getChatHistory(token: string, organizationId?: string | null): Promise<ApiResponse<Chat[]>>;
   getChatWithMessages(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<{ chat: Chat, messages: ChatMessage[] }>>;
   deleteChat(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<void>>;

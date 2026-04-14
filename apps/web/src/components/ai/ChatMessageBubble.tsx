@@ -70,24 +70,15 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({
 							/>
 							<AttributionDisplay
 								userId={message.user_id}
-								role={message.role as "user" | "assistant"}
+								role={message.role}
 								timestamp={message.created_at}
-								organizationId={
-									"organization_id" in message
-										? (
-												message as ChatMessage & {
-													organization_id?: string | null;
-												}
-											).organization_id
-										: undefined
-								}
 								modelId={message.ai_provider_id}
 							/>
 							{/* Token usage display for assistant messages */}
 							{message.role === "assistant" && message.token_usage && (
 								<div className="text-xs text-muted-foreground/70">
 									<TokenUsageDisplay
-										tokenUsage={message.token_usage as TokenUsage}
+										tokenUsage={message.token_usage}
 									/>
 								</div>
 							)}

@@ -6,16 +6,9 @@ import { SegmentContent } from '@paynless/types';
 import { MarkdownRenderer } from '../common/MarkdownRenderer';
 import {
   ArrowRight,
-  Lightbulb,
-  ShieldCheck,
-  Merge,
-  FileCode2,
-  Trophy,
   ChevronDown,
   ChevronUp,
-  Quote,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 
 interface SegmentLandingPageProps {
   content: SegmentContent;
@@ -29,13 +22,12 @@ const ALL_DOC_TITLES = {
   implementation: ['Work Plan', 'Recommendations', 'Updated Master Plan'],
 };
 
-const STAGE_ICONS: LucideIcon[] = [Lightbulb, ShieldCheck, Merge, FileCode2, Trophy];
-const STAGE_COLORS = [
-  { color: 'text-blue-500', bgColor: 'bg-blue-500/10', borderColor: 'border-blue-500/20' },
-  { color: 'text-red-500', bgColor: 'bg-red-500/10', borderColor: 'border-red-500/20' },
-  { color: 'text-purple-500', bgColor: 'bg-purple-500/10', borderColor: 'border-purple-500/20' },
-  { color: 'text-amber-500', bgColor: 'bg-amber-500/10', borderColor: 'border-amber-500/20' },
-  { color: 'text-emerald-500', bgColor: 'bg-emerald-500/10', borderColor: 'border-emerald-500/20' },
+const STAGE_GRADIENTS = [
+  'from-blue-600 to-cyan-500',
+  'from-red-600 to-rose-500', 
+  'from-purple-600 to-pink-500',
+  'from-amber-600 to-yellow-500',
+  'from-emerald-600 to-green-500',
 ];
 
 const containerVariants: Variants = {
@@ -64,57 +56,83 @@ export function SegmentLandingPage({ content }: SegmentLandingPageProps) {
   const registerUrl = `/register?ref=${content.ctaRef}`;
 
   return (
-    <div className="w-full">
+    <div className="w-full -mt-12 md:-mt-16 -ml-4 md:-ml-4">
       {/* Section 1: Hero */}
-      <section className={`w-full py-24 bg-gradient-to-br ${content.gradient} relative overflow-hidden`}>
-        <div className="absolute inset-0 bg-background/80" />
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+      <section className="w-full min-h-[80vh] flex items-center relative overflow-hidden">
+        <div className={`absolute inset-0 bg-gradient-to-br ${content.gradient} opacity-90`} />
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
+        
+        {/* Animated background elements */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -top-1/2 -left-1/2 w-full h-full bg-gradient-radial from-white/10 to-transparent rounded-full blur-3xl animate-pulse" />
+          <div className="absolute -bottom-1/2 -right-1/2 w-full h-full bg-gradient-radial from-white/10 to-transparent rounded-full blur-3xl animate-pulse animation-delay-2000" />
+        </div>
+        
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
             className="text-center"
           >
-            <h1 className="text-4xl md:text-5xl font-bold text-textPrimary mb-6">
+            <motion.h1 
+              className="text-5xl md:text-7xl lg:text-8xl font-black bg-clip-text text-transparent bg-gradient-to-r from-white to-white/80 mb-8 leading-tight tracking-tight"
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+            >
               {content.headline}
-            </h1>
-            <p className="text-xl md:text-2xl text-textSecondary mb-10 max-w-3xl mx-auto">
+            </motion.h1>
+            <motion.p 
+              className="text-xl md:text-3xl font-medium text-white/90 mb-12 max-w-4xl mx-auto leading-relaxed"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.7, delay: 0.4 }}
+            >
               {content.oneLiner}
-            </p>
-            {user ? (
-              <Link
-                to="/dashboard"
-                className="group inline-flex items-center px-8 py-4 text-base font-semibold rounded-xl text-white dark:text-black bg-primary hover:bg-primary/90 transition-all duration-300 shadow-lg hover:shadow-xl hover:shadow-primary/20"
-              >
-                Go to Dashboard
-                <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
-              </Link>
-            ) : (
-              <Link
-                to={registerUrl}
-                className="group inline-flex items-center px-8 py-4 text-base font-semibold rounded-xl text-white dark:text-black bg-primary hover:bg-primary/90 transition-all duration-300 shadow-lg hover:shadow-xl hover:shadow-primary/20"
-              >
-                Get Started Free
-                <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
-              </Link>
-            )}
+            </motion.p>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.6 }}
+            >
+              {user ? (
+                <Link
+                  to="/dashboard"
+                  className="group inline-flex items-center px-10 py-5 text-lg font-bold rounded-2xl bg-white/95 dark:bg-black/95 text-black dark:text-white hover:bg-white dark:hover:bg-black transition-all duration-300 shadow-2xl hover:shadow-3xl hover:scale-105 transform backdrop-blur-sm"
+                >
+                  Go to Dashboard
+                  <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-2 transition-transform" />
+                </Link>
+              ) : (
+                <Link
+                  to={registerUrl}
+                  className="group inline-flex items-center px-10 py-5 text-lg font-bold rounded-2xl bg-white/95 dark:bg-black/95 text-black dark:text-white hover:bg-white dark:hover:bg-black transition-all duration-300 shadow-2xl hover:shadow-3xl hover:scale-105 transform backdrop-blur-sm"
+                >
+                  Get Started Free
+                  <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-2 transition-transform" />
+                </Link>
+              )}
+            </motion.div>
           </motion.div>
         </div>
       </section>
 
       {/* Section 2: Before/After */}
-      <section className="w-full py-20 bg-surface">
+      <section className="w-full py-24 bg-gradient-to-b from-background to-surface relative">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
-            className="text-center mb-12"
+            className="text-center mb-16"
           >
-            <h2 className="text-3xl font-bold text-textPrimary mb-4">From Idea to Plan</h2>
-            <p className="text-textSecondary max-w-2xl mx-auto">
-              Bring whatever you have — from a single sentence to a full brief. The more detail you provide, the sharper the output.
+            <h2 className="text-4xl md:text-5xl font-black text-textPrimary mb-6 bg-clip-text text-transparent bg-gradient-to-r from-textPrimary to-primary">
+              {content.transformHeadline || 'From Chaos to Clarity'}
+            </h2>
+            <p className="text-lg text-textSecondary max-w-3xl mx-auto">
+              {content.transformSubheadline || 'Transform your scattered ideas into structured, actionable plans that your AI agents can actually follow.'}
             </p>
           </motion.div>
           <div className="grid md:grid-cols-2 gap-8 items-center">
@@ -123,29 +141,43 @@ export function SegmentLandingPage({ content }: SegmentLandingPageProps) {
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6 }}
-              className="p-6 rounded-xl bg-background border border-border"
+              className="p-8 rounded-2xl bg-gradient-to-br from-background via-surface to-background border-2 border-primary/20 shadow-xl hover:shadow-2xl transition-shadow duration-300"
             >
-              <p className="text-sm font-medium text-textSecondary mb-2">Your Input</p>
-              <p className="text-textPrimary italic">&quot;{content.exampleInput}&quot;</p>
+              <div className="flex items-center mb-4">
+                <div className="w-3 h-3 rounded-full bg-red-500 mr-2" />
+                <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2" />
+                <div className="w-3 h-3 rounded-full bg-green-500" />
+              </div>
+              <p className="text-sm font-bold text-primary mb-3 uppercase tracking-wider">Your Raw Input</p>
+              <p className="text-lg text-textPrimary italic leading-relaxed">&quot;{content.exampleInput}&quot;</p>
             </motion.div>
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.2 }}
-              className="p-6 rounded-xl bg-background border border-border"
+              className="p-8 rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-background border-2 border-primary/30 shadow-xl hover:shadow-2xl transition-all duration-300 hover:border-primary/50"
             >
-              <p className="text-sm font-medium text-textSecondary mb-2">What You Get</p>
-              <ul className="space-y-2">
+              <div className="flex items-center mb-4">
+                <div className="w-3 h-3 rounded-full bg-primary animate-pulse mr-2" />
+                <div className="w-3 h-3 rounded-full bg-primary/70 animate-pulse animation-delay-200 mr-2" />
+                <div className="w-3 h-3 rounded-full bg-primary/40 animate-pulse animation-delay-400" />
+              </div>
+              <p className="text-sm font-bold text-primary mb-4 uppercase tracking-wider">AI-Generated Output</p>
+              <ul className="space-y-3">
                 {content.featuredDocs.map((doc) => (
-                  <li key={doc.tabLabel} className="flex items-center gap-2 text-textPrimary">
-                    <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0" />
-                    {doc.tabLabel}
+                  <li key={doc.tabLabel} className="flex items-center gap-3 text-textPrimary group">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                      <div className="w-2 h-2 bg-white rounded-full" />
+                    </div>
+                    <span className="font-medium">{doc.tabLabel}</span>
                   </li>
                 ))}
-                <li className="flex items-center gap-2 text-textSecondary">
-                  <div className="w-2 h-2 rounded-full bg-textSecondary/30 flex-shrink-0" />
-                  + 16 more documents
+                <li className="flex items-center gap-3 text-textSecondary font-medium pt-2 border-t border-border">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-textSecondary/30 to-textSecondary/10 flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs font-bold">+16</span>
+                  </div>
+                  More strategic documents
                 </li>
               </ul>
             </motion.div>
@@ -154,54 +186,64 @@ export function SegmentLandingPage({ content }: SegmentLandingPageProps) {
       </section>
 
       {/* Section 3: Sound Familiar */}
-      <section className="w-full py-20 bg-background">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="w-full py-24 bg-gradient-to-b from-surface to-background relative overflow-hidden">
+        <div className="absolute inset-0">
+          <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
+        </div>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
-            className="text-center mb-8"
+            className="text-center mb-12"
           >
-            <h2 className="text-3xl font-bold text-textPrimary">Sound Familiar?</h2>
+            <h2 className="text-4xl md:text-5xl font-black text-textPrimary mb-4">This Is You Right Now</h2>
+            <div className="w-24 h-1 bg-gradient-to-r from-primary to-primary/40 mx-auto rounded-full" />
           </motion.div>
           <motion.blockquote
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.2 }}
-            className="relative p-8 rounded-xl bg-surface border border-border"
+            className="relative p-10 rounded-3xl bg-gradient-to-br from-surface via-background to-surface border-2 border-primary/20 shadow-2xl hover:shadow-3xl transition-all duration-300 hover:border-primary/30"
           >
-            <Quote className="absolute top-4 left-4 h-8 w-8 text-primary/20" />
-            <p className="text-lg text-textSecondary italic pl-8">
+            <div className="absolute -top-6 left-10">
+              <div className="bg-gradient-to-r from-primary to-primary/60 text-white text-6xl font-serif px-4 py-2 rounded-lg shadow-xl">&ldquo;</div>
+            </div>
+            <p className="text-xl text-textPrimary leading-relaxed font-medium pt-4">
               {content.scenario}
             </p>
+            <div className="absolute -bottom-6 right-10">
+              <div className="bg-gradient-to-r from-primary/60 to-primary text-white text-6xl font-serif px-4 py-2 rounded-lg shadow-xl rotate-180">&ldquo;</div>
+            </div>
           </motion.blockquote>
         </div>
       </section>
 
       {/* Section 4: Doc Reader */}
-      <section className="w-full py-20 bg-surface">
+      <section className="w-full py-24 bg-gradient-to-b from-background via-surface to-background">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
-            className="text-center mb-8"
+            className="text-center mb-12"
           >
-            <h2 className="text-3xl font-bold text-textPrimary mb-4">Here&apos;s What You Get</h2>
-            <p className="text-textSecondary">This is real, unedited output generated from the exact prompt example above.</p>
+            <h2 className="text-4xl md:text-5xl font-black text-textPrimary mb-6 bg-clip-text text-transparent bg-gradient-to-r from-textPrimary to-primary">Real Output. Real Results.</h2>
+            <p className="text-lg text-textSecondary font-medium">Actual AI-generated documents from the example above — no edits, no BS.</p>
           </motion.div>
-          <div className="flex gap-2 mb-4 justify-center">
+          <div className="flex gap-4 mb-8 justify-center">
             {content.featuredDocs.map((doc, index) => (
               <button
                 key={doc.tabLabel}
                 onClick={() => setActiveTab(index)}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                className={`px-6 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 ${
                   activeTab === index
-                    ? 'bg-primary text-white dark:text-black'
-                    : 'bg-background text-textSecondary hover:bg-background/80'
+                    ? 'bg-gradient-to-r from-primary to-primary/80 text-white shadow-xl scale-105'
+                    : 'bg-surface text-textSecondary hover:bg-primary/10 border-2 border-transparent hover:border-primary/30'
                 }`}
               >
                 {doc.tabLabel}
@@ -320,25 +362,27 @@ export function SegmentLandingPage({ content }: SegmentLandingPageProps) {
             className="grid md:grid-cols-5 gap-6"
           >
             {content.howItWorksSteps.map((step, index) => {
-              const Icon = STAGE_ICONS[index];
-              const colors = STAGE_COLORS[index];
+              const gradient = STAGE_GRADIENTS[index];
               return (
                 <motion.div
                   key={step.stage}
                   variants={itemVariants}
-                  className="text-center"
+                  className="text-center group"
                 >
-                  <div
-                    className={`w-16 h-16 mx-auto rounded-xl ${colors.bgColor} border ${colors.borderColor} flex items-center justify-center mb-4`}
-                  >
-                    <Icon className={`h-8 w-8 ${colors.color}`} />
+                  <div className="relative mb-6">
+                    <div className={`w-20 h-20 mx-auto rounded-3xl bg-gradient-to-br ${gradient} p-1 shadow-xl group-hover:shadow-2xl transition-all duration-300 group-hover:scale-110 transform`}>
+                      <div className="w-full h-full rounded-3xl bg-background flex items-center justify-center">
+                        <span className={`text-3xl font-black bg-gradient-to-br ${gradient} bg-clip-text text-transparent`}>
+                          {step.stage}
+                        </span>
+                      </div>
+                    </div>
+                    {index < content.howItWorksSteps.length - 1 && (
+                      <div className="hidden md:block absolute top-10 left-[60%] w-full h-px bg-gradient-to-r from-primary/30 to-transparent" />
+                    )}
                   </div>
-                  <h3 className={`text-lg font-bold ${colors.color} mb-2`}>
-                    {step.title}
-                  </h3>
-                  <p className="text-sm text-textSecondary">
-                    {step.description}
-                  </p>
+                  <h3 className="text-xl font-bold text-textPrimary mb-3">{step.title}</h3>
+                  <p className="text-textSecondary leading-relaxed">{step.description}</p>
                 </motion.div>
               );
             })}

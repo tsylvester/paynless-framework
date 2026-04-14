@@ -1,5 +1,5 @@
 import { IPaymentGatewayAdapter } from '../types/payment.types.ts';
-import { ITokenWalletService } from '../types/tokenWallet.types.ts';
+import { IAdminTokenWalletService } from '../services/tokenwallet/admin/adminTokenWalletService.interface.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js';
 import type { Database } from '../../types_db.ts';
 import Stripe from 'npm:stripe'; // Import the Stripe SDK
@@ -10,7 +10,7 @@ import { StripePaymentAdapter } from './stripe/stripePaymentAdapter.ts'; // Impo
 export function getPaymentAdapter(
   source: string,
   adminClient: SupabaseClient<Database>,
-  tokenWalletService: ITokenWalletService,
+  tokenWalletService: IAdminTokenWalletService,
 ): IPaymentGatewayAdapter | null {
   if (source === 'stripe') {
     // Align with getStripeMode() in stripe-client.ts

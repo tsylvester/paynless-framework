@@ -14,7 +14,7 @@ import {
 } from 'jsr:@std/testing@0.225.1/mock';
 import { createMockStripe, MockStripe, HandlerContext } from '../../../stripe.mock.ts';
 import { createMockSupabaseClient } from '../../../supabase.mock.ts';
-import { createMockTokenWalletService, MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import { createMockAdminTokenWalletService, MockAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 import type { ILogger, LogMetadata } from '../../../types.ts';
 
 const FREE_TIER_ITEM_ID_INTERNAL = 'SYS_FREE_TIER'; // Define constant for free tier
@@ -63,7 +63,7 @@ const createMockLoggerInternal = (): ILogger => {
 Deno.test('[stripe.subscriptionDeleted.ts] Tests - handleCustomerSubscriptionDeleted', async (t) => {
   let mockSupabaseClient: SupabaseClient<Database>;
   let mockSupabaseSetup: MockSupabaseClientSetup;
-  let mockTokenWalletService: MockTokenWalletService;
+  let mockTokenWalletService: MockAdminTokenWalletService;
   let mockLogger: ILogger;
   let mockStripeInstance: MockStripe['instance'];
   let handlerContext: HandlerContext;
@@ -75,7 +75,7 @@ Deno.test('[stripe.subscriptionDeleted.ts] Tests - handleCustomerSubscriptionDel
     userSubscriptionsUpdateError?: Error | null;
   }) => {
     mockLogger = createMockLoggerInternal();
-    mockTokenWalletService = createMockTokenWalletService();
+    mockTokenWalletService = createMockAdminTokenWalletService();
     mockStripeInstance = createMockStripe().instance;
 
     const genericMockResults: MockSupabaseDataConfig['genericMockResults'] = {};

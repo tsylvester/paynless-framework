@@ -7,15 +7,16 @@ import { createBillingPortalSession } from "./billing-portal.ts";
 import { HandlerError } from "./current.ts";
 import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/supabase.mock.ts";
 import { BillingPortalRequest } from "../../_shared/types.ts";
+import type { Database } from "../../types_db.ts";
 
 // --- Mocks & Spies ---
-let mockSupabaseClient: SupabaseClient;
+let mockSupabaseClient: ReturnType<typeof createMockSupabaseClient>["client"];
 let mockStripeInstance: Stripe;
 let stripeCreateSpy: Spy; // Define Stripe spy here for use across tests
 
 // Default Portal Session Create Spy
 const defaultPortalSessionCreateSpy = () => spy(() => 
-    Promise.resolve({ id: "bps_123", url: "https://billing.stripe.com/session/test" } as any)
+    Promise.resolve({ id: "bps_123", url: "https://billing.stripe.com/session/test" })
 );
 
 // --- Test Suite ---
@@ -30,7 +31,7 @@ describe("createBillingPortalSession Handler", () => {
             }
         }
     };
-    const { client } = createMockSupabaseClient(mockSupabaseConfig);
+    const { client } = createMockSupabaseClient(undefined, mockSupabaseConfig);
     mockSupabaseClient = client;
 
     // Default success setup for Stripe
@@ -46,12 +47,12 @@ describe("createBillingPortalSession Handler", () => {
 
   it("should throw HandlerError(400) if returnUrl is missing", async () => {
     // Arrange
-    const requestBody = {} as BillingPortalRequest; // Missing returnUrl
+    const requestBody: BillingPortalRequest = { returnUrl: "" }; // Missing returnUrl
     const userId = "user_test_1";
     
     // Act & Assert
     await assertRejects(
-        async () => await createBillingPortalSession(mockSupabaseClient, mockStripeInstance, userId, requestBody), // Remove mockDeps
+        async () => await createBillingPortalSession(mockSupabaseClient as unknown as SupabaseClient<Database>, mockStripeInstance, userId, requestBody), // Remove mockDeps
         HandlerError,
         "Missing return URL"
     );
@@ -64,13 +65,13 @@ describe("createBillingPortalSession Handler", () => {
     const mockConfig: MockSupabaseDataConfig = {
         genericMockResults: { user_subscriptions: { select: () => Promise.resolve({ data: null, error: dbError }) } }
     };
-    const { client: errorClient } = createMockSupabaseClient(mockConfig);
+    const { client: errorClient } = createMockSupabaseClient(undefined, mockConfig);
     const requestBody = { returnUrl: "/account" };
     const userId = "user_test_2";
     
     // Act & Assert
     await assertRejects(
-        async () => await createBillingPortalSession(errorClient, mockStripeInstance, userId, requestBody), // Use errorClient, remove mockDeps
+        async () => await createBillingPortalSession(errorClient as unknown as SupabaseClient<Database>, mockStripeInstance, userId, requestBody), // Use errorClient, remove mockDeps
         HandlerError,
         "Failed to retrieve subscription data"
     );
@@ -82,13 +83,13 @@ describe("createBillingPortalSession Handler", () => {
      const mockConfig: MockSupabaseDataConfig = {
         genericMockResults: { user_subscriptions: { select: () => Promise.resolve({ data: null, error: null }) } }
     };
-    const { client: nullClient } = createMockSupabaseClient(mockConfig);
+    const { client: nullClient } = createMockSupabaseClient(undefined, mockConfig);
     const requestBody = { returnUrl: "/account" };
     const userId = "user_test_3_no_customer";
     
     // Act & Assert
     await assertRejects(
-        async () => await createBillingPortalSession(nullClient, mockStripeInstance, userId, requestBody), // Use nullClient, remove mockDeps
+        async () => await createBillingPortalSession(nullClient as unknown as SupabaseClient<Database>, mockStripeInstance, userId, requestBody), // Use nullClient, remove mockDeps
         HandlerError,
         "No Stripe customer found for this user"
     );
@@ -108,7 +109,7 @@ describe("createBillingPortalSession Handler", () => {
     const userId = "user_test_4_success";
     
     // Act
-    const result = await createBillingPortalSession(mockSupabaseClient, mockStripeInstance, userId, requestBody); // Remove mockDeps
+    const result = await createBillingPortalSession(mockSupabaseClient as unknown as SupabaseClient<Database>, mockStripeInstance, userId, requestBody); // Remove mockDeps
     
     // Assert
     assertEquals(result.url, portalUrl);
@@ -134,7 +135,7 @@ describe("createBillingPortalSession Handler", () => {
     
     // Act & Assert
     await assertRejects(
-        async () => await createBillingPortalSession(mockSupabaseClient, mockStripeInstance, userId, requestBody), // Remove mockDeps
+        async () => await createBillingPortalSession(mockSupabaseClient as unknown as SupabaseClient<Database>, mockStripeInstance, userId, requestBody), // Remove mockDeps
         HandlerError,
         stripeError.message // Expect Stripe error message
     );

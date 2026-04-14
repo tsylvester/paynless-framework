@@ -21,7 +21,17 @@ import {
     isStepProgressDto,
     isGetAllStageProgressResponse,
     isDialecticRecipeEdge,
+    isSseChatEvent,
 } from './type_guards';
+import {
+    mockFullAssistantMessage,
+    mockSseChatCompleteInvalidAssistantMissingIsActive,
+    mockSseChatCompleteValid,
+    mockSseChatStartValid,
+    mockSseContentChunkValid,
+    mockSseErrorValid,
+    mockSseInvalidDiscriminator,
+} from './type_guards.mock';
 
 describe('isUserRole', () => {
   it('should return true for "user"', () => {
@@ -472,5 +482,55 @@ describe('isDialecticRecipeEdge', () => {
         expect(isDialecticRecipeEdge(null)).toBe(false);
         expect(isDialecticRecipeEdge(undefined)).toBe(false);
         expect(isDialecticRecipeEdge([])).toBe(false);
+    });
+});
+
+describe('isSseChatEvent', () => {
+    it('returns true for chat_start', () => {
+        expect(isSseChatEvent(mockSseChatStartValid)).toBe(true);
+    });
+
+    it('returns true for content_chunk', () => {
+        expect(isSseChatEvent(mockSseContentChunkValid)).toBe(true);
+    });
+
+    it('returns true for chat_complete with full assistantMessage', () => {
+        expect(isSseChatEvent(mockSseChatCompleteValid)).toBe(true);
+    });
+
+    it('returns true for error', () => {
+        expect(isSseChatEvent(mockSseErrorValid)).toBe(true);
+    });
+
+    it('returns false for unknown type discriminator', () => {
+        expect(isSseChatEvent(mockSseInvalidDiscriminator)).toBe(false);
+    });
+
+    it('returns false when chat_complete assistantMessage omits is_active_in_thread', () => {
+        expect(isSseChatEvent(mockSseChatCompleteInvalidAssistantMissingIsActive)).toBe(false);
+    });
+
+    it('returns false for null', () => {
+        expect(isSseChatEvent(null)).toBe(false);
+    });
+
+    it('returns false for non-object values', () => {
+        expect(isSseChatEvent(undefined)).toBe(false);
+        expect(isSseChatEvent('sse')).toBe(false);
+        expect(isSseChatEvent(0)).toBe(false);
+    });
+
+    it('returns false for arrays', () => {
+        expect(isSseChatEvent([])).toBe(false);
+    });
+
+    it('narrows to chat_complete so assistantMessage is fully usable', () => {
+        const payload = mockSseChatCompleteValid;
+        if (isSseChatEvent(payload) && payload.type === 'chat_complete') {
+            expect(payload.assistantMessage.id).toBe(mockFullAssistantMessage.id);
+            expect(payload.assistantMessage.is_active_in_thread).toBe(true);
+        } else {
+            expect.fail('expected chat_complete branch after guard');
+        }
     });
 });
