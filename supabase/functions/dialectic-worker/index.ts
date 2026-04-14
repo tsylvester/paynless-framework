@@ -38,7 +38,8 @@ import { IndexingService, LangchainTextSplitter, EmbeddingClient } from '../_sha
 import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
-import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
+import { AdminTokenWalletService } from '../_shared/services/tokenwallet/admin/adminTokenWalletService.ts';
+import { UserTokenWalletService } from '../_shared/services/tokenwallet/client/userTokenWalletService.ts';
 import { processRenderJob } from './processRenderJob.ts';
 import { isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
 import { renderDocument } from '../_shared/services/document_renderer.ts';
@@ -98,9 +99,10 @@ export async function createDialecticWorkerDeps(
 
   const embeddingClient = new EmbeddingClient(embeddingAdapter);
   const textSplitter = new LangchainTextSplitter();
-  const tokenWalletService = new TokenWalletService(adminClient, adminClient);
-  const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient, tokenWalletService);
-  const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService });
+  const adminTokenWalletService = new AdminTokenWalletService(adminClient);
+  const userTokenWalletService = new UserTokenWalletService(adminClient);
+  const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient, adminTokenWalletService);
+  const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService: adminTokenWalletService });
   const promptAssembler = new PromptAssembler(adminClient, fileManager);
   const documentRenderer = { renderDocument };
   const boundGatherArtifacts: BoundGatherArtifactsFn = (params, payload) =>
@@ -111,7 +113,7 @@ export async function createDialecticWorkerDeps(
         logger,
         fileManager,
         getAiProviderAdapter,
-        tokenWalletService,
+        userTokenWalletService,
         notificationService,
         continueJob,
         retryJob,
@@ -119,7 +121,7 @@ export async function createDialecticWorkerDeps(
         isIntermediateChunk,
         determineContinuation,
         buildUploadContext,
-        debitTokens,
+        debitTokens: (params, payload) => debitTokens({ logger, tokenWalletService: adminTokenWalletService }, params, payload),
       },
       params,
       payload,
@@ -156,7 +158,8 @@ export async function createDialecticWorkerDeps(
     indexingService,
     embeddingClient,
     countTokens,
-    tokenWalletService,
+    adminTokenWalletService,
+    userTokenWalletService,
     notificationService,
     getSeedPromptForStage,
     promptAssembler,
@@ -172,14 +175,14 @@ export async function createDialecticWorkerDeps(
     retryJob,
     prepareModelJob: (params, payload) => {
       const boundCompressPrompt: BoundCompressPromptFn = (cpParams, cpPayload) =>
-        compressPrompt({ logger, ragService, embeddingClient, tokenWalletService, countTokens }, cpParams, cpPayload);
+        compressPrompt({ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens }, cpParams, cpPayload);
       const boundCalculateAffordability: BoundCalculateAffordabilityFn = (caParams, caPayload) =>
         calculateAffordability({ logger, countTokens, compressPrompt: boundCompressPrompt }, caParams, caPayload);
       return prepareModelJob(
         {
           logger,
           applyInputsRequiredScope,
-          tokenWalletService,
+          tokenWalletService: userTokenWalletService,
           validateWalletBalance,
           validateModelCostRates,
           calculateAffordability: boundCalculateAffordability,

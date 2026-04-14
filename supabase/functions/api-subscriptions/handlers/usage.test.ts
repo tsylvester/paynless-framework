@@ -3,13 +3,14 @@ import { describe, it, beforeEach } from "jsr:@std/testing/bdd";
 // Remove old Deno mock import if only used for local spies
 // import { spy, assertSpyCalls, type Spy } from "jsr:@std/testing/mock"; 
 import { SupabaseClient } from "npm:@supabase/supabase-js";
+import type { Database } from "../../types_db.ts";
 import { getUsageMetrics } from "./usage.ts";
 import { HandlerError } from "./current.ts";
 // Import shared mock utilities
 import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/supabase.mock.ts"; 
 
 // --- Mocks & Spies ---
-let mockSupabaseClient: SupabaseClient;
+let mockSupabaseClient: SupabaseClient<Database>;
 // Remove locally declared spies
 // let selectSpy: Spy;
 // let eqSpy: Spy;
@@ -74,8 +75,8 @@ describe("getUsageMetrics Handler", () => {
             }
         };
         
-        const { client } = createMockSupabaseClient(mockConfig);
-        mockSupabaseClient = client; 
+        const { client } = createMockSupabaseClient(undefined, mockConfig);
+        mockSupabaseClient = client as unknown as SupabaseClient<Database>; 
         // We no longer set global spies like selectSpy, eqSpy, etc.
     });
 
@@ -145,12 +146,12 @@ describe("getUsageMetrics Handler", () => {
                 }
             }
         };
-        const { client: errorClient } = createMockSupabaseClient(mockConfigError);
+        const { client: errorClient } = createMockSupabaseClient(undefined, mockConfigError);
         // Removed old spy setup and client.from override
         
         // Act & Assert
         await assertRejects(
-            async () => await getUsageMetrics(errorClient, userId, "api-calls"), // Use errorClient
+            async () => await getUsageMetrics(errorClient as unknown as SupabaseClient<Database>, userId, "api-calls"), // Use errorClient
             HandlerError,
             "Failed to retrieve subscription data"
         );
@@ -171,12 +172,12 @@ describe("getUsageMetrics Handler", () => {
                 }
             }
         };
-        const { client: notFoundClient } = createMockSupabaseClient(mockConfigNotFound);
+        const { client: notFoundClient } = createMockSupabaseClient(undefined, mockConfigNotFound);
         // Removed old spy setup and client.from override
         
         // Act & Assert
         await assertRejects(
-             async () => await getUsageMetrics(notFoundClient, userId, "api-calls"), // Use notFoundClient
+             async () => await getUsageMetrics(notFoundClient as unknown as SupabaseClient<Database>, userId, "api-calls"), // Use notFoundClient
              HandlerError,
              "Subscription not found"
         );
@@ -197,11 +198,11 @@ describe("getUsageMetrics Handler", () => {
                 }
             }
         };
-        const { client: noPlanClient } = createMockSupabaseClient(mockConfigNoPlan);
+        const { client: noPlanClient } = createMockSupabaseClient(undefined, mockConfigNoPlan);
         // Removed old spy setup and client.from override
         
         // Act
-        const body = await getUsageMetrics(noPlanClient, userId, "api-calls"); // Use noPlanClient
+        const body = await getUsageMetrics(noPlanClient as unknown as SupabaseClient<Database>, userId, "api-calls"); // Use noPlanClient
 
         // Assert
         // Assert DB Query - Removed old spy assertions
@@ -226,11 +227,11 @@ describe("getUsageMetrics Handler", () => {
                 }
             }
         };
-        const { client: noLimitsClient } = createMockSupabaseClient(mockConfigNoLimits);
+        const { client: noLimitsClient } = createMockSupabaseClient(undefined, mockConfigNoLimits);
         // Removed old spy setup and client.from override
         
         // Act
-        const body = await getUsageMetrics(noLimitsClient, userId, "storage"); // Use noLimitsClient
+        const body = await getUsageMetrics(noLimitsClient as unknown as SupabaseClient<Database>, userId, "storage"); // Use noLimitsClient
 
         // Assert
         // Assert DB Query - Removed old spy assertions

@@ -4,7 +4,8 @@ import { JobContextParams } from './JobContext.interface.ts';
 import { MockFileManagerService } from '../../_shared/services/file_manager.mock.ts';
 import { MockRagService } from '../../_shared/services/rag_service.mock.ts';
 import { MockIndexingService } from '../../_shared/services/indexing_service.mock.ts';
-import { createMockTokenWalletService } from '../../_shared/services/tokenWalletService.mock.ts';
+import { createMockAdminTokenWalletService } from '../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts';
+import { createMockUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts';
 import { createDocumentRendererMock } from '../../_shared/services/document_renderer.mock.ts';
 import { MockPromptAssembler } from '../../_shared/prompt-assembler/prompt-assembler.mock.ts';
 import { mockNotificationService } from '../../_shared/utils/notification.service.mock.ts';
@@ -157,7 +158,8 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
     const fileManager = new MockFileManagerService();
     const ragService = new MockRagService();
     const indexingService = new MockIndexingService();
-    const tokenWalletService = createMockTokenWalletService().instance;
+    const adminTokenWalletService = createMockAdminTokenWalletService().instance;
+    const userTokenWalletService = createMockUserTokenWalletService().instance;
     const documentRenderer = createDocumentRendererMock().renderer;
     const promptAssembler = new MockPromptAssembler();
     const logger = new MockLogger();
@@ -203,7 +205,8 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
             }),
         },
         countTokens: () => 0,
-        tokenWalletService: tokenWalletService,
+        adminTokenWalletService: adminTokenWalletService,
+        userTokenWalletService: userTokenWalletService,
         notificationService: mockNotificationService,
         getSeedPromptForStage: async () => ({
             content: 'Seed prompt content',
@@ -266,7 +269,8 @@ export function buildGuardTestIJobContext(): IJobContext {
         indexingService: params.indexingService,
         embeddingClient: params.embeddingClient,
         countTokens: params.countTokens,
-        tokenWalletService: params.tokenWalletService,
+        adminTokenWalletService: params.adminTokenWalletService,
+        userTokenWalletService: params.userTokenWalletService,
         notificationService: params.notificationService,
         promptAssembler: params.promptAssembler,
         getSeedPromptForStage: params.getSeedPromptForStage,
@@ -329,7 +333,7 @@ export function buildContractIPrepareModelJobContext(root?: IJobContext): IPrepa
         logger: r.logger,
         applyInputsRequiredScope: r.applyInputsRequiredScope,
         countTokens: r.countTokens,
-        tokenWalletService: r.tokenWalletService,
+        adminTokenWalletService: r.adminTokenWalletService,
         validateWalletBalance: r.validateWalletBalance,
         validateModelCostRates: r.validateModelCostRates,
         ragService: r.ragService,

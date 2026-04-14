@@ -1,48 +1,86 @@
 import { vi, type Mock } from 'vitest';
-// Remove direct import of AiApiClient class type if no longer needed here
-// import type { AiApiClient } from '../ai.api'; 
-import type { 
-    IAiApiClient // Import the contract interface
-} from '@paynless/types';
+import type { ChatApiRequest, FetchOptions, IAiApiClient } from '@paynless/types';
 
 /**
  * Defines the structure of a mocked AiApiClient, where each method
  * from IAiApiClient is replaced with a Vitest Mock.
  */
 export type MockedAiApiClient = {
-    [K in keyof IAiApiClient]: IAiApiClient[K] extends (...args: infer A) => Promise<any> 
-        ? Mock<A, ReturnType<IAiApiClient[K]>> 
-        : IAiApiClient[K]; // For non-function properties, if any (though AiApiClient only has methods)
+    [K in keyof IAiApiClient]: IAiApiClient[K] extends (...args: infer A) => infer R
+        ? Mock<A, R>
+        : IAiApiClient[K];
 };
+
+const mockAiApiClientKeys: (keyof IAiApiClient)[] = [
+    'getAiProviders',
+    'getSystemPrompts',
+    'sendChatMessage',
+    'sendStreamingChatMessage',
+    'getChatHistory',
+    'getChatWithMessages',
+    'deleteChat',
+    'estimateTokens',
+];
 
 /**
  * Creates a mock instance of AiApiClient with all its public methods implemented as Vitest mock functions.
  * The method signatures for vi.fn() should match the actual AiApiClient methods.
  */
-export const createMockAiApiClient = (): MockedAiApiClient => ({
-    getAiProviders: vi.fn() as Mock<Parameters<IAiApiClient['getAiProviders']>, ReturnType<IAiApiClient['getAiProviders']>>,
-    getSystemPrompts: vi.fn() as Mock<Parameters<IAiApiClient['getSystemPrompts']>, ReturnType<IAiApiClient['getSystemPrompts']>>,
-    sendChatMessage: vi.fn() as Mock<Parameters<IAiApiClient['sendChatMessage']>, ReturnType<IAiApiClient['sendChatMessage']>>,
-    getChatHistory: vi.fn() as Mock<Parameters<IAiApiClient['getChatHistory']>, ReturnType<IAiApiClient['getChatHistory']>>,
-    getChatWithMessages: vi.fn() as Mock<Parameters<IAiApiClient['getChatWithMessages']>, ReturnType<IAiApiClient['getChatWithMessages']>>,
-    deleteChat: vi.fn() as Mock<Parameters<IAiApiClient['deleteChat']>, ReturnType<IAiApiClient['deleteChat']>>,
-    estimateTokens: vi.fn() as Mock<Parameters<IAiApiClient['estimateTokens']>, ReturnType<IAiApiClient['estimateTokens']>>,
-    // Cast the entire object to MockedAiApiClient to satisfy the type.
-    // This is safe because we are manually constructing the object to match the MockedAiApiClient structure.
-}) as unknown as MockedAiApiClient; // Keep as unknown as MockedAiApiClient for the overall object cast
+export const createMockAiApiClient = (): MockedAiApiClient => {
+    const client: MockedAiApiClient = {
+        getAiProviders: vi.fn<Parameters<IAiApiClient['getAiProviders']>, ReturnType<IAiApiClient['getAiProviders']>>(),
+        getSystemPrompts: vi.fn<Parameters<IAiApiClient['getSystemPrompts']>, ReturnType<IAiApiClient['getSystemPrompts']>>(),
+        sendChatMessage: vi.fn<Parameters<IAiApiClient['sendChatMessage']>, ReturnType<IAiApiClient['sendChatMessage']>>(),
+        sendStreamingChatMessage: vi.fn<Parameters<IAiApiClient['sendStreamingChatMessage']>, ReturnType<IAiApiClient['sendStreamingChatMessage']>>(),
+        getChatHistory: vi.fn<Parameters<IAiApiClient['getChatHistory']>, ReturnType<IAiApiClient['getChatHistory']>>(),
+        getChatWithMessages: vi.fn<Parameters<IAiApiClient['getChatWithMessages']>, ReturnType<IAiApiClient['getChatWithMessages']>>(),
+        deleteChat: vi.fn<Parameters<IAiApiClient['deleteChat']>, ReturnType<IAiApiClient['deleteChat']>>(),
+        estimateTokens: vi.fn<Parameters<IAiApiClient['estimateTokens']>, ReturnType<IAiApiClient['estimateTokens']>>(),
+    };
+    return client;
+};
 
 /**
  * Resets all mock functions on the provided mock AI API client instance.
  */
 export const resetMockAiApiClient = (mockClient: MockedAiApiClient) => {
-    // Iterate over the keys of the mockClient and reset if it's a mock function
-    // This is more robust if methods are added/removed from IAiApiClient
-    for (const key in mockClient) {
-        if (typeof mockClient[key as keyof MockedAiApiClient] === 'function' && 'mockReset' in mockClient[key as keyof MockedAiApiClient]) {
-            (mockClient[key as keyof MockedAiApiClient] as Mock<any[], any>).mockReset();
+    for (const key of mockAiApiClientKeys) {
+        const fn = mockClient[key];
+        if (typeof fn === 'function' && 'mockReset' in fn) {
+            fn.mockReset();
         }
     }
 };
 
 // Optional: Export a default instance
-// export const mockAiApiClient = createMockAiApiClient(); 
+// export const mockAiApiClient = createMockAiApiClient();
+
+export const streamingTestBaseUrl = 'http://mock-functions.api/v1';
+
+/**
+ * Default `ChatApiRequest` for `sendStreamingChatMessage` tests; override any field (including explicit `undefined` where applicable).
+ */
+export function mockChatApiRequestStreaming(overrides?: Partial<ChatApiRequest>): ChatApiRequest {
+    const data: ChatApiRequest = {
+        message: 'streaming test message',
+        providerId: 'provider-1',
+        promptId: 'prompt-1',
+    };
+    if (overrides === undefined) {
+        return data;
+    }
+    return { ...data, ...overrides };
+}
+
+/**
+ * Default `FetchOptions` for `sendStreamingChatMessage` tests; override any field.
+ */
+export function mockFetchOptionsStreaming(overrides?: Partial<FetchOptions>): FetchOptions {
+    const data: FetchOptions = {
+        token: 'streaming-test-token',
+    };
+    if (overrides === undefined) {
+        return data;
+    }
+    return { ...data, ...overrides };
+}

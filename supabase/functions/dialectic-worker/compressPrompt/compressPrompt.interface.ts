@@ -12,15 +12,15 @@ import type {
 import type { CountTokensDeps, CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import type { IEmbeddingClient } from "../../_shared/services/indexing_service.interface.ts";
 import type { IRagService } from "../../_shared/services/rag_service.interface.ts";
-import type { ITokenWalletService } from "../../_shared/types/tokenWallet.types.ts";
 import type { RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
 import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
+import type { IAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.interface.ts";
 
 export interface CompressPromptDeps {
   logger: ILogger;
   ragService: IRagService;
   embeddingClient: IEmbeddingClient;
-  tokenWalletService: ITokenWalletService;
+  tokenWalletService: IAdminTokenWalletService;
   countTokens: CountTokensFn;
 }
 

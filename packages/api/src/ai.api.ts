@@ -10,10 +10,11 @@ import type {
     ApiError,
     FetchOptions,
     IAiApiClient,
+    ISseConnection,
     TokenEstimationRequest,
     TokenEstimationResponse
 } from '@paynless/types';
-import { logger } from '@paynless/utils';
+import { createSseConnection, logger } from '@paynless/utils';
 
 /**
  * API Client for interacting with AI-related Edge Functions.
@@ -29,7 +30,7 @@ export class AiApiClient implements IAiApiClient {
      * Fetches the list of active AI providers.
      */
     async getAiProviders(token?: string): Promise<ApiResponse<AiProvider[]>> {
-        const options: FetchOptions = token ? { token } : { isPublic: true };
+        const options: FetchOptions = { token };
         logger.info('Fetching AI providers');
         const response = await this.apiClient.get<AiProvider[]>('/ai-providers', options);
         if (response.error) {
@@ -44,13 +45,13 @@ export class AiApiClient implements IAiApiClient {
      * Fetches the list of active system prompts.
      */
     async getSystemPrompts(token?: string): Promise<ApiResponse<SystemPrompt[]>> {
-        const options: FetchOptions = token ? { token } : {};
+        const options: FetchOptions = { token };
         logger.info('Fetching system prompts');
         const response = await this.apiClient.get<SystemPrompt[]>('/system-prompts', options);
         if (response.error) {
             logger.error('Error fetching system prompts:', { error: response.error });
         } else {
-            logger.info(`Fetched ${response.data?.length ?? 0} system prompts`);
+            logger.info(`Fetched ${response.data?.length} system prompts`);
         }
         return response;
     }
@@ -71,9 +72,9 @@ export class AiApiClient implements IAiApiClient {
 
     /**
      * Sends a streaming chat message to the backend using Server-Sent Events (SSE).
-     * Returns an EventSource for receiving real-time updates.
+     * Returns an ISseConnection produced by createSseConnection from the HTTP response body.
      */
-    async sendStreamingChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<EventSource | { error: ApiError }> {
+    async sendStreamingChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ISseConnection | { error: ApiError }> {
         // Validate essential data
         if (!data.message || !data.providerId || !data.promptId) {
             const error: ApiError = { code: 'VALIDATION_ERROR', message: 'Missing required fields in streaming chat message request' };
@@ -115,9 +116,7 @@ export class AiApiClient implements IAiApiClient {
                 return { error };
             }
 
-            // For SSE, we need to handle the stream directly rather than using EventSource
-            // since EventSource doesn't support POST requests with bodies
-            return this.createStreamingResponse(response);
+            return createSseConnection(response);
             
         } catch (err) {
             const error: ApiError = { 
@@ -125,84 +124,6 @@ export class AiApiClient implements IAiApiClient {
                 message: `Failed to establish streaming connection: ${err instanceof Error ? err.message : String(err)}` 
             };
             return { error };
-        }
-    }
-
-    /**
-     * Creates a streaming response handler for SSE data
-     */
-    private createStreamingResponse(response: Response): EventSource {
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-        
-        // Create a custom EventSource-like object
-        const eventSource = new EventTarget() as EventSource & EventTarget;
-        
-        // Add EventSource properties and methods
-        Object.defineProperties(eventSource, {
-            readyState: { value: 1, writable: false }, // OPEN
-            url: { value: response.url, writable: false },
-            withCredentials: { value: false, writable: false },
-            CONNECTING: { value: 0, writable: false },
-            OPEN: { value: 1, writable: false },
-            CLOSED: { value: 2, writable: false },
-        });
-
-        eventSource.close = () => {
-            if (reader) {
-                reader.cancel();
-            }
-        };
-
-        if (reader) {
-            this.processStream(reader, decoder, eventSource);
-        }
-
-        return eventSource as EventSource;
-    }
-
-    /**
-     * Processes the SSE stream and dispatches events
-     */
-    private async processStream(reader: ReadableStreamDefaultReader<Uint8Array>, decoder: TextDecoder, eventSource: EventSource & EventTarget) {
-        try {
-            let buffer = '';
-            
-            while (true) {
-                const { done, value } = await reader.read();
-                
-                if (done) break;
-                
-                buffer += decoder.decode(value, { stream: true });
-                
-                // Process complete messages
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || ''; // Keep the last incomplete line in the buffer
-                
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = line.substring(6); // Remove 'data: ' prefix
-                            if (data.trim()) {
-                                const parsedData = JSON.parse(data);
-                                const event = new MessageEvent('message', { data: parsedData });
-                                eventSource.dispatchEvent(event);
-                            }
-                        } catch (parseError) {
-                            logger.error('Failed to parse SSE data:', { error: parseError, line });
-                        }
-                    }
-                }
-            }
-            
-            // Dispatch close event
-            const closeEvent = new Event('close');
-            eventSource.dispatchEvent(closeEvent);
-            
-        } catch (error) {
-            // Dispatch error event
-            const errorEvent = new ErrorEvent('error', { error });
-            eventSource.dispatchEvent(errorEvent);
         }
     }
 

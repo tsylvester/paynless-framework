@@ -1,7 +1,7 @@
 import type Stripe from 'npm:stripe';
 import { stub, type Stub } from 'jsr:@std/testing@0.225.1/mock';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
-import type { ITokenWalletService } from './types/tokenWallet.types.ts';
+import type { IAdminTokenWalletService } from './services/tokenwallet/admin/adminTokenWalletService.interface.ts';
 import type { UpdatePaymentTransactionFn } from './types.ts';
 import type { ILogger } from './types.ts';
 
@@ -51,6 +51,21 @@ export interface MockStripe {
       Parameters<Stripe.PricesResource['list']>,
       ReturnType<Stripe.PricesResource['list']>
     >;
+    customersCreate: Stub<
+      Stripe.CustomersResource,
+      Parameters<Stripe.CustomersResource['create']>,
+      Promise<Stripe.Response<Stripe.Customer>>
+    >;
+    billingPortalSessionsCreate: Stub<
+      Stripe.BillingPortal.SessionsResource,
+      Parameters<Stripe.BillingPortal.SessionsResource['create']>,
+      Promise<Stripe.Response<Stripe.BillingPortal.Session>>
+    >;
+    subscriptionsUpdate: Stub<
+      Stripe.SubscriptionsResource,
+      Parameters<Stripe.SubscriptionsResource['update']>,
+      Promise<Stripe.Response<Stripe.Subscription>>
+    >;
   };
   clearStubs: () => void;
 }
@@ -59,7 +74,7 @@ export interface HandlerContext {
   stripe: Stripe;
   supabaseClient: SupabaseClient;
   logger: ILogger;
-  tokenWalletService: ITokenWalletService;
+  tokenWalletService: IAdminTokenWalletService;
   updatePaymentTransaction: UpdatePaymentTransactionFn;
   featureFlags?: Record<string, boolean>; // Optional feature flags
   functionsUrl: string; // Base URL for invoking other functions if needed
@@ -78,13 +93,53 @@ export interface ProductPriceHandlerContext {
 
 // A simplified mock of the Stripe instance parts we use
 const getMockStripeInstance = (): Stripe => ({
+  customers: {
+    create: (
+      params?: Stripe.CustomerCreateParams,
+      options?: Stripe.RequestOptions,
+    ): Promise<Stripe.Response<Stripe.Customer>> =>
+      Promise.resolve({
+        id: 'cus_mock_default',
+        object: 'customer',
+        email: params?.email ?? null,
+        name: params?.name ?? null,
+        metadata: params?.metadata ?? {},
+        livemode: false,
+        lastResponse: {
+          headers: {},
+          requestId: 'req_default_customer_create',
+          statusCode: 200,
+        },
+      } as Stripe.Response<Stripe.Customer>),
+  } as Stripe.CustomersResource,
+  billingPortal: {
+    sessions: {
+      create: (
+        params?: Stripe.BillingPortal.SessionCreateParams,
+        options?: Stripe.RequestOptions,
+      ): Promise<Stripe.Response<Stripe.BillingPortal.Session>> =>
+        Promise.resolve({
+          id: 'bps_test_default',
+          object: 'billing_portal.session',
+          url: 'https://billing.stripe.com/session/test_default',
+          customer: params?.customer ?? 'cus_mock_default',
+          livemode: false,
+          return_url: params?.return_url ?? null,
+          lastResponse: {
+            headers: {},
+            requestId: 'req_default_billing_portal_session',
+            statusCode: 200,
+          },
+        } as Stripe.Response<Stripe.BillingPortal.Session>),
+    } as Stripe.BillingPortal.SessionsResource,
+  },
   checkout: {
     sessions: {
       create: (params: Stripe.Checkout.SessionCreateParams, options?: Stripe.RequestOptions) => 
         Promise.resolve({
           id: 'cs_test_default',
           object: 'checkout.session',
-          url: 'https://stripe.com/pay/default',
+          url: 'https://checkout.stripe.com/c/pay/cs_test_default',
           status: 'open',
           livemode: false,
           lastResponse: {
@@ -157,9 +212,26 @@ const getMockStripeInstance = (): Stripe => ({
         id: id,
         object: 'subscription',
         status: 'active',
+        cancel_at_period_end: false,
         lastResponse: {
           headers: {},
           requestId: 'req_default_sub_retrieve',
+          statusCode: 200,
+        },
+      } as Stripe.Response<Stripe.Subscription>),
+    update: (
+      id: string,
+      params?: Stripe.SubscriptionUpdateParams,
+      options?: Stripe.RequestOptions,
+    ): Promise<Stripe.Response<Stripe.Subscription>> =>
+      Promise.resolve({
+        id,
+        object: 'subscription',
+        status: 'active',
+        cancel_at_period_end: params?.cancel_at_period_end ?? false,
+        lastResponse: {
+          headers: {},
+          requestId: 'req_default_sub_update',
           statusCode: 200,
         },
       } as Stripe.Response<Stripe.Subscription>),
@@ -233,9 +305,12 @@ export function createMockStripe(): MockStripe {
     webhooksConstructEvent: stub(mockInstance.webhooks, "constructEventAsync"),
     paymentIntentsRetrieve: stub(mockInstance.paymentIntents, "retrieve"),
     subscriptionsRetrieve: stub(mockInstance.subscriptions, "retrieve"),
+    subscriptionsUpdate: stub(mockInstance.subscriptions, "update"),
     productsRetrieve: stub(mockInstance.products, "retrieve"),
     pricesRetrieve: stub(mockInstance.prices, "retrieve"),
     pricesList: stub(mockInstance.prices, "list"),
+    customersCreate: stub(mockInstance.customers, "create"),
+    billingPortalSessionsCreate: stub(mockInstance.billingPortal.sessions, "create"),
   };
 
   const clearStubs = () => {
@@ -251,6 +326,9 @@ export function createMockStripe(): MockStripe {
     if (stubs.subscriptionsRetrieve?.restore) {
       stubs.subscriptionsRetrieve.restore();
     }
+    if (stubs.subscriptionsUpdate?.restore) {
+      stubs.subscriptionsUpdate.restore();
+    }
     if (stubs.productsRetrieve?.restore) {
       stubs.productsRetrieve.restore();
     }
@@ -259,6 +337,12 @@ export function createMockStripe(): MockStripe {
     }
     if (stubs.pricesList?.restore) {
       stubs.pricesList.restore();
+    }
+    if (stubs.customersCreate?.restore) {
+      stubs.customersCreate.restore();
+    }
+    if (stubs.billingPortalSessionsCreate?.restore) {
+      stubs.billingPortalSessionsCreate.restore();
     }
   };
 

@@ -40,13 +40,13 @@ import type {
   PrepareModelJobReturn,
   PrepareModelJobSuccessReturn,
 } from "./prepareModelJob.interface.ts";
-import type { ITokenWalletService } from "../../_shared/types/tokenWallet.types.ts";
-import { createMockTokenWalletService } from "../../_shared/services/tokenWalletService.mock.ts";
+import type { IUserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts";
+import { createMockUserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts";
 
 export type PrepareModelJobDepsOverrides = {
   executeModelCallAndSave: BoundExecuteModelCallAndSaveFn;
   enqueueRenderJob: BoundEnqueueRenderJobFn;
-  tokenWalletService?: ITokenWalletService;
+  tokenWalletService?: IUserTokenWalletService;
   calculateAffordability?: BoundCalculateAffordabilityFn;
 };
 
@@ -325,9 +325,9 @@ export function buildPrepareModelJobDeps(
   overrides: PrepareModelJobDepsOverrides,
 ): PrepareModelJobDeps {
   const logger: ILogger = new MockLogger();
-  const tokenWalletService: ITokenWalletService = overrides.tokenWalletService !== undefined
+  const tokenWalletService: IUserTokenWalletService = overrides.tokenWalletService !== undefined
     ? overrides.tokenWalletService
-    : createMockTokenWalletService().instance;
+    : createMockUserTokenWalletService().instance;
   const calculateAffordability: BoundCalculateAffordabilityFn = overrides.calculateAffordability !== undefined
     ? overrides.calculateAffordability
     : buildMockBoundCalculateAffordabilityFn();
@@ -346,7 +346,7 @@ export function buildPrepareModelJobDeps(
 /** Deps shape for interface contract tests (bound affordability; no storage/RAG token fields). */
 export function buildPrepareModelJobDepsStructuralContract() {
   const logger: ILogger = new MockLogger();
-  const tokenWalletService: ITokenWalletService = createMockTokenWalletService().instance;
+  const tokenWalletService: IUserTokenWalletService = createMockUserTokenWalletService().instance;
   const executeModelCallAndSave: BoundExecuteModelCallAndSaveFn = async () => ({
     contribution: buildDialecticContributionRow(),
     needsContinuation: false,
@@ -396,7 +396,7 @@ export function buildPrepareModelJobDepsMissingCalculateAffordability(): object 
   return {
     logger: new MockLogger(),
     applyInputsRequiredScope,
-    tokenWalletService: createMockTokenWalletService().instance,
+    tokenWalletService: createMockUserTokenWalletService().instance,
     validateWalletBalance,
     validateModelCostRates,
     executeModelCallAndSave: buildBoundExecuteModelCallAndSaveStub(),

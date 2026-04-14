@@ -2,7 +2,7 @@
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database, Tables } from '../../types_db.ts';
-import type { ChatMessageInsert, ServiceError } from '../../_shared/types.ts';
+import type { ChatMessageInsert, ChatMessageRow, ServiceError } from '../../_shared/types.ts';
 import type {
   AdapterStreamChunk,
   AiModelExtendedConfig,
@@ -32,7 +32,8 @@ import { isJson } from '../../_shared/utils/type_guards.ts';
 import { createMockSupabaseClient } from '../../_shared/supabase.mock.ts';
 import { MockLogger } from '../../_shared/logger.mock.ts';
 import { MockFileManagerService } from '../../_shared/services/file_manager.mock.ts';
-import { createMockTokenWalletService } from '../../_shared/services/tokenWalletService.mock.ts';
+import { createMockUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts';
+import { createMockAdminTokenWalletService } from '../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 import { mockNotificationService } from '../../_shared/utils/notification.service.mock.ts';
 import { resolveFinishReason } from '../../_shared/utils/resolveFinishReason.ts';
 import { isIntermediateChunk } from '../../_shared/utils/isIntermediateChunk.ts';
@@ -433,6 +434,30 @@ export function createMockChatMessageInsert(
   return { ...base, ...overrides };
 }
 
+export function createMockChatMessageRow(
+  overrides?: Partial<ChatMessageRow>,
+): ChatMessageRow {
+  const base: ChatMessageRow = {
+    id: crypto.randomUUID(),
+    chat_id: null,
+    user_id: null,
+    role: 'assistant',
+    content: 'mock-message',
+    ai_provider_id: null,
+    system_prompt_id: null,
+    token_usage: null,
+    is_active_in_thread: true,
+    error_type: null,
+    response_to_message_id: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  if (!overrides) {
+    return base;
+  }
+  return { ...base, ...overrides };
+}
+
 export function createMockDebitTokensSuccessFn(
   overrides?: CreateMockDebitTokensOverrides,
 ): DebitTokens {
@@ -445,8 +470,8 @@ export function createMockDebitTokensSuccessFn(
     _payload: DebitTokensPayload,
   ): Promise<DebitTokensReturn> => ({
     result: {
-      userMessage: createMockChatMessageInsert({ role: 'user' }),
-      assistantMessage: createMockChatMessageInsert({ role: 'assistant' }),
+      userMessage: createMockChatMessageRow({ role: 'user' }),
+      assistantMessage: createMockChatMessageRow({ role: 'assistant' }),
     },
     transactionRecordedSuccessfully: true,
   });
@@ -505,12 +530,12 @@ export function createMockFileManagerForEmcas(
 export function createMockExecuteModelCallAndSaveDeps(
   overrides?: ExecuteModelCallAndSaveDepsOverrides,
 ): ExecuteModelCallAndSaveDeps {
-  const tokenWalletService = createMockTokenWalletService().instance;
+  const userTokenWalletService = createMockUserTokenWalletService().instance;
   const base: ExecuteModelCallAndSaveDeps = {
     logger: new MockLogger(),
     fileManager: new MockFileManagerService(),
     getAiProviderAdapter: createMockEmcasGetAiProviderAdapter(),
-    tokenWalletService,
+    userTokenWalletService,
     notificationService: mockNotificationService,
     continueJob: async () => ({ enqueued: false }),
     retryJob: async () => ({}),
@@ -518,7 +543,11 @@ export function createMockExecuteModelCallAndSaveDeps(
     isIntermediateChunk,
     determineContinuation,
     buildUploadContext,
-    debitTokens: createMockDebitTokensSuccessFn(),
+    debitTokens: async (params, payload) => createMockDebitTokensSuccessFn()(
+      { logger: new MockLogger(), tokenWalletService: createMockAdminTokenWalletService().instance },
+      params,
+      payload,
+    ),
   };
   if (!overrides) {
     return base;

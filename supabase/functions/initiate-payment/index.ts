@@ -12,7 +12,8 @@ import {
   PaymentOrchestrationContext,
   IPaymentGatewayAdapter,
 } from '../_shared/types/payment.types.ts';
-import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
+import { UserTokenWalletService } from '../_shared/services/tokenwallet/client/userTokenWalletService.ts';
+import { AdminTokenWalletService } from '../_shared/services/tokenwallet/admin/adminTokenWalletService.ts';
 import { StripePaymentAdapter } from '../_shared/adapters/stripe/stripePaymentAdapter.ts';
 import { Database } from '../types_db.ts'; // Assuming this is the path for your DB types
 
@@ -37,10 +38,7 @@ const stripe = new Stripe(stripeKey!, {
 // --- Adapter Factory (Simple version for now) ---
 function getPaymentAdapter(
   gatewayId: string,
-  userSupabaseClient: SupabaseClient<Database>,
   adminSupabaseClient: SupabaseClient<Database>,
-  // userTokenWalletService: TokenWalletService, // No longer pass user-scoped service here
-  // Stripe instance could be passed here if it wasn't global or if adapter needed a specific instance
 ): IPaymentGatewayAdapter | null {
   if (gatewayId === 'stripe') {
     const stripeWebhookSecret = Deno.env.get('STRIPE_WEBHOOK_SIGNING_SECRET');
@@ -48,11 +46,9 @@ function getPaymentAdapter(
       console.error('STRIPE_WEBHOOK_SIGNING_SECRET is not set for StripePaymentAdapter.');
       // Potentially return null or throw if this is critical for the adapter's function beyond webhooks
     }
-    // Instantiate TokenWalletService with admin client for the adapter's use (e.g., in webhooks)
-    const tokenWalletService = new TokenWalletService(userSupabaseClient, adminSupabaseClient);
+    const adminTokenWalletService = new AdminTokenWalletService(adminSupabaseClient);
 
-    // The global `stripe` instance is used by StripePaymentAdapter constructor
-    return new StripePaymentAdapter(stripe, adminSupabaseClient, tokenWalletService, stripeWebhookSecret || 'dummy_secret_for_initiate_only');
+    return new StripePaymentAdapter(stripe, adminSupabaseClient, adminTokenWalletService, stripeWebhookSecret || 'dummy_secret_for_initiate_only');
   }
   // Add other gateways here:
   // else if (gatewayId === 'coinbase') {
@@ -66,9 +62,7 @@ async function initiatePaymentHandler(
   createUserClientFn: (authHeader: string) => SupabaseClient<Database>,
   getPaymentAdapterFn: (
     gatewayId: string,
-    userSupabaseClient: SupabaseClient<Database>,
-    adminSupabaseClient: SupabaseClient<Database>
-    // adminTokenWalletService: TokenWalletService // This was an incorrect thought, getPaymentAdapterFn should create its own adminTWS
+    adminSupabaseClient: SupabaseClient<Database>,
   ) => IPaymentGatewayAdapter | null
 ): Promise<Response> {
   console.log(`[initiate-payment] Received request: ${req.method} ${req.url}`);
@@ -112,7 +106,7 @@ async function initiatePaymentHandler(
     if (!req.body) {
         return createErrorResponse('Request body is missing', 400, req);
     }
-    const purchaseRequest = (await req.json()) as PurchaseRequest;
+    const purchaseRequest = await req.json();
     console.log('[initiate-payment] Parsed PurchaseRequest:', purchaseRequest);
 
     if (!purchaseRequest.itemId || !purchaseRequest.paymentGatewayId || !purchaseRequest.currency || purchaseRequest.quantity == null) {
@@ -139,8 +133,8 @@ async function initiatePaymentHandler(
       const errStatus = (typeof planError === 'object' && 
                          planError !== null && 
                          'status' in planError && 
-                         typeof (planError as { status?: unknown }).status === 'number') 
-                         ? (planError as { status: number }).status 
+                         typeof planError.status === 'number') 
+                         ? planError.status 
                          : 500;
       return createErrorResponse(planError.message || 'Failed to retrieve item details due to a database error.', errStatus, req, planError);
     }
@@ -171,11 +165,9 @@ async function initiatePaymentHandler(
         return createErrorResponse(errMessage, 400, req);
     }
     
-    // 4. Target Wallet Identification
-    // The TokenWalletService uses the user-specific Supabase client passed to its constructor
-    // to perform operations within the user's RLS context.
-    const tokenWalletService = new TokenWalletService(userClient, adminClient); // No 'as any' cast needed if types align
-    const wallet = await tokenWalletService.getWalletForContext(purchaseRequest.userId, purchaseRequest.organizationId ?? undefined);
+    // 4. Target Wallet Identification (user-scoped client + UserTokenWalletService)
+    const userTokenWalletService = new UserTokenWalletService(userClient);
+    const wallet = await userTokenWalletService.getWalletForContext(purchaseRequest.userId, purchaseRequest.organizationId ?? undefined);
 
     if (!wallet) {
       const errMessage = 'User/Organization wallet not found. A wallet must be provisioned before payment.';
@@ -230,18 +222,8 @@ async function initiatePaymentHandler(
     const internalPaymentId = paymentTxnData.id;
     console.log('[initiate-payment] Created payment_transactions record:', internalPaymentId);
 
-    // 6. Adapter Factory/Selection & Instantiation
-    // The TokenWalletService is passed to the adapter, but it should be initialized
-    // with the admin client if it needs to perform privileged operations during payment that the user cannot.
-    // However, TokenWalletService's recordTransaction is called by the *webhook handler* typically,
-    // which runs with admin/service context. For initiatePayment, the TokenWalletService instance
-    // here was primarily for getWalletForContext (which uses user client).
-    // Let's ensure adapters get an admin-context-capable TokenWalletService if they need to create wallets or do other admin tasks.
-    // For now, StripePaymentAdapter gets the user-context one, as its initiatePayment (after refactor) won't call TokenWalletService.
-    // const adapter = getPaymentAdapterFn(purchaseRequest.paymentGatewayId, adminClient, tokenWalletService); // OLD CALL
-
-    // Corrected: getPaymentAdapterFn now only needs adminClient to construct its own admin-scoped services if needed by adapter
-    const adapter = getPaymentAdapterFn(purchaseRequest.paymentGatewayId, userClient, adminClient);
+    // 6. Adapter factory (admin-scoped AdminTokenWalletService inside getPaymentAdapter for Stripe)
+    const adapter = getPaymentAdapterFn(purchaseRequest.paymentGatewayId, adminClient);
 
     if (!adapter) {
       const errMessage = `Payment gateway '${purchaseRequest.paymentGatewayId}' is not supported.`;

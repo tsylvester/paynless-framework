@@ -2,17 +2,10 @@
 // Centralized APPLICATION-LEVEL types for Supabase Edge Functions.
 // Types directly related to DB tables should be imported from ../types_db.ts
 import type { Database, Json } from '../types_db.ts';
-import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from './cors-headers.ts';
-import type { CountTokensDeps, CountableChatPayload } from './types/tokenizer.types.ts';
-import { createClient, SupabaseClient, User } from "npm:@supabase/supabase-js";
+import type { createSuccessResponse, createErrorResponse } from '../_shared/cors-headers.ts';
+import { createClient, User } from "npm:@supabase/supabase-js";
 import { GenerateContentResponse } from "npm:@google/generative-ai";
 import { Tables } from '../types_db.ts';
-import type { ITokenWalletService } from './types/tokenWallet.types.ts';
-import type { prepareChatContext } from '../chat/prepareChatContext.ts';
-import type { handleNormalPath } from '../chat/handleNormalPath.ts';
-import type { handleRewindPath } from '../chat/handleRewindPath.ts';
-import type { handleDialecticPath } from '../chat/handleDialecticPath.ts';
-import type { debitTokens } from './utils/debitTokens.ts';
 import { SystemInstruction } from '../dialectic-service/dialectic.interface.ts';
 
 export type GetAiProviderAdapterFn = (
@@ -26,11 +19,7 @@ export type PaymentTransaction = Tables<'payment_transactions'>;
 
 export type UpdatePaymentTransactionFn = (
   transactionId: string,
-  updates: Partial<Omit<PaymentTransaction, 'id' | 'created_at' | 'user_id' | 'payment_provider' | 'transaction_type' | 'amount' | 'currency' | 'provider_transaction_id' | 'metadata_json'>> & { 
-    metadata_json?: Json | Record<string, unknown>;
-    status?: string; // Explicitly allow status here, or ensure it's not in Omit
-    gateway_transaction_id?: string; // Allow this as well, as it's used
-  },
+  updates: Partial<Omit<PaymentTransaction, 'id' | 'created_at' | 'user_id' | 'payment_provider' | 'transaction_type' | 'amount' | 'currency' | 'provider_transaction_id'>>,
   stripeEventId?: string
 ) => Promise<PaymentTransaction | null>;
 
@@ -507,33 +496,6 @@ export interface FinalAppModelConfig {
   // Note: The 'config' property is NOT optional and NOT partial.
   // It must be a complete, valid object.
   config: AiModelExtendedConfig; 
-}
-
-// Signature for countTokens function (this might be an old definition)
-// export type countTokensFn = (
-//   messages: MessageForTokenCounting[], 
-//   modelName: string
-// ) => number;
-
-export interface ChatHandlerDeps {
-  createSupabaseClient: typeof createClient;
-  fetch: typeof fetch; // Global fetch type
-  handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
-  createSuccessResponse: typeof createSuccessResponse; // Use the corrected type name
-  createErrorResponse: typeof createErrorResponse;
-  getAiProviderAdapter: (dependencies: FactoryDependencies) => AiProviderAdapterInstance | null;
-  getAiProviderAdapterOverride?: (dependencies: FactoryDependencies) => AiProviderAdapterInstance | null;
-  verifyApiKey: (apiKey: string, providerName: string) => Promise<boolean>;
-  logger: ILogger;
-  tokenWalletService?: ITokenWalletService; 
-  countTokens: (deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number;
-  prepareChatContext: typeof prepareChatContext;
-  handleNormalPath: typeof handleNormalPath;
-  handleRewindPath: typeof handleRewindPath;
-  handleDialecticPath: typeof handleDialecticPath;
-  debitTokens: typeof debitTokens;
-  handlePostRequest?: (requestBody: ChatApiRequest, supabaseClient: SupabaseClient<Database>, userId: string, deps: ChatHandlerDeps) => Promise<ChatHandlerSuccessResponse | { error: { message: string, status?: number } }>;
-  handleStreamingRequest?: (requestBody: ChatApiRequest, supabaseClient: SupabaseClient<Database>, userId: string, deps: ChatHandlerDeps) => Promise<Response>;
 }
 
 export type PerformChatRewindResult = Database['public']['Functions']['perform_chat_rewind']['Returns'];

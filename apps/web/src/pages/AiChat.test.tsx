@@ -1,11 +1,25 @@
-import React from 'react';
-import { render, screen, act, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+
+const { mockNavigate } = vi.hoisted(() => ({
+  mockNavigate: vi.fn(),
+}));
+
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
+import React from 'react';
+import { render, screen, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import AiChatPage from './AiChat';
 import { useAiStore, useAuthStore, useOrganizationStore } from '@paynless/store';
-import type { Organization, Chat, User, ChatMessage, AiStore } from '@paynless/types';
+import type { Organization, Chat, User } from '@paynless/types';
 
 // --- Global Mocks ---
 vi.mock('@paynless/analytics', () => ({
@@ -149,6 +163,17 @@ const setupStoreAndSpies = async (
   };
 };
 
+function renderAiChatPageAt(initialEntry: string = '/chat') {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Routes>
+        <Route path="/chat" element={<AiChatPage />} />
+        <Route path="/chat/:chatId" element={<AiChatPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
 describe('AiChatPage Integration Tests', () => {
   let mocks: Awaited<ReturnType<typeof setupStoreAndSpies>>;
 
@@ -156,94 +181,12 @@ describe('AiChatPage Integration Tests', () => {
     mocks = await setupStoreAndSpies(orgA.id, [chatPersonal1], [chatOrgA1]);
   });
 
-  // Test 1.1: Initial render with Org A (pre-filled history)
-  it.skip('should render and default to global org context, displaying its history if pre-filled', async () => {
-    render(<AiChatPage />);
-    // expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent(orgA.name!);
-    // The above assertion is no longer valid as the mock is simpler.
-    // We verify ChatContextSelector is rendered, its internal state is tested separately.
-    expect(screen.getByTestId('chat-context-selector-mock')).toBeInTheDocument();
-    expect(await screen.findByText('Org A Chat History')).toBeInTheDocument();
-    expect(screen.getByText(chatOrgA1.title!)).toBeInTheDocument();
-    expect(mocks.mockLoadChatHistory).not.toHaveBeenCalled();
-  });
-
-  // Test 1.2: Initial render with Org A (empty history, should load)
-  it.skip('should call loadChatHistory if global org context history is NOT pre-filled', async () => {
-    mocks = await setupStoreAndSpies(orgA.id, [chatPersonal1], undefined);
-    render(<AiChatPage />);
-    expect(await screen.findByTestId('chat-context-selector-mock')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith(orgA.id);
-    });
-  });
-
-  // Test 1.3: Initial render with Personal (pre-filled history)
-  it.skip('should render and default to Personal context, displaying its history if pre-filled', async () => {
-    mocks = await setupStoreAndSpies(null, [chatPersonal1], [chatOrgA1]);
-    render(<AiChatPage />);
-    // expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent('Personal');
-    expect(screen.getByTestId('chat-context-selector-mock')).toBeInTheDocument();
-    expect(await screen.findByText('Personal Chat History')).toBeInTheDocument();
-    expect(screen.getByText(chatPersonal1.title!)).toBeInTheDocument();
-    expect(mocks.mockLoadChatHistory).not.toHaveBeenCalled();
-  });
-
-  // Test 1.4: Initial render with Personal (empty history, should load)
-  it.skip('should call loadChatHistory if Personal context history is NOT pre-filled', async () => {
-    mocks = await setupStoreAndSpies(null, undefined, [chatOrgA1]);
-    render(<AiChatPage />);
-    expect(await screen.findByTestId('chat-context-selector-mock')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith('personal');
-    });
-  });
-
-  // Test 2.1: Context Switching to Personal
-  it.skip("selecting 'Personal' in ChatContextSelector should load personal history if not pre-filled", async () => {
-    // const user = userEvent.setup(); // userEvent not used for this part now
-    mocks = await setupStoreAndSpies(orgA.id, undefined, [chatOrgA1]);
-    render(<AiChatPage />);
-    
-    // Simulate ChatContextSelector updating the store directly for testing AiChatPage's reaction
-    act(() => {
-      useAiStore.setState({ newChatContext: 'personal' });
-    });
-    
-    await waitFor(() => {
-      // AiChatPage useEffect for activeContextIdForHistory should trigger loadChatHistory
-      expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith('personal');
-    });
-    // Analytics for context selection for new chat is tracked by setSelectedChatContextForNewChat action in store,
-    // not directly by AiChatPage anymore.
-    // expect(mocks.mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Context Selected For New Chat', { contextId: 'personal' });
-  });
-
-  // Test 2.2: Context Switching to Org B
-  it.skip("selecting Org B in ChatContextSelector should load Org B history if not pre-filled", async () => {
-    // const user = userEvent.setup(); // userEvent not used
-    render(<AiChatPage />);
-    expect(await screen.findByText(chatOrgA1.title!)).toBeInTheDocument();
-    mocks.mockLoadChatHistory.mockClear();
-
-    // Simulate ChatContextSelector updating the store directly
-    act(() => {
-      useAiStore.setState({ newChatContext: orgB.id });
-    });
-
-    await waitFor(() => {
-      expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith(orgB.id);
-    });
-    // Analytics for context selection for new chat is tracked by setSelectedChatContextForNewChat action in store.
-    // expect(mocks.mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Context Selected For New Chat', { contextId: orgB.id });
-  });
-
   // Test 3.1: New Chat - Personal
   it("clicking 'New Chat' when 'Personal' context is active (set in store) should call startNewChat for personal", async () => {
     const user = userEvent.setup();
     // Set up store with Personal as the selected context for new chat
     mocks = await setupStoreAndSpies(orgA.id, [chatPersonal1], [chatOrgA1], undefined, null);
-    render(<AiChatPage />);
+    renderAiChatPageAt();
     
     // Ensure page has rendered, e.g., by finding some existing content if necessary
     // await screen.findByText(chatOrgA1.title!); // This might be for a different context initially loaded by globalCurrentOrgId
@@ -262,7 +205,7 @@ describe('AiChatPage Integration Tests', () => {
     const user = userEvent.setup();
     // Set up store with OrgA as the selected context for new chat
     mocks = await setupStoreAndSpies(null, [chatPersonal1], [chatOrgA1], undefined, orgA.id);
-    render(<AiChatPage />);
+    renderAiChatPageAt();
 
     mocks.mockStartNewChat.mockClear(); // Clear before action
     mocks.mockAnalyticsTrack.mockClear();
@@ -273,172 +216,26 @@ describe('AiChatPage Integration Tests', () => {
     expect(mocks.mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Clicked New Chat', { contextId: orgA.id });
   });
 
-  // Test 4.1: Load Chat from History List
-  it.skip('clicking a chat item in ChatHistoryList should call loadChatDetails', async () => {
+  it('clicking "New Chat" while chatId URL param is present calls navigate once with /chat', async () => {
     const user = userEvent.setup();
-    render(<AiChatPage />);    
-    const chatItemButton = await screen.findByRole('button', { name: new RegExp(chatOrgA1.title!, 'i') });
-    expect(chatItemButton).toBeInTheDocument();
-    mocks.mockLoadChatDetails.mockClear();
-    await user.click(chatItemButton);
-    expect(mocks.mockLoadChatDetails).toHaveBeenCalledWith(chatOrgA1.id);
+    mocks = await setupStoreAndSpies(orgA.id, [chatPersonal1], [chatOrgA1], undefined, null);
+    mockNavigate.mockClear();
+    renderAiChatPageAt('/chat/some-id');
+    await user.click(screen.getByTestId('new-chat-button'));
+    expect(mockNavigate).toHaveBeenCalledWith('/chat');
   });
 
-  // Test 5.1a: Message Alignment
-  it.skip('renders ChatMessageBubble for user and assistant messages with the correct alignment', async () => {
-    vi.unmock('../components/ai/AiChatbox');
-    // Setup: Add a chat with both user and assistant messages
-    const chatId = chatOrgA1.id;
-    const userMessage: ChatMessage = { 
-      id: 'msg1-alignment',
-      role: 'user', 
-      content: 'User message for alignment test', 
-      created_at: new Date().toISOString(), 
-      user_id: mockUser.id, 
-      chat_id: chatId,
-      system_prompt_id: null,
-      ai_provider_id: null,
-      token_usage: null,
-      updated_at: new Date().toISOString(),
-      is_active_in_thread: true,
-      error_type: null,
-      response_to_message_id: null,
-    };
-    const assistantMessage: ChatMessage = { 
-      id: 'msg2-alignment',
-      role: 'assistant', 
-      content: 'Assistant message for alignment test', 
-      created_at: new Date().toISOString(), 
-      ai_provider_id: 'prov-1',
-      chat_id: chatId,
-      user_id: null,
-      system_prompt_id: null,
-      token_usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      updated_at: new Date().toISOString(),
-      is_active_in_thread: true,
-      error_type: null,
-      response_to_message_id: null,
-    };
-
-    act(() => {
-      const existingState = useAiStore.getState(); // Get existing state to merge critical parts
-      useAiStore.setState({
-        ...existingState, // Preserve other parts of state
-        messagesByChatId: {
-          [chatId]: [userMessage, assistantMessage],
-        },
-        currentChatId: chatId,
-        // Ensure selectedMessagesMap is present and correctly structured for the current chat
-        selectedMessagesMap: { 
-          ...(existingState.selectedMessagesMap || {}), // Merge with existing selections if any
-          [chatId]: { [userMessage.id]: true, [assistantMessage.id]: true } 
-        },
-        isDetailsLoading: false, // Explicitly set as the original test logic might have done this via mockLoadChatDetails side effect
-      }, true); // Replace state
-      mocks.mockLoadChatDetails.mockResolvedValueOnce(undefined); // Simulate action completion
-    });
-    render(<AiChatPage />);
-    await act(async () => {
-      await useAiStore.getState().loadChatDetails(chatId);
-    });
-    await waitFor(() => {
-      expect(screen.getAllByTestId('chat-message-bubble-card')).toHaveLength(2);
-    });
-    // User message should be aligned to the end (right)
-    const userMessageLayout = screen.getByTestId('chat-message-layout-user');
-    expect(userMessageLayout.className).toMatch(/justify-end/);
-    // Assistant message should be aligned to the start (left)
-    const assistantMessageLayout = screen.getByTestId('chat-message-layout-assistant');
-    expect(assistantMessageLayout.className).toMatch(/justify-start/);
-  });
-
-  // Test 5.1b: AttributionDisplay
-  it.skip('uses AttributionDisplay to render user name and date correctly for user and assistant messages', async () => {
-    vi.unmock('../components/ai/AiChatbox');
-    // Setup: Add a chat with both user and assistant messages
-    const chatId = 'chat-with-attribution';
-    const userMessage: ChatMessage = { 
-      id: 'msg3-attribution',
-      role: 'user', 
-      content: 'Another User message for attribution', 
-      created_at: new Date(2023, 0, 15, 10, 30).toISOString(), 
-      user_id: mockUser.id,
-      chat_id: chatId,
-      system_prompt_id: null,
-      ai_provider_id: null,
-      token_usage: null,
-      updated_at: new Date(2023, 0, 15, 10, 30).toISOString(),
-      is_active_in_thread: true,
-      error_type: null,
-      response_to_message_id: null,
-    }; 
-    const assistantMessage: ChatMessage = { 
-      id: 'msg4-attribution',
-      role: 'assistant', 
-      content: 'Another Assistant message for attribution', 
-      created_at: new Date(2023, 0, 15, 10, 31).toISOString(), 
-      ai_provider_id: 'prov-1',
-      chat_id: chatId,
-      user_id: null,
-      system_prompt_id: null,
-      token_usage: { promptTokens: 15, completionTokens: 25, totalTokens: 40 },
-      updated_at: new Date(2023, 0, 15, 10, 31).toISOString(),
-      is_active_in_thread: true,
-      error_type: null,
-      response_to_message_id: null,
-    };
-
-    // Mock user profiles
-    const mockProfiles: AiStore['chatParticipantsProfiles'] = { 
-      [mockUser.id]: { 
-        id: mockUser.id, 
-        first_name: 'Test',
-        last_name: 'User',
-        chat_context: { defaultPromptId: 'prompt-1', defaultProviderId: 'prov-1' },
-        created_at: new Date().toISOString(),
-        last_selected_org_id: orgA.id,
-        profile_privacy_setting: 'private',
-        role: 'user',
-        updated_at: new Date().toISOString(),
-        has_seen_welcome_modal: false,
-        is_subscribed_to_newsletter: false,
-      }
-    };
-    
-    act(() => {
-      const existingState = useAiStore.getState();
-      useAiStore.setState({
-        ...existingState,
-        chatParticipantsProfiles: mockProfiles, // This was the primary purpose of this setState
-        messagesByChatId: {
-          ...(existingState.messagesByChatId || {}),
-          [chatId]: [userMessage, assistantMessage],
-        },
-        currentChatId: chatId,
-        selectedMessagesMap: {
-          ...(existingState.selectedMessagesMap || {}),
-          [chatId]: { [userMessage.id]: true, [assistantMessage.id]: true }
-        },
-        isDetailsLoading: false, // Explicitly set
-      }, true); // Replace state
-      mocks.mockLoadChatDetails.mockResolvedValueOnce(undefined); // Simulate action completion
-    });
-    render(<AiChatPage />);
-    await act(async () => {
-      await useAiStore.getState().loadChatDetails(chatId);
-    });
-    await waitFor(() => {
-      expect(screen.getAllByTestId('chat-message-bubble-card')).toHaveLength(2);
-    });
-    // User attribution: should show email or truncated ID
-    const userBubble = within(screen.getByTestId('chat-message-layout-user'));
-    expect(userBubble.getByText(/test@example.com \(You\)|user-test-123 \(You\)|User \(You\)/)).toBeInTheDocument();
-    // Assistant attribution: should show 'Assistant'
-    const assistantBubble = within(screen.getByTestId('chat-message-layout-assistant'));
-    expect(assistantBubble.getByText(/Assistant/)).toBeInTheDocument();
-    // Timestamp: should show a relative time (e.g., 'less than a minute ago')
-    // Check within each bubble to ensure timestamps are present for both
-    expect(userBubble.getAllByTitle(/ago|AM|PM|GMT|UTC/).length).toBeGreaterThanOrEqual(1);
-    expect(assistantBubble.getAllByTitle(/ago|AM|PM|GMT|UTC/).length).toBeGreaterThanOrEqual(1);
+  it('clicking "New Chat" calls startNewChat before navigate', async () => {
+    const user = userEvent.setup();
+    mocks = await setupStoreAndSpies(orgA.id, [chatPersonal1], [chatOrgA1], undefined, null);
+    mockNavigate.mockClear();
+    mocks.mockStartNewChat.mockClear();
+    renderAiChatPageAt();
+    await user.click(screen.getByTestId('new-chat-button'));
+    expect(mocks.mockStartNewChat).toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalled();
+    expect(mocks.mockStartNewChat.mock.invocationCallOrder[0]).toBeLessThan(
+      mockNavigate.mock.invocationCallOrder[0]
+    );
   });
 }); 

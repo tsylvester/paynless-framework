@@ -70,6 +70,8 @@ const defaultMockUserMessage: ChatMessage = {
   is_active_in_thread: true,
   system_prompt_id: null,
   updated_at: '2024-05-18T12:00:00.000Z',
+  error_type: null,
+  response_to_message_id: null,
 };
 
 const defaultMockAssistantMessage: ChatMessage = {
@@ -84,6 +86,8 @@ const defaultMockAssistantMessage: ChatMessage = {
   ai_provider_id: 'gpt-4',
   is_active_in_thread: true,
   system_prompt_id: null,
+  error_type: null,
+  response_to_message_id: null,
 };
 
 // Updated style definitions to separate layout and card specific styles
@@ -106,6 +110,12 @@ describe('ChatMessageBubble', () => {
     last_selected_org_id: mockCurrentOrgId,
     profile_privacy_setting: 'public',
     role: 'user',
+    has_seen_welcome_modal: false,
+    is_subscribed_to_newsletter: false,
+    subscribed_at: null,
+    synced_to_kit_at: null,
+    unsubscribed_at: null,
+    signup_ref: null,
   };
   const mockOnEditClick = vi.fn();
 
@@ -113,11 +123,11 @@ describe('ChatMessageBubble', () => {
     // Dynamically import the mocked store and assign hooks
     const store = await import('@paynless/store');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockedAuthStoreHook = store.useAuthStore as any; // Cast to any after import
+    mockedAuthStoreHook = store.useAuthStore; // Cast to any after import
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockedOrgStoreHook = store.useOrganizationStore as any; // Cast to any after import
+    mockedOrgStoreHook = store.useOrganizationStore; // Cast to any after import
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockedAiStoreHook = store.useAiStore as any; // Added assignment
+    mockedAiStoreHook = store.useAiStore; // Added assignment
   });
 
   beforeEach(() => {
@@ -352,8 +362,7 @@ describe('ChatMessageBubble', () => {
       const assistantMessageMissingTokens: ChatMessage = {
         ...defaultMockAssistantMessage,
         id: 'assistant-missing-tokens-1',
-        // @ts-expect-error Testing with intentionally partial/malformed TokenUsage data.
-        token_usage: { total: 30 } as unknown as TokenUsage, 
+        token_usage: { total: 30 }, 
       };
       renderComponent({ message: assistantMessageMissingTokens });
       expect(actualMockTokenUsageDisplay).toHaveBeenCalledTimes(1);

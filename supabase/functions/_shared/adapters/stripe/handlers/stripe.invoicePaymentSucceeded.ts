@@ -23,7 +23,7 @@ async function retrieveSubscriptionPlanDetails(
       .from('subscription_plans')
       .select('tokens_to_award, plan_type, item_id_internal, stripe_price_id')
       .eq('stripe_price_id', stripePriceId)
-      .single();
+      .maybeSingle();
 
     if (planError) {
       context.logger.error(`[retrieveSubscriptionPlanDetails] Error fetching plan details for Stripe Price ID ${stripePriceId} from subscription_plans. DB Error: ${planError.message}`);
@@ -56,6 +56,16 @@ export async function handleInvoicePaymentSucceeded(
     return { success: false, transactionId: undefined, error: 'Stripe customer ID missing on invoice.' };
   }
 
+  if (invoice.billing_reason === 'subscription_create') {
+    context.logger.info(`[handleInvoicePaymentSucceeded] subscription_create invoice ${invoice.id} skipped; handled by checkout.session.completed`, { eventId: stripeEventId });
+    return {
+      success: true,
+      transactionId: undefined,
+      tokensAwarded: 0,
+      message: 'subscription_create invoice skipped; handled by checkout.session.completed',
+    };
+  }
+
   const subscriptionIdFromLineItem = invoice.lines.data[0]?.subscription;
   const subscriptionId = typeof subscriptionIdFromLineItem === 'string' ? subscriptionIdFromLineItem : (subscriptionIdFromLineItem?.id ?? undefined);
   let paymentIntentId: string | undefined;
@@ -68,7 +78,7 @@ export async function handleInvoicePaymentSucceeded(
     .from('payment_transactions')
     .select('id, status, tokens_to_award')
     .eq('gateway_transaction_id', invoice.id)
-    .eq('status', 'succeeded') // Check specifically for a 'succeeded' status
+    .eq('status', 'COMPLETED') // Check specifically for a COMPLETED status
     .maybeSingle();
 
   if (checkError) {
@@ -258,7 +268,7 @@ export async function handleInvoicePaymentSucceeded(
         context.logger.error(`[handleInvoicePaymentSucceeded] CRITICAL: Also failed to update payment transaction ${newPaymentTx.id} status to TOKEN_AWARD_FAILED. Manual review required.`, { updateError: updatePtxError, eventId: stripeEventId });
       }
       // Return success: false because the primary action (awarding tokens) failed.
-      return { success: false, transactionId: newPaymentTx.id, error: `Failed to award tokens: ${errorMessage}`, tokensAwarded: 0 };
+      return { success: false, transactionId: newPaymentTx.id, error: `Failed to award tokens: ${errorMessage}`, tokensAwarded: 0, status: 500 };
     }
   } else {
     context.logger.info(`[handleInvoicePaymentSucceeded] No tokens to award for invoice ${invoice.id}. Payment transaction ${newPaymentTx.id} created, but no token transaction performed.`, { eventId: stripeEventId });
@@ -267,13 +277,13 @@ export async function handleInvoicePaymentSucceeded(
   // --- Final Update to Payment Transaction Status ---
   const { data: finalPtx, error: finalUpdateError } = await context.supabaseClient
     .from('payment_transactions')
-    .update({ status: 'succeeded' })
+    .update({ status: 'COMPLETED' })
     .eq('id', newPaymentTx.id)
     .select()
     .single();
 
   if (finalUpdateError || !finalPtx) {
-    const finalErrorMessage = `CRITICAL: Failed to update payment transaction ${newPaymentTx.id} to 'succeeded' after processing invoice ${invoice.id}.`;
+    const finalErrorMessage = `CRITICAL: Failed to update payment transaction ${newPaymentTx.id} to 'COMPLETED' after processing invoice ${invoice.id}.`;
     context.logger.error(`[handleInvoicePaymentSucceeded] ${finalErrorMessage}`, { error: finalUpdateError, eventId: stripeEventId });
     // Even if this update fails, the core logic succeeded. Return success but log the critical failure.
     // The transactionId is still the one we created.

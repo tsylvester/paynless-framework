@@ -73,9 +73,12 @@ export function isITokenContext(value: unknown): value is ITokenContext {
         return false;
     }
     return (
-        'tokenWalletService' in value &&
-        typeof value.tokenWalletService === 'object' &&
-        value.tokenWalletService !== null
+        'adminTokenWalletService' in value &&
+        typeof value.adminTokenWalletService === 'object' &&
+        value.adminTokenWalletService !== null &&
+        'userTokenWalletService' in value &&
+        typeof value.userTokenWalletService === 'object' &&
+        value.userTokenWalletService !== null
     );
 }
 
@@ -97,7 +100,7 @@ export function isIExecuteModelCallContext(value: unknown): value is IExecuteMod
         'logger' in value && typeof value.logger === 'object' && value.logger !== null &&
         'fileManager' in value && typeof value.fileManager === 'object' && value.fileManager !== null &&
         'getAiProviderAdapter' in value && typeof value.getAiProviderAdapter === 'function' &&
-        'tokenWalletService' in value && typeof value.tokenWalletService === 'object' && value.tokenWalletService !== null &&
+        'userTokenWalletService' in value && typeof value.userTokenWalletService === 'object' && value.userTokenWalletService !== null &&
         'notificationService' in value && typeof value.notificationService === 'object' && value.notificationService !== null &&
         'continueJob' in value && typeof value.continueJob === 'function' &&
         'retryJob' in value && typeof value.retryJob === 'function' &&
@@ -116,7 +119,7 @@ export function isIPrepareModelJobContext(value: unknown): value is IPrepareMode
         'logger' in value && typeof value.logger === 'object' && value.logger !== null &&
         'applyInputsRequiredScope' in value && typeof value.applyInputsRequiredScope === 'function' &&
         'countTokens' in value && typeof value.countTokens === 'function' &&
-        'tokenWalletService' in value && typeof value.tokenWalletService === 'object' && value.tokenWalletService !== null &&
+        'adminTokenWalletService' in value && typeof value.adminTokenWalletService === 'object' && value.adminTokenWalletService !== null &&
         'validateWalletBalance' in value && typeof value.validateWalletBalance === 'function' &&
         'validateModelCostRates' in value && typeof value.validateModelCostRates === 'function' &&
         'ragService' in value && typeof value.ragService === 'object' && value.ragService !== null &&
@@ -164,7 +167,8 @@ export function isIJobContext(value: unknown): value is IJobContext {
         'indexingService' in value && typeof value.indexingService === 'object' && value.indexingService !== null &&
         'embeddingClient' in value && typeof value.embeddingClient === 'object' && value.embeddingClient !== null &&
         'countTokens' in value && typeof value.countTokens === 'function' &&
-        'tokenWalletService' in value && typeof value.tokenWalletService === 'object' && value.tokenWalletService !== null &&
+        'adminTokenWalletService' in value && typeof value.adminTokenWalletService === 'object' && value.adminTokenWalletService !== null &&
+        'userTokenWalletService' in value && typeof value.userTokenWalletService === 'object' && value.userTokenWalletService !== null &&
         'pickLatest' in value && typeof value.pickLatest === 'function' &&
         'applyInputsRequiredScope' in value && typeof value.applyInputsRequiredScope === 'function' &&
         'validateWalletBalance' in value && typeof value.validateWalletBalance === 'function' &&

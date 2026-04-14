@@ -4,7 +4,7 @@ import { useAiStore } from '@paynless/store';
 import type { SystemPrompt, AiStore } from '@paynless/types';
 import { PromptSelector } from './PromptSelector';
 import { 
-  mockedUseAiStoreHookLogic,
+  useMockedAiStoreHookLogic,
   mockSetState,
   resetAiStoreMock,
   getAiStoreState, // Changed from internalMockAiGetState to getAiStoreState
@@ -42,12 +42,10 @@ const mockAvailablePromptsData: SystemPrompt[] = [
     created_at: '2023-01-01T00:00:00Z', 
     updated_at: '2023-01-01T00:00:00Z', 
     is_active: true,
-    context: null,
-    description: null,
-    is_stage_default: false,
-    stage_association: null,
-    variables_required: {},
+    user_selectable: true,
+    document_template_id: null,
     version: 1,
+    description: 'A general assistant prompt',
   },
   { 
     id: 'prompt-2', 
@@ -56,11 +54,9 @@ const mockAvailablePromptsData: SystemPrompt[] = [
     created_at: '2023-01-01T00:00:00Z', 
     updated_at: '2023-01-01T00:00:00Z', 
     is_active: true,
-    context: null,
-    description: null,
-    is_stage_default: false,
-    stage_association: null,
-    variables_required: {},
+    user_selectable: true,
+    document_template_id: null,
+    description: 'A code helper prompt',
     version: 1,
   },
   { 
@@ -70,11 +66,9 @@ const mockAvailablePromptsData: SystemPrompt[] = [
     created_at: '2023-01-01T00:00:00Z', 
     updated_at: '2023-01-01T00:00:00Z', 
     is_active: true,
-    context: null,
-    description: null,
-    is_stage_default: false,
-    stage_association: null,
-    variables_required: {},
+    user_selectable: true,
+    document_template_id: null,
+    description: 'A creative writer prompt',
     version: 1,
   },
 ];
@@ -88,16 +82,11 @@ describe('PromptSelector', () => {
     resetAiStoreMock(); // Reset the shared mock
     
     // Set the mock implementation for useAiStore here, before each test
-    vi.mocked(useAiStore).mockImplementation(mockedUseAiStoreHookLogic);
+    vi.mocked(useAiStore).mockImplementation(useMockedAiStoreHookLogic);
 
     // Initialize storeActions for easy access to spies, after reset
     storeActions = getAiStoreState(); 
     HTMLElement.prototype.scrollIntoView = vi.fn(); // Mock scrollIntoView
-
-    // Ensure setSelectedPrompt is a spy before each test, if not already by resetAiStoreMock
-    // The shared mock's initialAiState should ideally have spies for all actions.
-    // Let's assume resetAiStoreMock correctly sets up setSelectedPrompt as a spy.
-    // If not, we might need: storeActions.setSelectedPrompt = vi.fn();
   });
 
   afterEach(() => {

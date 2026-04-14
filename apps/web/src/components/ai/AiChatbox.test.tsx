@@ -1,8 +1,19 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { AiChatbox, AiChatboxProps } from './AiChatbox';
 import { vi } from 'vitest';
-import { ChatMessage, AiProvider, SystemPrompt, ChatMessageRow, AiStore, TokenUsage, Json } from '@paynless/types';
+import { ChatMessage, ChatMessageRow, AiStore, ChatRole } from '@paynless/types';
+import { createSseConnectionStub } from '../../../../../packages/store/src/aiStore.streaming.mock.ts';
+
+vi.mock('@/hooks/useAIChatAffordabilityStatus', () => ({
+  useAIChatAffordabilityStatus: () => ({
+    canAffordNext: true,
+    lowBalanceWarning: false,
+    currentBalance: '10000',
+    estimatedNextCost: 0,
+  }),
+}));
 
 // Mock @paynless/utils
 vi.mock('@paynless/utils', () => ({
@@ -17,7 +28,7 @@ vi.mock('@paynless/utils', () => ({
 
 // Import the shared mock utilities
 import { 
-  mockedUseAiStoreHookLogic, 
+  useMockedAiStoreHookLogic, 
   mockSetState,
   resetAiStoreMock,
   // Access action spies via the initial state or exported spies from the mock file
@@ -25,9 +36,12 @@ import {
   // let mockSendMessage; (will be assigned from the store mock state)
 } from '../../mocks/aiStore.mock'; // Adjusted path
 
-// Import missing store items
-import { useAiStore, selectCurrentChatMessages } from '@paynless/store';
-
+function requireTextarea(node: HTMLElement): HTMLTextAreaElement {
+  if (node instanceof HTMLTextAreaElement) {
+    return node;
+  }
+  throw new Error('Expected HTMLTextAreaElement');
+}
 
 // Mock ChatMessageBubble
 const mockChatMessageBubble = vi.fn((props: { message: ChatMessage; onEditClick?: (id: string, content: string) => void; }) => <div data-testid={`mock-bubble-${props.message.id}`} />); 
@@ -35,28 +49,17 @@ vi.mock('./ChatMessageBubble', () => ({
   ChatMessageBubble: (props: { message: ChatMessage; onEditClick?: (id: string, content: string) => void; }) => mockChatMessageBubble(props), 
 }));
 
-// Mock CurrentMessageTokenEstimator (New)
-interface MockCurrentMessageTokenEstimatorProps { // Renamed to avoid conflict if imported
-  textInput: string;
-}
-const mockCurrentMessageTokenEstimator = vi.fn((props: MockCurrentMessageTokenEstimatorProps) => (
-  <div data-testid="mock-current-message-token-estimator">Est. tokens for: {props.textInput}</div>
-));
-vi.mock('./CurrentMessageTokenEstimator', () => ({
-  CurrentMessageTokenEstimator: (props: MockCurrentMessageTokenEstimatorProps) => mockCurrentMessageTokenEstimator(props),
-}));
-
 // Mock the store using the shared mock logic
 vi.mock('@paynless/store', async () => {
   const originalStoreModule = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
-  const { mockedUseAiStoreHookLogic } = await vi.importActual<typeof import('../../mocks/aiStore.mock')>('../../mocks/aiStore.mock');
+  const { useMockedAiStoreHookLogic } = await vi.importActual<typeof import('../../mocks/aiStore.mock')>('../../mocks/aiStore.mock');
   
   const mockTrackEvent = vi.fn();
   const mockGetStateAnalytics = vi.fn(() => ({ trackEvent: mockTrackEvent }));
 
   return {
     ...originalStoreModule, 
-    useAiStore: mockedUseAiStoreHookLogic, 
+    useAiStore: useMockedAiStoreHookLogic, 
     // selectCurrentChatMessages will be taken from originalStoreModule
     useAnalyticsStore: vi.fn(() => ({
       getState: mockGetStateAnalytics,
@@ -77,6 +80,8 @@ const mockUserMessage: ChatMessageRow = {
   ai_provider_id: null, 
   system_prompt_id: null, 
   is_active_in_thread: true,
+  error_type: null,
+  response_to_message_id: null,
 };
 
 const mockAssistantMessage: ChatMessageRow = { 
@@ -87,17 +92,21 @@ const mockAssistantMessage: ChatMessageRow = {
   content: 'Hello from assistant',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
-  token_usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 } as unknown as Json,
+  token_usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
   ai_provider_id: 'provider-1', 
   system_prompt_id: null, 
   is_active_in_thread: true,
+  error_type: null,
+  response_to_message_id: null,
 };
 
-let storeActions: AiStore; 
+let storeActions: AiStore;
+let mockSendStreamingMessage: AiStore['sendStreamingMessage'];
+let scrollToStub: ReturnType<typeof vi.fn>;
 
 // Helper to get typed store state
 const getMockedStoreState = (): AiStore => {
-  return (mockedUseAiStoreHookLogic as typeof useAiStore).getState();
+  return (useMockedAiStoreHookLogic).getState();
 };
 
 describe('AiChatbox', () => {
@@ -105,12 +114,20 @@ describe('AiChatbox', () => {
     storeActions = getMockedStoreState();
   });
 
+  function AiChatboxTestRouter(props: { children: React.ReactNode }) {
+    return <MemoryRouter>{props.children}</MemoryRouter>;
+  }
+
   beforeEach(() => {
     vi.clearAllMocks(); 
     resetAiStoreMock(); 
-    storeActions = getMockedStoreState(); // Get fresh actions AFTER reset
+    scrollToStub = vi.fn();
+    window.scrollTo = scrollToStub;
 
     // Setup default state for most tests. Specific tests can override.
+    const streamingImpl: AiStore['sendStreamingMessage'] = async () =>
+      createSseConnectionStub();
+    mockSendStreamingMessage = vi.fn(streamingImpl);
     mockSetState({ 
       messagesByChatId: {
         'chat-1': [mockUserMessage, { ...mockAssistantMessage, id: 'assistant-msg-default' }],
@@ -119,7 +136,7 @@ describe('AiChatbox', () => {
       isLoadingAiResponse: false,
       aiError: null,
       rewindTargetMessageId: null,
-      // Corrected AiProvider mock based on typical DB structure, might need further adjustment if db.types.ts reveals more specific non-nullable fields
+      sendStreamingMessage: mockSendStreamingMessage,
       availableProviders: [{
         id: 'provider-1', 
         name: 'Default Provider', 
@@ -130,16 +147,19 @@ describe('AiChatbox', () => {
         config: {}, 
         created_at: new Date().toISOString(), 
         updated_at: new Date().toISOString(),
-        description: 'A default provider'
-        // Ensure all non-nullable fields from Database['public']['Tables']['ai_providers']['Row'] are present
-      } as AiProvider], 
-      availablePrompts: [{id: 'prompt-1', name: 'Default Prompt', prompt_text: 'Default Content', created_at: new Date().toISOString(), is_active: true, updated_at: new Date().toISOString(), user_id: null, is_public: false } as SystemPrompt],
+        description: 'A default provider',
+        is_default_embedding: false,
+        is_default_generation: false,
+      }], 
+      availablePrompts: [{id: 'prompt-1', name: 'Default Prompt', prompt_text: 'Default Content', created_at: new Date().toISOString(), is_active: true, updated_at: new Date().toISOString(), user_selectable: true, version: 1, description: 'A default prompt', document_template_id: null }],
       selectedProviderId: 'provider-1', 
       selectedPromptId: 'prompt-1',
     });
+    storeActions = getMockedStoreState();
     
-    vi.spyOn(storeActions, 'sendMessage').mockResolvedValue({ id: 'new-msg', role: 'assistant', content: 'response' } as ChatMessage);
-    vi.spyOn(storeActions, 'prepareRewind').mockImplementation((messageId: string, _chatId: string) => { // _chatId is intentionally unused in mock
+    vi.spyOn(storeActions, 'sendMessage').mockResolvedValue({ id: 'new-msg', role: 'assistant', content: 'response', created_at: new Date().toISOString(), error_type: null, is_active_in_thread: true, response_to_message_id: null, user_id: null, ai_provider_id: 'provider-1', chat_id: 'chat-1', system_prompt_id: 'prompt-1', token_usage: null, updated_at: new Date().toISOString() });
+    vi.spyOn(storeActions, 'prepareRewind').mockImplementation((messageId: string, chatId: string) => {
+      void chatId;
       act(() => {
         mockSetState({ rewindTargetMessageId: messageId }); 
       });
@@ -149,11 +169,13 @@ describe('AiChatbox', () => {
         mockSetState({ rewindTargetMessageId: null }); 
       });
     });
-    vi.spyOn(storeActions, 'clearAiError').mockClear(); 
+    vi.spyOn(storeActions, 'clearAiError').mockImplementation(() => {
+      mockSetState({ aiError: null });
+    });
   });
 
   const renderAiChatbox = (props: Partial<AiChatboxProps> = {}) => {
-    return render(<AiChatbox {...props} />); 
+    return render(<AiChatbox {...props} />, { wrapper: AiChatboxTestRouter });
   };
 
   it('should render ChatMessageBubble for each message from the store', () => {
@@ -195,12 +217,12 @@ describe('AiChatbox', () => {
 
   it('should allow typing in the textarea', () => {
     renderAiChatbox();
-    const textarea = screen.getByPlaceholderText(/Type your message here/i) as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText(/Type your message here/i);
     fireEvent.change(textarea, { target: { value: 'Test input' } });
-    expect(textarea.value).toBe('Test input');
+    expect(requireTextarea(textarea).value).toBe('Test input');
   });
 
-  it('should call sendMessage with correct parameters when send button is clicked', async () => {
+  it('should call sendStreamingMessage with correct parameters when send button is clicked', async () => {
     renderAiChatbox();
     const textarea = screen.getByPlaceholderText(/Type your message here/i);
     const sendButton = screen.getByRole('button', { name: /Send/i });
@@ -222,25 +244,30 @@ describe('AiChatbox', () => {
     const { selectedProviderId, selectedPromptId, currentChatId } = getMockedStoreState();
 
     await waitFor(() => {
-      expect(storeActions.sendMessage).toHaveBeenCalledWith({
-        message: testMessage,
-        providerId: selectedProviderId, 
-        promptId: selectedPromptId,     
-        chatId: currentChatId, 
-      });
+      expect(mockSendStreamingMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: testMessage,
+          providerId: selectedProviderId, 
+          promptId: selectedPromptId,     
+          chatId: currentChatId, 
+        }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
     });
   });
 
   it('should clear input after sending a message', async () => {
     renderAiChatbox();
-    const textarea = screen.getByPlaceholderText(/Type your message here/i) as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText(/Type your message here/i);
     const sendButton = screen.getByRole('button', { name: /Send/i });
 
     // Simulate typing
     await act(async () => {
       fireEvent.change(textarea, { target: { value: 'Another message' } });
     });
-    expect(textarea.value).toBe('Another message'); 
+    expect(requireTextarea(textarea).value).toBe('Another message'); 
     
     // Wait for the button to become enabled
     await waitFor(() => expect(sendButton).toBeEnabled());
@@ -251,9 +278,9 @@ describe('AiChatbox', () => {
     });
 
     await waitFor(() => {
-      expect(storeActions.sendMessage).toHaveBeenCalled(); 
+      expect(mockSendStreamingMessage).toHaveBeenCalled(); 
     });
-    expect(textarea.value).toBe('');
+    expect(requireTextarea(textarea).value).toBe('');
   });
 
   it('should disable send button and input when isLoadingAiResponse is true', () => {
@@ -316,7 +343,7 @@ describe('AiChatbox', () => {
     mockSetState({ selectedProviderId: null }); 
     renderAiChatbox(); 
 
-    const textarea = screen.getByPlaceholderText(/Type your message here/i) as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText(/Type your message here/i);
     const sendButton = screen.getByRole('button', { name: /Send/i });
     const testMessage = 'Attempt to send with null providerId';
 
@@ -325,8 +352,8 @@ describe('AiChatbox', () => {
       fireEvent.click(sendButton);
     });
     
-    expect(storeActions.sendMessage).not.toHaveBeenCalled();
-    expect(textarea.value).toBe(testMessage);
+    expect(mockSendStreamingMessage).not.toHaveBeenCalled();
+    expect(requireTextarea(textarea).value).toBe(testMessage);
   });
 
   describe('Rewind Functionality', () => {
@@ -342,6 +369,8 @@ describe('AiChatbox', () => {
       ai_provider_id: null, 
       system_prompt_id: null, 
       is_active_in_thread: true,
+      error_type: null,
+      response_to_message_id: null,
     };
 
     beforeEach(() => {
@@ -353,10 +382,26 @@ describe('AiChatbox', () => {
         rewindTargetMessageId: null,
         selectedProviderId: 'provider-rewind-1', 
         selectedPromptId: 'prompt-rewind-1',
+        availableProviders: [{
+          id: 'provider-rewind-1',
+          name: 'Rewind Provider',
+          api_identifier: 'rewind-api',
+          provider: 'default',
+          is_active: true,
+          is_enabled: true,
+          config: {},
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          description: 'Rewind test provider',
+          is_default_embedding: false,
+          is_default_generation: false,
+        }],
+        availablePrompts: [{ id: 'prompt-rewind-1', name: 'Rewind Prompt', prompt_text: 'Rewind', created_at: new Date().toISOString(), is_active: true, updated_at: new Date().toISOString(), user_selectable: true, version: 1, description: 'A rewind prompt', document_template_id: null } ],
       });
       storeActions = getMockedStoreState();
-      vi.spyOn(storeActions, 'sendMessage').mockResolvedValue({ id: 'new-msg', role: 'assistant', content: 'response' } as ChatMessage);
-      vi.spyOn(storeActions, 'prepareRewind').mockImplementation((messageId: string, _chatId: string) => { 
+      vi.spyOn(storeActions, 'sendMessage').mockResolvedValue({ id: 'new-msg', role: 'assistant', content: 'response', created_at: new Date().toISOString(), error_type: null, is_active_in_thread: true, response_to_message_id: null, user_id: null, ai_provider_id: 'provider-rewind-1', chat_id: 'chat-1-rewind', system_prompt_id: 'prompt-rewind-1', token_usage: null, updated_at: new Date().toISOString() });
+      vi.spyOn(storeActions, 'prepareRewind').mockImplementation((messageId: string, chatId: string) => { 
+        void chatId;
         act(() => {
           mockSetState({ rewindTargetMessageId: messageId }); 
         });
@@ -368,7 +413,10 @@ describe('AiChatbox', () => {
       });
     });
 
-    const triggerEditOnUserMessageViaBubble = async (message: ChatMessage) => {
+    const triggerEditOnUserMessageViaBubble = async (
+      message: ChatMessage,
+      rerender: (ui: React.ReactElement) => void,
+    ) => {
       let userBubbleProps: { message: ChatMessage; onEditClick?: (id: string, content: string) => void; } | undefined; 
       const calls = mockChatMessageBubble.mock.calls;
       for (const call of calls) {
@@ -380,18 +428,19 @@ describe('AiChatbox', () => {
 
       if (userBubbleProps && userBubbleProps.onEditClick) {
         await act(async () => {
-          // Ensure onEditClick is not undefined before calling
-          if(userBubbleProps.onEditClick) userBubbleProps.onEditClick(message.id, message.content);
+          if (userBubbleProps.onEditClick) userBubbleProps.onEditClick(message.id, message.content);
+        });
+        await act(async () => {
+          rerender(<AiChatbox />);
         });
       } else {
-        console.log('ChatMessageBubble mock calls during triggerEdit:', JSON.stringify(calls.map(c => c[0].message.id)));
         throw new Error(`Could not find user message bubble for ID ${message.id} or its onEditClick prop. Target ID: ${message.id}`);
       }
     };
 
     it('should initiate rewind mode when onEditClick is called from ChatMessageBubble', async () => {
-      renderAiChatbox(); 
-      await triggerEditOnUserMessageViaBubble(mockUserMessageToEdit);
+      const { rerender } = renderAiChatbox(); 
+      await triggerEditOnUserMessageViaBubble(mockUserMessageToEdit, rerender);
 
       expect(storeActions.prepareRewind).toHaveBeenCalledTimes(1);
       expect(storeActions.prepareRewind).toHaveBeenCalledWith(mockUserMessageToEdit.id, 'chat-1-rewind');
@@ -399,7 +448,7 @@ describe('AiChatbox', () => {
       // Wait for the textarea placeholder to change, indicating ChatInput has updated based on store state
       const textarea = await screen.findByPlaceholderText('Edit your message...', {}, { timeout: 3000 });
       expect(textarea).toBeInTheDocument(); // Ensure it's found
-      expect((textarea as HTMLTextAreaElement).value).toBe(mockUserMessageToEdit.content);
+      expect(requireTextarea(textarea).value).toBe(mockUserMessageToEdit.content);
 
       expect(screen.getByRole('button', { name: /Resubmit/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
@@ -418,7 +467,7 @@ describe('AiChatbox', () => {
       
       renderAiChatbox();
       
-      const textarea = screen.getByPlaceholderText('Edit your message...') as HTMLTextAreaElement;
+      const textarea = screen.getByPlaceholderText('Edit your message...');
       // Manually set the textarea value as handleEditClick would do in a full flow,
       // or as it might be if rewind was initiated and then component re-rendered.
       fireEvent.change(textarea, { target: { value: mockUserMessageToEdit.content } });
@@ -431,8 +480,8 @@ describe('AiChatbox', () => {
 
       expect(storeActions.cancelRewindPreparation).toHaveBeenCalledTimes(1);
       
-      const revertedTextarea = await screen.findByPlaceholderText(/Type your message here/i, {}, {timeout: 3000}) as HTMLTextAreaElement;
-      expect(revertedTextarea.value).toBe('');
+      const revertedTextarea = await screen.findByPlaceholderText(/Type your message here/i, {}, {timeout: 3000});
+      expect(requireTextarea(revertedTextarea).value).toBe('');
 
       expect(screen.getByRole('button', { name: /Send/i })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Resubmit/i })).not.toBeInTheDocument();
@@ -440,11 +489,11 @@ describe('AiChatbox', () => {
     });
 
     it('should call sendMessage and then cancelRewindPreparation when Resubmit is clicked', async () => {
-      renderAiChatbox(); 
-      await triggerEditOnUserMessageViaBubble(mockUserMessageToEdit);
+      const { rerender } = renderAiChatbox(); 
+      await triggerEditOnUserMessageViaBubble(mockUserMessageToEdit, rerender);
 
       // Wait for rewind mode to be active by checking for the placeholder
-      const textarea = await screen.findByPlaceholderText('Edit your message...', {}, { timeout: 3000 }) as HTMLTextAreaElement;
+      const textarea = await screen.findByPlaceholderText('Edit your message...', {}, { timeout: 3000 });
       expect(textarea).toBeInTheDocument(); // Ensure it's found before proceeding
 
       const editedContent = 'This is the EDITED message for resubmission.';
@@ -468,7 +517,11 @@ describe('AiChatbox', () => {
           message: editedContent,
           providerId: selectedProviderId, 
           promptId: selectedPromptId,     
-          chatId: currentChatId, 
+          chatId: currentChatId,
+          contextMessages: [
+            { role: ChatRole.USER, content: mockUserMessageToEdit.content },
+            { role: ChatRole.ASSISTANT, content: mockAssistantMessage.content },
+          ],
         });
       });
 
@@ -490,7 +543,7 @@ describe('AiChatbox', () => {
       mockSetState({ rewindTargetMessageId: null }); 
       renderAiChatbox(); 
       
-      const textarea = screen.getByPlaceholderText(/Type your message here/i) as HTMLTextAreaElement;
+      const textarea = screen.getByPlaceholderText(/Type your message here/i);
       const sendButton = screen.getByRole('button', { name: /Send/i });
       const testMessage = 'Standard test message, not a rewind.';
 
@@ -508,12 +561,17 @@ describe('AiChatbox', () => {
       const { selectedProviderId, selectedPromptId, currentChatId } = getMockedStoreState();
 
       await waitFor(() => {
-        expect(storeActions.sendMessage).toHaveBeenCalledWith({
-          message: testMessage,
-          providerId: selectedProviderId, 
-          promptId: selectedPromptId,     
-          chatId: currentChatId, 
-        });
+        expect(mockSendStreamingMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: testMessage,
+            providerId: selectedProviderId, 
+            promptId: selectedPromptId,     
+            chatId: currentChatId, 
+          }),
+          expect.anything(),
+          expect.anything(),
+          expect.anything(),
+        );
       });
       expect(storeActions.cancelRewindPreparation).not.toHaveBeenCalled();
     });
@@ -521,7 +579,7 @@ describe('AiChatbox', () => {
 
   describe('Auto-scroll functionality', () => {
     beforeEach(() => {
-      vi.useFakeTimers();
+      vi.useFakeTimers({ shouldAdvanceTime: true });
       mockSetState({
         selectedProviderId: 'p-scroll',
         selectedPromptId: 'pr-scroll',
@@ -533,7 +591,8 @@ describe('AiChatbox', () => {
       vi.useRealTimers();
     });
     
-    it('should attempt to scroll for new assistant messages', async () => {
+    it('should scroll the window when new assistant messages arrive', async () => {
+      const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
       const initialMessages: ChatMessageRow[] = [mockUserMessage]; 
       const chatIdScrollTest = 'chat-scroll-test';
       mockSetState({ 
@@ -545,32 +604,6 @@ describe('AiChatbox', () => {
 
       const { rerender } = renderAiChatbox(); 
 
-      const mockScrollElement = {
-        scrollTop: 0,
-        offsetTop: 50,
-        querySelectorAll: vi.fn().mockImplementation((selector: string) => { 
-          if (selector === '[data-message-id]') {
-            const state = getMockedStoreState(); 
-            const currentMessagesForScroll = state.messagesByChatId[chatIdScrollTest] || [];
-            if (currentMessagesForScroll.find((m: ChatMessage) => m.id === 'new-assistant-scroll')) {
-              return [
-                { offsetTop: 100, getAttribute: vi.fn().mockReturnValue(mockUserMessage.id) },
-                { offsetTop: 200, getAttribute: vi.fn().mockReturnValue('new-assistant-scroll') },
-              ];
-            }
-          }
-          return [];
-        }),
-      };
-      const mockUseRefSpy = vi.spyOn(React, 'useRef');
-      mockUseRefSpy.mockImplementationOnce(() => ({ current: mockScrollElement }));
-
-      let rAFCallback: FrameRequestCallback | null = null;
-      const mockRAF = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
-        rAFCallback = cb;
-        return 0;
-      });
-
       const newAssistantMessageForScroll: ChatMessageRow = { ...mockAssistantMessage, id: 'new-assistant-scroll', chat_id: chatIdScrollTest }; 
       await act(async () => {
         mockSetState({ 
@@ -581,35 +614,13 @@ describe('AiChatbox', () => {
       });
       rerender(<AiChatbox />); 
 
-      await act(async () => {});
-
       await act(async () => {
-        vi.runAllTimers(); 
+        vi.advanceTimersByTime(200);
       });
 
-      await waitFor(() => expect(mockRAF).toHaveBeenCalled()); 
-
-      if (rAFCallback) {
-        await act(async () => {
-        if(rAFCallback) rAFCallback(performance.now()); 
-        });
-      } else {
-        console.error("AiChatbox.test.tsx: rAFCallback was not set, requestAnimationFrame mock might not have captured the callback or rAF was not called.");
-      }
-      
-      await waitFor(() => {
-      expect(mockScrollElement.querySelectorAll).toHaveBeenCalledWith('[data-message-id]');
-      }, {timeout: 1000}); 
-      
-      if (mockScrollElement.querySelectorAll.mock.calls.length > 0) { 
-        await waitFor(() => {
-            expect(mockRAF).toHaveBeenCalled();
-        });
-      }
-      
-      mockUseRefSpy.mockRestore();
-      mockRAF.mockRestore();
-    }, 3000); 
+      expect(scrollToSpy).toHaveBeenCalled();
+      scrollToSpy.mockRestore();
+    });
   });
 
   it('should render MessageSelectionControls', () => {
@@ -619,33 +630,4 @@ describe('AiChatbox', () => {
     expect(screen.getByLabelText(/(Select All|Deselect All)/i)).toBeInTheDocument();
   });
 
-  it('should display the current message token estimator and pass input to it', () => {
-    renderAiChatbox();
-    const textarea = screen.getByPlaceholderText(/Type your message here/i) as HTMLTextAreaElement;
-
-    // Initial render, estimator should be present
-    expect(mockCurrentMessageTokenEstimator).toHaveBeenCalled();
-    // Initial input is empty, so textInput prop should be empty
-    expect(mockCurrentMessageTokenEstimator).toHaveBeenLastCalledWith(expect.objectContaining({ textInput: '' }));
-
-    // Simulate typing in the textarea
-    fireEvent.change(textarea, { target: { value: 'Hello estimator' } });
-
-    // Estimator should be called again with the new text
-    // Due to potential debouncing or async updates in the actual hook, we might need waitFor if it was real.
-    // But for a direct prop pass in AiChatbox, it should be synchronous.
-    expect(mockCurrentMessageTokenEstimator).toHaveBeenLastCalledWith(expect.objectContaining({ textInput: 'Hello estimator' }));
-
-    // Check the mock's output (optional, but good for verifying the mock itself is working as expected in tests)
-    expect(screen.getByTestId('mock-current-message-token-estimator')).toHaveTextContent('Est. tokens for: Hello estimator');
-
-    // Simulate clearing the textarea
-    fireEvent.change(textarea, { target: { value: '' } });
-    expect(mockCurrentMessageTokenEstimator).toHaveBeenLastCalledWith(expect.objectContaining({ textInput: '' }));
-  });
-
-  // Test for scrolling behavior
-  describe('Scrolling Behavior', () => {
-    // ... existing code ...
-  });
 });

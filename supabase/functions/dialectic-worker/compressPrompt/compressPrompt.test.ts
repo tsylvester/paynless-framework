@@ -16,7 +16,7 @@ import { buildExtendedModelConfig } from "../../_shared/ai_service/ai_provider.m
 import type { RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
 import { FileType } from "../../_shared/types/file_manager.types.ts";
 import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
-import { createMockTokenWalletService } from "../../_shared/services/tokenWalletService.mock.ts";
+import { createMockAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import { ContextWindowError } from "../../_shared/utils/errors.ts";
 import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
@@ -185,7 +185,7 @@ Deno.test("wallet debit uses idempotency rag:{jobId}:{candidateId} and DEBIT_USA
     countIdx++;
     return next;
   };
-  const walletMock = createMockTokenWalletService();
+  const walletMock = createMockAdminTokenWalletService();
   const deps = buildCompressPromptDeps({
     ragService: mockRag,
     countTokens,
@@ -246,7 +246,7 @@ Deno.test("compressPrompt: balance decremented by tokensUsed * inputRate affects
     countIdx++;
     return next;
   };
-  const walletMock = createMockTokenWalletService();
+  const walletMock = createMockAdminTokenWalletService();
   const depsHigh = buildCompressPromptDeps({
     ragService: mockRagHigh,
     countTokens,
@@ -537,7 +537,7 @@ Deno.test("ragResult.error propagated as error return", async () => {
 Deno.test("recordTransaction throws yields Insufficient funds for RAG operation", async () => {
   const mockRag: MockRagService = new MockRagService();
   mockRag.setConfig({ mockContextResult: "z", mockTokensUsed: 5 });
-  const walletMock = createMockTokenWalletService({
+  const walletMock = createMockAdminTokenWalletService({
     recordTransaction: () => Promise.reject(new Error("nsf")),
   });
   const candidate: CompressionCandidate = {
@@ -1028,7 +1028,7 @@ Deno.test("should orchestrate RAG and debit tokens for un-indexed history chunks
     provider_max_input_tokens: 200,
   });
 
-  const { instance: mockTokenWalletService, stubs: tokenWalletStubs } = createMockTokenWalletService();
+  const { instance: mockTokenWalletService, stubs: tokenWalletStubs } = createMockAdminTokenWalletService();
   const deps = buildCompressPromptDeps({
     ragService: mockRag,
     tokenWalletService: mockTokenWalletService,
@@ -1135,7 +1135,7 @@ Deno.test("does not debit when compression tokensUsedForIndexing is zero", async
     provider_max_input_tokens: 200,
   });
 
-  const { instance: mockTokenWalletService, stubs: tokenWalletStubs } = createMockTokenWalletService();
+  const { instance: mockTokenWalletService, stubs: tokenWalletStubs } = createMockAdminTokenWalletService();
   const deps = buildCompressPromptDeps({
     ragService: mockRag,
     tokenWalletService: mockTokenWalletService,
@@ -1248,7 +1248,7 @@ Deno.test("should perform affordable compression, checking balance once", async 
     provider_max_input_tokens: 200,
   });
 
-  const { instance: mockTokenWalletService } = createMockTokenWalletService();
+  const { instance: mockTokenWalletService } = createMockAdminTokenWalletService();
   const deps = buildCompressPromptDeps({
     ragService: mockRagService,
     tokenWalletService: mockTokenWalletService,
@@ -1443,7 +1443,7 @@ Deno.test("RAG debits use stable idempotency keys tied to job and candidate", as
   });
   const mockRag: MockRagService = new MockRagService();
   mockRag.setConfig({ mockContextResult: "summary", mockTokensUsed: 7 });
-  const { instance: mockTokenWalletService, stubs: walletStubs } = createMockTokenWalletService();
+  const { instance: mockTokenWalletService, stubs: walletStubs } = createMockAdminTokenWalletService();
   let walletCountIdx = 0;
   const countTokens: CountTokensFn = (
     _deps: CountTokensDeps,
@@ -1568,9 +1568,7 @@ Deno.test(
     });
     const mockRag: MockRagService = new MockRagService();
     mockRag.setConfig({ mockContextResult: "z", mockTokensUsed: 0 });
-    const { instance: mockTokenWalletService } = createMockTokenWalletService({
-      getBalance: () => Promise.resolve("100"),
-    });
+    const { instance: mockTokenWalletService } = createMockAdminTokenWalletService();
     let ssotIdx = 0;
     const countTokens: CountTokensFn = (
       _deps: CountTokensDeps,
@@ -1697,9 +1695,7 @@ Deno.test(
       content: "very long content",
       document_key: FileType.business_case,
     });
-    const { instance: tokenWalletService } = createMockTokenWalletService({
-      getBalance: () => Promise.resolve("100000"),
-    });
+    const { instance: tokenWalletService } = createMockAdminTokenWalletService();
     let plumbCountIdx: number = 0;
     const countTokens: CountTokensFn = createMockCountTokens({
       countTokens: (
@@ -1783,9 +1779,7 @@ Deno.test(
       id: "docB",
       content: "long content",
     });
-    const { instance: tokenWalletService } = createMockTokenWalletService({
-      getBalance: () => Promise.resolve("100000"),
-    });
+    const { instance: tokenWalletService } = createMockAdminTokenWalletService();
     let emptyRelCountIdx: number = 0;
     const countTokens: CountTokensFn = createMockCountTokens({
       countTokens: (
@@ -1873,9 +1867,7 @@ Deno.test(
       content: "beta",
       document_key: FileType.success_metrics,
     });
-    const { instance: tokenWalletService } = createMockTokenWalletService({
-      getBalance: () => Promise.resolve("100000"),
-    });
+    const { instance: tokenWalletService } = createMockAdminTokenWalletService();
     let orderCountIdx: number = 0;
     const countTokens: CountTokensFn = createMockCountTokens({
       countTokens: (
@@ -1967,9 +1959,7 @@ Deno.test(
       content: "x",
       document_key: FileType.success_metrics,
     });
-    const { instance: tokenWalletService } = createMockTokenWalletService({
-      getBalance: () => Promise.resolve("100000"),
-    });
+    const { instance: tokenWalletService } = createMockAdminTokenWalletService();
     let tiesCountIdx: number = 0;
     const countTokens: CountTokensFn = createMockCountTokens({
       countTokens: (

@@ -33,7 +33,8 @@ Deno.test('Integration: constructed context passes structural check against IJob
   assertEquals(rootContext.indexingService, params.indexingService);
   assertEquals(rootContext.embeddingClient, params.embeddingClient);
   assertEquals(rootContext.countTokens, params.countTokens);
-  assertEquals(rootContext.tokenWalletService, params.tokenWalletService);
+  assertEquals(rootContext.adminTokenWalletService, params.adminTokenWalletService);
+  assertEquals(rootContext.userTokenWalletService, params.userTokenWalletService);
   assertEquals(rootContext.notificationService, params.notificationService);
   assertEquals(rootContext.promptAssembler, params.promptAssembler);
   assertEquals(rootContext.getSeedPromptForStage, params.getSeedPromptForStage);
@@ -59,7 +60,7 @@ Deno.test('Integration: constructed context passes structural check against IJob
   assertEquals(executeContext.logger, rootContext.logger);
   assertEquals(executeContext.fileManager, rootContext.fileManager);
   assertEquals(executeContext.getAiProviderAdapter, rootContext.getAiProviderAdapter);
-  assertEquals(executeContext.tokenWalletService, rootContext.tokenWalletService);
+  assertEquals(executeContext.userTokenWalletService, rootContext.userTokenWalletService);
   assertEquals(executeContext.notificationService, rootContext.notificationService);
   assertEquals(executeContext.continueJob, rootContext.continueJob);
   assertEquals(executeContext.retryJob, rootContext.retryJob);
@@ -67,7 +68,7 @@ Deno.test('Integration: constructed context passes structural check against IJob
   assertEquals(executeContext.isIntermediateChunk, rootContext.isIntermediateChunk);
   assertEquals(executeContext.determineContinuation, rootContext.determineContinuation);
   assertEquals(executeContext.buildUploadContext, rootContext.buildUploadContext);
-  assertEquals(executeContext.debitTokens, rootContext.debitTokens);
+  assertEquals(typeof executeContext.debitTokens, 'function');
   assertEquals('ragService' in executeContext, false);
   assertEquals('countTokens' in executeContext, false);
   assertEquals('prepareModelJob' in executeContext, false);
@@ -115,7 +116,7 @@ Deno.test('Integration: createPrepareModelJobContext result passes structural ch
   assertEquals(prepareContext.logger, rootContext.logger);
   assertEquals(prepareContext.applyInputsRequiredScope, rootContext.applyInputsRequiredScope);
   assertEquals(prepareContext.countTokens, rootContext.countTokens);
-  assertEquals(prepareContext.tokenWalletService, rootContext.tokenWalletService);
+  assertEquals(prepareContext.adminTokenWalletService, rootContext.adminTokenWalletService);
   assertEquals(prepareContext.validateWalletBalance, rootContext.validateWalletBalance);
   assertEquals(prepareContext.validateModelCostRates, rootContext.validateModelCostRates);
   assertEquals(prepareContext.ragService, rootContext.ragService);

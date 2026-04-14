@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AiApiClient } from './ai.api';
-import { ApiClient, ApiResponse } from './apiClient';
 import {
     AiProvider,
     SystemPrompt,
@@ -15,16 +14,26 @@ import {
     TokenEstimationRequest,
     TokenEstimationResponse,
     AiModelExtendedConfig,
-    MessageForTokenCounting,
+    ApiError,
+    ApiResponse,
+    ChatRole,
 } from '@paynless/types';
+import { createSseConnection } from '@paynless/utils';
+import { createMockSseConnection } from '../../utils/src/sse.stream.mock';
+import {
+    mockChatApiRequestStreaming,
+    mockFetchOptionsStreaming,
+} from './mocks/ai.api.mock';
 
-// Mock the base ApiClient
-const mockApiClient = {
-    get: vi.fn(),
-    post: vi.fn(),
-    put: vi.fn(), // Include other methods even if not directly used by AiApiClient
-    delete: vi.fn(),
-} as unknown as ApiClient; // Use type assertion
+import { mockApiClient } from './mocks/apiClient.mock';
+
+vi.mock('@paynless/utils', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@paynless/utils')>();
+    return {
+        ...actual,
+        createSseConnection: vi.fn(),
+    };
+});
 
 // Create an instance of the class we are testing
 const aiApiClient = new AiApiClient(mockApiClient);
@@ -43,27 +52,27 @@ describe('AiApiClient', () => {
                 data: [],
                 status: 200,
             };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
 
             // Act
             await aiApiClient.getAiProviders();
 
             // Assert
             expect(mockApiClient.get).toHaveBeenCalledTimes(1);
-            expect(mockApiClient.get).toHaveBeenCalledWith('/ai-providers', { isPublic: true });
+            expect(mockApiClient.get).toHaveBeenCalledWith('/ai-providers', { token: undefined });
         });
 
         it('should return the providers array on successful response', async () => {
             // Arrange
             const mockProviders: AiProvider[] = [
-                { id: 'p1', name: 'Provider 1', description: 'Desc 1' },
-                { id: 'p2', name: 'Provider 2', description: null },
+                { id: 'p1', name: 'Provider 1', description: 'Desc 1', api_identifier: 'gpt-4', config: {}, created_at: '2024-01-01T12:00:00.000Z', is_active: true, is_default_embedding: false, is_default_generation: false, is_enabled: true, provider: 'openai', updated_at: '2024-01-01T12:00:00.000Z' },
+                { id: 'p2', name: 'Provider 2', description: null, api_identifier: 'gpt-4', config: {}, created_at: '2024-01-01T12:00:00.000Z', is_active: true, is_default_embedding: false, is_default_generation: false, is_enabled: true, provider: 'openai', updated_at: '2024-01-01T12:00:00.000Z' },
             ];
             const mockResponse: ApiResponse<AiProvider[]> = {
                 data: mockProviders,
                 status: 200,
             };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
 
             // Act
             const result = await aiApiClient.getAiProviders();
@@ -76,18 +85,17 @@ describe('AiApiClient', () => {
         it('should return the error object on failed response', async () => {
             // Arrange
             const mockErrorResponse: ApiResponse<AiProvidersApiResponse> = {
-                success: false,
-                error: 'Failed to fetch providers',
-                statusCode: 500,
+                error: { code: 'SERVER_ERROR', message: 'Failed to fetch providers' },
+                status: 500,
             };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockErrorResponse);
+            vi.mocked(mockApiClient.get).mockResolvedValue(mockErrorResponse);
 
             // Act
             const result = await aiApiClient.getAiProviders();
 
             // Assert
-            expect(result.error).toBe('Failed to fetch providers');
-            expect(result.statusCode).toBe(500);
+            expect(result.error).toStrictEqual({ code: 'SERVER_ERROR', message: 'Failed to fetch providers' });
+            expect(result.status).toBe(500);
         });
     });
 
@@ -95,7 +103,11 @@ describe('AiApiClient', () => {
     describe('getSystemPrompts', () => {
         it('should call apiClient.get with the correct endpoint', async () => {
             // Arrange
-            mockApiClient.get.mockResolvedValueOnce({ data: [], status: 200 });
+            const mockResponse: ApiResponse<AiProvider[]> = {
+                data: [],
+                status: 200,
+            };
+            vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
 
             // Act
             await aiApiClient.getSystemPrompts(); // No token passed, should not set isPublic: true
@@ -109,14 +121,14 @@ describe('AiApiClient', () => {
         it('should return the prompts array on successful response', async () => {
             // Arrange
             const mockPrompts: SystemPrompt[] = [
-                { id: 'sp1', name: 'Prompt 1', prompt_text: 'Act as...' },
-                { id: 'sp2', name: 'Prompt 2', prompt_text: 'Generate...' },
+                { id: 'sp1', name: 'Prompt 1', prompt_text: 'Act as...', created_at: '2024-01-01T12:00:00.000Z', description: 'Description 1', document_template_id: null, is_active: true, user_selectable: true, version: 1, updated_at: '2024-01-01T12:00:00.000Z' },
+                { id: 'sp2', name: 'Prompt 2', prompt_text: 'Generate...', created_at: '2024-01-01T12:00:00.000Z', description: 'Description 2', document_template_id: null, is_active: true, user_selectable: true, version: 1, updated_at: '2024-01-01T12:00:00.000Z' },
             ];
             const mockResponse: ApiResponse<SystemPrompt[]> = {
                 data: mockPrompts,
                 status: 200,
             };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
 
             // Act
             const result = await aiApiClient.getSystemPrompts();
@@ -129,18 +141,17 @@ describe('AiApiClient', () => {
         it('should return the error object on failed response', async () => {
              // Arrange
             const mockErrorResponse: ApiResponse<SystemPromptsApiResponse> = {
-                success: false,
-                error: 'Failed to fetch prompts',
-                statusCode: 500,
+                error: { code: 'SERVER_ERROR', message: 'Failed to fetch prompts' },
+                status: 500,
             };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockErrorResponse);
+            vi.mocked(mockApiClient.get).mockResolvedValue(mockErrorResponse);
 
             // Act
             const result = await aiApiClient.getSystemPrompts();
 
             // Assert
-            expect(result.error).toBe('Failed to fetch prompts');
-            expect(result.statusCode).toBe(500);
+            expect(result.error).toStrictEqual({ code: 'SERVER_ERROR', message: 'Failed to fetch prompts' });
+            expect(result.status).toBe(500);
         });
     });
 
@@ -156,13 +167,17 @@ describe('AiApiClient', () => {
         const mockAssistantMessage: ChatMessage = {
             id: 'm2',
             chat_id: 'c1',
-            role: 'assistant',
+            role: ChatRole.ASSISTANT,
             content: 'Hello User',
+            response_to_message_id: null,
             user_id: null,
             ai_provider_id: 'p1',
             system_prompt_id: 'sp1',
             token_usage: { total_tokens: 10 },
             created_at: '2024-01-01T12:00:00.000Z',
+            updated_at: '2024-01-01T12:00:00.000Z',
+            error_type: null,
+            is_active_in_thread: true,
         };
 
         it('should call apiClient.post with the correct endpoint and data', async () => {
@@ -171,7 +186,7 @@ describe('AiApiClient', () => {
                 data: mockAssistantMessage,
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
             // Act: Call without explicit options
             await aiApiClient.sendChatMessage(chatRequestData);
@@ -186,15 +201,15 @@ describe('AiApiClient', () => {
             const chatRequestDataWithContext: ChatApiRequest = {
                 ...chatRequestData,
                 contextMessages: [
-                    { role: 'user', content: 'Previous user message' },
-                    { role: 'assistant', content: 'Previous assistant response' },
+                    { role: ChatRole.USER, content: 'Previous user message' },
+                    { role: ChatRole.ASSISTANT, content: 'Previous assistant response' },
                 ],
             };
             const mockResponse: ApiResponse<ChatMessage> = {
                 data: mockAssistantMessage,
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
             // Act
             await aiApiClient.sendChatMessage(chatRequestDataWithContext);
@@ -210,7 +225,7 @@ describe('AiApiClient', () => {
                 data: mockAssistantMessage,
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
             // Act
             const result = await aiApiClient.sendChatMessage(chatRequestData);
@@ -223,18 +238,17 @@ describe('AiApiClient', () => {
         it('should return the error object on failed response', async () => {
             // Arrange
              const mockErrorResponse: ApiResponse<ChatApiResponse> = {
-                success: false,
-                error: 'Failed to send message',
-                statusCode: 500,
+                error: { code: 'SERVER_ERROR', message: 'Failed to send message' },
+                status: 500,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockErrorResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValue(mockErrorResponse);
 
             // Act
             const result = await aiApiClient.sendChatMessage(chatRequestData);
 
             // Assert
-            expect(result.error).toBe('Failed to send message');
-            expect(result.statusCode).toBe(500);
+            expect(result.error).toStrictEqual({ code: 'SERVER_ERROR', message: 'Failed to send message' });
+            expect(result.status).toBe(500);
         });
     });
 
@@ -249,7 +263,7 @@ describe('AiApiClient', () => {
                 data: [],
                 status: 200
             };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
 
             // Act: Call with the mock token
             await aiApiClient.getChatHistory(mockToken);
@@ -267,11 +281,9 @@ describe('AiApiClient', () => {
                 data: [],
                 status: 200
             };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
 
             // Act: Call with mock token and organizationId
-            // Note: Method signature will need update later for this to compile
-            // @ts-expect-error - Temporarily ignore error until method signature is updated
             await aiApiClient.getChatHistory(mockToken, mockOrgId); 
 
             // Assert
@@ -283,39 +295,37 @@ describe('AiApiClient', () => {
         it('should return the chat history array on successful response', async () => {
             // Arrange
             const mockHistory: Chat[] = [
-                { id: 'c1', title: 'Chat 1', user_id: 'u1', created_at: 't1', updated_at: 't1' },
-                { id: 'c2', title: null, user_id: 'u1', created_at: 't2', updated_at: 't2' },
+                { id: 'c1', title: 'Chat 1', user_id: 'u1', created_at: 't1', updated_at: 't1', organization_id: null, system_prompt_id: null },
+                { id: 'c2', title: null, user_id: 'u1', created_at: 't2', updated_at: 't2', organization_id: null, system_prompt_id: null },
             ];
             const mockResponse: ApiResponse<Chat[]> = {
-                success: true,
                 data: mockHistory,
-                statusCode: 200,
+                status: 200,
             };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
 
             // Act: Call with the mock token
             const result = await aiApiClient.getChatHistory(mockToken);
 
             // Assert
             expect(result.data).toEqual(mockHistory);
-            expect(result.statusCode).toBe(200);
+            expect(result.status).toBe(200);
         });
 
         it('should return the error object on failed response', async () => {
              // Arrange
             const mockErrorResponse: ApiResponse<ChatHistoryApiResponse> = {
-                success: false,
-                error: 'Failed to fetch history',
-                statusCode: 401,
+                error: { code: 'AUTH_ERROR', message: 'Failed to fetch history' },
+                status: 401,
             };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockErrorResponse);
+            vi.mocked(mockApiClient.get).mockResolvedValue(mockErrorResponse);
 
             // Act: Call with the mock token
             const result = await aiApiClient.getChatHistory(mockToken);
 
             // Assert
-            expect(result.error).toBe('Failed to fetch history');
-            expect(result.statusCode).toBe(401);
+            expect(result.error).toStrictEqual({ code: 'AUTH_ERROR', message: 'Failed to fetch history' });
+            expect(result.status).toBe(401);
         });
     });
 
@@ -326,13 +336,13 @@ describe('AiApiClient', () => {
         const mockOrgId = 'org-xyz-789';
         const mockMessagesResponse: { chat: Chat, messages: ChatMessage[] } = {
             chat: { id: chatId, user_id: 'user-1', created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', organization_id: null, system_prompt_id: null, title: 'Test Chat' },
-            messages: [{ id: 'msg-1', chat_id: chatId, user_id: 'user-1', role: 'user', content: 'Hello', created_at: '2023-01-01T00:00:00Z', is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null }]
+            messages: [{ id: 'msg-1', chat_id: chatId, user_id: 'user-1', role: ChatRole.USER, content: 'Hello', created_at: '2023-01-01T00:00:00Z', is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, response_to_message_id: null, error_type: null, updated_at: '2023-01-01T00:00:00Z' }]
         };
 
         it('should return an error object if chatId is missing', async () => {
             const invalidChatId = ''; // Test with an empty or invalid chatId
             // Mock apiClient.get to ensure it's not called due to client-side validation
-            (mockApiClient.get as vi.Mock).mockResolvedValue({ data: { chat: {} as Chat, messages: []} }); // Should not be reached
+            vi.mocked(mockApiClient.get).mockResolvedValue({ data: { chat: {}, messages: []}, status: 200 }); // Should not be reached
 
             // Act
             const result = await aiApiClient.getChatWithMessages(invalidChatId, mockToken);
@@ -345,7 +355,7 @@ describe('AiApiClient', () => {
         });
 
         it('should call apiClient.get with the correct endpoint including chatId when no orgId is provided', async () => {
-            (mockApiClient.get as vi.Mock).mockResolvedValue({ data: mockMessagesResponse });
+            vi.mocked(mockApiClient.get).mockResolvedValue({ data: mockMessagesResponse, status: 200 });
 
             // Act
             await aiApiClient.getChatWithMessages(chatId, mockToken);
@@ -358,10 +368,9 @@ describe('AiApiClient', () => {
         });
 
         it('should call apiClient.get with the correct endpoint including chatId and organizationId when provided', async () => {
-            (mockApiClient.get as vi.Mock).mockResolvedValue({ data: mockMessagesResponse });
+            vi.mocked(mockApiClient.get).mockResolvedValue({ data: mockMessagesResponse, status: 200 });
 
             // Act
-            // @ts-expect-error - Temporarily ignore error until method signature is updated (already updated)
             await aiApiClient.getChatWithMessages(chatId, mockToken, mockOrgId);
 
             // Assert
@@ -372,7 +381,7 @@ describe('AiApiClient', () => {
         });
 
         it('should return the chat and messages object on successful response', async () => {
-            (mockApiClient.get as vi.Mock).mockResolvedValue({ data: mockMessagesResponse });
+            vi.mocked(mockApiClient.get).mockResolvedValue({ data: mockMessagesResponse, status: 200 });
 
             // Act
             const result = await aiApiClient.getChatWithMessages(chatId, mockToken);
@@ -383,14 +392,14 @@ describe('AiApiClient', () => {
         });
 
         it('should return the error object on failed response', async () => {
-            const errorResponse = { message: 'Failed to fetch messages' };
-            (mockApiClient.get as vi.Mock).mockResolvedValue({ error: errorResponse });
+            const errorResponse: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch messages' };
+            vi.mocked(mockApiClient.get).mockResolvedValue({ error: errorResponse, status: 500 });
 
             // Act
             const result = await aiApiClient.getChatWithMessages(chatId, mockToken);
 
             // Assert
-            expect(result.error).toEqual(errorResponse);
+            expect(result.error).toStrictEqual(errorResponse);
             expect(result.data).toBeUndefined();
         });
     });
@@ -400,7 +409,6 @@ describe('AiApiClient', () => {
         const mockToken = 'test-auth-token';
         
         const mockModelConfig: AiModelExtendedConfig = {
-            api_identifier: 'gpt-4',
             input_token_cost_rate: 0.03,
             output_token_cost_rate: 0.06,
             hard_cap_output_tokens: 4096,
@@ -426,7 +434,7 @@ describe('AiApiClient', () => {
                 data: mockTokenEstimationResponse,
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
             // Act
             await aiApiClient.estimateTokens(mockTokenEstimationRequest, mockToken);
@@ -442,7 +450,7 @@ describe('AiApiClient', () => {
                 data: mockTokenEstimationResponse,
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
             // Act
             const result = await aiApiClient.estimateTokens(mockTokenEstimationRequest, mockToken);
@@ -456,17 +464,17 @@ describe('AiApiClient', () => {
             // Arrange
             const messagesRequest: TokenEstimationRequest = {
                 textOrMessages: [
-                    { role: 'system', content: 'You are a helpful assistant.' },
-                    { role: 'user', content: 'What is the capital of France?' },
-                    { role: 'assistant', content: 'The capital of France is Paris.' }
-                ] as MessageForTokenCounting[],
+                    { role: ChatRole.SYSTEM, content: 'You are a helpful assistant.' },
+                    { role: ChatRole.USER, content: 'What is the capital of France?' },
+                    { role: ChatRole.ASSISTANT, content: 'The capital of France is Paris.' }
+                ],
                 modelConfig: mockModelConfig
             };
             const mockResponse: ApiResponse<TokenEstimationResponse> = {
                 data: { estimatedTokens: 41 },
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
             // Act
             const result = await aiApiClient.estimateTokens(messagesRequest, mockToken);
@@ -487,9 +495,10 @@ describe('AiApiClient', () => {
 
             // Assert
             expect(result.error).toBeDefined();
+            expect(result.error?.code).toBe('VALIDATION_ERROR');
             expect(result.error?.message).toBe('textOrMessages and modelConfig are required');
             expect(result.status).toBe(400);
-            expect(mockApiClient.post).not.toHaveBeenCalled();
+            expect(vi.mocked(mockApiClient.post)).not.toHaveBeenCalled();
         });
 
         it('should return validation error when modelConfig is missing', async () => {
@@ -503,9 +512,10 @@ describe('AiApiClient', () => {
 
             // Assert
             expect(result.error).toBeDefined();
+            expect(result.error?.code).toBe('VALIDATION_ERROR');
             expect(result.error?.message).toBe('textOrMessages and modelConfig are required');
             expect(result.status).toBe(400);
-            expect(mockApiClient.post).not.toHaveBeenCalled();
+            expect(vi.mocked(mockApiClient.post)).not.toHaveBeenCalled();
         });
 
         it('should return auth error when token is missing', async () => {
@@ -514,9 +524,10 @@ describe('AiApiClient', () => {
 
             // Assert
             expect(result.error).toBeDefined();
+            expect(result.error?.code).toBe('AUTH_ERROR');
             expect(result.error?.message).toBe('Authentication token is required');
             expect(result.status).toBe(401);
-            expect(mockApiClient.post).not.toHaveBeenCalled();
+            expect(vi.mocked(mockApiClient.post)).not.toHaveBeenCalled();
         });
 
         it('should return the error object on failed response from server', async () => {
@@ -525,13 +536,14 @@ describe('AiApiClient', () => {
                 error: { code: 'SERVER_ERROR', message: 'Token estimation failed' },
                 status: 500,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockErrorResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValue(mockErrorResponse);
 
             // Act
             const result = await aiApiClient.estimateTokens(mockTokenEstimationRequest, mockToken);
 
             // Assert
             expect(result.error).toBeDefined();
+            expect(result.error?.code).toBe('SERVER_ERROR');
             expect(result.error?.message).toBe('Token estimation failed');
             expect(result.status).toBe(500);
         });
@@ -539,7 +551,6 @@ describe('AiApiClient', () => {
         it('should handle rough character count strategy', async () => {
             // Arrange
             const roughCountModelConfig: AiModelExtendedConfig = {
-                api_identifier: 'test-model',
                 input_token_cost_rate: 0.01,
                 output_token_cost_rate: 0.02,
                 hard_cap_output_tokens: 2048,
@@ -556,7 +567,7 @@ describe('AiApiClient', () => {
                 data: { estimatedTokens: 13 }, // 52 chars / 4 = 13 tokens
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
             // Act
             const result = await aiApiClient.estimateTokens(roughCountRequest, mockToken);
@@ -564,6 +575,73 @@ describe('AiApiClient', () => {
             // Assert
             expect(mockApiClient.post).toHaveBeenCalledWith('tokenEstimator', roughCountRequest, { token: mockToken });
             expect(result.data?.estimatedTokens).toBe(13);
+        });
+    });
+
+    describe('sendStreamingChatMessage', () => {
+        beforeEach(() => {
+            vi.mocked(createSseConnection).mockReturnValue(createMockSseConnection());
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue(new Response('', { status: 200, statusText: 'OK' })),
+            );
+        });
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+        });
+
+        it('calls createSseConnection with the Response from fetch when the response is ok', async () => {
+            const client: AiApiClient = new AiApiClient(mockApiClient);
+            await client.sendStreamingChatMessage(mockChatApiRequestStreaming(), mockFetchOptionsStreaming());
+            expect(vi.mocked(createSseConnection)).toHaveBeenCalledTimes(1);
+            const responseArg: unknown = vi.mocked(createSseConnection).mock.calls[0][0];
+            expect(responseArg).toBeInstanceOf(Response);
+            if (responseArg instanceof Response) {
+                expect(responseArg.ok).toBe(true);
+            }
+        });
+
+        it('returns the ISseConnection instance returned by createSseConnection', async () => {
+            const stubConnection = createMockSseConnection();
+            vi.mocked(createSseConnection).mockReturnValueOnce(stubConnection);
+            const client: AiApiClient = new AiApiClient(mockApiClient);
+            const result = await client.sendStreamingChatMessage(mockChatApiRequestStreaming(), mockFetchOptionsStreaming());
+            expect('error' in result).toBe(false);
+            if ('error' in result) {
+                return;
+            }
+            expect(result).toBe(stubConnection);
+        });
+
+        it('does not call createSseConnection when request validation fails', async () => {
+            const client: AiApiClient = new AiApiClient(mockApiClient);
+            const invalidRequest: ChatApiRequest = mockChatApiRequestStreaming({ message: '' });
+            await client.sendStreamingChatMessage(invalidRequest, mockFetchOptionsStreaming());
+            expect(vi.mocked(createSseConnection)).not.toHaveBeenCalled();
+        });
+
+        it('does not call createSseConnection when fetch returns a non-ok status', async () => {
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue(new Response('err', { status: 502, statusText: 'Bad Gateway' })),
+            );
+            const client: AiApiClient = new AiApiClient(mockApiClient);
+            const result = await client.sendStreamingChatMessage(mockChatApiRequestStreaming(), mockFetchOptionsStreaming());
+            expect(vi.mocked(createSseConnection)).not.toHaveBeenCalled();
+            expect('error' in result).toBe(true);
+        });
+
+        it('returns NETWORK_ERROR and does not call createSseConnection when fetch rejects', async () => {
+            vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+            const client: AiApiClient = new AiApiClient(mockApiClient);
+            const result = await client.sendStreamingChatMessage(mockChatApiRequestStreaming(), mockFetchOptionsStreaming());
+            expect(vi.mocked(createSseConnection)).not.toHaveBeenCalled();
+            expect('error' in result).toBe(true);
+            if (!('error' in result)) {
+                return;
+            }
+            expect(result.error.code).toBe('NETWORK_ERROR');
         });
     });
 }); 

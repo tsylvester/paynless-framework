@@ -68,6 +68,8 @@ import type {
   ExecuteModelCallAndSaveErrorReturn,
 } from './executeModelCallAndSave.interface.ts';
 import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
+import { createMockAdminTokenWalletService } from '../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts';
+import { MockLogger } from '../../_shared/logger.mock.ts';
 
 Deno.test('executeModelCallAndSave calls adapter.sendMessageStream with payload.chatApiRequest and params.providerRow.api_identifier', async () => {
   let capturedRequest: ChatApiRequest | undefined;
@@ -154,7 +156,11 @@ Deno.test('executeModelCallAndSave passes usage chunk token counts into debitTok
   });
   const deps: ExecuteModelCallAndSaveDeps = createMockExecuteModelCallAndSaveDeps({
     getAiProviderAdapter: () => adapter,
-    debitTokens,
+    debitTokens: async (params, payload) => debitTokens(
+      { logger: new MockLogger(), tokenWalletService: createMockAdminTokenWalletService().instance },
+      params,
+      payload,
+    ),
   });
   await executeModelCallAndSave(
     deps,
@@ -367,11 +373,11 @@ Deno.test('executeModelCallAndSave returns ExecuteModelCallAndSaveErrorReturn wh
       outcome: 'success',
       contribution: createMockDialecticContributionRow(),
     }),
-    debitTokens: createMockDebitTokensFn({
-      kind: 'failure',
-      message: 'debit failed',
-      retriable: false,
-    }),
+    debitTokens: async (params, payload) => createMockDebitTokensFn({ kind: 'failure', message: 'debit failed', retriable: false })(
+        { logger: new MockLogger(), tokenWalletService: createMockAdminTokenWalletService().instance },
+        params,
+        payload,
+      ),
   });
   const result: unknown = await executeModelCallAndSave(
     deps,
@@ -420,7 +426,11 @@ Deno.test('executeModelCallAndSave debits with synthetic TokenUsage when stream 
   });
   const deps: ExecuteModelCallAndSaveDeps = createMockExecuteModelCallAndSaveDeps({
     getAiProviderAdapter: () => adapter,
-    debitTokens: createMockDebitTokensFn({ kind: 'recording', sink: recorded }),
+    debitTokens: async (params, payload) => createMockDebitTokensFn({ kind: 'recording', sink: recorded })(
+      { logger: new MockLogger(), tokenWalletService: createMockAdminTokenWalletService().instance },
+      params,
+      payload,
+    ),
     fileManager: createMockFileManagerForEmcas({
       outcome: 'success',
       contribution: createMockDialecticContributionRow(),

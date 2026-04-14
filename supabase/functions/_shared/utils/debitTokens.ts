@@ -1,7 +1,8 @@
 import { calculateActualChatCost } from "./cost_utils.ts";
 import { TokenUsageSchema } from "../../chat/zodSchema.ts";
-import type { DebitTokensDeps, DebitTokensParams, DebitTokensPayload, DebitTokensReturn } from "./debitTokens.interface.ts";
-import type { TokenWalletTransactionType } from "../types/tokenWallet.types.ts";
+import { DebitTokensDeps, DebitTokensParams, DebitTokensPayload, DebitTokensReturn } from "./debitTokens.interface.ts";
+import { RecordTransactionParams } from "../services/tokenwallet/admin/adminTokenWalletService.interface.ts";
+import { TokenWalletTransactionType } from "../types/tokenWallet.types.ts";
 
 export async function debitTokens(
     { logger, tokenWalletService }: DebitTokensDeps,
@@ -46,7 +47,7 @@ export async function debitTokens(
                 ? `Token usage for chat message in chat ${chatId}. Model: ${modelConfig?.api_identifier || 'unknown'}. Input Tokens: ${tokenUsageFromAdapter?.prompt_tokens || 0}, Output Tokens: ${tokenUsageFromAdapter?.completion_tokens || 0}.`
                 : `Token usage for headless job (e.g., Dialectic). Model: ${modelConfig?.api_identifier || 'unknown'}. Input Tokens: ${tokenUsageFromAdapter?.prompt_tokens || 0}, Output Tokens: ${tokenUsageFromAdapter?.completion_tokens || 0}.`;
 
-            const transactionData = {
+            const transactionData: RecordTransactionParams = {
                 walletId: wallet.walletId,
                 type: debitType,
                 amount: String(actualTokensToDebit),
@@ -108,7 +109,7 @@ export async function debitTokens(
                     ? `Automatic refund for failed message persistence in chat ${chatId}. Original debit amount: ${actualTokensToDebit}.`
                     : `Automatic refund for failed message persistence in headless job. Original debit amount: ${actualTokensToDebit}.`;
 
-                const refundTransactionData = {
+                const refundTransactionData: RecordTransactionParams = {
                     walletId: wallet.walletId,
                     type: creditType,
                     amount: String(actualTokensToDebit),

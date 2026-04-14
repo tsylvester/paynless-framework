@@ -13,7 +13,7 @@ import { type Database } from '../../../functions/types_db.ts';
 import { DummyAdapter } from "../ai_service/dummy_adapter.ts";
 import { MOCK_PROVIDER } from "../ai_service/ai_provider.mock.ts";
 import { assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { createMockTokenWalletService } from "../services/tokenWalletService.mock.ts";
+import { createMockAdminTokenWalletService } from "./tokenwallet/admin/adminTokenWalletService.mock.ts";
 import { MockLogger } from '../logger.mock.ts';
 
 class MockTextSplitter implements ITextSplitter {
@@ -27,7 +27,7 @@ test('IndexingService should process and index a document successfully', async (
   const { client: mockSupabaseClient, spies } = createMockSupabaseClient();
   const logger = new MockLogger();
   const textSplitter = new MockTextSplitter();
-  const mockWallet = createMockTokenWalletService();
+  const mockWallet = createMockAdminTokenWalletService();
   const embeddingClient = new EmbeddingClient(mockOpenAiAdapter);
   const service = new IndexingService(mockSupabaseClient as unknown as SupabaseClient<Database>, logger, textSplitter, embeddingClient, mockWallet.instance);
 
@@ -85,7 +85,7 @@ Deno.test('IndexingService uses DummyAdapter embeddings (deterministic vector, n
   const { client: mockSupabaseClient, spies } = createMockSupabaseClient();
   const logger = new MockLogger();
   const textSplitter = new MockTextSplitter(); // yields 2 chunks
-  const mockWallet = createMockTokenWalletService();
+  const mockWallet = createMockAdminTokenWalletService();
   const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', logger);
   const getEmbeddingSpy = spy(dummyAdapter, 'getEmbedding');
   const embeddingClient = new EmbeddingClient(dummyAdapter);
@@ -141,7 +141,7 @@ Deno.test('IndexingService guard: returns error when embedding dimension != 3072
   const { client: mockSupabaseClient, spies } = createMockSupabaseClient();
   const logger = new MockLogger();
   const textSplitter = new MockTextSplitter(); // yields 2 chunks
-  const mockWallet = createMockTokenWalletService();
+  const mockWallet = createMockAdminTokenWalletService();
 
   class WrongDimEmbeddingClient implements IEmbeddingClient {
     async getEmbedding(text: string): Promise<EmbeddingResponse> {
@@ -195,7 +195,7 @@ Deno.test('IndexingService bills embeddings 1:1 per chunk with idempotent keys',
   const embeddingClient = new EmbeddingClient(dummyAdapter);
 
   // Prepare mock wallet service and capture debits
-  const mockWallet = createMockTokenWalletService();
+  const mockWallet = createMockAdminTokenWalletService();
 
   // Construct service (DI for wallet to be added in GREEN step)
   const service = new IndexingService(
