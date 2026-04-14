@@ -30,7 +30,7 @@ export class AiApiClient implements IAiApiClient {
      * Fetches the list of active AI providers.
      */
     async getAiProviders(token?: string): Promise<ApiResponse<AiProvider[]>> {
-        const options: FetchOptions = token ? { token } : { isPublic: true };
+        const options: FetchOptions = { token };
         logger.info('Fetching AI providers');
         const response = await this.apiClient.get<AiProvider[]>('/ai-providers', options);
         if (response.error) {
@@ -45,13 +45,13 @@ export class AiApiClient implements IAiApiClient {
      * Fetches the list of active system prompts.
      */
     async getSystemPrompts(token?: string): Promise<ApiResponse<SystemPrompt[]>> {
-        const options: FetchOptions = token ? { token } : {};
+        const options: FetchOptions = { token };
         logger.info('Fetching system prompts');
         const response = await this.apiClient.get<SystemPrompt[]>('/system-prompts', options);
         if (response.error) {
             logger.error('Error fetching system prompts:', { error: response.error });
         } else {
-            logger.info(`Fetched ${response.data?.length ?? 0} system prompts`);
+            logger.info(`Fetched ${response.data?.length} system prompts`);
         }
         return response;
     }

@@ -59,7 +59,7 @@ describe('AiApiClient', () => {
 
             // Assert
             expect(mockApiClient.get).toHaveBeenCalledTimes(1);
-            expect(mockApiClient.get).toHaveBeenCalledWith('/ai-providers', { isPublic: true });
+            expect(mockApiClient.get).toHaveBeenCalledWith('/ai-providers', { token: undefined });
         });
 
         it('should return the providers array on successful response', async () => {
