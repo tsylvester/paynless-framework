@@ -1,0 +1,17 @@
+{
+  "name": "@paynless/netlify",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Netlify async workload functions (Node).",
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "typescript": "^5.5.3",
+    "vitest": "^1.6.1"
+  },
+  "license": "ISC"
+}

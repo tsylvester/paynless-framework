@@ -22,6 +22,6 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     // Disable threads to avoid concurrency issues
-    threads: false,
+    // threads: false,
   },
 }); 

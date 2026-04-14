@@ -13,142 +13,142 @@
 
 # Work Breakdown Structure
 
-* `[ ]`   `netlify/functions/ai-stream/adapters/getNodeAiAdapter` **[BE] Node.js AI adapter factory — core interface, factory dispatch, and adapter conformance test suite**
+* `[✅]`   `netlify/functions/ai-stream/adapters/getNodeAiAdapter` **[BE] Node.js AI adapter factory — core interface, factory dispatch, and adapter conformance test suite**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Provide the core `AiAdapter` interface all provider adapters must implement, a `getNodeAiAdapter` factory function that dispatches to the correct adapter by `api_identifier` prefix, and an exported `runAdapterConformanceTests` utility that each adapter node imports to prove interface compliance without test drift
-    * `[ ]`   Functional goals:
+  * `[✅]`   `objective`
+    * `[✅]`   Provide the core `AiAdapter` interface all provider adapters must implement, a `getNodeAiAdapter` factory function that dispatches to the correct adapter by `api_identifier` prefix, and an exported `runAdapterConformanceTests` utility that each adapter node imports to prove interface compliance without test drift
+    * `[✅]`   Functional goals:
       * Define all shared Node.js streaming types: `NodeChatMessage`, `NodeChatApiRequest`, `NodeModelConfig`, `NodeTokenUsage`, `AiAdapterParams`, `AiAdapterResult`, `AiAdapter`
       * Implement `getNodeAiAdapter(deps, params)` that selects and returns the correct adapter or null for unknown providers
       * Export `runAdapterConformanceTests(factory: NodeAdapterFactory)` — shared test suite each adapter runs against its own implementation to prevent drift
-    * `[ ]`   Non-functional constraints:
+    * `[✅]`   Non-functional constraints:
       * Integration test with real adapter implementations deferred to Google adapter node (last in dep chain) — this node tests with mock adapters only
       * `defaultNodeProviderMap` is populated incrementally as each adapter node is completed
       * No `any` types; all guards cover every exported type
 
-  * `[ ]`   `role`
-    * `[ ]`   Role: infra/factory — defines contract and dispatch mechanism for all Node.js AI provider adapters
-    * `[ ]`   Why appropriate: single source of truth for the adapter interface; prevents drift between providers; mirrors the Deno factory pattern in `_shared/ai_service/factory.ts`
-    * `[ ]`   Must NOT: implement provider-specific streaming logic, access Supabase, or know about `ai-stream` workload internals
+  * `[✅]`   `role`
+    * `[✅]`   Role: infra/factory — defines contract and dispatch mechanism for all Node.js AI provider adapters
+    * `[✅]`   Why appropriate: single source of truth for the adapter interface; prevents drift between providers; mirrors the Deno factory pattern in `_shared/ai_service/factory.ts`
+    * `[✅]`   Must NOT: implement provider-specific streaming logic, access Supabase, or know about `ai-stream` workload internals
 
-  * `[ ]`   `module`
-    * `[ ]`   Bounded context: `netlify/functions/ai-stream/adapters` — Node.js adapter contract layer
-    * `[ ]`   Inside boundary: core interface types, factory dispatch logic, conformance test utilities, shared guards
-    * `[ ]`   Outside boundary: provider-specific streaming (each adapter node), workload orchestration (`ai-stream`)
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: `netlify/functions/ai-stream/adapters` — Node.js adapter contract layer
+    * `[✅]`   Inside boundary: core interface types, factory dispatch logic, conformance test utilities, shared guards
+    * `[✅]`   Outside boundary: provider-specific streaming (each adapter node), workload orchestration (`ai-stream`)
 
-  * `[ ]`   `deps`
-    * `[ ]`   `NodeProviderMap` — injected at construction; maps `api_identifier` prefix strings to `NodeAdapterFactory` functions
-    * `[ ]`   No external npm packages in the factory itself — provider SDKs live in each adapter node
-    * `[ ]`   No reverse deps; adapter nodes depend on this node, not the reverse
+  * `[✅]`   `deps`
+    * `[✅]`   `NodeProviderMap` — injected at construction; maps `api_identifier` prefix strings to `NodeAdapterFactory` functions
+    * `[✅]`   No external npm packages in the factory itself — provider SDKs live in each adapter node
+    * `[✅]`   No reverse deps; adapter nodes depend on this node, not the reverse
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Receives `GetNodeAiAdapterDeps`: `{ providerMap: NodeProviderMap }`
-    * `[ ]`   Receives `GetNodeAiAdapterParams`: `{ apiIdentifier: string; apiKey: string }`
-    * `[ ]`   Returns `AiAdapter | null`
+  * `[✅]`   `context_slice`
+    * `[✅]`   Receives `GetNodeAiAdapterDeps`: `{ providerMap: NodeProviderMap }`
+    * `[✅]`   Receives `GetNodeAiAdapterParams`: `{ apiIdentifier: string; apiKey: string }`
+    * `[✅]`   Returns `AiAdapter | null`
 
-  * `[ ]`   `ai-adapter.interface.test.ts`
-    * `[ ]`   Valid `NodeChatMessage`: `role` is `'user' | 'assistant' | 'system'`, `content` is string
-    * `[ ]`   Valid `NodeChatApiRequest`: non-empty messages array, each message is valid `NodeChatMessage`
-    * `[ ]`   Valid `NodeModelConfig`: non-empty `model_identifier`, positive integer `max_tokens`
-    * `[ ]`   Valid `AiAdapterResult`: `assembled_content` is string (may be empty), `token_usage` is `NodeTokenUsage` or `null`
-    * `[ ]`   Valid `NodeTokenUsage`: `prompt_tokens`, `completion_tokens`, `total_tokens` are non-negative integers
-    * `[ ]`   Invalid: missing `messages`, null `apiKey`, empty `model_identifier`, non-integer token counts → guard rejects
-    * `[ ]`   `AiAdapter`: object with `stream` function — guard accepts; missing `stream` → guard rejects
+  * `[✅]`   `ai-adapter.interface.test.ts`
+    * `[✅]`   Valid `NodeChatMessage`: `role` is `'user' | 'assistant' | 'system'`, `content` is string
+    * `[✅]`   Valid `NodeChatApiRequest`: non-empty messages array, each message is valid `NodeChatMessage`
+    * `[✅]`   Valid `NodeModelConfig`: non-empty `model_identifier`, positive integer `max_tokens`
+    * `[✅]`   Valid `AiAdapterResult`: `assembled_content` is string (may be empty), `token_usage` is `NodeTokenUsage` or `null`
+    * `[✅]`   Valid `NodeTokenUsage`: `prompt_tokens`, `completion_tokens`, `total_tokens` are non-negative integers
+    * `[✅]`   Invalid: missing `messages`, null `apiKey`, empty `model_identifier`, non-integer token counts → guard rejects
+    * `[✅]`   `AiAdapter`: object with `stream` function — guard accepts; missing `stream` → guard rejects
 
-  * `[ ]`   `ai-adapter.interface.ts`
-    * `[ ]`   `NodeChatMessage`: `{ role: 'user' | 'assistant' | 'system'; content: string }`
-    * `[ ]`   `NodeChatApiRequest`: `{ messages: NodeChatMessage[]; model: string; max_tokens: number; system?: string }`
-    * `[ ]`   `NodeModelConfig`: `{ model_identifier: string; max_tokens: number }`
-    * `[ ]`   `NodeTokenUsage`: `{ prompt_tokens: number; completion_tokens: number; total_tokens: number }`
-    * `[ ]`   `AiAdapterParams`: `{ chatApiRequest: NodeChatApiRequest; modelConfig: NodeModelConfig; apiKey: string }`
-    * `[ ]`   `AiAdapterResult`: `{ assembled_content: string; token_usage: NodeTokenUsage | null }`
-    * `[ ]`   `AiAdapter`: `{ stream(params: AiAdapterParams): Promise<AiAdapterResult> }`
-    * `[ ]`   `NodeAdapterFactory`: `(apiKey: string) => AiAdapter`
-    * `[ ]`   `NodeProviderMap`: `Record<string, NodeAdapterFactory>`
-    * `[ ]`   No `any`, no optional fields without explicit justification
+  * `[✅]`   `ai-adapter.interface.ts`
+    * `[✅]`   `NodeChatMessage`: `{ role: 'user' | 'assistant' | 'system'; content: string }`
+    * `[✅]`   `NodeChatApiRequest`: `{ messages: NodeChatMessage[]; model: string; max_tokens: number; system?: string }`
+    * `[✅]`   `NodeModelConfig`: `{ model_identifier: string; max_tokens: number }`
+    * `[✅]`   `NodeTokenUsage`: `{ prompt_tokens: number; completion_tokens: number; total_tokens: number }`
+    * `[✅]`   `AiAdapterParams`: `{ chatApiRequest: NodeChatApiRequest; modelConfig: NodeModelConfig; apiKey: string }`
+    * `[✅]`   `AiAdapterResult`: `{ assembled_content: string; token_usage: NodeTokenUsage | null }`
+    * `[✅]`   `AiAdapter`: `{ stream(params: AiAdapterParams): Promise<AiAdapterResult> }`
+    * `[✅]`   `NodeAdapterFactory`: `(apiKey: string) => AiAdapter`
+    * `[✅]`   `NodeProviderMap`: `Record<string, NodeAdapterFactory>`
+    * `[✅]`   No `any`, no optional fields without explicit justification
 
-  * `[ ]`   `getNodeAiAdapter.interface.test.ts`
-    * `[ ]`   Valid `GetNodeAiAdapterDeps`: `providerMap` is a `NodeProviderMap` with at least one entry whose value is a function
-    * `[ ]`   Valid `GetNodeAiAdapterParams`: non-empty `apiIdentifier`, non-empty `apiKey`
-    * `[ ]`   Invalid: missing `providerMap`, empty `providerMap`, non-function map values → guard rejects
-    * `[ ]`   Invalid: empty `apiIdentifier` → guard rejects
+  * `[✅]`   `getNodeAiAdapter.interface.test.ts`
+    * `[✅]`   Valid `GetNodeAiAdapterDeps`: `providerMap` is a `NodeProviderMap` with at least one entry whose value is a function
+    * `[✅]`   Valid `GetNodeAiAdapterParams`: non-empty `apiIdentifier`, non-empty `apiKey`
+    * `[✅]`   Invalid: missing `providerMap`, empty `providerMap`, non-function map values → guard rejects
+    * `[✅]`   Invalid: empty `apiIdentifier` → guard rejects
 
-  * `[ ]`   `getNodeAiAdapter.interface.ts`
-    * `[ ]`   `GetNodeAiAdapterDeps`: `{ providerMap: NodeProviderMap }`
-    * `[ ]`   `GetNodeAiAdapterParams`: `{ apiIdentifier: string; apiKey: string }`
-    * `[ ]`   `GetNodeAiAdapterFn`: `(deps: GetNodeAiAdapterDeps, params: GetNodeAiAdapterParams) => AiAdapter | null`
+  * `[✅]`   `getNodeAiAdapter.interface.ts`
+    * `[✅]`   `GetNodeAiAdapterDeps`: `{ providerMap: NodeProviderMap }`
+    * `[✅]`   `GetNodeAiAdapterParams`: `{ apiIdentifier: string; apiKey: string }`
+    * `[✅]`   `GetNodeAiAdapterFn`: `(deps: GetNodeAiAdapterDeps, params: GetNodeAiAdapterParams) => AiAdapter | null`
 
-  * `[ ]`   `adapter-conformance.test-utils.ts` *(exported — imported by each adapter node's unit test to prove conformance without drift)*
-    * `[ ]`   Exports `runAdapterConformanceTests(factory: NodeAdapterFactory): void`
-    * `[ ]`   Conformance cases (each adapter's test provides mock SDK, factory produces adapter):
+  * `[✅]`   `adapter-conformance.test-utils.ts` *(exported — imported by each adapter node's unit test to prove conformance without drift)*
+    * `[✅]`   Exports `runAdapterConformanceTests(factory: NodeAdapterFactory): void`
+    * `[✅]`   Conformance cases (each adapter's test provides mock SDK, factory produces adapter):
       * `factory('test-key')` returns object satisfying `isAiAdapter`
       * `stream()` called with valid `AiAdapterParams` resolves to `AiAdapterResult`
       * `stream()` with provider SDK error propagates throw (does not swallow)
       * `token_usage` is null when provider returns no usage data
 
-  * `[ ]`   `getNodeAiAdapter.guard.test.ts`
-    * `[ ]`   `isNodeProviderMap`: accepts valid map; rejects empty object; rejects non-function values
-    * `[ ]`   `isGetNodeAiAdapterDeps`: accepts valid; rejects missing `providerMap`
-    * `[ ]`   `isGetNodeAiAdapterParams`: accepts valid; rejects empty strings
-    * `[ ]`   `isAiAdapter`: accepts object with `stream` function; rejects non-function or missing `stream`
+  * `[✅]`   `getNodeAiAdapter.guard.test.ts`
+    * `[✅]`   `isNodeProviderMap`: accepts valid map; rejects empty object; rejects non-function values
+    * `[✅]`   `isGetNodeAiAdapterDeps`: accepts valid; rejects missing `providerMap`
+    * `[✅]`   `isGetNodeAiAdapterParams`: accepts valid; rejects empty strings
+    * `[✅]`   `isAiAdapter`: accepts object with `stream` function; rejects non-function or missing `stream`
 
-  * `[ ]`   `getNodeAiAdapter.guard.ts`
-    * `[ ]`   `isNodeChatMessage(v: unknown): v is NodeChatMessage`
-    * `[ ]`   `isNodeChatApiRequest(v: unknown): v is NodeChatApiRequest`
-    * `[ ]`   `isNodeModelConfig(v: unknown): v is NodeModelConfig`
-    * `[ ]`   `isNodeTokenUsage(v: unknown): v is NodeTokenUsage`
-    * `[ ]`   `isAiAdapterParams(v: unknown): v is AiAdapterParams`
-    * `[ ]`   `isAiAdapterResult(v: unknown): v is AiAdapterResult`
-    * `[ ]`   `isAiAdapter(v: unknown): v is AiAdapter`
-    * `[ ]`   `isNodeProviderMap(v: unknown): v is NodeProviderMap`
-    * `[ ]`   `isGetNodeAiAdapterDeps(v: unknown): v is GetNodeAiAdapterDeps`
-    * `[ ]`   `isGetNodeAiAdapterParams(v: unknown): v is GetNodeAiAdapterParams`
+  * `[✅]`   `getNodeAiAdapter.guard.ts`
+    * `[✅]`   `isNodeChatMessage(v: unknown): v is NodeChatMessage`
+    * `[✅]`   `isNodeChatApiRequest(v: unknown): v is NodeChatApiRequest`
+    * `[✅]`   `isNodeModelConfig(v: unknown): v is NodeModelConfig`
+    * `[✅]`   `isNodeTokenUsage(v: unknown): v is NodeTokenUsage`
+    * `[✅]`   `isAiAdapterParams(v: unknown): v is AiAdapterParams`
+    * `[✅]`   `isAiAdapterResult(v: unknown): v is AiAdapterResult`
+    * `[✅]`   `isAiAdapter(v: unknown): v is AiAdapter`
+    * `[✅]`   `isNodeProviderMap(v: unknown): v is NodeProviderMap`
+    * `[✅]`   `isGetNodeAiAdapterDeps(v: unknown): v is GetNodeAiAdapterDeps`
+    * `[✅]`   `isGetNodeAiAdapterParams(v: unknown): v is GetNodeAiAdapterParams`
 
-  * `[ ]`   `getNodeAiAdapter.test.ts`
-    * `[ ]`   Known prefix (`'openai-gpt-4o'`) in mock provider map → factory returned and called with `apiKey`
-    * `[ ]`   Known prefix case-insensitive (`'OPENAI-GPT-4O'`) → same result
-    * `[ ]`   Unknown prefix → returns null
-    * `[ ]`   Empty `apiIdentifier` → returns null
-    * `[ ]`   Mock `NodeProviderMap` used — no real provider SDKs imported
+  * `[✅]`   `getNodeAiAdapter.test.ts`
+    * `[✅]`   Known prefix (`'openai-gpt-4o'`) in mock provider map → factory returned and called with `apiKey`
+    * `[✅]`   Known prefix case-insensitive (`'OPENAI-GPT-4O'`) → same result
+    * `[✅]`   Unknown prefix → returns null
+    * `[✅]`   Empty `apiIdentifier` → returns null
+    * `[✅]`   Mock `NodeProviderMap` used — no real provider SDKs imported
 
-  * `[ ]`   `construction`
-    * `[ ]`   `defaultNodeProviderMap: NodeProviderMap` — populated as each adapter node is completed; starts empty in this node
-    * `[ ]`   Factory is stateless — `deps.providerMap` and `params` injected per call
-    * `[ ]`   Test framework: Vitest (Node.js); `describe` / `it` / `expect`
+  * `[✅]`   `construction`
+    * `[✅]`   `defaultNodeProviderMap: NodeProviderMap` — populated as each adapter node is completed; starts empty in this node
+    * `[✅]`   Factory is stateless — `deps.providerMap` and `params` injected per call
+    * `[✅]`   Test framework: Vitest (Node.js); `describe` / `it` / `expect`
 
-  * `[ ]`   `getNodeAiAdapter.ts`
-    * `[ ]`   Exports `getNodeAiAdapter(deps: GetNodeAiAdapterDeps, params: GetNodeAiAdapterParams): AiAdapter | null`
-    * `[ ]`   Lowercases `params.apiIdentifier`
-    * `[ ]`   Finds matching prefix via `Object.keys(deps.providerMap).find(prefix => lower.startsWith(prefix))`
-    * `[ ]`   Returns `deps.providerMap[prefix](params.apiKey)` or null if no prefix found
+  * `[✅]`   `getNodeAiAdapter.ts`
+    * `[✅]`   Exports `getNodeAiAdapter(deps: GetNodeAiAdapterDeps, params: GetNodeAiAdapterParams): AiAdapter | null`
+    * `[✅]`   Lowercases `params.apiIdentifier`
+    * `[✅]`   Finds matching prefix via `Object.keys(deps.providerMap).find(prefix => lower.startsWith(prefix))`
+    * `[✅]`   Returns `deps.providerMap[prefix](params.apiKey)` or null if no prefix found
 
-  * `[ ]`   `getNodeAiAdapter.mock.ts`
-    * `[ ]`   `createMockNodeProviderMap(overrides?: Partial<NodeProviderMap>): NodeProviderMap` — default: `{ 'openai-': () => mockAiAdapter, 'anthropic-': () => mockAiAdapter, 'google-': () => mockAiAdapter }`
-    * `[ ]`   `createMockGetNodeAiAdapterDeps(overrides?): GetNodeAiAdapterDeps`
-    * `[ ]`   `mockAiAdapter`: satisfies `isAiAdapter`; `stream()` resolves with mock `AiAdapterResult`
+  * `[✅]`   `getNodeAiAdapter.mock.ts`
+    * `[✅]`   `createMockNodeProviderMap(overrides?: Partial<NodeProviderMap>): NodeProviderMap` — default: `{ 'openai-': () => mockAiAdapter, 'anthropic-': () => mockAiAdapter, 'google-': () => mockAiAdapter }`
+    * `[✅]`   `createMockGetNodeAiAdapterDeps(overrides?): GetNodeAiAdapterDeps`
+    * `[✅]`   `mockAiAdapter`: satisfies `isAiAdapter`; `stream()` resolves with mock `AiAdapterResult`
 
-  * `[ ]`   `getNodeAiAdapter.provides.ts`
-    * `[ ]`   Exports: `getNodeAiAdapter`, `defaultNodeProviderMap`, `GetNodeAiAdapterFn`
-    * `[ ]`   Re-exports all shared types from `ai-adapter.interface.ts`: `AiAdapter`, `AiAdapterParams`, `AiAdapterResult`, `NodeTokenUsage`, `NodeChatApiRequest`, `NodeModelConfig`, `NodeAdapterFactory`, `NodeProviderMap`
-    * `[ ]`   Re-exports all shared guards: `isAiAdapter`, `isAiAdapterParams`, `isAiAdapterResult`, `isNodeTokenUsage`
-    * `[ ]`   Re-exports: `runAdapterConformanceTests` from `adapter-conformance.test-utils.ts`
-    * `[ ]`   No external access to factory internals bypasses this file
+  * `[✅]`   `getNodeAiAdapter.provides.ts`
+    * `[✅]`   Exports: `getNodeAiAdapter`, `defaultNodeProviderMap`, `GetNodeAiAdapterFn`
+    * `[✅]`   Re-exports all shared types from `ai-adapter.interface.ts`: `AiAdapter`, `AiAdapterParams`, `AiAdapterResult`, `NodeTokenUsage`, `NodeChatApiRequest`, `NodeModelConfig`, `NodeAdapterFactory`, `NodeProviderMap`
+    * `[✅]`   Re-exports all shared guards: `isAiAdapter`, `isAiAdapterParams`, `isAiAdapterResult`, `isNodeTokenUsage`
+    * `[✅]`   Re-exports: `runAdapterConformanceTests` from `adapter-conformance.test-utils.ts`
+    * `[✅]`   No external access to factory internals bypasses this file
 
-  * `[ ]`   `getNodeAiAdapter.integration.test.ts`
-    * `[ ]`   NOTE: Integration test with real adapter implementations is in the Google adapter node (last adapter in dep chain)
-    * `[ ]`   This file validates factory dispatch with mock provider map: known prefix returns adapter satisfying `isAiAdapter`; unknown prefix returns null
+  * `[✅]`   `getNodeAiAdapter.integration.test.ts`
+    * `[✅]`   NOTE: Integration test with real adapter implementations is in the Google adapter node (last adapter in dep chain)
+    * `[✅]`   This file validates factory dispatch with mock provider map: known prefix returns adapter satisfying `isAiAdapter`; unknown prefix returns null
 
-  * `[ ]`   `directionality`
-    * `[ ]`   Layer: infra/factory (Node.js)
-    * `[ ]`   Deps inward: `NodeProviderMap` injected; no external npm packages in factory itself
-    * `[ ]`   Provides outward: `AiAdapter` interface and all shared types to adapter nodes and `ai-stream` workload; `runAdapterConformanceTests` to adapter test files
-    * `[ ]`   No cycles: adapter nodes depend on factory; factory does not import adapters
+  * `[✅]`   `directionality`
+    * `[✅]`   Layer: infra/factory (Node.js)
+    * `[✅]`   Deps inward: `NodeProviderMap` injected; no external npm packages in factory itself
+    * `[✅]`   Provides outward: `AiAdapter` interface and all shared types to adapter nodes and `ai-stream` workload; `runAdapterConformanceTests` to adapter test files
+    * `[✅]`   No cycles: adapter nodes depend on factory; factory does not import adapters
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Known prefix returns adapter factory result — proven by unit test
-    * `[ ]`   Unknown prefix returns null — proven by unit test
-    * `[ ]`   `runAdapterConformanceTests` runs successfully in each of the three adapter test files — proven by adapter nodes
-    * `[ ]`   All shared type guards reject invalid inputs — proven by guard unit tests
+  * `[✅]`   `requirements`
+    * `[✅]`   Known prefix returns adapter factory result — proven by unit test
+    * `[✅]`   Unknown prefix returns null — proven by unit test
+    * `[✅]`   `runAdapterConformanceTests` runs successfully in each of the three adapter test files — proven by adapter nodes
+    * `[✅]`   All shared type guards reject invalid inputs — proven by guard unit tests
 
 * `[ ]`   `netlify/functions/ai-stream/adapters/openai/openai-adapter` **[BE] OpenAI Node.js streaming adapter for Netlify Async Workload**
 
