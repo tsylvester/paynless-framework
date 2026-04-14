@@ -17,7 +17,7 @@ import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { type Database } from "../../types_db.ts";
 import { createMockSupabaseClient } from "../supabase.mock.ts";
-import { IDialecticJobDeps, RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
+import { RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
 import { FileType } from "../types/file_manager.types.ts";
 import { isRecord } from "./type_guards.ts";
 
@@ -135,126 +135,13 @@ const mockSourceDocument = (overrides: Partial<SourceDocument>): SourceDocument 
     ...overrides,
 });
 
-const deps: IDialecticJobDeps = { embeddingClient: mockEmbeddingClient, getSeedPromptForStage: () => Promise.resolve({
-  content: '',
-  fullPath: '',
-  bucket: '',
-  path: '',
-  fileName: '',
-}),
-documentRenderer: {
-  renderDocument: () => Promise.resolve({
-    content: '',
-    fullPath: '',
-    bucket: '',
-    path: '',
-    fileName: '',
-    pathContext: {
-      projectId: '',
-      sessionId: '',
-      iteration: 0,
-      stageSlug: '',
-      documentKey: '',
-      fileType: FileType.RenderedDocument,
-      modelSlug: '',
-    },
-    renderedBytes: new Uint8Array(),
-  }),
-},
-continueJob: () => Promise.resolve({
-  error: undefined,
-  enqueued: true,
-}),
-retryJob: () => Promise.resolve({
-  error: undefined,
-  enqueued: true,
-}),
-notificationService: {
-  sendJobNotificationEvent: () => Promise.resolve(),
-  sendContributionStartedEvent: () => Promise.resolve(),
-  sendDialecticContributionStartedEvent: () => Promise.resolve(),
-  sendContributionReceivedEvent: () => Promise.resolve(),
-  sendContributionRetryingEvent: () => Promise.resolve(),
-  sendContributionGenerationCompleteEvent: () => Promise.resolve(),
-  sendContributionGenerationContinuedEvent: () => Promise.resolve(),
-  sendContributionFailedNotification: () => Promise.resolve(),
-  sendContributionGenerationFailedEvent: () => Promise.resolve(),
-  sendContributionGenerationPausedNsfEvent: () => Promise.resolve(),
-},
-downloadFromStorage: () => Promise.resolve({
-  data: new ArrayBuffer(0),
-  error: null,
-}),
-getExtensionFromMimeType: () => '',
-logger: {
-  info: () => {},
-  error: () => {},
-  debug: () => {},
-  warn: () => {},
-},
-randomUUID: () => '',
-fileManager: {
-  uploadAndRegisterFile: () => Promise.resolve({
-      record: {
-          id: '',
-          name: '',
-          size: 0,
-          type: '',
-          url: '',
-          created_at: '',
-          file_name: '',
-          mime_type: '',
-          project_id: '',
-          resource_description: {},
-          size_bytes: 0,
-          storage_bucket: '',
-          storage_path: '',
-          updated_at: '',
-          user_id: '',
-          iteration_number: null,
-          resource_type: null,
-          session_id: null,
-          source_contribution_id: null,
-          stage_slug: null,
-      },
-      error: null,
-  }),
-  assembleAndSaveFinalDocument: () => Promise.resolve({
-    record: {
-      id: '',
-      name: '',
-      size: 0,
-      type: '',
-      url: '',
-      created_at: '',
-      file_name: '',
-      mime_type: '',
-      project_id: '',
-      resource_description: {},
-      size_bytes: 0,
-      storage_bucket: '',
-      storage_path: '',
-      updated_at: '',
-      user_id: '',
-    },
-    error: null,
-    finalPath: null,
-  }),
-},
-deleteFromStorage: () => Promise.resolve({
-  success: true,
-  error: null,
-}),
-};
-
 Deno.test("scoreResourceDocuments", async (t) => {
 
     const currentUserPrompt = 'prompt';
     const { client: dbClient } = createMockSupabaseClient('user-123', {});
     const compressionDeps: CompressionStrategyDeps = {
         dbClient: dbClient as unknown as SupabaseClient<Database>,
-        embeddingClient: deps.embeddingClient,
-        logger: deps.logger,
+        embeddingClient: mockEmbeddingClient,
     };
 
     await t.step("should return an empty array if no documents are provided", async () => {
@@ -348,7 +235,7 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
 
         const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
         const result = await compressionStrategy(
-            { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+            { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: mockEmbeddingClient },
             {},
             { documents: resourceDocuments, history: conversationHistory, currentUserPrompt: 'prompt' },
         );
@@ -397,7 +284,7 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
         // Act
         const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
         const result = await compressionStrategy(
-            { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+            { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: mockEmbeddingClient },
             {},
             { documents: soloDocuments, history: shortHistory, currentUserPrompt: 'prompt' },
         );
@@ -423,7 +310,7 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
 
         const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
         const result = await compressionStrategy(
-            { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+            { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: mockEmbeddingClient },
             {},
             { documents: resourceDocuments, history: conversationHistory, currentUserPrompt: 'prompt' },
         );
@@ -464,7 +351,7 @@ Deno.test("getSortedCompressionCandidates - role-aware anchors preserved; non-an
 
   const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
   const result = await compressionStrategy(
-    { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+    { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: mockEmbeddingClient },
     {},
     { documents: [], history, currentUserPrompt: 'prompt' }
   );
@@ -574,7 +461,7 @@ Deno.test("getSortedCompressionCandidates - blended scoring ranks higher-matrix 
 
   const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
   const result = await compressionStrategy(
-    { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+    { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: mockEmbeddingClient },
     { inputsRelevance },
     { documents, history: [], currentUserPrompt: 'prompt' }
   );
@@ -607,7 +494,7 @@ Deno.test("getSortedCompressionCandidates - matrix priority protects high-priori
 
   const compressionStrategy: ICompressionStrategy = getSortedCompressionCandidates;
   const result = await compressionStrategy(
-    { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: deps.embeddingClient, logger: deps.logger },
+    { dbClient: dbClient as unknown as SupabaseClient<Database>, embeddingClient: mockEmbeddingClient },
     { inputsRelevance },
     { documents, history: [], currentUserPrompt: 'prompt' }
   );
@@ -661,8 +548,8 @@ Deno.test(
     const result = await compressionStrategy(
       {
         dbClient: dbClient as unknown as SupabaseClient<Database>,
-        embeddingClient: deps.embeddingClient,
-        logger: deps.logger,
+        embeddingClient: mockEmbeddingClient,
+        logger: undefined,
       },
       { inputsRelevance },
       { documents, history: [], currentUserPrompt: "prompt" },
@@ -711,8 +598,8 @@ Deno.test(
     const result = await compressionStrategy(
       {
         dbClient: dbClient as unknown as SupabaseClient<Database>,
-        embeddingClient: deps.embeddingClient,
-        logger: deps.logger,
+        embeddingClient: mockEmbeddingClient,
+        logger: undefined,
       },
       {},
       { documents, history: [], currentUserPrompt: "prompt" },
