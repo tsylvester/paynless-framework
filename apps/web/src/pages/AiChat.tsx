@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useAiStore, useOrganizationStore } from "@paynless/store";
 import { logger } from "@paynless/utils";
 import { analytics } from "@paynless/analytics";
@@ -17,6 +17,7 @@ import { DomainSelector } from "@/components/dialectic/DomainSelector";
 
 export default function AiChatPage() {
 	const { chatId } = useParams<{ chatId?: string }>();
+	const navigate: ReturnType<typeof useNavigate> = useNavigate();
 
 	const {
 		loadAiConfig,
@@ -171,6 +172,7 @@ export default function AiChatPage() {
 		});
 
 		startNewChat(contextForNewChat);
+		navigate("/chat");
 	};
 
 	// const activeContextIdFromStores =

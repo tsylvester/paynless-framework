@@ -44,8 +44,9 @@ import { getMockAiProviderAdapter, buildExtendedModelConfig } from "../../_share
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
 import { EmbeddingClient } from "../../_shared/services/indexing_service.ts";
-import { createMockTokenWalletService } from "../../_shared/services/tokenWalletService.mock.ts";
-import type { ITokenWalletService } from "../../_shared/types/tokenWallet.types.ts";
+import { createMockAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts";
+import { createMockUserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts";
+import type { IUserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts";
 import { isJson } from "../../_shared/utils/type_guards.ts";
 import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
 import { createMockCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
@@ -1409,7 +1410,8 @@ Deno.test("prepareModelJob returns ContextWindowError when prompt exceeds token 
   async (t) => {await t.step("oversized resource document: RAG replacement still exceeds context_window_tokens",
       async () => {
         const logger: MockLogger = new MockLogger();
-        const tokenWalletInstance: ITokenWalletService = createMockTokenWalletService().instance;
+        const adminTokenWalletInstance = createMockAdminTokenWalletService().instance;
+        const userTokenWalletInstance: IUserTokenWalletService = createMockUserTokenWalletService().instance;
         const mockRagService: MockRagService = new MockRagService();
         mockRagService.setConfig({
           mockContextResult:
@@ -1438,7 +1440,7 @@ Deno.test("prepareModelJob returns ContextWindowError when prompt exceeds token 
           logger,
           ragService: mockRagService,
           embeddingClient,
-          tokenWalletService: tokenWalletInstance,
+          tokenWalletService: adminTokenWalletInstance,
           countTokens,
         };
         const boundCompressPrompt: BoundCompressPromptFn = async (params, payload) =>
@@ -1536,7 +1538,7 @@ Deno.test("prepareModelJob returns ContextWindowError when prompt exceeds token 
           executeModelCallAndSave: emcas,
           enqueueRenderJob: enqueue,
           calculateAffordability: boundCalculateAffordability,
-          tokenWalletService: tokenWalletInstance,
+          tokenWalletService: userTokenWalletInstance,
         });
 
         const result: unknown = await prepareModelJob(deps, params, preparePayload);

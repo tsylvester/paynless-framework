@@ -21,6 +21,9 @@ import {
 	type IWalletService,
 	type IAiStateService,
 	type HandleSendMessageServiceParams,
+	type SseChatEvent,
+	type SseChatCompleteEvent,
+	type ISseConnection,
 } from "@paynless/types"; // IMPORT NECESSARY TYPES
 
 // Import api AFTER other local/utility imports but BEFORE code that might use types that cause issues with mocking
@@ -34,6 +37,7 @@ import {
 	isChatContextPreferences,
 	isAiProvidersApiResponse,
 	isSystemPromptsApiResponse,
+	isSseChatEvent,
 } from "@paynless/utils";
 
 // Import the new handler function and its required interfaces from ai.SendMessage.ts
@@ -1430,7 +1434,7 @@ export const useAiStore = create<AiStore>()(
 				onMessage?: (event: MessageEvent) => void,
 				onComplete?: (assistantMessage: ChatMessage) => void,
 				onError?: (error: string) => void,
-			): Promise<EventSource | null> => {
+			): Promise<ISseConnection | null> => {
 				// --- Create Adapters for Service Dependencies ---
 				const authStoreState = useAuthStore.getState();
 				const walletServiceAdapter: IWalletService = {
@@ -1591,9 +1595,20 @@ export const useAiStore = create<AiStore>()(
 					let assistantMessageId = "";
 					let streamedChatId = "";
 
-					eventSource.addEventListener("message", (event: MessageEvent) => {
+					eventSource.addEventListener("message", (event: Event) => {
 						try {
-							const data = event.data;
+							if (!(event instanceof MessageEvent)) {
+								return;
+							}
+							if (!isSseChatEvent(event.data)) {
+								logger.error(
+									"[Streaming] SSE message failed isSseChatEvent validation",
+									{ payload: event.data },
+								);
+								if (onError) onError("Invalid streaming event payload");
+								return;
+							}
+							const data: SseChatEvent = event.data;
 
 							switch (data.type) {
 								case "chat_start":
@@ -1658,7 +1673,9 @@ export const useAiStore = create<AiStore>()(
 									break;
 
 								case "chat_complete": {
-									const finalAssistantMessage = data.assistantMessage;
+									const complete: SseChatCompleteEvent = data;
+									const finalAssistantMessage: ChatMessage =
+										complete.assistantMessage;
 
 									// Update state with final message
 									set((state) => {

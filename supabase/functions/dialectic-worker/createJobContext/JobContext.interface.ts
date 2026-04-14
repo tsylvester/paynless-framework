@@ -7,7 +7,8 @@ import { DeleteFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
 import { IRagService } from '../../_shared/services/rag_service.interface.ts';
 import { IIndexingService } from '../../_shared/services/indexing_service.interface.ts';
 import { IEmbeddingClient } from '../../_shared/services/indexing_service.interface.ts';
-import { ITokenWalletService } from '../../_shared/types/tokenWallet.types.ts';
+import { IAdminTokenWalletService } from '../../_shared/services/tokenwallet/admin/adminTokenWalletService.interface.ts';
+import { IUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts';
 import { NotificationServiceType } from '../../_shared/types/notification.service.types.ts';
 import { GetAiProviderConfigFn } from '../../dialectic-service/dialectic.interface.ts';
 import { CountTokensFn } from '../../_shared/types/tokenizer.types.ts';
@@ -39,7 +40,7 @@ import {
     DetermineContinuationResult,
 } from '../../_shared/utils/determineContinuation/determineContinuation.interface.ts';
 import { BuildUploadContextParams } from '../../_shared/utils/buildUploadContext/buildUploadContext.interface.ts';
-import { DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
+import { BoundDebitTokens, DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 import { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
 import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
@@ -189,7 +190,8 @@ export interface IRagContext {
  * Used by functions that need to debit/credit token wallets.
  */
 export interface ITokenContext {
-    readonly tokenWalletService: ITokenWalletService;
+    readonly adminTokenWalletService: IAdminTokenWalletService;
+    readonly userTokenWalletService: IUserTokenWalletService;
 }
 
 /**
@@ -209,7 +211,7 @@ export interface IExecuteModelCallContext {
     readonly logger: ILogger;
     readonly fileManager: IFileManager;
     readonly getAiProviderAdapter: GetAiProviderAdapterFn;
-    readonly tokenWalletService: ITokenWalletService;
+    readonly userTokenWalletService: IUserTokenWalletService;
     readonly notificationService: NotificationServiceType;
     readonly continueJob: ContinueJobFn;
     readonly retryJob: RetryJobFn;
@@ -217,7 +219,7 @@ export interface IExecuteModelCallContext {
     readonly isIntermediateChunk: IsIntermediateChunkFn;
     readonly determineContinuation: DetermineContinuationFn;
     readonly buildUploadContext: BuildUploadContextFn;
-    readonly debitTokens: DebitTokens;
+    readonly debitTokens: BoundDebitTokens;
 }
 
 /**
@@ -230,7 +232,7 @@ export interface IPrepareModelJobContext {
     readonly logger: ILogger;
     readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
     readonly countTokens: CountTokensFn;
-    readonly tokenWalletService: ITokenWalletService;
+    readonly adminTokenWalletService: IAdminTokenWalletService;
     readonly validateWalletBalance: ValidateWalletBalanceFn;
     readonly validateModelCostRates: ValidateModelCostRatesFn;
     readonly ragService: IRagService;
@@ -301,7 +303,8 @@ export interface IJobContext extends
     readonly indexingService: IIndexingService;
     readonly embeddingClient: IEmbeddingClient;
     readonly countTokens: CountTokensFn;
-    readonly tokenWalletService: ITokenWalletService;
+    readonly adminTokenWalletService: IAdminTokenWalletService;
+    readonly userTokenWalletService: IUserTokenWalletService;
     readonly pickLatest: PickLatestFn;
     readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
     readonly validateWalletBalance: ValidateWalletBalanceFn;
@@ -336,7 +339,8 @@ export interface JobContextParams {
     readonly indexingService: IIndexingService;
     readonly embeddingClient: IEmbeddingClient;
     readonly countTokens: CountTokensFn;
-    readonly tokenWalletService: ITokenWalletService;
+    readonly adminTokenWalletService: IAdminTokenWalletService;
+    readonly userTokenWalletService: IUserTokenWalletService;
     readonly notificationService: NotificationServiceType;
     readonly getSeedPromptForStage: GetSeedPromptForStageFn;
     readonly promptAssembler: IPromptAssembler;

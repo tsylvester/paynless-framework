@@ -14,6 +14,8 @@ import {
     StepProgressDto,
     GetAllStageProgressResponse,
     DialecticRecipeEdge,
+    ChatMessage,
+    SseChatEvent,
 } from '@paynless/types';
 
 export function isUserRole(role: unknown): role is UserRole {
@@ -223,4 +225,98 @@ export function isDialecticLifecycleEventType(x: unknown): x is DialecticNotific
   }
 
   return false;
+}
+
+const CHAT_MESSAGE_STATUS_VALUES: readonly string[] = [
+  'pending',
+  'sent',
+  'streaming',
+  'failed',
+  'error',
+];
+
+function isJsonLike(value: unknown): boolean {
+  if (value === null) {
+    return true;
+  }
+  const t: string = typeof value;
+  return t === 'string' || t === 'number' || t === 'boolean' || t === 'object';
+}
+
+/**
+ * Validates wire-shaped chat_messages row + optional UI status (SseChatCompleteEvent.assistantMessage).
+ * Not exported: ChatMessage is owned by @paynless/types; this is internal structure for isSseChatEvent only.
+ */
+function isChatMessageWireValue(x: unknown): x is ChatMessage {
+  if (typeof x !== 'object' || x === null || Array.isArray(x)) {
+    return false;
+  }
+  if (
+    !('id' in x) || typeof x.id !== 'string' ||
+    !('chat_id' in x) || (x.chat_id !== null && typeof x.chat_id !== 'string') ||
+    !('content' in x) || typeof x.content !== 'string' ||
+    !('created_at' in x) || typeof x.created_at !== 'string' ||
+    !('updated_at' in x) || typeof x.updated_at !== 'string' ||
+    !('role' in x) || typeof x.role !== 'string' ||
+    !('user_id' in x) || (x.user_id !== null && typeof x.user_id !== 'string') ||
+    !('ai_provider_id' in x) || (x.ai_provider_id !== null && typeof x.ai_provider_id !== 'string') ||
+    !('system_prompt_id' in x) || (x.system_prompt_id !== null && typeof x.system_prompt_id !== 'string') ||
+    !('token_usage' in x) || (x.token_usage !== null && !isJsonLike(x.token_usage)) ||
+    !('error_type' in x) || (x.error_type !== null && typeof x.error_type !== 'string') ||
+    !('response_to_message_id' in x) || (x.response_to_message_id !== null && typeof x.response_to_message_id !== 'string') ||
+    !('is_active_in_thread' in x) || typeof x.is_active_in_thread !== 'boolean'
+  ) {
+    return false;
+  }
+  if ('status' in x && x.status !== undefined) {
+    if (typeof x.status !== 'string' || !CHAT_MESSAGE_STATUS_VALUES.includes(x.status)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function isSseChatEvent(obj: unknown): obj is SseChatEvent {
+  if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
+    return false;
+  }
+  if (!('type' in obj) || typeof obj.type !== 'string') {
+    return false;
+  }
+  switch (obj.type) {
+    case 'chat_start':
+      return (
+        'chatId' in obj &&
+        typeof obj.chatId === 'string' &&
+        'timestamp' in obj &&
+        typeof obj.timestamp === 'string'
+      );
+    case 'content_chunk':
+      return (
+        'content' in obj &&
+        typeof obj.content === 'string' &&
+        'assistantMessageId' in obj &&
+        typeof obj.assistantMessageId === 'string' &&
+        'timestamp' in obj &&
+        typeof obj.timestamp === 'string'
+      );
+    case 'chat_complete':
+      return (
+        'assistantMessage' in obj &&
+        isChatMessageWireValue(obj.assistantMessage) &&
+        'finish_reason' in obj &&
+        (obj.finish_reason === null || typeof obj.finish_reason === 'string') &&
+        'timestamp' in obj &&
+        typeof obj.timestamp === 'string'
+      );
+    case 'error':
+      return (
+        'message' in obj &&
+        typeof obj.message === 'string' &&
+        'timestamp' in obj &&
+        typeof obj.timestamp === 'string'
+      );
+    default:
+      return false;
+  }
 }

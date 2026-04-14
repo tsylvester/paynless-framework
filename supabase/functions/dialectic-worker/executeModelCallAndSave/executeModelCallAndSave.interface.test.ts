@@ -8,7 +8,6 @@ import type {
 } from "../../_shared/types.ts";
 import { FileType } from "../../_shared/types/file_manager.types.ts";
 import { isJson } from "../../_shared/utils/type_guards.ts";
-import { debitTokens } from "../../_shared/utils/debitTokens.ts";
 import type {
   DialecticContributionRow,
   DialecticExecuteJobPayload,
@@ -30,7 +29,7 @@ function sliceExecuteModelCallAndSaveDeps(root: IJobContext): ExecuteModelCallAn
     logger: root.logger,
     fileManager: root.fileManager,
     getAiProviderAdapter: root.getAiProviderAdapter,
-    tokenWalletService: root.tokenWalletService,
+    userTokenWalletService: root.userTokenWalletService,
     notificationService: root.notificationService,
     continueJob: root.continueJob,
     retryJob: root.retryJob,
@@ -38,7 +37,11 @@ function sliceExecuteModelCallAndSaveDeps(root: IJobContext): ExecuteModelCallAn
     isIntermediateChunk: root.isIntermediateChunk,
     determineContinuation: root.determineContinuation,
     buildUploadContext: root.buildUploadContext,
-    debitTokens,
+    debitTokens: (params, payload) => root.debitTokens(
+      { logger: root.logger, tokenWalletService: root.adminTokenWalletService },
+      params,
+      payload,
+    ),
   };
 }
 
@@ -195,7 +198,7 @@ Deno.test(
     assertEquals(typeof deps.logger.info, "function");
     assertEquals(typeof deps.fileManager, "object");
     assertEquals(typeof deps.getAiProviderAdapter, "function");
-    assertEquals(typeof deps.tokenWalletService.getBalance, "function");
+    assertEquals(typeof deps.userTokenWalletService.getBalance, "function");
     assertEquals(typeof deps.notificationService.sendJobNotificationEvent, "function");
     assertEquals(typeof deps.debitTokens, "function");
     assertEquals(typeof deps.continueJob, "function");
@@ -292,10 +295,10 @@ Deno.test(
 );
 
 Deno.test(
-  "Contract: ExecuteModelCallAndSaveDeps.debitTokens is the shared debitTokens implementation",
+  "Contract: ExecuteModelCallAndSaveDeps.debitTokens is a bound function",
   () => {
     const root: IJobContext = buildGuardTestIJobContext();
     const deps: ExecuteModelCallAndSaveDeps = sliceExecuteModelCallAndSaveDeps(root);
-    assertEquals(deps.debitTokens, debitTokens);
+    assertEquals(typeof deps.debitTokens, "function");
   },
 );

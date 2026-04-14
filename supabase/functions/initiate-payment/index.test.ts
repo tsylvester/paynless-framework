@@ -3,7 +3,8 @@ import { stub, spy, type Spy, type Stub, assertSpyCall, assertSpyCalls } from "h
 
 // Import the actual handler function
 import { initiatePaymentHandler } from "./index.ts"; 
-
+import type { Database } from '../types_db.ts';
+import type { SupabaseClient, User } from 'npm:@supabase/supabase-js';
 import type {
     PurchaseRequest,
     PaymentInitiationResult,
@@ -14,8 +15,10 @@ import type {
 
 // Mock Creators
 // import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockSupabaseDataConfig } from '../_shared/supabase.mock.ts';
-import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
-// We won't use MockTokenWalletService directly, but mock DB calls for the real service.
+import { createMockSupabaseClient, type MockQueryBuilderState, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
+// Target wiring: handler uses UserTokenWalletService(user client) for getWalletForContext; production
+// getPaymentAdapter builds AdminTokenWalletService(admin client) for StripePaymentAdapter. We mock Supabase
+// so the real user-scoped service can resolve wallets, and we spy getPaymentAdapterFn instead of constructing adapters.
 
 // --- Constants for Mocking ---
 const MOCK_USER_ID = 'test-user-id-123';
@@ -30,6 +33,57 @@ const MOCK_CURRENCY = 'usd';
 const MOCK_WALLET_ID = 'wallet-id-for-user';
 const MOCK_PAYMENT_TRANSACTION_ID = 'ptxn_new_id_789';
 const MOCK_SITE_URL = 'http://localhost:5173';
+
+function messageFromUnknown(err: unknown): string {
+    if (err instanceof Error) {
+        return err.message;
+    }
+    return String(err);
+}
+
+function firstRowFromInsertData(insertData: MockQueryBuilderState["insertData"]): Record<string, unknown> {
+    if (insertData === null) {
+        return {};
+    }
+    if (Array.isArray(insertData)) {
+        const row0: unknown = insertData[0];
+        if (typeof row0 === "object" && row0 !== null && !Array.isArray(row0)) {
+            return { ...row0 };
+        }
+        return {};
+    }
+    return { ...insertData };
+}
+
+/** IMockSupabaseClient is structurally used as SupabaseClient in handler tests; double assertion is required by deno-ts. */
+function supabaseClientForHandlerTests(setup: MockSupabaseClientSetup): SupabaseClient<Database> {
+    return setup.client as unknown as SupabaseClient<Database>;
+}
+
+function isDenoSpy<F extends (...args: never[]) => unknown>(value: unknown): value is Spy<F> {
+    if (typeof value !== "function") {
+        return false;
+    }
+    return (
+        "calls" in value &&
+        "restore" in value &&
+        "restored" in value &&
+        "original" in value
+    );
+}
+
+type InitiatePaymentSpy = Spy<
+    (context: PaymentOrchestrationContext) => Promise<PaymentInitiationResult>
+>;
+type HandleWebhookSpy = Spy<
+    (rawBody: ArrayBuffer, signature: string | undefined) => Promise<PaymentConfirmation>
+>;
+
+interface MockPaymentAdapterWithSpies {
+    gatewayId: string;
+    initiatePayment: InitiatePaymentSpy;
+    handleWebhook: HandleWebhookSpy;
+}
 
 // --- Common Test Setup ---
 // Utility to create a mock Request
@@ -48,14 +102,14 @@ function createMockRequest(
 }
 
 const originalDenoEnvGet = Deno.env.get;
-let globalEnvGetStub: Stub<Deno.Env, [key: string, ...args: any[]], string | undefined> | null = null;
+let globalEnvGetStub: Stub<Deno.Env, [string], string | undefined> | null = null;
 
 function setupGlobalTestEnvironment(initialEnvVars: Record<string, string> = {}): void {
     if (globalEnvGetStub && !globalEnvGetStub.restored) { // Check if already stubbed and not restored
         try {
             globalEnvGetStub.restore();
         } catch (e) {
-            console.warn("Previous globalEnvGetStub restore failed:", (e as Error).message);
+            console.warn("Previous globalEnvGetStub restore failed:", messageFromUnknown(e));
         }
     }
     const defaultEnvVars: Record<string, string> = {
@@ -77,7 +131,7 @@ function teardownGlobalTestEnvironment(): void {
         try {
             globalEnvGetStub.restore();
         } catch (e) {
-             console.warn("globalEnvGetStub restore failed in teardown:", (e as Error).message);
+             console.warn("globalEnvGetStub restore failed in teardown:", messageFromUnknown(e));
         }
     }
     globalEnvGetStub = null;
@@ -92,11 +146,21 @@ Deno.test("initiate-payment function tests", async (t) => {
     let mockUserSbSetup: MockSupabaseClientSetup;
     
     // Declare spies in the broader scope of Deno.test to manage their lifecycle across t.steps
-    let mockCreateUserClientFn: Spy<any, [string], any> | undefined;
-    let mockGetPaymentAdapterFn: Spy<any, [string, any], IPaymentGatewayAdapter | null> | undefined;
-    let mockPaymentAdapter: IPaymentGatewayAdapter; // This will hold the (potentially spied) adapter instance
+    let mockCreateUserClientFn: Spy<(authHeader: string) => SupabaseClient<Database>> | undefined;
+    let mockGetPaymentAdapterFn: Spy<
+        (gatewayId: string, adminSupabaseClient: SupabaseClient<Database>) => IPaymentGatewayAdapter | null
+    > | undefined;
+    let mockPaymentAdapter: MockPaymentAdapterWithSpies;
 
-    const MOCK_DEFAULT_USER = { id: MOCK_USER_ID, aud: 'authenticated', email: 'user@example.com' } as any;
+    const MOCK_DEFAULT_USER: User = {
+        id: MOCK_USER_ID,
+        aud: 'authenticated',
+        role: 'authenticated',
+        email: 'user@example.com',
+        app_metadata: {},
+        user_metadata: {},
+        created_at: new Date().toISOString(),
+    };
 
     const beforeEachScoped = (options: {
         userAuthConfig?: MockSupabaseDataConfig,
@@ -108,16 +172,16 @@ Deno.test("initiate-payment function tests", async (t) => {
 
         // Restore existing spies before creating new ones for this scope
         if (mockCreateUserClientFn && typeof mockCreateUserClientFn.restore === 'function' && !mockCreateUserClientFn.restored) {
-            try { mockCreateUserClientFn.restore(); } catch (e) { console.warn('[beforeEachScoped] Pre-restore failed for mockCreateUserClientFn:', (e as Error).message); }
+            try { mockCreateUserClientFn.restore(); } catch (e) { console.warn('[beforeEachScoped] Pre-restore failed for mockCreateUserClientFn:', messageFromUnknown(e)); }
         }
         if (mockGetPaymentAdapterFn && typeof mockGetPaymentAdapterFn.restore === 'function' && !mockGetPaymentAdapterFn.restored) {
-            try { mockGetPaymentAdapterFn.restore(); } catch (e) { console.warn('[beforeEachScoped] Pre-restore failed for mockGetPaymentAdapterFn:', (e as Error).message); }
+            try { mockGetPaymentAdapterFn.restore(); } catch (e) { console.warn('[beforeEachScoped] Pre-restore failed for mockGetPaymentAdapterFn:', messageFromUnknown(e)); }
         }
-        if (mockPaymentAdapter?.initiatePayment && typeof (mockPaymentAdapter.initiatePayment as Spy<any,any,any>).restore === 'function' && !(mockPaymentAdapter.initiatePayment as Spy<any,any,any>).restored) {
-            try { (mockPaymentAdapter.initiatePayment as Spy<any,any,any>).restore(); } catch (e) { console.warn('[beforeEachScoped] Pre-restore failed for initiatePayment spy:', (e as Error).message); }
+        if (mockPaymentAdapter?.initiatePayment && typeof mockPaymentAdapter.initiatePayment.restore === 'function' && !mockPaymentAdapter.initiatePayment.restored) {
+            try { mockPaymentAdapter.initiatePayment.restore(); } catch (e) { console.warn('[beforeEachScoped] Pre-restore failed for initiatePayment spy:', messageFromUnknown(e)); }
         }
-        if (mockPaymentAdapter?.handleWebhook && typeof (mockPaymentAdapter.handleWebhook as Spy<any,any,any>).restore === 'function' && !(mockPaymentAdapter.handleWebhook as Spy<any,any,any>).restored) {
-            try { (mockPaymentAdapter.handleWebhook as Spy<any,any,any>).restore(); } catch (e) { console.warn('[beforeEachScoped] Pre-restore failed for handleWebhook spy:', (e as Error).message); }
+        if (mockPaymentAdapter?.handleWebhook && typeof mockPaymentAdapter.handleWebhook.restore === 'function' && !mockPaymentAdapter.handleWebhook.restored) {
+            try { mockPaymentAdapter.handleWebhook.restore(); } catch (e) { console.warn('[beforeEachScoped] Pre-restore failed for handleWebhook spy:', messageFromUnknown(e)); }
         }
 
 
@@ -125,7 +189,7 @@ Deno.test("initiate-payment function tests", async (t) => {
         const defaultAdminSupaConfig: MockSupabaseDataConfig = {
             genericMockResults: {
                 'subscription_plans': {
-                    select: spy(async (state) => {
+                    select: async (state: MockQueryBuilderState) => {
                         const itemIdFilter = state.filters.find(f => f.column === 'stripe_price_id' && f.type === 'eq');
                         const activeFilter = state.filters.find(f => f.column === 'active' && f.type === 'eq' && f.value === true);
 
@@ -143,72 +207,109 @@ Deno.test("initiate-payment function tests", async (t) => {
                                 return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
                             }
                         }
-                        // Default empty if no specific item matches, or if filters are not as expected
-                        return { data: [], error: {message: 'Mock: Item not found or query unexpected'} as any, count: 0, status: 404, statusText: 'Not Found' };
-                    })
+                        return { data: [], error: new Error('Mock: Item not found or query unexpected'), count: 0, status: 404, statusText: 'Not Found' };
+                    },
                 },
                 'payment_transactions': {
-                    insert: spy(async (state) => ({ data: [{ id: MOCK_PAYMENT_TRANSACTION_ID, ...(state.insertData as any)?.[0] }], error: null, count: 1, status: 201, statusText: 'Created' })),
-                    update: spy(async (_state) => ({ data: [{ id: MOCK_PAYMENT_TRANSACTION_ID }], error: null, count: 1, status: 200, statusText: 'OK' }))
+                    insert: async (state: MockQueryBuilderState) => {
+                        const row = firstRowFromInsertData(state.insertData);
+                        return { data: [{ id: MOCK_PAYMENT_TRANSACTION_ID, ...row }], error: null, count: 1, status: 201, statusText: 'Created' };
+                    },
+                    update: async (_state: MockQueryBuilderState) => ({ data: [{ id: MOCK_PAYMENT_TRANSACTION_ID }], error: null, count: 1, status: 200, statusText: 'OK' }),
                 }
             }
         };
         
-        // Default user client mocks (for TokenWalletService inside handler)
+        // Default user client mocks for UserTokenWalletService.getWalletForContext (token_wallets + maybeSingle)
         const defaultUserSupaConfig: MockSupabaseDataConfig = {
             mockUser: MOCK_DEFAULT_USER,
             getUserResult: { data: { user: MOCK_DEFAULT_USER }, error: null },
             genericMockResults: {
                 'token_wallets': {
-                     select: spy(async (state) => {
-                        const userIdFilter = state.filters.find(f => f.column === 'user_id');
-                        const orgIdFilter = state.filters.find(f => f.column === 'organization_id');
-                        // Basic mock: if query for the default test user or a specific org, return a wallet
-                        if ((userIdFilter && userIdFilter.value === 'user') || (orgIdFilter && orgIdFilter.value === MOCK_ORGANIZATION_ID)) {
-                            return { data: [{ wallet_id: MOCK_WALLET_ID, user_id: MOCK_USER_ID, balance: '5000', currency: 'AI_TOKEN', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }], error: null, count: 1, status: 200 };
+                     select: async (state: MockQueryBuilderState) => {
+                        const filters = state.filters;
+                        const userEq = filters.find((f) => f.column === 'user_id' && f.type === 'eq');
+                        const orgEq = filters.find((f) => f.column === 'organization_id' && f.type === 'eq');
+                        const userWalletRow = {
+                            wallet_id: MOCK_WALLET_ID,
+                            user_id: MOCK_USER_ID,
+                            organization_id: null,
+                            balance: 5000,
+                            currency: 'AI_TOKEN',
+                            created_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString(),
+                        };
+                        // Personal wallet: UserTokenWalletService uses .eq(user_id).is(organization_id, null).
+                        // MockQueryBuilder only records .is() when the value is the string 'null', not JS null
+                        // (see isIsValue in supabase.mock.ts), so filters often omit organization_id.is.
+                        if (userEq && userEq.value === MOCK_USER_ID && !orgEq) {
+                            return { data: [userWalletRow], error: null, count: 1, status: 200, statusText: 'OK' };
                         }
-                        return { data: [], error: null, count: 0, status: 200 }; // No wallet found
-                    })
+                        if (orgEq && orgEq.value === MOCK_ORGANIZATION_ID) {
+                            return {
+                                data: [{
+                                    ...userWalletRow,
+                                    user_id: null,
+                                    organization_id: MOCK_ORGANIZATION_ID,
+                                }],
+                                error: null,
+                                count: 1,
+                                status: 200,
+                                statusText: 'OK',
+                            };
+                        }
+                        return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
+                    },
                 }
             }
         };
 
-        mockUserSbSetup = createMockSupabaseClient('user', userAuthConfig || defaultUserSupaConfig);
+        // First arg is currentTestUserId: MockSupabaseAuth forces user.id to this value (overrides mockUser.id).
+        mockUserSbSetup = createMockSupabaseClient(MOCK_USER_ID, userAuthConfig || defaultUserSupaConfig);
         mockAdminSbSetup = createMockSupabaseClient('admin', adminSupaConfig || defaultAdminSupaConfig);
         
-        mockCreateUserClientFn = spy((_authHeader: string) => mockUserSbSetup.client as any);
+        mockCreateUserClientFn = spy((_authHeader: string) => supabaseClientForHandlerTests(mockUserSbSetup));
 
         const defaultInitiatePaymentBehavior = async (ctx: PaymentOrchestrationContext): Promise<PaymentInitiationResult> => {
             return { success: true, transactionId: ctx.internalPaymentId, paymentGatewayTransactionId: 'stripe_session_mock_' + ctx.internalPaymentId, redirectUrl: `${MOCK_SITE_URL}/stripe/pay/mock_session` };
         };
-        const defaultHandleWebhookBehavior = async (): Promise<PaymentConfirmation> => ({ success: true, transactionId: 'wh_mock' });
+        const defaultHandleWebhookBehavior = async (
+            _rawBody: ArrayBuffer,
+            _signature: string | undefined,
+        ): Promise<PaymentConfirmation> => ({ success: true, transactionId: 'wh_mock' });
 
-        // Create the base adapter object; its methods will be spied upon or replaced.
+        let initiatePayment: InitiatePaymentSpy;
+        if (adapterBehavior?.initiatePayment) {
+            const provided = adapterBehavior.initiatePayment;
+            if (isDenoSpy<(context: PaymentOrchestrationContext) => Promise<PaymentInitiationResult>>(provided)) {
+                initiatePayment = provided;
+            } else {
+                initiatePayment = spy(provided);
+            }
+        } else {
+            initiatePayment = spy(defaultInitiatePaymentBehavior);
+        }
+
+        let handleWebhook: HandleWebhookSpy;
+        if (adapterBehavior?.handleWebhook) {
+            const provided = adapterBehavior.handleWebhook;
+            if (isDenoSpy<(rawBody: ArrayBuffer, signature: string | undefined) => Promise<PaymentConfirmation>>(provided)) {
+                handleWebhook = provided;
+            } else {
+                handleWebhook = spy(provided);
+            }
+        } else {
+            handleWebhook = spy(defaultHandleWebhookBehavior);
+        }
+
         mockPaymentAdapter = {
             gatewayId: 'stripe',
-            initiatePayment: defaultInitiatePaymentBehavior,
-            handleWebhook: defaultHandleWebhookBehavior,
+            initiatePayment,
+            handleWebhook,
         };
-        
-        // Apply specific behaviors and ensure they are spies
-        if (adapterBehavior?.initiatePayment) {
-            mockPaymentAdapter.initiatePayment = typeof adapterBehavior.initiatePayment === 'function' && !('calls' in adapterBehavior.initiatePayment)
-                ? spy(adapterBehavior.initiatePayment as any)
-                : adapterBehavior.initiatePayment as Spy<any,any,any>;
-        } else {
-            mockPaymentAdapter.initiatePayment = spy(defaultInitiatePaymentBehavior);
-        }
 
-        if (adapterBehavior?.handleWebhook) {
-            mockPaymentAdapter.handleWebhook = typeof adapterBehavior.handleWebhook === 'function' && !('calls' in adapterBehavior.handleWebhook)
-                ? spy(adapterBehavior.handleWebhook as any)
-                : adapterBehavior.handleWebhook as Spy<any,any,any>;
-        } else {
-            mockPaymentAdapter.handleWebhook = spy(defaultHandleWebhookBehavior);
-        }
-        
-        mockGetPaymentAdapterFn = spy((_gatewayId: string, _adminClient: any) => {
-            console.log('mockGetPaymentAdapterFn', _gatewayId, _adminClient);
+        mockGetPaymentAdapterFn = spy((_gatewayId: string, adminClient: SupabaseClient<Database>) => {
+            console.log('mockGetPaymentAdapterFn', _gatewayId, adminClient);
             return getAdapterShouldReturnNull ? null : mockPaymentAdapter;
         });
     };
@@ -219,20 +320,20 @@ Deno.test("initiate-payment function tests", async (t) => {
 
         // Restore spies
         if (mockCreateUserClientFn && typeof mockCreateUserClientFn.restore === 'function' && !mockCreateUserClientFn.restored) {
-            try { mockCreateUserClientFn.restore(); } catch (e) { console.warn('[afterEachScoped] Failed to restore mockCreateUserClientFn:', (e as Error).message); }
+            try { mockCreateUserClientFn.restore(); } catch (e) { console.warn('[afterEachScoped] Failed to restore mockCreateUserClientFn:', messageFromUnknown(e)); }
         }
         if (mockGetPaymentAdapterFn && typeof mockGetPaymentAdapterFn.restore === 'function' && !mockGetPaymentAdapterFn.restored) {
-            try { mockGetPaymentAdapterFn.restore(); } catch (e) { console.warn('[afterEachScoped] Failed to restore mockGetPaymentAdapterFn:', (e as Error).message); }
+            try { mockGetPaymentAdapterFn.restore(); } catch (e) { console.warn('[afterEachScoped] Failed to restore mockGetPaymentAdapterFn:', messageFromUnknown(e)); }
         }
 
-        const activeInitiatePaymentSpy = mockPaymentAdapter?.initiatePayment as Spy<any,any,any> | undefined;
+        const activeInitiatePaymentSpy = mockPaymentAdapter?.initiatePayment;
         if (activeInitiatePaymentSpy && typeof activeInitiatePaymentSpy.restore === 'function' && !activeInitiatePaymentSpy.restored) {
-            try { activeInitiatePaymentSpy.restore(); } catch (e) { console.warn('[afterEachScoped] Failed to restore activeInitiatePaymentSpy:', (e as Error).message); }
+            try { activeInitiatePaymentSpy.restore(); } catch (e) { console.warn('[afterEachScoped] Failed to restore activeInitiatePaymentSpy:', messageFromUnknown(e)); }
         }
 
-        const activeHandleWebhookSpy = mockPaymentAdapter?.handleWebhook as Spy<any,any,any> | undefined;
+        const activeHandleWebhookSpy = mockPaymentAdapter?.handleWebhook;
         if (activeHandleWebhookSpy && typeof activeHandleWebhookSpy.restore === 'function' && !activeHandleWebhookSpy.restored) {
-            try { activeHandleWebhookSpy.restore(); } catch (e) { console.warn('[afterEachScoped] Failed to restore activeHandleWebhookSpy:', (e as Error).message); }
+            try { activeHandleWebhookSpy.restore(); } catch (e) { console.warn('[afterEachScoped] Failed to restore activeHandleWebhookSpy:', messageFromUnknown(e)); }
         }
         
         // Nullify to ensure clean state for next beforeEach, though Deno test runner might re-scope variables per t.step
@@ -246,7 +347,7 @@ Deno.test("initiate-payment function tests", async (t) => {
         await t.step("OPTIONS request should return CORS headers", async () => {
             beforeEachScoped();
             const req = createMockRequest('OPTIONS', '/initiate-payment', null, { Origin: MOCK_SITE_URL });
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             
             assertEquals(res.status, 204);
             assertEquals(res.headers.get('access-control-allow-origin'), MOCK_SITE_URL);
@@ -257,7 +358,7 @@ Deno.test("initiate-payment function tests", async (t) => {
         await t.step("should return 401 if Authorization header is missing", async () => {
             beforeEachScoped();
             const req = createMockRequest('POST', '/initiate-payment', { itemId: 'test' }); // No Auth header
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
 
             assertEquals(res.status, 401);
@@ -267,15 +368,17 @@ Deno.test("initiate-payment function tests", async (t) => {
         });
         
         await t.step("should return 401 for invalid Authorization token", async () => {
+            const invalidJwtError: Error = new Error("Invalid JWT");
+            invalidJwtError.name = "AuthApiError";
             beforeEachScoped({ 
                 userAuthConfig: { 
                     mockUser: null, 
-                    getUserResult: { data: { user: null }, error: { name:"AuthApiError", message: "Invalid JWT", status: 401} as any } 
+                    getUserResult: { data: { user: null }, error: invalidJwtError },
                 }
             });
 
             const req = createMockRequest('POST', '/initiate-payment', { itemId: 'test' }, { Authorization: 'Bearer invalid.token' });
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
             
             assertEquals(res.status, 401);
@@ -289,7 +392,7 @@ Deno.test("initiate-payment function tests", async (t) => {
         await t.step("should return 400 if request body is missing", async () => {
             beforeEachScoped(); 
             const req = createMockRequest('POST', '/initiate-payment', null, { Authorization: 'Bearer valid.token' });
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
 
             assertEquals(res.status, 400);
@@ -303,7 +406,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             beforeEachScoped(); // Default: auth success
             const purchaseRequestBody = { quantity: 1, currency: MOCK_CURRENCY, paymentGatewayId: 'stripe' }; // Missing itemId
             const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
 
             assertEquals(res.status, 400);
@@ -315,7 +418,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             beforeEachScoped(); // Uses default admin mock which will return empty for MOCK_INVALID_ITEM_ID
             const purchaseRequestBody: PurchaseRequest = { itemId: MOCK_INVALID_ITEM_ID, quantity: 1, currency: MOCK_CURRENCY, paymentGatewayId: 'stripe', userId: MOCK_USER_ID };
             const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
             
             assertEquals(res.status, 404);
@@ -327,7 +430,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             beforeEachScoped(); // Default admin mock returns incomplete plan for MOCK_INCOMPLETE_ITEM_ID
             const purchaseRequestBody: PurchaseRequest = { itemId: MOCK_INCOMPLETE_ITEM_ID, quantity: 1, currency: MOCK_CURRENCY, paymentGatewayId: 'stripe', userId: MOCK_USER_ID };
             const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
 
             assertEquals(res.status, 500);
@@ -339,7 +442,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             beforeEachScoped(); // MOCK_WRONG_CURRENCY_ITEM_ID is set to 'eur'
             const purchaseRequestBody: PurchaseRequest = { itemId: MOCK_WRONG_CURRENCY_ITEM_ID, quantity: 1, currency: 'usd', paymentGatewayId: 'stripe', userId: MOCK_USER_ID };
             const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
             
             assertEquals(res.status, 400);
@@ -357,7 +460,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             });
             const purchaseRequestBody: PurchaseRequest = { itemId: MOCK_ITEM_ID, quantity: 1, currency: MOCK_CURRENCY, paymentGatewayId: 'stripe', userId: MOCK_USER_ID };
             const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
 
             assertEquals(res.status, 404);
@@ -370,7 +473,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             const purchaseRequestBody: PurchaseRequest = { itemId: MOCK_ITEM_ID, quantity: 1, currency: MOCK_CURRENCY, paymentGatewayId: 'stripe', userId: MOCK_USER_ID };
             const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
             
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
 
             assertEquals(res.status, 200); // Success from adapter
@@ -382,18 +485,21 @@ Deno.test("initiate-payment function tests", async (t) => {
             const insertSpy = mockAdminSbSetup.spies.getLatestQueryBuilderSpies('payment_transactions')?.insert;
             assert(insertSpy, "payment_transactions insert spy should exist");
             assertSpyCalls(insertSpy, 1);
-            const insertArg = insertSpy.calls[0].args[0] as any;
-            assertEquals(insertArg.user_id, 'user');
+            const insertArg = insertSpy.calls[0].args[0];
+            assertEquals(insertArg.user_id, MOCK_USER_ID);
             assertEquals(insertArg.target_wallet_id, MOCK_WALLET_ID);
             assertEquals(insertArg.status, 'PENDING');
             assertEquals(insertArg.tokens_to_award, MOCK_tokens_to_award);
             assertEquals(insertArg.amount_requested_fiat, MOCK_ITEM_AMOUNT * purchaseRequestBody.quantity); // Total amount
             
-            // Verify adapter was called
             assertSpyCalls(mockGetPaymentAdapterFn!, 1);
-            const initiatePaymentSpy = mockPaymentAdapter.initiatePayment as Spy<any,any,any>;
+            const adapterFactoryArgs: unknown[] = mockGetPaymentAdapterFn!.calls[0].args;
+            assertEquals(adapterFactoryArgs.length, 2);
+            assertEquals(adapterFactoryArgs[0], 'stripe');
+            assertEquals(adapterFactoryArgs[1], mockAdminSbSetup.client);
+            const initiatePaymentSpy = mockPaymentAdapter.initiatePayment;
             assertSpyCalls(initiatePaymentSpy, 1);
-            const adapterContext = initiatePaymentSpy.calls[0].args[0] as PaymentOrchestrationContext;
+            const adapterContext = initiatePaymentSpy.calls[0].args[0];
             assertEquals(adapterContext.internalPaymentId, MOCK_PAYMENT_TRANSACTION_ID);
             assertEquals(adapterContext.itemId, MOCK_ITEM_ID);
 
@@ -406,7 +512,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             const purchaseRequestBody: PurchaseRequest = { itemId: MOCK_ITEM_ID, quantity: 1, currency: MOCK_CURRENCY, paymentGatewayId: 'unsupported_gateway', userId: MOCK_USER_ID };
             const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
             
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
 
             assertEquals(res.status, 400);
@@ -432,7 +538,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             const purchaseRequestBody: PurchaseRequest = { itemId: MOCK_ITEM_ID, quantity: 1, currency: MOCK_CURRENCY, paymentGatewayId: 'stripe', userId: MOCK_USER_ID };
             const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
             
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
 
             assertEquals(res.status, 400); // As per createSuccessResponse(initiationResult, initiationResult.success ? 200 : 400, req )
@@ -442,7 +548,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             const updateSpy = mockAdminSbSetup.spies.getLatestQueryBuilderSpies('payment_transactions')?.update;
             assert(updateSpy, "payment_transactions update spy should exist");
             assertSpyCalls(updateSpy, 1);
-            const updateArg = updateSpy.calls[0].args[0] as any;
+            const updateArg = updateSpy.calls[0].args[0];
             assertEquals(updateArg.status, 'FAILED');
             assertEquals(updateArg.metadata_json.adapter_error_details, adapterErrorMessage);
             
@@ -454,15 +560,17 @@ Deno.test("initiate-payment function tests", async (t) => {
                 adminSupaConfig: { // Override admin client for this test
                     genericMockResults: {
                         'subscription_plans': {
-                            select: spy(async () => { throw new Error("Simulated DB error fetching plans"); })
-                        }
-                    }
-                }
+                            select: async () => {
+                                throw new Error("Simulated DB error fetching plans");
+                            },
+                        },
+                    },
+                },
             });
             const purchaseRequestBody: PurchaseRequest = { itemId: MOCK_ITEM_ID, quantity: 1, currency: MOCK_CURRENCY, paymentGatewayId: 'stripe', userId: MOCK_USER_ID };
             const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
             
-            const res = await initiatePaymentHandler(req, mockAdminSbSetup.client as any, mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
             const resBody = await res.json();
 
             assertEquals(res.status, 500);
@@ -475,20 +583,3 @@ Deno.test("initiate-payment function tests", async (t) => {
         teardownGlobalTestEnvironment(); // Teardown env once after all tests in this block
     }
 });
-
-// TODO: Add mock implementations for SupabaseClient, TokenWalletService, IPaymentGatewayAdapter
-// Example (very basic structure):
-// const mockSupabaseClient = {
-//   auth: {
-//     getUser: () => Promise.resolve({ data: { user: { id: 'test-user-id' } }, error: null }),
-//   },
-//   from: (table: string) => ({
-//     select: () => (console.log(`mock from(${table}).select called`), mockSupabaseClient.from(table)),
-//     insert: (data: any) => (console.log(`mock from(${table}).insert called with`, data), Promise.resolve({ data: [{id: 'new-txn-id'}], error: null })),
-//     update: (data: any) => (console.log(`mock from(${table}).update called with`, data), Promise.resolve({ data: [{}], error: null })),
-//     eq: (column: string, value: any) => (console.log(`mock from(${table}).eq(${column}, ${value}) called`), mockSupabaseClient.from(table)),
-//     is: (column: string, value: any) => (console.log(`mock from(${table}).is(${column}, ${value}) called`), mockSupabaseClient.from(table)),
-//     single: () => Promise.resolve({ data: {}, error: null }),
-//     maybeSingle: () => Promise.resolve({ data: {}, error: null }),
-//   }),
-// }; 

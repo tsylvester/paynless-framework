@@ -1,6 +1,6 @@
 import { StripePaymentAdapter } from '../stripePaymentAdapter.ts';
 import type { TokenWalletTransaction, TokenWalletTransactionType } from '../../../types/tokenWallet.types.ts';
-import { MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import { MockAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import Stripe from 'npm:stripe';
 import type { PurchaseRequest, PaymentOrchestrationContext } from '../../../types/payment.types.ts';
@@ -19,8 +19,12 @@ import {
 } from 'jsr:@std/testing@0.225.1/mock';
 import { createMockStripe, MockStripe } from '../../../stripe.mock.ts';
 import { createMockSupabaseClient, MockSupabaseClientSetup, MockSupabaseDataConfig, MockQueryBuilderState } from '../../../supabase.mock.ts';
-import { createMockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import { createMockAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 import { Database } from '../../../../types_db.ts';
+
+type SubscriptionPlansRow = Database['public']['Tables']['subscription_plans']['Row'];
+
+const MOCK_PLAN_TS = '2026-04-10T12:00:00.000Z';
 import { ILogger, LogMetadata } from '../../../types.ts';
 import { handleInvoicePaymentSucceeded } from './stripe.invoicePaymentSucceeded.ts';
 import { HandlerContext } from '../../../stripe.mock.ts';
@@ -29,7 +33,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
   
   let mockStripe: MockStripe;
   let mockSupabaseSetup: MockSupabaseClientSetup;
-  let mockTokenWalletService: MockTokenWalletService;
+  let mockTokenWalletService: MockAdminTokenWalletService;
   let adapter: StripePaymentAdapter;
 
   const MOCK_SITE_URL = 'http://localhost:3000';
@@ -40,7 +44,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
     mockStripe = createMockStripe();
     // Corrected: Pass undefined for currentTestUserId and supabaseConfig as the second argument
     mockSupabaseSetup = createMockSupabaseClient(undefined, supabaseConfig);
-    mockTokenWalletService = createMockTokenWalletService();
+    mockTokenWalletService = createMockAdminTokenWalletService();
 
     adapter = new StripePaymentAdapter(
       mockStripe.instance,
@@ -79,10 +83,23 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       currencyForGateway: 'USD',
     };
 
-    const planData = { 
-      stripe_price_id: context.itemId, // Ensure this matches context.itemId for the mock
-      item_id_internal: 'internal_otp_standard_id', // Add a distinct internal ID if needed
-      plan_type: 'one_time_purchase', 
+    const planData: SubscriptionPlansRow = {
+      id: 'sp_row_otp_happy',
+      active: true,
+      amount: 10,
+      created_at: MOCK_PLAN_TS,
+      currency: 'USD',
+      description: null,
+      interval: null,
+      interval_count: null,
+      item_id_internal: 'internal_otp_standard_id',
+      metadata: null,
+      name: 'Mock OTP Plan',
+      plan_type: 'one_time_purchase',
+      stripe_price_id: context.itemId,
+      stripe_product_id: null,
+      tokens_to_award: 1000,
+      updated_at: MOCK_PLAN_TS,
     };
 
     const stripeSessionData = { 
@@ -169,7 +186,6 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
     assertEquals(createCallArgs.metadata?.internal_payment_id, context.internalPaymentId, "Stripe metadata.internal_payment_id is incorrect");
 
     // mockTokenWalletService.getWalletForContext should not have been called by the adapter
-    assertEquals(mockTokenWalletService.stubs.getWalletForContext.calls.length, 0, "getWalletForContext should not be called by adapter");
     assertEquals(mockTokenWalletService.stubs.createWallet.calls.length, 0, "createWallet should not be called by adapter");
 
     // Assert that subscription_plans was queried correctly
@@ -284,9 +300,23 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
         currencyForGateway: 'USD',
     };
 
-    const planData = { 
-        stripe_price_id: 'price_stripe_error_final', 
-        plan_type: 'one_time_purchase',
+    const planData: SubscriptionPlansRow = {
+      id: 'sp_row_stripe_error_final',
+      active: true,
+      amount: 25,
+      created_at: MOCK_PLAN_TS,
+      currency: 'USD',
+      description: null,
+      interval: null,
+      interval_count: null,
+      item_id_internal: 'internal_stripe_error_final',
+      metadata: null,
+      name: 'Mock Plan Stripe Error Final',
+      plan_type: 'one_time_purchase',
+      stripe_price_id: 'price_stripe_error_final',
+      stripe_product_id: null,
+      tokens_to_award: 300,
+      updated_at: MOCK_PLAN_TS,
     }; 
     const stripeError = new Error('Mock Stripe API error during session creation final test');
 
@@ -352,10 +382,23 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
         currencyForGateway: 'USD',
     };
 
-    const planData = { 
-        stripe_price_id: 'price_causes_error', 
-        plan_type: 'one_time_purchase', 
-        // tokens_to_award and amount used by orchestrator
+    const planData: SubscriptionPlansRow = {
+      id: 'sp_row_api_error',
+      active: true,
+      amount: 20,
+      created_at: MOCK_PLAN_TS,
+      currency: 'USD',
+      description: null,
+      interval: null,
+      interval_count: null,
+      item_id_internal: 'internal_causes_error',
+      metadata: null,
+      name: 'Mock Plan API Error',
+      plan_type: 'one_time_purchase',
+      stripe_price_id: 'price_causes_error',
+      stripe_product_id: null,
+      tokens_to_award: 500,
+      updated_at: MOCK_PLAN_TS,
     };
     // const walletData = { walletId: 'wallet-for-user-stripe-error', balance: '0', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date(), userId: basePurchaseRequest.userId } as TokenWallet;
 
@@ -429,9 +472,23 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
         currencyForGateway: 'USD',
     };
 
-    const planData = { 
-        stripe_price_id: 'price_causes_pi_error', 
-        plan_type: 'one_time_purchase', 
+    const planData: SubscriptionPlansRow = {
+      id: 'sp_row_pi_error',
+      active: true,
+      amount: 30,
+      created_at: MOCK_PLAN_TS,
+      currency: 'USD',
+      description: null,
+      interval: null,
+      interval_count: null,
+      item_id_internal: 'internal_causes_pi_error',
+      metadata: null,
+      name: 'Mock Plan PI Error',
+      plan_type: 'one_time_purchase',
+      stripe_price_id: 'price_causes_pi_error',
+      stripe_product_id: null,
+      tokens_to_award: 600,
+      updated_at: MOCK_PLAN_TS,
     };
     const stripeSessionData = { 
       id: 'cs_test_pi_retrieve_error', 
@@ -512,9 +569,23 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       currencyForGateway: 'USD',
     };
 
-    const planData = { 
-      stripe_price_id: 'price_sub_premium', 
-      plan_type: 'subscription', // Key for this test
+    const planData: SubscriptionPlansRow = {
+      id: 'sp_row_sub_premium',
+      active: true,
+      amount: 25,
+      created_at: MOCK_PLAN_TS,
+      currency: 'USD',
+      description: null,
+      interval: null,
+      interval_count: null,
+      item_id_internal: 'internal_sub_premium',
+      metadata: null,
+      name: 'Mock Sub Premium Plan',
+      plan_type: 'subscription',
+      stripe_price_id: 'price_sub_premium',
+      stripe_product_id: null,
+      tokens_to_award: 5000,
+      updated_at: MOCK_PLAN_TS,
     };
 
     const stripeSessionData = { 
@@ -584,7 +655,6 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
     assertEquals(createCallArgs.metadata?.internal_payment_id, context.internalPaymentId);
 
     // mockTokenWalletService.getWalletForContext should not have been called by the adapter
-    assertEquals(mockTokenWalletService.stubs.getWalletForContext.calls.length, 0, "getWalletForContext should not be called by adapter (sub)");
     assertEquals(mockTokenWalletService.stubs.createWallet.calls.length, 0, "createWallet should not be called by adapter (sub)");
 
     // Assert that subscription_plans was queried correctly
@@ -623,17 +693,43 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
         currencyForGateway: 'USD',
     };
 
-    // Simulate planData with a missing plan_type
-    const planDataMissingType = { 
-        stripe_price_id: 'price_for_missing_type',
-        // plan_type is deliberately missing
-    }; 
+    const planDataMissingType: SubscriptionPlansRow = {
+      id: 'sp_row_missing_plan_type',
+      active: true,
+      amount: 12,
+      created_at: MOCK_PLAN_TS,
+      currency: 'USD',
+      description: null,
+      interval: null,
+      interval_count: null,
+      item_id_internal: 'internal_missing_type',
+      metadata: null,
+      name: 'Mock Plan Missing Plan Type',
+      plan_type: '',
+      stripe_price_id: 'price_for_missing_type',
+      stripe_product_id: null,
+      tokens_to_award: 250,
+      updated_at: MOCK_PLAN_TS,
+    };
 
-    // Simulate planData with an invalid plan_type
-    const planDataInvalidType = { 
-        stripe_price_id: 'price_for_invalid_type',
-        plan_type: 'some_unsupported_type',
-    }; 
+    const planDataInvalidType: SubscriptionPlansRow = {
+      id: 'sp_row_invalid_plan_type',
+      active: true,
+      amount: 12,
+      created_at: MOCK_PLAN_TS,
+      currency: 'USD',
+      description: null,
+      interval: null,
+      interval_count: null,
+      item_id_internal: 'internal_invalid_type',
+      metadata: null,
+      name: 'Mock Plan Invalid Plan Type',
+      plan_type: 'some_unsupported_type',
+      stripe_price_id: 'price_for_invalid_type',
+      stripe_product_id: null,
+      tokens_to_award: 250,
+      updated_at: MOCK_PLAN_TS,
+    };
 
     const testScenarios = [
       { name: "missing plan_type", data: planDataMissingType, itemIdSuffix: "-missing"},
@@ -671,10 +767,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
 
       assert(!result.success, `Payment initiation should fail for scenario: ${scenario.name}`);
       
-      // Determine the plan_type as the adapter would see it.
-      // For the 'missing' scenario, scenario.data.plan_type would be undefined.
-      // For the 'invalid' scenario, it would be the invalid string.
-      const effectivePlanType = (scenario.data as any).plan_type; // Cast to any to access potentially missing property
+      const effectivePlanType: string = scenario.data.plan_type;
 
       const expectedErrorMessage = `Invalid or missing plan_type: '${effectivePlanType}' received for item ID: ${currentItemId}. Cannot determine Stripe session mode.`;
       assertEquals(result.error, expectedErrorMessage, `Error message not as expected for ${scenario.name}`);

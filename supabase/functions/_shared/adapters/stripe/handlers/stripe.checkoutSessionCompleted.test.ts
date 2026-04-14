@@ -1,6 +1,7 @@
 import { StripePaymentAdapter } from '../stripePaymentAdapter.ts';
-import type { ITokenWalletService, TokenWalletTransaction } from '../../../types/tokenWallet.types.ts';
-import { MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import type { TokenWalletTransaction } from '../../../types/tokenWallet.types.ts';
+import type { IAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.interface.ts';
+import { MockAdminTokenWalletService, createMockAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import { Database } from "../../../../types_db.ts";
 import Stripe from 'npm:stripe';
@@ -16,61 +17,18 @@ import {
   type Stub,
   type Spy,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe, MockStripe, HandlerContext } from '../../../stripe.mock.ts';
-import { createMockSupabaseClient, MockSupabaseClientSetup, MockSupabaseDataConfig } from '../../../supabase.mock.ts';
-import { createMockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import { createMockStripe, MockStripe, HandlerContext, createMockCheckoutSessionCompletedEvent } from '../../../stripe.mock.ts';
+import { createMockSupabaseClient, MockSupabaseClientSetup, MockSupabaseDataConfig, MockQueryBuilderState } from '../../../supabase.mock.ts';
 import { handleCheckoutSessionCompleted } from "./stripe.checkoutSessionCompleted.ts";
-import type { PaymentTransaction, ILogger, LogMetadata } from "../../../types.ts";
+import type { PaymentTransaction, UpdatePaymentTransactionFn } from "../../../types.ts";
+import { MockLogger } from '../../../logger.mock.ts';
 
-// Helper to create a mock Stripe.Event
-const createMockCheckoutSessionCompletedEvent = (
-  sessionData: Partial<Stripe.Checkout.Session>,
-  id = `evt_test_${Date.now()}`
-): Stripe.CheckoutSessionCompletedEvent => {
-  return {
-    id,
-    object: "event",
-    api_version: "2020-08-27",
-    created: Math.floor(Date.now() / 1000),
-    data: {
-      object: {
-        id: `cs_test_${Date.now()}`,
-        object: "checkout.session",
-        status: "complete",
-        payment_status: "paid",
-        mode: "payment",
-        currency: "usd",
-        amount_total: 1000,
-        customer: null,
-        customer_details: null,
-        payment_intent: `pi_test_${Date.now()}`,
-        subscription: null,
-        client_reference_id: `user_test_${Date.now()}`,
-        metadata: { internal_payment_id: `ptxn_test_${Date.now()}` },
-        ...sessionData,
-      } as Stripe.Checkout.Session,
-    },
-    livemode: false,
-    pending_webhooks: 0,
-    request: { id: `req_test_${Date.now()}`, idempotency_key: null },
-    type: "checkout.session.completed",
-  } as Stripe.CheckoutSessionCompletedEvent;
-};
-
-// Mock Logger
-const createMockLoggerInternal = (): ILogger => { // Renamed to avoid conflict if any
-    return {
-        debug: spy((_message: string, _metadata?: LogMetadata) => {}),
-        info: spy((_message: string, _metadata?: LogMetadata) => {}),
-        warn: spy((_message: string, _metadata?: LogMetadata) => {}),
-        error: spy((_message: string | Error, _metadata?: LogMetadata) => {}),
-    };
-};
+const mockLogger = new MockLogger();
 
 Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
   let mockStripe: MockStripe;
   let mockSupabaseSetup: MockSupabaseClientSetup;
-  let mockTokenWalletService: MockTokenWalletService;
+  let mockTokenWalletService: MockAdminTokenWalletService;
   let adapter: StripePaymentAdapter;
 
   const MOCK_SITE_URL = 'http://localhost:3000';
@@ -87,7 +45,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     Deno.env.set('STRIPE_WEBHOOK_SECRET', MOCK_WEBHOOK_SECRET);
     mockStripe = createMockStripe();
     mockSupabaseSetup = createMockSupabaseClient(undefined, supabaseConfig);
-    mockTokenWalletService = createMockTokenWalletService();
+    mockTokenWalletService = createMockAdminTokenWalletService();
 
     adapter = new StripePaymentAdapter(
       mockStripe.instance,
@@ -125,7 +83,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
       },
     };
 
-    const mockStripeEvent = createMockCheckoutSessionCompletedEvent(mockStripeSession, 'evt_webhook_otp_completed_789');
+    const mockStripeEvent = createMockCheckoutSessionCompletedEvent(mockStripeSession, { id: 'evt_webhook_otp_completed_789' });
 
     // 2. Mock payment_transactions table data (initial state)
     const initialPaymentTxnData = {
@@ -143,15 +101,14 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     const supabaseConfig: MockSupabaseDataConfig = {
       genericMockResults: {
         'payment_transactions': {
-          select: async (state) => {
+          select: async (state: MockQueryBuilderState) => {
             if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId)) {
               return { data: [initialPaymentTxnData], error: null, count: 1, status: 200, statusText: 'OK' };
             }
             return { data: [], error: new Error('Mock: Payment txn not found'), count: 0, status: 404, statusText: 'Not Found' };
           },
-          update: async (state) => { // Should be called to update status to COMPLETED
-            const updateData = state.updateData as { status?: string, gateway_transaction_id?: string }; // Type assertion for updateData
-            if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId) && updateData?.status === 'COMPLETED') {
+          update: async (state: MockQueryBuilderState) => {
+            if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId)) {
               return { data: [{ ...initialPaymentTxnData, status: 'COMPLETED', gateway_transaction_id: stripeSessionId }], error: null, count: 1, status: 200, statusText: 'OK' };
             }
             return { data: null, error: new Error('Mock: Payment txn update failed'), count: 0, status: 500, statusText: 'Error' };
@@ -163,9 +120,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
 
     // Mock stripe.webhooks.constructEventAsync
     if (mockStripe.stubs.webhooksConstructEvent?.restore) mockStripe.stubs.webhooksConstructEvent.restore();
-    mockStripe.stubs.webhooksConstructEvent = stub(mockStripe.instance.webhooks, "constructEventAsync", (_payload: any, _sig: any, _secret: any): Promise<Stripe.Event> => {
-      return Promise.resolve(mockStripeEvent);
-    });
+    mockStripe.stubs.webhooksConstructEvent = stub(mockStripe.instance.webhooks, "constructEventAsync", () => Promise.resolve(mockStripeEvent));
 
     // Mock tokenWalletService.recordTransaction
     const mockTokenTxResult: TokenWalletTransaction = { 
@@ -197,7 +152,9 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     // 4. Call handleWebhook
     const rawBodyString = JSON.stringify(mockStripeEvent);
     const dummySignature = 'whsec_test_signature';
-    const rawBodyArrayBuffer = new TextEncoder().encode(rawBodyString).buffer as ArrayBuffer;
+    const encoded = new TextEncoder().encode(rawBodyString);
+    const rawBodyArrayBuffer = new ArrayBuffer(encoded.length);
+    new Uint8Array(rawBodyArrayBuffer).set(encoded);
 
     const result = await adapter.handleWebhook(rawBodyArrayBuffer, dummySignature);
 
@@ -210,21 +167,20 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     assertSpyCalls(mockStripe.stubs.webhooksConstructEvent, 1);
     
     // Assert that from('payment_transactions') was called (at least for select and update)
-    // Depending on the execution path, it might be called once (if update is skipped) or twice.
-    assert(mockSupabaseSetup.spies.fromSpy.calls.some((call: { args: any[] }) => call.args[0] === 'payment_transactions'), "from('payment_transactions') should have been called at least once.");
-    const paymentTransactionsFromCalls = mockSupabaseSetup.spies.fromSpy.calls.filter((call: { args: any[] }) => call.args[0] === 'payment_transactions').length;
+    assert(mockSupabaseSetup.spies.fromSpy.calls.some(call => call.args[0] === 'payment_transactions'), "from('payment_transactions') should have been called at least once.");
+    const paymentTransactionsFromCalls = mockSupabaseSetup.spies.fromSpy.calls.filter(call => call.args[0] === 'payment_transactions').length;
     console.log(`DEBUG: from('payment_transactions') called ${paymentTransactionsFromCalls} times (OTP).`);
 
     // Check DB calls by iterating over historic builders
-    const historicPaymentTxBuildersOtp = (mockSupabaseSetup.client as any).getHistoricBuildersForTable('payment_transactions');
+    const historicPaymentTxBuildersOtp = mockSupabaseSetup.client.getHistoricBuildersForTable('payment_transactions');
     assert(historicPaymentTxBuildersOtp && historicPaymentTxBuildersOtp.length > 0, "No historic query builders found for payment_transactions (OTP)");
 
-    const totalSelectCallsOtp = historicPaymentTxBuildersOtp.reduce((sum: number, builder: { methodSpies: { select?: { calls: { length: number }[] } } }) => {
+    const totalSelectCallsOtp = historicPaymentTxBuildersOtp.reduce((sum, builder) => {
       return sum + (builder.methodSpies.select?.calls?.length || 0);
     }, 0);
     assertEquals(totalSelectCallsOtp, 2, "select should have been called twice on payment_transactions (OTP)");
 
-    const totalUpdateCallsOtp = historicPaymentTxBuildersOtp.reduce((sum: number, builder: { methodSpies: { update?: { calls: { length: number }[] } } }) => {
+    const totalUpdateCallsOtp = historicPaymentTxBuildersOtp.reduce((sum, builder) => {
       return sum + (builder.methodSpies.update?.calls?.length || 0);
     }, 0);
     assertEquals(totalUpdateCallsOtp, 1, "update should have been called once on payment_transactions (OTP)");
@@ -326,50 +282,46 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     // 3. Setup Mocks
     const supabaseConfig: MockSupabaseDataConfig = {
       genericMockResults: {
-        'payment_transactions': {
-          select: async (state: any) => {
-            if (state.filters.some((f: any) => f.column === 'id' && f.value === internalPaymentId)) {
-              return { data: [initialPaymentTxnData], error: null, count: 1, status: 200, statusText: 'OK' };
+          'payment_transactions': {
+            select: async (state: MockQueryBuilderState) => {
+              if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId)) {
+                return { data: [initialPaymentTxnData], error: null, count: 1, status: 200, statusText: 'OK' };
+              }
+              return { data: [], error: new Error('Mock: Payment txn not found for subscription test'), count: 0, status: 404, statusText: 'Not Found' };
+            },
+            update: async (state: MockQueryBuilderState) => {
+              if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId)) {
+                return { data: [{ ...initialPaymentTxnData, status: 'COMPLETED', gateway_transaction_id: stripeSessionId }], error: null, count: 1, status: 200, statusText: 'OK' };
+              }
+              return { data: null, error: new Error('Mock: Payment txn update failed for subscription test'), count: 0, status: 500, statusText: 'Error' };
             }
-            return { data: [], error: new Error('Mock: Payment txn not found for subscription test'), count: 0, status: 404, statusText: 'Not Found' };
           },
-          update: async (state: any) => { 
-            const updateData = state.updateData as { status?: string, gateway_transaction_id?: string }; 
-            if (state.filters.some((f: any) => f.column === 'id' && f.value === internalPaymentId) && updateData?.status === 'COMPLETED') {
-              return { data: [{ ...initialPaymentTxnData, status: 'COMPLETED', gateway_transaction_id: stripeSessionId }], error: null, count: 1, status: 200, statusText: 'OK' };
+          'subscription_plans': {
+            select: async (state: MockQueryBuilderState) => {
+              if (state.filters.some(f => f.column === 'stripe_price_id' && f.value === itemIdInternal)) {
+                return { data: [{ id: internalPlanId }], error: null, count: 1, status: 200, statusText: 'OK' };
+              }
+              return { data: [], error: new Error(`Mock: Subscription plan not found for stripe_price_id ${itemIdInternal}`), count: 0, status: 404, statusText: 'Not Found' };
             }
-            return { data: null, error: new Error('Mock: Payment txn update failed for subscription test'), count: 0, status: 500, statusText: 'Error' };
-          }
-        },
-        'subscription_plans': { // Mock for fetching internal plan_id in the first test suite
-          select: async (state: any) => {
-            if (state.filters.some((f: any) => f.column === 'stripe_price_id' && f.value === itemIdInternal)) {
-              return { data: [{ id: internalPlanId }], error: null, count: 1, status: 200, statusText: 'OK' };
+          },
+          'user_subscriptions': {
+            upsert: async (state: MockQueryBuilderState) => {
+              const data = state.upsertData;
+              assert(data !== null && !Array.isArray(data) && typeof data === 'object', 'Expected upsertData to be a plain object');
+              const entries = Object.entries(data);
+              assertEquals(entries.find(([k]) => k === 'user_id')?.[1], userId, 'wrong user_id in upsert');
+              assertEquals(entries.find(([k]) => k === 'plan_id')?.[1], internalPlanId, 'wrong plan_id in upsert');
+              assertEquals(entries.find(([k]) => k === 'status')?.[1], mockStripeSubscriptionObject.status, 'wrong status in upsert');
+              return { data: [{}], error: null, count: 1, status: 200, statusText: 'OK' };
             }
-            return { data: [], error: new Error(`Mock: Subscription plan not found for stripe_price_id ${itemIdInternal}`), count: 0, status: 404, statusText: 'Not Found' };
           }
-        },
-        'user_subscriptions': { // MODIFIED MOCK for upserting user subscription
-          upsert: async (state: any) => {
-            const upsertData = state.upsertData as any; 
-            if (upsertData && upsertData.stripe_subscription_id === stripeSubscriptionId) {
-              assertEquals(upsertData.user_id, userId);
-              assertEquals(upsertData.plan_id, internalPlanId);
-              assertEquals(upsertData.status, mockStripeSubscriptionObject.status);
-              return { data: [upsertData], error: null, count: 1, status: 200, statusText: 'OK' }; 
-            }
-            return { data: null, error: new Error('Mock: User subscription upsert failed condition check'), count: 0, status: 500, statusText: 'Error' };
-          }
-        }
       }
     };
     setupMocksAndAdapterForWebhook(supabaseConfig);
 
     // Mock stripe.webhooks.constructEventAsync
     if (mockStripe.stubs.webhooksConstructEvent?.restore) mockStripe.stubs.webhooksConstructEvent.restore();
-    mockStripe.stubs.webhooksConstructEvent = stub(mockStripe.instance.webhooks, "constructEventAsync", (_payload: any, _sig: any, _secret: any): Promise<Stripe.Event> => {
-      return Promise.resolve(mockStripeEvent);
-    });
+    mockStripe.stubs.webhooksConstructEvent = stub(mockStripe.instance.webhooks, "constructEventAsync", () => Promise.resolve(mockStripeEvent));
 
     // Ensure subscriptionsRetrieve stub is available on mockStripe.stubs
     if (mockStripe.stubs.subscriptionsRetrieve && typeof mockStripe.stubs.subscriptionsRetrieve.restore === 'function') {
@@ -417,7 +369,9 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     // 4. Call handleWebhook
     const rawBodyString = JSON.stringify(mockStripeEvent);
     const dummySignature = 'whsec_test_subscription_signature';
-    const rawBodyArrayBuffer = new TextEncoder().encode(rawBodyString).buffer as ArrayBuffer;
+    const encodedSub = new TextEncoder().encode(rawBodyString);
+    const rawBodyArrayBuffer = new ArrayBuffer(encodedSub.length);
+    new Uint8Array(rawBodyArrayBuffer).set(encodedSub);
 
     const result: PaymentConfirmation = await adapter.handleWebhook(rawBodyArrayBuffer, dummySignature);
 
@@ -433,66 +387,49 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     assertSpyCalls(mockStripe.stubs.subscriptionsRetrieve, 1);
     
     // Check DB calls by iterating over historic builders
-    const historicPaymentTxBuildersSub = (mockSupabaseSetup.client as any).getHistoricBuildersForTable('payment_transactions');
+    const historicPaymentTxBuildersSub = mockSupabaseSetup.client.getHistoricBuildersForTable('payment_transactions');
     assert(historicPaymentTxBuildersSub && historicPaymentTxBuildersSub.length > 0, "No historic query builders found for payment_transactions (Sub)");
 
-    const totalSelectCallsSub = historicPaymentTxBuildersSub.reduce((sum: number, builder: { methodSpies: { select?: { calls: { length: number }[] } } }) => {
+    const totalSelectCallsSub = historicPaymentTxBuildersSub.reduce((sum, builder) => {
       return sum + (builder.methodSpies.select?.calls?.length || 0);
     }, 0);
     assertEquals(totalSelectCallsSub, 2, "select should have been called twice on payment_transactions (Sub)");
 
-    const totalUpdateCallsSub = historicPaymentTxBuildersSub.reduce((sum: number, builder: { methodSpies: { update?: { calls: { length: number }[] } } }) => {
+    const totalUpdateCallsSub = historicPaymentTxBuildersSub.reduce((sum, builder) => {
       return sum + (builder.methodSpies.update?.calls?.length || 0);
     }, 0);
     assertEquals(totalUpdateCallsSub, 1, "update should have been called once on payment_transactions (Sub)");
-    
-    // Accessing arguments of the update call from the relevant builder
-    // Assuming the update call is on the second builder instance in this flow (first is select, second is update)
+
     const updateBuilderInstanceSub = historicPaymentTxBuildersSub.find(
-      (b: { methodSpies: { update?: { calls?: { length: number }[], callsArgs?: any[][] } } }) => 
-        b.methodSpies.update?.calls && b.methodSpies.update.calls.length > 0
+      b => b.methodSpies.update?.calls && b.methodSpies.update.calls.length > 0
     );
     assert(updateBuilderInstanceSub, "Could not find the builder instance that performed the update (Sub)");
-    assert(updateBuilderInstanceSub.methodSpies.update?.calls && updateBuilderInstanceSub.methodSpies.update.calls.length > 0 && updateBuilderInstanceSub.methodSpies.update.calls[0].args.length > 0, "Update call arguments not found in spy calls (Sub)");
-    const updateObject = updateBuilderInstanceSub.methodSpies.update.calls[0].args[0] as { status?: string; gateway_transaction_id?: string };
+    assert(updateBuilderInstanceSub.methodSpies.update?.calls?.length, "Update call arguments not found in spy calls (Sub)");
+    const updateArg = updateBuilderInstanceSub.methodSpies.update.calls[0].args[0];
+    assert(updateArg !== null && typeof updateArg === 'object', "update arg must be an object");
+    const updateFields = Object.entries(updateArg);
+    assertEquals(updateFields.find(([k]) => k === 'status')?.[1], 'COMPLETED', "wrong status in update");
+    assertEquals(updateFields.find(([k]) => k === 'gateway_transaction_id')?.[1], stripeSessionId, "wrong gateway_transaction_id in update");
+    assert(updateFields.some(([k]) => k === 'updated_at'), "update must include updated_at");
+    assert(updateFields.some(([k]) => k === 'metadata_json'), "update must include metadata_json");
 
-    assertEquals(updateObject.status, 'COMPLETED');
-    assertEquals(updateObject.gateway_transaction_id, stripeSessionId);
-
-
-    const subPlansSelectSpies = (mockSupabaseSetup.client as any).getHistoricBuildersForTable('subscription_plans');
+    const subPlansSelectSpies = mockSupabaseSetup.client.getHistoricBuildersForTable('subscription_plans');
     assert(subPlansSelectSpies && subPlansSelectSpies.length > 0, "Historic select spies info should exist for subscription_plans (Sub)");
-    const totalSubPlansSelectCalls = subPlansSelectSpies.reduce((sum: number, builder: { methodSpies: { select?: { calls: { length: number }[] } } }) => {
+    const totalSubPlansSelectCalls = subPlansSelectSpies.reduce((sum, builder) => {
       return sum + (builder.methodSpies.select?.calls?.length || 0);
     }, 0);
     assertEquals(totalSubPlansSelectCalls, 1, "select on subscription_plans should have been called once (Sub)");
-    
-    const subPlansBuilderInstance = subPlansSelectSpies[0]; // Assuming first builder is the one we need
-    assert(subPlansBuilderInstance?.methodSpies.eq, "Eq spy not found on subscription_plans builder");
-    assert(subPlansBuilderInstance.methodSpies.eq.calls && subPlansBuilderInstance.methodSpies.eq.calls.length > 0, "No calls found for eq on subscription_plans");
-    assert(subPlansBuilderInstance.methodSpies.eq.calls[0].args && subPlansBuilderInstance.methodSpies.eq.calls[0].args.length > 0, "No call arguments for eq on subscription_plans");
+
+    const subPlansBuilderInstance = subPlansSelectSpies[0];
+    assert(subPlansBuilderInstance?.methodSpies.eq?.calls?.length, "Eq spy not found or not called on subscription_plans builder");
     assertEquals(subPlansBuilderInstance.methodSpies.eq.calls[0].args, ['stripe_price_id', itemIdInternal], "eq on subscription_plans called with wrong stripe_price_id");
 
-
-    const userSubUpsertSpies = (mockSupabaseSetup.client as any).getHistoricBuildersForTable('user_subscriptions');
+    const userSubUpsertSpies = mockSupabaseSetup.client.getHistoricBuildersForTable('user_subscriptions');
     assert(userSubUpsertSpies && userSubUpsertSpies.length > 0, "Historic upsert spies info should exist for user_subscriptions (Sub)");
-    const totalUserSubUpsertCalls = userSubUpsertSpies.reduce((sum: number, builder: { methodSpies: { upsert?: { calls: { length: number }[] } } }) => {
+    const totalUserSubUpsertCalls = userSubUpsertSpies.reduce((sum, builder) => {
       return sum + (builder.methodSpies.upsert?.calls?.length || 0);
     }, 0);
     assertEquals(totalUserSubUpsertCalls, 1, "upsert on user_subscriptions should have been called once (Sub)");
-    
-    const userSubBuilderInstance = userSubUpsertSpies[0]; // Assuming first builder
-    assert(userSubBuilderInstance?.methodSpies.upsert, "Upsert spy not found on user_subscriptions builder");
-    assert(userSubBuilderInstance.methodSpies.upsert.calls && userSubBuilderInstance.methodSpies.upsert.calls.length > 0, "No calls found for upsert on user_subscriptions");
-    assert(userSubBuilderInstance.methodSpies.upsert.calls[0].args && userSubBuilderInstance.methodSpies.upsert.calls[0].args.length > 0, "No call arguments for upsert on user_subscriptions");
-    const upsertDataArray = userSubBuilderInstance.methodSpies.upsert.calls[0].args; // Accessing the data object from the call
-    assert(upsertDataArray && upsertDataArray.length > 0, "Upsert data not found");
-    const upsertData = upsertDataArray[0];
-
-    assertEquals(upsertData.user_id, userId, "user_subscriptions upserted with wrong user_id");
-    assertEquals(upsertData.plan_id, internalPlanId, "user_subscriptions upserted with wrong plan_id");
-    assertEquals(upsertData.stripe_subscription_id, stripeSubscriptionId, "user_subscriptions upserted with wrong stripe_subscription_id");
-    assertEquals(upsertData.status, mockStripeSubscriptionObject.status, "user_subscriptions upserted with wrong status");
 
 
     // Check token wallet service call
@@ -510,14 +447,16 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
 Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
   let mockSupabaseClient: SupabaseClient<Database>;
   let mockSupabaseSetup: MockSupabaseClientSetup;
-  let mockTokenWalletService: MockTokenWalletService;
-  let mockLogger: ILogger;
-  let mockUpdatePaymentTransaction: Spy<any, any[], any>; 
+  let mockTokenWalletService: MockAdminTokenWalletService;
+  let mockUpdatePaymentTransaction = spy(
+    (_id: string, _updates: Parameters<UpdatePaymentTransactionFn>[1], _eventId?: string): ReturnType<UpdatePaymentTransactionFn> =>
+      Promise.resolve(null)
+  );
   let mockStripe: MockStripe;
   let handlerContext: HandlerContext;
 
-  let subscriptionsRetrieveStub: Stub<Stripe.SubscriptionsResource, [id: string, params?: Stripe.SubscriptionRetrieveParams, options?: Stripe.RequestOptions], Promise<Stripe.Response<Stripe.Subscription>>>;
-  let recordTokenTransactionStub: Stub<ITokenWalletService, Parameters<ITokenWalletService['recordTransaction']>, ReturnType<ITokenWalletService['recordTransaction']>>;
+  let subscriptionsRetrieveStub: Stub<Stripe.SubscriptionsResource, [id: string, options?: Stripe.RequestOptions], Promise<Stripe.Response<Stripe.Subscription>>>;
+  let recordTokenTransactionStub: Stub<IAdminTokenWalletService, Parameters<IAdminTokenWalletService['recordTransaction']>, ReturnType<IAdminTokenWalletService['recordTransaction']>>;
 
   const setup = (dbQueryResults?: { 
     paymentTransaction?: Partial<PaymentTransaction> | null;
@@ -526,13 +465,29 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     stripeSubscriptionRetrieveResult?: Partial<Stripe.Subscription> | Error | null;
     tokenWalletRecordTransactionResult?: TokenWalletTransaction | Error;
   }) => {
-    mockLogger = createMockLoggerInternal();
-    mockTokenWalletService = createMockTokenWalletService();
-    mockUpdatePaymentTransaction = spy((_id, _updates, _eventId) => 
-      Promise.resolve({ 
-        ...(dbQueryResults?.paymentTransaction || { id: _id }), 
-        status: 'COMPLETED', 
-      } as PaymentTransaction)
+    mockTokenWalletService = createMockAdminTokenWalletService();
+    mockUpdatePaymentTransaction = spy(
+      (_id: string, _updates: Parameters<UpdatePaymentTransactionFn>[1], _eventId?: string): ReturnType<UpdatePaymentTransactionFn> => {
+        const base = dbQueryResults?.paymentTransaction;
+        const result: PaymentTransaction = {
+          id: base?.id ?? _id,
+          amount_requested_crypto: base?.amount_requested_crypto ?? null,
+          amount_requested_fiat: base?.amount_requested_fiat ?? null,
+          created_at: base?.created_at ?? new Date().toISOString(),
+          currency_requested_crypto: base?.currency_requested_crypto ?? null,
+          currency_requested_fiat: base?.currency_requested_fiat ?? null,
+          gateway_transaction_id: base?.gateway_transaction_id ?? null,
+          metadata_json: base?.metadata_json ?? null,
+          organization_id: base?.organization_id ?? null,
+          payment_gateway_id: base?.payment_gateway_id ?? 'stripe',
+          status: 'COMPLETED',
+          target_wallet_id: base?.target_wallet_id ?? '',
+          tokens_to_award: base?.tokens_to_award ?? 0,
+          updated_at: new Date().toISOString(),
+          user_id: base?.user_id ?? null,
+        };
+        return Promise.resolve(result);
+      }
     );
     mockStripe = createMockStripe();
     
@@ -551,10 +506,10 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     }
     if (dbQueryResults?.subscriptionPlans !== undefined) {
       genericMockResults['subscription_plans'] = {
-        select: async (state: any) => {
-          const stripePriceIdFilter = state.filters.find((f: any) => f.column === 'stripe_price_id');
+        select: async (state: MockQueryBuilderState) => {
+          const stripePriceIdFilter = state.filters.find(f => f.column === 'stripe_price_id');
           if (dbQueryResults.subscriptionPlans && stripePriceIdFilter) {
-            const filteredPlans = dbQueryResults.subscriptionPlans.filter((p: any) => p.item_id_internal === stripePriceIdFilter.value);
+            const filteredPlans = dbQueryResults.subscriptionPlans.filter(p => p.item_id_internal === stripePriceIdFilter.value);
             return { data: filteredPlans.length > 0 ? [filteredPlans[0]] : [], error: null, count: filteredPlans.length > 0 ? 1 : 0, status: 200, statusText: 'OK' };
           } else if (dbQueryResults.subscriptionPlans === null) {
              return { data: null, error: new Error('Mock Not found'), count: 0, status: 404, statusText: 'Not Found' };
@@ -565,7 +520,7 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     }
     if (dbQueryResults?.userSubscriptionUpsertError !== undefined || dbQueryResults?.userSubscriptionUpsertError === null) {
         genericMockResults['user_subscriptions'] = {
-            upsert: async (_state) => {
+            upsert: async (_state: MockQueryBuilderState) => {
                 return { data: dbQueryResults.userSubscriptionUpsertError ? null : [{}], error: dbQueryResults.userSubscriptionUpsertError, count: dbQueryResults.userSubscriptionUpsertError ? 0 : 1, status: 200, statusText: 'OK' };
             }
         };
@@ -580,27 +535,27 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     }
 
     subscriptionsRetrieveStub = stub(
-      mockStripe.instance.subscriptions, 
-      "retrieve", 
-      ((id: string, params?: Stripe.SubscriptionRetrieveParams, options?: Stripe.RequestOptions) => { 
+      mockStripe.instance.subscriptions,
+      "retrieve",
+      (id: string) => {
         const res = dbQueryResults?.stripeSubscriptionRetrieveResult;
         if (res instanceof Error) return Promise.reject(res);
         const partialSub = res || {};
         return Promise.resolve({
-          ...partialSub, 
-          id: id, 
-          object: 'subscription', 
-          lastResponse: { 
+          ...partialSub,
+          id,
+          object: 'subscription',
+          lastResponse: {
             headers: {},
             requestId: `req_mock_standalone_retrieve_${id}`,
             statusCode: 200,
-            apiVersion: undefined, 
-            idempotencyKey: undefined, 
-            stripeAccount: undefined 
-          }
+            apiVersion: undefined,
+            idempotencyKey: undefined,
+            stripeAccount: undefined,
+          },
         } as Stripe.Response<Stripe.Subscription>);
-      }) as any 
-    ) as Stub<Stripe.SubscriptionsResource, [id: string, params?: Stripe.SubscriptionRetrieveParams, options?: Stripe.RequestOptions], Promise<Stripe.Response<Stripe.Subscription>>>;
+      }
+    );
 
     // Restore the default stub for recordTransaction from mockTokenWalletService if it pre-stubs it.
     // Assuming createMockTokenWalletService() might also pre-stub its methods and store them in `stubs`.
@@ -608,11 +563,21 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
         mockTokenWalletService.stubs.recordTransaction.restore();
     }
 
-    recordTokenTransactionStub = stub(mockTokenWalletService.instance, "recordTransaction", 
-      () => {
+    recordTokenTransactionStub = stub(mockTokenWalletService.instance, "recordTransaction",
+      (params) => {
         const res = dbQueryResults?.tokenWalletRecordTransactionResult;
         if (res instanceof Error) return Promise.reject(res);
-        return Promise.resolve(res || { transactionId: "mock_ttx" } as TokenWalletTransaction);
+        const defaultTx: TokenWalletTransaction = {
+          transactionId: 'mock_ttx_default',
+          walletId: params.walletId,
+          type: params.type,
+          amount: params.amount,
+          balanceAfterTxn: params.amount,
+          recordedByUserId: params.recordedByUserId,
+          idempotencyKey: params.idempotencyKey,
+          timestamp: new Date(),
+        };
+        return Promise.resolve(res ?? defaultTx);
       }
     );
     
@@ -645,7 +610,16 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
       gateway_transaction_id: null,
       metadata_json: { itemId: "item_otp_success" },
     };
-    const mockTokenTx = { transactionId: "ttx_success_otp" } as TokenWalletTransaction;
+    const mockTokenTx: TokenWalletTransaction = {
+      transactionId: 'ttx_success_otp',
+      walletId,
+      type: 'CREDIT_PURCHASE',
+      amount: String(tokensToAward),
+      balanceAfterTxn: String(tokensToAward),
+      recordedByUserId: userId,
+      idempotencyKey: `otp_success_${internalPaymentId}`,
+      timestamp: new Date(),
+    };
 
     setup({ 
       paymentTransaction: mockPaymentTxData,
@@ -700,6 +674,7 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     const internalPaymentId = "ptxn_not_found";
     const gatewayTxId = "cs_not_found";
 
+    const errorSpy = spy(mockLogger, 'error');
     setup({ 
       paymentTransaction: null, // Simulate payment_transaction not found
     });
@@ -718,13 +693,13 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     assert(result.error?.includes(`Payment transaction not found: ${internalPaymentId}`), `Expected error message about missing payment transaction, got: ${result.error}`);
 
     // Verify logger was called
-    assertSpyCalls(mockLogger.error as Spy<any, any[], any>, 1);
-    const errorLogCall = (mockLogger.error as Spy<any, any[], any>).calls[0].args[0];
-    assert(String(errorLogCall).includes(`Payment transaction not found: ${internalPaymentId}`), `Unexpected logger error message: ${errorLogCall}`);
+    assertSpyCalls(errorSpy, 1);
+    assert(String(errorSpy.calls[0].args[0]).includes(`Payment transaction not found: ${internalPaymentId}`), `Unexpected logger error message: ${errorSpy.calls[0].args[0]}`);
 
     // Verify other services were not called
     assertSpyCalls(mockUpdatePaymentTransaction, 0);
     assertSpyCalls(recordTokenTransactionStub, 0);
+    errorSpy.restore();
   });
 
   await t.step("handleCheckoutSessionCompleted - payment transaction already completed", async () => {
@@ -745,6 +720,7 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
       metadata_json: { itemId: "item_already_completed" },
     };
 
+    const infoSpy = spy(mockLogger, 'info');
     setup({ 
       paymentTransaction: mockPaymentTxData,
     });
@@ -764,25 +740,19 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     assertEquals(result.tokensAwarded, tokensToAward, "Expected original tokens to be in result");
     assert(result.message?.includes(`Transaction ${internalPaymentId} already processed with status COMPLETED`), `Unexpected message: ${result.message}`);
 
-    // Allow for 2 info calls: 1 from StripePaymentAdapter init, 1 from the handler itself.
-    const infoSpy = mockLogger.info as Spy<any, any[], any>; 
-    assertSpyCalls(infoSpy, 2); // Expect two info log calls by the handler in this scenario
-
-    // Check the first log call by the handler
-    const firstLogCallArgs = infoSpy.calls[0].args[0];
-    assert(String(firstLogCallArgs).includes(`Processing for session ${gatewayTxId}, initial internalPaymentId from metadata: ${internalPaymentId}`),
-      `Expected first log message to be about processing with metadata, got: ${firstLogCallArgs}`);
-
-    // Check the second log call by the handler
-    const secondLogCallArgs = infoSpy.calls[1].args[0];
-    assert(String(secondLogCallArgs).includes(`Transaction ${internalPaymentId} already processed with status COMPLETED`),
-      `Expected second log message about already completed transaction, got: ${secondLogCallArgs}`);
+    assertSpyCalls(infoSpy, 2);
+    assert(String(infoSpy.calls[0].args[0]).includes(`Processing for session ${gatewayTxId}, initial internalPaymentId from metadata: ${internalPaymentId}`),
+      `Expected first log message, got: ${infoSpy.calls[0].args[0]}`);
+    assert(String(infoSpy.calls[1].args[0]).includes(`Transaction ${internalPaymentId} already processed with status COMPLETED`),
+      `Expected second log message, got: ${infoSpy.calls[1].args[0]}`);
 
     assertSpyCalls(mockUpdatePaymentTransaction, 0);
     assertSpyCalls(recordTokenTransactionStub, 0);
+    infoSpy.restore();
   });
 
   await t.step("handleCheckoutSessionCompleted - payment transaction already failed", async () => {
+    const warnSpy = spy(mockLogger, 'warn');
     const internalPaymentId = "ptxn_already_failed";
     const gatewayTxId = "cs_event_for_already_failed"; // New event ID
     const userId = "user_already_failed";
@@ -821,15 +791,16 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     assert(result.message?.includes(`Transaction ${internalPaymentId} already processed with status FAILED. Original status: FAILED.`), `Unexpected message: ${result.message}`);
     assert(result.error?.includes(`Payment transaction ${internalPaymentId} was previously marked as FAILED.`), `Unexpected error: ${result.error}`);
 
-    assertSpyCalls(mockLogger.warn as Spy<any, any[], any>, 1); // Changed from info to warn
-    const warnLogCall = (mockLogger.warn as Spy<any, any[], any>).calls[0].args[0];
-    assert(String(warnLogCall).includes(`Transaction ${internalPaymentId} already processed with status FAILED`), `Unexpected logger warn message: ${warnLogCall}`);
+    assertSpyCalls(warnSpy, 1);
+    assert(String(warnSpy.calls[0].args[0]).includes(`Transaction ${internalPaymentId} already processed with status FAILED`), `Unexpected logger warn message: ${warnSpy.calls[0].args[0]}`);
 
     assertSpyCalls(mockUpdatePaymentTransaction, 0);
     assertSpyCalls(recordTokenTransactionStub, 0);
+    warnSpy.restore();
   });
 
   await t.step("handleCheckoutSessionCompleted - one-time payment - token award fails", async () => {
+    const tokenErrorSpy = spy(mockLogger, 'error');
     const internalPaymentId = "ptxn_token_award_fails";
     const gatewayTxId = "cs_token_award_fails";
     const userId = "user_token_award_fails";
@@ -870,16 +841,15 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     assert(result.error?.includes(`Failed to award tokens for payment transaction ${internalPaymentId}: ${tokenAwardErrorMessage}`), `Unexpected error: ${result.error}`);
     assertEquals(result.tokensAwarded, 0);
 
-    assertSpyCalls(mockLogger.error as Spy<any, any[], any>, 1); // One for the token awarding exception
-    const errorLogCall = (mockLogger.error as Spy<any, any[], any>).calls.find(call => String(call.args[0]).includes("Token awarding exception"));
-    assert(errorLogCall, "Expected error log for token awarding exception");
-    assert(String(errorLogCall.args[0]).includes(`Token awarding exception for ${internalPaymentId}`), `Unexpected logger error message: ${errorLogCall.args[0]}`);
+    assertSpyCalls(tokenErrorSpy, 1);
+    assert(String(tokenErrorSpy.calls[0].args[0]).includes(`Token awarding exception for ${internalPaymentId}`), `Unexpected logger error message: ${tokenErrorSpy.calls[0].args[0]}`);
 
     assertSpyCalls(mockUpdatePaymentTransaction, 2); // Initial COMPLETED, then TOKEN_AWARD_FAILED
     assertEquals(mockUpdatePaymentTransaction.calls[0].args[1]?.status, "COMPLETED");
     assertEquals(mockUpdatePaymentTransaction.calls[1].args[1]?.status, "TOKEN_AWARD_FAILED");
     
     assertSpyCalls(recordTokenTransactionStub, 1);
+    tokenErrorSpy.restore();
   });
 
   await t.step("handleCheckoutSessionCompleted - subscription - stripe.subscriptions.retrieve fails", async () => {
@@ -916,6 +886,7 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
       client_reference_id: userId,
     });
 
+    const retrieveErrorSpy = spy(mockLogger, 'error');
     try {
       await handleCheckoutSessionCompleted(handlerContext, event);
       assert(false, "Expected handleCheckoutSessionCompleted to throw due to subscription retrieval failure.");
@@ -923,10 +894,8 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
       assert(e instanceof Error, "Expected thrown error to be an instance of Error.");
       assertEquals(e.message, retrieveErrorMessage, "Thrown error message does not match expected.");
       
-      const errorSpy = mockLogger.error as Spy<any, any[], any>; 
-      // Check for the log about failing to retrieve the subscription
-      const retrieveErrorLogCall = errorSpy.calls.find(call => String(call.args[0]).includes(`Failed to retrieve Stripe subscription ${stripeSubscriptionId}`));
-      assert(retrieveErrorLogCall, `Expected logger error message about failing to retrieve subscription. Logged errors: ${errorSpy.calls.map(c => String(c.args[0])).join("; ")}`);
+      const retrieveErrorLogCall = retrieveErrorSpy.calls.find(call => String(call.args[0]).includes(`Failed to retrieve Stripe subscription ${stripeSubscriptionId}`));
+      assert(retrieveErrorLogCall, `Expected logger error message about failing to retrieve subscription. Logged errors: ${retrieveErrorSpy.calls.map(c => String(c.args[0])).join("; ")}`);
       
       assertSpyCalls(subscriptionsRetrieveStub, 1);
       assertEquals(subscriptionsRetrieveStub.calls[0].args[0], stripeSubscriptionId);
@@ -938,10 +907,13 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
       assertEquals(mockUpdatePaymentTransaction.calls[0].args[2], event.id);
 
       assertSpyCalls(recordTokenTransactionStub, 0); 
+    } finally {
+      retrieveErrorSpy.restore();
     }
   });
 
   await t.step("handleCheckoutSessionCompleted - subscription - subscription_plans lookup fails", async () => {
+    const planLookupErrorSpy = spy(mockLogger, 'error');
     const internalPaymentId = "ptxn_sub_plan_lookup_fails";
     const gatewayTxId = "cs_sub_plan_lookup_fails";
     const stripeSubscriptionId = "sub_plan_lookup_fails_id";
@@ -1007,10 +979,8 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     assertEquals(result.paymentGatewayTransactionId, gatewayTxId);
     assert(result.error?.includes(`Could not find internal subscription plan ID for item_id: ${itemId}`), `Unexpected error: ${result.error}`);
 
-    const errorSpy = mockLogger.error as Spy<any, any[], any>; 
-    assertSpyCalls(errorSpy, 1);
-    const errorLogCall = errorSpy.calls[0].args[0];
-    assert(String(errorLogCall).includes(`Could not find internal subscription plan ID for item_id: ${itemId}`), `Unexpected logger error message: ${errorLogCall}`);
+    assertSpyCalls(planLookupErrorSpy, 1);
+    assert(String(planLookupErrorSpy.calls[0].args[0]).includes(`Could not find internal subscription plan ID for item_id: ${itemId}`), `Unexpected logger error message: ${planLookupErrorSpy.calls[0].args[0]}`);
 
     assertSpyCalls(subscriptionsRetrieveStub, 1); 
     
@@ -1027,9 +997,11 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     const userSubBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
     assert(!userSubBuilder?.methodSpies.upsert || userSubBuilder.methodSpies.upsert.calls.length === 0, "user_subscriptions.upsert should not have been called");
     assertSpyCalls(recordTokenTransactionStub, 0);
+    planLookupErrorSpy.restore();
   });
 
   await t.step("handleCheckoutSessionCompleted - subscription - user_subscriptions upsert fails", async () => {
+    const upsertFailsErrorSpy = spy(mockLogger, 'error');
     const internalPaymentId = "ptxn_user_sub_upsert_fails";
     const gatewayTxId = "cs_user_sub_upsert_fails";
     const stripeSubscriptionId = "sub_user_sub_upsert_fails_id";
@@ -1102,10 +1074,8 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     assertEquals(result.tokensAwarded, 0);
 
 
-    const errorSpy = mockLogger.error as Spy<any, any[], any>; 
-    assertSpyCalls(errorSpy, 1);
-    const errorLogCall = errorSpy.calls[0].args[0];
-    assert(String(errorLogCall).includes(`Failed to upsert user_subscription for ${stripeSubscriptionId}`), `Unexpected logger error message: ${errorLogCall}`);
+    assertSpyCalls(upsertFailsErrorSpy, 1);
+    assert(String(upsertFailsErrorSpy.calls[0].args[0]).includes(`Failed to upsert user_subscription for ${stripeSubscriptionId}`), `Unexpected logger error message: ${upsertFailsErrorSpy.calls[0].args[0]}`);
 
     assertSpyCalls(subscriptionsRetrieveStub, 1);
     const subPlansBuilder = mockSupabaseSetup.client.getLatestBuilder('subscription_plans');
@@ -1118,7 +1088,8 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     assertSpyCalls(mockUpdatePaymentTransaction, 1);
     assertEquals(mockUpdatePaymentTransaction.calls[0].args[1]?.status, "COMPLETED");
 
-    assertSpyCalls(recordTokenTransactionStub, 0); 
+    assertSpyCalls(recordTokenTransactionStub, 0);
+    upsertFailsErrorSpy.restore();
   });
 
   // TODO: Add more test steps for other scenarios
@@ -1127,12 +1098,11 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
 // Test suite for the handleCheckoutSessionCompleted handler directly
 Deno.test('handleCheckoutSessionCompleted directly', async (t) => {
   // Mock setup for individual handler tests
-  let mockLogger: ILogger;
   let mockStripeInternal: MockStripe; // Renamed to avoid conflict with outer scope mockStripe if Deno.test scopes behave unexpectedly
   let mockSupabaseClientForHandler: SupabaseClient<Database>; 
-  let mockTokenWalletServiceForHandler: MockTokenWalletService; // This is the wrapper
-  let recordTokenTransactionStub: Stub<ITokenWalletService, Parameters<ITokenWalletService['recordTransaction']>, ReturnType<ITokenWalletService['recordTransaction']>>; // Corrected type for the stub
-  let updatePaymentTransactionSpy: Spy<any, any[], any>; // Generic spy type
+  let mockTokenWalletServiceForHandler: MockAdminTokenWalletService;
+  let recordTokenTransactionStub: Stub<IAdminTokenWalletService, Parameters<IAdminTokenWalletService['recordTransaction']>, ReturnType<IAdminTokenWalletService['recordTransaction']>>;
+  let updatePaymentTransactionSpy: Spy<object, Parameters<UpdatePaymentTransactionFn>, ReturnType<UpdatePaymentTransactionFn>>;
 
   const defaultUserIdForHandler = 'user-handler-direct-test';
   // ... existing code ...

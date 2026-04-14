@@ -15,6 +15,7 @@ export const mockApiClient = {
   post: vi.fn(),
   put: vi.fn(),
   delete: vi.fn(),
+  getBaseUrl: vi.fn().mockReturnValue('http://mock-functions.api/v1'),
   getFunctionsUrl: vi.fn().mockReturnValue('http://mock-functions.api/v1'), // Default mock URL
   getSupabaseClient: vi.fn().mockImplementation(() => { // Use mockImplementation for complex return
     // Mock the Supabase client instance
@@ -58,6 +59,7 @@ export const resetMockApiClient = () => {
   vi.mocked(mockApiClient.post).mockReset();
   vi.mocked(mockApiClient.put).mockReset();
   vi.mocked(mockApiClient.delete).mockReset();
+  vi.mocked(mockApiClient.getBaseUrl).mockReset().mockReturnValue('http://mock-functions.api/v1');
   vi.mocked(mockApiClient.getFunctionsUrl).mockReset().mockReturnValue('http://mock-functions.api/v1');
   vi.mocked(mockApiClient.getSupabaseClient).mockReset().mockImplementation(() => {
     const mockSupabase = {

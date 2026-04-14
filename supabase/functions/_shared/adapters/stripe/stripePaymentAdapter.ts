@@ -8,7 +8,7 @@ import {
   PaymentConfirmation,
   PaymentOrchestrationContext,
 } from '../../types/payment.types.ts';
-import { ITokenWalletService } from '../../types/tokenWallet.types.ts';
+import { IAdminTokenWalletService } from '../../services/tokenwallet/admin/adminTokenWalletService.interface.ts';
 import { logger } from '../../logger.ts'; // Import the logger instance
 import { updatePaymentTransaction } from './utils/stripe.updatePaymentTransaction.ts';
 import type { HandlerContext, ProductPriceHandlerContext } from '../../stripe.mock.ts';
@@ -38,7 +38,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
   constructor(
     stripeInstance: Stripe,
     adminSupabaseClient: SupabaseClient<Database>,
-    tokenWalletService: ITokenWalletService,
+    tokenWalletService: IAdminTokenWalletService,
     stripeWebhookSecret: string,
   ) {
     this.stripe = stripeInstance;

@@ -6,7 +6,8 @@ import { FileType } from "../_shared/types/file_manager.types.ts";
 import type { AiModelExtendedConfig, ChatApiRequest, OutboundDocument, ResourceDocument } from "../_shared/types.ts";
 import { MockLogger } from "../_shared/logger.mock.ts";
 import { MockRagService } from "../_shared/services/rag_service.mock.ts";
-import { TokenWalletService } from "../_shared/services/tokenWalletService.ts";
+import { AdminTokenWalletService } from "../_shared/services/tokenwallet/admin/adminTokenWalletService.ts";
+import { UserTokenWalletService } from "../_shared/services/tokenwallet/client/userTokenWalletService.ts";
 import { countTokens } from "../_shared/utils/tokenizer_utils.ts";
 import { calculateAffordability } from "./calculateAffordability/calculateAffordability.provides.ts";
 import type { BoundCalculateAffordabilityFn } from "./calculateAffordability/calculateAffordability.interface.ts";
@@ -220,15 +221,15 @@ Deno.test(
         },
       },
       token_wallets: {
-        select: () =>
-          Promise.resolve({
-            data: [
-              buildTokenWalletRow({
-                wallet_id: mockPayload.walletId,
-              }),
-            ],
+        select: (state: unknown) => {
+          if (isRecord(state) && state["selectColumns"] === "balance::text") {
+            return Promise.resolve({ data: [{ balance: "100000" }], error: null });
+          }
+          return Promise.resolve({
+            data: [buildTokenWalletRow({ wallet_id: mockPayload.walletId })],
             error: null,
-          }),
+          });
+        },
       },
     });
 
@@ -276,15 +277,16 @@ Deno.test(
       }),
     };
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-    const tokenWalletService = new TokenWalletService(dbClient, dbClient);
+    const adminTokenWalletService = new AdminTokenWalletService(dbClient);
+    const userTokenWalletService = new UserTokenWalletService(dbClient);
     const boundCompressPrompt: BoundCompressPromptFn = (cpParams, cpPayload) =>
-      compressPrompt({ logger, ragService, embeddingClient, tokenWalletService, countTokens }, cpParams, cpPayload);
+      compressPrompt({ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens }, cpParams, cpPayload);
     const boundCalculateAffordability: BoundCalculateAffordabilityFn = (caParams, caPayload) =>
       calculateAffordability({ logger, countTokens, compressPrompt: boundCompressPrompt }, caParams, caPayload);
     const prepareDeps: PrepareModelJobDeps = {
       logger,
       applyInputsRequiredScope,
-      tokenWalletService,
+      tokenWalletService: userTokenWalletService,
       validateWalletBalance,
       validateModelCostRates,
       calculateAffordability: boundCalculateAffordability,
@@ -1012,7 +1014,8 @@ Deno.test({
           usage: { prompt_tokens: 0, total_tokens: 0 },
         }),
       };
-      const tokenWalletService = new TokenWalletService(admin, admin);
+      const adminTokenWalletService = new AdminTokenWalletService(admin);
+      const userTokenWalletService = new UserTokenWalletService(admin);
 
       // Spy on EMCAS — capture the final ChatApiRequest
       const emcasSpy: Spy<BoundExecuteModelCallAndSaveFn> = spy(async (_p, _payload) => {
@@ -1032,7 +1035,7 @@ Deno.test({
       // Real compressPrompt + calculateAffordability chain
       const boundCompressPrompt: BoundCompressPromptFn = (cpParams, cpPayload) =>
         compressPrompt(
-          { logger, ragService, embeddingClient, tokenWalletService, countTokens },
+          { logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens },
           cpParams,
           cpPayload,
         );
@@ -1046,7 +1049,7 @@ Deno.test({
       const prepareDeps: PrepareModelJobDeps = {
         logger,
         applyInputsRequiredScope,
-        tokenWalletService,
+        tokenWalletService: userTokenWalletService,
         validateWalletBalance,
         validateModelCostRates,
         calculateAffordability: boundCalculateAffordability,

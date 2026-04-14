@@ -36,11 +36,11 @@ vi.mock('@/components/ui/sonner', () => ({ Toaster: () => <div data-testid="mock
 vi.mock('@paynless/store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@paynless/store')>();
   const { mockedUseAuthStoreHookLogic } = await import('./mocks/authStore.mock');
-  const { mockedUseAiStoreHookLogic } = await import('./mocks/aiStore.mock');
+  const { useMockedAiStoreHookLogic } = await import('./mocks/aiStore.mock');
   return {
     ...actual,
     useAuthStore: mockedUseAuthStoreHookLogic,
-    useAiStore: mockedUseAiStoreHookLogic,
+    useAiStore: useMockedAiStoreHookLogic,
   };
 });
 
@@ -175,6 +175,10 @@ describe('App Component', () => {
             created_at: new Date().toISOString(),
             role: 'user',
             updated_at: new Date().toISOString(),
+            signup_ref: null,
+            subscribed_at: null,
+            synced_to_kit_at: null,
+            unsubscribed_at: null,
         };
 
         // Arrange

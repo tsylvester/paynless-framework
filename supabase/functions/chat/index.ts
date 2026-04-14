@@ -1,288 +1,367 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
-import { z } from "https://deno.land/x/zod@v3.23.8/mod.ts";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import {
-    handleCorsPreflightRequest,
-    createErrorResponse,
-    createSuccessResponse,
-} from '../_shared/cors-headers.ts';
-import { getAiProviderAdapter, testProviderMap, defaultProviderMap } from '../_shared/ai_service/factory.ts';
-import type {
-    ChatHandlerDeps,
-    GetUserFn,
-    GetUserFnResult,
-    FactoryDependencies,
-    ChatApiRequest,
-} from '../_shared/types.ts';
-import { logger } from '../_shared/logger.ts';
-import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
-import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
-import { ChatApiRequestSchema } from './zodSchema.ts';
-import { handlePostRequest } from './handlePostRequest.ts';
-import { handleStreamingRequest } from './handleStreamingRequest.ts';
-import { prepareChatContext } from './prepareChatContext.ts';
-import { handleNormalPath } from './handleNormalPath.ts';
-import { handleRewindPath } from './handleRewindPath.ts';
-import { handleDialecticPath } from "./handleDialecticPath.ts";
-import { debitTokens } from '../_shared/utils/debitTokens.ts';
+  createErrorResponse,
+  createSuccessResponse,
+  handleCorsPreflightRequest,
+} from "../_shared/cors-headers.ts";
+import {
+  defaultProviderMap,
+  getAiProviderAdapter,
+  testProviderMap,
+} from "../_shared/ai_service/factory.ts";
+import { AdminTokenWalletService } from "../_shared/services/tokenwallet/admin/adminTokenWalletService.ts";
+import { UserTokenWalletService } from "../_shared/services/tokenwallet/client/userTokenWalletService.ts";
+import {
+  FactoryDependencies,
+  GetAiProviderAdapterFn,
+  GetUserFn,
+  GetUserFnResult,
+} from "../_shared/types.ts";
+import { logger } from "../_shared/logger.ts";
+import { countTokens } from "../_shared/utils/tokenizer_utils.ts";
+import { debitTokens } from "../_shared/utils/debitTokens.ts";
+import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
+import { Database } from "../types_db.ts";
+import { constructMessageHistory } from "./constructMessageHistory/constructMessageHistory.ts";
+import { findOrCreateChat } from "./findOrCreateChat.ts";
+import {
+  ChatDeps,
+  ChatParams,
+  ChatPayload,
+  ChatReturn,
+} from "./index.interface.ts";
+import { prepareChatContext } from "./prepareChatContext/prepareChatContext.ts";
+import { streamRequest } from "./streamRequest/streamRequest.ts";
+import {
+  StreamRequestDeps,
+  StreamRequestParams,
+  StreamRequestPayload,
+  StreamRequestReturn,
+} from "./streamRequest/streamRequest.interface.ts";
+import { StreamChat } from "./streamChat/StreamChat.ts";
+import { StreamRewind } from "./streamRewind/streamRewind.ts";
 
-// --- Main Handler ---
-export async function handler(
-    req: Request,
-    deps: ChatHandlerDeps,
-    userClient: SupabaseClient,
-    adminClient: SupabaseClient,
-    getUserFn: GetUserFn,
-): Promise<Response> {
-    const {
-        handleCorsPreflightRequest,
-        createSuccessResponse,
-        createErrorResponse,
-        logger,
-    } = deps;
-
-    const corsResponse = handleCorsPreflightRequest(req);
-    if (corsResponse) return corsResponse;
-
-    const { data: { user }, error: userError } = await getUserFn();
-    logger.info('[handler] getUserFn result:', { user, userError });
-
-    if (userError || !user) {
-        const status = userError?.status || 401;
-        logger.error('Auth error in chat handler:', { error: userError || 'User not found', status });
-
-        // For POST requests, we might want a specific signal for the client to prompt login
-        if (req.method === 'POST' && status === 401) {
-            logger.info("POST request without valid auth. Returning AUTH_REQUIRED signal.");
-            return createSuccessResponse(
-                { error: "Authentication required", code: "AUTH_REQUIRED" },
-                401,
-                req
-            );
-        }
-
-        return createErrorResponse(userError?.message || 'Invalid authentication credentials', status, req);
-    }
-
-    const userId = user.id;
-    logger.info('Authenticated user:', { userId });
-
-    const isTestMode = req.headers.get('X-Test-Mode') === 'true';
-    let effectiveDeps = deps;
-
-    if (isTestMode && deps.getAiProviderAdapter === defaultDeps.getAiProviderAdapter) {
-        logger.info('[handler] Test mode detected and no adapter override present. Using testProviderMap.');
-        effectiveDeps = {
-            ...deps,
-            getAiProviderAdapter: (dependencies: FactoryDependencies) => {
-                return getAiProviderAdapter({
-                    ...dependencies,
-                    providerMap: testProviderMap,
-                });
-            },
-        };
-    }
-
-    let tokenWalletService = deps.tokenWalletService;
-    if (!tokenWalletService) {
-        tokenWalletService = new TokenWalletService(userClient, adminClient);
-    }
-
-    if (req.method === 'POST') {
-        try {
-            let rawBody;
-            try {
-                rawBody = await req.json();
-            } catch (jsonError) {
-                logger.error('Failed to parse request body as JSON:', { error: jsonError });
-                return createErrorResponse('Invalid JSON format in request body.', 400, req);
-            }
-
-            const parsedResult = ChatApiRequestSchema.safeParse(rawBody);
-
-            if (!parsedResult.success) {
-                const errorMessages = parsedResult.error.errors.map((e: z.ZodIssue) => `${e.path.join('.') || 'body'}: ${e.message}`).join(', ');
-                logger.warn('Chat API request validation failed:', { errors: errorMessages, requestBody: rawBody });
-                return createErrorResponse(`Invalid request body: ${errorMessages}`, 400, req);
-            }
-
-            const requestBody: ChatApiRequest = parsedResult.data;
-            logger.info('Received chat POST request (validated):', { body: requestBody });
-
-            // Check if streaming is requested
-            const acceptHeader = req.headers.get('Accept');
-            const isStreamingRequest = acceptHeader?.includes('text/event-stream') || requestBody.stream === true;
-
-            if (isStreamingRequest) {
-                // Handle SSE streaming
-                if (!effectiveDeps.handleStreamingRequest) {
-                    throw new Error('handleStreamingRequest is not defined in the dependencies.');
-                }
-                return await effectiveDeps.handleStreamingRequest(requestBody, userClient, userId, { ...effectiveDeps, tokenWalletService });
-            } else {
-                // Handle regular POST request
-                if (!effectiveDeps.handlePostRequest) {
-                    throw new Error('handlePostRequest is not defined in the dependencies.');
-                }
-                const result = await effectiveDeps.handlePostRequest(requestBody, userClient, userId, { ...effectiveDeps, tokenWalletService });
-
-                if (result && 'error' in result && result.error) {
-                    const { message, status } = result.error;
-                    logger.warn('handlePostRequest returned an error.', { message, status: status || 500 });
-                    return createErrorResponse(message, status || 500, req);
-                }
-
-                return createSuccessResponse(result, 200, req);
-            }
-        } catch (err) {
-            logger.error('Unhandled error in POST mainHandler:', { error: err instanceof Error ? err.stack : String(err) });
-            const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred processing the chat request.';
-            return createErrorResponse(errorMessage, 500, req);
-        }
-    } else if (req.method === 'DELETE') {
-        try {
-            const url = new URL(req.url);
-            const pathSegments = url.pathname.split('/');
-            const chatId = pathSegments[pathSegments.length - 1];
-            if (!chatId || chatId === 'chat') {
-                return createErrorResponse('Missing chat ID in URL path for DELETE request.', 400, req);
-            }
-            logger.info(`Received DELETE request for chat ID: ${chatId}`);
-
-            // Use the user-specific client for the RPC call to enforce RLS
-            const { error: rpcError } = await userClient.rpc('delete_chat_and_messages', {
-                p_chat_id: chatId,
-                p_user_id: userId
-            });
-
-            if (rpcError) {
-                logger.error(`Error calling delete_chat_and_messages RPC for chat ${chatId}:`, { error: rpcError });
-                if (rpcError.code === 'PGRST01' || rpcError.message.includes('permission denied')) {
-                    return createErrorResponse('Permission denied to delete this chat.', 403, req);
-                }
-                return createErrorResponse(rpcError.message || 'Failed to delete chat.', 500, req);
-            }
-
-            logger.info(`Successfully deleted chat ${chatId} via RPC.`);
-            return createSuccessResponse(null, 204, req);
-        } catch (err) {
-            logger.error('Unhandled error in DELETE handler:', { error: err instanceof Error ? err.stack : String(err) });
-            const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred.';
-            return createErrorResponse(errorMessage, 500, req);
-        }
-    } else {
-        return createErrorResponse('Method Not Allowed', 405, req);
-    }
-}
-
-// Default dependencies using actual implementations
-export const defaultDeps: ChatHandlerDeps = {
-    createSupabaseClient: createClient,
-    fetch: fetch,
-    handleCorsPreflightRequest,
-    createSuccessResponse,
-    createErrorResponse,
-    getAiProviderAdapter: (dependencies: FactoryDependencies) => {
-        return getAiProviderAdapter({
-            ...dependencies,
-            providerMap: defaultProviderMap,
-        });
-    },
-    verifyApiKey: async (apiKey: string, providerName: string): Promise<boolean> => {
-        logger.warn("[defaultDeps] Using STUB for verifyApiKey.", { apiKeyLen: apiKey.length, providerName });
-        return apiKey.startsWith('sk-test-');
-    },
-    logger: logger,
-    tokenWalletService: undefined,
-    countTokens: countTokens,
-    prepareChatContext: prepareChatContext,
-    handleNormalPath: handleNormalPath,
-    handleRewindPath: handleRewindPath,
-    handleDialecticPath: handleDialecticPath,
-    debitTokens: debitTokens,
-    handlePostRequest: handlePostRequest,
-    handleStreamingRequest: handleStreamingRequest,
+const defaultGetAiProviderAdapter: GetAiProviderAdapterFn = (
+  dependencies: FactoryDependencies,
+) => {
+  return getAiProviderAdapter({
+    ...dependencies,
+    providerMap: defaultProviderMap,
+  });
 };
 
-// This factory creates the main request handler, injecting dependencies.
-export function createChatServiceHandler(
-    deps: ChatHandlerDeps,
-    getSupabaseClient: (token: string | null) => SupabaseClient,
-    adminClient: SupabaseClient,
-) {
-    logger.info('[createChatServiceHandler] CREATING HANDLER. Deps provided:', { keys: Object.keys(deps) });
-    return async (req: Request): Promise<Response> => {
-        if (req.method === "OPTIONS") {
-            return handleCorsPreflightRequest(req) ?? new Response(null, { status: 204 });
+const adminClient: SupabaseClient<Database> = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+);
+
+const userClient: SupabaseClient<Database> = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_ANON_KEY")!,
+  {
+    auth: {
+      persistSession: false,
+    },
+  },
+);
+
+export async function handler(
+  deps: ChatDeps,
+  params: ChatParams,
+  payload: ChatPayload,
+): Promise<ChatReturn> {
+  const corsResponse: Response | null = deps.handleCorsPreflightRequest(
+    payload.req,
+  );
+  if (corsResponse) {
+    return corsResponse;
+  }
+
+  const { data: { user }, error: userError } = await params.getUserFn();
+  deps.logger.info("[handler] getUserFn result:", { user, userError });
+
+  if (userError || !user) {
+    const status: number = userError?.status || 401;
+    deps.logger.error("Auth error in chat handler:", {
+      error: userError || "User not found",
+      status,
+    });
+
+    if (payload.req.method === "POST" && status === 401) {
+      deps.logger.info(
+        "POST request without valid auth. Returning AUTH_REQUIRED signal.",
+      );
+      return deps.createSuccessResponse(
+        { error: "Authentication required", code: "AUTH_REQUIRED" },
+        401,
+        payload.req,
+      );
+    }
+
+    return deps.createErrorResponse(
+      userError?.message || "Invalid authentication credentials",
+      status,
+      payload.req,
+    );
+  }
+
+  const userId: string = user.id;
+  deps.logger.info("Authenticated user:", { userId });
+
+  const isTestMode: boolean = payload.req.headers.get("X-Test-Mode") === "true";
+
+  if (payload.req.method === "POST") {
+    try {
+      if (
+        isTestMode &&
+        deps.getAiProviderAdapter === defaultDeps.getAiProviderAdapter
+      ) {
+        deps.logger.info(
+          "[handler] Test mode detected and no adapter override present. Using testProviderMap.",
+        );
+      }
+      const streamDeps: StreamRequestDeps = {
+        logger: deps.logger,
+        adminTokenWalletService: deps.adminTokenWalletService,
+        getAiProviderAdapter:
+          isTestMode &&
+            deps.getAiProviderAdapter === defaultDeps.getAiProviderAdapter
+            ? (
+              dependencies: FactoryDependencies,
+            ) => {
+              return getAiProviderAdapter({
+                ...dependencies,
+                providerMap: testProviderMap,
+              });
+            }
+            : deps.getAiProviderAdapter,
+        prepareChatContext: deps.prepareChatContext,
+        streamChat: StreamChat,
+        streamRewind: StreamRewind,
+        createErrorResponse: deps.createErrorResponse,
+        countTokens: deps.countTokens,
+        debitTokens: deps.debitTokens,
+        getMaxOutputTokens: deps.getMaxOutputTokens,
+        findOrCreateChat: deps.findOrCreateChat,
+        constructMessageHistory: deps.constructMessageHistory,
+      };
+      const streamParams: StreamRequestParams = {
+        supabaseClient: params.userClient,
+        userId,
+        userTokenWalletService: deps.userTokenWalletService,
+      };
+      const streamPayload: StreamRequestPayload = {
+        req: payload.req,
+      };
+      const result: StreamRequestReturn = await deps.streamRequest(
+        streamDeps,
+        streamParams,
+        streamPayload,
+      );
+      if (result instanceof Error) {
+        return deps.createErrorResponse(result.message, 500, payload.req);
+      }
+      return result;
+    } catch (err) {
+      deps.logger.error("Unhandled error in POST mainHandler:", {
+        error: err instanceof Error ? err.stack : String(err),
+      });
+      const errorMessage: string = err instanceof Error
+        ? err.message
+        : "An unexpected error occurred processing the chat request.";
+      return deps.createErrorResponse(errorMessage, 500, payload.req);
+    }
+  }
+
+  if (payload.req.method === "DELETE") {
+    try {
+      const url: URL = new URL(payload.req.url);
+      const pathSegments: string[] = url.pathname.split("/");
+      const chatId: string = pathSegments[pathSegments.length - 1];
+      if (!chatId || chatId === "chat") {
+        return deps.createErrorResponse(
+          "Missing chat ID in URL path for DELETE request.",
+          400,
+          payload.req,
+        );
+      }
+      deps.logger.info(`Received DELETE request for chat ID: ${chatId}`);
+
+      const { error: rpcError } = await params.userClient.rpc(
+        "delete_chat_and_messages",
+        {
+          p_chat_id: chatId,
+          p_user_id: userId,
+        },
+      );
+
+      if (rpcError) {
+        deps.logger.error(
+          `Error calling delete_chat_and_messages RPC for chat ${chatId}:`,
+          { error: rpcError },
+        );
+        if (
+          rpcError.code === "PGRST01" ||
+          rpcError.message.includes("permission denied")
+        ) {
+          return deps.createErrorResponse(
+            "Permission denied to delete this chat.",
+            403,
+            payload.req,
+          );
         }
+        return deps.createErrorResponse(
+          rpcError.message || "Failed to delete chat.",
+          500,
+          payload.req,
+        );
+      }
 
-        const authHeader = req.headers.get("Authorization");
-        const authToken = authHeader && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : null;
-        const userClient = getSupabaseClient(authToken);
+      deps.logger.info(`Successfully deleted chat ${chatId} via RPC.`);
+      return deps.createSuccessResponse(null, 204, payload.req);
+    } catch (err) {
+      deps.logger.error("Unhandled error in DELETE handler:", {
+        error: err instanceof Error ? err.stack : String(err),
+      });
+      const errorMessage: string = err instanceof Error
+        ? err.message
+        : "An unexpected error occurred.";
+      return deps.createErrorResponse(errorMessage, 500, payload.req);
+    }
+  }
 
-        const getUserFnForRequest: GetUserFn = async (): Promise<GetUserFnResult> => {
-            logger.info('[getUserFnForRequest] Auth check initiated.');
-            if (!authHeader) {
-                logger.warn('[getUserFnForRequest] No auth header found.');
-                return { data: { user: null }, error: { message: "User not authenticated", status: 401 } };
-            }
-            const { data, error } = await userClient.auth.getUser();
-            logger.info('[getUserFnForRequest] userClient.auth.getUser() result:', { data: { user: data.user ? { id: data.user.id, email: data.user.email } : null }, error });
-            if (error) {
-                return { data: { user: null }, error: { message: error.message, status: error.status || 500 } };
-            }
-            return { data, error: null };
-        };
-
-        return await handler(req, deps, userClient, adminClient, getUserFnForRequest);
-    };
+  return deps.createErrorResponse("Method Not Allowed", 405, payload.req);
 }
 
+export const defaultDeps: ChatDeps = {
+  logger: logger,
+  adminTokenWalletService: new AdminTokenWalletService(adminClient),
+  userTokenWalletService: new UserTokenWalletService(userClient),
+  streamRequest: streamRequest,
+  handleCorsPreflightRequest,
+  createSuccessResponse,
+  createErrorResponse,
+  getAiProviderAdapter: defaultGetAiProviderAdapter,
+  countTokens: countTokens,
+  prepareChatContext: prepareChatContext,
+  debitTokens: debitTokens,
+  getMaxOutputTokens: getMaxOutputTokens,
+  findOrCreateChat: findOrCreateChat,
+  constructMessageHistory: constructMessageHistory,
+};
 
-// Start the server
-serve(async (req: Request) => {
-    try {
-        // Factory to create a Supabase client for a given user request
-        const getSupabaseClient = (token: string | null) => createClient(
-            Deno.env.get("SUPABASE_URL")!,
-            Deno.env.get("SUPABASE_ANON_KEY")!,
-            {
-                global: {
-                    headers: { Authorization: `Bearer ${token}` },
-                },
-                auth: {
-                    persistSession: false,
-                },
-            }
-        );
+export function createChatServiceHandler(
+  deps: ChatDeps,
+  getSupabaseClient: (token: string | null) => SupabaseClient<Database>,
+  adminClient: SupabaseClient<Database>,
+) {
+  logger.info("[createChatServiceHandler] CREATING HANDLER. Deps provided:", {
+    keys: Object.keys(deps),
+  });
+  return async (req: Request): Promise<Response> => {
+    const authHeader: string | null = req.headers.get("Authorization");
+    const authToken: string | null = authHeader && authHeader.startsWith("Bearer ")
+      ? authHeader.substring(7)
+      : null;
+    const userClient: SupabaseClient<Database> = getSupabaseClient(authToken);
 
-        // Singleton client with admin privileges
-        const adminClient = createClient(
-            Deno.env.get("SUPABASE_URL")!,
-            Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-        );
+    const adminTokenWalletService: AdminTokenWalletService =
+      new AdminTokenWalletService(adminClient);
+    const userTokenWalletService: UserTokenWalletService = new UserTokenWalletService(
+      userClient,
+    );
 
-        // Create the handler with real dependencies
-        const requestHandler = createChatServiceHandler(defaultDeps, getSupabaseClient, adminClient);
+    const getUserFnForRequest: GetUserFn = async (): Promise<GetUserFnResult> => {
+      logger.info("[getUserFnForRequest] Auth check initiated.");
+      if (!authHeader) {
+        logger.warn("[getUserFnForRequest] No auth header found.");
+        return {
+          data: { user: null },
+          error: { message: "User not authenticated", status: 401 },
+        };
+      }
+      const { data, error } = await userClient.auth.getUser();
+      logger.info("[getUserFnForRequest] userClient.auth.getUser() result:", {
+        data: {
+          user: data.user
+            ? { id: data.user.id, email: data.user.email }
+            : null,
+        },
+        error,
+      });
+      if (error) {
+        return {
+          data: { user: null },
+          error: { message: error.message, status: error.status || 500 },
+        };
+      }
+      return { data, error: null };
+    };
 
-        // Process the request
-        return await requestHandler(req);
+    const chatDeps: ChatDeps = {
+      ...deps,
+      adminTokenWalletService,
+      userTokenWalletService,
+    };
 
-    } catch (e) {
-        logger.error("Critical error in server request processing:", {
-            error: e instanceof Error ? e.stack : String(e),
-            request_url: req.url,
-            request_method: req.method,
-        });
+    const chatParams: ChatParams = {
+      userClient,
+      adminClient,
+      getUserFn: getUserFnForRequest,
+    };
 
-        return createErrorResponse(
-            e instanceof Error ? e.message : "Internal Server Error",
-            500,
-            req
-        );
+    const payload: ChatPayload = { req };
+
+    const out: ChatReturn = await handler(chatDeps, chatParams, payload);
+    if (out instanceof Error) {
+      return deps.createErrorResponse(out.message, 500, req);
     }
+    return out;
+  };
+}
+
+serve(async (req: Request) => {
+  try {
+    const getSupabaseClient = (token: string | null) =>
+      createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        {
+          global: {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+          auth: {
+            persistSession: false,
+          },
+        },
+      );
+
+    const adminClient: SupabaseClient<Database> = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    const requestHandler = createChatServiceHandler(
+      defaultDeps,
+      getSupabaseClient,
+      adminClient,
+    );
+
+    return await requestHandler(req);
+  } catch (e) {
+    logger.error("Critical error in server request processing:", {
+      error: e instanceof Error ? e.stack : String(e),
+      request_url: req.url,
+      request_method: req.method,
+    });
+
+    return createErrorResponse(
+      e instanceof Error ? e.message : "Internal Server Error",
+      500,
+      req,
+    );
+  }
 });
-
-

@@ -1,12 +1,12 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { handleCorsPreflightRequest, baseCorsHeaders } from '../_shared/cors-headers.ts';
 import { createSupabaseAdminClient } from '../_shared/auth.ts';
-import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
-import { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
 import { getPaymentAdapter } from '../_shared/adapters/adapterFactory.ts';
 import { PaymentConfirmation, IPaymentGatewayAdapter } from '../_shared/types/payment.types.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import type { Database } from '../types_db.ts';
+import type { IAdminTokenWalletService } from '../_shared/services/tokenwallet/admin/adminTokenWalletService.interface.ts';
+import { AdminTokenWalletService } from '../_shared/services/tokenwallet/admin/adminTokenWalletService.ts';
 import Stripe from 'npm:stripe';
 
 console.log('[/webhooks] Edge Function initialized');
@@ -15,13 +15,13 @@ console.log('[/webhooks] Edge Function initialized');
 export type PaymentAdapterFactoryFn = (
   source: string,
   adminClient: SupabaseClient<Database>,
-  tokenWalletService: ITokenWalletService
+  tokenWalletService: IAdminTokenWalletService,
 ) => IPaymentGatewayAdapter | null;
 
 // Define the dependencies structure for the core logic, exported for tests
 export interface WebhookHandlerDependencies {
   adminClient: SupabaseClient<Database>;
-  tokenWalletService: ITokenWalletService;
+  tokenWalletService: IAdminTokenWalletService;
   paymentAdapterFactory: PaymentAdapterFactoryFn;
   getEnv: (key: string) => string | undefined;
 }
@@ -115,7 +115,9 @@ export async function handleWebhookRequestLogic(
 export type WebhookRouterDependencies = {
   corsHandler: (req: Request) => Response | null;
   adminClientFactory: () => SupabaseClient<Database>;
-  tokenWalletServiceFactory: new (adminClient: SupabaseClient<Database>) => ITokenWalletService;
+  adminTokenWalletServiceFactory: (
+    adminClient: SupabaseClient<Database>,
+  ) => IAdminTokenWalletService;
   paymentAdapterFactory: PaymentAdapterFactoryFn;
   envGetter: (key: string) => string | undefined;
 };
@@ -123,7 +125,7 @@ export type WebhookRouterDependencies = {
 // This is the main handler for Deno serve, it composes dependencies.
 export async function webhookRouterHandler(
   req: Request,
-  routerDeps: WebhookRouterDependencies
+  routerDeps: WebhookRouterDependencies,
 ): Promise<Response> {
   const corsResponse = routerDeps.corsHandler(req);
   if (corsResponse) {
@@ -131,7 +133,7 @@ export async function webhookRouterHandler(
   }
 
   const adminClient = routerDeps.adminClientFactory();
-  const tokenWalletService = new routerDeps.tokenWalletServiceFactory(adminClient);
+  const tokenWalletService = routerDeps.adminTokenWalletServiceFactory(adminClient);
 
   const logicDependencies: WebhookHandlerDependencies = {
     adminClient,
@@ -143,11 +145,20 @@ export async function webhookRouterHandler(
   return handleWebhookRequestLogic(req, logicDependencies);
 }
 
+function webhooksPaymentAdapterFactory(
+  source: string,
+  adminClient: SupabaseClient<Database>,
+  tokenWalletService: IAdminTokenWalletService,
+): IPaymentGatewayAdapter | null {
+  return getPaymentAdapter(source, adminClient, tokenWalletService);
+}
+
 // The serve function uses the webhookRouterHandler with real dependencies.
 serve((req: Request) => webhookRouterHandler(req, {
   corsHandler: handleCorsPreflightRequest,
   adminClientFactory: () => createSupabaseAdminClient(),
-  tokenWalletServiceFactory: TokenWalletService,
-  paymentAdapterFactory: getPaymentAdapter,
+  adminTokenWalletServiceFactory: (adminClient: SupabaseClient<Database>) =>
+    new AdminTokenWalletService(adminClient),
+  paymentAdapterFactory: webhooksPaymentAdapterFactory,
   envGetter: Deno.env.get
-})); 
+}));

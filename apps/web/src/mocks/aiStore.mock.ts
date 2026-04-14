@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import { vi, Mock } from 'vitest';
 import { act } from '@testing-library/react';
 import { initialAiStateValues } from '@paynless/types';
@@ -38,28 +39,52 @@ const initializeMockAiState = (): AiStore => ({
     _updateChatContextInProfile: vi.fn(),
     _fetchAndStoreUserProfiles: vi.fn(),
     _dangerouslySetStateForTesting: vi.fn(),
-    addOptimisticMessageForReplay: vi.fn(),
+    sendStreamingMessage: vi.fn(),
+    checkAndReplayPendingChatAction: vi.fn(),
 });
 
 internalMockAiStoreState = initializeMockAiState();
 
+type MockAiStoreListener = () => void;
+
+const mockAiStoreListeners: Set<MockAiStoreListener> = new Set();
+
+const subscribeToMockAiStore = (listener: MockAiStoreListener) => {
+    mockAiStoreListeners.add(listener);
+    return () => {
+        mockAiStoreListeners.delete(listener);
+    };
+};
+
+const emitMockAiStoreChange = () => {
+    mockAiStoreListeners.forEach((listener) => {
+        listener();
+    });
+};
+
 export const internalMockAiStoreGetState = (): AiStore => internalMockAiStoreState;
 
-export function mockedUseAiStoreHookLogic<S>(
+export function useMockedAiStoreHookLogic<S>(
     selector?: (state: AiStore) => S
 ): S | AiStore {
+    const snapshot: AiStore = useSyncExternalStore(
+        subscribeToMockAiStore,
+        internalMockAiStoreGetState,
+        internalMockAiStoreGetState,
+    );
     if (selector) {
-        return selector(internalMockAiStoreState);
+        return selector(snapshot);
     }
-    return internalMockAiStoreState;
+    return snapshot;
 }
 
-mockedUseAiStoreHookLogic.getState = internalMockAiStoreGetState;
-mockedUseAiStoreHookLogic.setState = (newState: Partial<AiStore>) => {
+useMockedAiStoreHookLogic.getState = internalMockAiStoreGetState;
+useMockedAiStoreHookLogic.setState = (newState: Partial<AiStore>) => {
     internalMockAiStoreState = {
         ...internalMockAiStoreState,
         ...newState,
     };
+    emitMockAiStoreChange();
 };
 
 // --- Export mockSetState directly for easier use in tests ---
@@ -71,6 +96,7 @@ export const mockSetState = (updater: Partial<AiStore> | ((state: AiStore) => Pa
         newStatePart = updater;
     }
     internalMockAiStoreState = { ...internalMockAiStoreState, ...newStatePart };
+    emitMockAiStoreChange();
 };
 // --- End export ---
 
@@ -156,9 +182,10 @@ export const mockSetIsChatContextHydrated = (isHydrated: boolean) => {
 export const resetAiStoreMock = () => {
     // Reset to initial state values and re-mock actions
     internalMockAiStoreState = initializeMockAiState();
+    emitMockAiStoreChange();
     // The vi.fn() calls above ensure mocks are fresh, no need to loop and clear.
 };
 
 // The actual mock hook that tests will use.
 // It uses the mock implementation and returns slices of the mock state.
-export const useAiStore: MockedUseAiStoreHook = mockedUseAiStoreHookLogic; 
+export const useAiStore: MockedUseAiStoreHook = useMockedAiStoreHookLogic; 

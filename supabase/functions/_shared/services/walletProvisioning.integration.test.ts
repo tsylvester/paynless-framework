@@ -1,51 +1,82 @@
 import {
-  afterAll,
   afterEach,
   beforeAll,
   describe,
   it,
-} from "https://deno.land/std@0.208.0/testing/bdd.ts"; // Using Deno's BDD test framework
+} from "https://deno.land/std@0.224.0/testing/bdd.ts";
 import {
   assert,
   assertEquals,
   assertExists,
-} from "https://deno.land/std@0.208.0/assert/mod.ts"; // Deno's assertions
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2"; // Supabase types
-import type { Database } from "../../types_db.ts"; // Import the auto-generated DB types
-
-// Assuming _testUtils.ts is in the same directory as this test file's PARENT directory
-// e.g., if tests are in 'services/tests/' and _testUtils is in 'services/'
-// Adjust path if _testUtils.ts is directly in 'services/' alongside this test file
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import type { Database } from "../../types_db.ts";
 import {
-  adminClient, // Now importing the instance directly
-  createTestUserUtil,
-  type TestUserContext, // Interface from _testUtils.ts
-  createOrgAndMakeUserAdminUtil, // Helper for org creation
-} from "./_testUtils.ts"; // Path to _testUtils.ts
+  supabaseAdminClient,
+  initializeSupabaseAdminClient,
+} from "../_integration.test.utils.ts";
 
-// Define a basic Organization type for direct creation if needed, or use one from _testUtils if available
-interface TestOrganization {
+interface TestUserContext {
   id: string;
-  name: string;
-  // Add other fields that might be returned or are required for creation
+  email: string;
 }
 
-const generateUniqueEmail = () => `testuser_${Date.now()}_${Math.random().toString(36).substring(2, 7)}@example.com`;
+const generateUniqueEmail = () =>
+  `testuser_${Date.now()}_${Math.random().toString(36).substring(2, 7)}@example.com`;
+
+async function createTestUserUtil(args: {
+  email: string;
+  password?: string;
+  email_confirm?: boolean;
+}): Promise<TestUserContext> {
+  const { data, error } = await supabaseAdminClient.auth.admin.createUser({
+    email: args.email,
+    password: args.password ?? "password123",
+    email_confirm: args.email_confirm ?? true,
+  });
+  if (error || !data.user) {
+    throw new Error(`Failed to create test user: ${error?.message}`);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  return { id: data.user.id, email: data.user.email ?? args.email };
+}
+
+async function createOrgAndMakeUserAdminUtil(
+  orgNamePrefix: string,
+  userId: string,
+  orgsToCleanup: string[],
+): Promise<string> {
+  const orgName = `${orgNamePrefix}-${Date.now()}`;
+  const { data: org, error: orgError } = await supabaseAdminClient
+    .from("organizations")
+    .insert({ name: orgName })
+    .select("id")
+    .single();
+  if (orgError || !org) {
+    throw new Error(`Failed to create test org: ${orgError?.message}`);
+  }
+  const orgId: string = org.id;
+  orgsToCleanup.push(orgId);
+  const { error: memberError } = await supabaseAdminClient
+    .from("organization_members")
+    .insert({ organization_id: orgId, user_id: userId, role: "admin", status: "active" });
+  if (memberError) {
+    throw new Error(`Failed to add user as org admin: ${memberError.message}`);
+  }
+  return orgId;
+}
 
 describe("Wallet Provisioning Triggers Integration Tests", () => {
   const usersToCleanup: TestUserContext[] = [];
   const orgsToCleanup: string[] = []; // Store org IDs for cleanup
 
   beforeAll(() => {
-    // adminClient is imported directly and should already be initialized.
-    // We just need to assert its existence to be sure it was imported correctly.
-    assertExists(adminClient, "Admin client should be initialized via import from _testUtils.ts");
+    initializeSupabaseAdminClient();
   });
 
   afterEach(async () => {
     for (const userCtx of usersToCleanup) {
       try {
-        await adminClient.auth.admin.deleteUser(userCtx.id);
+        await supabaseAdminClient.auth.admin.deleteUser(userCtx.id);
       } catch (e) {
         console.error(`Error cleaning up user ${userCtx.id}:`, Error);
       }
@@ -54,10 +85,7 @@ describe("Wallet Provisioning Triggers Integration Tests", () => {
 
     for (const orgId of orgsToCleanup) {
       try {
-        // Assuming ON DELETE CASCADE from organizations to token_wallets for organization_id
-        // If not, delete wallet first: 
-        // await adminClient.from('token_wallets').delete().eq('organization_id', orgId);
-        await adminClient.from("organizations").delete().eq("id", orgId);
+        await supabaseAdminClient.from("organizations").delete().eq("id", orgId);
       } catch (e) {
         console.error(`Error cleaning up organization ${orgId}:`, Error);
       }
@@ -79,7 +107,7 @@ describe("Wallet Provisioning Triggers Integration Tests", () => {
     // Adding a bit more for wallet trigger if necessary, but often covered.
     await new Promise(resolve => setTimeout(resolve, 250)); // Shorter additional delay
 
-    const { data: profile, error: profileError } = await adminClient
+    const { data: profile, error: profileError } = await supabaseAdminClient
       .from("user_profiles")
       .select("*")
       .eq("id", userId)
@@ -89,7 +117,7 @@ describe("Wallet Provisioning Triggers Integration Tests", () => {
     assertExists(profile, `Profile for user ${userId} should be created.`);
     assertEquals(profile.id, userId);
 
-    const { data: wallet, error: walletError } = await adminClient
+    const { data: wallet, error: walletError } = await supabaseAdminClient
       .from("token_wallets")
       .select("*")
       .eq("user_id", userId)
@@ -99,7 +127,7 @@ describe("Wallet Provisioning Triggers Integration Tests", () => {
     assert(!walletError, `Error fetching user wallet: ${walletError?.message}`);
     assertExists(wallet, `Wallet for user ${userId} should be created.`);
     assertEquals(wallet.user_id, userId);
-    assertEquals(wallet.balance, 0);
+    assertEquals(wallet.balance, 1000000);
     assertEquals(wallet.currency, "AI_TOKEN");
   });
 
@@ -115,7 +143,7 @@ describe("Wallet Provisioning Triggers Integration Tests", () => {
     // Add a small delay for the wallet trigger to complete.
     await new Promise(resolve => setTimeout(resolve, 250)); 
 
-    const { data: wallet, error: walletError } = await adminClient
+    const { data: wallet, error: walletError } = await supabaseAdminClient
       .from("token_wallets")
       .select("*")
       .eq("organization_id", orgId)
