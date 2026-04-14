@@ -12,7 +12,8 @@ import type {
 import type { CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import { FileType } from "../../_shared/types/file_manager.types.ts";
 import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
-import { createMockTokenWalletService } from "../../_shared/services/tokenWalletService.mock.ts";
+import { createMockAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts";
+import { createMockUserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts";
 import { isChatApiRequest, isRecord } from "../../_shared/utils/type_guards.ts";
 import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
 import type {
@@ -455,14 +456,15 @@ Deno.test(
       return callIdx === 1 ? 100 : 40;
     };
 
-    const tokenWalletService = createMockTokenWalletService({
+    const adminTokenWalletService = createMockAdminTokenWalletService().instance;
+    const userTokenWalletService = createMockUserTokenWalletService({
       getBalance: () => Promise.resolve("1000000"),
     }).instance;
 
     const compressPromptBound = buildBoundCompressPromptFn({
       ragService: mockRag,
       countTokens,
-      tokenWalletService,
+      tokenWalletService: adminTokenWalletService,
     });
 
     const affordDeps = buildCalculateAffordabilityDeps({
@@ -481,7 +483,7 @@ Deno.test(
       executeModelCallAndSave: emcas,
       enqueueRenderJob: enqueue,
       calculateAffordability: boundCalculateAffordability,
-      tokenWalletService,
+      tokenWalletService: userTokenWalletService,
     });
 
     const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();

@@ -14,6 +14,7 @@ import { CompressPromptFn } from '../compressPrompt/compressPrompt.interface.ts'
 import { BoundCompressPromptFn } from '../compressPrompt/compressPrompt.interface.ts';
 import { CalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
 import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
+import type { BoundDebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 /**
  * Factory function to construct IJobContext at application boundary.
  * All fields are required and must be explicitly provided.
@@ -42,7 +43,8 @@ export function createJobContext(params: JobContextParams): IJobContext {
         countTokens: params.countTokens,
 
         // From ITokenContext
-        tokenWalletService: params.tokenWalletService,
+        adminTokenWalletService: params.adminTokenWalletService,
+        userTokenWalletService: params.userTokenWalletService,
 
         // From INotificationContext
         notificationService: params.notificationService,
@@ -85,11 +87,21 @@ export function createJobContext(params: JobContextParams): IJobContext {
  * @returns IExecuteModelCallContext with only fields needed for executeModelCallAndSave
  */
 export function createExecuteModelCallContext(root: IJobContext): IExecuteModelCallContext {
+    const boundDebitTokens: BoundDebitTokens = (params, payload) =>
+        root.debitTokens(
+            {
+                logger: root.logger,
+                tokenWalletService: root.adminTokenWalletService,
+            },
+            params,
+            payload,
+        );
+
     return {
         logger: root.logger,
         fileManager: root.fileManager,
         getAiProviderAdapter: root.getAiProviderAdapter,
-        tokenWalletService: root.tokenWalletService,
+        userTokenWalletService: root.userTokenWalletService,
         notificationService: root.notificationService,
         continueJob: root.continueJob,
         retryJob: root.retryJob,
@@ -97,7 +109,7 @@ export function createExecuteModelCallContext(root: IJobContext): IExecuteModelC
         isIntermediateChunk: root.isIntermediateChunk,
         determineContinuation: root.determineContinuation,
         buildUploadContext: root.buildUploadContext,
-        debitTokens: root.debitTokens,
+        debitTokens: boundDebitTokens,
     };
 }
 
@@ -126,7 +138,7 @@ export function createPrepareModelJobContext(
                 logger: root.logger,
                 ragService: root.ragService,
                 embeddingClient: root.embeddingClient,
-                tokenWalletService: root.tokenWalletService,
+                tokenWalletService: root.adminTokenWalletService,
                 countTokens: root.countTokens,
             },
             params,
@@ -148,7 +160,7 @@ export function createPrepareModelJobContext(
         logger: root.logger,
         applyInputsRequiredScope: root.applyInputsRequiredScope,
         countTokens: root.countTokens,
-        tokenWalletService: root.tokenWalletService,
+        adminTokenWalletService: root.adminTokenWalletService,
         validateWalletBalance: root.validateWalletBalance,
         validateModelCostRates: root.validateModelCostRates,
         ragService: root.ragService,

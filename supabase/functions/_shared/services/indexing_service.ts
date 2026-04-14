@@ -3,7 +3,7 @@ import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { RecursiveCharacterTextSplitter } from 'npm:@langchain/textsplitters';
 import { type Database, type TablesInsert } from '../../../functions/types_db.ts';
 import { ILogger, AiProviderAdapterInstance, EmbeddingResponse } from '../types.ts';
-import type { ITokenWalletService } from '../types/tokenWallet.types.ts';
+import type { IAdminTokenWalletService } from './tokenwallet/admin/adminTokenWalletService.interface.ts';
 import { IndexingError } from '../utils/errors.ts';
 import { ITextSplitter, IEmbeddingClient, IndexDocumentResult } from './indexing_service.interface.ts';
 
@@ -47,7 +47,7 @@ export class IndexingService {
     private logger: ILogger,
     private textSplitter: ITextSplitter,
     private embeddingClient: IEmbeddingClient,
-    private tokenWalletService: ITokenWalletService,
+    private tokenWalletService: IAdminTokenWalletService,
   ) {}
 
   async indexDocument(

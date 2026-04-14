@@ -31,7 +31,8 @@ import { getMockAiProviderAdapter } from "../../_shared/ai_service/ai_provider.m
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
 import { EmbeddingClient } from "../../_shared/services/indexing_service.ts";
-import { TokenWalletService } from "../../_shared/services/tokenWalletService.ts";
+import { UserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.ts";
+import { AdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import type {
   AiModelExtendedConfig,
@@ -179,7 +180,8 @@ describe("calculateAffordability integration: oversized path with real compressP
   let testProject: DialecticProject;
   let testSessionId: string;
   let testModelId: string;
-  let tokenWalletService: TokenWalletService;
+  let userWalletService: UserTokenWalletService;
+  let adminWalletService: AdminTokenWalletService;
   let testWalletId: string;
 
   beforeAll(async () => {
@@ -195,8 +197,9 @@ describe("calculateAffordability integration: oversized path with real compressP
     void jwt;
 
     await coreEnsureTestUserAndWallet(testUserId, 1_000_000, "local");
-    tokenWalletService = new TokenWalletService(adminClient, adminClient);
-    const walletForSuite = await tokenWalletService.getWalletForContext(testUserId);
+    userWalletService = new UserTokenWalletService(adminClient);
+    adminWalletService = new AdminTokenWalletService(adminClient);
+    const walletForSuite = await userWalletService.getWalletForContext(testUserId);
     if (walletForSuite === null) {
       throw new Error("Personal wallet must exist after coreEnsureTestUserAndWallet");
     }
@@ -369,7 +372,7 @@ describe("calculateAffordability integration: oversized path with real compressP
       logger: testLogger,
       ragService: mockRag,
       embeddingClient,
-      tokenWalletService,
+      tokenWalletService: adminWalletService,
       countTokens,
     };
     const boundCompressPrompt: BoundCompressPromptFn = (

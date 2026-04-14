@@ -48,7 +48,7 @@ function isFileManagerShape(value: unknown): value is ExecuteModelCallAndSaveDep
 
 function isTokenWalletServiceShape(
   value: unknown,
-): value is ExecuteModelCallAndSaveDeps['tokenWalletService'] {
+): value is ExecuteModelCallAndSaveDeps['userTokenWalletService'] {
   if (!isRecord(value)) {
     return false;
   }
@@ -75,7 +75,7 @@ export function isExecuteModelCallAndSaveDeps(value: unknown): value is ExecuteM
     'logger',
     'fileManager',
     'getAiProviderAdapter',
-    'tokenWalletService',
+    'userTokenWalletService',
     'notificationService',
     'continueJob',
     'retryJob',
@@ -99,7 +99,7 @@ export function isExecuteModelCallAndSaveDeps(value: unknown): value is ExecuteM
   if (typeof value.getAiProviderAdapter !== 'function') {
     return false;
   }
-  if (!isTokenWalletServiceShape(value.tokenWalletService)) {
+  if (!isTokenWalletServiceShape(value.userTokenWalletService)) {
     return false;
   }
   if (!isNotificationServiceShape(value.notificationService)) {

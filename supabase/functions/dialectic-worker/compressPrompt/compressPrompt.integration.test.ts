@@ -38,7 +38,8 @@ import {
     } from "./compressPrompt.guard.ts";
   import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
   import type { CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
-  import { TokenWalletService } from "../../_shared/services/tokenWalletService.ts";
+  import { UserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.ts";
+  import { AdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.ts";
   import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
   import { EmbeddingClient } from "../../_shared/services/indexing_service.ts";
   import { getMockAiProviderAdapter } from "../../_shared/ai_service/ai_provider.mock.ts";
@@ -66,7 +67,8 @@ import {
     let testSessionId: string;
     let testModelId: string;
     let tokenizerDeps: CountTokensDeps;
-    let tokenWalletService: TokenWalletService;
+    let userWalletService: UserTokenWalletService;
+    let adminWalletService: AdminTokenWalletService;
     let testWalletId: string;
   
     beforeAll(async () => {
@@ -83,8 +85,9 @@ import {
       void jwt;
   
       await coreEnsureTestUserAndWallet(testUserId, 1_000_000, "local");
-      tokenWalletService = new TokenWalletService(adminClient, adminClient);
-      const walletForSuite = await tokenWalletService.getWalletForContext(testUserId);
+      userWalletService = new UserTokenWalletService(adminClient);
+      adminWalletService = new AdminTokenWalletService(adminClient);
+      const walletForSuite = await userWalletService.getWalletForContext(testUserId);
       if (walletForSuite === null) {
         throw new Error("Personal wallet must exist after coreEnsureTestUserAndWallet");
       }
@@ -241,7 +244,7 @@ import {
         logger: testLogger,
         ragService: mockRag,
         embeddingClient,
-        tokenWalletService,
+        tokenWalletService: adminWalletService,
         countTokens,
       };
   
@@ -400,7 +403,7 @@ import {
         logger: testLogger,
         ragService: mockRag,
         embeddingClient,
-        tokenWalletService,
+        tokenWalletService: adminWalletService,
         countTokens,
       };
   
@@ -500,7 +503,7 @@ import {
         logger: testLogger,
         ragService: mockRag,
         embeddingClient,
-        tokenWalletService,
+        tokenWalletService: adminWalletService,
         countTokens,
       };
   

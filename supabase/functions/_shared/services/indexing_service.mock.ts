@@ -1,7 +1,7 @@
 // supabase/functions/_shared/services/indexing_service.mock.ts
 import { IndexingService } from './indexing_service.ts';
 import type { IndexDocumentResult } from './indexing_service.interface.ts';
-import { createMockTokenWalletService } from './tokenWalletService.mock.ts';
+import { createMockAdminTokenWalletService } from './tokenwallet/admin/adminTokenWalletService.mock.ts';
 import { MockLogger } from '../logger.mock.ts';
 import { ILogger } from '../types.ts';
 import { createMockSupabaseClient } from '../supabase.mock.ts';
@@ -24,7 +24,7 @@ export class MockIndexingService extends IndexingService {
       }),
     };
 
-    const mockTokenWalletService = createMockTokenWalletService().instance;
+    const mockTokenWalletService = createMockAdminTokenWalletService().instance;
 
     super(mockSupabaseClient as unknown as SupabaseClient<Database>, mockLogger, mockTextSplitter, mockEmbeddingClient, mockTokenWalletService);
   }

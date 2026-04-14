@@ -16,11 +16,11 @@ import type {
 import type { IEmbeddingClient } from "../../_shared/services/indexing_service.interface.ts";
 import { EmbeddingClient } from "../../_shared/services/indexing_service.ts";
 import { mockOpenAiAdapter } from "../../_shared/ai_service/openai_adapter.mock.ts";
-import type { ITokenWalletService } from "../../_shared/types/tokenWallet.types.ts";
+import type { IAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.interface.ts";
 import type { IRagService } from "../../_shared/services/rag_service.interface.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
-import { createMockTokenWalletService } from "../../_shared/services/tokenWalletService.mock.ts";
+import { createMockAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts";
 import { FileType } from "../../_shared/types/file_manager.types.ts";
 import type { RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
 import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
@@ -209,7 +209,7 @@ export type CompressPromptDepsOverrides = {
   logger?: ILogger;
   ragService?: IRagService;
   embeddingClient?: IEmbeddingClient;
-  tokenWalletService?: ITokenWalletService;
+  tokenWalletService?: IAdminTokenWalletService;
   countTokens?: CountTokensFn;
 };
 
@@ -225,9 +225,9 @@ export function buildCompressPromptDeps(
   const embeddingClient: IEmbeddingClient = overrides?.embeddingClient !== undefined
     ? overrides.embeddingClient
     : new EmbeddingClient(mockOpenAiAdapter);
-  const tokenWalletService: ITokenWalletService = overrides?.tokenWalletService !== undefined
+  const tokenWalletService: IAdminTokenWalletService = overrides?.tokenWalletService !== undefined
     ? overrides.tokenWalletService
-    : createMockTokenWalletService().instance;
+    : createMockAdminTokenWalletService().instance;
   const countTokens: CountTokensFn = overrides?.countTokens !== undefined
     ? overrides.countTokens
     : createMockCountTokens();

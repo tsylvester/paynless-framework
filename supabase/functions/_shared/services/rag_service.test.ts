@@ -29,7 +29,7 @@ import { PostgrestError } from 'npm:@supabase/postgrest-js@1.15.5';
 import { EmbeddingClient } from './indexing_service.ts';
 import { DummyAdapter } from '../ai_service/dummy_adapter.ts';
 import { MOCK_PROVIDER } from '../ai_service/ai_provider.mock.ts';
-import { createMockTokenWalletService } from '../services/tokenWalletService.mock.ts';
+import { createMockAdminTokenWalletService } from './tokenwallet/admin/adminTokenWalletService.mock.ts';
 import { FileType } from '../types/file_manager.types.ts';
 
 // Helper to create a compliant PostgrestError mock
@@ -181,7 +181,7 @@ describe('RagService', () => {
         rpcResults: { match_dialectic_chunks: { data: [], error: null } },
       });
 
-      const mockWallet = createMockTokenWalletService();
+      const mockWallet = createMockAdminTokenWalletService();
       deps.tokenWalletService = mockWallet.instance;
       service = new RagService(deps);
       const embeddingSpy = spy(deps.embeddingClient, 'getEmbedding');

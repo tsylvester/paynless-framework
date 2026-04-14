@@ -19,11 +19,7 @@ export type PaymentTransaction = Tables<'payment_transactions'>;
 
 export type UpdatePaymentTransactionFn = (
   transactionId: string,
-  updates: Partial<Omit<PaymentTransaction, 'id' | 'created_at' | 'user_id' | 'payment_provider' | 'transaction_type' | 'amount' | 'currency' | 'provider_transaction_id' | 'metadata_json'>> & { 
-    metadata_json?: Json | Record<string, unknown>;
-    status?: string; // Explicitly allow status here, or ensure it's not in Omit
-    gateway_transaction_id?: string; // Allow this as well, as it's used
-  },
+  updates: Partial<Omit<PaymentTransaction, 'id' | 'created_at' | 'user_id' | 'payment_provider' | 'transaction_type' | 'amount' | 'currency' | 'provider_transaction_id'>>,
   stripeEventId?: string
 ) => Promise<PaymentTransaction | null>;
 

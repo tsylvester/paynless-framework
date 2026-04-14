@@ -573,8 +573,9 @@ Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', asy
     assertEquals(typeof deps.countTokens, 'function');
     assertEquals(typeof deps.prepareModelJob, 'function');
 
-    // Wallet service must be injected
-    assertExists(deps.tokenWalletService, 'Token wallet service should be present');
+    // Wallet services must be injected
+    assertExists(deps.userTokenWalletService, 'User token wallet service should be present');
+    assertExists(deps.adminTokenWalletService, 'Admin token wallet service should be present');
 });
 
 // Worker composition root must bind the same `_shared/utils` implementations as `createMockJobContextParams`

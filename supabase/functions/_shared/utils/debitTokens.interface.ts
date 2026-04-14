@@ -41,3 +41,8 @@ export type DebitTokens = (
     params: DebitTokensParams,
     payload: DebitTokensPayload
 ) => Promise<DebitTokensReturn>;
+
+export type BoundDebitTokens = (
+    params: DebitTokensParams,
+    payload: DebitTokensPayload
+) => Promise<DebitTokensReturn>;

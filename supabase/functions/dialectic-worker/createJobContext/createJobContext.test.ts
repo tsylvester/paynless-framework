@@ -152,7 +152,7 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals(result.logger, root.logger);
       assertEquals(result.fileManager, root.fileManager);
       assertEquals(result.getAiProviderAdapter, root.getAiProviderAdapter);
-      assertEquals(result.tokenWalletService, root.tokenWalletService);
+      assertEquals(result.userTokenWalletService, root.userTokenWalletService);
       assertEquals(result.notificationService, root.notificationService);
       assertEquals(result.continueJob, root.continueJob);
       assertEquals(result.retryJob, root.retryJob);
@@ -160,7 +160,7 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals(result.isIntermediateChunk, root.isIntermediateChunk);
       assertEquals(result.determineContinuation, root.determineContinuation);
       assertEquals(result.buildUploadContext, root.buildUploadContext);
-      assertEquals(result.debitTokens, root.debitTokens);
+      assertEquals(typeof result.debitTokens, 'function');
     });
 
     it('result does NOT include ragService, countTokens, pickLatest, applyInputsRequiredScope, validateWalletBalance, validateModelCostRates, downloadFromStorage, embeddingClient, prepareModelJob', () => {
@@ -231,7 +231,7 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals(result.logger, root.logger);
       assertEquals(result.applyInputsRequiredScope, root.applyInputsRequiredScope);
       assertEquals(result.countTokens, root.countTokens);
-      assertEquals(result.tokenWalletService, root.tokenWalletService);
+      assertEquals(result.adminTokenWalletService, root.adminTokenWalletService);
       assertEquals(result.validateWalletBalance, root.validateWalletBalance);
       assertEquals(result.validateModelCostRates, root.validateModelCostRates);
       assertEquals(result.ragService, root.ragService);
@@ -276,7 +276,7 @@ describe('createJobContext Factory and Slicers', () => {
         logger: root.logger,
         applyInputsRequiredScope: root.applyInputsRequiredScope,
         countTokens: root.countTokens,
-        tokenWalletService: root.tokenWalletService,
+        adminTokenWalletService: root.adminTokenWalletService,
         validateWalletBalance: root.validateWalletBalance,
         validateModelCostRates: root.validateModelCostRates,
         ragService: root.ragService,
@@ -349,7 +349,7 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals(recordedCompressDeps[0].logger, root.logger);
       assertEquals(recordedCompressDeps[0].ragService, root.ragService);
       assertEquals(recordedCompressDeps[0].embeddingClient, root.embeddingClient);
-      assertEquals(recordedCompressDeps[0].tokenWalletService, root.tokenWalletService);
+      assertEquals(recordedCompressDeps[0].tokenWalletService, root.adminTokenWalletService);
       assertEquals(recordedCompressDeps[0].countTokens, root.countTokens);
     });
   });

@@ -10,7 +10,8 @@ import { MockLogger } from '../../_shared/logger.mock.ts';
 import { MockFileManagerService } from '../../_shared/services/file_manager.mock.ts';
 import { MockRagService } from '../../_shared/services/rag_service.mock.ts';
 import { MockIndexingService } from '../../_shared/services/indexing_service.mock.ts';
-import { createMockTokenWalletService } from '../../_shared/services/tokenWalletService.mock.ts';
+import { createMockAdminTokenWalletService } from '../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts';
+import { createMockUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts';
 import { createDocumentRendererMock } from '../../_shared/services/document_renderer.mock.ts';
 import { MockPromptAssembler } from '../../_shared/prompt-assembler/prompt-assembler.mock.ts';
 import { mockNotificationService } from '../../_shared/utils/notification.service.mock.ts';
@@ -24,7 +25,7 @@ import { resolveFinishReason } from '../../_shared/utils/resolveFinishReason.ts'
 import { isIntermediateChunk } from '../../_shared/utils/isIntermediateChunk.ts';
 import { determineContinuation } from '../../_shared/utils/determineContinuation/determineContinuation.ts';
 import { buildUploadContext } from '../../_shared/utils/buildUploadContext/buildUploadContext.ts';
-import type { DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
+import type { BoundDebitTokens, DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 import { createMockFindSourceDocuments } from '../findSourceDocuments.mock.ts';
 import { buildMockBoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.mock.ts';
 import {
@@ -117,10 +118,15 @@ describe('JobContext.interface.ts contracts', () => {
     });
 
     describe('ITokenContext', () => {
-        it('requires tokenWalletService', () => {
-            const ctx: ITokenContext = { tokenWalletService: createMockTokenWalletService().instance };
-            assertEquals(typeof ctx.tokenWalletService, 'object');
-            assertEquals(ctx.tokenWalletService === null, false);
+        it('requires adminTokenWalletService and userTokenWalletService', () => {
+            const ctx: ITokenContext = {
+                adminTokenWalletService: createMockAdminTokenWalletService().instance,
+                userTokenWalletService: createMockUserTokenWalletService().instance,
+            };
+            assertEquals(typeof ctx.adminTokenWalletService, 'object');
+            assertEquals(ctx.adminTokenWalletService === null, false);
+            assertEquals(typeof ctx.userTokenWalletService, 'object');
+            assertEquals(ctx.userTokenWalletService === null, false);
         });
     });
 
@@ -136,8 +142,8 @@ describe('JobContext.interface.ts contracts', () => {
         it('requires twelve members for executeModelCallAndSave', () => {
             const logger = new MockLogger();
             const fileManager = new MockFileManagerService();
-            const tokenWalletService = createMockTokenWalletService().instance;
-            const debitTokens: DebitTokens = async () => ({
+            const userTokenWalletService = createMockUserTokenWalletService().instance;
+            const debitTokens: BoundDebitTokens = async () => ({
                 error: new Error('interface test stub'),
                 retriable: false,
             });
@@ -155,7 +161,7 @@ describe('JobContext.interface.ts contracts', () => {
                     sendMessageStream: mockSendMessageStream,
                     listModels: async () => [],
                 }),
-                tokenWalletService: tokenWalletService,
+                userTokenWalletService: userTokenWalletService,
                 notificationService: mockNotificationService,
                 continueJob: async () => ({ enqueued: false }),
                 retryJob: async () => ({}),
@@ -168,8 +174,8 @@ describe('JobContext.interface.ts contracts', () => {
             assertEquals(typeof ctx.logger, 'object');
             assertEquals(typeof ctx.fileManager, 'object');
             assertEquals(typeof ctx.getAiProviderAdapter, 'function');
-            assertEquals(typeof ctx.tokenWalletService, 'object');
-            assertEquals(ctx.tokenWalletService === null, false);
+            assertEquals(typeof ctx.userTokenWalletService, 'object');
+            assertEquals(ctx.userTokenWalletService === null, false);
             assertEquals(typeof ctx.notificationService, 'object');
             assertEquals(ctx.notificationService === null, false);
             assertEquals(typeof ctx.continueJob, 'function');
@@ -186,12 +192,12 @@ describe('JobContext.interface.ts contracts', () => {
         it('requires eleven members', () => {
             const logger = new MockLogger();
             const ragService = new MockRagService();
-            const tokenWalletService = createMockTokenWalletService().instance;
+            const adminTokenWalletService = createMockAdminTokenWalletService().instance;
             const ctx: IPrepareModelJobContext = {
                 logger: logger,
                 applyInputsRequiredScope: applyInputsRequiredScope,
                 countTokens: () => 0,
-                tokenWalletService: tokenWalletService,
+                adminTokenWalletService: adminTokenWalletService,
                 validateWalletBalance: validateWalletBalance,
                 validateModelCostRates: validateModelCostRates,
                 ragService: ragService,
@@ -253,7 +259,8 @@ describe('JobContext.interface.ts contracts', () => {
             const fileManager = new MockFileManagerService();
             const ragService = new MockRagService();
             const indexingService = new MockIndexingService();
-            const tokenWalletService = createMockTokenWalletService().instance;
+            const adminTokenWalletService = createMockAdminTokenWalletService().instance;
+            const userTokenWalletService = createMockUserTokenWalletService().instance;
             const documentRenderer = createDocumentRendererMock().renderer;
             const promptAssembler = new MockPromptAssembler();
             const logger = new MockLogger();
@@ -302,7 +309,8 @@ describe('JobContext.interface.ts contracts', () => {
                     }),
                 },
                 countTokens: () => 0,
-                tokenWalletService: tokenWalletService,
+                adminTokenWalletService: adminTokenWalletService,
+                userTokenWalletService: userTokenWalletService,
                 notificationService: mockNotificationService,
                 getSeedPromptForStage: async () => ({
                     content: 'Seed prompt content',
@@ -349,7 +357,8 @@ describe('JobContext.interface.ts contracts', () => {
                 indexingService: params.indexingService,
                 embeddingClient: params.embeddingClient,
                 countTokens: params.countTokens,
-                tokenWalletService: params.tokenWalletService,
+                adminTokenWalletService: params.adminTokenWalletService,
+                userTokenWalletService: params.userTokenWalletService,
                 notificationService: params.notificationService,
                 promptAssembler: params.promptAssembler,
                 getSeedPromptForStage: params.getSeedPromptForStage,

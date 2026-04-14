@@ -1,7 +1,7 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database, Tables } from '../../types_db.ts';
 import type { ILogger } from '../../_shared/types.ts';
-import type { ITokenWalletService } from '../../_shared/types/tokenWallet.types.ts';
+import type { IUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts';
 import type { ICompressionStrategy } from '../../_shared/utils/vector_utils.interface.ts';
 import type {
   DialecticContributionRow,
@@ -23,7 +23,7 @@ import type { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJ
 export interface PrepareModelJobDeps {
   logger: ILogger;
   applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
-  tokenWalletService: ITokenWalletService;
+  tokenWalletService: IUserTokenWalletService;
   validateWalletBalance: ValidateWalletBalanceFn;
   validateModelCostRates: ValidateModelCostRatesFn;
   calculateAffordability: BoundCalculateAffordabilityFn;
