@@ -10,7 +10,6 @@ import type {
 	IEmbeddingClient,
 	IIndexingService,
 } from "../_shared/services/indexing_service.interface.ts";
-import type { IRagService } from "../_shared/services/rag_service.interface.ts";
 import type {
 	DeleteFromStorageFn,
 	DownloadFromStorageFn,
@@ -24,11 +23,6 @@ import type {
 	ModelContributionFileTypes,
 } from "../_shared/types/file_manager.types.ts";
 import type { NotificationServiceType } from "../_shared/types/notification.service.types.ts";
-import type {
-	CountableChatPayload,
-	CountTokensDeps,
-} from "../_shared/types/tokenizer.types.ts";
-import type { ITokenWalletService } from "../_shared/types/tokenWallet.types.ts";
 import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts";
 import type {
 	GenerateInstallationTokenDeps,
@@ -52,7 +46,6 @@ import type {
 	DeconstructedPathInfo,
 	DeconstructStoragePathFn,
 } from "../_shared/utils/path_deconstructor.types.ts";
-import type { debitTokens } from "../_shared/utils/debitTokens.ts";
 import type {
 	IJobContext,
 	IPlanJobContext,
@@ -1925,57 +1918,6 @@ export type SourceFeedback = Omit<DialecticFeedback, "resource_description"> & {
 	attempt_count?: number; // The attempt_count of the source document itself, derived from its filename
 };
 
-export interface IDialecticJobDeps extends GenerateContributionsDeps {
-	getSeedPromptForStage: (
-		dbClient: SupabaseClient<Database>,
-		projectId: string,
-		sessionId: string,
-		stageSlug: string,
-		iterationNumber: number,
-		downloadFromStorage: GenerateContributionsDeps["downloadFromStorage"],
-	) => Promise<SeedPromptData>;
-	continueJob: (
-		deps: IContinueJobDeps,
-		dbClient: SupabaseClient<Database>,
-		job: DialecticJobRow,
-		aiResponse: UnifiedAIResponse,
-		savedContribution: DialecticContributionRow,
-		projectOwnerUserId: string,
-	) => Promise<IContinueJobResult>;
-	retryJob: (
-		deps: { logger: ILogger; notificationService: NotificationServiceType },
-		dbClient: SupabaseClient<Database>,
-		job: DialecticJobRow,
-		currentAttempt: number,
-		failedContributionAttempts: FailedAttemptError[],
-		projectOwnerUserId: string,
-	) => Promise<{ error?: Error }>;
-	notificationService: NotificationServiceType;
-	// Properties from the former IPlanComplexJobDeps
-	planComplexStage?: PlanComplexStageFn;
-	getGranularityPlanner?: (
-		strategyId: string,
-	) => GranularityPlannerFn | undefined;
-	ragService?: IRagService;
-	countTokens?: (
-		deps: CountTokensDeps,
-		payload: CountableChatPayload,
-		modelConfig: AiModelExtendedConfig,
-	) => number;
-	getAiProviderConfig?: (
-		dbClient: SupabaseClient<Database>,
-		modelId: string,
-	) => Promise<AiModelExtendedConfig>;
-	indexingService?: IIndexingService;
-	embeddingClient?: IEmbeddingClient;
-	promptAssembler?: IPromptAssembler;
-	getAiProviderAdapter?: (
-		deps: FactoryDependencies,
-	) => AiProviderAdapterInstance | null;
-	tokenWalletService?: ITokenWalletService;
-	documentRenderer: IDocumentRenderer;
-	debitTokens?: typeof debitTokens;
-}
 export type RecipeStep = {
 	step_name: string;
 	description: string;
