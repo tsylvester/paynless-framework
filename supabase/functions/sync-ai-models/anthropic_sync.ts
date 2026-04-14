@@ -74,6 +74,7 @@ export const defaultSyncAnthropicDeps: SyncAnthropicDeps = {
       updated_at: new Date().toISOString(),
       is_default_embedding: false,
       is_enabled: true,
+      is_default_generation: false,
     };
     const adapter = new AnthropicAdapter(dummyProvider, apiKey, logger);
     // We call with `getRaw: true` to get the detailed data for our logs.

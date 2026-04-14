@@ -1,8 +1,9 @@
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { describe, it, beforeEach } from "jsr:@std/testing/bdd";
-import { spy, assertSpyCalls, type Spy, assertSpyCall } from "jsr:@std/testing/mock";
+import { spy, assertSpyCalls, type Spy } from "jsr:@std/testing/mock";
 import { SupabaseClient } from "npm:@supabase/supabase-js";
 import Stripe from "npm:stripe";
+import type { Database } from "../../types_db.ts";
 import {
     cancelSubscription,
     resumeSubscription,
@@ -11,7 +12,7 @@ import { HandlerError } from "./current.ts";
 import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/supabase.mock.ts";
 
 // --- Mocks & Spies ---
-let mockSupabaseClient: SupabaseClient;
+let mockSupabaseClient: SupabaseClient<Database>;
 let mockStripeInstance: Stripe;
 
 // --- Mock Setup Helpers ---
@@ -72,8 +73,8 @@ describe("Subscription Handlers", () => {
                     }
                 }
             };
-            const { client } = createMockSupabaseClient(mockSupabaseConfig);
-            mockSupabaseClient = client;
+            const { client } = createMockSupabaseClient(undefined, mockSupabaseConfig);
+            mockSupabaseClient = client as unknown as SupabaseClient<Database>;
 
             // Basic success config for Stripe update
             stripeUpdateSpy = createStripeUpdateSpy({ id: stripeSubId, cancel_at_period_end: true, status: 'active' });
@@ -98,10 +99,10 @@ describe("Subscription Handlers", () => {
             const mockConfig: MockSupabaseDataConfig = {
                 genericMockResults: { user_subscriptions: { select: () => Promise.resolve({ data: null, error: dbError }) } }
             };
-            const { client } = createMockSupabaseClient(mockConfig);
+            const { client } = createMockSupabaseClient(undefined, mockConfig);
             
             await assertRejects(
-                async () => await cancelSubscription(client, mockStripeInstance, userId, stripeSubId),
+                async () => await cancelSubscription(client as unknown as SupabaseClient<Database>, mockStripeInstance, userId, stripeSubId),
                 HandlerError,
                 "Subscription not found or access denied"
             );
@@ -112,10 +113,10 @@ describe("Subscription Handlers", () => {
             const mockConfig: MockSupabaseDataConfig = {
                 genericMockResults: { user_subscriptions: { select: () => Promise.resolve({ data: null, error: null }) } }
             };
-            const { client } = createMockSupabaseClient(mockConfig);
+            const { client } = createMockSupabaseClient(undefined, mockConfig);
 
             await assertRejects(
-                async () => await cancelSubscription(client, mockStripeInstance, userId, stripeSubId),
+                async () => await cancelSubscription(client as unknown as SupabaseClient<Database>, mockStripeInstance, userId, stripeSubId),
                 HandlerError,
                 "Subscription not found or access denied"
             );
@@ -127,10 +128,10 @@ describe("Subscription Handlers", () => {
              const mockConfig: MockSupabaseDataConfig = {
                 genericMockResults: { user_subscriptions: { select: () => Promise.resolve({ data: [subWithoutStripeId], error: null }) } }
             };
-            const { client } = createMockSupabaseClient(mockConfig);
+            const { client } = createMockSupabaseClient(undefined, mockConfig);
 
             await assertRejects(
-                async () => await cancelSubscription(client, mockStripeInstance, userId, stripeSubId),
+                async () => await cancelSubscription(client as unknown as SupabaseClient<Database>, mockStripeInstance, userId, stripeSubId),
                 HandlerError,
                 "Subscription data inconsistent"
             );
@@ -160,10 +161,10 @@ describe("Subscription Handlers", () => {
                     }
                 }
             };
-            const { client } = createMockSupabaseClient(mockConfig);
+            const { client } = createMockSupabaseClient(undefined, mockConfig);
             
             await assertRejects(
-                async () => await cancelSubscription(client, mockStripeInstance, userId, stripeSubId),
+                async () => await cancelSubscription(client as unknown as SupabaseClient<Database>, mockStripeInstance, userId, stripeSubId),
                 HandlerError,
                 "Failed to update local subscription status after cancellation"
             );
@@ -187,8 +188,8 @@ describe("Subscription Handlers", () => {
                     }
                 }
             };
-            const { client } = createMockSupabaseClient(mockSupabaseConfig);
-            mockSupabaseClient = client;
+            const { client } = createMockSupabaseClient(undefined, mockSupabaseConfig);
+            mockSupabaseClient = client as unknown as SupabaseClient<Database>;
 
             // Basic success config for Stripe update (resume)
             stripeUpdateSpy = createStripeUpdateSpy({ id: stripeSubId, cancel_at_period_end: false, status: 'active' });
@@ -213,10 +214,10 @@ describe("Subscription Handlers", () => {
             const mockConfig: MockSupabaseDataConfig = {
                 genericMockResults: { user_subscriptions: { select: () => Promise.resolve({ data: null, error: dbError }) } }
             };
-            const { client } = createMockSupabaseClient(mockConfig);
+            const { client } = createMockSupabaseClient(undefined, mockConfig);
 
             await assertRejects(
-                async () => await resumeSubscription(client, mockStripeInstance, userId, stripeSubId),
+                async () => await resumeSubscription(client as unknown as SupabaseClient<Database>, mockStripeInstance, userId, stripeSubId),
                 HandlerError,
                 "Subscription not found or access denied"
             );
@@ -227,10 +228,10 @@ describe("Subscription Handlers", () => {
             const mockConfig: MockSupabaseDataConfig = {
                 genericMockResults: { user_subscriptions: { select: () => Promise.resolve({ data: null, error: null }) } }
             };
-            const { client } = createMockSupabaseClient(mockConfig);
+            const { client } = createMockSupabaseClient(undefined, mockConfig);
             
             await assertRejects(
-                async () => await resumeSubscription(client, mockStripeInstance, userId, stripeSubId),
+                async () => await resumeSubscription(client as unknown as SupabaseClient<Database>, mockStripeInstance, userId, stripeSubId),
                 HandlerError,
                 "Subscription not found or access denied"
             );
@@ -242,10 +243,10 @@ describe("Subscription Handlers", () => {
              const mockConfig: MockSupabaseDataConfig = {
                 genericMockResults: { user_subscriptions: { select: () => Promise.resolve({ data: [subWithoutStripeId], error: null }) } }
             };
-            const { client } = createMockSupabaseClient(mockConfig);
+            const { client } = createMockSupabaseClient(undefined, mockConfig);
 
             await assertRejects(
-                async () => await resumeSubscription(client, mockStripeInstance, userId, stripeSubId),
+                async () => await resumeSubscription(client as unknown as SupabaseClient<Database>, mockStripeInstance, userId, stripeSubId),
                 HandlerError,
                 "Subscription data inconsistent"
             );
@@ -275,10 +276,10 @@ describe("Subscription Handlers", () => {
                     }
                 }
             };
-            const { client } = createMockSupabaseClient(mockConfig);
+            const { client } = createMockSupabaseClient(undefined, mockConfig);
             
             await assertRejects(
-                async () => await resumeSubscription(client, mockStripeInstance, userId, stripeSubId),
+                async () => await resumeSubscription(client as unknown as SupabaseClient<Database>, mockStripeInstance, userId, stripeSubId),
                 HandlerError,
                 "Failed to update local subscription status after resumption"
             );

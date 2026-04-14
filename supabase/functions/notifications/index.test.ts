@@ -37,6 +37,10 @@ const mockNotifications: NotificationRow[] = [
         data: { message: "Test notification 1" },
         read: false,
         created_at: new Date(Date.now() - 10000).toISOString(),
+        is_internal_event: false,
+        link_path: null,
+        message: "Test notification 1",
+        title: null,
     },
     {
         id: "noti-2",
@@ -45,6 +49,10 @@ const mockNotifications: NotificationRow[] = [
         data: { message: "Test notification 2", target_path: "/dashboard" },
         read: true,
         created_at: new Date(Date.now() - 20000).toISOString(),
+        is_internal_event: false,
+        link_path: "/dashboard",
+        message: "Test notification 2",
+        title: null,
     },
 ];
 

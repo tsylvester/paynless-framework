@@ -21,7 +21,7 @@ const PROVIDER_ENV_KEY_MAP: Record<string, string> = {
 
 // --- Dependency Injection Setup ---
 export interface AiProvidersHandlerDeps {
-  createSupabaseClient: (url: string, key: string) => SupabaseClient;
+  createSupabaseClient: (url: string, key: string, authHeader?: string) => SupabaseClient;
   getEnv: (key: string) => string | undefined;
   handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
   createJsonResponse: typeof createSuccessResponse;
@@ -29,9 +29,13 @@ export interface AiProvidersHandlerDeps {
 }
 
 export const defaultDeps: AiProvidersHandlerDeps = {
-  createSupabaseClient: (url, key) => createClient(url, key, { 
-    // Add global options if needed, like auth headers for non-anon usage
-    // global: { headers: { Authorization: `Bearer ${supabaseServiceRoleKey}` } } 
+  createSupabaseClient: (url, key, authHeader) => createClient(url, key, {
+    global: { headers: { Authorization: authHeader ?? '' } },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
   }),
   getEnv: Deno.env.get,
   handleCorsPreflightRequest: handleCorsPreflightRequest,
@@ -58,15 +62,21 @@ export async function mainHandler(req: Request, deps: AiProvidersHandlerDeps = d
   }
 
   try {
-    // Use Anon key - assuming RLS handles auth if needed, or it's public
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return createErrorResponse('Missing or invalid Authorization header', 401, req);
+    }
+
     const supabaseUrl = getEnvDep('SUPABASE_URL') ?? '';
-    const supabaseServiceRoleKey = getEnvDep('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const supabaseAnonKey = getEnvDep('SUPABASE_ANON_KEY') ?? '';
     console.log(`[ai-providers] Checking Env Vars: OPENAI_API_KEY=${getEnvDep('OPENAI_API_KEY') ? 'SET' : 'MISSING'}, ANTHROPIC_API_KEY=${getEnvDep('ANTHROPIC_API_KEY') ? 'SET' : 'MISSING'}, GOOGLE_API_KEY=${getEnvDep('GOOGLE_API_KEY') ? 'SET' : 'MISSING'}`);
-    if (!supabaseUrl || !supabaseServiceRoleKey) {
-        console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.");
+    if (!supabaseUrl || !supabaseAnonKey) {
+        console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
         return createErrorResponse("Server configuration error.", 500, req);
     }
-    const supabaseClient = createSupabaseClientDep(supabaseUrl, supabaseServiceRoleKey);
+    const supabaseClient = createSupabaseClientDep === defaultDeps.createSupabaseClient
+      ? createSupabaseClientDep(supabaseUrl, supabaseAnonKey, authHeader)
+      : createSupabaseClientDep(supabaseUrl, supabaseAnonKey);
 
     // Fetch provider column as well
     const { data: allActiveProviders, error } = await supabaseClient
