@@ -8,6 +8,11 @@
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts"
   },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.89.0",
+    "@google/generative-ai": "^0.24.1",
+    "openai": "^6.34.0"
+  },
   "devDependencies": {
     "@types/node": "^20.11.24",
     "typescript": "^5.5.3",
