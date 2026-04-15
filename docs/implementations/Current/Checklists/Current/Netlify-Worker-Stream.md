@@ -617,89 +617,89 @@
     * `[✅]`   JWT forwarded correctly in Authorization header — proven by unit test
     * `[✅]`   No Supabase access in workload — provable by static analysis (no `@supabase/supabase-js` import in this file)
 
-* `[ ]`   `_shared/utils/jsonSanitizer/jsonSanitizer` **[BE] Define `SanitizeJsonContentFn` named injectable type and add `isJsonSanitizationResult` guard**
+* `[✅]`   `_shared/utils/jsonSanitizer/jsonSanitizer` **[BE] Define `SanitizeJsonContentFn` named injectable type and add `isJsonSanitizationResult` guard**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Define `SanitizeJsonContentFn` as a named, exported function type in `jsonSanitizer.interface.ts` so that all consumers (`assembleChunks`, `saveResponse`) replace inline ad-hoc type declarations with the canonical named type
-    * `[ ]`   Functional goals:
+  * `[✅]`   `objective`
+    * `[✅]`   Define `SanitizeJsonContentFn` as a named, exported function type in `jsonSanitizer.interface.ts` so that all consumers (`assembleChunks`, `saveResponse`) replace inline ad-hoc type declarations with the canonical named type
+    * `[✅]`   Functional goals:
       * `SanitizeJsonContentFn` added to `jsonSanitizer.interface.ts`
       * `sanitizeJsonContent` in `jsonSanitizer.ts` explicitly typed as `SanitizeJsonContentFn`
       * `isJsonSanitizationResult` guard added to enable runtime narrowing
-    * `[ ]`   Non-functional constraints:
+    * `[✅]`   Non-functional constraints:
       * No change to sanitization logic — typing and export surface only
       * All existing callers continue to compile without modification to their import site
 
-  * `[ ]`   `role`
-    * `[ ]`   Role: infra/utility — pure, stateless string transformation
-    * `[ ]`   Why appropriate: no external deps; pure input → output; injectable for testability across all consumers
-    * `[ ]`   Must NOT: perform I/O, mutate state, or throw
+  * `[✅]`   `role`
+    * `[✅]`   Role: infra/utility — pure, stateless string transformation
+    * `[✅]`   Why appropriate: no external deps; pure input → output; injectable for testability across all consumers
+    * `[✅]`   Must NOT: perform I/O, mutate state, or throw
 
-  * `[ ]`   `module`
-    * `[ ]`   Bounded context: `_shared/utils/jsonSanitizer`
-    * `[ ]`   Inside boundary: JSON sanitization logic, result type, injectable function type, type guard
-    * `[ ]`   Outside boundary: all consumers — they reference `SanitizeJsonContentFn`, they do not inline the signature
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: `_shared/utils/jsonSanitizer`
+    * `[✅]`   Inside boundary: JSON sanitization logic, result type, injectable function type, type guard
+    * `[✅]`   Outside boundary: all consumers — they reference `SanitizeJsonContentFn`, they do not inline the signature
 
-  * `[ ]`   `deps`
-    * `[ ]`   None — pure function, no injected deps
+  * `[✅]`   `deps`
+    * `[✅]`   None — pure function, no injected deps
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Input: `content: string`
-    * `[ ]`   Output: `JsonSanitizationResult`
+  * `[✅]`   `context_slice`
+    * `[✅]`   Input: `content: string`
+    * `[✅]`   Output: `JsonSanitizationResult`
 
-  * `[ ]`   `jsonSanitizer.interface.test.ts`
-    * `[ ]`   Valid `JsonSanitizationResult`: all six fields present and correctly typed — guard accepts
-    * `[ ]`   Invalid: missing `sanitized` → guard rejects; missing `wasSanitized` → guard rejects; missing `duplicateKeysResolved` array → guard rejects; wrong type on any boolean field → guard rejects; `originalLength` not a number → guard rejects
-    * `[ ]`   `SanitizeJsonContentFn` type shape: a variable typed as `SanitizeJsonContentFn` is assignable from `(content: string) => JsonSanitizationResult` — compiler proof via typed assignment
+  * `[✅]`   `jsonSanitizer.interface.test.ts`
+    * `[✅]`   Valid `JsonSanitizationResult`: all six fields present and correctly typed — guard accepts
+    * `[✅]`   Invalid: missing `sanitized` → guard rejects; missing `wasSanitized` → guard rejects; missing `duplicateKeysResolved` array → guard rejects; wrong type on any boolean field → guard rejects; `originalLength` not a number → guard rejects
+    * `[✅]`   `SanitizeJsonContentFn` type shape: a variable typed as `SanitizeJsonContentFn` is assignable from `(content: string) => JsonSanitizationResult` — compiler proof via typed assignment
 
-  * `[ ]`   `jsonSanitizer.interface.ts` *(update existing)*
-    * `[ ]`   Add `export type SanitizeJsonContentFn = (content: string) => JsonSanitizationResult`
-    * `[ ]`   `JsonSanitizationResult` unchanged
+  * `[✅]`   `jsonSanitizer.interface.ts` *(update existing)*
+    * `[✅]`   Add `export type SanitizeJsonContentFn = (content: string) => JsonSanitizationResult`
+    * `[✅]`   `JsonSanitizationResult` unchanged
 
-  * `[ ]`   `jsonSanitizer.interaction.spec`
-    * `[ ]`   Pure synchronous function — no side effects, no async, no external calls
-    * `[ ]`   Given any string input, returns `JsonSanitizationResult` with all six fields populated
-    * `[ ]`   Never throws — all failure modes expressed via result fields
+  * `[✅]`   `jsonSanitizer.interaction.spec`
+    * `[✅]`   Pure synchronous function — no side effects, no async, no external calls
+    * `[✅]`   Given any string input, returns `JsonSanitizationResult` with all six fields populated
+    * `[✅]`   Never throws — all failure modes expressed via result fields
 
-  * `[ ]`   `jsonSanitizer.guard.test.ts`
-    * `[ ]`   `isJsonSanitizationResult`: accepts fully valid object; rejects missing `sanitized`; rejects missing `wasSanitized`; rejects missing `wasStructurallyFixed`; rejects missing `hasDuplicateKeys`; rejects `duplicateKeysResolved` that is not an array; rejects missing `originalLength`; rejects `originalLength` that is not a number
+  * `[✅]`   `jsonSanitizer.guard.test.ts`
+    * `[✅]`   `isJsonSanitizationResult`: accepts fully valid object; rejects missing `sanitized`; rejects missing `wasSanitized`; rejects missing `wasStructurallyFixed`; rejects missing `hasDuplicateKeys`; rejects `duplicateKeysResolved` that is not an array; rejects missing `originalLength`; rejects `originalLength` that is not a number
 
-  * `[ ]`   `jsonSanitizer.guard.ts`
-    * `[ ]`   `isJsonSanitizationResult(v: unknown): v is JsonSanitizationResult`
-    * `[ ]`   Checks: `typeof v.sanitized === 'string'`, `typeof v.wasSanitized === 'boolean'`, `typeof v.wasStructurallyFixed === 'boolean'`, `typeof v.hasDuplicateKeys === 'boolean'`, `Array.isArray(v.duplicateKeysResolved)`, `typeof v.originalLength === 'number'`
+  * `[✅]`   `jsonSanitizer.guard.ts`
+    * `[✅]`   `isJsonSanitizationResult(v: unknown): v is JsonSanitizationResult`
+    * `[✅]`   Checks: `typeof v.sanitized === 'string'`, `typeof v.wasSanitized === 'boolean'`, `typeof v.wasStructurallyFixed === 'boolean'`, `typeof v.hasDuplicateKeys === 'boolean'`, `Array.isArray(v.duplicateKeysResolved)`, `typeof v.originalLength === 'number'`
 
-  * `[ ]`   `jsonSanitizer.test.ts` *(update existing — add new tests at end)*
-    * `[ ]`   Existing tests unchanged and GREEN
-    * `[ ]`   New: `sanitizeJsonContent` assigned to a `SanitizeJsonContentFn`-typed variable compiles without error — compiler proof of type conformance
+  * `[✅]`   `jsonSanitizer.test.ts` *(update existing — add new tests at end)*
+    * `[✅]`   Existing tests unchanged and GREEN
+    * `[✅]`   New: `sanitizeJsonContent` assigned to a `SanitizeJsonContentFn`-typed variable compiles without error — compiler proof of type conformance
 
-  * `[ ]`   `construction`
-    * `[ ]`   No construction required — pure exported function
+  * `[✅]`   `construction`
+    * `[✅]`   No construction required — pure exported function
 
-  * `[ ]`   `jsonSanitizer.ts` *(update existing)*
-    * `[ ]`   Add explicit type annotation: `export const sanitizeJsonContent: SanitizeJsonContentFn = ...`
-    * `[ ]`   No logic changes
+  * `[✅]`   `jsonSanitizer.ts` *(update existing)*
+    * `[✅]`   Add explicit type annotation: `export const sanitizeJsonContent: SanitizeJsonContentFn = ...`
+    * `[✅]`   No logic changes
 
-  * `[ ]`   `jsonSanitizer.mock.ts`
-    * `[ ]`   `createMockSanitizeJsonContent(overrides?: Partial<JsonSanitizationResult>): SanitizeJsonContentFn`
-    * `[ ]`   Default: returns `{ sanitized: input, wasSanitized: false, wasStructurallyFixed: false, hasDuplicateKeys: false, duplicateKeysResolved: [], originalLength: input.length }`
+  * `[✅]`   `jsonSanitizer.mock.ts`
+    * `[✅]`   `createMockSanitizeJsonContent(overrides?: Partial<JsonSanitizationResult>): SanitizeJsonContentFn`
+    * `[✅]`   Default: returns `{ sanitized: input, wasSanitized: false, wasStructurallyFixed: false, hasDuplicateKeys: false, duplicateKeysResolved: [], originalLength: input.length }`
 
-  * `[ ]`   `jsonSanitizer.provides.ts`
-    * `[ ]`   Exports: `sanitizeJsonContent`, `SanitizeJsonContentFn`, `JsonSanitizationResult`, `isJsonSanitizationResult`, `createMockSanitizeJsonContent`
+  * `[✅]`   `jsonSanitizer.provides.ts`
+    * `[✅]`   Exports: `sanitizeJsonContent`, `SanitizeJsonContentFn`, `JsonSanitizationResult`, `isJsonSanitizationResult`, `createMockSanitizeJsonContent`
 
-  * `[ ]`   `jsonSanitizer.integration.test.ts`
-    * `[ ]`   Inject `sanitizeJsonContent` as `SanitizeJsonContentFn` into a stub consumer dep struct; assert stub invokes it with a string and receives a valid `JsonSanitizationResult` confirmed by `isJsonSanitizationResult`
-    * `[ ]`   Prerequisite: this node must be complete before `assembleChunks` and `saveResponse` nodes
+  * `[✅]`   `jsonSanitizer.integration.test.ts`
+    * `[✅]`   Inject `sanitizeJsonContent` as `SanitizeJsonContentFn` into a stub consumer dep struct; assert stub invokes it with a string and receives a valid `JsonSanitizationResult` confirmed by `isJsonSanitizationResult`
+    * `[✅]`   Prerequisite: this node must be complete before `assembleChunks` and `saveResponse` nodes
 
-  * `[ ]`   `directionality`
-    * `[ ]`   Layer: infra/utility
-    * `[ ]`   Deps inward: none
-    * `[ ]`   Provides outward: `SanitizeJsonContentFn` consumed by `assembleChunks` and `saveResponse`
-    * `[ ]`   No cycles
+  * `[✅]`   `directionality`
+    * `[✅]`   Layer: infra/utility
+    * `[✅]`   Deps inward: none
+    * `[✅]`   Provides outward: `SanitizeJsonContentFn` consumed by `assembleChunks` and `saveResponse`
+    * `[✅]`   No cycles
 
-  * `[ ]`   `requirements`
-    * `[ ]`   `SanitizeJsonContentFn` exported and callable — proven by compiler
-    * `[ ]`   `sanitizeJsonContent` explicitly typed as `SanitizeJsonContentFn` — proven by compiler
-    * `[ ]`   `isJsonSanitizationResult` correct — proven by guard tests
-    * `[ ]`   No regression to existing sanitization logic — proven by existing tests GREEN
+  * `[✅]`   `requirements`
+    * `[✅]`   `SanitizeJsonContentFn` exported and callable — proven by compiler
+    * `[✅]`   `sanitizeJsonContent` explicitly typed as `SanitizeJsonContentFn` — proven by compiler
+    * `[✅]`   `isJsonSanitizationResult` correct — proven by guard tests
+    * `[✅]`   No regression to existing sanitization logic — proven by existing tests GREEN
 
 * `[ ]`   `_shared/utils/assembleChunks/assembleChunks` **[BE] Replace inline ad-hoc `sanitizeJsonContent` type in `AssembleChunksDeps` with named `SanitizeJsonContentFn`**
 

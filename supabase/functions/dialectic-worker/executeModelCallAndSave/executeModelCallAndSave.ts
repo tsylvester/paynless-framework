@@ -29,9 +29,9 @@ import type {
   FinishReason,
   TokenUsage,
 } from '../../_shared/types.ts';
-import { sanitizeJsonContent } from '../../_shared/utils/jsonSanitizer.ts';
-import { isJsonSanitizationResult } from '../../_shared/utils/type-guards/type_guards.jsonSanitizer.ts';
-import type { JsonSanitizationResult } from '../../_shared/types/jsonSanitizer.interface.ts';
+import { sanitizeJsonContent } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
+import { isJsonSanitizationResult } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.guard.ts';
+import type { JsonSanitizationResult } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts';
 import {
   isDocumentKey,
   isDocumentRelated,

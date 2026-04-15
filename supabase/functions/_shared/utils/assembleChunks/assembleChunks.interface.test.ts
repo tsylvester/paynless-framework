@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { JsonSanitizationResult } from "../../types/jsonSanitizer.interface.ts";
+import { JsonSanitizationResult } from "../jsonSanitizer/jsonSanitizer.interface.ts";
 import {
     AssembleChunksDeps,
     AssembleChunksError,

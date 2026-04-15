@@ -1,4 +1,4 @@
-import { JsonSanitizationResult } from '../types/jsonSanitizer.interface.ts';
+import { JsonSanitizationResult, SanitizeJsonContentFn } from './jsonSanitizer.interface.ts';
 import { parseTree, Node } from 'https://esm.sh/jsonc-parser@3.2.0';
 
 /**
@@ -8,7 +8,9 @@ import { parseTree, Node } from 'https://esm.sh/jsonc-parser@3.2.0';
  * @param rawContent - The raw JSON string content, potentially wrapped in backticks, quotes, or whitespace
  * @returns A JsonSanitizationResult containing the sanitized content, sanitization flag, and original length
  */
-export function sanitizeJsonContent(rawContent: string): JsonSanitizationResult {
+export const sanitizeJsonContent: SanitizeJsonContentFn = function sanitizeJsonContent(
+    rawContent: string,
+): JsonSanitizationResult {
     const originalLength = rawContent.length;
     let sanitized = rawContent;
     let wasSanitized = false;
@@ -148,7 +150,7 @@ export function sanitizeJsonContent(rawContent: string): JsonSanitizationResult 
     };
 
     return result;
-}
+};
 
 // --- Module-Private Helper: Stream Truncation Repair ---
 

@@ -18,3 +18,6 @@ export interface JsonSanitizationResult {
     /** The original content length before sanitization for debugging/logging purposes. */
     originalLength: number;
 }
+
+/** Pure string in → {@link JsonSanitizationResult} out; used for DI at boundaries. */
+export type SanitizeJsonContentFn = (content: string) => JsonSanitizationResult;

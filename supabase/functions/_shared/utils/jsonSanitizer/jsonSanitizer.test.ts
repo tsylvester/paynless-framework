@@ -1,6 +1,6 @@
 import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import { sanitizeJsonContent } from './jsonSanitizer.ts';
-import type { JsonSanitizationResult } from '../types/jsonSanitizer.interface.ts';
+import { sanitizeJsonContent } from '../jsonSanitizer/jsonSanitizer.ts';
+import { JsonSanitizationResult, SanitizeJsonContentFn } from './jsonSanitizer.interface.ts';
 
 Deno.test('sanitizeJsonContent', async (t) => {
     await t.step('should pass through valid JSON without sanitization', () => {
@@ -659,4 +659,10 @@ Deno.test('sanitizeJsonContent', async (t) => {
         const parsed = JSON.parse(result.sanitized);
         assertEquals(parsed.score, 3.1);
     });
+});
+
+Deno.test('Contract: sanitizeJsonContent is assignable to SanitizeJsonContentFn', () => {
+    const sanitize: SanitizeJsonContentFn = sanitizeJsonContent;
+    const result: JsonSanitizationResult = sanitize('{}');
+    assertEquals(result.sanitized, '{}');
 });

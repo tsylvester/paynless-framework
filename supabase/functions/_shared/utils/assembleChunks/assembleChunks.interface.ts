@@ -1,4 +1,4 @@
-import { JsonSanitizationResult } from "../../types/jsonSanitizer.interface.ts";
+import { JsonSanitizationResult } from "../jsonSanitizer/jsonSanitizer.interface.ts";
 
 /**
  * Injected dependencies for `assembleChunks`.

@@ -2,8 +2,8 @@ import { assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { 
     isJsonSanitizationResult,
     isValidJsonString,
-} from './type_guards.jsonSanitizer.ts';
-import type { JsonSanitizationResult } from '../../types/jsonSanitizer.interface.ts';
+} from './jsonSanitizer.guard.ts';
+import type { JsonSanitizationResult } from './jsonSanitizer.interface.ts';
 
 // --- Mocks ---
 

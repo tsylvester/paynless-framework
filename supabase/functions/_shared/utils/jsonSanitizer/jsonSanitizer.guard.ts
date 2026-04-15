@@ -1,5 +1,5 @@
-import { isRecord } from './type_guards.common.ts';
-import type { JsonSanitizationResult } from '../../types/jsonSanitizer.interface.ts';
+import { isRecord } from '../type-guards/type_guards.common.ts';
+import type { JsonSanitizationResult } from './jsonSanitizer.interface.ts';
 
 export function isJsonSanitizationResult(value: unknown): value is JsonSanitizationResult {
     if (!isRecord(value)) return false;
