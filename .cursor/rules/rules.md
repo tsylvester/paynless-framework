@@ -83,6 +83,7 @@
 * Do not type as "unknown" to avoid locating and applying specific application or database types. 
 * Use type guards to prove and narrow types for the compiler when required.
 * Never import entire libraries with `*`, never alias imports, never add `"type"` to type imports.
+* Reexporting is only permitted in barrel exports for a package or workspace. These files are typically named *index* or *provides*. 
 * A ternary is not a type guard, a ternary is a default value. Default values are prohibited in production code.
 * Every object and variable must be typed. There are no exceptions to this rule. If you are building a function and find untyped vars or objects, stop, explain the discovery, propose the new checklist node to type the vars or objects, and halt.
 

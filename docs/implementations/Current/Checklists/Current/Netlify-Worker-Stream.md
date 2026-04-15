@@ -497,125 +497,291 @@
     * ` [✅]`   `stream()` returns correct `AiAdapterResult` for Gemini — proven by unit test
     * ` [✅]`   Satisfies `isAiAdapter` at runtime — proven by integration test
 
-* `[ ]`   `netlify/functions/ai-stream/ai-stream` **[BE] Netlify Async Workload — AI streaming orchestrator**
+* `[✅]`   `netlify/functions/ai-stream/ai-stream` **[BE] Netlify Async Workload — AI streaming orchestrator**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Receive a dialectic stream event from the queue, dispatch to the correct provider adapter, stream the AI response, and POST the assembled result to the EMCAS back-half Edge Function — with no Supabase database access, no finish_reason speculation, and full Netlify retry semantics
-    * `[ ]`   Functional goals:
+  * `[✅]`   `objective`
+    * `[✅]`   Receive a dialectic stream event from the queue, dispatch to the correct provider adapter, stream the AI response, and POST the assembled result to the EMCAS back-half Edge Function — with no Supabase database access, no finish_reason speculation, and full Netlify retry semantics
+    * `[✅]`   Functional goals:
       * Validate the incoming event payload
       * Select the correct `AiAdapter` by `api_identifier` prefix
       * Read provider API key from Netlify env vars
       * Call adapter `stream()` and receive `{ assembled_content, token_usage }`
       * POST `{ job_id, assembled_content, token_usage }` to the back-half URL with `Authorization: Bearer <user_jwt>`
       * Return success; on POST failure let Netlify retry the transmission
-    * `[ ]`   Non-functional constraints:
+    * `[✅]`   Non-functional constraints:
       * Event payload ≤ 500 KB (Netlify limit) — enforced by front-half at enqueue time
       * No Supabase access — workload does not read or write DB
       * No finish_reason in POST body — back-half examines blob locally
 
+  * `[✅]`   `role`
+    * `[✅]`   Role: app/orchestrator (Netlify Async Workload handler)
+    * `[✅]`   Why appropriate: only this layer has the Netlify runtime context (`AsyncWorkloadEvent`) and bridges the AI provider adapters to the Supabase back-half
+    * `[✅]`   Must NOT: access Supabase, modify job state, classify finish_reason, send notifications, or implement streaming logic directly
+
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: `netlify/functions/ai-stream` — Netlify-side async workload
+    * `[✅]`   Inside boundary: event validation, adapter dispatch, back-half HTTP POST
+    * `[✅]`   Outside boundary: AI streaming internals (in adapters), job state (in Supabase), post-processing (in EMCAS back-half)
+
+  * `[✅]`   `deps`
+    * `[✅]`   `createOpenAINodeAdapter` — from OpenAI adapter node; dispatched for `openai-*`
+    * `[✅]`   `createAnthropicNodeAdapter` — from Anthropic adapter node; dispatched for `anthropic-*`
+    * `[✅]`   `createGoogleNodeAdapter` — from Google adapter node; dispatched for `google-*`
+    * `[✅]`   `@netlify/async-workloads` npm package — provides `asyncWorkloadFn`, `AsyncWorkloadEvent`
+    * `[✅]`   `node:https` / `fetch` — for HTTP POST to back-half
+    * `[✅]`   Env vars: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `DIALECTIC_SAVERESPONSE_URL`
+    * `[✅]`   No reverse deps; no Supabase client
+
+  * `[✅]`   `context_slice`
+    * `[✅]`   From event: `{ job_id: string, api_identifier: string, extended_model_config: NodeModelConfig, chat_api_request: NodeChatApiRequest, user_jwt: string }`
+    * `[✅]`   To adapters: `AiAdapterParams`
+    * `[✅]`   To back-half: `{ job_id, assembled_content, token_usage }` with `Authorization: Bearer <user_jwt>` header
+    * `[✅]`   No over-fetching
+
+  * `[✅]`   `ai-stream.interface.test.ts`
+    * `[✅]`   Valid `AiStreamEvent`: all required fields present and typed correctly
+    * `[✅]`   Valid `AiStreamPayload`: `job_id`, `assembled_content`, `token_usage` (nullable)
+    * `[✅]`   Invalid: missing `job_id`, missing `user_jwt`, empty `api_identifier`, unknown `api_identifier` prefix → guard rejects
+    * `[✅]`   `api_identifier` dispatch: `openai-*`, `anthropic-*`, `google-*` → resolves; anything else → error
+
+  * `[✅]`   `ai-stream.interface.ts`
+    * `[✅]`   `AiStreamEvent`: `{ job_id: string; api_identifier: string; extended_model_config: NodeModelConfig; chat_api_request: NodeChatApiRequest; user_jwt: string }`
+    * `[✅]`   `AiStreamPayload`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null }`
+    * `[✅]`   `AiStreamDeps`: `{ openaiAdapter: AiAdapter; anthropicAdapter: AiAdapter; googleAdapter: AiAdapter; Url: string; getApiKey(apiIdentifier: string): string }`
+
+  * `[✅]`   `ai-stream.interaction.spec`
+    * `[✅]`   Netlify queue delivers event; workload receives it via `asyncWorkloadFn` handler
+    * `[✅]`   Workload validates event shape via guard; invalid event → `ErrorDoNotRetry` thrown (malformed event cannot be fixed by retry)
+    * `[✅]`   Dispatches to adapter by `api_identifier` prefix; unknown prefix → `ErrorDoNotRetry`
+    * `[✅]`   Calls `adapter.stream(params)` — on error, throws (Netlify retries the model call)
+    * `[✅]`   On stream success: POSTs `AiStreamPayload` to `DIALECTIC_SAVERESPONSE_URL` with JWT header
+    * `[✅]`   POST success (2xx): workload completes successfully
+    * `[✅]`   POST failure (non-2xx or network error): throws (Netlify retries the POST, not the model call — step boundary)
+    * `[✅]`   Two distinct retry points via `event.step.run`: step-1 wraps adapter call; step-2 wraps back-half POST
+
+  * `[✅]`   `ai-stream.guard.test.ts`
+    * `[✅]`   `isAiStreamEvent`: valid, rejects missing fields, rejects unknown prefix
+    * `[✅]`   `isAiStreamPayload`: valid, rejects missing `job_id`, accepts null `token_usage`
+    * `[✅]`   `isAiStreamDeps`: valid, rejects missing adapters or missing `saveResponseUrl`
+
+  * `[✅]`   `ai-stream.guard.ts`
+    * `[✅]`   `isAiStreamEvent(v: unknown): v is AiStreamEvent`
+    * `[✅]`   `isAiStreamPayload(v: unknown): v is AiStreamPayload`
+    * `[✅]`   `isAiStreamDeps(v: unknown): v is AiStreamDeps`
+
+  * `[✅]`   `ai-stream.test.ts`
+    * `[✅]`   Invalid event → `ErrorDoNotRetry` thrown, no adapter called
+    * `[✅]`   Unknown `api_identifier` prefix → `ErrorDoNotRetry` thrown
+    * `[✅]`   Valid event, `openai-*` → OpenAI mock adapter called; result POSTed to back-half
+    * `[✅]`   Valid event, `anthropic-*` → Anthropic mock adapter called
+    * `[✅]`   Valid event, `google-*` → Google mock adapter called
+    * `[✅]`   Adapter stream error → throws (Netlify retries step-1)
+    * `[✅]`   Adapter success, back-half POST returns 4xx → throws (Netlify retries step-2)
+    * `[✅]`   Full happy path: adapter returns result → POST body matches `AiStreamPayload` → JWT header present
+
+  * `[✅]`   `construction`
+    * `[✅]`   `createAiStreamDeps(): AiStreamDeps` — reads env vars, instantiates adapters
+    * `[✅]`   Wired at module load; `asyncWorkloadFn` receives `event: AsyncWorkloadEvent<AiStreamEvent>`
+    * `[✅]`   `asyncWorkloadConfig` exports event name `'ai-stream'`, `maxRetries: 4`
+
+  * `[✅]`   `ai-stream.ts`
+    * `[✅]`   Exports default `asyncWorkloadFn` handler and `asyncWorkloadConfig`
+    * `[✅]`   Validates event data via `isAiStreamEvent` — `ErrorDoNotRetry` on failure
+    * `[✅]`   Dispatches adapter by prefix
+    * `[✅]`   `step.run('stream-ai', ...)` wraps adapter call
+    * `[✅]`   `step.run('post-', ...)` wraps HTTP POST with JWT header
+    * `[✅]`   Throws on POST non-2xx
+
+  * `[✅]`   `ai-stream.mock.ts`
+    * `[✅]`   `createMockAiStreamDeps(overrides?)`: returns controllable `AiStreamDeps`
+    * `[✅]`   Default: all three adapters are mocks; `SaveResponseUrl` is `'http://localhost/mock-saveResponse'`; `getApiKey` returns `'mock-key'`
+
+  * `[✅]`   `ai-stream.provides.ts`
+    * `[✅]`   Exports: workload handler (default), `asyncWorkloadConfig`, `createAiStreamDeps`
+
+  * `[✅]`   `ai-stream.integration.test.ts`
+    * `[✅]`   Full chain: mock event → workload → mock OpenAI adapter → mock back-half POST server → asserts POST body and headers
+    * `[✅]`   Retry semantics: step-1 failure retries without re-entering step-2; step-2 failure does not re-invoke adapter
+    * `[✅]`   Uses mocked adapters and mocked HTTP server — no live calls
+
+  * `[✅]`   `directionality`
+    * `[✅]`   Layer: app/orchestrator (Netlify runtime)
+    * `[✅]`   Deps inward: three adapter nodes, `@netlify/async-workloads`, env vars
+    * `[✅]`   Provides outward: `ai-stream` event handler consumed by Netlify queue
+    * `[✅]`   No cycles
+
+  * `[✅]`   `requirements`
+    * `[✅]`   Invalid event never retried — `ErrorDoNotRetry` — proven by unit test
+    * `[✅]`   Adapter stream error causes Netlify step-1 retry — proven by unit test
+    * `[✅]`   Back-half POST failure causes Netlify step-2 retry without re-calling adapter — proven by integration test
+    * `[✅]`   JWT forwarded correctly in Authorization header — proven by unit test
+    * `[✅]`   No Supabase access in workload — provable by static analysis (no `@supabase/supabase-js` import in this file)
+
+* `[ ]`   `_shared/utils/jsonSanitizer/jsonSanitizer` **[BE] Define `SanitizeJsonContentFn` named injectable type and add `isJsonSanitizationResult` guard**
+
+  * `[ ]`   `objective`
+    * `[ ]`   Define `SanitizeJsonContentFn` as a named, exported function type in `jsonSanitizer.interface.ts` so that all consumers (`assembleChunks`, `saveResponse`) replace inline ad-hoc type declarations with the canonical named type
+    * `[ ]`   Functional goals:
+      * `SanitizeJsonContentFn` added to `jsonSanitizer.interface.ts`
+      * `sanitizeJsonContent` in `jsonSanitizer.ts` explicitly typed as `SanitizeJsonContentFn`
+      * `isJsonSanitizationResult` guard added to enable runtime narrowing
+    * `[ ]`   Non-functional constraints:
+      * No change to sanitization logic — typing and export surface only
+      * All existing callers continue to compile without modification to their import site
+
   * `[ ]`   `role`
-    * `[ ]`   Role: app/orchestrator (Netlify Async Workload handler)
-    * `[ ]`   Why appropriate: only this layer has the Netlify runtime context (`AsyncWorkloadEvent`) and bridges the AI provider adapters to the Supabase back-half
-    * `[ ]`   Must NOT: access Supabase, modify job state, classify finish_reason, send notifications, or implement streaming logic directly
+    * `[ ]`   Role: infra/utility — pure, stateless string transformation
+    * `[ ]`   Why appropriate: no external deps; pure input → output; injectable for testability across all consumers
+    * `[ ]`   Must NOT: perform I/O, mutate state, or throw
 
   * `[ ]`   `module`
-    * `[ ]`   Bounded context: `netlify/functions/ai-stream` — Netlify-side async workload
-    * `[ ]`   Inside boundary: event validation, adapter dispatch, back-half HTTP POST
-    * `[ ]`   Outside boundary: AI streaming internals (in adapters), job state (in Supabase), post-processing (in EMCAS back-half)
+    * `[ ]`   Bounded context: `_shared/utils/jsonSanitizer`
+    * `[ ]`   Inside boundary: JSON sanitization logic, result type, injectable function type, type guard
+    * `[ ]`   Outside boundary: all consumers — they reference `SanitizeJsonContentFn`, they do not inline the signature
 
   * `[ ]`   `deps`
-    * `[ ]`   `createOpenAINodeAdapter` — from OpenAI adapter node; dispatched for `openai-*`
-    * `[ ]`   `createAnthropicNodeAdapter` — from Anthropic adapter node; dispatched for `anthropic-*`
-    * `[ ]`   `createGoogleNodeAdapter` — from Google adapter node; dispatched for `google-*`
-    * `[ ]`   `@netlify/async-workloads` npm package — provides `asyncWorkloadFn`, `AsyncWorkloadEvent`
-    * `[ ]`   `node:https` / `fetch` — for HTTP POST to back-half
-    * `[ ]`   Env vars: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `DIALECTIC_SAVERESPONSE_URL`
-    * `[ ]`   No reverse deps; no Supabase client
+    * `[ ]`   None — pure function, no injected deps
 
   * `[ ]`   `context_slice`
-    * `[ ]`   From event: `{ job_id: string, api_identifier: string, extended_model_config: NodeModelConfig, chat_api_request: NodeChatApiRequest, user_jwt: string }`
-    * `[ ]`   To adapters: `AiAdapterParams`
-    * `[ ]`   To back-half: `{ job_id, assembled_content, token_usage }` with `Authorization: Bearer <user_jwt>` header
-    * `[ ]`   No over-fetching
+    * `[ ]`   Input: `content: string`
+    * `[ ]`   Output: `JsonSanitizationResult`
 
-  * `[ ]`   `ai-stream.interface.test.ts`
-    * `[ ]`   Valid `AiStreamEvent`: all required fields present and typed correctly
-    * `[ ]`   Valid `AiStreamPayload`: `job_id`, `assembled_content`, `token_usage` (nullable)
-    * `[ ]`   Invalid: missing `job_id`, missing `user_jwt`, empty `api_identifier`, unknown `api_identifier` prefix → guard rejects
-    * `[ ]`   `api_identifier` dispatch: `openai-*`, `anthropic-*`, `google-*` → resolves; anything else → error
+  * `[ ]`   `jsonSanitizer.interface.test.ts`
+    * `[ ]`   Valid `JsonSanitizationResult`: all six fields present and correctly typed — guard accepts
+    * `[ ]`   Invalid: missing `sanitized` → guard rejects; missing `wasSanitized` → guard rejects; missing `duplicateKeysResolved` array → guard rejects; wrong type on any boolean field → guard rejects; `originalLength` not a number → guard rejects
+    * `[ ]`   `SanitizeJsonContentFn` type shape: a variable typed as `SanitizeJsonContentFn` is assignable from `(content: string) => JsonSanitizationResult` — compiler proof via typed assignment
 
-  * `[ ]`   `ai-stream.interface.ts`
-    * `[ ]`   `AiStreamEvent`: `{ job_id: string; api_identifier: string; extended_model_config: NodeModelConfig; chat_api_request: NodeChatApiRequest; user_jwt: string }`
-    * `[ ]`   `AiStreamPayload`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null }`
-    * `[ ]`   `AiStreamDeps`: `{ openaiAdapter: AiAdapter; anthropicAdapter: AiAdapter; googleAdapter: AiAdapter; Url: string; getApiKey(apiIdentifier: string): string }`
+  * `[ ]`   `jsonSanitizer.interface.ts` *(update existing)*
+    * `[ ]`   Add `export type SanitizeJsonContentFn = (content: string) => JsonSanitizationResult`
+    * `[ ]`   `JsonSanitizationResult` unchanged
 
-  * `[ ]`   `ai-stream.interaction.spec`
-    * `[ ]`   Netlify queue delivers event; workload receives it via `asyncWorkloadFn` handler
-    * `[ ]`   Workload validates event shape via guard; invalid event → `ErrorDoNotRetry` thrown (malformed event cannot be fixed by retry)
-    * `[ ]`   Dispatches to adapter by `api_identifier` prefix; unknown prefix → `ErrorDoNotRetry`
-    * `[ ]`   Calls `adapter.stream(params)` — on error, throws (Netlify retries the model call)
-    * `[ ]`   On stream success: POSTs `AiStreamPayload` to `DIALECTIC_SAVERESPONSE_URL` with JWT header
-    * `[ ]`   POST success (2xx): workload completes successfully
-    * `[ ]`   POST failure (non-2xx or network error): throws (Netlify retries the POST, not the model call — step boundary)
-    * `[ ]`   Two distinct retry points via `event.step.run`: step-1 wraps adapter call; step-2 wraps back-half POST
+  * `[ ]`   `jsonSanitizer.interaction.spec`
+    * `[ ]`   Pure synchronous function — no side effects, no async, no external calls
+    * `[ ]`   Given any string input, returns `JsonSanitizationResult` with all six fields populated
+    * `[ ]`   Never throws — all failure modes expressed via result fields
 
-  * `[ ]`   `ai-stream.guard.test.ts`
-    * `[ ]`   `isAiStreamEvent`: valid, rejects missing fields, rejects unknown prefix
-    * `[ ]`   `isAiStreamPayload`: valid, rejects missing `job_id`, accepts null `token_usage`
-    * `[ ]`   `isAiStreamDeps`: valid, rejects missing adapters or missing `saveResponseUrl`
+  * `[ ]`   `jsonSanitizer.guard.test.ts`
+    * `[ ]`   `isJsonSanitizationResult`: accepts fully valid object; rejects missing `sanitized`; rejects missing `wasSanitized`; rejects missing `wasStructurallyFixed`; rejects missing `hasDuplicateKeys`; rejects `duplicateKeysResolved` that is not an array; rejects missing `originalLength`; rejects `originalLength` that is not a number
 
-  * `[ ]`   `ai-stream.guard.ts`
-    * `[ ]`   `isAiStreamEvent(v: unknown): v is AiStreamEvent`
-    * `[ ]`   `isAiStreamPayload(v: unknown): v is AiStreamPayload`
-    * `[ ]`   `isAiStreamDeps(v: unknown): v is AiStreamDeps`
+  * `[ ]`   `jsonSanitizer.guard.ts`
+    * `[ ]`   `isJsonSanitizationResult(v: unknown): v is JsonSanitizationResult`
+    * `[ ]`   Checks: `typeof v.sanitized === 'string'`, `typeof v.wasSanitized === 'boolean'`, `typeof v.wasStructurallyFixed === 'boolean'`, `typeof v.hasDuplicateKeys === 'boolean'`, `Array.isArray(v.duplicateKeysResolved)`, `typeof v.originalLength === 'number'`
 
-  * `[ ]`   `ai-stream.test.ts`
-    * `[ ]`   Invalid event → `ErrorDoNotRetry` thrown, no adapter called
-    * `[ ]`   Unknown `api_identifier` prefix → `ErrorDoNotRetry` thrown
-    * `[ ]`   Valid event, `openai-*` → OpenAI mock adapter called; result POSTed to back-half
-    * `[ ]`   Valid event, `anthropic-*` → Anthropic mock adapter called
-    * `[ ]`   Valid event, `google-*` → Google mock adapter called
-    * `[ ]`   Adapter stream error → throws (Netlify retries step-1)
-    * `[ ]`   Adapter success, back-half POST returns 4xx → throws (Netlify retries step-2)
-    * `[ ]`   Full happy path: adapter returns result → POST body matches `AiStreamPayload` → JWT header present
+  * `[ ]`   `jsonSanitizer.test.ts` *(update existing — add new tests at end)*
+    * `[ ]`   Existing tests unchanged and GREEN
+    * `[ ]`   New: `sanitizeJsonContent` assigned to a `SanitizeJsonContentFn`-typed variable compiles without error — compiler proof of type conformance
 
   * `[ ]`   `construction`
-    * `[ ]`   `createAiStreamDeps(): AiStreamDeps` — reads env vars, instantiates adapters
-    * `[ ]`   Wired at module load; `asyncWorkloadFn` receives `event: AsyncWorkloadEvent<AiStreamEvent>`
-    * `[ ]`   `asyncWorkloadConfig` exports event name `'ai-stream'`, `maxRetries: 4`
+    * `[ ]`   No construction required — pure exported function
 
-  * `[ ]`   `ai-stream.ts`
-    * `[ ]`   Exports default `asyncWorkloadFn` handler and `asyncWorkloadConfig`
-    * `[ ]`   Validates event data via `isAiStreamEvent` — `ErrorDoNotRetry` on failure
-    * `[ ]`   Dispatches adapter by prefix
-    * `[ ]`   `step.run('stream-ai', ...)` wraps adapter call
-    * `[ ]`   `step.run('post-', ...)` wraps HTTP POST with JWT header
-    * `[ ]`   Throws on POST non-2xx
+  * `[ ]`   `jsonSanitizer.ts` *(update existing)*
+    * `[ ]`   Add explicit type annotation: `export const sanitizeJsonContent: SanitizeJsonContentFn = ...`
+    * `[ ]`   No logic changes
 
-  * `[ ]`   `ai-stream.mock.ts`
-    * `[ ]`   `createMockAiStreamDeps(overrides?)`: returns controllable `AiStreamDeps`
-    * `[ ]`   Default: all three adapters are mocks; `SaveResponseUrl` is `'http://localhost/mock-saveResponse'`; `getApiKey` returns `'mock-key'`
+  * `[ ]`   `jsonSanitizer.mock.ts`
+    * `[ ]`   `createMockSanitizeJsonContent(overrides?: Partial<JsonSanitizationResult>): SanitizeJsonContentFn`
+    * `[ ]`   Default: returns `{ sanitized: input, wasSanitized: false, wasStructurallyFixed: false, hasDuplicateKeys: false, duplicateKeysResolved: [], originalLength: input.length }`
 
-  * `[ ]`   `ai-stream.provides.ts`
-    * `[ ]`   Exports: workload handler (default), `asyncWorkloadConfig`, `createAiStreamDeps`
+  * `[ ]`   `jsonSanitizer.provides.ts`
+    * `[ ]`   Exports: `sanitizeJsonContent`, `SanitizeJsonContentFn`, `JsonSanitizationResult`, `isJsonSanitizationResult`, `createMockSanitizeJsonContent`
 
-  * `[ ]`   `ai-stream.integration.test.ts`
-    * `[ ]`   Full chain: mock event → workload → mock OpenAI adapter → mock back-half POST server → asserts POST body and headers
-    * `[ ]`   Retry semantics: step-1 failure retries without re-entering step-2; step-2 failure does not re-invoke adapter
-    * `[ ]`   Uses mocked adapters and mocked HTTP server — no live calls
+  * `[ ]`   `jsonSanitizer.integration.test.ts`
+    * `[ ]`   Inject `sanitizeJsonContent` as `SanitizeJsonContentFn` into a stub consumer dep struct; assert stub invokes it with a string and receives a valid `JsonSanitizationResult` confirmed by `isJsonSanitizationResult`
+    * `[ ]`   Prerequisite: this node must be complete before `assembleChunks` and `saveResponse` nodes
 
   * `[ ]`   `directionality`
-    * `[ ]`   Layer: app/orchestrator (Netlify runtime)
-    * `[ ]`   Deps inward: three adapter nodes, `@netlify/async-workloads`, env vars
-    * `[ ]`   Provides outward: `ai-stream` event handler consumed by Netlify queue
+    * `[ ]`   Layer: infra/utility
+    * `[ ]`   Deps inward: none
+    * `[ ]`   Provides outward: `SanitizeJsonContentFn` consumed by `assembleChunks` and `saveResponse`
     * `[ ]`   No cycles
 
   * `[ ]`   `requirements`
-    * `[ ]`   Invalid event never retried — `ErrorDoNotRetry` — proven by unit test
-    * `[ ]`   Adapter stream error causes Netlify step-1 retry — proven by unit test
-    * `[ ]`   Back-half POST failure causes Netlify step-2 retry without re-calling adapter — proven by integration test
-    * `[ ]`   JWT forwarded correctly in Authorization header — proven by unit test
-    * `[ ]`   No Supabase access in workload — provable by static analysis (no `@supabase/supabase-js` import in this file)
+    * `[ ]`   `SanitizeJsonContentFn` exported and callable — proven by compiler
+    * `[ ]`   `sanitizeJsonContent` explicitly typed as `SanitizeJsonContentFn` — proven by compiler
+    * `[ ]`   `isJsonSanitizationResult` correct — proven by guard tests
+    * `[ ]`   No regression to existing sanitization logic — proven by existing tests GREEN
+
+* `[ ]`   `_shared/utils/assembleChunks/assembleChunks` **[BE] Replace inline ad-hoc `sanitizeJsonContent` type in `AssembleChunksDeps` with named `SanitizeJsonContentFn`**
+
+  * `[ ]`   `objective`
+    * `[ ]`   Replace the inline ad-hoc function type `(rawContent: string) => JsonSanitizationResult` in `AssembleChunksDeps.sanitizeJsonContent` with the named `SanitizeJsonContentFn` type from `jsonSanitizer.interface.ts`, eliminating the §5 violation
+    * `[ ]`   Functional goals:
+      * `AssembleChunksDeps.sanitizeJsonContent` type changes from inline to `SanitizeJsonContentFn`
+      * All test mocks and guards updated to reference the named type
+    * `[ ]`   Non-functional constraints:
+      * No change to `assembleChunks` logic — type reference change only
+      * All existing tests remain GREEN
+
+  * `[ ]`   `role`
+    * `[ ]`   Role: infra/utility — chunk assembly pipeline, injected deps
+    * `[ ]`   Why appropriate: `assembleChunks` is a pure pipeline; `sanitizeJsonContent` is an injected transformation step
+    * `[ ]`   Must NOT: import `sanitizeJsonContent` directly — injection only
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `_shared/utils/assembleChunks`
+    * `[ ]`   Inside boundary: chunk classification, sanitization, parse, merge
+    * `[ ]`   Outside boundary: `sanitizeJsonContent` implementation — injected from `jsonSanitizer`
+
+  * `[ ]`   `deps`
+    * `[ ]`   `sanitizeJsonContent: SanitizeJsonContentFn` — from `jsonSanitizer.provides.ts`; previously inline-typed, now named
+    * `[ ]`   `isRecord: (item: unknown) => item is Record<PropertyKey, unknown>` — unchanged
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   `AssembleChunksDeps.sanitizeJsonContent`: type reference changes from `(rawContent: string) => JsonSanitizationResult` to `SanitizeJsonContentFn`
+    * `[ ]`   All other context unchanged
+
+  * `[ ]`   `assembleChunks.interface.test.ts` *(update existing)*
+    * `[ ]`   Updated: valid `AssembleChunksDeps` test uses a value typed as `SanitizeJsonContentFn` (not inline) — guard accepts
+    * `[ ]`   Invalid: `sanitizeJsonContent` field absent → guard rejects; wrong shape → guard rejects
+    * `[ ]`   All other interface tests unchanged and GREEN
+
+  * `[ ]`   `assembleChunks.interface.ts` *(update existing)*
+    * `[ ]`   Import `SanitizeJsonContentFn` from `jsonSanitizer.interface.ts`
+    * `[ ]`   `AssembleChunksDeps.sanitizeJsonContent`: change from `(rawContent: string) => JsonSanitizationResult` to `SanitizeJsonContentFn`
+    * `[ ]`   Remove import of `JsonSanitizationResult` if no longer directly referenced
+    * `[ ]`   All other types unchanged
+
+  * `[ ]`   `assembleChunks.interaction.spec` *(update)*
+    * `[ ]`   `deps.sanitizeJsonContent` is typed as `SanitizeJsonContentFn`; all call sites unchanged
+    * `[ ]`   No behavioral change
+
+  * `[ ]`   `assembleChunks.guard.test.ts` *(update existing)*
+    * `[ ]`   `isAssembleChunksDeps`: guard test mock value uses `SanitizeJsonContentFn`-typed function reference instead of inline type
+    * `[ ]`   All other guard tests unchanged
+
+  * `[ ]`   `assembleChunks.guard.ts` *(update existing)*
+    * `[ ]`   Guard check for `sanitizeJsonContent` field: `typeof deps.sanitizeJsonContent === 'function'` — unchanged behavior; no type import required in guard
+
+  * `[ ]`   `assembleChunks.test.ts` *(update existing)*
+    * `[ ]`   All mock dep objects: `sanitizeJsonContent` typed as `SanitizeJsonContentFn` (import named type, replace inline)
+    * `[ ]`   All existing tests unchanged and GREEN
+
+  * `[ ]`   `construction`
+    * `[ ]`   No construction change — caller wires `sanitizeJsonContent` from `jsonSanitizer.provides.ts`
+
+  * `[ ]`   `assembleChunks.ts` *(update existing)*
+    * `[ ]`   No logic changes — only type reference in `AssembleChunksDeps` changes upstream; implementation unchanged
+
+  * `[ ]`   `assembleChunks.mock.ts` *(update existing)*
+    * `[ ]`   Mock `sanitizeJsonContent` field: typed as `SanitizeJsonContentFn`; use `createMockSanitizeJsonContent()` from `jsonSanitizer.provides.ts`
+
+  * `[ ]`   `assembleChunks.provides.ts` *(update if exists)*
+    * `[ ]`   Re-export `AssembleChunksDeps` reflecting updated type
+
+  * `[ ]`   `assembleChunks.integration.test.ts` *(update existing)*
+    * `[ ]`   Integration fixture: inject `createMockSanitizeJsonContent()` as `SanitizeJsonContentFn` — assert `assembleChunks` calls it correctly and returns valid `AssembleChunksSuccess` or `AssembleChunksError`
+    * `[ ]`   Prerequisite for `saveResponse` node
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: infra/utility
+    * `[ ]`   Deps inward: `jsonSanitizer` (via `SanitizeJsonContentFn`)
+    * `[ ]`   Provides outward: `AssembleChunksSignature` consumed by `IFileManager` → `saveResponse`
+    * `[ ]`   No cycles
+
+  * `[ ]`   `requirements`
+    * `[ ]`   `AssembleChunksDeps.sanitizeJsonContent` uses named `SanitizeJsonContentFn` — proven by compiler
+    * `[ ]`   No inline ad-hoc types in `assembleChunks.interface.ts` — proven by §5 lint
+    * `[ ]`   All existing tests GREEN — no behavioral regression
 
 * `[ ]`   `dialectic-worker/saveResponse/saveResponse` **[BE] EMCAS back-half — post-stream processing, contribution save, token debit, and job completion**
 
@@ -643,10 +809,20 @@
     * `[ ]`   Outside boundary: AI streaming (Netlify), job queuing (front-half), prompt assembly (prepareModelJob)
 
   * `[ ]`   `deps`
-    * `[ ]`   All deps currently used by EMCAS post-stream: `resolveFinishReason`, `retryJob`, `continueJob`, `debitTokens`, `assembleAndSaveFinalDocument`, `notificationService`, `fileManager`, `sanitizeJsonContent`, `logger`
-    * `[ ]`   `SupabaseClient<Database>` — constructed from JWT in request headers
+    * `[ ]`   `logger: ILogger` — from existing EMCAS deps
+    * `[ ]`   `fileManager: IFileManager` — covers `assembleAndSaveFinalDocument` (method on `IFileManager`) and upload/register operations; `assembleAndSaveFinalDocument` is NOT a separate dep
+    * `[ ]`   `notificationService: NotificationServiceType` — from existing EMCAS deps
+    * `[ ]`   `continueJob: ContinueJobFn` — from existing EMCAS deps
+    * `[ ]`   `retryJob: RetryJobFn` — from existing EMCAS deps
+    * `[ ]`   `resolveFinishReason: ResolveFinishReasonFn` — from existing EMCAS deps
+    * `[ ]`   `isIntermediateChunk: IsIntermediateChunkFn` — from existing EMCAS deps; required for continuation path
+    * `[ ]`   `determineContinuation: DetermineContinuationFn` — from existing EMCAS deps; required for continuation path
+    * `[ ]`   `buildUploadContext: BuildUploadContextFn` — from existing EMCAS deps; required for storage upload
+    * `[ ]`   `debitTokens: BoundDebitTokens` — from existing EMCAS deps; wraps `userTokenWalletService`
+    * `[ ]`   `sanitizeJsonContent: SanitizeJsonContentFn` — injected after `jsonSanitizer` node; direct import replaced by injection
     * `[ ]`   `dialectic-worker/index.ts` — registers the new HTTP route for this function (wiring step, separate file touch; one file per turn during execution)
     * `[ ]`   Existing type guards, interfaces, and helpers remain in Deno — no porting required
+    * `[ ]`   Note: `dbClient: SupabaseClient<Database>` constructed from JWT at request boundary — placed in `SaveResponseParams` consistent with EMCAS pattern
 
   * `[ ]`   `context_slice`
     * `[ ]`   HTTP POST body: `{ job_id: string, assembled_content: string, token_usage: NodeTokenUsage | null }`
@@ -655,18 +831,26 @@
     * `[ ]`   Does NOT receive `finish_reason` — determines it locally from `assembled_content`
 
   * `[ ]`   `saveResponse.interface.test.ts`
-    * `[ ]`   Valid `SaveResponseRequestBody`: non-empty `job_id`, non-empty `assembled_content`, `token_usage` is `NodeTokenUsage` or null
-    * `[ ]`   Invalid: missing `job_id`, missing `assembled_content`, wrong type for `token_usage` → guard rejects
-    * `[ ]`   Valid `SaveResponseSuccessReturn`: `{ status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' }`
-    * `[ ]`   Valid `SaveResponseErrorReturn`: `{ error: Error; retriable: boolean }`
+    * `[ ]`   Valid `SaveResponseParams`: non-empty `job_id` string, `dbClient` present — guard accepts
+    * `[ ]`   Invalid `SaveResponseParams`: missing `job_id` → guard rejects; missing `dbClient` → guard rejects
+    * `[ ]`   Valid `SaveResponsePayload`: non-empty `assembled_content`, `token_usage` is `NodeTokenUsage` or null — guard accepts
+    * `[ ]`   Invalid `SaveResponsePayload`: missing `assembled_content` → guard rejects; wrong type for `token_usage` → guard rejects
+    * `[ ]`   Valid `SaveResponseRequestBody` (transport only): `{ job_id, assembled_content, token_usage }` — guard accepts; used only at HTTP handler boundary
+    * `[ ]`   Invalid `SaveResponseRequestBody`: missing `job_id` → guard rejects; missing `assembled_content` → guard rejects; wrong type for `token_usage` → guard rejects
+    * `[ ]`   Valid `SaveResponseDeps`: all eleven fields present with correct types — guard accepts
+    * `[ ]`   Invalid `SaveResponseDeps`: any single field absent → guard rejects
+    * `[ ]`   Valid `SaveResponseSuccessReturn`: `{ status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' }` — guard accepts
+    * `[ ]`   Valid `SaveResponseErrorReturn`: `{ error: Error; retriable: boolean }` — guard accepts
 
   * `[ ]`   `saveResponse.interface.ts`
-    * `[ ]`   `SaveResponseRequestBody`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null }`
+    * `[ ]`   `SaveResponseParams`: `{ job_id: string; dbClient: SupabaseClient<Database> }` — identifying information and DB handle constructed from JWT at handler boundary; consistent with EMCAS params pattern
+    * `[ ]`   `SaveResponsePayload`: `{ assembled_content: string; token_usage: NodeTokenUsage | null }` — data the function operates on
+    * `[ ]`   `SaveResponseRequestBody`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null }` — HTTP transport type only; parsed and split into `SaveResponseParams` + `SaveResponsePayload` at handler boundary; not used as function contract
     * `[ ]`   `NodeTokenUsage` imported from shared Netlify adapter interface (or re-declared locally as identical shape to avoid cross-runtime import)
+    * `[ ]`   `SaveResponseDeps`: `{ logger: ILogger; fileManager: IFileManager; notificationService: NotificationServiceType; continueJob: ContinueJobFn; retryJob: RetryJobFn; resolveFinishReason: ResolveFinishReasonFn; isIntermediateChunk: IsIntermediateChunkFn; determineContinuation: DetermineContinuationFn; buildUploadContext: BuildUploadContextFn; debitTokens: BoundDebitTokens; sanitizeJsonContent: SanitizeJsonContentFn }`
     * `[ ]`   `SaveResponseSuccessReturn`: `{ status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' }`
     * `[ ]`   `SaveResponseErrorReturn`: `{ error: Error; retriable: boolean }`
     * `[ ]`   `SaveResponseReturn`: `SaveResponseSuccessReturn | SaveResponseErrorReturn`
-    * `[ ]`   `saveResponseDeps`: carries all existing EMCAS post-stream deps
 
   * `[ ]`   `saveResponse.interaction.spec`
     * `[ ]`   Receives HTTP POST from Netlify workload with JWT; Supabase Edge validates JWT at gateway
@@ -680,12 +864,18 @@
     * `[ ]`   Returns 200 on success; 500 on unretriable failure; 503 on retriable failure (Netlify retries POST on non-2xx)
 
   * `[ ]`   `saveResponse.guard.test.ts`
-    * `[ ]`   `isSaveResponseRequestBody`: valid; rejects missing fields; rejects wrong types
+    * `[ ]`   `isSaveResponseRequestBody`: valid; rejects missing `job_id`; rejects missing `assembled_content`; rejects wrong type for `token_usage`
+    * `[ ]`   `isSaveResponseParams`: valid; rejects missing `job_id`; rejects missing `dbClient`
+    * `[ ]`   `isSaveResponsePayload`: valid; rejects missing `assembled_content`; rejects wrong type for `token_usage`
+    * `[ ]`   `isSaveResponseDeps`: valid full object accepted; any single missing field → guard rejects
     * `[ ]`   `isSaveResponseSuccessReturn`: valid; rejects unknown status values
     * `[ ]`   `isSaveResponseErrorReturn`: valid; requires `retriable` boolean
 
   * `[ ]`   `saveResponse.guard.ts`
     * `[ ]`   `isSaveResponseRequestBody(v: unknown): v is SaveResponseRequestBody`
+    * `[ ]`   `isSaveResponseParams(v: unknown): v is SaveResponseParams`
+    * `[ ]`   `isSaveResponsePayload(v: unknown): v is SaveResponsePayload`
+    * `[ ]`   `isSaveResponseDeps(v: unknown): v is SaveResponseDeps`
     * `[ ]`   `isSaveResponseSuccessReturn(v: unknown): v is SaveResponseSuccessReturn`
     * `[ ]`   `isSaveResponseErrorReturn(v: unknown): v is SaveResponseErrorReturn`
 
@@ -775,18 +965,22 @@
     * `[ ]`   Emits: `AiStreamEvent` to Netlify queue
 
   * `[ ]`   `enqueueModelCall.interface.test.ts`
-    * `[ ]`   Valid `EnqueueModelCallSuccessReturn`: `{ queued: true }`
-    * `[ ]`   Valid `EnqueueModelCallErrorReturn`: `{ error: Error; retriable: boolean }`
-    * `[ ]`   Invalid: `queued: false` → guard rejects; missing `error` field → guard rejects
+    * `[ ]`   Valid `EnqueueModelCallSuccessReturn`: `{ queued: true }` — guard accepts
+    * `[ ]`   Valid `EnqueueModelCallErrorReturn`: `{ error: Error; retriable: boolean }` — guard accepts
+    * `[ ]`   Invalid: `queued: false` → guard rejects; missing `error` field → guard rejects; missing `retriable` → guard rejects
+    * `[ ]`   Valid `EnqueueModelCallDeps`: all three fields present — guard accepts
+    * `[ ]`   Invalid `EnqueueModelCallDeps`: missing `logger` → guard rejects; missing `enqueueNetlifyEvent` → guard rejects; missing `apiKeyForProvider` → guard rejects
     * `[ ]`   `BoundEnqueueModelCallFn`: callable with `(params, payload) => Promise<Return>`
 
   * `[ ]`   `enqueueModelCall.interface.ts`
     * `[ ]`   `EnqueueModelCallSuccessReturn`: `{ queued: true }`
     * `[ ]`   `EnqueueModelCallErrorReturn`: `{ error: Error; retriable: boolean }`
     * `[ ]`   `EnqueueModelCallReturn`: union of above
-    * `[ ]`   `EnqueueModelCallDeps`: `{ logger: ILogger; enqueueNetlifyEvent(eventName: string, data: AiStreamEvent): Promise<void>; }`
+    * `[ ]`   `EnqueueModelCallDeps`: `{ logger: ILogger; enqueueNetlifyEvent: (eventName: string, data: AiStreamEvent) => Promise<void>; apiKeyForProvider: ApiKeyForProviderFn }`
+    * `[ ]`   Note: `dbClient: SupabaseClient<Database>` is in `EnqueueModelCallParams` (re-used from `ExecuteModelCallAndSaveParams`) — no new dep required for DB write
+    * `[ ]`   `ApiKeyForProviderFn` must be located in `_shared` before this node executes — do not define a new type if one already exists
     * `[ ]`   `BoundEnqueueModelCallFn`: pre-bound signature used as dep in `PrepareModelJobDeps`
-    * `[ ]`   Re-uses existing `EnqueueModelCallParams` and `EnqueueModelCallPayload` — no change to those types
+    * `[ ]`   Re-uses existing `EnqueueModelCallParams` (includes `dbClient`) and `EnqueueModelCallPayload` — no change to those types
 
   * `[ ]`   `enqueueModelCall.interaction.spec`
     * `[ ]`   Called by `prepareModelJob` as `deps.enqueueModelCall` (now bound to front-half)
@@ -800,12 +994,14 @@
     * `[ ]`   Does NOT call the AI provider or await stream result
 
   * `[ ]`   `enqueueModelCall.guard.test.ts`
-    * `[ ]`   `isEnqueueModelCallSuccessReturn`: accepts `{ queued: true }`; rejects `{ queued: false }`, rejects missing field
-    * `[ ]`   `isEnqueueModelCallErrorReturn`: accepts valid; rejects missing `retriable`
+    * `[ ]`   `isEnqueueModelCallSuccessReturn`: accepts `{ queued: true }`; rejects `{ queued: false }`; rejects missing field
+    * `[ ]`   `isEnqueueModelCallErrorReturn`: accepts valid; rejects missing `retriable`; rejects missing `error`
+    * `[ ]`   `isEnqueueModelCallDeps`: accepts valid deps object with all three fields; rejects missing `logger`; rejects missing `enqueueNetlifyEvent`; rejects missing `apiKeyForProvider`
 
   * `[ ]`   `enqueueModelCall.guard.ts`
     * `[ ]`   `isEnqueueModelCallSuccessReturn(v: unknown): v is EnqueueModelCallSuccessReturn`
     * `[ ]`   `isEnqueueModelCallErrorReturn(v: unknown): v is EnqueueModelCallErrorReturn`
+    * `[ ]`   `isEnqueueModelCallDeps(v: unknown): v is EnqueueModelCallDeps`
 
   * `[ ]`   `enqueueModelCall.test.ts`
     * `[ ]`   Invalid `output_type` → error return, no DB write, no enqueue
@@ -1105,6 +1301,14 @@
     * `[ ]`   Uses mock Netlify enqueue and mock DB client
     * `[ ]`   Proves end-to-end that the Supabase side of Phase 1 is wired correctly
 
+  * `[ ]`   `ai-stream.integration.test.ts` *(update — add cross-system chain tests)*
+    * `[ ]`   Full cross-system chain: mock `AiStreamEvent` → `runAiStreamWorkload` (real) → mock AI adapter (no live model calls) → real Node HTTP server standing in for `saveResponse` → assert POST body matches `AiStreamPayload` and `Authorization: Bearer <user_jwt>` header is present
+    * `[ ]`   Invokes `saveResponse` real implementation against the captured POST body via mock Supabase client — assert DB write is attempted with correct `job_id`, `assembled_content`, and `token_usage`
+    * `[ ]`   Back-half failure path: `saveResponse` mock Supabase client returns error → assert workload throws (Netlify retries step-2) without re-invoking adapter
+    * `[ ]`   Mocked boundaries: AI adapter (no live model calls), Supabase DB client (no live DB), Netlify queue transport (event delivered directly to `runAiStreamWorkload`)
+    * `[ ]`   Real implementations: `runAiStreamWorkload`, `executeStreamPhase`, `executePostPhase`, `saveResponse` handler, event validation guards on both sides
+    * `[ ]`   Prerequisite: `saveResponse` Edge Function node must be complete before this step can be written
+
   * `[ ]`   `directionality`
     * `[ ]`   Layer: app/infra — wiring boundary
     * `[ ]`   Deps inward: front-half, back-half, all existing worker deps
@@ -1114,7 +1318,8 @@
   * `[ ]`   `requirements`
     * `[ ]`   Context wires front-half into prepareModelJob — proven by unit test
     * `[ ]`   `enqueueRenderJob` absent from prepareModelJob slice — proven by unit test
-    * `[ ]`   Phase 1 full chain integration passes — proven by integration test
+    * `[ ]`   Phase 1 Supabase-side chain integration passes — proven by `JobContext.integration.test.ts`
+    * `[ ]`   Phase 1 cross-system chain integration passes: workload receives event, calls mock adapter, POSTs to `saveResponse`, `saveResponse` writes to DB — proven by `ai-stream.integration.test.ts` update
     * `[ ]`   All existing context tests remain GREEN
 
   * `[ ]`   **Commit** `feat(dialectic-worker): split EMCAS into enqueueModelCall (EMCAS front-half) + Netlify streaming worker + saveResponse (EMCAS back-half)`
