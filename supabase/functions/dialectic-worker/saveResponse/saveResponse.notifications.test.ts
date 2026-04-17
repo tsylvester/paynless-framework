@@ -30,6 +30,7 @@ import {
 
 const defaultNotificationPayload = createMockSaveResponsePayload({
     assembled_content: '{"ok": true}',
+    finish_reason: "stop",
 });
 
 function countJobNotificationType(

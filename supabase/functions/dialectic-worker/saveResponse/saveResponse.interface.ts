@@ -4,7 +4,6 @@ import type { ILogger } from '../../_shared/types.ts';
 import type { IFileManager } from '../../_shared/types/file_manager.types.ts';
 import type { NotificationServiceType } from '../../_shared/types/notification.service.types.ts';
 import type { BoundDebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
-import type { IUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts';
 import type { SanitizeJsonContentFn } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts';
 import type {
   BuildUploadContextFn,
@@ -29,12 +28,14 @@ export interface SaveResponseParams {
 export interface SaveResponsePayload {
   assembled_content: string;
   token_usage: NodeTokenUsage | null;
+  finish_reason: string | null;
 }
 
 export interface SaveResponseRequestBody {
   job_id: string;
   assembled_content: string;
   token_usage: NodeTokenUsage | null;
+  finish_reason: string | null;
 }
 
 export interface SaveResponseDeps {
@@ -48,7 +49,6 @@ export interface SaveResponseDeps {
   determineContinuation: DetermineContinuationFn;
   buildUploadContext: BuildUploadContextFn;
   debitTokens: BoundDebitTokens;
-  userTokenWalletService: IUserTokenWalletService;
   sanitizeJsonContent: SanitizeJsonContentFn;
 }
 

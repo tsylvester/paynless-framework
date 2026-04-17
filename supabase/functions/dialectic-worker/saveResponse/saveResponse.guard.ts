@@ -41,7 +41,16 @@ export function isSaveResponseRequestBody(
   if (!('token_usage' in v)) {
     return false;
   }
-  return isTokenUsageOrNull(v.token_usage);
+  if (!isTokenUsageOrNull(v.token_usage)) {
+    return false;
+  }
+  if (!('finish_reason' in v)) {
+    return false;
+  }
+  if (v.finish_reason !== null && typeof v.finish_reason !== 'string') {
+    return false;
+  }
+  return true;
 }
 
 export function isSaveResponseParams(v: unknown): v is SaveResponseParams {
@@ -75,7 +84,16 @@ export function isSaveResponsePayload(v: unknown): v is SaveResponsePayload {
   if (!('token_usage' in v)) {
     return false;
   }
-  return isTokenUsageOrNull(v.token_usage);
+  if (!isTokenUsageOrNull(v.token_usage)) {
+    return false;
+  }
+  if (!('finish_reason' in v)) {
+    return false;
+  }
+  if (v.finish_reason !== null && typeof v.finish_reason !== 'string') {
+    return false;
+  }
+  return true;
 }
 
 export function isSaveResponseDeps(v: unknown): v is SaveResponseDeps {
@@ -93,7 +111,6 @@ export function isSaveResponseDeps(v: unknown): v is SaveResponseDeps {
     'determineContinuation',
     'buildUploadContext',
     'debitTokens',
-    'userTokenWalletService',
     'sanitizeJsonContent',
   ];
   for (let i = 0; i < keys.length; i++) {
@@ -142,13 +159,6 @@ export function isSaveResponseDeps(v: unknown): v is SaveResponseDeps {
     return false;
   }
   if (typeof v.debitTokens !== 'function') {
-    return false;
-  }
-  if (
-    typeof v.userTokenWalletService !== 'object' ||
-    v.userTokenWalletService === null ||
-    Array.isArray(v.userTokenWalletService)
-  ) {
     return false;
   }
   if (typeof v.sanitizeJsonContent !== 'function') {

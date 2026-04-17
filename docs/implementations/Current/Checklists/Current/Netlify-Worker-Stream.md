@@ -928,185 +928,185 @@
     * `[✅]`   No inline ad-hoc types in `assembleChunks.interface.ts` — proven by §5 lint
     * `[✅]`   All existing tests GREEN — no behavioral regression
 
-* `[ ]`   `dialectic-worker/saveResponse/saveResponse` **[BE] EMCAS back-half — post-stream processing, contribution save, token debit, and job completion**
+* `[✅]`   `dialectic-worker/saveResponse/saveResponse` **[BE] EMCAS back-half — post-stream processing, contribution save, token debit, and job completion**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Receive the assembled AI response blob from the Netlify workload via HTTP POST, fetch the corresponding job from DB by `job_id`, execute all post-stream processing (finish_reason detection, JSON sanitization, storage upload, contribution save, token debit, continuation dispatch), and update job status from `queued` to the correct terminal or continuation state
-    * `[ ]`   Functional goals:
+  * `[✅]`   `objective`
+    * `[✅]`   Receive the assembled AI response blob from the Netlify workload via HTTP POST, fetch the corresponding job from DB by `job_id`, execute all post-stream processing (finish_reason detection, JSON sanitization, storage upload, contribution save, token debit, continuation dispatch), and update job status from `queued` to the correct terminal or continuation state
+    * `[✅]`   Functional goals:
       * Accept and validate `{ job_id, assembled_content, token_usage, finish_reason }` from Netlify with valid user JWT
       * Fetch full job row and derived context from Supabase
       * Execute all logic currently in EMCAS after the `for await` stream loop
       * Update job status to `completed`, `needs_continuation`, `continuation_limit_reached`, or `failed`
-    * `[ ]`   Non-functional constraints:
+    * `[✅]`   Non-functional constraints:
       * Runs in Deno (Supabase Edge Function) — same runtime as existing EMCAS
       * Authenticated via user JWT forwarded from Netlify (validated by Supabase Edge JWT gate)
       * Must complete within Supabase Edge Function limit — post-stream work is fast relative to streaming
       * `execute_completed` notification (previously in processSimpleJob) moves here since completion is now confirmed at this point
 
-  * `[ ]`   `role`
-    * `[ ]`   Role: app/domain (Supabase Edge Function handler)
-    * `[ ]`   Why appropriate: all post-stream logic requires Supabase access, Deno utilities, and existing shared deps — keeping it in Deno avoids porting the entire shared library to Node.js
-    * `[ ]`   Must NOT: invoke the AI provider, receive a stream, set job status to `queued`, or call the Netlify workload
+  * `[✅]`   `role`
+    * `[✅]`   Role: app/domain (Supabase Edge Function handler)
+    * `[✅]`   Why appropriate: all post-stream logic requires Supabase access, Deno utilities, and existing shared deps — keeping it in Deno avoids porting the entire shared library to Node.js
+    * `[✅]`   Must NOT: invoke the AI provider, receive a stream, set job status to `queued`, or call the Netlify workload
 
-  * `[ ]`   `module`
-    * `[ ]`   Bounded context: `dialectic-worker/executeModelCallAndSave` — post-stream processing half of EMCAS
-    * `[ ]`   Inside boundary: finish_reason resolution, JSON sanitization, storage upload, contribution persistence, token debit, continuation dispatch, job status update, `execute_completed` notification
-    * `[ ]`   Outside boundary: AI streaming (Netlify), job queuing (front-half), prompt assembly (prepareModelJob)
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: `dialectic-worker/executeModelCallAndSave` — post-stream processing half of EMCAS
+    * `[✅]`   Inside boundary: finish_reason resolution, JSON sanitization, storage upload, contribution persistence, token debit, continuation dispatch, job status update, `execute_completed` notification
+    * `[✅]`   Outside boundary: AI streaming (Netlify), job queuing (front-half), prompt assembly (prepareModelJob)
 
-  * `[ ]`   `deps`
-    * `[ ]`   `logger: ILogger` — from existing EMCAS deps
-    * `[ ]`   `fileManager: IFileManager` — covers `assembleAndSaveFinalDocument` (method on `IFileManager`) and upload/register operations; `assembleAndSaveFinalDocument` is NOT a separate dep
-    * `[ ]`   `notificationService: NotificationServiceType` — from existing EMCAS deps
-    * `[ ]`   `continueJob: ContinueJobFn` — from existing EMCAS deps
-    * `[ ]`   `retryJob: RetryJobFn` — from existing EMCAS deps
-    * `[ ]`   `resolveFinishReason: ResolveFinishReasonFn` — from existing EMCAS deps
-    * `[ ]`   `isIntermediateChunk: IsIntermediateChunkFn` — from existing EMCAS deps; required for continuation path
-    * `[ ]`   `determineContinuation: DetermineContinuationFn` — from existing EMCAS deps; required for continuation path
-    * `[ ]`   `buildUploadContext: BuildUploadContextFn` — from existing EMCAS deps; required for storage upload
-    * `[ ]`   `debitTokens: BoundDebitTokens` — from existing EMCAS deps; wraps `userTokenWalletService`
-    * `[ ]`   `sanitizeJsonContent: SanitizeJsonContentFn` — injected after `jsonSanitizer` node; direct import replaced by injection
-    * `[ ]`   `dialectic-worker/index.ts` — registers the new HTTP route for this function (wiring step, separate file touch; one file per turn during execution)
-    * `[ ]`   Existing type guards, interfaces, and helpers remain in Deno — no porting required
-    * `[ ]`   Note: `dbClient: SupabaseClient<Database>` constructed from JWT at request boundary — placed in `SaveResponseParams` consistent with EMCAS pattern
+  * `[✅]`   `deps`
+    * `[✅]`   `logger: ILogger` — from existing EMCAS deps
+    * `[✅]`   `fileManager: IFileManager` — covers `assembleAndSaveFinalDocument` (method on `IFileManager`) and upload/register operations; `assembleAndSaveFinalDocument` is NOT a separate dep
+    * `[✅]`   `notificationService: NotificationServiceType` — from existing EMCAS deps
+    * `[✅]`   `continueJob: ContinueJobFn` — from existing EMCAS deps
+    * `[✅]`   `retryJob: RetryJobFn` — from existing EMCAS deps
+    * `[✅]`   `resolveFinishReason: ResolveFinishReasonFn` — from existing EMCAS deps
+    * `[✅]`   `isIntermediateChunk: IsIntermediateChunkFn` — from existing EMCAS deps; required for continuation path
+    * `[✅]`   `determineContinuation: DetermineContinuationFn` — from existing EMCAS deps; required for continuation path
+    * `[✅]`   `buildUploadContext: BuildUploadContextFn` — from existing EMCAS deps; required for storage upload
+    * `[✅]`   `debitTokens: BoundDebitTokens` — from existing EMCAS deps; wraps `userTokenWalletService`
+    * `[✅]`   `sanitizeJsonContent: SanitizeJsonContentFn` — injected after `jsonSanitizer` node; direct import replaced by injection
+    * `[✅]`   `dialectic-worker/index.ts` — registers the new HTTP route for this function (wiring step, separate file touch; one file per turn during execution)
+    * `[✅]`   Existing type guards, interfaces, and helpers remain in Deno — no porting required
+    * `[✅]`   Note: `dbClient: SupabaseClient<Database>` constructed from JWT at request boundary — placed in `SaveResponseParams` consistent with EMCAS pattern
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   HTTP POST body: `{ job_id: string, assembled_content: string, token_usage: NodeTokenUsage | null, finish_reason: string | null }`
-    * `[ ]`   HTTP header: `Authorization: Bearer <user_jwt>`
-    * `[ ]`   Fetches from DB: full job row, provider row, session data, project owner user ID
-    * `[ ]`   Receives `finish_reason` from Netlify handler (explicit outer / provider stream done chunk); `null` when stream interrupted (no done chunk). Narrows to `FinishReason` via type guard with `'unknown'` fallback
+  * `[✅]`   `context_slice`
+    * `[✅]`   HTTP POST body: `{ job_id: string, assembled_content: string, token_usage: NodeTokenUsage | null, finish_reason: string | null }`
+    * `[✅]`   HTTP header: `Authorization: Bearer <user_jwt>`
+    * `[✅]`   Fetches from DB: full job row, provider row, session data, project owner user ID
+    * `[✅]`   Receives `finish_reason` from Netlify handler (explicit outer / provider stream done chunk); `null` when stream interrupted (no done chunk). Narrows to `FinishReason` via type guard with `'unknown'` fallback
 
-  * `[ ]`   `saveResponse.interface.test.ts`
-    * `[ ]`   Imports types ONLY from `saveResponse.interface.ts` — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
-    * `[ ]`   Construct `SaveResponseParams` literal with `job_id: string` and `dbClient: SupabaseClient<Database>` — compiles; assert `typeof job_id === 'string'`
-    * `[ ]`   Construct `SaveResponsePayload` literal with `assembled_content: string`, `token_usage: NodeTokenUsage`, `finish_reason: 'stop'` — compiles; assert field types
-    * `[ ]`   Construct `SaveResponsePayload` literal with `token_usage: null` and `finish_reason: null` — compiles (both nullable)
-    * `[ ]`   Construct `SaveResponseRequestBody` literal (transport shape) with `{ job_id, assembled_content, token_usage, finish_reason }` — compiles; assert shape
-    * `[ ]`   Construct `SaveResponseDeps` literal with all eleven fields of the declared types — compiles; assert shape
-    * `[ ]`   Construct `SaveResponseSuccessReturn` literal with each union member (`'completed'`, `'needs_continuation'`, `'continuation_limit_reached'`) — compiles for each
-    * `[ ]`   Construct `SaveResponseErrorReturn` literal with `{ error: new Error('x'), retriable: true }` — compiles; assert `error instanceof Error` and `typeof retriable === 'boolean'`
-    * `[ ]`   Pure type-shape assertions only — invalid shapes are a compile-time concern; runtime accept/reject belongs in `saveResponse.guard.test.ts`
+  * `[✅]`   `saveResponse.interface.test.ts`
+    * `[✅]`   Imports types ONLY from `saveResponse.interface.ts` — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
+    * `[✅]`   Construct `SaveResponseParams` literal with `job_id: string` and `dbClient: SupabaseClient<Database>` — compiles; assert `typeof job_id === 'string'`
+    * `[✅]`   Construct `SaveResponsePayload` literal with `assembled_content: string`, `token_usage: NodeTokenUsage`, `finish_reason: 'stop'` — compiles; assert field types
+    * `[✅]`   Construct `SaveResponsePayload` literal with `token_usage: null` and `finish_reason: null` — compiles (both nullable)
+    * `[✅]`   Construct `SaveResponseRequestBody` literal (transport shape) with `{ job_id, assembled_content, token_usage, finish_reason }` — compiles; assert shape
+    * `[✅]`   Construct `SaveResponseDeps` literal with all eleven fields of the declared types — compiles; assert shape
+    * `[✅]`   Construct `SaveResponseSuccessReturn` literal with each union member (`'completed'`, `'needs_continuation'`, `'continuation_limit_reached'`) — compiles for each
+    * `[✅]`   Construct `SaveResponseErrorReturn` literal with `{ error: new Error('x'), retriable: true }` — compiles; assert `error instanceof Error` and `typeof retriable === 'boolean'`
+    * `[✅]`   Pure type-shape assertions only — invalid shapes are a compile-time concern; runtime accept/reject belongs in `saveResponse.guard.test.ts`
 
-  * `[ ]`   `saveResponse.interface.ts`
-    * `[ ]`   `SaveResponseParams`: `{ job_id: string; dbClient: SupabaseClient<Database> }` — identifying information and DB handle constructed from JWT at handler boundary; consistent with EMCAS params pattern
-    * `[ ]`   `SaveResponsePayload`: `{ assembled_content: string; token_usage: NodeTokenUsage | null; finish_reason: string | null }` — data the function operates on; `finish_reason` relayed from Netlify handler's `done` chunk capture
-    * `[ ]`   `SaveResponseRequestBody`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null; finish_reason: string | null }` — HTTP transport type only; parsed and split into `SaveResponseParams` + `SaveResponsePayload` at handler boundary; not used as function contract
-    * `[ ]`   `NodeTokenUsage` imported from shared Netlify adapter interface (or re-declared locally as identical shape to avoid cross-runtime import)
-    * `[ ]`   `SaveResponseDeps`: `{ logger: ILogger; fileManager: IFileManager; notificationService: NotificationServiceType; continueJob: ContinueJobFn; retryJob: RetryJobFn; resolveFinishReason: ResolveFinishReasonFn; isIntermediateChunk: IsIntermediateChunkFn; determineContinuation: DetermineContinuationFn; buildUploadContext: BuildUploadContextFn; debitTokens: BoundDebitTokens; sanitizeJsonContent: SanitizeJsonContentFn }`
-    * `[ ]`   `SaveResponseSuccessReturn`: `{ status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' }`
-    * `[ ]`   `SaveResponseErrorReturn`: `{ error: Error; retriable: boolean }`
-    * `[ ]`   `SaveResponseReturn`: `SaveResponseSuccessReturn | SaveResponseErrorReturn`
+  * `[✅]`   `saveResponse.interface.ts`
+    * `[✅]`   `SaveResponseParams`: `{ job_id: string; dbClient: SupabaseClient<Database> }` — identifying information and DB handle constructed from JWT at handler boundary; consistent with EMCAS params pattern
+    * `[✅]`   `SaveResponsePayload`: `{ assembled_content: string; token_usage: NodeTokenUsage | null; finish_reason: string | null }` — data the function operates on; `finish_reason` relayed from Netlify handler's `done` chunk capture
+    * `[✅]`   `SaveResponseRequestBody`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null; finish_reason: string | null }` — HTTP transport type only; parsed and split into `SaveResponseParams` + `SaveResponsePayload` at handler boundary; not used as function contract
+    * `[✅]`   `NodeTokenUsage` imported from shared Netlify adapter interface (or re-declared locally as identical shape to avoid cross-runtime import)
+    * `[✅]`   `SaveResponseDeps`: `{ logger: ILogger; fileManager: IFileManager; notificationService: NotificationServiceType; continueJob: ContinueJobFn; retryJob: RetryJobFn; resolveFinishReason: ResolveFinishReasonFn; isIntermediateChunk: IsIntermediateChunkFn; determineContinuation: DetermineContinuationFn; buildUploadContext: BuildUploadContextFn; debitTokens: BoundDebitTokens; sanitizeJsonContent: SanitizeJsonContentFn }`
+    * `[✅]`   `SaveResponseSuccessReturn`: `{ status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' }`
+    * `[✅]`   `SaveResponseErrorReturn`: `{ error: Error; retriable: boolean }`
+    * `[✅]`   `SaveResponseReturn`: `SaveResponseSuccessReturn | SaveResponseErrorReturn`
 
-  * `[ ]`   `saveResponse.interaction.spec`
-    * `[ ]`   Receives HTTP POST from Netlify workload with JWT; Supabase Edge validates JWT at gateway
-    * `[ ]`   Parses and validates `SaveResponseRequestBody` — invalid → 400, no DB access
-    * `[ ]`   Fetches job row by `job_id`; job not found → 404
-    * `[ ]`   Executes full post-stream logic (finish_reason, sanitize, parse, upload, save, debit)
-    * `[ ]`   Calls `retryJob` on retriable failure; updates job status accordingly
-    * `[ ]`   Calls `continueJob` when continuation required; job status → `needs_continuation`
-    * `[ ]`   Sends `execute_completed` notification on terminal success (moved from processSimpleJob)
-    * `[ ]`   Updates job status from `queued` to terminal state
-    * `[ ]`   Returns 200 on success; 500 on unretriable failure; 503 on retriable failure (Netlify retries POST on non-2xx)
+  * `[✅]`   `saveResponse.interaction.spec`
+    * `[✅]`   Receives HTTP POST from Netlify workload with JWT; Supabase Edge validates JWT at gateway
+    * `[✅]`   Parses and validates `SaveResponseRequestBody` — invalid → 400, no DB access
+    * `[✅]`   Fetches job row by `job_id`; job not found → 404
+    * `[✅]`   Executes full post-stream logic (finish_reason, sanitize, parse, upload, save, debit)
+    * `[✅]`   Calls `retryJob` on retriable failure; updates job status accordingly
+    * `[✅]`   Calls `continueJob` when continuation required; job status → `needs_continuation`
+    * `[✅]`   Sends `execute_completed` notification on terminal success (moved from processSimpleJob)
+    * `[✅]`   Updates job status from `queued` to terminal state
+    * `[✅]`   Returns 200 on success; 500 on unretriable failure; 503 on retriable failure (Netlify retries POST on non-2xx)
 
-  * `[ ]`   `saveResponse.guard.test.ts`
-    * `[ ]`   `isSaveResponseRequestBody`: valid; rejects missing `job_id`; rejects missing `assembled_content`; rejects wrong type for `token_usage`; rejects missing `finish_reason` field
-    * `[ ]`   `isSaveResponseParams`: valid; rejects missing `job_id`; rejects missing `dbClient`
-    * `[ ]`   `isSaveResponsePayload`: valid (with `finish_reason`); rejects missing `assembled_content`; rejects wrong type for `token_usage`; rejects missing `finish_reason` field
-    * `[ ]`   `isSaveResponseDeps`: valid full object accepted; any single missing field → guard rejects
-    * `[ ]`   `isSaveResponseSuccessReturn`: valid; rejects unknown status values
-    * `[ ]`   `isSaveResponseErrorReturn`: valid; requires `retriable` boolean
+  * `[✅]`   `saveResponse.guard.test.ts`
+    * `[✅]`   `isSaveResponseRequestBody`: valid; rejects missing `job_id`; rejects missing `assembled_content`; rejects wrong type for `token_usage`; rejects missing `finish_reason` field
+    * `[✅]`   `isSaveResponseParams`: valid; rejects missing `job_id`; rejects missing `dbClient`
+    * `[✅]`   `isSaveResponsePayload`: valid (with `finish_reason`); rejects missing `assembled_content`; rejects wrong type for `token_usage`; rejects missing `finish_reason` field
+    * `[✅]`   `isSaveResponseDeps`: valid full object accepted; any single missing field → guard rejects
+    * `[✅]`   `isSaveResponseSuccessReturn`: valid; rejects unknown status values
+    * `[✅]`   `isSaveResponseErrorReturn`: valid; requires `retriable` boolean
 
-  * `[ ]`   `saveResponse.guard.ts`
-    * `[ ]`   `isSaveResponseRequestBody(v: unknown): v is SaveResponseRequestBody`
-    * `[ ]`   `isSaveResponseParams(v: unknown): v is SaveResponseParams`
-    * `[ ]`   `isSaveResponsePayload(v: unknown): v is SaveResponsePayload`
-    * `[ ]`   `isSaveResponseDeps(v: unknown): v is SaveResponseDeps`
-    * `[ ]`   `isSaveResponseSuccessReturn(v: unknown): v is SaveResponseSuccessReturn`
-    * `[ ]`   `isSaveResponseErrorReturn(v: unknown): v is SaveResponseErrorReturn`
+  * `[✅]`   `saveResponse.guard.ts`
+    * `[✅]`   `isSaveResponseRequestBody(v: unknown): v is SaveResponseRequestBody`
+    * `[✅]`   `isSaveResponseParams(v: unknown): v is SaveResponseParams`
+    * `[✅]`   `isSaveResponsePayload(v: unknown): v is SaveResponsePayload`
+    * `[✅]`   `isSaveResponseDeps(v: unknown): v is SaveResponseDeps`
+    * `[✅]`   `isSaveResponseSuccessReturn(v: unknown): v is SaveResponseSuccessReturn`
+    * `[✅]`   `isSaveResponseErrorReturn(v: unknown): v is SaveResponseErrorReturn`
 
-  * `[ ]`   `saveResponse.test.ts` *(copy post-stream subset from `executeModelCallAndSave.test.ts` and modify)*
-    * `[ ]`   Copy all post-stream tests from `executeModelCallAndSave.test.ts`: finish_reason resolution, debitTokens invocation and failure path, fileManager upload and failure path, buildUploadContext ordering, continueJob invocation, retryJob on empty assembled content, sanitizeJsonContent wiring on accumulated content, post-sanitize orchestration, cross-output persistence, document_relationships init failure paths, source_contribution_id update on originating prompt
-    * `[ ]`   Exclude pre-stream tests (adapter.sendMessageStream, stream accumulation, text_delta, usage chunk, done chunk, soft-timeout, AI error throws, Throws on AI Error, Database Error on Update) — those belong to `ai-stream` or `enqueueModelCall`
-    * `[ ]`   Modify each copied test:
+  * `[✅]`   `saveResponse.test.ts` *(copy post-stream subset from `executeModelCallAndSave.test.ts` and modify)*
+    * `[✅]`   Copy all post-stream tests from `executeModelCallAndSave.test.ts`: finish_reason resolution, debitTokens invocation and failure path, fileManager upload and failure path, buildUploadContext ordering, continueJob invocation, retryJob on empty assembled content, sanitizeJsonContent wiring on accumulated content, post-sanitize orchestration, cross-output persistence, document_relationships init failure paths, source_contribution_id update on originating prompt
+    * `[✅]`   Exclude pre-stream tests (adapter.sendMessageStream, stream accumulation, text_delta, usage chunk, done chunk, soft-timeout, AI error throws, Throws on AI Error, Database Error on Update) — those belong to `ai-stream` or `enqueueModelCall`
+    * `[✅]`   Modify each copied test:
       * Replace `executeModelCallAndSave(deps, params, payload)` with `saveResponse(deps, params, payload)`
       * Replace `ExecuteModelCallAndSaveParams` construction with `SaveResponseParams` (`{ job_id, dbClient }`)
       * Replace `ExecuteModelCallAndSavePayload` construction with `SaveResponsePayload` (`{ assembled_content, token_usage, finish_reason }`)
       * Remove `getAiProviderAdapter` from deps — saveResponse does not call adapters
       * Remove adapter stream setup — blob arrives assembled
       * Replace `createMockExecuteModelCallAndSaveDeps` with `createMockSaveResponseDeps`
-    * `[ ]`   New tests (not in EMCAS — specific to HTTP boundary):
+    * `[✅]`   New tests (not in EMCAS — specific to HTTP boundary):
       * Invalid HTTP body (`SaveResponseRequestBody` guard fails) → 400, no DB calls
       * Job not found in `dialectic_generation_jobs` → 404
       * Provider row not found for `job_id` → 500 unretriable
       * Session data not found → 500 unretriable
 
-  * `[ ]`   `saveResponse.assembleDocument.test.ts` *(copy from `executeModelCallAndSave.assembleDocument.test.ts` and modify)*
-    * `[ ]`   Copy all 4 tests verbatim; apply the standard modifications (function call, params/payload shape, deps, mock factory)
-    * `[ ]`   All tests unchanged in behavior — they assert `fileManager.assembleAndSaveFinalDocument` gating rules:
+  * `[✅]`   `saveResponse.assembleDocument.test.ts` *(copy from `executeModelCallAndSave.assembleDocument.test.ts` and modify)*
+    * `[✅]`   Copy all 4 tests verbatim; apply the standard modifications (function call, params/payload shape, deps, mock factory)
+    * `[✅]`   All tests unchanged in behavior — they assert `fileManager.assembleAndSaveFinalDocument` gating rules:
       * NOT called for final markdown with root relationships normalized to contribution id
       * NOT called for final JSON-only chunk when rootIdFromSaved equals contribution id
       * NOT called for non-final chunk (`resolvedFinish !== stop`)
       * NOT called when `document_relationships` on saved record is null
 
-  * `[ ]`   `saveResponse.continue.test.ts` *(copy from `executeModelCallAndSave.continue.test.ts` and modify)*
-    * `[ ]`   Copy all ~30 tests; apply the standard modifications
-    * `[ ]`   Preserves full continuation contract: Continuation Enqueued, Continuation Handling, `target_contribution_id` forwarding and metadata preservation, first chunk saved as non-continuation with continuation enqueued, final assembly using SAVED relationships when payload is missing, dynamic `document_relationships` key based on stage slug for initial chunk, continuation persists payload `document_relationships` and skips initializer, continuation uses gathered history without duplicating "Please continue.", final document assembly when continuations are exhausted, rejection of continuation without relationships (pre-upload validation), three-chunk finalization uses saved root id and correct chunk order, continuation pathContext flags, content-driven continuation (finish_reason: stop + `continuation_needed: true`), no spacer injection when history already alternates, comprehensive continuation triggers, comprehensive retry triggers, structurally-fixed trigger (Fix 3.4), missing-keys trigger (Fix 3.5), `continuation_count` requirement for continuation chunks (Step 12.b), `continuation_limit_reached` handling (Fix 2), `document_relationships[stageSlug] = contribution.id` enforcement for JSON-only root chunks, enforcement for document root chunks even when planner sets invalid value, no overwrite of `document_relationships[stageSlug]` for continuation chunks
+  * `[✅]`   `saveResponse.continue.test.ts` *(copy from `executeModelCallAndSave.continue.test.ts` and modify)*
+    * `[✅]`   Copy all ~30 tests; apply the standard modifications
+    * `[✅]`   Preserves full continuation contract: Continuation Enqueued, Continuation Handling, `target_contribution_id` forwarding and metadata preservation, first chunk saved as non-continuation with continuation enqueued, final assembly using SAVED relationships when payload is missing, dynamic `document_relationships` key based on stage slug for initial chunk, continuation persists payload `document_relationships` and skips initializer, continuation uses gathered history without duplicating "Please continue.", final document assembly when continuations are exhausted, rejection of continuation without relationships (pre-upload validation), three-chunk finalization uses saved root id and correct chunk order, continuation pathContext flags, content-driven continuation (finish_reason: stop + `continuation_needed: true`), no spacer injection when history already alternates, comprehensive continuation triggers, comprehensive retry triggers, structurally-fixed trigger (Fix 3.4), missing-keys trigger (Fix 3.5), `continuation_count` requirement for continuation chunks (Step 12.b), `continuation_limit_reached` handling (Fix 2), `document_relationships[stageSlug] = contribution.id` enforcement for JSON-only root chunks, enforcement for document root chunks even when planner sets invalid value, no overwrite of `document_relationships[stageSlug]` for continuation chunks
 
-  * `[ ]`   `saveResponse.notifications.test.ts` *(copy from `executeModelCallAndSave.notifications.test.ts` and modify)*
-    * `[ ]`   Copy all 5 tests; apply the standard modifications
-    * `[ ]`   Preserves: `execute_chunk_completed` emitted for final chunk, `execute_chunk_completed` emitted with all required fields on continuation + document-related, no `sendJobNotificationEvent` when output type is non-document (HeaderContext), no job notification when `projectOwnerUserId` is empty, all `sendJobNotificationEvent` calls include `targetUserId = projectOwnerUserId` as second argument
-    * `[ ]`   New test: `execute_completed` emission on terminal success — **moved from `processSimpleJob`** per the split architecture. Assert `execute_completed` is sent exactly once on terminal success
-    * `[ ]`   New test: `execute_completed` NOT sent on continuation path (`needs_continuation`)
-    * `[ ]`   New test: `execute_completed` NOT sent on retriable error path
-    * `[ ]`   New test: `execute_completed` NOT sent on unretriable error path
+  * `[✅]`   `saveResponse.notifications.test.ts` *(copy from `executeModelCallAndSave.notifications.test.ts` and modify)*
+    * `[✅]`   Copy all 5 tests; apply the standard modifications
+    * `[✅]`   Preserves: `execute_chunk_completed` emitted for final chunk, `execute_chunk_completed` emitted with all required fields on continuation + document-related, no `sendJobNotificationEvent` when output type is non-document (HeaderContext), no job notification when `projectOwnerUserId` is empty, all `sendJobNotificationEvent` calls include `targetUserId = projectOwnerUserId` as second argument
+    * `[✅]`   New test: `execute_completed` emission on terminal success — **moved from `processSimpleJob`** per the split architecture. Assert `execute_completed` is sent exactly once on terminal success
+    * `[✅]`   New test: `execute_completed` NOT sent on continuation path (`needs_continuation`)
+    * `[✅]`   New test: `execute_completed` NOT sent on retriable error path
+    * `[✅]`   New test: `execute_completed` NOT sent on unretriable error path
 
-  * `[ ]`   `saveResponse.pathContext.test.ts` *(copy from `executeModelCallAndSave.pathContext.test.ts` and modify)*
-    * `[ ]`   Copy all ~20 tests; apply the standard modifications
-    * `[ ]`   Preserves: pathContext validation for document file type (41.b.i), notification `document_key` from payload (41.b.ii), all missing-field error cases (41.b.iii.a–i: `document_key` undefined, `document_key` empty, `projectId` undefined, `sessionId` undefined, `iterationNumber` undefined, `canonicalPathParams` undefined, `canonicalPathParams.stageSlug` undefined, `attempt_count` undefined, `providerDetails.api_identifier` empty), non-document HeaderContext succeeds with `document_key` (41.b.iv), `sourceAnchorModelSlug` propagation for antithesis HeaderContext, `document_key` extraction for `assembled_document_json` (101.c), `documentKey` passed unconditionally for HeaderContext, all `sourceGroupFragment` cases (71.c.i–vi)
+  * `[✅]`   `saveResponse.pathContext.test.ts` *(copy from `executeModelCallAndSave.pathContext.test.ts` and modify)*
+    * `[✅]`   Copy all ~20 tests; apply the standard modifications
+    * `[✅]`   Preserves: pathContext validation for document file type (41.b.i), notification `document_key` from payload (41.b.ii), all missing-field error cases (41.b.iii.a–i: `document_key` undefined, `document_key` empty, `projectId` undefined, `sessionId` undefined, `iterationNumber` undefined, `canonicalPathParams` undefined, `canonicalPathParams.stageSlug` undefined, `attempt_count` undefined, `providerDetails.api_identifier` empty), non-document HeaderContext succeeds with `document_key` (41.b.iv), `sourceAnchorModelSlug` propagation for antithesis HeaderContext, `document_key` extraction for `assembled_document_json` (101.c), `documentKey` passed unconditionally for HeaderContext, all `sourceGroupFragment` cases (71.c.i–vi)
 
-  * `[ ]`   `saveResponse.rawJsonOnly.test.ts` *(copy from `executeModelCallAndSave.rawJsonOnly.test.ts` and modify)*
-    * `[ ]`   Copy all 5 tests; apply the standard modifications
-    * `[ ]`   Preserves: `FileType.ModelContributionRawJson` passed to file manager (not document key fileType) (49.b.i), `mimeType: "application/json"` (not `text/markdown`) (49.b.ii), sanitized JSON string as `fileContent` (49.b.iii), `rawJsonResponseContent` excluded from upload context (49.b.iv), contribution record created with correct `file_name`, `storage_path`, `mime_type` (49.b.v)
+  * `[✅]`   `saveResponse.rawJsonOnly.test.ts` *(copy from `executeModelCallAndSave.rawJsonOnly.test.ts` and modify)*
+    * `[✅]`   Copy all 5 tests; apply the standard modifications
+    * `[✅]`   Preserves: `FileType.ModelContributionRawJson` passed to file manager (not document key fileType) (49.b.i), `mimeType: "application/json"` (not `text/markdown`) (49.b.ii), sanitized JSON string as `fileContent` (49.b.iii), `rawJsonResponseContent` excluded from upload context (49.b.iv), contribution record created with correct `file_name`, `storage_path`, `mime_type` (49.b.v)
 
-  * `[ ]`   `saveResponse.planValidation.test.ts` *(copy from `executeModelCallAndSave.planValidation.test.ts` and modify)*
-    * `[ ]`   **Classification note:** despite its name in the existing EMCAS file, all 4 tests in `executeModelCallAndSave.planValidation.test.ts` validate `header_context` shape on the **already-assembled content**. That is post-stream behavior and belongs to `saveResponse`, not to `enqueueModelCall` or `ai-stream`.
-    * `[ ]`   Copy all 4 tests; apply the standard modifications (function call → `saveResponse(deps, params, payload)`, params shape → `SaveResponseParams`, payload shape → `SaveResponsePayload` with `assembled_content` carrying the header_context JSON string, deps factory → `createMockSaveResponseDeps`, drop adapter/stream setup)
-    * `[ ]`   Preserves header_context post-stream validation contract against `payload.assembled_content`
+  * `[✅]`   `saveResponse.planValidation.test.ts` *(copy from `executeModelCallAndSave.planValidation.test.ts` and modify)*
+    * `[✅]`   **Classification note:** despite its name in the existing EMCAS file, all 4 tests in `executeModelCallAndSave.planValidation.test.ts` validate `header_context` shape on the **already-assembled content**. That is post-stream behavior and belongs to `saveResponse`, not to `enqueueModelCall` or `ai-stream`.
+    * `[✅]`   Copy all 4 tests; apply the standard modifications (function call → `saveResponse(deps, params, payload)`, params shape → `SaveResponseParams`, payload shape → `SaveResponsePayload` with `assembled_content` carrying the header_context JSON string, deps factory → `createMockSaveResponseDeps`, drop adapter/stream setup)
+    * `[✅]`   Preserves header_context post-stream validation contract against `payload.assembled_content`
 
-  * `[ ]`   `construction`
-    * `[ ]`   Handler constructed at Edge Function request boundary; `saveResponseDeps` wired from existing `createDialecticWorkerDeps` where shared, plus new back-half-specific wiring
-    * `[ ]`   `dialectic-worker/index.ts` wiring: add route matching `POST /execute-model-call-and-save-back-half` → `saveResponse` handler (separate file, one-file-per-turn)
+  * `[✅]`   `construction`
+    * `[✅]`   Handler constructed at Edge Function request boundary; `saveResponseDeps` wired from existing `createDialecticWorkerDeps` where shared, plus new back-half-specific wiring
+    * `[✅]`   `dialectic-worker/index.ts` wiring: add route matching `POST /execute-model-call-and-save-back-half` → `saveResponse` handler (separate file, one-file-per-turn)
 
-  * `[ ]`   `saveResponse.ts`
-    * `[ ]`   Exports `saveResponse(deps, params, payload): Promise<SaveResponseReturn>`
-    * `[ ]`   Validates `SaveResponseRequestBody` via guard
-    * `[ ]`   Fetches job row, provider row, session, project owner from Supabase
-    * `[ ]`   Narrows `payload.finish_reason` (string | null) to `FinishReason` via type guard; `null` falls back to `'unknown'` (triggers continuation — correct for stream interruption)
-    * `[ ]`   Runs all post-stream logic extracted from existing `dialectic-worker/executeModelCallAndSave/executeModelCallAndSave.ts` (finish_reason → sanitize → parse → upload → save → debit → continue or complete)
-    * `[ ]`   Sends `execute_completed` notification on terminal success
-    * `[ ]`   Updates job status from `queued` to outcome
+  * `[✅]`   `saveResponse.ts`
+    * `[✅]`   Exports `saveResponse(deps, params, payload): Promise<SaveResponseReturn>`
+    * `[✅]`   Validates `SaveResponseRequestBody` via guard
+    * `[✅]`   Fetches job row, provider row, session, project owner from Supabase
+    * `[✅]`   Narrows `payload.finish_reason` (string | null) to `FinishReason` via type guard; `null` falls back to `'unknown'` (triggers continuation — correct for stream interruption)
+    * `[✅]`   Runs all post-stream logic extracted from existing `dialectic-worker/executeModelCallAndSave/executeModelCallAndSave.ts` (finish_reason → sanitize → parse → upload → save → debit → continue or complete)
+    * `[✅]`   Sends `execute_completed` notification on terminal success
+    * `[✅]`   Updates job status from `queued` to outcome
 
-  * `[ ]`   `saveResponse.mock.ts`
-    * `[ ]`   `createMockSaveResponseDeps(overrides?)`: controllable `saveResponseDeps`
-    * `[ ]`   Mirrors the existing `executeModelCallAndSave.mock.ts` pattern for shared deps
+  * `[✅]`   `saveResponse.mock.ts`
+    * `[✅]`   `createMockSaveResponseDeps(overrides?)`: controllable `saveResponseDeps`
+    * `[✅]`   Mirrors the existing `executeModelCallAndSave.mock.ts` pattern for shared deps
 
-  * `[ ]`   `saveResponse.provides.ts`
-    * `[ ]`   Exports: `saveResponse`, `saveResponseDeps`, `SaveResponseReturn`
+  * `[✅]`   `saveResponse.provides.ts`
+    * `[✅]`   Exports: `saveResponse`, `saveResponseDeps`, `SaveResponseReturn`
 
-  * `[ ]`   `saveResponse.integration.test.ts`
-    * `[ ]`   Chain: mock Netlify POST → back-half → mock Supabase → mock retryJob/continueJob → asserts job status updated, notification sent
-    * `[ ]`   Verifies `execute_completed` notification fires on terminal success (was processSimpleJob's responsibility)
+  * `[✅]`   `saveResponse.integration.test.ts`
+    * `[✅]`   Chain: mock Netlify POST → back-half → mock Supabase → mock retryJob/continueJob → asserts job status updated, notification sent
+    * `[✅]`   Verifies `execute_completed` notification fires on terminal success (was processSimpleJob's responsibility)
 
-  * `[ ]`   `directionality`
-    * `[ ]`   Layer: app/domain (Supabase Edge, Deno)
-    * `[ ]`   Deps inward: existing shared Deno utilities, Supabase client, notification service
-    * `[ ]`   Provides outward: HTTP 200/4xx/5xx response to Netlify workload; job status updates to DB; notifications to users
-    * `[ ]`   No cycles; does not call front-half or Netlify
+  * `[✅]`   `directionality`
+    * `[✅]`   Layer: app/domain (Supabase Edge, Deno)
+    * `[✅]`   Deps inward: existing shared Deno utilities, Supabase client, notification service
+    * `[✅]`   Provides outward: HTTP 200/4xx/5xx response to Netlify workload; job status updates to DB; notifications to users
+    * `[✅]`   No cycles; does not call front-half or Netlify
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Invalid POST body → 400 without DB access — proven by unit test
-    * `[ ]`   Job status transitions from `queued` to correct terminal state — proven by unit test
-    * `[ ]`   `execute_completed` notification fires on success — proven by unit test (moved from processSimpleJob)
-    * `[ ]`   Non-2xx response on retriable failure causes Netlify to retry POST — proven by interaction spec + integration test
+  * `[✅]`   `requirements`
+    * `[✅]`   Invalid POST body → 400 without DB access — proven by unit test
+    * `[✅]`   Job status transitions from `queued` to correct terminal state — proven by unit test
+    * `[✅]`   `execute_completed` notification fires on success — proven by unit test (moved from processSimpleJob)
+    * `[✅]`   Non-2xx response on retriable failure causes Netlify to retry POST — proven by interaction spec + integration test
 
 * `[ ]`   `dialectic-worker/enqueueModelCall/enqueueModelCall` **[BE] EMCAS front-half — pre-call validation, job queuing, and Netlify event dispatch**
 

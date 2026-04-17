@@ -1,7 +1,4 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../../types_db.ts";
-import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import type {
     NodeTokenUsage,
     SaveResponseDeps,
@@ -18,7 +15,7 @@ import {
 import { createMockSaveResponseDeps } from "./saveResponse.mock.ts";
 
 Deno.test(
-    "Type Guard: isSaveResponseRequestBody returns true for valid transport body with NodeTokenUsage",
+    "Type Guard: isSaveResponseRequestBody returns true for valid transport body with NodeTokenUsage and finish_reason",
     () => {
         const usage: NodeTokenUsage = {
             prompt_tokens: 1,
@@ -29,18 +26,20 @@ Deno.test(
             job_id: "job-1",
             assembled_content: "content",
             token_usage: usage,
+            finish_reason: "stop",
         };
         assertEquals(isSaveResponseRequestBody(body), true);
     },
 );
 
 Deno.test(
-    "Type Guard: isSaveResponseRequestBody returns true when token_usage is null",
+    "Type Guard: isSaveResponseRequestBody returns true when token_usage is null and finish_reason is null",
     () => {
         const body = {
             job_id: "job-1",
             assembled_content: "content",
             token_usage: null,
+            finish_reason: null,
         };
         assertEquals(isSaveResponseRequestBody(body), true);
     },
@@ -57,6 +56,7 @@ Deno.test(
         const body = {
             assembled_content: "c",
             token_usage: usage,
+            finish_reason: "stop",
         };
         assertEquals(isSaveResponseRequestBody(body), false);
     },
@@ -73,6 +73,7 @@ Deno.test(
         const body = {
             job_id: "j",
             token_usage: usage,
+            finish_reason: "stop",
         };
         assertEquals(isSaveResponseRequestBody(body), false);
     },
@@ -85,6 +86,24 @@ Deno.test(
             job_id: "j",
             assembled_content: "c",
             token_usage: "not-usage",
+            finish_reason: "stop",
+        };
+        assertEquals(isSaveResponseRequestBody(body), false);
+    },
+);
+
+Deno.test(
+    "Type Guard: isSaveResponseRequestBody returns false when finish_reason field is missing",
+    () => {
+        const usage: NodeTokenUsage = {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        };
+        const body = {
+            job_id: "job-1",
+            assembled_content: "content",
+            token_usage: usage,
         };
         assertEquals(isSaveResponseRequestBody(body), false);
     },
@@ -101,12 +120,9 @@ Deno.test(
 Deno.test(
     "Type Guard: isSaveResponseParams returns true for job_id and dbClient",
     () => {
-        const mockSetup: ReturnType<typeof createMockSupabaseClient> =
-            createMockSupabaseClient("save-response-guard-test");
-        const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
         const params = {
             job_id: "job-1",
-            dbClient,
+            dbClient: {},
         };
         assertEquals(isSaveResponseParams(params), true);
     },
@@ -115,11 +131,8 @@ Deno.test(
 Deno.test(
     "Type Guard: isSaveResponseParams returns false when job_id is missing",
     () => {
-        const mockSetup: ReturnType<typeof createMockSupabaseClient> =
-            createMockSupabaseClient("save-response-guard-test");
-        const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
         const params = {
-            dbClient,
+            dbClient: {},
         };
         assertEquals(isSaveResponseParams(params), false);
     },
@@ -144,7 +157,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Type Guard: isSaveResponsePayload returns true for assembled_content and NodeTokenUsage",
+    "Type Guard: isSaveResponsePayload returns true for assembled_content, NodeTokenUsage, and finish_reason",
     () => {
         const usage: NodeTokenUsage = {
             prompt_tokens: 0,
@@ -154,17 +167,19 @@ Deno.test(
         const payload = {
             assembled_content: "assembled",
             token_usage: usage,
+            finish_reason: "stop",
         };
         assertEquals(isSaveResponsePayload(payload), true);
     },
 );
 
 Deno.test(
-    "Type Guard: isSaveResponsePayload returns true when token_usage is null",
+    "Type Guard: isSaveResponsePayload returns true when token_usage is null and finish_reason is null",
     () => {
         const payload = {
             assembled_content: "assembled",
             token_usage: null,
+            finish_reason: null,
         };
         assertEquals(isSaveResponsePayload(payload), true);
     },
@@ -180,6 +195,7 @@ Deno.test(
         };
         const payload = {
             token_usage: usage,
+            finish_reason: "stop",
         };
         assertEquals(isSaveResponsePayload(payload), false);
     },
@@ -191,6 +207,23 @@ Deno.test(
         const payload = {
             assembled_content: "a",
             token_usage: 99,
+            finish_reason: "stop",
+        };
+        assertEquals(isSaveResponsePayload(payload), false);
+    },
+);
+
+Deno.test(
+    "Type Guard: isSaveResponsePayload returns false when finish_reason field is missing",
+    () => {
+        const usage: NodeTokenUsage = {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        };
+        const payload = {
+            assembled_content: "assembled",
+            token_usage: usage,
         };
         assertEquals(isSaveResponsePayload(payload), false);
     },
@@ -213,14 +246,28 @@ Deno.test(
 );
 
 Deno.test(
-    "Type Guard: isSaveResponseDeps returns false when a dependency field is missing",
+    "Type Guard: isSaveResponseDeps returns false when any single dependency field is missing",
     () => {
         const full: SaveResponseDeps = createMockSaveResponseDeps();
-        const missingLogger: Omit<SaveResponseDeps, "logger"> & {
-            logger?: SaveResponseDeps["logger"];
-        } = { ...full };
-        delete missingLogger.logger;
-        assertEquals(isSaveResponseDeps(missingLogger), false);
+        const depKeys: (keyof SaveResponseDeps)[] = [
+            "logger",
+            "fileManager",
+            "notificationService",
+            "continueJob",
+            "retryJob",
+            "resolveFinishReason",
+            "isIntermediateChunk",
+            "determineContinuation",
+            "buildUploadContext",
+            "debitTokens",
+            "sanitizeJsonContent",
+        ];
+        for (let i = 0; i < depKeys.length; i++) {
+            const key: keyof SaveResponseDeps = depKeys[i];
+            const missingOne: Record<string, unknown> = { ...full };
+            delete missingOne[key];
+            assertEquals(isSaveResponseDeps(missingOne), false);
+        }
     },
 );
 

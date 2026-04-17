@@ -19,6 +19,7 @@ import {
   isDialecticContribution,
   isContributionType,
   isDialecticContinueReason,
+  isFinishReason,
   isRecord,
   isJson,
   isDocumentRelationships,
@@ -32,7 +33,6 @@ import {
 import { extractSourceGroupFragment } from "../../_shared/utils/path_utils.ts";
 import { RenderJobValidationError } from "../../_shared/utils/errors.ts";
 import type { ChatMessageRow } from "../../_shared/types.ts";
-import type { TokenWallet } from "../../_shared/types/tokenWallet.types.ts";
 import type {
   DebitTokensParams,
   DebitTokensPayload,
@@ -60,6 +60,7 @@ import {
   isSaveResponseParams,
   isSaveResponsePayload,
 } from "./saveResponse.guard.ts";
+import type { TokenWallet } from "../../_shared/types/tokenWallet.types.ts";
 
 function readOptionalPreflightInputTokens(payload: unknown): number {
   if (!isRecord(payload)) {
@@ -189,7 +190,6 @@ export async function saveResponse(
     const out: SaveResponseErrorReturn = { error: err, retriable: false };
     return out;
   }
-  const jobWalletId: string = walletId;
 
   if (typeof projectId !== "string" || projectId.trim() === "") {
     const err: Error = new Error("job payload projectId is required");
@@ -273,7 +273,9 @@ export async function saveResponse(
     effectiveTokenUsage = synthetic;
   }
 
-  const streamFinishReason: FinishReason = 'stop';
+  const streamFinishReason: FinishReason = isFinishReason(payload.finish_reason)
+    ? (payload.finish_reason === null ? 'unknown' : payload.finish_reason)
+    : 'unknown';
 
   const aiResponse: UnifiedAIResponse = {
     content: contentString,
@@ -707,13 +709,6 @@ export async function saveResponse(
     }
   }
 
-  const wallet: TokenWallet | null = await deps.userTokenWalletService.getWallet(jobWalletId);
-  if (wallet === null) {
-    const err: Error = new Error(`Wallet not found for id ${jobWalletId}`);
-    const out: SaveResponseErrorReturn = { error: err, retriable: false };
-    return out;
-  }
-
   const relatedEntityId: string = job.id;
   const nowIso: string = new Date().toISOString();
   let assistantTokenUsageJson: Json | null = null;
@@ -724,6 +719,32 @@ export async function saveResponse(
       assistantTokenUsageJson = usageParsed;
     }
   }
+
+  const { data: walletRow, error: walletError } = await params.dbClient
+  .from('token_wallets')
+  .select('wallet_id, user_id, organization_id, balance, currency, created_at, updated_at')
+  .eq('wallet_id', walletId)
+  .single();
+if (walletError || !walletRow) {
+  const err: Error = new Error(`Wallet not found for id ${walletId}`);
+  const out: SaveResponseErrorReturn = { error: err, retriable: false };
+  return out;
+}
+if (walletRow.currency !== 'AI_TOKEN' || walletRow.balance === null) {
+  const err: Error = new Error(`Invalid wallet data for id ${walletId}`);
+  const out: SaveResponseErrorReturn = { error: err, retriable: false };
+  return out;
+}
+const wallet: TokenWallet = {
+  walletId: walletRow.wallet_id,
+  ...(walletRow.user_id !== null ? { userId: walletRow.user_id } : {}),
+  ...(walletRow.organization_id !== null ? { organizationId: walletRow.organization_id } : {}),
+  balance: walletRow.balance.toString(),
+  currency: 'AI_TOKEN',
+  createdAt: new Date(walletRow.created_at),
+  updatedAt: new Date(walletRow.updated_at),
+};
+
   const debitParams: DebitTokensParams = {
     wallet,
     tokenUsage: effectiveTokenUsage,

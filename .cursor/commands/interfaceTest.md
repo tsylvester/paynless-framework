@@ -10,11 +10,11 @@ THIS IS A TDD RED TEST YOU WILL HAVE LINTER ERRORS YOU JUST DO EXACTLY WHAT YOU"
 
 An interface test proves that the interface implements the defined shape contract. 
 
-An interface test DOES NOT use type guards, import type guards, or act as a type guard. 
+An interface test DOES NOT use mocks, type guards, import type guards, or act as a type guard. 
+
+An interface test ONLY TESTS THE ELEMENTS DEFINED IN THE INTERFACE! IT DOES NOT TEST ANYTHING THAT IS NOT DEFINED IN THE INTERFACE! IT DOES NOT TEST ANYTHING IMPORTED BY THE INTERFACE! THE INTERFACE TESTS ONLY THE ELEMENTS **DEFINED** IN THE INTERFACE! IF IT IS NOT **DEFINED** IN THE INTERFACE IT IS **NOT FUCKING TESTED IN THE FUCKING INTERFACE TEST!**
 
 An interface test DOES NOT rely on implementation details. 
-
-For any factories or other helpers, place them in the mock file. 
 
 DO NOT DUPLICATE FUNCTIONALITY! CONSUME WHAT EXISTS BEFORE BUILDING SOMETHING NEW! 
 

@@ -8,7 +8,6 @@ import { isIntermediateChunk } from "../../_shared/utils/isIntermediateChunk.ts"
 import { determineContinuation } from "../../_shared/utils/determineContinuation/determineContinuation.ts";
 import { buildUploadContext } from "../../_shared/utils/buildUploadContext/buildUploadContext.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
-import { createMockUserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts";
 import type { Database, Tables } from "../../types_db.ts";
 import type {
     ContentToInclude,
@@ -50,6 +49,18 @@ export type SaveResponsePayloadOverrides = Partial<SaveResponsePayload>;
 export type SaveResponseSuccessReturnOverrides = Partial<SaveResponseSuccessReturn>;
 
 export type SaveResponseErrorReturnOverrides = Partial<SaveResponseErrorReturn>;
+
+export function createSaveResponseParamsForInterfaceContract(): SaveResponseParams {
+    const mockSetup: ReturnType<typeof createMockSupabaseClient> =
+        createMockSupabaseClient("save-response-interface-contract");
+    const dbClient: SupabaseClient<Database> =
+        mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = {
+        job_id: "interface-contract-job-id",
+        dbClient,
+    };
+    return params;
+}
 
 export function createMockSaveResponseDeps(
     overrides?: SaveResponseDepsOverrides,
@@ -100,7 +111,6 @@ export function createMockSaveResponseDeps(
             },
             transactionRecordedSuccessfully: true,
         }),
-        userTokenWalletService: createMockUserTokenWalletService().instance,
         sanitizeJsonContent: sanitizeJsonContent,
     };
     if (!overrides) {
@@ -154,6 +164,7 @@ export function createMockSaveResponsePayload(
     const base: SaveResponsePayload = {
         assembled_content: "{}",
         token_usage: defaultUsage,
+        finish_reason: null,
     };
     if (!overrides) {
         return base;
@@ -435,6 +446,22 @@ export function createMockSaveResponseParamsWithQueuedJob(
                                 updated_at: new Date().toISOString(),
                                 idempotency_key: "session-456_render",
                                 viewing_stage_id: null,
+                            },
+                        ],
+                        error: null,
+                    },
+                },
+                token_wallets: {
+                    select: {
+                        data: [
+                            {
+                                wallet_id: "wallet-ghi",
+                                user_id: "user-789",
+                                organization_id: null,
+                                balance: 10000,
+                                currency: "AI_TOKEN",
+                                created_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString(),
                             },
                         ],
                         error: null,
