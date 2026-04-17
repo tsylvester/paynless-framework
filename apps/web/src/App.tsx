@@ -8,7 +8,7 @@ import {
 import { isChatContextPreferences, logger } from "@paynless/utils";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AlertCircle } from "lucide-react";
-import { useEffect /*useRef */ } from "react";
+import { useEffect, useRef } from "react";
 import { RouterProvider, useNavigate } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 // import { ChatwootIntegration } from './components/integrations/ChatwootIntegration'
@@ -56,6 +56,9 @@ function AppContent() {
 			personalWallet: state.personalWallet,
 			isLoadingPersonalWallet: state.isLoadingPersonalWallet,
 		}));
+	
+	// Track if we've attempted to load the wallet for this user
+	const walletLoadAttempted = useRef(false);
 
 	const {
 		isChatContextHydrated,
@@ -117,13 +120,26 @@ function AppContent() {
 
 	// Effect to load wallet information
 	useEffect(() => {
-		if (profile && !personalWallet && !isLoadingPersonalWallet) {
+		// Only try to load wallet if:
+		// 1. Profile exists (user is logged in)
+		// 2. Wallet is not already loaded
+		// 3. Not currently loading
+		// 4. Haven't already attempted for this user session
+		if (profile && !personalWallet && !isLoadingPersonalWallet && !walletLoadAttempted.current) {
 			logger.info(
 				"[AppContent] Profile available, personal wallet not loaded. Loading personal wallet...",
 			);
+			walletLoadAttempted.current = true; // Mark as attempted
 			loadPersonalWallet();
 		}
 	}, [profile, personalWallet, isLoadingPersonalWallet, loadPersonalWallet]);
+	
+	// Reset the attempt flag when user changes
+	useEffect(() => {
+		if (!profile) {
+			walletLoadAttempted.current = false;
+		}
+	}, [profile]);
 
 	if (isLoadingCapabilities) {
 		return (

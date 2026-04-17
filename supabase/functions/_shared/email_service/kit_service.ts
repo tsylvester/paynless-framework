@@ -75,7 +75,7 @@ export class KitService implements EmailMarketingService {
             throw new Error("KitService is not configured with custom field keys.");
         }
 
-        const endpoint = `/v4/subscribers`;
+        const endpoint = `/subscribers`;
         const payload: Record<string, unknown> = {
             email_address: userData.email,
             first_name: userData.firstName,
@@ -104,7 +104,7 @@ export class KitService implements EmailMarketingService {
             return; // Don't throw, just skip if not found
         }
 
-        const endpoint = `/v4/subscribers/${subscriberId}`;
+        const endpoint = `/subscribers/${subscriberId}`;
         const fields: Record<string, unknown> = {};
         if (attributes.id) fields[this.config.customUserIdField.replace('fields[','').replace(']','')] = attributes.id;
         if (attributes.createdAt) fields[this.config.customCreatedAtField.replace('fields[','').replace(']','')] = attributes.createdAt;
@@ -123,7 +123,7 @@ export class KitService implements EmailMarketingService {
     }
 
     private async findSubscriberIdByEmail(email: string): Promise<number | null> {
-        const endpoint = `/v4/subscribers?email_address=${encodeURIComponent(email)}`;
+        const endpoint = `/subscribers?email_address=${encodeURIComponent(email)}`;
         try {
             const data = await this.makeApiRequest<{ subscribers: Array<{id: number}> }>(endpoint, { method: 'GET' });
             // Removed TODO as email is now passed in endpoint query string
@@ -149,7 +149,7 @@ export class KitService implements EmailMarketingService {
             return;
         }
 
-        const endpoint = `/v4/subscribers/${subscriberId}`;
+        const endpoint = `/subscribers/${subscriberId}`;
         logger.info(`Attempting to remove Kit subscriber ${subscriberId} (${email})`);
         // makeApiRequest handles non-OK status by throwing, which is desired here
         await this.makeApiRequest(endpoint, { method: 'DELETE' }); 
@@ -157,7 +157,7 @@ export class KitService implements EmailMarketingService {
     }
 
     async addTagToSubscriber(email: string, tagId: string): Promise<void> {
-        const endpoint = `/v4/tags/${tagId}/subscribers`;
+        const endpoint = `/tags/${tagId}/subscribers`;
         const payload: Record<string, unknown> = {
             email_address: email,
         };
@@ -170,7 +170,7 @@ export class KitService implements EmailMarketingService {
     }
 
     async removeTagFromSubscriber(email: string, tagId: string): Promise<void> {
-        const endpoint = `/v4/tags/${tagId}/subscribers`;
+        const endpoint = `/tags/${tagId}/subscribers`;
         const payload: Record<string, unknown> = {
             email_address: email,
         };
